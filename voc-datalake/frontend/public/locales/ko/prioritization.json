@@ -17,6 +17,14 @@
     "wrongTypeDescription": "프로젝트에 문서가 있지만 PRD 또는 PR/FAQ가 없습니다. 프로젝트를 열고 PRD 또는 PR/FAQ를 생성하여 여기서 평가하세요.",
     "wrongTypeTitle": "평가 가능한 문서 없음"
   },
+  "evidence": {
+    "avgRating": "평균 평점",
+    "noLinkedForm": "이 문서에 연결된 피드백 양식이 없습니다.",
+    "noRatings": "수집된 평점 없음",
+    "submissions": "제출 수",
+    "title": "수집된 피드백",
+    "unavailable": "평점을 사용할 수 없음"
+  },
   "framework": {
     "description": "각 문서를 다음 항목으로 평가하세요: <strong>영향도</strong>, <strong>출시 시간</strong>, <strong>전략적 부합도</strong>, <strong>신뢰도</strong>.",
     "title": "우선순위 지정 프레임워크"

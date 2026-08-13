@@ -17,6 +17,14 @@
     "wrongTypeDescription": "プロジェクトにドキュメントはありますが、PRDもPR/FAQもありません。プロジェクトを開き、PRDまたはPR/FAQを生成してここで評価してください。",
     "wrongTypeTitle": "スコアリング可能なドキュメントがありません"
   },
+  "evidence": {
+    "avgRating": "平均評価",
+    "noLinkedForm": "このドキュメントにリンクされたフィードバックフォームはありません。",
+    "noRatings": "評価は収集されていません",
+    "submissions": "回答数",
+    "title": "収集されたフィードバック",
+    "unavailable": "評価を取得できません"
+  },
   "framework": {
     "description": "各ドキュメントを次の基準で評価: <strong>インパクト</strong>、<strong>市場投入時間</strong>、<strong>戦略的適合性</strong>、<strong>確信度</strong>。",
     "title": "優先順位付けフレームワーク"

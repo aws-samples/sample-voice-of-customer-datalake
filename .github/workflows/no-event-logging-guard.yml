@@ -1,0 +1,58 @@
+# Runs the raw-event logging guard (issue #245) on every pull request.
+#
+# Deliberately narrow: this executes ONE test file, not the backend suite.
+# The guard depends only on `re` and `pathlib`, so it needs no application
+# dependencies and no Lambda layer build, and it finishes in well under a
+# second.  The rest of the suite currently cannot run in a bare environment
+# (it needs pydantic, aws_xray_sdk and the built layers), so attempting it
+# here would produce a permanently red, ignored check — which is worse than
+# no check at all.
+#
+# The repo's real gate is `npm run check` in the root package.json, which chains
+# lint, typecheck:all, the frontend/CDK/stream suites and test:backend.  Widening
+# this workflow towards that would first need the deps missing from
+# requirements-dev.txt and the layer build.
+name: no-event-logging guard
+
+on:
+  pull_request:
+  push:
+    branches:
+      - development
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: raw Lambda event is not logged
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check pytest
+
+      # -o addopts="": pytest.ini's addopts enables pytest-cov for the whole
+      # backend suite.  pytest-cov is not installed here (and is not wanted for
+      # one stdlib-only file), and pytest treats the unknown --cov flags as a
+      # usage error, so the defaults must be cleared rather than just disabling
+      # the plugin with -p no:cov.
+      #
+      # --noconftest: this file uses no fixtures, but pytest would still load
+      # lambda/conftest.py and lambda/api/test/conftest.py.  Those import boto3
+      # and cryptography inside fixture bodies today, so nothing heavy is
+      # imported — an incidental property, not a guarantee.  Hoisting one of
+      # those imports to module scope would turn this check red with a
+      # ModuleNotFoundError that reads like a security-guard failure.  The local
+      # `npm run test:backend` run does load the conftests, so that coupling is
+      # still exercised, just not here.
+      - name: Run guard
+        working-directory: voc-datalake
+        run: >-
+          python -m pytest lambda/api/test/test_no_event_logging.py
+          -o addopts="" --noconftest -p no:cacheprovider --no-header -q

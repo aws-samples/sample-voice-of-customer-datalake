@@ -16,14 +16,15 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
-import { uniqueName } from '../utils/naming';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
 import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
+import { SOURCE_PLACEHOLDER } from '../utils/naming';
 
-export interface VocApiStackProps extends cdk.StackProps {
+export interface VocApiStackProps extends VocStackProps {
   // Core stack resources
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
@@ -82,7 +83,7 @@ export interface VocApiStackProps extends cdk.StackProps {
  * - Webhook Lambdas for plugins
  * - Frontend S3 deployment
  */
-export class VocApiStack extends cdk.Stack {
+export class VocApiStack extends VocStack {
   public readonly api: apigateway.RestApi;
 
   constructor(scope: Construct, id: string, props: VocApiStackProps) {
@@ -171,7 +172,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(metricsRole);
 
     const metricsLambda = new lambda.Function(this, 'MetricsApi', {
-      functionName: uniqueName('voc-metrics-api'),
+      functionName: this.uniqueName('voc-metrics-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'metrics_handler.lambda_handler',
@@ -187,7 +188,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('MetricsApiLogs', uniqueName('voc-metrics-api')),
+      logGroup: this.createLogGroup('MetricsApiLogs', this.uniqueName('voc-metrics-api')),
     });
 
     // Integrations API
@@ -196,18 +197,22 @@ export class VocApiStack extends cdk.Stack {
       actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
       resources: [secretsArn],
     }));
+    // Prefixed so the wildcards cannot reach into a SECOND deployment's
+    // ingestors in the same account and region. The trailing `*` stays: it
+    // stands in for the `-<account>-<region>` suffix, and narrowing these to
+    // exact names is issue #234, deliberately a separate change.
     integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['events:EnableRule', 'events:DisableRule', 'events:DescribeRule'],
-      resources: [`arn:aws:events:${this.region}:${this.account}:rule/voc-ingest-*-schedule*`],
+      resources: [`arn:aws:events:${this.region}:${this.account}:rule/${this.prefixed('voc-ingest')}-*-schedule*`],
     }));
     integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-*`],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:${this.prefixed('voc-ingestor')}-*`],
     }));
-    NagSuppressions.addResourceSuppressions(integrationsRole, pluginSystemSuppressions, true);
+    NagSuppressions.addResourceSuppressions(integrationsRole, pluginSystemSuppressions(this.deploymentPrefix), true);
 
     const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
-      functionName: uniqueName('voc-integrations-api'),
+      functionName: this.uniqueName('voc-integrations-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'integrations_handler.lambda_handler',
@@ -215,9 +220,20 @@ export class VocApiStack extends cdk.Stack {
       role: integrationsRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, AGGREGATES_TABLE: aggregatesTable.tableName },
+      // POST /sources/{source}/run and the enable/disable routes address a
+      // PER-PLUGIN ingestor and schedule rule, so one fixed name will not do —
+      // but resolving the pattern is still the infrastructure's job, not the
+      // handler's, exactly as WEBSCRAPER_FUNCTION_NAME and
+      // MANUAL_IMPORT_PROCESSOR_FUNCTION are already handed down. Rebuilding
+      // the name in Python from DEPLOY_ACCOUNT_ID/DEPLOY_REGION would, under a
+      // prefix, invoke a function that does not exist — a ResourceNotFound the
+      // user experiences as "the scraper runs but pulls no reviews".
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, ...this.prefixOnlyEnv({
+        INGESTOR_FUNCTION_NAME_PATTERN: this.uniqueNamePattern(`voc-ingestor-${SOURCE_PLACEHOLDER}`),
+        INGEST_SCHEDULE_RULE_NAME_PATTERN: this.uniqueNamePattern(`voc-ingest-${SOURCE_PLACEHOLDER}-schedule`),
+      }), AGGREGATES_TABLE: aggregatesTable.tableName },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('IntegrationsApiLogs', uniqueName('voc-integrations-api')),
+      logGroup: this.createLogGroup('IntegrationsApiLogs', this.uniqueName('voc-integrations-api')),
     });
     aggregatesTable.grantReadWriteData(integrationsRole);
 
@@ -231,9 +247,9 @@ export class VocApiStack extends cdk.Stack {
     }));
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-ingestor-webscraper-*`],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:${this.prefixed('voc-ingestor-webscraper')}-*`],
     }));
-    NagSuppressions.addResourceSuppressions(scrapersRole, pluginSystemSuppressions, true);
+    NagSuppressions.addResourceSuppressions(scrapersRole, pluginSystemSuppressions(this.deploymentPrefix), true);
     scrapersRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: allowlistedModelArns(this.region, this.account),
@@ -246,7 +262,7 @@ export class VocApiStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressions(scrapersRole, marketplaceSuppressions, true);
 
     const scrapersLambda = new lambda.Function(this, 'ScrapersApi', {
-      functionName: uniqueName('voc-scrapers-api'),
+      functionName: this.uniqueName('voc-scrapers-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'scrapers_handler.lambda_handler',
@@ -257,9 +273,9 @@ export class VocApiStack extends cdk.Stack {
       // this just keeps the Lambda from dying before that.
       timeout: cdk.Duration.seconds(120),
       memorySize: 512,
-      environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: uniqueName('voc-ingestor-webscraper'), ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
+      environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: this.uniqueName('voc-ingestor-webscraper'), ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ScrapersApiLogs', uniqueName('voc-scrapers-api')),
+      logGroup: this.createLogGroup('ScrapersApiLogs', this.uniqueName('voc-scrapers-api')),
     });
 
 
@@ -268,12 +284,12 @@ export class VocApiStack extends cdk.Stack {
     aggregatesTable.grantReadWriteData(manualImportRole);
     kmsKey.grantEncryptDecrypt(manualImportRole);
     manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
-    manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:voc-manual-import-processor-*`] }));
-    NagSuppressions.addResourceSuppressions(manualImportRole, pluginSystemSuppressions, true);
+    manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`arn:aws:lambda:${this.region}:${this.account}:function:${this.prefixed('voc-manual-import-processor')}-*`] }));
+    NagSuppressions.addResourceSuppressions(manualImportRole, pluginSystemSuppressions(this.deploymentPrefix), true);
     rawDataBucket.grantReadWrite(manualImportRole);
 
     const manualImportLambda = new lambda.Function(this, 'ManualImportApi', {
-      functionName: uniqueName('voc-manual-import-api'),
+      functionName: this.uniqueName('voc-manual-import-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_handler.lambda_handler',
@@ -285,13 +301,13 @@ export class VocApiStack extends cdk.Stack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         PROCESSING_QUEUE_URL: processingQueueUrl,
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
-        MANUAL_IMPORT_PROCESSOR_FUNCTION: uniqueName('voc-manual-import-processor'),
+        MANUAL_IMPORT_PROCESSOR_FUNCTION: this.uniqueName('voc-manual-import-processor'),
         ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-manual-import-api',
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ManualImportApiLogs', uniqueName('voc-manual-import-api')),
+      logGroup: this.createLogGroup('ManualImportApiLogs', this.uniqueName('voc-manual-import-api')),
     });
 
     // Manual Import Processor (async)
@@ -304,7 +320,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     new lambda.Function(this, 'ManualImportProcessor', {
-      functionName: uniqueName('voc-manual-import-processor'),
+      functionName: this.uniqueName('voc-manual-import-processor'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'manual_import_processor.lambda_handler',
@@ -314,7 +330,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 1024,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, POWERTOOLS_SERVICE_NAME: 'voc-manual-import-processor', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ManualImportProcessorLogs', uniqueName('voc-manual-import-processor')),
+      logGroup: this.createLogGroup('ManualImportProcessorLogs', this.uniqueName('voc-manual-import-processor')),
     });
 
     // Settings API
@@ -327,7 +343,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const settingsLambda = new lambda.Function(this, 'SettingsApi', {
-      functionName: uniqueName('voc-settings-api'),
+      functionName: this.uniqueName('voc-settings-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'settings_handler.lambda_handler',
@@ -337,7 +353,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-settings-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('SettingsApiLogs', uniqueName('voc-settings-api')),
+      logGroup: this.createLogGroup('SettingsApiLogs', this.uniqueName('voc-settings-api')),
     });
 
     // Logs API
@@ -346,7 +362,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantDecrypt(logsRole);
 
     const logsLambda = new lambda.Function(this, 'LogsApi', {
-      functionName: uniqueName('voc-logs-api'),
+      functionName: this.uniqueName('voc-logs-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'logs_handler.lambda_handler',
@@ -356,7 +372,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('LogsApiLogs', uniqueName('voc-logs-api')),
+      logGroup: this.createLogGroup('LogsApiLogs', this.uniqueName('voc-logs-api')),
     });
 
     // Users API
@@ -367,7 +383,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const usersLambda = new lambda.Function(this, 'UsersApi', {
-      functionName: uniqueName('voc-users-api'),
+      functionName: this.uniqueName('voc-users-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'users_handler.lambda_handler',
@@ -377,7 +393,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { USER_POOL_ID: userPool.userPoolId, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-users-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('UsersApiLogs', uniqueName('voc-users-api')),
+      logGroup: this.createLogGroup('UsersApiLogs', this.uniqueName('voc-users-api')),
     });
 
     // Feedback Form API
@@ -388,7 +404,7 @@ export class VocApiStack extends cdk.Stack {
     feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
 
     const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
-      functionName: uniqueName('voc-feedback-form-api'),
+      functionName: this.uniqueName('voc-feedback-form-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'feedback_form_handler.lambda_handler',
@@ -398,7 +414,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, FEEDBACK_TABLE: feedbackTable.tableName, PROCESSING_QUEUE_URL: processingQueueUrl, BRAND_NAME: brandName, POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('FeedbackFormApiLogs', uniqueName('voc-feedback-form-api')),
+      logGroup: this.createLogGroup('FeedbackFormApiLogs', this.uniqueName('voc-feedback-form-api')),
     });
 
     // Chat API
@@ -413,7 +429,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const chatLambda = new lambda.Function(this, 'ChatApi', {
-      functionName: uniqueName('voc-chat-api'),
+      functionName: this.uniqueName('voc-chat-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'chat_handler.lambda_handler',
@@ -423,7 +439,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 512,
       environment: { FEEDBACK_TABLE: feedbackTable.tableName, AGGREGATES_TABLE: aggregatesTable.tableName, CONVERSATIONS_TABLE: conversationsTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-chat-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ChatApiLogs', uniqueName('voc-chat-api')),
+      logGroup: this.createLogGroup('ChatApiLogs', this.uniqueName('voc-chat-api')),
     });
 
 
@@ -459,7 +475,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
-      functionName: uniqueName('voc-projects-api'),
+      functionName: this.uniqueName('voc-projects-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'projects_handler.lambda_handler',
@@ -483,7 +499,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('ProjectsApiLogs', uniqueName('voc-projects-api')),
+      logGroup: this.createLogGroup('ProjectsApiLogs', this.uniqueName('voc-projects-api')),
     });
 
     // ── Async job Lambdas (persona/document generation) invoked by the Projects API ──
@@ -534,7 +550,7 @@ export class VocApiStack extends cdk.Stack {
     rawDataBucket.grantReadWrite(personaGeneratorRole, 'avatars/*');
 
     const personaGeneratorLambda = new lambda.Function(this, 'PersonaGeneratorJob', {
-      functionName: uniqueName('voc-job-persona-generator'),
+      functionName: this.uniqueName('voc-job-persona-generator'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -553,7 +569,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('PersonaGeneratorJobLogs', uniqueName('voc-job-persona-generator')),
+      logGroup: this.createLogGroup('PersonaGeneratorJobLogs', this.uniqueName('voc-job-persona-generator')),
     });
 
     // Document Generator Job Lambda (PRD/PRFAQ)
@@ -578,7 +594,7 @@ export class VocApiStack extends cdk.Stack {
     rawDataBucket.grantReadWrite(documentGeneratorRole, 'prototypes/*');
 
     const documentGeneratorLambda = new lambda.Function(this, 'DocumentGeneratorJob', {
-      functionName: uniqueName('voc-job-document-generator'),
+      functionName: this.uniqueName('voc-job-document-generator'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -599,7 +615,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('DocumentGeneratorJobLogs', uniqueName('voc-job-document-generator')),
+      logGroup: this.createLogGroup('DocumentGeneratorJobLogs', this.uniqueName('voc-job-document-generator')),
     });
 
     // Document Merger Job Lambda
@@ -616,7 +632,7 @@ export class VocApiStack extends cdk.Stack {
     }));
 
     const documentMergerLambda = new lambda.Function(this, 'DocumentMergerJob', {
-      functionName: uniqueName('voc-job-document-merger'),
+      functionName: this.uniqueName('voc-job-document-merger'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -633,7 +649,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('DocumentMergerJobLogs', uniqueName('voc-job-document-merger')),
+      logGroup: this.createLogGroup('DocumentMergerJobLogs', this.uniqueName('voc-job-document-merger')),
     });
 
     // Persona Importer Job Lambda
@@ -650,7 +666,7 @@ export class VocApiStack extends cdk.Stack {
     rawDataBucket.grantReadWrite(personaImporterRole, 'avatars/*');
 
     const personaImporterLambda = new lambda.Function(this, 'PersonaImporterJob', {
-      functionName: uniqueName('voc-job-persona-importer'),
+      functionName: this.uniqueName('voc-job-persona-importer'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -668,7 +684,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('PersonaImporterJobLogs', uniqueName('voc-job-persona-importer')),
+      logGroup: this.createLogGroup('PersonaImporterJobLogs', this.uniqueName('voc-job-persona-importer')),
     });
 
     // Wire job Lambda function names into the Projects API + grant invoke
@@ -693,7 +709,7 @@ export class VocApiStack extends cdk.Stack {
 
     // Chat Stream (Node.js — API Gateway response streaming, replaces Python Function URL)
     const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
-      functionName: uniqueName('voc-chat-stream'),
+      functionName: this.uniqueName('voc-chat-stream'),
       entry: path.join(__dirname, '../../lambda/stream/src/handler.ts'),
       // The nodeModules install step below pairs CDK's generated minimal
       // package.json with a copied lockfile. Without this, CDK discovers the
@@ -741,7 +757,7 @@ export class VocApiStack extends cdk.Stack {
           '@aws-sdk/client-secrets-manager',
         ],
       },
-      logGroup: this.createLogGroup('ChatStreamLogs', uniqueName('voc-chat-stream')),
+      logGroup: this.createLogGroup('ChatStreamLogs', this.uniqueName('voc-chat-stream')),
     });
 
     // Bedrock permissions — InvokeModelWithResponseStream. Grant every
@@ -805,7 +821,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantEncryptDecrypt(s3ImportRole);
 
     const s3ImportLambda = new lambda.Function(this, 'S3ImportApi', {
-      functionName: uniqueName('voc-s3-import-api'),
+      functionName: this.uniqueName('voc-s3-import-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 's3_import_handler.lambda_handler',
@@ -815,7 +831,7 @@ export class VocApiStack extends cdk.Stack {
       memorySize: 256,
       environment: { S3_IMPORT_BUCKET: s3ImportBucket.bucketName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('S3ImportApiLogs', uniqueName('voc-s3-import-api')),
+      logGroup: this.createLogGroup('S3ImportApiLogs', this.uniqueName('voc-s3-import-api')),
     });
 
     // Data Explorer API
@@ -826,7 +842,7 @@ export class VocApiStack extends cdk.Stack {
     dataExplorerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
 
     const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
-      functionName: uniqueName('voc-data-explorer-api'),
+      functionName: this.uniqueName('voc-data-explorer-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'data_explorer_handler.lambda_handler',
@@ -843,7 +859,7 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('DataExplorerApiLogs', uniqueName('voc-data-explorer-api')),
+      logGroup: this.createLogGroup('DataExplorerApiLogs', this.uniqueName('voc-data-explorer-api')),
     });
 
     // ============================================
@@ -873,13 +889,13 @@ export class VocApiStack extends cdk.Stack {
 
     // API Gateway CloudWatch Logs
     const apiLogGroup = new logs.LogGroup(this, 'ApiGatewayLogs', {
-      logGroupName: `/aws/apigateway/${uniqueName('voc-analytics-api')}`,
+      logGroupName: `/aws/apigateway/${this.uniqueName('voc-analytics-api')}`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     this.api = new apigateway.RestApi(this, 'VocAnalyticsApi', {
-      restApiName: uniqueName('voc-analytics-api'),
+      restApiName: this.uniqueName('voc-analytics-api'),
       description: 'Voice of the Customer Analytics API v2',
       deployOptions: {
         stageName: 'v1',
@@ -1132,7 +1148,7 @@ export class VocApiStack extends cdk.Stack {
     kmsKey.grantDecrypt(mcpRole);
 
     const mcpLambda = new lambda.Function(this, 'McpApi', {
-      functionName: uniqueName('voc-mcp-api'),
+      functionName: this.uniqueName('voc-mcp-api'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'mcp_handler.lambda_handler',
@@ -1148,15 +1164,15 @@ export class VocApiStack extends cdk.Stack {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup('McpApiLogs', uniqueName('voc-mcp-api')),
+      logGroup: this.createLogGroup('McpApiLogs', this.uniqueName('voc-mcp-api')),
     });
 
     const mcpIntegration = new apigateway.LambdaIntegration(mcpLambda, { proxy: true });
 
     // Inline Node.js token-format authorizer (validates Bearer voc_* shape; mcp_handler does the real check)
-    const mcpAuthorizerLogGroup = this.createLogGroup('McpAuthorizerLogs', uniqueName('voc-mcp-authorizer'));
+    const mcpAuthorizerLogGroup = this.createLogGroup('McpAuthorizerLogs', this.uniqueName('voc-mcp-authorizer'));
     const mcpAuthorizerFn = new lambda.Function(this, 'McpTokenAuthorizer', {
-      functionName: uniqueName('voc-mcp-token-authorizer'),
+      functionName: this.uniqueName('voc-mcp-token-authorizer'),
       runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
@@ -1213,7 +1229,7 @@ exports.handler = async (event) => {
 
     // Per-method throttling (10 req/s, burst 20) to limit brute-force token attempts
     const mcpUsagePlan = this.api.addUsagePlan('McpUsagePlan', {
-      name: uniqueName('voc-mcp-throttle'),
+      name: this.uniqueName('voc-mcp-throttle'),
       description: 'Throttle MCP endpoints to limit brute-force token attempts',
       throttle: { rateLimit: 10, burstLimit: 20 },
     });
@@ -1418,13 +1434,13 @@ exports.handler = async (event) => {
       .next(maybeStep3);
 
     return new sfn.StateMachine(this, 'DocumentStateMachine', {
-      stateMachineName: uniqueName('voc-document-workflow'),
+      stateMachineName: this.uniqueName('voc-document-workflow'),
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       timeout: cdk.Duration.hours(2),
       tracingEnabled: true,
       logs: {
         destination: new logs.LogGroup(this, 'DocumentStateMachineLogs', {
-          logGroupName: uniqueName('/aws/stepfunctions/voc-document-workflow'),
+          logGroupName: this.uniqueName('/aws/stepfunctions/voc-document-workflow'),
           retention: logs.RetentionDays.TWO_WEEKS,
           removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),
@@ -1454,7 +1470,7 @@ exports.handler = async (event) => {
     const pascalPluginId = capitalize(plugin.id);
 
     return new lambda.Function(this, `${pascalPluginId}Webhook`, {
-      functionName: uniqueName(`voc-webhook-${plugin.id}`),
+      functionName: this.uniqueName(`voc-webhook-${plugin.id}`),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -1472,7 +1488,7 @@ exports.handler = async (event) => {
         LOG_LEVEL: 'INFO',
       },
       layers: [apiLayer],
-      logGroup: this.createLogGroup(`${pascalPluginId}WebhookLogs`, uniqueName(`voc-webhook-${plugin.id}`)),
+      logGroup: this.createLogGroup(`${pascalPluginId}WebhookLogs`, this.uniqueName(`voc-webhook-${plugin.id}`)),
     });
   }
 }

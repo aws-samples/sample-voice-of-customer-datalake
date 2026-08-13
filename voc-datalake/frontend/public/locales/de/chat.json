@@ -24,6 +24,7 @@
     "reasoning": "Begründung",
     "relatedFeedback": "Zugehöriges Feedback:"
   },
+  "messageTooLong": "Die Nachricht ist zu lang. Bitte auf höchstens {{max}} Zeichen kürzen.",
   "showHistory": "Verlauf anzeigen",
   "sidebar": {
     "clearAll": "Alle Unterhaltungen löschen",

@@ -27,6 +27,7 @@ from shared.aws import (
 )
 from .circuit_breaker import CircuitBreaker
 from .audit import emit_audit_event
+from .sqs_utils import send_messages_to_queue
 
 # Re-export for backwards compatibility with existing handlers
 __all__ = ["BaseIngestor", "logger", "tracer", "metrics", "fetch_with_retry"]
@@ -238,22 +239,25 @@ class BaseIngestor(ABC):
             "raw_data": item if not s3_raw_uri else None,
         }
 
-    def send_to_queue(self, items: list[dict]):
-        """Send items to SQS processing queue."""
-        if not items:
-            return
+    def send_to_queue(self, items: list[dict]) -> int:
+        """Send items to SQS processing queue.
 
-        for i in range(0, len(items), 10):
-            batch = items[i : i + 10]
-            entries = [
-                {"Id": str(idx), "MessageBody": json.dumps(item, default=str)}
-                for idx, item in enumerate(batch)
-            ]
+        Delegates to the shared helper which checks the ``Failed`` list in every
+        batch response, retries transient errors, and raises ``RuntimeError`` if
+        any items cannot be enqueued — ensuring callers cannot silently lose
+        feedback.  The ``ItemsIngested`` metric reflects the actual enqueued
+        count, not the attempted count.
 
-            self._sqs.send_message_batch(QueueUrl=PROCESSING_QUEUE_URL, Entries=entries)
-
-        logger.info(f"Sent {len(items)} items to processing queue")
-        metrics.add_metric(name="ItemsIngested", unit="Count", value=len(items))
+        Returns:
+            The number of items that SQS confirmed as enqueued.
+        """
+        return send_messages_to_queue(
+            self._sqs,
+            PROCESSING_QUEUE_URL,
+            items,
+            metric_name="ItemsIngested",
+            log_label="ingestor",
+        )
 
     @tracer.capture_method
     def _update_source_run_status(self, updates: dict):
@@ -311,15 +315,13 @@ class BaseIngestor(ABC):
 
                 # Batch send every 100 items
                 if len(items) >= 100:
-                    self.send_to_queue(items)
-                    total_processed += len(items)
+                    total_processed += self.send_to_queue(items)
                     items = []
                     self._update_source_run_status({'items_found': total_processed})
 
             # Send remaining items
             if items:
-                self.send_to_queue(items)
-                total_processed += len(items)
+                total_processed += self.send_to_queue(items)
 
             # Update watermark
             if last_id:

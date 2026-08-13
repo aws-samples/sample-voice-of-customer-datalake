@@ -22,6 +22,14 @@ from shared.feedback import query_feedback_by_date
 from shared.api import validate_date_basis
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 from shared.prototypes import prototype_s3_key
+from shared.derivation import (
+    DERIVATION_FIELD,
+    ROLE_PROTOTYPE_PRD,
+    ROLE_PROTOTYPE_PRFAQ,
+    ROLE_REFERENCE,
+    build_derivation,
+    derivation_source,
+)
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -46,15 +54,23 @@ def _gather_context(
     feedback_table,
     project_id: str,
     doc_config: dict,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """Gather feedback, document, and persona context for document generation.
 
     Returns:
-        (feedback_context, personas_context) formatted for LLM prompts.
+        (feedback_context, personas_context, inputs) where the first two are
+        formatted for LLM prompts and `inputs` records what actually reached
+        them — the reference documents used (not the ones requested), how many
+        were selected, the feedback items included, and the personas used. The
+        caller folds `inputs` into the document's `derivation` (shared.derivation).
     """
     data_sources = doc_config.get('data_sources', {})
     feedback_context = ''
     personas_context = ''
+    used_sources: list[dict] = []
+    used_feedback_count = 0
+    used_persona_ids: list[str] = []
+    selected_document_count = 0
 
     # Gather feedback
     if data_sources.get('feedback'):
@@ -77,6 +93,8 @@ def _gather_context(
                     f"{item.get('original_text', '')[:300]}"
                 )
             feedback_context = '\n\n'.join(parts)
+            # Count what went into the prompt, not what the query returned.
+            used_feedback_count = len(parts)
 
     # Query project items once if we need personas or documents
     all_project_items = []
@@ -100,28 +118,68 @@ def _gather_context(
                     f"- Goals: {', '.join(p.get('goals', [])[:3])}\n"
                     f"- Frustrations: {', '.join(p.get('frustrations', [])[:3])}"
                 )
+                pid = p.get('persona_id')
+                if pid:
+                    used_persona_ids.append(pid)
             personas_context = '\n\n'.join(parts)
 
     # Gather reference documents and append to feedback context
     if data_sources.get('documents') or data_sources.get('research'):
         ctx.update_progress(40, 'fetching_documents')
         selected_ids = doc_config.get('selected_document_ids', [])
+        selected_document_count = len(selected_ids)
         docs = [i for i in all_project_items if i.get('sk', '').startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
         if selected_ids:
             docs = [d for d in docs if d.get('document_id') in selected_ids]
         if docs:
             doc_parts = []
+            # The [:3] cap silently drops the rest of the selection. Recording
+            # each document from THIS loop (rather than from selected_ids) is
+            # what makes the recorded provenance the documents that actually
+            # reached the model; selected_document_count above states how many
+            # were asked for, so the drop is visible. The cap itself is a
+            # separate known issue and is deliberately left alone.
             for d in docs[:3]:
                 doc_parts.append(f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:3000]}")
+                source = derivation_source(d.get('document_id'), ROLE_REFERENCE)
+                if source:
+                    used_sources.append(source)
             doc_text = "## Reference Documents\n\n" + '\n\n'.join(doc_parts)
             feedback_context = f"{feedback_context}\n\n{doc_text}" if feedback_context else doc_text
 
-    return feedback_context, personas_context
+    inputs = {
+        'sources': used_sources,
+        'selected_document_count': selected_document_count,
+        'feedback_count': used_feedback_count,
+        'persona_ids': used_persona_ids,
+    }
+    return feedback_context, personas_context, inputs
+
+
+NO_PRODUCT_CONTEXT = "(No product context provided.)"
+
+
+def _product_context(project_id: str) -> tuple[str, bool]:
+    """The product-context block for the prompts, plus whether it carries anything.
+
+    The flag is what the document's derivation records: a PRD built from the
+    project's product context and nothing else must not read as "built from
+    nothing". A failure to build the block is not fatal — the prompts fall back
+    to the same placeholder they always did, and the derivation says the block
+    was not included.
+    """
+    try:
+        from api.product_context import build_product_context_block
+        block = build_product_context_block(project_id)
+    except Exception as e:
+        logger.warning(f"Failed to build product context: {e}")
+        return NO_PRODUCT_CONTEXT, False
+    return block, block != NO_PRODUCT_CONTEXT
 
 
 def _generate_prd(ctx: JobContext, feature_idea: str, feedback_context: str,
                   personas_context: str, doc_config: dict,
-                  product_context: str = "(No product context provided.)") -> tuple[str, dict]:
+                  product_context: str = NO_PRODUCT_CONTEXT) -> tuple[str, dict]:
     """Generate PRD using multi-step LLM chain.
 
     Returns:
@@ -153,7 +211,7 @@ def _generate_prd(ctx: JobContext, feature_idea: str, feedback_context: str,
 
 def _generate_prfaq(ctx: JobContext, feature_idea: str, feedback_context: str,
                     personas_context: str, doc_config: dict,
-                    product_context: str = "(No product context provided.)") -> tuple[str, dict]:
+                    product_context: str = NO_PRODUCT_CONTEXT) -> tuple[str, dict]:
     """Generate PR-FAQ using multi-step LLM chain.
 
     Returns:
@@ -283,7 +341,7 @@ Produce a polished, tap-through prototype. Remember: ONE HTML document, output n
 PROTOTYPE_HTML_USER_TEMPLATE = """Build a clickable HTML prototype for the product/feature below. Output ONE complete HTML document only — no prose, no code fences.
 
 PROJECT: {project_name}
-{brand_section}{prd_section}{prfaq_section}
+{brand_section}{product_context_section}{prd_section}{prfaq_section}{research_section}
 
 Requirements:
 - Single self-contained HTML file (inline CSS + vanilla JS), offline-first, no external resources.
@@ -350,23 +408,292 @@ def _get_prototype_html(project_id: str, doc_id: str) -> str:
     return obj['Body'].read().decode('utf-8')
 
 
+def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id: str) -> dict | None:
+    """
+    Fetch one document of a known type by id, or None if there is no such
+    document in this project.
+
+    Existence, project ownership and document type are all decided by the key
+    itself: `pk` names the project and `sk` is `{TYPE}#{document_id}`. So an id
+    belonging to a different project, or naming a PR/FAQ where a PRD was asked
+    for, simply does not resolve — there is no key this function can build that
+    reaches outside `project_id`. That is what lets a caller pass a
+    client-supplied id here without a separate ownership check.
+    """
+    resp = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},
+    )
+    return resp.get('Item') or None
+
+
+def _document_id_of(item: dict) -> str:
+    """
+    A document's id, from the attribute or else from its sort key.
+
+    Every writer sets `document_id`, and a scan of the live table found 0 of 6
+    `PRD#`/`PRFAQ#` rows without it — so the `sk` fallback is defence in depth
+    rather than a fix for a known row. It earns its two lines because the ranking
+    read is PROJECTED: without `content` to fall back on, an item whose
+    `document_id` were somehow absent would simply be skipped, and the build would
+    quietly use an older document or report having none. `sk` cannot be absent —
+    it is the key.
+    """
+    document_id = item.get('document_id')
+    if document_id:
+        return str(document_id)
+    sk = str(item.get('sk') or '')
+    return sk.split('#', 1)[1] if '#' in sk else ''
+
+
+def _newest_document_id(projects_table, project_id: str, sk_prefix: str) -> str | None:
+    """
+    The id of the most recently created document of a type, decided over ALL of
+    them, or None if the project has none.
+
+    Every page is read and the winner is chosen on `created_at`, so the answer
+    does not depend on ids sorting the same way as creation time. It used to: a
+    `Limit=20` window over `sk` descending was then re-sorted by `created_at`,
+    which is correct only while ids stay timestamp-prefixed. The day one is
+    minted any other way the newest document falls outside the window and is
+    skipped silently — a build against a stale spec, with nothing in the output
+    saying so.
+
+    Only the two attributes that decide the winner are read back. Documents carry
+    their whole `content`, so unbounding the page count WITHOUT projecting would
+    trade a 20-document payload for an all-documents one — the cap was wrong, but
+    removing it is what makes the projection necessary rather than optional.
+
+    Ties break on `document_id` descending, matching what the `sk`-ordered read
+    resolved them to. `sourceOptions` in the frontend's overviewState.ts mirrors
+    this exact rule, ties included, so the picker's default and this answer name
+    the same document.
+    """
+    newest: tuple[str, str] | None = None
+    params: dict = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
+        # None of these names can collide with a DynamoDB reserved word (`sk` is
+        # not one, and the others contain an underscore), so no
+        # ExpressionAttributeNames are needed. `sk` is here only as the fallback
+        # source of the id — see `_document_id_of`.
+        'ProjectionExpression': 'sk, document_id, created_at',
+    }
+    while True:
+        resp = projects_table.query(**params)
+        for item in resp.get('Items') or []:
+            document_id = _document_id_of(item)
+            if not document_id:
+                continue
+            rank = (str(item.get('created_at') or ''), str(document_id))
+            if newest is None or rank > newest:
+                newest = rank
+        # A real page key is a dict of key attributes. Requiring that, rather
+        # than mere truthiness, is also what stops this loop from spinning
+        # forever against a test double whose `query` returns a bare mock.
+        start_key = resp.get('LastEvaluatedKey')
+        if not isinstance(start_key, dict) or not start_key:
+            return newest[1] if newest else None
+        params['ExclusiveStartKey'] = start_key
+
+
 def _latest_doc_by_prefix(projects_table, project_id: str, sk_prefix: str) -> dict | None:
     """
     Return the most recently created document of a given type for the project,
     or None if none exist. We can't use a GSI here because prefixes are encoded
-    in `sk` directly; small project tables make a query+filter cheap enough.
+    in `sk` directly.
+
+    Two reads by design: rank over a projection, then fetch only the winner in
+    full. One unprojected pass would be a single round trip but would pull every
+    document body in the range to compare two attributes.
     """
-    from boto3.dynamodb.conditions import Key
-    resp = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
-        ScanIndexForward=False,  # newest first by sk
-        Limit=20,
-    )
-    items = resp.get('Items') or []
-    if not items:
+    document_id = _newest_document_id(projects_table, project_id, sk_prefix)
+    if not document_id:
         return None
-    items.sort(key=lambda i: i.get('created_at', ''), reverse=True)
-    return items[0]
+    return _document_by_id(projects_table, project_id, sk_prefix, document_id)
+
+
+def _source_document(
+    projects_table, project_id: str, sk_prefix: str, requested_id: str, field: str,
+) -> dict | None:
+    """
+    The document a prototype build reads for one source slot: exactly the one the
+    request named, or the newest of that type when it named none.
+
+    A named id that does not resolve RAISES instead of falling back to the newest.
+    The fallback is the failure mode that matters: the build would succeed against
+    a document the user did not choose, and neither the prototype nor the job
+    would say which one it actually read.
+    """
+    if not requested_id:
+        return _latest_doc_by_prefix(projects_table, project_id, sk_prefix)
+    doc = _document_by_id(projects_table, project_id, sk_prefix, requested_id)
+    if not doc:
+        raise RuntimeError(
+            f'{field}: no {sk_prefix.rstrip("#")} document "{requested_id}" in this project.'
+        )
+    return doc
+
+
+#: Per-research-report slice of the prompt, matching the reference-document cap
+#: `_gather_context` applies. The arity is bounded by the API
+#: (`MAX_SELECTED_RESEARCH_IDS`), so this bounds the other dimension.
+RESEARCH_PER_DOC_CAP = 3000
+
+#: Ceiling on the whole research section, however many reports were named.
+#:
+#: Sized against the other caps in `_generate_prototype` rather than picked: the
+#: PRD, the PR/FAQ and the product-context block each get PER_DOC_CAP (12000),
+#: and a revision's prior prototype HTML gets PRIOR_CAP (24000). Research is
+#: corroborating evidence, not the thing being built, so the whole selection is
+#: allowed no more than a single spec document gets — one PER_DOC_CAP.
+#:
+#: The per-report cap alone was not a bound on the section: RESEARCH_PER_DOC_CAP
+#: x MAX_SELECTED_RESEARCH_IDS is 30000, more than the PRD and PR/FAQ combined,
+#: so a ten-report selection could crowd out the spec the prototype is supposed
+#: to implement. It stays the cap for a small selection (12000 // 3 is already
+#: over it, so one to three reports are unaffected); this is what makes ten of
+#: them bounded too.
+#:
+#: Four used to be unaffected as well, before the share started paying for the
+#: heading it carries (RESEARCH_TITLE_CAP below): 12000 // 4 == 3000 was the
+#: per-report cap exactly, which left nothing for four headings and put the
+#: assembled body 58 characters past this ceiling — taken off the last report.
+RESEARCH_TOTAL_CAP = 12000
+
+#: Cap on a report's `title` where it is used as the block's heading.
+#:
+#: A title is a label for the block, not content, so it is sized against the
+#: titles this system writes rather than against the content caps: every research
+#: report created on this path gets `f'Research: {research_question[:50]}'` (see
+#: `projects.py` and `research_step_handler.py`) — about 60 characters. 120 leaves
+#: that much room again for a hand-edited title while keeping a heading a heading.
+#:
+#: Needed because the title is otherwise bounded NOWHERE on this path: it comes
+#: back from DynamoDB as stored, and ten 1000-character titles cost more of the
+#: budget than the reports they label.
+RESEARCH_TITLE_CAP = 120
+
+#: What one block costs on top of its content: `'### '` + a capped title + `'\n'`,
+#: plus the `'\n\n'` the blocks are joined with.
+#:
+#: Charged to every block including the last, which is one separator more than is
+#: actually written — deliberately, so the arithmetic needs no special case and the
+#: assembled body lands two characters UNDER the total rather than one over.
+_RESEARCH_BLOCK_OVERHEAD = len('### ') + RESEARCH_TITLE_CAP + len('\n') + len('\n\n')
+
+
+def _research_section(documents: list[dict]) -> str:
+    """
+    The research block for the reports a build read, or '' when it read none.
+
+    Two bounds, because one of them does not hold on its own. Each report is
+    sliced to an equal share of RESEARCH_TOTAL_CAP *minus what its heading and
+    separator cost*, never more than RESEARCH_PER_DOC_CAP — so one to three
+    reports are sliced exactly as before, four get 2873 characters instead of
+    3000, and ten get 1073 each.
+
+    Shared equally rather than spent front-to-back: a running budget would drop
+    the last reports of a long selection entirely, and every named report is
+    recorded in the document's `derivation` as having been used, so a report that
+    reached none of the prompt would make that record a lie.
+
+    Charging the overhead is what makes that hold. Dividing RESEARCH_TOTAL_CAP
+    alone and then hard-slicing the assembled body re-introduced exactly the
+    front-to-back spending this shares to avoid: with the heading unpaid for, the
+    body overran the cap and the slice took the overrun off the END — ~120
+    characters at eight reports with short titles, but whole reports once titles
+    are long, which is the same lie by a different route.
+
+    The assembled body is still hard-capped at RESEARCH_TOTAL_CAP, and that cap is
+    now belt-and-braces: with the title capped and the overhead paid, the body is
+    within the total by construction (n x (overhead + share) <= total). It only
+    binds where the headings alone exceed the budget — above ~94 reports the share
+    clamps to zero — which the API's MAX_SELECTED_RESEARCH_IDS bound of ten keeps
+    out of reach, so it is a guard rather than the thing doing the work.
+    """
+    if not documents:
+        return ''
+    per_doc = min(
+        RESEARCH_PER_DOC_CAP,
+        # max(): a selection long enough for the headings to eat the whole budget
+        # would otherwise make this negative, and `content[:-n]` silently keeps
+        # everything BUT the last n characters instead of nothing.
+        max(0, RESEARCH_TOTAL_CAP // len(documents) - _RESEARCH_BLOCK_OVERHEAD),
+    )
+    body = '\n\n'.join(
+        f"### {str(d.get('title') or 'Untitled')[:RESEARCH_TITLE_CAP]}\n"
+        f"{d.get('content', '')[:per_doc]}"
+        for d in documents
+    )
+    return '\n\nRESEARCH FINDINGS:\n' + body[:RESEARCH_TOTAL_CAP]
+
+
+def _research_documents(projects_table, project_id: str, research_ids) -> list[dict]:
+    """
+    The research reports a build was told to read, in the order they were asked
+    for, or [] when it named none.
+
+    A narrow reader on purpose, and NOT `_gather_context`: every branch in that
+    function is gated on a `data_sources` map a prototype's `doc_config` does not
+    carry (so it would return nothing), it re-queries feedback, and its progress
+    callbacks overwrite this build's own 40 → 80 → 90 narrative.
+
+    Keyed reads only — one `get_item` per id under `RESEARCH#`, so ownership and
+    document type come from the key exactly as in `_document_by_id`, and no id can
+    address another project's partition. There is no "read all the research"
+    fallback: an empty list means nothing to read, so the callers stay one keyed
+    read per named report rather than a project-wide query, and the recorded
+    provenance is exactly what was asked for.
+
+    An id that does not resolve RAISES, for the same reason `_source_document`
+    does: the alternative is a prototype the user believes was grounded in a
+    report the model never saw, with nothing in the output saying otherwise. The
+    API rejects such an id before a job exists; this is the second line, and it is
+    what keeps the failure loud if a job is ever replayed after the document was
+    deleted.
+    """
+    documents: list[dict] = []
+    for research_id in research_ids or []:
+        document_id = str(research_id or '').strip()
+        if not document_id:
+            continue
+        doc = _document_by_id(projects_table, project_id, 'RESEARCH#', document_id)
+        if not doc:
+            raise RuntimeError(
+                f'selected_research_ids: no RESEARCH document "{document_id}" in this project.'
+            )
+        documents.append(doc)
+    return documents
+
+
+def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> dict | None:
+    """
+    The prototype a revision is built on: the one the request named, or None when
+    it named none.
+
+    A named id that does not resolve RAISES, in the same shape and for the same
+    reason as `_source_document`. Left silent, the build carried on as a fresh
+    generation with no `EXISTING PROTOTYPE (revise this)` block, then saved a
+    document labelled a revision — it carries `revised_from_id` — that the model
+    produced without ever seeing the prototype it supposedly revises. Nothing in
+    the output said so, and the failure cost a full Bedrock call to reach.
+
+    The error condition is the ABSENT ITEM, not empty HTML. A prototype whose
+    stored content is legitimately empty resolved fine and stays buildable — see
+    the caller, which asks for no prior-HTML block in that case.
+
+    Resolved whenever an id is supplied, regardless of whether `feedback` came
+    with it: an id that is sent is an id that is claimed.
+    """
+    if not base_prototype_id:
+        return None
+    item = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'},
+    ).get('Item')
+    if not item:
+        raise RuntimeError(
+            f'base_prototype_id: no PROTOTYPE document "{base_prototype_id}" in this project.'
+        )
+    return item
 
 
 def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
@@ -375,11 +702,26 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     PR/FAQ for this project, save it as a ProjectDocument of type 'prototype' with
     prototype_format='html'. The frontend renders the HTML in a sandboxed
     <iframe srcdoc> so inline CSS/JS run in isolation. Opus 5 builds the HTML.
+
+    Two further inputs are read only when the request asks for them:
+    `use_product_context` adds the project's product-context block, and
+    `use_research` + `selected_research_ids` add named research reports. Both
+    absent — every caller before they existed — produces the same prompt this
+    function always produced.
     """
     from shared.converse import converse
 
-    prd = _latest_doc_by_prefix(projects_table, project_id, 'PRD#')
-    prfaq = _latest_doc_by_prefix(projects_table, project_id, 'PRFAQ#')
+    # Aimable build: `source_prd_id`/`source_prfaq_id` name the documents to read.
+    # Absent — every caller before this existed, and the Overview card when the
+    # project has one of each — means the newest of that type, as it always did.
+    prd = _source_document(
+        projects_table, project_id, 'PRD#',
+        (doc_config.get('source_prd_id') or '').strip(), 'source_prd_id',
+    )
+    prfaq = _source_document(
+        projects_table, project_id, 'PRFAQ#',
+        (doc_config.get('source_prfaq_id') or '').strip(), 'source_prfaq_id',
+    )
 
     if not prd and not prfaq:
         raise RuntimeError('No PRD or PR/FAQ found for this project. Generate at least one first.')
@@ -404,20 +746,55 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     brand = (doc_config.get('brand') or '').strip()
     brand_section = f'BRAND: {brand}\n' if brand else ''
 
+    # Optional extra grounding, ticked per build on the prototype card. Both
+    # default off, so a request that asks for neither produces the prompt this
+    # path has always produced, byte for byte.
+    #
+    # The section is added only when the block carries something. `_product_context`
+    # returns its placeholder both for "the project described nothing" and for a
+    # failed read, and a prompt section whose body says "(No product context
+    # provided.)" is worse than no section: it spends budget telling the model
+    # nothing. The flag it returns is the same one the derivation records, so what
+    # reached the prompt and what the document claims cannot disagree.
+    product_context_section = ''
+    product_context_included = False
+    if doc_config.get('use_product_context'):
+        product_context_block, product_context_included = _product_context(project_id)
+        if product_context_included:
+            # Capped like every other injected block here (PER_DOC_CAP, PRIOR_CAP).
+            # `build_product_context_block` budgets uploaded document text at
+            # 50k chars, which unbounded would crowd out the PRD this prompt is
+            # actually built from.
+            product_context_section = (
+                f'\n\nPRODUCT CONTEXT (what this product is, who it is for):\n'
+                f'{product_context_block[:PER_DOC_CAP]}'
+            )
+
+    # Research reports, scoped to RESEARCH# only — see `_research_documents` for
+    # why this is not the shared document picker.
+    research_docs = (
+        _research_documents(projects_table, project_id, doc_config.get('selected_research_ids'))
+        if doc_config.get('use_research') else []
+    )
+    # Bounded per report AND in total — see `_research_section`. The per-report cap
+    # alone let ten reports contribute more than the PRD and PR/FAQ combined.
+    research_section = _research_section(research_docs)
+
     # Optional feedback-driven regeneration: when the user gives feedback on an
     # existing prototype, we re-generate CENTERED on that feedback while still
     # honoring the PRD/PR-FAQ. We include the prior prototype HTML so the model
     # revises it (e.g. "switch to an admin-facing view") rather than starting over.
     feedback = (doc_config.get('feedback') or '').strip()
     base_prototype_id = (doc_config.get('base_prototype_id') or '').strip()
+    # Resolved OUTSIDE the `if feedback:` below so an unresolvable id fails the
+    # job whether or not feedback was sent alongside it. Absent, null or blank
+    # still means "this build is not a revision".
+    base = _base_prototype(projects_table, project_id, base_prototype_id)
     feedback_section = ''
     system_prompt = PROTOTYPE_HTML_SYSTEM_PROMPT
     if feedback:
         prior_html = ''
-        if base_prototype_id:
-            base = projects_table.get_item(
-                Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'}
-            ).get('Item') or {}
+        if base is not None:
             # New (S3-only) prototypes have no `content` field — read the HTML
             # back from S3 via prototype_url instead. Old (pre-migration)
             # prototypes still have `content` inline in DynamoDB; fall back to
@@ -445,8 +822,10 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
         brand_section=brand_section,
+        product_context_section=product_context_section,
         prd_section=prd_section,
         prfaq_section=prfaq_section,
+        research_section=research_section,
         lang_hint=lang_hint,
     ) + feedback_section
 
@@ -501,10 +880,43 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         'job_id': job_id,
         'source_prd_id': (prd or {}).get('document_id'),
         'source_prfaq_id': (prfaq or {}).get('document_id'),
+        # Same relation as source_prd_id/source_prfaq_id above, in the one shape
+        # every document type uses. Those two stay exactly as they are (existing
+        # readers, and pre-change prototypes, depend on them); this is additive.
+        # A prototype built from only one of the two records only that one —
+        # derivation_source drops the None that `(prd or {}).get(...)` yields.
+        DERIVATION_FIELD: build_derivation(
+            sources=[
+                # `_document_id_of` for all three, rather than `.get('document_id')`
+                # for two of them and the helper for the third: one idiom per call
+                # site. It reads the same id and then falls back to the sort key, so
+                # an absent document still yields '' and `derivation_source` drops it
+                # exactly as it dropped the None before. The two `source_*_id`
+                # attributes above keep `.get`, deliberately — a stored None and a
+                # stored '' are different values to their existing readers.
+                derivation_source(_document_id_of(prd or {}), ROLE_PROTOTYPE_PRD),
+                derivation_source(_document_id_of(prfaq or {}), ROLE_PROTOTYPE_PRFAQ),
+                # The research reports that reached the prompt, in the reference
+                # role the shared vocabulary already has for "selected and fed to
+                # the model". Recorded from the documents themselves rather than
+                # from the requested ids, so this stays "what was used" — and
+                # `_research_documents` raises rather than dropping, so the two
+                # cannot silently differ.
+                *(derivation_source(_document_id_of(d), ROLE_REFERENCE) for d in research_docs),
+            ],
+            selected_document_count=len([d for d in (prd, prfaq) if d]) + len(research_docs),
+            # Whether the product-context block actually carried anything, not
+            # whether it was asked for: a build that ticked the box on a project
+            # that describes nothing must not claim it was grounded.
+            product_context_included=product_context_included,
+        ),
         'created_at': now,
     }
     if feedback:
         # Record that this prototype is a feedback-driven revision of a prior one.
+        # Deliberately NOT folded into `derivation`: "this replaces that" is a
+        # different relation from "this was built from that" (a held product
+        # decision), so the revision fields stay as they are.
         item['revised_from_id'] = base_prototype_id or None
         item['revision_feedback'] = feedback[:2000]
     projects_table.put_item(Item=item)
@@ -570,17 +982,12 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         ctx.update_progress(20, 'loading_source_documents')
         return _generate_prototype(ctx, projects_table, project_id, job_id, doc_config)
 
-    feedback_context, personas_context = _gather_context(
+    feedback_context, personas_context, inputs = _gather_context(
         ctx, projects_table, feedback_table, project_id, doc_config
     )
 
     # Inject the per-project product/service context (structured fields + uploaded internal docs).
-    try:
-        from api.product_context import build_product_context_block
-        product_context_str = build_product_context_block(project_id)
-    except Exception as e:
-        logger.warning(f"Failed to build product context: {e}")
-        product_context_str = "(No product context provided.)"
+    product_context_str, product_context_included = _product_context(project_id)
 
     ctx.update_progress(50, 'generating_document')
 
@@ -605,6 +1012,9 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         'feature_idea': feature_idea,
         'content': content,
         'job_id': job_id,
+        DERIVATION_FIELD: build_derivation(
+            **inputs, product_context_included=product_context_included
+        ),
         'created_at': now,
     }
     if analysis:
@@ -666,6 +1076,22 @@ def _get_text(key: str) -> str:
     return _s3().get_object(Bucket=SCRATCH_BUCKET, Key=key)['Body'].read().decode('utf-8')
 
 
+def _read_derivation(job_id: str) -> dict:
+    """Read back the derivation the gather step stashed, or an empty one.
+
+    Never raises: a document that reaches the save step must be saved even if
+    its provenance could not be read back (an execution replayed against a
+    scratch prefix that was already cleaned, say). An empty derivation reads as
+    "no lineage", which is a legitimate answer, not an error.
+    """
+    import json as _json
+    try:
+        return _json.loads(_get_text(_scratch_key(job_id, 'derivation')))
+    except Exception as e:
+        logger.warning(f"Could not read derivation for job {job_id}: {e}")
+        return build_derivation()
+
+
 def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     """gather step: fetch context, build chain steps, stash them in S3.
 
@@ -682,16 +1108,11 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     doc_type = doc_config.get('doc_type', 'prd')
     feature_idea = doc_config.get('feature_idea', '')
 
-    feedback_context, personas_context = _gather_context(
+    feedback_context, personas_context, inputs = _gather_context(
         ctx, projects_table, feedback_table, project_id, doc_config
     )
 
-    try:
-        from api.product_context import build_product_context_block
-        product_context_str = build_product_context_block(project_id)
-    except Exception as e:
-        logger.warning(f"Failed to build product context: {e}")
-        product_context_str = "(No product context provided.)"
+    product_context_str, product_context_included = _product_context(project_id)
 
     builder = get_prd_generation_steps if doc_type == 'prd' else get_prfaq_generation_steps
     chain_steps = builder(
@@ -704,6 +1125,15 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
 
     import json as _json
     _put_text(_scratch_key(job_id, 'steps'), _json.dumps(chain_steps))
+    # The derivation is decided here (this is where the inputs are read) but
+    # written by the save step several Lambda invocations later. It rides the
+    # same claim-check as the step prompts rather than Step Functions state, so
+    # the state machine definition needs no new field and an in-flight execution
+    # started on the previous definition still saves a derivation.
+    _put_text(
+        _scratch_key(job_id, 'derivation'),
+        _json.dumps(build_derivation(**inputs, product_context_included=product_context_included)),
+    )
 
     ctx.update_progress(15, 'context_ready')
     # S3 keys are deterministic from (job_id, index), so SF state carries only
@@ -806,6 +1236,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
         'feature_idea': feature_idea,
         'content': content,
         'job_id': job_id,
+        DERIVATION_FIELD: _read_derivation(job_id),
         'created_at': now,
     }
     if analysis:
@@ -820,7 +1251,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
 
     # Best-effort cleanup of the scratch prefix for this job.
     try:
-        keys = [{'Key': _scratch_key(job_id, 'steps')}] + \
+        keys = [{'Key': _scratch_key(job_id, 'steps')}, {'Key': _scratch_key(job_id, 'derivation')}] + \
                [{'Key': _scratch_key(job_id, f'result_{i}')} for i in range(num_steps)]
         _s3().delete_objects(Bucket=SCRATCH_BUCKET, Delete={'Objects': keys})
     except Exception as e:

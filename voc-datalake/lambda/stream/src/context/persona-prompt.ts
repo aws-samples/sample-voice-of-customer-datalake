@@ -2,18 +2,13 @@
  * Roundtable persona prompt building, split out of project-context.ts to keep
  * that module inside its size budget. The type-only import back into
  * project-context is erased at compile time, so there is no runtime cycle.
+ *
+ * `getLanguageInstruction` lives in ./language.js; consumers import it from there
+ * directly rather than through a re-export here.
  */
 import type { ProjectItem } from './project-context.js';
-
-export function getLanguageInstruction(lang?: string): string {
-  if (!lang || lang === 'en') return '';
-  const names: Record<string, string> = {
-    es: 'Spanish', fr: 'French', de: 'German', pt: 'Portuguese',
-    ja: 'Japanese', zh: 'Chinese', ko: 'Korean', it: 'Italian',
-  };
-  const name = names[lang] ?? lang;
-  return `IMPORTANT: You MUST respond entirely in ${name} (${lang}). All text, headings, labels, and explanations must be in ${name}.`;
-}
+import { getLanguageInstruction } from './language.js';
+import type { SupportedLanguage } from './language.js';
 
 /** The persona's identity block: who they are, what drives them, how to speak. */
 function personaIdentitySection(projectName: string, persona: ProjectItem): string {
@@ -41,7 +36,7 @@ export function buildSinglePersonaPrompt(
   selectedDocumentIds: string[],
   documents: ProjectItem[],
   previousResponses: Array<{ name: string; response: string }>,
-  responseLanguage?: string,
+  responseLanguage?: SupportedLanguage,
 ): string {
   const parts: string[] = [personaIdentitySection(projectName, persona)];
 

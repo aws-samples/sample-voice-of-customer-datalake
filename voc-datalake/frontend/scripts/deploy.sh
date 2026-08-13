@@ -9,30 +9,45 @@ FRONTEND_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$FRONTEND_DIR"
 
+# Stack names, overridable for a deployment created with -c deploymentPrefix=<p>,
+# whose stacks are <p>-VocCoreStack / <p>-VocApiStack. Same seam as
+# scripts/update-env.sh: bin/voc-datalake.ts reads the prefix from CDK context,
+# which a shell script cannot see, so an env var is the only way to point this at
+# the right deployment.
+#
+# It matters more here than in update-env.sh: with the names hardcoded, running
+# this for the second deployment resolves the FIRST deployment's bucket and
+# distribution and syncs the wrong build over its live site — silently, because
+# every output resolves fine.
+#
+#   CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack npm run deploy:frontend
+CORE_STACK="${CORE_STACK:-VocCoreStack}"
+API_STACK="${API_STACK:-VocApiStack}"
+
 echo "=== VoC Frontend Deployment ==="
 echo ""
 
 # Step 1: Fetch all outputs from CloudFormation stacks
-echo "Step 1: Fetching configuration from CloudFormation..."
+echo "Step 1: Fetching configuration from CloudFormation ($CORE_STACK, $API_STACK)..."
 
 CORE_OUTPUTS=$(aws cloudformation describe-stacks \
-  --stack-name VocCoreStack \
+  --stack-name "$CORE_STACK" \
   --query 'Stacks[0].Outputs' \
   --output json 2>&1)
 
 if [ $? -ne 0 ]; then
-  echo "Error: Failed to fetch VocCoreStack outputs"
+  echo "Error: Failed to fetch $CORE_STACK outputs"
   echo "$CORE_OUTPUTS"
   exit 1
 fi
 
 API_OUTPUTS=$(aws cloudformation describe-stacks \
-  --stack-name VocApiStack \
+  --stack-name "$API_STACK" \
   --query 'Stacks[0].Outputs' \
   --output json 2>&1)
 
 if [ $? -ne 0 ]; then
-  echo "Error: Failed to fetch VocApiStack outputs"
+  echo "Error: Failed to fetch $API_STACK outputs"
   echo "$API_OUTPUTS"
   exit 1
 fi
@@ -52,17 +67,17 @@ WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="We
 
 # Validate required values
 if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
-  echo "Error: Could not fetch bucket name from VocCoreStack"
+  echo "Error: Could not fetch bucket name from $CORE_STACK"
   exit 1
 fi
 
 if [ -z "$DISTRIBUTION_ID" ] || [ "$DISTRIBUTION_ID" = "null" ]; then
-  echo "Error: Could not fetch distribution ID from VocCoreStack"
+  echo "Error: Could not fetch distribution ID from $CORE_STACK"
   exit 1
 fi
 
 if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "null" ]; then
-  echo "Error: Could not fetch API endpoint from VocApiStack"
+  echo "Error: Could not fetch API endpoint from $API_STACK"
   exit 1
 fi
 

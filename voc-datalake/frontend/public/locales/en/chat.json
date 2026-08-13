@@ -24,6 +24,7 @@
     "reasoning": "Reasoning",
     "relatedFeedback": "Related feedback:"
   },
+  "messageTooLong": "Message is too long. Please shorten it to {{max}} characters or fewer.",
   "showHistory": "Show history",
   "sidebar": {
     "clearAll": "Clear all conversations",
