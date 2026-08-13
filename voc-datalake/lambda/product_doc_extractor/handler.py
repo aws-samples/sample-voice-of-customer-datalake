@@ -32,8 +32,9 @@ WHY NO aws_lambda_powertools, AND NO `lambda/shared/` IMPORTS
     `shared/model_config.py::get_active_model_id` exactly), the reserved-word
     aliasing in the status writes (pattern from `shared/jobs.py`), and structured
     JSON logging with per-record context (see JsonFormatter — powertools' output
-    shape and `append_keys` behaviour, in a stdlib Formatter subclass). All three
-    are pinned by tests.
+    shape and `append_keys` behaviour, in a stdlib Formatter subclass, on a named
+    logger that does not propagate, which is the shape powertools' own Logger
+    takes). All three are pinned by tests.
 
     WHAT THE ISOLATION DOES NOT COST is structured logs. Emitting plain text
     because powertools is unavailable would be a non-sequitur: the JSON shape is
@@ -50,6 +51,7 @@ import logging
 import os
 import re
 import struct
+import sys
 from urllib.parse import unquote_plus
 
 import boto3
@@ -151,43 +153,62 @@ def _log_level() -> int:
     return logging.getLevelNamesMapping().get(name, logging.INFO)
 
 
-#: True inside Lambda. A reserved runtime variable, always present there and
-#: never elsewhere, which is the only thing that reliably distinguishes "the
-#: handler on the root logger is the runtime's" from "it belongs to whatever is
-#: hosting this import". See _configure_logging for why that distinction decides
-#: a behaviour rather than a comment.
-IN_LAMBDA = bool(os.environ.get('AWS_LAMBDA_FUNCTION_NAME'))
+#: The name given to the handler this module installs, so that a SECOND import
+#: can find it. `Handler.set_name` is stdlib and, unlike `isinstance`, it survives
+#: a module reload: reloading rebinds `JsonFormatter` to a new class object, and
+#: an isinstance check against the new one answers False for the handler the
+#: previous generation installed — which is precisely when a duplicate appears.
+HANDLER_NAME = 'voc-product-doc-extractor-json'
 
 
-def _configure_logging(target: logging.Logger, *, replace_existing: bool) -> None:
-    """Attach a JSON handler to `target`, WITHOUT a second copy of every line.
+def _configure_logging(target: logging.Logger) -> None:
+    """Give `target` exactly one JSON handler, and keep its lines off the root logger.
 
-    THE DUPLICATE: the Lambda runtime pre-installs its own handler on the root
-    logger, which emits plain text. Adding ours beside it logs every line twice —
-    and a doubled line reads like a retry, not like a formatting mistake, so it
-    misleads exactly the person reading the log during a diagnosis. Inside Lambda
-    the runtime's handler is therefore detached first.
+    A NAMED logger that does not propagate — the same shape powertools' own
+    Logger takes — which settles three things at once:
 
-    WHY THAT IS CONDITIONAL, rather than "take over whatever handler is already
-    there": handlers we did not create are not ours to reformat. Setting this
-    formatter on the host's handler was tried, and outside Lambda the host is
-    pytest — whose capture handler populates `record.message` as a side effect of
-    its own formatter, so six unrelated tests started failing with
-    AttributeError, and only when the suites ran in one process. Nothing outside
-    Lambda pre-installs a plain-text handler on our behalf anyway, so there is no
-    duplicate to prevent there and nothing to justify the intrusion.
+    NO DOUBLED LINE. The Lambda runtime pre-installs a plain-text handler on the
+    ROOT logger, so a record that propagates there is emitted twice: once as JSON
+    by ours, once as text by the runtime's. A doubled line reads like a retry
+    rather than like a formatting mistake, so it misleads exactly the person
+    reading the log during a diagnosis. `propagate = False` is the whole
+    mechanism; detaching the runtime's handler (what this function used to do) is
+    no longer needed, because our records never reach it — and detaching a handler
+    the runtime owns would also have taken away the plain-text destination for
+    every OTHER library that logs through root.
+
+    NO SIDE EFFECT ON THE HOST. Configuring the ROOT logger at import time
+    reformatted and re-levelled logging for whatever process imported this module;
+    under pytest that is every other suite in the run, from one handler module's
+    import. A named logger touches only itself.
+
+    IDEMPOTENT. A second import or a reload must not add a second handler — that
+    is how one log call becomes N lines, and nothing about the JSON output would
+    look wrong while it happened.
+
+    LINES STILL REACH CLOUDWATCH, which is the thing not propagating could
+    plausibly have cost: the handler writes to `sys.stdout`, and Lambda forwards
+    everything the function process writes there to the log stream. That is where
+    powertools writes too. Binding the stream at import time is safe on either
+    reading of the runtime — it wraps `sys.stdout` during bootstrap, before it
+    imports the handler module, and unwrapped it is still fd 1, which the execution
+    environment captures.
     """
-    handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
-    if replace_existing:
-        for existing in list(target.handlers):
-            target.removeHandler(existing)
-    target.addHandler(handler)
+    target.propagate = False
+    # Re-read on every call, so a reload picks up a changed LOG_LEVEL even when
+    # the handler below is already in place.
     target.setLevel(_log_level())
+    if any(h.name == HANDLER_NAME for h in target.handlers):
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.set_name(HANDLER_NAME)
+    handler.setFormatter(JsonFormatter())
+    target.addHandler(handler)
 
 
-logger = logging.getLogger()
-_configure_logging(logger, replace_existing=IN_LAMBDA)
+#: NOT the root logger: see _configure_logging.
+logger = logging.getLogger(__name__)
+_configure_logging(logger)
 
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')

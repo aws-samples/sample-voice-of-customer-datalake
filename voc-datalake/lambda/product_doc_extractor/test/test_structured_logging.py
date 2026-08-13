@@ -16,6 +16,7 @@ dict that is cleared when the record finishes, so a record formatted after the
 fact would have lost exactly the thing under test — and a test that passed
 anyway would be proving nothing.
 """
+import importlib
 import io
 import json
 import logging
@@ -43,12 +44,56 @@ def _record(key: str, size: int = 7) -> dict:
 
 
 @pytest.fixture
+def reload_extractor(extractor):
+    """Re-run the module's import-time side effects, then undo them.
+
+    Those side effects ARE what TestImportingTheModuleLeavesTheHostAlone is about,
+    and they happen once per process — so running them again is the only way to
+    observe them. Everything a reload can reach outside the module is snapshotted
+    and restored, because the loggers it configures outlive the test.
+    """
+    root = logging.getLogger()
+    # The same object across reloads: logging caches loggers by name, so only the
+    # module's classes are rebound, never its logger.
+    ours = extractor.logger
+    saved = {
+        'ours_handlers': list(ours.handlers),
+        'ours_level': ours.level,
+        'ours_propagate': ours.propagate,
+        'root_handlers': list(root.handlers),
+        'root_level': root.level,
+        # Restored too: a test that redirects the module's own handler to measure
+        # what it emitted would otherwise leave every later line going there.
+        'streams': [(h, h.stream) for h in ours.handlers
+                    if isinstance(h, logging.StreamHandler)],
+    }
+
+    def _reload(times: int = 1):
+        module = extractor
+        for _ in range(times):
+            module = importlib.reload(module)
+        return module
+
+    try:
+        yield _reload
+    finally:
+        ours.handlers[:] = saved['ours_handlers']
+        ours.setLevel(saved['ours_level'])
+        ours.propagate = saved['ours_propagate']
+        root.handlers[:] = saved['root_handlers']
+        root.setLevel(saved['root_level'])
+        for handler, stream in saved['streams']:
+            handler.setStream(stream)
+
+
+@pytest.fixture
 def json_logs(extractor):
     """Capture what the handler's OWN formatter writes, one dict per line.
 
     Attached to the same logger the handler uses, with the module's formatter, so
     this exercises the real thing rather than a re-implementation of it. The level
-    is forced to INFO because pytest's logging plugin owns the root level.
+    is forced to INFO belt-and-braces: the module sets it at import, but a reload
+    under a monkeypatched LOG_LEVEL could leave it somewhere else.
     """
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
@@ -121,54 +166,70 @@ class TestTheLogLevelIsConfigurable:
 
 
 class TestNoDuplicatePlainTextLine:
-    """The Lambda runtime pre-installs a plain-text handler on the root logger,
-    so ADDING ours beside it emits every line twice. A doubled line reads like a
-    retry rather than a formatting mistake, so it misleads exactly the person
-    reading the log during a diagnosis — hence asserted, not assumed."""
+    """The Lambda runtime pre-installs a plain-text handler on the ROOT logger, so
+    a record that reaches root is emitted twice: once as JSON by ours, once as
+    text by the runtime's. A doubled line reads like a retry rather than like a
+    formatting mistake, so it misleads exactly the person reading the log during a
+    diagnosis.
 
-    def test_the_runtimes_handler_is_detached_inside_lambda(self, extractor):
-        logger = logging.getLogger('test-preinstalled-handler')
-        logger.handlers = [logging.StreamHandler(io.StringIO())]
+    `propagate = False` on a named logger is the whole mechanism — it replaced
+    detaching the runtime's handler, which fixed the duplicate by taking the
+    plain-text destination away from every other library logging through root.
+    """
 
-        extractor._configure_logging(logger, replace_existing=True)
+    def test_the_logger_does_not_propagate(self, extractor):
+        assert extractor.logger.propagate is False
 
-        assert len(logger.handlers) == 1, 'a second handler means every line twice'
-        assert isinstance(logger.handlers[0].formatter, extractor.JsonFormatter)
+    def test_the_logger_is_not_the_root_logger(self, extractor):
+        """Root belongs to whatever process imported this module; a handler and a
+        level set on it are that process's, not ours."""
+        assert extractor.logger is not logging.getLogger()
+        assert extractor.logger.name
 
-    def test_it_is_a_json_handler_that_survives_and_not_the_plain_one(self, extractor):
-        """Vacuity guard: "one handler" would also be satisfied by keeping the
-        plain-text handler and dropping ours."""
+    def test_a_handler_on_root_receives_nothing(self, extractor):
+        """The mechanism measured rather than inferred: a spy standing in for the
+        runtime's plain-text handler must see no copy of our line."""
         stream = io.StringIO()
-        logger = logging.getLogger('test-which-handler-survives')
-        logger.handlers = [logging.StreamHandler(stream)]
-        logger.propagate = False
+        spy = logging.StreamHandler(stream)
+        root = logging.getLogger()
+        root.addHandler(spy)
+        try:
+            extractor.logger.info('not for root')
+        finally:
+            root.removeHandler(spy)
 
-        extractor._configure_logging(logger, replace_existing=True)
-        logger.info('after reconfiguration')
+        assert stream.getvalue() == '', 'a line reached root and would be emitted twice'
 
-        assert stream.getvalue() == '', 'the pre-installed handler still received a copy'
+    def test_configuring_the_same_logger_twice_adds_one_handler(self, extractor):
+        """Idempotent by name, because a second handler is a second copy of every
+        line — and nothing about the JSON would look wrong while it happened."""
+        logger = logging.getLogger('test-configured-twice')
+        logger.handlers = []
 
-    def test_a_handler_the_host_owns_is_left_alone_outside_lambda(self, extractor):
-        """Outside Lambda nothing pre-installs a plain-text handler on our behalf,
-        so there is no duplicate to prevent — and the handler that IS there
-        belongs to the host. Reformatting pytest's capture handler (which
-        populates `record.message` as a side effect of its own formatter) broke six
-        unrelated tests, and only when the suites shared a process."""
+        extractor._configure_logging(logger)
+        extractor._configure_logging(logger)
+
+        ours = [h for h in logger.handlers if h.name == extractor.HANDLER_NAME]
+        assert len(ours) == 1, f'{len(ours)} handlers means every line {len(ours)} times'
+
+    def test_a_handler_the_target_already_had_is_neither_dropped_nor_reformatted(
+        self, extractor,
+    ):
+        """It ADDS; it does not take over. Setting this formatter on a handler we
+        did not create was tried, and outside Lambda the host is pytest — whose
+        capture handler populates `record.message` as a side effect of its own
+        formatter, so six unrelated tests failed with AttributeError, and only when
+        the suites shared a process."""
         existing = logging.StreamHandler(io.StringIO())
         original_formatter = existing.formatter
-        logger = logging.getLogger('test-host-owned-handler')
+        logger = logging.getLogger('test-existing-handler-untouched')
         logger.handlers = [existing]
 
-        extractor._configure_logging(logger, replace_existing=False)
+        extractor._configure_logging(logger)
 
         assert existing in logger.handlers
         assert existing.formatter is original_formatter
-        assert any(isinstance(h.formatter, extractor.JsonFormatter) for h in logger.handlers)
-
-    def test_the_lambda_environment_is_detected_from_a_reserved_variable(self, extractor):
-        """The flag has to come from something that is true in Lambda and nowhere
-        else; AWS_LAMBDA_FUNCTION_NAME is reserved and always set there."""
-        assert extractor.IN_LAMBDA is False, 'the test process is not Lambda'
+        assert any(h.name == extractor.HANDLER_NAME for h in logger.handlers)
 
     def test_a_formatted_record_still_carries_message_for_other_handlers(self, extractor):
         """`logging.Formatter.format` sets `record.message`, and other handlers on
@@ -179,6 +240,91 @@ class TestNoDuplicatePlainTextLine:
         extractor.JsonFormatter().format(record)
 
         assert record.message == 'hello world'
+
+
+class TestImportingTheModuleLeavesTheHostAlone:
+    """Importing a handler module must not reconfigure the process that imported it.
+
+    This module used to configure the ROOT logger at import: outside Lambda that
+    attached a JSON handler to the host's own logger and re-levelled it, so in the
+    backend pytest run one import reformatted every other suite's logging. No test
+    noticed, because the fixtures above read only their own stream — which is the
+    shape of defect worth a class of its own.
+    """
+
+    def test_a_reload_adds_no_handler_to_the_root_logger(self, extractor, reload_extractor):
+        root = logging.getLogger()
+        before = list(root.handlers)
+
+        reload_extractor(times=2)
+
+        assert list(root.handlers) == before, 'the import attached a handler to root'
+
+    def test_no_json_handler_of_ours_is_on_root_at_all(self, extractor, reload_extractor):
+        """Stronger than "unchanged", and deliberately: the FIRST import happens
+        before any test runs, so a handler it left on root is already inside every
+        snapshot. This asks whether one of ours is on root at all.
+
+        Matched by formatter class NAME, not `isinstance`: a reload rebinds
+        JsonFormatter, so isinstance against the current class would miss the
+        handler an earlier generation installed.
+        """
+        reload_extractor(times=2)
+
+        on_root = [h for h in logging.getLogger().handlers
+                   if type(h.formatter).__name__ == extractor.JsonFormatter.__name__]
+        assert on_root == [], f'{len(on_root)} JSON handler(s) left on the host root logger'
+
+    def test_the_root_level_is_not_touched(self, extractor, reload_extractor):
+        """A sentinel level, for the same reason: root was already re-levelled to
+        INFO before this test existed, so "unchanged since the snapshot" would pass
+        while the write still happened. WARNING is a value nothing else here
+        chooses, so the write becomes visible."""
+        root = logging.getLogger()
+        root.setLevel(logging.WARNING)
+
+        reload_extractor(times=2)
+
+        assert root.level == logging.WARNING, 'the import re-levelled the host root logger'
+
+
+class TestTheHandlerIsAttachedExactlyOnce:
+    """A second import must not mean a second copy of every line.
+
+    A warm container imports once, but a reload does not (and the test suite is a
+    reloading host): each pass through _configure_logging that appends
+    unconditionally adds a handler, and every line is then emitted once per
+    handler — growing across the process, with nothing in the JSON itself looking
+    wrong.
+    """
+
+    def test_two_reloads_leave_one_json_handler(self, extractor, reload_extractor):
+        module = reload_extractor(times=2)
+
+        ours = [h for h in module.logger.handlers if h.name == module.HANDLER_NAME]
+        assert len(ours) == 1, f'{len(ours)} handlers means every line {len(ours)} times'
+
+    def test_a_reload_does_not_multiply_the_lines_emitted(self, extractor, reload_extractor):
+        """The consequence, counted rather than inferred: every handler the module
+        installed is pointed at ONE stream, so a duplicate handler shows up as a
+        duplicate line.
+
+        Also the vacuity guard for the class above — "nothing on root" is satisfied
+        just as well by logging nowhere at all, and this fails in that case.
+        """
+        module = reload_extractor(times=2)
+        stream = io.StringIO()
+        installed = [h for h in module.logger.handlers if h.name == module.HANDLER_NAME]
+        assert installed, 'the module installed no handler of its own'
+        for handler in installed:
+            handler.setStream(stream)
+
+        module.logger.info('one call')
+
+        lines = [json.loads(line) for line in stream.getvalue().splitlines() if line.strip()]
+        assert len(lines) == 1, f'one log call produced {len(lines)} lines'
+        assert lines[0]['message'] == 'one call'
+        assert lines[0]['service'] == module.SERVICE_NAME
 
 
 class TestContextualFieldsReachEveryLine:

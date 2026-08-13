@@ -623,6 +623,12 @@ export class VocCoreStack extends VocStack {
         // reason. Namespacing it also made the value a CloudFormation token,
         // which is not a string a runtime field can be compared against.
         SERVICE_NAME: 'voc-product-doc-extractor',
+        // Hardcoded, matching every other function in this app: LOG_LEVEL is a
+        // literal 'INFO' at all 24 definitions across the four stacks, so there is
+        // no context key or stack parameter to follow here. Raising verbosity
+        // during a diagnosis is an environment-variable change on the deployed
+        // function — the handler reads LOG_LEVEL at import (see _log_level), so it
+        // needs no stack edit and no code change.
         LOG_LEVEL: 'INFO',
       },
       logGroup: new logs.LogGroup(this, 'ProductDocExtractorLambdaLogs', {

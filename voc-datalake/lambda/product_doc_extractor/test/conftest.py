@@ -219,6 +219,31 @@ def extractor():
     handler._clients.clear()
 
 
+@pytest.fixture(autouse=True)
+def _extractor_lines_reach_caplog(caplog):
+    """Route the handler's log records into `caplog`.
+
+    The handler logs through a NAMED logger with `propagate = False` — that is
+    what keeps its lines off the root logger, where the Lambda runtime's
+    plain-text handler would emit a second copy of each one, and what keeps an
+    import from reconfiguring whatever process is hosting it (see
+    handler._configure_logging). pytest attaches its capture handler to ROOT, so
+    without this every `caplog` assertion in this package would silently see zero
+    records — a test that cannot fail. Powertools' own testing guidance prescribes
+    the same adjustment for the same reason.
+
+    AUTOUSE on purpose: the next caplog test written here has to work without
+    anyone remembering this, because the failure mode is a green test that pins
+    nothing.
+    """
+    from product_doc_extractor import handler
+    handler.logger.addHandler(caplog.handler)
+    try:
+        yield
+    finally:
+        handler.logger.removeHandler(caplog.handler)
+
+
 @pytest.fixture
 def wire(extractor):
     """Inject fakes for S3, DynamoDB and Bedrock; return them for assertions."""

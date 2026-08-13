@@ -35,9 +35,46 @@ from product_doc_extractor.handler import NON_TERMINAL_STATUSES, TERMINAL_STATUS
 
 TYPES_SOURCE = 'frontend/src/api/types.ts'
 
+#: The whole `ProductDocStatus` declaration, however prettier has wrapped it.
+#:
+#: NOT `([^\n]+)`: this repo's prettier writes no semicolons, so a union that
+#: outgrows the print width becomes
+#:     export type ProductDocStatus =
+#:       | 'pending'
+#:       | ...
+#: and a line-bounded capture would then see only the FIRST member — a set
+#: difference that reads like the frontend drifted when only the regex did. `\s`
+#: matches newlines, so accepting a leading `|` and repeating the `| 'member'`
+#: tail parses both layouts.
+#:
+#: It also cannot over-capture, which is why the union members are matched rather
+#: than "everything up to a terminator": the pattern accepts nothing but quoted
+#: members separated by pipes, so it stops at the end of the declaration whether
+#: or not a `;` follows, and a quoted string in the NEXT statement can never be
+#: read as a status.
+UNION_PATTERN = re.compile(
+    r"export type ProductDocStatus\s*=\s*(\|?\s*'[^']+'(?:\s*\|\s*'[^']+')*)"
+)
+
+
+def _parse_statuses(source: str) -> set[str]:
+    """Members of the `ProductDocStatus` union, read out of TypeScript source text.
+
+    Takes the source as a string so the parse itself is testable against a layout
+    this repo does not currently use — see test_a_multi_line_union_still_parses.
+    """
+    match = UNION_PATTERN.search(source)
+    assert match, (
+        f'ProductDocStatus union not found. Either it moved out of {TYPES_SOURCE} '
+        'or it is no longer written as a union of quoted members, and '
+        'UNION_PATTERN needs updating — this is the regex failing, not the '
+        'vocabulary drifting.'
+    )
+    return set(re.findall(r"'([^']+)'", match.group(1)))
+
 
 def _frontend_statuses() -> set[str]:
-    """Members of the `ProductDocStatus` union, read out of the TypeScript source.
+    """The union as the shipped TypeScript source actually declares it.
 
     Source text rather than execution — a Python test cannot import a `.ts` file,
     and this is the approach the sibling lockstep tests already use.
@@ -49,12 +86,7 @@ def _frontend_statuses() -> set[str]:
         # compare, and skipping beats a failure that says nothing about the code
         # under test. Same precedent as test_image_limits_lockstep.py.
         pytest.skip(f'{TYPES_SOURCE} not present in this tree')
-    match = re.search(
-        r'export type ProductDocStatus\s*=\s*([^\n]+)',
-        path.read_text(encoding='utf-8'),
-    )
-    assert match, f'ProductDocStatus not found in {TYPES_SOURCE}'
-    return set(re.findall(r"'([^']+)'", match.group(1)))
+    return _parse_statuses(path.read_text(encoding='utf-8'))
 
 
 class TestStatusPartitionLockstep:
@@ -132,6 +164,53 @@ class TestFrontendStatusMirrorLockstep:
         )
 
     def test_the_union_was_actually_parsed(self):
-        """Vacuity guard: a regex that stopped matching would otherwise compare an
-        empty set against an empty set, passing while pinning nothing."""
-        assert len(_frontend_statuses()) >= 4
+        """Vacuity guard: a regex that captured nothing would otherwise compare an
+        empty set against an empty set, passing while pinning nothing.
+
+        NOT circular, for two reasons. The count comes from parsing the TypeScript
+        SOURCE; the expected number comes from the Python tuple — different files,
+        different languages, so the parse cannot satisfy this by agreeing with
+        itself. And `_parse_statuses` asserts on its own match first, so a pattern
+        that stopped matching fails there by name, saying the regex broke rather
+        than reporting a set difference that looks like frontend drift.
+
+        `len(PRODUCT_DOC_STATUSES)` rather than a literal `>= 4`, which would drift
+        into vacuity the day a fifth status is added.
+        """
+        parsed = _frontend_statuses()
+
+        assert parsed, 'the ProductDocStatus union parsed as empty'
+        assert len(parsed) == len(PRODUCT_DOC_STATUSES)
+
+    def test_a_multi_line_union_still_parses(self):
+        """A union prettier has wrapped across lines is still fully read.
+
+        The layout below is what prettier writes once the union outgrows the print
+        width — `types.ts` is single-line TODAY, so nothing in this repo would catch
+        a line-bounded regex until a reformat silently reduced the parse to the
+        first member. A fixture string proves the parse without reformatting the
+        real file.
+
+        Built FROM the canonical tuple, so a status added later cannot leave this
+        fixture pinning a stale vocabulary.
+        """
+        wrapped = 'export type ProductDocStatus =\n' + '\n'.join(
+            f"  | '{status}'" for status in PRODUCT_DOC_STATUSES
+        )
+
+        assert _parse_statuses(wrapped) == set(PRODUCT_DOC_STATUSES)
+
+    def test_a_quoted_string_in_the_next_statement_is_not_read_as_a_status(self):
+        """The other half of the parse: it stops at the end of the declaration.
+
+        Nothing terminates a type alias in this repo's style — prettier writes no
+        semicolon — so a capture bounded by a terminator would run on into whatever
+        follows and read its quoted strings as statuses.
+        """
+        followed = (
+            "export type ProductDocStatus = 'pending' | 'ready'\n"
+            '\n'
+            "export const SOMETHING_ELSE = 'not-a-status'\n"
+        )
+
+        assert _parse_statuses(followed) == {'pending', 'ready'}
