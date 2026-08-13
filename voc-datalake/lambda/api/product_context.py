@@ -3,8 +3,14 @@ Product/service description input — per-project context that feeds PRD/PR-FAQ 
 
 Three pieces:
   1. ProductContext  — single mutable record per project (structured fields + free-form notes).
-  2. ProductDoc      — internal documents uploaded by the user; extracted to text by an
-                       S3-triggered extractor lambda (see lambda/product_doc_extractor).
+  2. ProductDoc      — internal documents uploaded by the user, turned into text by the
+                       S3-triggered extractor at lambda/product_doc_extractor/.
+                       WHAT IS PROCESSED: images (png/jpeg/gif/webp) and text
+                       (.md/.txt). WHAT IS NOT: PDF and .docx are refused at upload
+                       with an explicit "not yet" — no extractor handles them, and
+                       accepting them only produced records stuck at status=pending
+                       forever, with the UI badge reading "Extracting…" indefinitely.
+                       See DEFERRED_CONTENT_TYPES.
   3. interview_turn  — one round of AI interview chat. The model uses a `update_product_context`
                        tool to patch the structured record; the assistant text is the user-facing
                        reply. Synchronous, returns {assistant_message, applied_patch} for simplicity.
@@ -21,6 +27,7 @@ from boto3.dynamodb.conditions import Key
 
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
 from shared.model_config import get_active_model_id, omits_temperature
 from shared.exceptions import (
     ConfigurationError, NotFoundError, ValidationError, ServiceError,
@@ -83,16 +90,54 @@ LIST_FIELDS: dict[str, tuple[int, int]] = {}
 
 ALL_FIELDS = set(STRING_FIELDS) | set(LIST_FIELDS) | {'current_state'}
 
-# Upload limits
+# ── Upload limits ────────────────────────────────────────────────────────────
+# Kept in lockstep with the frontend and with the Converse image caps by
+# lambda/shared/test/test_image_limits_lockstep.py.
+
+# General cap, applied to text uploads. Mirrored in
+# frontend/src/pages/ProjectDetail/ProductDocsUpload.tsx.
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_DOCS_PER_PROJECT = 20
 MAX_EXTRACTED_INJECTION_CHARS = 50_000
-ALLOWED_CONTENT_TYPES = {
-    'application/pdf': 'pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+
+# Text formats we can extract with nothing more than a decode.
+TEXT_CONTENT_TYPES = {
     'text/markdown': 'md',
     'text/plain': 'txt',
 }
+
+# Image content types are single-sourced from shared.image_limits, which also
+# carries the byte/pixel caps the Converse API imposes on them.
+IMAGE_CONTENT_TYPES = frozenset(IMAGE_CONTENT_TYPE_EXTENSIONS)
+
+# Exactly what this platform can actually turn into prompt input. Anything not
+# here is refused at the boundary rather than stored and never processed.
+ALLOWED_CONTENT_TYPES = {**IMAGE_CONTENT_TYPE_EXTENSIONS, **TEXT_CONTENT_TYPES}
+
+DOCX_CONTENT_TYPE = (
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+)
+
+# Types we intend to support but cannot yet: no extractor handles them. Kept
+# separate from "unsupported" on purpose. These used to be ACCEPTED, and the
+# upload appeared to work while the record sat at status=pending forever, so a
+# user who previously uploaded a PDF needs to be told it is deferred rather than
+# rejected outright — "we will never take this" and "not yet" are different
+# answers and a caller has to be able to tell them apart.
+DEFERRED_CONTENT_TYPES = {
+    'application/pdf': 'PDF',
+    DOCX_CONTENT_TYPE: 'Word (.docx)',
+}
+
+# Derived so a new accepted type cannot leave the user-facing list stale.
+_ACCEPTED_EXTENSIONS_LABEL = ', '.join(
+    '.' + ext for ext in sorted(set(ALLOWED_CONTENT_TYPES.values()))
+)
+
+# A pending/extracting record older than this is treated as never-extracted and
+# transitioned to failed on read. See _fail_if_stalled.
+EXTRACTION_STALL_SECONDS = 300
+STALLABLE_STATUSES = ('pending', 'extracting')
 
 
 def _empty_context() -> dict:
@@ -407,6 +452,18 @@ def _new_doc_id() -> str:
     return secrets.token_hex(8)
 
 
+def _human_mb(byte_count: int) -> str:
+    """Render a byte cap for a user-facing message. Truncates, never rounds up.
+
+    A raw `3750000` in an error is not an improvement over no message at all. And
+    the truncation matters: rounding 3,750,000 to "3.6 MB" would advertise a
+    ceiling 24 KB above the real one, so a file just under the advertised figure
+    would still be refused — the error would be lying about the limit it names.
+    """
+    tenths = (byte_count * 10) // (1024 * 1024)
+    return f'{tenths // 10}.{tenths % 10} MB'
+
+
 def _list_doc_items(project_id: str) -> list[dict]:
     if not projects_table:
         return []
@@ -442,11 +499,93 @@ def _doc_to_dto(item: dict) -> dict:
     }
 
 
+def _age_seconds(created_at) -> float | None:
+    """Seconds since an ISO-8601 `created_at`, or None if it cannot be read.
+
+    Defensive on purpose: the value is written by
+    `datetime.now(timezone.utc).isoformat()`, but a missing or malformed one must
+    NOT be treated as old. Failing safe means leaving the record alone — marking a
+    document failed because its timestamp was unparseable would be a new lie in
+    place of the one this transition removes.
+    """
+    if not isinstance(created_at, str) or not created_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(created_at)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - parsed).total_seconds()
+
+
+def _fail_if_stalled(project_id: str, item: dict) -> dict:
+    """Transition a never-extracted document to `failed`, on read.
+
+    WHY ON READ rather than a scheduled sweep: nothing else can do it. The client
+    (ProductDocsUpload.tsx) gives its polling a 60s deadline and then clears the
+    interval, so it can never write `failed` itself; without this a record whose
+    extraction never ran stays `pending` forever and the badge reads "Extracting…"
+    for the life of the record.
+
+    WHY A REAL update_item and not a DTO-level substitution: reporting `failed`
+    while the stored record still says `pending` is the same class of lie this
+    rung exists to remove — the next reader through a different path would see the
+    old value. The transition has to persist.
+
+    The write is CONDITIONAL on the status still being the pending/extracting one
+    we read, so a race with the extractor finishing cannot clobber a genuine
+    `ready` (or `failed`) result with our guess.
+
+    EXTRACTION_STALL_SECONDS (300) must comfortably exceed the extractor Lambda's
+    own timeout (120s) — a healthy extraction always completes inside the window.
+    Raising that Lambda's timeout past this value would start marking successful
+    extractions as failed, so the two numbers move together.
+    """
+    status = item.get('status')
+    if status not in STALLABLE_STATUSES:
+        return item
+
+    age = _age_seconds(item.get('created_at'))
+    if age is None or age <= EXTRACTION_STALL_SECONDS:
+        return item
+
+    doc_id = item.get('doc_id')
+    message = (
+        'Text extraction did not complete. Please delete this document and '
+        'upload it again.'
+    )
+    try:
+        projects_table.update_item(
+            Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
+            UpdateExpression='SET #status = :failed, #error = :error',
+            ConditionExpression='#status = :expected',
+            # `status` and `error` are both DynamoDB reserved words — same
+            # aliasing pattern as shared/jobs.py::update_job_status.
+            ExpressionAttributeNames={'#status': 'status', '#error': 'error'},
+            ExpressionAttributeValues={
+                ':failed': 'failed',
+                ':error': message,
+                ':expected': status,
+            },
+        )
+    except Exception as e:  # noqa: BLE001 - a read must never fail on this
+        # Includes ConditionalCheckFailedException, which is the benign case: the
+        # extractor got there first, so the stored record is already correct and
+        # the caller should see it unchanged. Anything else is logged and ignored
+        # for the same reason — listing documents is not allowed to break because
+        # a bookkeeping write did.
+        logger.warning(f'Stalled-doc transition skipped for {doc_id}: {e}')
+        return item
+
+    return {**item, 'status': 'failed', 'error': message}
+
+
 @tracer.capture_method
 def list_docs(project_id: str) -> dict:
     items = _list_doc_items(project_id)
     items.sort(key=lambda i: i.get('created_at', ''), reverse=True)
-    return {'docs': [_doc_to_dto(i) for i in items]}
+    return {'docs': [_doc_to_dto(_fail_if_stalled(project_id, i)) for i in items]}
 
 
 @tracer.capture_method
@@ -466,15 +605,30 @@ def create_upload_url(project_id: str, body: dict) -> dict:
     content_type = (body or {}).get('content_type', '').strip()
     size_bytes = int((body or {}).get('size_bytes') or 0)
 
+    # INVARIANT (tested): every rejection below happens BEFORE the put_item, so a
+    # refused upload leaves no record behind. A record written and then abandoned
+    # is what produced the permanently-"Extracting…" rows this rung removes.
     if not filename:
         raise ValidationError('filename is required')
+    if content_type in DEFERRED_CONTENT_TYPES:
+        raise ValidationError(
+            f'{DEFERRED_CONTENT_TYPES[content_type]} files are not supported yet. '
+            f'Accepted for now: {_ACCEPTED_EXTENSIONS_LABEL}.'
+        )
     if content_type not in ALLOWED_CONTENT_TYPES:
         raise ValidationError(
-            f'Unsupported file type. Allowed: {sorted(ALLOWED_CONTENT_TYPES)}'
+            f'Unsupported file type. Accepted: {_ACCEPTED_EXTENSIONS_LABEL}.'
         )
-    if size_bytes <= 0 or size_bytes > MAX_FILE_BYTES:
+
+    # Per-type cap: images are bound by what the Bedrock Converse API will accept
+    # in a message, which is well under the general file cap. One lowered cap for
+    # everything would needlessly refuse large text documents we handle fine.
+    is_image = content_type in IMAGE_CONTENT_TYPES
+    max_bytes = MAX_IMAGE_BYTES if is_image else MAX_FILE_BYTES
+    if size_bytes <= 0 or size_bytes > max_bytes:
+        kind = 'Images' if is_image else 'Files'
         raise ValidationError(
-            f'File size must be between 1 byte and {MAX_FILE_BYTES} bytes'
+            f'{kind} must be between 1 byte and {_human_mb(max_bytes)}.'
         )
 
     existing = _list_doc_items(project_id)
@@ -510,9 +664,20 @@ def create_upload_url(project_id: str, body: dict) -> dict:
             'Bucket': bucket,
             'Key': s3_raw_key,
             'ContentType': content_type,
+            # ContentLength is what makes the size cap above real, and it is not
+            # redundant with it. `size_bytes` is a number the CLIENT declares in
+            # the JSON body; without it signed into the URL, S3 enforces nothing,
+            # so a client could declare 1 byte and then PUT ten gigabytes. Signing
+            # it turns the declaration into a commitment: S3 rejects a body whose
+            # length differs from what was signed.
+            'ContentLength': size_bytes,
         },
         ExpiresIn=600,
     )
+    # Content-Length is deliberately NOT in `headers`: it is a forbidden header
+    # name for fetch/XHR, so the browser refuses to let JS set it and derives it
+    # from the body instead. A PUT of the same file the client measured therefore
+    # satisfies the signature; a PUT of anything else fails, which is the point.
     return {
         'doc_id': doc_id,
         'presigned_url': presigned,

@@ -85,7 +85,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "fe7c4c9e0e28570ee0a78d5d0511ac214393a11288e4730777ab8eb516899f44",
+      "templateSha256": "90dc24aca48bac188dec10d75695f4109a9ac63833ff2e2f719f7129ffb48b83",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -102,6 +102,7 @@
           "AWS::KMS::Alias AliasName = alias/voc-datalake-key-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-admin-bootstrap-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-cdn-signing-keys-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-product-doc-extractor-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-access-logs-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-frontend-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-raw-data-<AWS::AccountId>-<AWS::Region>",
