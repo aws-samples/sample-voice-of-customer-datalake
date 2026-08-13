@@ -271,7 +271,11 @@ def ingestor():
         from s3_import.ingestor.handler import S3ImportIngestor
         ing = S3ImportIngestor()
         ing.normalize_item = lambda item: {**item, "_normalized": True}
-        ing.send_to_queue = MagicMock()
+        # Mirror the real contract: send_to_queue returns the number of items SQS
+        # confirmed, and raises rather than losing any.  A bare MagicMock() would
+        # return a MagicMock, so process_file's count would silently stop being a
+        # number and every assertion on it would be vacuous.
+        ing.send_to_queue = MagicMock(side_effect=lambda batch: len(batch))
         return ing
 
 
@@ -326,6 +330,38 @@ class TestProcessFile:
 
         assert ingestor.process_file("bucket", "src/big.csv") == 250
         assert ingestor.send_to_queue.call_count == 3  # 100 + 100 + 50
+
+    @patch("s3_import.ingestor.handler.metrics")
+    @patch("s3_import.ingestor.handler.s3_client")
+    def test_reports_what_landed_when_a_later_batch_is_rejected(
+        self, mock_s3, mock_metrics, ingestor
+    ):
+        """When send_to_queue raises part-way through a file, the items already
+        enqueued must still be reported, and the error must propagate.
+
+        This plugin is the third caller of the shared helper, so it inherits the
+        raising contract: one rejected row now fails the whole file rather than
+        silently importing a subset.
+
+        Reverts-to-catch: emitting ItemsImported after the loop skips it entirely
+        on the raise, so a run that enqueued 200 of 250 items reports nothing to
+        CloudWatch — and counting ``len(batch)`` instead of the returned value
+        reports 250 for a file where 50 items never reached the queue.
+        """
+        rows = [f"{i},Review {i},3" for i in range(250)]
+        csv_data = _csv_bytes("id,text,rating", *rows)
+        mock_s3.head_object.return_value = {"ContentLength": len(csv_data)}
+        mock_s3.get_object.return_value = {"Body": _stream(csv_data)}
+        ingestor.send_to_queue = MagicMock(
+            side_effect=[100, 100, RuntimeError("50 ingestor item(s) rejected")]
+        )
+
+        with pytest.raises(RuntimeError):
+            ingestor.process_file("bucket", "src/big.csv")
+
+        mock_metrics.add_metric.assert_called_once_with(
+            name="ItemsImported", unit="Count", value=200
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,124 @@
 Tests for feedback_form_handler.py - /feedback-forms/* endpoints.
 """
 import json
+import re
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+
+WIDGET_SOURCE = Path(__file__).resolve().parents[1] / 'static' / 'feedback-widget.js'
+
+# How the widget reaches its config: `config.x` in the fetch callback,
+# `this.config.x`, and `c.x` after the `var c = this.config` alias.
+#
+# The trailing \b is load-bearing rather than tidy: without it a camelCase DOM
+# property (`c.appendChild`) matches partially and contributes a bogus field name
+# (`append`), which fails the assertion below for a reason that has nothing to do
+# with the projection. With it, such a property yields no match at all.
+_WIDGET_CONFIG_READ = re.compile(r'(?:this\.config|\bconfig|\bc)\.([a-z_]+)\b')
+
+# Every `c = ...` assignment, with its right-hand side captured. `c` is a single
+# letter, so the read pattern above is only safe while `c` means the config and
+# nothing else in this file.
+#
+# `(?<![.\w])` excludes a property named `c` (`foo.c = 1`) and `(?!=)` excludes a
+# comparison (`c === x`), either of which would otherwise be reported as a stray
+# alias — a failure with nothing to do with the projection under test.
+#
+# Captures the RHS instead of using `\bc\s*=\s*(?!this\.config)`: `\s*` backtracks
+# to zero width, which lets that negative lookahead land on the space and succeed,
+# so that spelling flags the one assignment it means to allow.
+_WIDGET_C_ASSIGNMENT = re.compile(r'(?<![.\w])c\s*=(?!=)\s*([^;,\n]+)')
+
+
+def _widget_code_lines(source: str) -> list[str]:
+    """The widget's lines with comment-ONLY lines dropped, nothing rewritten.
+
+    Comments have to be excluded because a `config.x` inside a docblock is not a
+    read, and collecting it fails the assertion below in the direction that tempts
+    a reader to widen the public projection.
+
+    But this drops whole lines rather than substituting `//[^\\n]*` away, because
+    that pattern also matches inside a string literal — a `https://…` URL, a regex
+    literal — truncating the rest of that line and silently dropping any config
+    read after it. That is an UNDER-collection, i.e. fail-open in the opposite
+    direction: a field genuinely dropped from `item_to_widget_config` would stop
+    failing the test.
+
+    Exactly what this does and does not handle, since a guard that overstates
+    itself is the thing being fixed here:
+
+    - Comment-only lines and block-comment bodies are dropped. Nothing is
+      rewritten, so no line is ever truncated mid-way.
+    - A trailing comment on a code line is KEPT, so a `config.x` mentioned there is
+      collected. Loud direction — it can only fail the test, never weaken it.
+    - `/* note */ config.foo` and `*/ config.foo` are dropped whole, because the
+      line starts with a comment token. That is still the quiet direction, just far
+      narrower than the substitution it replaced; the widget has no such line, and
+      the alternative is a tokenizer.
+    - A block opened mid-line (`init(); /* note`) is not detected, so its body
+      lines are kept and may over-collect. Loud direction again.
+    """
+    kept: list[str] = []
+    in_block = False
+    for line in source.split('\n'):
+        text = line.strip()
+        if in_block:
+            in_block = '*/' not in text
+            continue
+        if text.startswith('/*'):
+            in_block = '*/' not in text
+            continue
+        if text.startswith('//'):
+            continue
+        kept.append(line)
+    return kept
+
+
+def _fields_the_widget_reads() -> set[str]:
+    """Config field names read by static/feedback-widget.js, read off the widget.
+
+    Derived rather than hand-listed. The list this replaced had already drifted:
+    it claimed the widget reads `custom_fields`, which appears nowhere in the
+    widget, so it asserted a dependency that does not exist while a genuinely new
+    read would have gone unnoticed.
+
+    Over-collecting is NOT harmless here, which is why the two assertions below
+    exist. The caller subtracts this set from the served payload, so a bogus name
+    fails the test — and the obvious way to "fix" a red test that names a field
+    the widget does not read is to add that field to the public projection, i.e.
+    to publish something on an unauthenticated route. The assumptions are
+    therefore asserted rather than hoped for.
+    """
+    raw = WIDGET_SOURCE.read_text(encoding='utf-8')
+    code_lines = _widget_code_lines(raw)
+    # Sanity bound on the line filter itself: an unterminated block comment would
+    # otherwise swallow the file and leave nothing to scan.
+    assert len(code_lines) > len(raw.split('\n')) // 2, (
+        f'comment filtering kept only {len(code_lines)} of '
+        f'{len(raw.split(chr(10)))} lines in {WIDGET_SOURCE.name} — an '
+        'unterminated block comment, or the file is now mostly prose.'
+    )
+    source = '\n'.join(code_lines)
+
+    # `c` must mean the config and nothing else, or `c.style` on a DOM node would
+    # be collected as a config field.
+    c_assignments = [rhs.strip() for rhs in _WIDGET_C_ASSIGNMENT.findall(source)]
+    assert c_assignments, (
+        f'{WIDGET_SOURCE.name} no longer aliases the config to `c` — the read '
+        'pattern below expects it. Update both together.'
+    )
+    stray = [rhs for rhs in c_assignments if rhs != 'this.config']
+    assert not stray, (
+        f'{WIDGET_SOURCE.name} assigns `c` to {stray}, not just this.config. '
+        'This derivation reads `c.<field>` as a config access, so that variable '
+        'would be collected as a field name; rename it or narrow the pattern.'
+    )
+
+    fields = set(_WIDGET_CONFIG_READ.findall(source))
+    assert fields, f'found no config reads in {WIDGET_SOURCE.name} — did it move?'
+    return fields
 
 
 class TestListForms:
@@ -467,3 +584,364 @@ class TestItemToForm:
         assert result['rating_enabled'] is True
         assert result['rating_max'] == 5
         assert result['theme'] == {}
+
+
+class TestValidationLink:
+    """Tests for the optional project_id / document_id validation link.
+
+    A feedback form may record which project — and, as a refinement, which
+    document — it validates, so the Prioritization page can show the ratings
+    collected about the artefact being scored. Both fields are optional: a
+    standalone website survey stores neither and must behave exactly as it
+    did before they existed.
+    """
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_create_persists_and_returns_the_link(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """A create request carrying the link persists it and echoes it back.
+
+        Asserts on the *persisted item*, not only the response: the two are
+        built by different code paths (DEFAULT_FORM_CONFIG seeding vs. the
+        item_to_form allowlist), and a field declared in only one of them is
+        silently dropped on the next read.
+        """
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={
+                'name': 'PR/FAQ validation',
+                'project_id': 'proj-1',
+                'document_id': 'doc-9',
+            },
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['form']['project_id'] == 'proj-1'
+        assert body['form']['document_id'] == 'doc-9'
+
+        stored_item = mock_table.put_item.call_args.kwargs['Item']
+        assert stored_item['project_id'] == 'proj-1'
+        assert stored_item['document_id'] == 'doc-9'
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_create_without_the_link_stores_empty_strings(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """A form that validates nothing keeps working: link fields default empty."""
+        event = api_gateway_event(
+            method='POST', path='/feedback-forms', body={'name': 'Website Footer Form'}
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['form']['project_id'] == ''
+        assert body['form']['document_id'] == ''
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_get_returns_a_stored_link(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """A stored link is readable back through the authenticated get route."""
+        mock_table.get_item.return_value = {
+            'Item': {
+                'form_id': 'form-123',
+                'name': 'Test Form',
+                'enabled': True,
+                'project_id': 'proj-1',
+                'document_id': 'doc-9',
+            }
+        }
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['form']['project_id'] == 'proj-1'
+        assert body['form']['document_id'] == 'doc-9'
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_update_writes_the_link(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """PUT accepts the link fields — they are in UPDATABLE_FIELDS."""
+        mock_table.update_item.return_value = {
+            'Attributes': {
+                'form_id': 'form-123',
+                'name': 'Test Form',
+                'project_id': 'proj-2',
+                'document_id': 'doc-7',
+            }
+        }
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/feedback-forms/form-123',
+            path_params={'form_id': 'form-123'},
+            body={'project_id': 'proj-2', 'document_id': 'doc-7'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['form']['project_id'] == 'proj-2'
+        expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert expr_values[':project_id'] == 'proj-2'
+        assert expr_values[':document_id'] == 'doc-7'
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_update_can_clear_the_link(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """Clearing the link (empty strings) reaches DynamoDB rather than being
+        dropped as falsy — an admin must be able to unlink a form."""
+        mock_table.update_item.return_value = {
+            'Attributes': {'form_id': 'form-123', 'project_id': '', 'document_id': ''}
+        }
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/feedback-forms/form-123',
+            path_params={'form_id': 'form-123'},
+            body={'project_id': '', 'document_id': ''},
+        )
+
+        feedback_form_handler.lambda_handler(event, lambda_context)
+
+        expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert expr_values[':project_id'] == ''
+        assert expr_values[':document_id'] == ''
+
+    def test_item_to_form_declares_every_default_config_field(self, feedback_form_handler):
+        """Every DEFAULT_FORM_CONFIG field must also be in the item_to_form
+        allowlist. build_form_item seeds the record from that dict and
+        item_to_form projects it on read, so a field in one and not the other
+        persists but is never returned (or vice versa)."""
+        projected = set(feedback_form_handler.item_to_form({}))
+
+        assert set(feedback_form_handler.DEFAULT_FORM_CONFIG) <= projected
+        assert set(feedback_form_handler.UPDATABLE_FIELDS) <= projected
+
+
+class TestPublicConfigDoesNotLeakTheLink:
+    """The widget config route is UNAUTHENTICATED and fetched cross-origin from
+    customers' own websites (lambda/api/static/feedback-widget.js). Internal
+    identifiers for the project and document a form validates must never appear
+    in it. This is the security-relevant assertion for this change."""
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_public_config_omits_project_and_document_ids(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """GET /feedback-forms/<id>/config must not expose the link fields."""
+        mock_table.get_item.return_value = {
+            'Item': {
+                'form_id': 'form-123',
+                'name': 'Internal name',
+                'enabled': True,
+                'title': 'Rate this concept',
+                'project_id': 'proj-secret',
+                'document_id': 'doc-secret',
+            }
+        }
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/config',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        config = body['config']
+        assert 'project_id' not in config
+        assert 'document_id' not in config
+        # Not merely absent-by-name: the values must not appear anywhere in the
+        # serialized public payload under any other key either.
+        assert 'proj-secret' not in response['body']
+        assert 'doc-secret' not in response['body']
+        # And the fields the widget actually renders are still served.
+        assert config['enabled'] is True
+        assert config['title'] == 'Rate this concept'
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_public_config_serves_every_field_the_widget_reads(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The narrower public projection must not have dropped a field the
+        embedded widget depends on."""
+        mock_table.get_item.return_value = {
+            'Item': {
+                'form_id': 'form-123',
+                'enabled': True,
+                'theme': {'primary_color': '#3B82F6'},
+                'rating_max': 5,
+            }
+        }
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/config',
+            path_params={'form_id': 'form-123'},
+        )
+
+        body = json.loads(feedback_form_handler.lambda_handler(event, lambda_context)['body'])
+
+        read_by_widget = _fields_the_widget_reads()
+        missing = sorted(read_by_widget - set(body['config']))
+        assert not missing, (
+            f'the widget reads config.{missing} but the public projection no '
+            'longer serves it.'
+        )
+
+
+class TestValidationLinkBoundary:
+    """The link fields are writable, so they are validated on the way in.
+
+    They are the only writable fields whose values another surface later matches
+    on: the Prioritization page pairs a form to a document by them. A non-string
+    would be stored verbatim by DynamoDB and then silently match nothing, which
+    reads on the page as "this form collected no evidence" rather than as the
+    bad request it was.
+    """
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_create_rejects_a_non_string_project_id(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """A structured value is a client error, not something to persist."""
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'Bad form', 'project_id': {'nested': 'object'}},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        # Nothing may be written: rejecting after the put would leave the record
+        # behind and only fail the response.
+        mock_table.put_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_update_rejects_a_non_string_document_id(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """PUT is validated on the same path as POST."""
+        event = api_gateway_event(
+            method='PUT',
+            path='/feedback-forms/form-123',
+            path_params={'form_id': 'form-123'},
+            body={'document_id': ['doc-1', 'doc-2']},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.update_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_create_rejects_an_over_long_link_field(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The values are server-minted identifiers, so anything long is not one."""
+        too_long = 'p' * (feedback_form_handler.LINK_FIELD_MAX_LENGTH + 1)
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'Bad form', 'project_id': too_long},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        mock_table.put_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_accepts_a_link_at_the_length_limit(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The cap is inclusive — an id exactly at the limit is still valid."""
+        at_limit = 'p' * feedback_form_handler.LINK_FIELD_MAX_LENGTH
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'Edge form', 'project_id': at_limit},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert mock_table.put_item.call_args.kwargs['Item']['project_id'] == at_limit
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_request_without_the_link_is_untouched_by_validation(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """Absent is always valid: the link is optional and must stay so."""
+        event = api_gateway_event(
+            method='POST', path='/feedback-forms', body={'name': 'Website Footer Form'}
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+
+    def test_the_record_constructor_itself_rejects_a_bad_link(self, feedback_form_handler):
+        """Validation is structural, not a line the route remembers to call.
+
+        build_form_item is the only way a new record is constructed, so a future
+        second caller cannot reach the table with an unvalidated link by omitting
+        a call. Asserted against the function directly, with no route involved.
+        """
+        # Taken off the module under test rather than imported directly: the
+        # sys.path insert that makes `shared` importable lives in the fixture.
+        validation_error = feedback_form_handler.ValidationError
+
+        # Length derived from the cap, like the neighbouring tests: a hardcoded
+        # 129 would quietly become a VALID length the day the cap is raised, and
+        # this case would then assert nothing.
+        too_long = 'x' * (feedback_form_handler.LINK_FIELD_MAX_LENGTH + 1)
+
+        for bad in ({'project_id': 123}, {'document_id': too_long}):
+            with pytest.raises(validation_error):
+                feedback_form_handler.build_form_item(bad)
+
+        # And a link-free body still builds, so the guard cannot have become
+        # "reject everything".
+        assert feedback_form_handler.build_form_item({'name': 'ok'})['name'] == 'ok'
+
+    def test_every_link_field_is_updatable_and_validated(self, feedback_form_handler):
+        """The validated set must not drift from the writable set.
+
+        A link field added to UPDATABLE_FIELDS but not to LINK_FIELDS would be
+        writable without validation — the exact gap this class closes — so the
+        invariant is asserted over the actual tuples rather than left to review.
+        """
+        link_fields = set(feedback_form_handler.LINK_FIELDS)
+        updatable = set(feedback_form_handler.UPDATABLE_FIELDS)
+
+        assert link_fields <= updatable
+        assert link_fields <= set(feedback_form_handler.DEFAULT_FORM_CONFIG)
+
+        # The direction the docstring is about, and the one the two assertions
+        # above do NOT cover: a writable identifier that nobody validates. Keyed
+        # off the `_id` suffix, because being an identifier another surface
+        # matches on is exactly what earns a field validation here; a writable
+        # free-text field is out of scope and stays out.
+        writable_identifiers = {field for field in updatable if field.endswith('_id')}
+        assert writable_identifiers <= link_fields, (
+            f'{sorted(writable_identifiers - link_fields)} can be written by a '
+            'PUT but is absent from LINK_FIELDS, so validate_link_fields never '
+            'sees it.'
+        )

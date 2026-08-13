@@ -24,6 +24,7 @@
     "reasoning": "Raciocínio",
     "relatedFeedback": "Feedback relacionado:"
   },
+  "messageTooLong": "A mensagem é demasiado longa. Reduza-a para no máximo {{max}} caracteres.",
   "showHistory": "Mostrar histórico",
   "sidebar": {
     "clearAll": "Limpar todas as conversas",
