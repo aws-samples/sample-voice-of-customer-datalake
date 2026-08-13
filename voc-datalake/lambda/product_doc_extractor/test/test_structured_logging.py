@@ -495,3 +495,79 @@ class TestExceptionsCarryTheirTraceback:
         assert failures
         assert 'Traceback' in failures[0]['exception']
         assert failures[0]['doc_id'] == 'abc123'
+
+
+class TestCaplogActuallyCapturesFromThisLogger:
+    """The autouse conftest fixture has to work for the NEXT test written here.
+
+    Both of these fail on the fixture as first written, and both fail the same way
+    a real future test would: `caplog` sees zero records and the assertion about
+    the code's behaviour passes vacuously. That is the shape the fixture exists to
+    prevent, so it needs pinning at its own level rather than being trusted.
+    """
+
+    def test_an_info_record_reaches_caplog_at_all(self, extractor, caplog):
+        """Baseline. Without the fixture routing records, pytest's capture handler
+        sits on root and this logger does not propagate, so caplog is empty."""
+        extractor.logger.info('routed to caplog')
+
+        assert 'routed to caplog' in caplog.text
+
+    def test_a_debug_record_reaches_caplog_when_the_caller_asks_for_debug(
+        self, extractor, caplog,
+    ):
+        """THE ONE THE FIXTURE'S FIRST VERSION FAILED.
+
+        `caplog.at_level` sets the level on the ROOT logger, so against a named
+        non-propagating logger it does not move this one's threshold — which sits
+        at `_log_level()`, INFO by default. A DEBUG assertion would therefore
+        capture nothing and pass. The fixture now lowers this logger for the
+        duration, leaving pytest's handler to do the filtering a caller expects.
+        """
+        with caplog.at_level(logging.DEBUG):
+            extractor.logger.debug('a debug line a future test might assert on')
+
+        assert 'a debug line a future test might assert on' in caplog.text
+
+    def test_the_fixture_lowered_this_logger_rather_than_the_module_defaulting_low(
+        self, extractor,
+    ):
+        """The lowering is the fixture's doing, and DEBUG is not the module's own level.
+
+        Both halves are needed. Without the first, `caplog.at_level(DEBUG)` cannot
+        reach a named non-propagating logger and any DEBUG assertion here passes on
+        zero records. Without the second, this test would also pass if the module
+        simply shipped at DEBUG — which would mean the fixture was doing nothing
+        and the debug test above was green for the wrong reason.
+
+        REPLACES an earlier version of this test that asserted
+        `_log_level() == INFO`. That reads the ENVIRONMENT, not the logger, so it
+        held no matter what the fixture did — a vacuous test, in a class written to
+        stop vacuous tests. Found by mutating the fixture and noticing the suite
+        stayed green.
+
+        What is NOT asserted here, deliberately: that the fixture RESTORES the
+        level. Its only observable consequence is the logger's state after the
+        last test in the session, which no test inside that session can see. A
+        mutation removing the restore therefore survives, and is recorded as such
+        rather than covered by something that would only look like cover.
+        """
+        assert extractor.logger.level == logging.DEBUG
+        assert extractor._log_level() == logging.INFO, (
+            'the module itself must not be at DEBUG, or the fixture is not what '
+            'made the debug assertion above work'
+        )
+
+    def test_the_fixture_and_the_module_share_one_logger(self, extractor):
+        """The fixture asserts this itself, so this test documents WHY it does.
+
+        A bare `import handler` (rather than `from product_doc_extractor import
+        handler`) produces a second module object whose logger has a different
+        name. The fixture would then route records from a logger no test uses, and
+        every caplog assertion here would be empty again — indistinguishable from
+        the code simply not logging.
+        """
+        from product_doc_extractor import handler
+
+        assert extractor is handler
+        assert extractor.logger.name == extractor.__name__

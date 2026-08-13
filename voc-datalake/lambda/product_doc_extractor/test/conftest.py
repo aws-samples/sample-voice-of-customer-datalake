@@ -11,6 +11,7 @@ constants (house style for this repo's Lambdas).
 """
 import io
 import json
+import logging
 import os
 import re
 import struct
@@ -235,13 +236,35 @@ def _extractor_lines_reach_caplog(caplog):
     AUTOUSE on purpose: the next caplog test written here has to work without
     anyone remembering this, because the failure mode is a green test that pins
     nothing.
+
+    THE LEVEL IS LOWERED HERE TOO, and that is the same trap one layer down.
+    `caplog.set_level()` and `caplog.at_level()` act on the ROOT logger, so
+    against a named non-propagating logger they do not move this one's threshold
+    at all. A future `caplog.at_level(logging.DEBUG)` assertion in this package
+    would therefore capture nothing and pass — precisely the vacuous green this
+    fixture exists to prevent, arriving through the fixture itself. Setting the
+    logger to DEBUG for the duration means pytest's own level filtering (on the
+    capture handler) is what decides, which is what a caller expects.
     """
     from product_doc_extractor import handler
+
+    # A bare `import handler` elsewhere would create a SECOND module object with
+    # its own logger, and this fixture would then be routing records from a logger
+    # no test uses — silently empty caplog again. Asserted rather than commented,
+    # because the failure mode looks identical to "the code logged nothing".
+    assert handler.logger.name == handler.__name__, (
+        'the fixture and the module under test must share one logger; '
+        f'fixture has {handler.logger.name!r} for module {handler.__name__!r}'
+    )
+
+    previous_level = handler.logger.level
+    handler.logger.setLevel(logging.DEBUG)
     handler.logger.addHandler(caplog.handler)
     try:
         yield
     finally:
         handler.logger.removeHandler(caplog.handler)
+        handler.logger.setLevel(previous_level)
 
 
 @pytest.fixture
