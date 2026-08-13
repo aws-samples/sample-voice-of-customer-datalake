@@ -86,6 +86,33 @@ class BedrockThrottlingError(Exception):
     pass
 
 
+def _temperature_note(
+    sent: bool,
+    temperature: float | None,
+    model_id: str,
+    explicit_thinking: bool,
+) -> str:
+    """Name the REAL reason `temperature` is or is not on the wire.
+
+    Several suppression causes can hold at once — a caller passing None together
+    with an explicit budget (reachable today), or a model that both rejects
+    temperature and takes an explicit budget (reachable as soon as one is
+    allowlisted). Attributing the drop to whichever cause is checked first would
+    point an operator at the wrong one, which defeats the purpose of logging the
+    reason at all. So the branches mirror the suppression condition in order,
+    most caller-proximate first.
+    """
+    if sent:
+        return str(temperature)
+    if temperature is None:
+        return 'omitted (caller passed None)'
+    if omits_temperature(model_id):
+        return 'omitted (model rejects it)'
+    if explicit_thinking:
+        return 'omitted (explicit thinking)'
+    return 'omitted'  # pragma: no cover — no suppression cause left to name
+
+
 def _raised_empty_budget(current_max: int) -> int | None:
     """Next maxTokens to try after a model returned zero visible text.
 
@@ -229,10 +256,12 @@ def converse(
     # when triaging a ValidationException about those fields. The drop REASON is
     # spelled out so an operator reading only this line knows why it vanished
     # instead of inferring it from the thinking value.
-    if 'temperature' in inference_config:
-        effective_temperature = inference_config['temperature']
-    else:
-        effective_temperature = 'omitted (explicit thinking)' if explicit_thinking else 'omitted'
+    effective_temperature = _temperature_note(
+        sent='temperature' in inference_config,
+        temperature=temperature,
+        model_id=used_model,
+        explicit_thinking=explicit_thinking,
+    )
     effective_thinking = thinking_budget if explicit_thinking else 'omitted'
     logger.info(f"[BEDROCK] Effective params: temperature={effective_temperature}, thinking={effective_thinking}")
     logger.info(f"[BEDROCK] Invoking Bedrock converse API for step '{step_name}'...")

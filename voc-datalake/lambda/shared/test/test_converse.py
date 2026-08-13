@@ -194,6 +194,17 @@ class TestConverse:
             uses_adaptive_thinking,
         )
 
+        # The loop count below proves the loop RAN, but not that any model can
+        # actually reach the illegal pairing — if every model that accepts
+        # temperature stops taking an explicit budget, case 1 goes quietly
+        # vacuous. Data-driven so no id is pinned. If this fires, the allowlist
+        # no longer contains a model that can produce the bug: confirm that is
+        # intended, then this test's regression half can be retired with it.
+        assert any(
+            not omits_temperature(m['id']) and not uses_adaptive_thinking(m['id'])
+            for m in ALLOWED_MODELS
+        ), "no allowlisted model can pair temperature with an explicit thinking budget"
+
         checked = 0
         for model in ALLOWED_MODELS:
             model_id = model['id']
@@ -237,6 +248,41 @@ class TestConverse:
                 checked += 1
         # Guards against the loop silently iterating nothing.
         assert checked == len(ALLOWED_MODELS) * 2
+
+    def test_temperature_note_names_the_actual_suppression_cause(self):
+        """The `Effective params` log exists to tell an operator WHY temperature
+        vanished, so attributing it to the wrong cause is worse than silence.
+
+        Causes can co-occur — `temperature=None` with an explicit budget is
+        reachable today — so this pins each one against a case where a naive
+        first-match-wins order would misreport it.
+        """
+        from shared.converse import _temperature_note
+        from shared.model_config import ALLOWED_MODELS, omits_temperature
+
+        # Derived, not pinned — same reason as the invariant test above: a
+        # retired model id must not turn this into a confusing false negative.
+        accepts = [m['id'] for m in ALLOWED_MODELS if not omits_temperature(m['id'])]
+        rejects = [m['id'] for m in ALLOWED_MODELS if omits_temperature(m['id'])]
+        assert accepts and rejects, "need one model of each kind to tell the causes apart"
+        accepting, rejecting = accepts[0], rejects[0]
+
+        # Sent: report the value, not a reason.
+        assert _temperature_note(True, 0.1, accepting, False) == '0.1'
+
+        # None wins over a co-occurring explicit budget — the caller's choice is
+        # the reason, and blaming thinking here would send an operator hunting a
+        # model-capability problem that does not exist.
+        assert _temperature_note(False, None, accepting, True) == 'omitted (caller passed None)'
+        assert _temperature_note(False, None, accepting, False) == 'omitted (caller passed None)'
+
+        # Model capability, including alongside an explicit budget.
+        assert _temperature_note(False, 0.1, rejecting, False) == 'omitted (model rejects it)'
+        assert _temperature_note(False, 0.1, rejecting, True) == 'omitted (model rejects it)'
+
+        # Only when the caller asked for it and the model accepts it is thinking
+        # the real cause.
+        assert _temperature_note(False, 0.1, accepting, True) == 'omitted (explicit thinking)'
 
 
 class TestConverseRetry:
