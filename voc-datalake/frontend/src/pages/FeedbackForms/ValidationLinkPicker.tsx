@@ -113,7 +113,14 @@ function storedOptionLabel(
  */
 function documentOptionLabel(doc: ProjectDocument, t: (key: string) => string): string {
   const typeMeta = SCORABLE_TYPE_META[doc.document_type]
-  return `${doc.title} (${typeMeta ? t(typeMeta.i18nKey) : doc.document_type})`
+  const typeLabel = typeMeta ? t(typeMeta.i18nKey) : doc.document_type
+  // `title` is declared `string` and `projectsApi` has no schema at its boundary,
+  // so nothing enforces that. It matters here and not before this change: `{title}`
+  // rendered an empty option for a missing title, while interpolating it prints the
+  // literal "undefined". Falling back to the id, the way DocumentsTab labels a
+  // revision with no title — an opaque id at least identifies the record.
+  const name = typeof doc.title === 'string' && doc.title.trim() !== '' ? doc.title : doc.document_id
+  return `${name} (${typeLabel})`
 }
 
 export default function ValidationLinkPicker({

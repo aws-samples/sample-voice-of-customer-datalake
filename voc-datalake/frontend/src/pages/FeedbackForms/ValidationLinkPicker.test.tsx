@@ -430,6 +430,28 @@ describe('validation link in the form editor', () => {
     expect(screen.queryByText('Instant payouts')).not.toBeInTheDocument()
   })
 
+  it('falls back to the document id when a record has no title', async () => {
+    // `ProjectDocument.title` is declared `string` but projectsApi has no schema
+    // at its boundary, so a legacy record without one reaches this render. Before
+    // the type label, `{doc.title}` rendered an empty option for it; interpolating
+    // it into a template would print the literal "undefined" to the admin.
+    mockGetProject.mockResolvedValue({
+      project_id: 'p1',
+      documents: [
+        { document_id: 'doc_untitled', document_type: 'prd', content: '', created_at: '' },
+        { document_id: 'doc_blank', document_type: 'prfaq', title: '   ', content: '', created_at: '' },
+      ],
+    })
+
+    await openValidationTab('PR/FAQ concept test')
+
+    await waitFor(() => {
+      expect(screen.getByText('doc_untitled (PRD)')).toBeInTheDocument()
+    })
+    expect(screen.getByText('doc_blank (PR/FAQ)')).toBeInTheDocument()
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument()
+  })
+
   it('does not claim to be loading when the project list request fails', async () => {
     // A rejected query is not "loading" and it is not "no longer available"
     // either — nobody managed to look. Saying either is a false statement next

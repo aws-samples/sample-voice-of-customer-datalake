@@ -2,8 +2,10 @@
  * @fileoverview Tests for prioritizationUtils — safe score access and calculations.
  */
 import { describe, it, expect } from 'vitest'
+import i18n from 'i18next'
 import {
   getScore, calculatePriorityScore, collectPRFAQs, comparePRFAQs, DEFAULT_SCORE, isScorable,
+  SCORABLE_TYPE_META,
 } from './prioritizationUtils'
 import type { PrioritizationScore, ProjectDocument } from '../../api/types'
 
@@ -216,5 +218,42 @@ describe('StatsCards regression: scores with missing document_id', () => {
     const score = getScore(scores, 'missing')
     expect(() => calculatePriorityScore(score)).not.toThrow()
     expect(calculatePriorityScore(score)).toBeCloseTo(0.9)
+  })
+})
+
+describe('SCORABLE_TYPE_META display labels', () => {
+  // Bound to feedbackForms ON PURPOSE, not to prioritization: these keys are read
+  // from two namespaces — the badge in PRFAQRow (prioritization) and the document
+  // select in FeedbackForms/ValidationLinkPicker (feedbackForms) — and only the
+  // foreign binding can fail. A relative key resolves fine in its own namespace,
+  // so a test using `prioritization` passes with or without the prefix and proves
+  // nothing. This is the gate the badge itself never had: no Prioritization test
+  // asserts the badge text, so un-qualifying these keys left that suite green.
+  const t = i18n.getFixedT(null, 'feedbackForms')
+
+  it('resolve to real text, not the raw key path, from another namespace', () => {
+    const entries = Object.entries(SCORABLE_TYPE_META)
+    expect(entries.length, 'nothing is scorable — the constant is empty').toBeGreaterThan(0)
+
+    for (const [type, meta] of entries) {
+      if (!meta) throw new Error(`${type} has no display metadata`)
+      const label = t(meta.i18nKey)
+      expect(label, `${type}: '${meta.i18nKey}' does not resolve — the badge and the
+        document picker would both render this raw key path to users`)
+        .not.toBe(meta.i18nKey)
+      expect(label.trim(), `${type} resolves to an empty label`).not.toBe('')
+    }
+  })
+
+  it('name the scorable types PRD and PR/FAQ', () => {
+    // Pinned literals, not the catalogue value looked up the same way the code
+    // does: this is what a user reads on the Prioritization badge and in the
+    // document select, and it is the assertion that fails if a rename lands in
+    // one place only.
+    const { prd, prfaq } = SCORABLE_TYPE_META
+    if (!prd || !prfaq) throw new Error('prd/prfaq are no longer scorable — update this test')
+
+    expect(t(prd.i18nKey)).toBe('PRD')
+    expect(t(prfaq.i18nKey)).toBe('PR/FAQ')
   })
 })
