@@ -31,8 +31,9 @@ import {
 function readPinnedSource(filePath: string, purpose: string): string {
   if (!fs.existsSync(filePath)) {
     throw new Error(
-      `Cannot read ${filePath} from ${process.cwd()}. This test pins ${purpose}, so it needs `
-      + 'both packages checked out and must run from the frontend package root.',
+      `Cannot read ${filePath}. This test pins ${purpose}, so it needs both packages present `
+      + `in the same checkout. Resolved from ${__dirname}, so cwd (${process.cwd()}) is not `
+      + 'the problem — the sibling package has moved or is not checked out.',
     )
   }
   return fs.readFileSync(filePath, 'utf8')
@@ -101,19 +102,43 @@ const INTERVIEW_PATH = path.join(__dirname, '../../../lambda/api/product_context
  * there is no boundary in `chat_history[`, and a differently-named list
  * therefore yields null — the loud direction — rather than a plausible wrong
  * number.
+ *
+ * Global, because {@link extractInterviewWindow} has to see *every* slice in the
+ * file rather than stopping at the first one. Used only via `matchAll`, which
+ * iterates a clone, so there is no `lastIndex` to carry between calls.
  */
-const SERVER_INTERVIEW_WINDOW_PATTERN = /\bhistory\[\s*-(\d+)\s*:\s*\]/
+const SERVER_INTERVIEW_WINDOW_PATTERN = /\bhistory\[\s*-(\d+)\s*:\s*\]/g
 
 /**
  * Pull the interview's history window out of `product_context.py`.
  *
- * Null when the slice is absent or respelled beyond recognition, which the
+ * Returns a window only when the file contains exactly one *distinct* one.
+ * This is the one way the coupling assertion could pass *wrongly* that the null
+ * cases below do not cover: a regex cannot be scoped to `interview_turn`, so if
+ * another function in the file ever slices `history` with a different window,
+ * reading the first match pins whichever one happens to sit nearest the top of
+ * the file — silently, and possibly not the interview's. Collapsing to null
+ * instead makes a second, different window red this suite with the message the
+ * caller attaches.
+ *
+ * Two *identical* windows are tolerated, deliberately. They pin the same number,
+ * so the assertion is exactly as sound as with one, while rejecting them would
+ * red on a refactor that cannot change what is pinned (a helper extracted, a
+ * second loop over the same window). The tolerance is not load-bearing either:
+ * the moment those two diverge there are two distinct windows again, and the
+ * null path fires.
+ *
+ * Residue, pre-existing and not closeable with a regex: were the interview's own
+ * slice *deleted* while a single unrelated `history[-N:]` remained, one distinct
+ * window would still be found and it would be the wrong function's.
+ *
+ * Null also when the slice is absent or respelled beyond recognition, which the
  * caller turns into a loud failure rather than a vacuous pass.
  */
 function extractInterviewWindow(source: string): number | null {
-  const match = SERVER_INTERVIEW_WINDOW_PATTERN.exec(source)
-  if (match?.[1] === undefined) return null
-  return Number(match[1])
+  const windows = [...source.matchAll(SERVER_INTERVIEW_WINDOW_PATTERN)]
+    .map((match) => Number(match[1]))
+  return new Set(windows).size === 1 ? windows[0] : null
 }
 
 /** Alternating user/assistant conversation of the given length, user first. */
@@ -231,6 +256,30 @@ describe('extractInterviewWindow', () => {
     expect(extractInterviewWindow('m = history[-12]')).toBeNull()
     expect(extractInterviewWindow('for m in history[-12:-2]:')).toBeNull()
   })
+
+  it('returns null when the file holds two different windows', () => {
+    // The one way the coupling assertion could pass *wrongly*: a regex cannot be
+    // scoped to `interview_turn`, so a second function slicing `history` with a
+    // different window would otherwise pin whichever match came first — the
+    // interview's or not, depending only on line order.
+    expect(extractInterviewWindow(
+      'recent = history[-99:]\nfor m in history[-12:]:',
+    )).toBeNull()
+    // Order-independent: reversing it must not make one of them preferred.
+    expect(extractInterviewWindow(
+      'for m in history[-12:]:\nrecent = history[-99:]',
+    )).toBeNull()
+  })
+
+  it('tolerates two identical windows, which pin the same number', () => {
+    // The deliberate half of the decision above (see extractInterviewWindow):
+    // duplicates of the same window cannot change what is pinned, so reddening
+    // on them would only punish a harmless refactor. Divergence is what fires
+    // the null path, and the test above covers that.
+    expect(extractInterviewWindow(
+      'for m in history[-12:]:\nrecent = history[ -12 : ]',
+    )).toBe(12)
+  })
 })
 
 describe('MAX_INTERVIEW_HISTORY_ENTRIES vs the interview window', () => {
@@ -249,9 +298,11 @@ describe('MAX_INTERVIEW_HISTORY_ENTRIES vs the interview window', () => {
     // extractInterviewWindow understands, rather than passing vacuously.
     expect(
       serverWindow,
-      `Could not read the history slice from ${INTERVIEW_PATH}. If interview_turn now uses a `
-      + 'named constant, a different list name, or a different slice shape, update '
-      + 'extractInterviewWindow to match.',
+      `Could not read a single history window from ${INTERVIEW_PATH}. Either the slice moved `
+      + '(a named constant, a different list name, a different slice shape), or the file now '
+      + 'contains MORE THAN ONE distinct history[-N:] window — in which case pick the one '
+      + 'interview_turn uses and teach extractInterviewWindow to tell them apart, rather '
+      + 'than letting it pin whichever came first.',
     ).not.toBeNull()
     expect(MAX_INTERVIEW_HISTORY_ENTRIES).toBeLessThanOrEqual(Number(serverWindow))
   })

@@ -225,7 +225,7 @@ interface FinishedStreamValues {
  * this function — so it is written down here rather than left to be rediscovered:
  *
  * - The only emitter of `type: 'error'` is `sendErrorAndClose`
- *   (`lambda/stream/src/lib/streaming.ts:81-95`), which writes the error, then
+ *   (in `lambda/stream/src/lib/streaming.ts`), which writes the error, then
  *   `done`, then `stream.end()` in one batch. The client therefore parses all
  *   three from the same read and leaves the `for await` in the same tick, so the
  *   `isStreaming` falling edge fires while the origin ref is still set and the

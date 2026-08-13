@@ -1,13 +1,22 @@
 /**
  * Shared rules for the conversation history sent to the streaming chat API.
  *
- * The two streaming surfaces (the VOC chat page `Chat.tsx` and the project chat
- * tab `ChatTab.tsx`) post to the same `/chat/stream` endpoint, so both are
- * bound by the same server-side contract.  The product interview
- * (`ProductTab.tsx`) posts elsewhere, but its history reaches Bedrock Converse
- * through the same 1:1 mapping and so owes the same shape.  Every call site
- * that assembles history goes through {@link buildHistory}, so no path can
- * keep producing the shape this module exists to prevent.
+ * Both streaming surfaces POST to the *same path*, `/chat/stream`. The VOC chat
+ * page (`Chat.tsx`) reaches it through `streamVocChat` and the project chat tab
+ * (`ChatTab.tsx`) through `streamProjectChat`, but those two helpers are the same
+ * request to the same URL with different fields in the body — the project one
+ * adds `project_id`, `selected_personas`, `selected_documents`, `attachments` and
+ * `roundtable`. Neither varies the path (see `api/streamClient.ts`), so one
+ * server-side contract binds both, and that is why the history rules live here
+ * rather than per surface.
+ *
+ * The product interview (`ProductTab.tsx`) is the one that really does post
+ * elsewhere, to `/product-context/interview`; its history still reaches Bedrock
+ * Converse through the same 1:1 mapping and so owes the same shape, under its own
+ * tighter cap ({@link MAX_INTERVIEW_HISTORY_ENTRIES}).
+ *
+ * Every call site that assembles history goes through {@link buildHistory}, so no
+ * path can keep producing the shape this module exists to prevent.
  */
 
 /**
@@ -26,8 +35,8 @@
  *
  * Residual, open, and server-side: the server applies a second, aggregate
  * character budget (`MAX_HISTORY_TOTAL_LENGTH = MAX_HISTORY_CONTENT_LENGTH * 4`)
- * after the window, and `clampHistoryToBudget`'s newest-to-oldest walk
- * (`lambda/stream/src/history-budget.ts:107-112`) has no role check. It keeps a
+ * after the window, and the newest-to-oldest walk in `clampHistoryToBudget`
+ * (`lambda/stream/src/history-budget.ts`) has no role check. It keeps a
  * contiguous window ending at the newest turn, so any odd kept-count starts on
  * an assistant turn: a repaired 50-entry list is user-first and alternating, so
  * dropping an odd number of the oldest turns hands Bedrock an assistant-first

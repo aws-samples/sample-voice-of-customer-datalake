@@ -77,6 +77,10 @@ describe('ChatTab history payload', () => {
     useProjectChatStore.setState({ messagesByProject: {} })
   })
 
+  // The seeds below are complete, not partial: `ProjectChatMessage` in
+  // `store/projectChatStore.ts` requires only `role` and `content` (everything
+  // else, `activePersona` included, is optional), and `activePersona` itself
+  // requires only `name`. A genuinely partial literal would not compile.
   it('merges the per-persona assistant turns of a roundtable into one entry', async () => {
     useProjectChatStore.setState({
       messagesByProject: {
