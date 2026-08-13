@@ -110,17 +110,33 @@ const INTERVIEW_PATH = path.join(__dirname, '../../../lambda/api/product_context
  */
 const SERVER_INTERVIEW_WINDOW_PATTERN = /\bhistory\[\s*-(\d+)\s*:\s*\]/g
 
-/** Start of the `def` whose body owns the window this file pins. */
-const INTERVIEW_DEF_PATTERN = /^def interview_turn\b/m
+/**
+ * Start of the `def` whose body owns the window this file pins.
+ *
+ * `async` is optional so that making `interview_turn` a coroutine — a change that
+ * cannot move the window — does not read as the function having disappeared.
+ */
+const INTERVIEW_DEF_PATTERN = /^(?:async )?def interview_turn\b/m
+
+/**
+ * Any line that starts a new top-level `def`, i.e. the end of the previous one.
+ *
+ * `async` is not optional politeness here, it is load-bearing: without it a
+ * following `async def` is not recognised as a terminator, the "body" silently
+ * extends past it, and a `history[-N:]` in *that* function gets read as the
+ * interview's — reintroducing the wrong-function read this scoping exists to
+ * close. The file happens to have no `async def` today, which is exactly why the
+ * omission would have gone unnoticed until it broke.
+ */
+const NEXT_TOP_LEVEL_DEF_PATTERN = /\n(?:async )?def \w/
 
 /**
  * Narrow a Python source to one top-level function's body.
  *
  * Every `def` in `product_context.py` sits at column 0, so the body runs from the
- * matched `def` to the next line starting `def ` — no indentation tracking
- * needed. The search for that terminator is for `\ndef `, which cannot match the
- * opening `def` itself because the slice starts *at* it with no preceding
- * newline.
+ * matched `def` to the next line starting a top-level one — no indentation
+ * tracking needed. The terminator search cannot match the opening `def` itself,
+ * because the slice starts *at* it with no preceding newline.
  *
  * Returns null when the function is absent, which is the loud direction: a
  * renamed `interview_turn` must red this suite rather than have its window read
@@ -130,7 +146,7 @@ function sliceTopLevelDef(source: string, defPattern: RegExp): string | null {
   const start = source.search(defPattern)
   if (start < 0) return null
   const body = source.slice(start)
-  const nextDef = body.search(/\ndef \w/)
+  const nextDef = body.search(NEXT_TOP_LEVEL_DEF_PATTERN)
   return nextDef < 0 ? body : body.slice(0, nextDef)
 }
 
@@ -255,15 +271,25 @@ describe('MAX_HISTORY_ENTRIES vs the server window', () => {
  *
  * The neighbours are not decoration — they are what makes these cases exercise
  * the function scoping at all. A body tested in isolation would pass under a
- * file-wide extractor too, so every case below carries a `before` and an `after`
- * for the scope to exclude.
+ * file-wide extractor too, so every case below has a neighbour for the scope to
+ * exclude.
+ *
+ * `following` is the def *immediately* after the interview, and it is a parameter
+ * rather than a fixed line because that is the one position the body terminator
+ * actually keys on. An earlier revision appended the interesting neighbour after
+ * a hard-coded `_doc_pk`, where the plain `def` had already ended the body — so
+ * an `async def` case placed there could not fail, and did not, under mutation.
  */
-function pythonModule(interviewBody: string, before = '', after = ''): string {
+function pythonModule(
+  interviewBody: string,
+  before = '',
+  following = "def _doc_pk(project_id: str) -> str:\n    return 'x'",
+): string {
   return 'def _format_context_for_prompt(ctx: dict) -> str:\n'
     + `    return ''\n${before}\n\n`
     + 'def interview_turn(project_id: str, body: dict) -> dict:\n'
     + `    ${interviewBody}\n\n`
-    + `def _doc_pk(project_id: str) -> str:\n    return 'x'\n${after}\n`
+    + `${following}\n`
 }
 
 describe('extractInterviewWindow', () => {
@@ -309,13 +335,11 @@ describe('extractInterviewWindow', () => {
     // pinned differently by line order alone. Both must read the interview's own
     // window, and neither may red: an unrelated backend slice is not drift in
     // the coupling this test owns.
-    const before = 'def _other(h):\n    return h[-99:]'
-    const after = 'def _later(h):\n    return h[-77:]'
     expect(extractInterviewWindow(
-      pythonModule('for m in history[-12:]:', before),
+      pythonModule('for m in history[-12:]:', 'def _other(history):\n    return history[-99:]'),
     )).toBe(12)
     expect(extractInterviewWindow(
-      pythonModule('for m in history[-12:]:', '', after),
+      pythonModule('for m in history[-12:]:', '', 'def _later(history):\n    return history[-77:]'),
     )).toBe(12)
   })
 
@@ -342,12 +366,34 @@ describe('extractInterviewWindow', () => {
     ))).toBe(12)
   })
 
+  it('treats a following async def as the end of the body', () => {
+    // Without `async` in the terminator the body runs straight past this def and
+    // reads ITS window as the interview's — the wrong-function read the scoping
+    // exists to close, reintroduced by one missing keyword. There is no
+    // `async def` in product_context.py today, which is exactly why the omission
+    // would have gone unnoticed until it broke.
+    // The async def must be the def IMMEDIATELY following the interview: that is
+    // the only position where a missing `async` in the terminator changes the
+    // body. Placed after any plain def it cannot fail, which is how the first
+    // version of this test passed under its own mutation.
+    expect(extractInterviewWindow(
+      pythonModule('for m in history[-12:]:', '', 'async def _later(history):\n    return history[-77:]'),
+    )).toBe(12)
+    // And the interview being a coroutine itself is a change that cannot move the
+    // window, so it must not read as the function having disappeared.
+    expect(extractInterviewWindow(
+      'async def interview_turn(project_id: str, body: dict) -> dict:\n'
+      + '    for m in history[-12:]:\n        pass\n\n'
+      + "def _doc_pk(p):\n    return 'x'\n",
+    )).toBe(12)
+  })
+
   it('returns null when interview_turn is renamed away', () => {
     // Scoping's own loud direction, and it closes what the previous file-wide
     // rule could not: with the interview's slice gone but an unrelated one still
     // present, that rule found exactly one distinct window and pinned the wrong
     // function's. Scoped, there is no body to read and the caller fails loudly.
-    const source = 'def _other(h):\n    return h[-99:]\n\n'
+    const source = 'def _other(history):\n    return history[-99:]\n\n'
       + 'def conduct_interview(project_id: str, body: dict) -> dict:\n'
       + '    for m in history[-12:]:\n        pass\n'
     expect(extractInterviewWindow(source)).toBeNull()
@@ -381,11 +427,14 @@ describe('MAX_INTERVIEW_HISTORY_ENTRIES vs the interview window', () => {
     // extractInterviewWindow understands, rather than passing vacuously.
     expect(
       serverWindow,
-      `Could not read a single history window from ${INTERVIEW_PATH}. Either the slice moved `
-      + '(a named constant, a different list name, a different slice shape), or the file now '
-      + 'contains MORE THAN ONE distinct history[-N:] window — in which case pick the one '
-      + 'interview_turn uses and teach extractInterviewWindow to tell them apart, rather '
-      + 'than letting it pin whichever came first.',
+      `Could not read a single history window from interview_turn in ${INTERVIEW_PATH}, in one `
+      + 'of three ways. (1) interview_turn is no longer a top-level def under that name — the '
+      + 'likeliest cause, since the read is scoped to its body; update INTERVIEW_DEF_PATTERN. '
+      + '(2) It no longer slices history as history[-N:] — a named constant, a different list '
+      + 'name, or a different slice shape; update SERVER_INTERVIEW_WINDOW_PATTERN. (3) It keeps '
+      + 'TWO DIFFERENT windows, so there is no single number to pin — decide which one bounds '
+      + 'what the client may send, and teach the extractor to read that one rather than letting '
+      + 'it guess.',
     ).not.toBeNull()
     expect(MAX_INTERVIEW_HISTORY_ENTRIES).toBeLessThanOrEqual(Number(serverWindow))
   })
