@@ -276,9 +276,10 @@ describe('I18N_INIT_OPTIONS', () => {
     // would reduce coverage instead of failing. Set equality first, then iterate.
     expect(
       localeDirsOnDisk(),
-      'catalogue directories and supportedLngs must be the same set — a directory '
-      + 'missing here ships translations nothing can select; one missing there is a '
-      + 'locale the detector accepts with no catalogues to load',
+      'locale directories on disk (received) must equal supportedLngs (expected). '
+      + 'Extra on disk = translations shipped that the detector will never select. '
+      + 'Extra in supportedLngs = a locale the detector accepts with no catalogues '
+      + 'to load.',
     ).toEqual(locales)
 
     for (const locale of locales) {
