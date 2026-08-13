@@ -20,7 +20,7 @@
  * any of the four hardcoded lists — a namespace IS a catalogue.
  */
 import { describe, it, expect } from 'vitest'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, extname, basename } from 'node:path'
 import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from './options'
@@ -44,12 +44,16 @@ function shippedNamespaces(): string[] {
   return cataloguesIn(LOCALES_EN)
 }
 
-/** Every locale directory, `en` included. */
-function localeDirs(): string[] {
-  return readdirSync(LOCALES, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-    .sort()
+/**
+ * The locales to check: the ones the app declares support for, not every directory
+ * under `public/locales`.
+ *
+ * Reading the filesystem would make an unrelated subdirectory (`_templates/`) fail
+ * the parity test with a message about catalogues. `supportedLngs` is also the more
+ * meaningful set — it is what the language detector will accept.
+ */
+function supportedLocales(): string[] {
+  return [...(I18N_INIT_OPTIONS.supportedLngs as string[])].sort()
 }
 
 /**
@@ -149,11 +153,18 @@ function scanSource(): { namespaces: Set<string>; filesScanned: number } {
     // `t` plus every name `t` was renamed to in this file, so a qualified key
     // reached through an alias is not invisible.
     //
-    // Scoped to a destructuring pattern on purpose: a bare `/\bt\s*:\s*(\w+)/`
-    // also matches type annotations and parameters (`{ t: TFunction }`,
-    // `(t: number)`), which would add meaningless names to the caller set. The
-    // negated class spans newlines, so a multi-line destructuring still matches —
-    // which it must, because Chat.tsx's rename is in one.
+    // Brace-scoped, which drops bare `(t: number)` parameters. It does NOT
+    // distinguish a destructuring from a type literal — `{ t: TFunction }` still
+    // contributes `TFunction` — and that is fine rather than fixed, because the
+    // two directions are not symmetric: an extra caller name matches no call site
+    // and changes nothing, while a MISSED alias is the silent blind spot this
+    // whole scan exists to avoid. So the regex is deliberately generous.
+    //
+    // Caveat worth knowing: `[^{}]*` cannot cross a nested object, so a future
+    // `const { data: { x }, t: tr }` would drop out of the caller set. Unused today.
+    //
+    // The negated class spans newlines, which it must — Chat.tsx's rename is in a
+    // multi-line destructuring.
     const callers = new Set(['t'])
     for (const [, alias] of source.matchAll(/\{[^{}]*\bt\s*:\s*(\w+)/g)) callers.add(alias)
     for (const caller of callers) {
@@ -242,12 +253,18 @@ describe('I18N_INIT_OPTIONS', () => {
     // would skip that file forever. The reverse, a locale missing a catalogue `en`
     // ships, means that whole page falls back to English with no other signal.
     const shipped = shippedNamespaces()
-    const locales = localeDirs()
-    expect(locales, 'no locale directories found — wrong path').toContain('en')
-    expect(locales.length, 'only one locale found; parity across locales is untested')
+    const locales = supportedLocales()
+    expect(locales, 'supportedLngs must include the reference locale').toContain('en')
+    expect(locales.length, 'only one locale supported; parity across locales is untested')
       .toBeGreaterThan(1)
 
     for (const locale of locales) {
+      // A declared locale with no directory at all is the sharper failure, so name it
+      // rather than letting readdirSync throw ENOENT.
+      expect(
+        existsSync(join(LOCALES, locale)),
+        `${locale} is in supportedLngs but ships no catalogue directory`,
+      ).toBe(true)
       expect(cataloguesIn(join(LOCALES, locale)), `locale ${locale}`).toEqual(shipped)
     }
   })
