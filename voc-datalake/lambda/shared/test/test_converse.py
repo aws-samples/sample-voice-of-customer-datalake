@@ -258,31 +258,36 @@ class TestConverse:
         first-match-wins order would misreport it.
         """
         from shared.converse import _temperature_note
-        from shared.model_config import ALLOWED_MODELS, omits_temperature
 
-        # Derived, not pinned — same reason as the invariant test above: a
-        # retired model id must not turn this into a confusing false negative.
-        accepts = [m['id'] for m in ALLOWED_MODELS if not omits_temperature(m['id'])]
-        rejects = [m['id'] for m in ALLOWED_MODELS if omits_temperature(m['id'])]
-        assert accepts and rejects, "need one model of each kind to tell the causes apart"
-        accepting, rejecting = accepts[0], rejects[0]
+        # What is under test is the ORDER the causes are checked in, not the
+        # capability lookup, so the lookup is stubbed and the ids are synthetic.
+        # Sourcing a real "rejects temperature" model from ALLOWED_MODELS would
+        # couple this to the allowlist's contents and fail if every model ever
+        # accepts temperature — the same false negative the invariant test's
+        # guard is careful to make deliberate, but here it would be incidental
+        # rather than meaningful: fixture availability says nothing about the
+        # system. Real models are covered by the invariant test above.
+        ACCEPTS = 'model-that-accepts-temperature'
+        REJECTS = 'model-that-rejects-temperature'
 
-        # Sent: report the value, not a reason.
-        assert _temperature_note(True, 0.1, accepting, False) == '0.1'
+        with patch('shared.converse.omits_temperature',
+                   lambda model_id: model_id == REJECTS):
+            # Sent: report the value, not a reason.
+            assert _temperature_note(True, 0.1, ACCEPTS, False) == '0.1'
 
-        # None wins over a co-occurring explicit budget — the caller's choice is
-        # the reason, and blaming thinking here would send an operator hunting a
-        # model-capability problem that does not exist.
-        assert _temperature_note(False, None, accepting, True) == 'omitted (caller passed None)'
-        assert _temperature_note(False, None, accepting, False) == 'omitted (caller passed None)'
+            # None wins over a co-occurring explicit budget — the caller's choice
+            # is the reason, and blaming thinking here would send an operator
+            # hunting a model-capability problem that does not exist.
+            assert _temperature_note(False, None, ACCEPTS, True) == 'omitted (caller passed None)'
+            assert _temperature_note(False, None, ACCEPTS, False) == 'omitted (caller passed None)'
 
-        # Model capability, including alongside an explicit budget.
-        assert _temperature_note(False, 0.1, rejecting, False) == 'omitted (model rejects it)'
-        assert _temperature_note(False, 0.1, rejecting, True) == 'omitted (model rejects it)'
+            # Model capability, including alongside an explicit budget.
+            assert _temperature_note(False, 0.1, REJECTS, False) == 'omitted (model rejects it)'
+            assert _temperature_note(False, 0.1, REJECTS, True) == 'omitted (model rejects it)'
 
-        # Only when the caller asked for it and the model accepts it is thinking
-        # the real cause.
-        assert _temperature_note(False, 0.1, accepting, True) == 'omitted (explicit thinking)'
+            # Only when the caller asked for it and the model accepts it is
+            # thinking the real cause.
+            assert _temperature_note(False, 0.1, ACCEPTS, True) == 'omitted (explicit thinking)'
 
 
 class TestConverseRetry:
