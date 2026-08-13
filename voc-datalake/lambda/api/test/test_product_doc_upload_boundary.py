@@ -10,6 +10,7 @@ declared size binding on S3 instead of advisory.
 `create_upload_url` and `ALLOWED_CONTENT_TYPES` had no coverage at all, so
 everything here is new.
 """
+import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -312,6 +313,135 @@ class TestADeclaredSizeMustBeAWholeNumberOfBytes:
         assert signed == 1000
         assert type(signed) is int
         assert table.put_item.call_args.kwargs['Item']['size_bytes'] == 1000
+
+
+class _NeverConvertibleDecimal(Decimal):
+    """A Decimal that refuses to become an int.
+
+    This is what lets the tests below fail on the SLOW PATH rather than on the
+    return value. Asserting only "returns a 400" would pass just as happily while
+    `int()` spent minutes building a 415 MB integer first — the 400 was never the
+    part in doubt.
+
+    Patched over `product_context.Decimal`, so the module's own parse produces one
+    of these and any conversion raises where a test can see it. Subclassing works
+    on the C `_decimal` implementation: the constructor returns the subclass and
+    `__int__` is honoured, while comparison, `is_finite()` and
+    `to_integral_value()` behave exactly as the base class does.
+    """
+
+    def __int__(self):
+        raise AssertionError(
+            'int() was reached on a declared size whose magnitude had not been '
+            'bounded first — that conversion IS the resource exhaustion, so a '
+            'bound placed after it guards nothing'
+        )
+
+
+HOSTILE_SIZES = [
+    '1E+999999999',    # twelve bytes -> a billion-digit integer
+    '1e+999999999',    # lower-case exponent, same value, still parses
+    '-1E+999999999',   # below every cap, so an UPPER bound alone misses it
+    '9' * 10_000,      # no exponent at all — and int() on a Decimal is not
+                       # subject to sys.get_int_max_str_digits(), which is what
+                       # stops the same digits arriving as a JSON int
+    '1E-999999999',    # negative exponent: the other end of the same trick
+    Decimal('1E+999999999'),  # the DynamoDB number type, same magnitude
+]
+
+
+class TestAHostileDeclaredSizeIsNeverMaterialised:
+    """A declared size must be bounded in the Decimal domain, before conversion.
+
+    `'1E+999999999'` is twelve bytes of request body. It parses, it is finite and
+    it is integral, so every other check in `_declared_size` passes it — and
+    `int()` then builds an integer of a billion digits (~415 MB) inside the request
+    path, before the caller's `max_bytes` cap is ever consulted. The conversion is
+    the cost, so the caller's check comes too late by construction.
+
+    This was a REGRESSION: the original `int(value or 0)` raised ValueError on
+    exponent notation and produced a clean 400.
+    """
+
+    @pytest.mark.parametrize('size_bytes', HOSTILE_SIZES)
+    def test_it_is_refused_with_the_ordinary_bad_size_error(self, size_bytes):
+        """No new vocabulary: the caller answers with the message every other
+        unusable size gets, so nothing new needs translating."""
+        error, table = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                                'size_bytes': size_bytes})
+        assert error.status_code == 400
+        assert error.message == 'Images must be between 1 byte and 3.5 MB.'
+        table.put_item.assert_not_called()
+
+    @pytest.mark.parametrize('size_bytes', HOSTILE_SIZES)
+    def test_the_conversion_is_never_reached(self, size_bytes):
+        """The load-bearing half. With `int()` booby-trapped, reaching it is an
+        AssertionError out of `_declared_size` — so this fails on the work done,
+        not on the status code."""
+        import product_context
+
+        with patch.object(product_context, 'Decimal', _NeverConvertibleDecimal):
+            error, table = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                                    'size_bytes': size_bytes})
+        assert error.status_code == 400
+        table.put_item.assert_not_called()
+
+    def test_the_trap_fires_on_a_size_that_IS_converted(self):
+        """Vacuity guard for the test above: if the module ever stopped parsing
+        through its own `Decimal` name, the patch would land on nothing and the
+        trap would pass by never firing. A legitimate size must still reach the
+        conversion, and therefore must still trip the trap."""
+        import product_context
+
+        with patch.object(product_context, 'Decimal', _NeverConvertibleDecimal), \
+             pytest.raises(AssertionError, match=r'int\(\) was reached'):
+            _create({'filename': 'screen.png', 'content_type': 'image/png',
+                     'size_bytes': 1000})
+
+    def test_a_hostile_size_is_refused_inside_a_time_budget(self):
+        """Belt and braces, and it survives a rewrite that no longer routes through
+        the patched name.
+
+        `1E+300000` rather than `1E+999999999` on purpose: without the bound this
+        must FAIL rather than hang. Measured on this runtime,
+        `int(Decimal('1E+300000'))` costs ~2.7s (and the cost is superquadratic in
+        the digit count, which is why a billion digits is a Lambda timeout, not a
+        blip), so an unbounded implementation blows this budget by ~5x and says so
+        in seconds. The bounded path is ~10 microseconds — five orders of magnitude
+        inside the budget — so there is no machine slow enough to make this flaky
+        without every other test in the suite timing out first.
+        """
+        import product_context
+
+        started = time.perf_counter()
+        assert product_context._declared_size('1E+300000') is None
+        assert time.perf_counter() - started < 0.5
+
+    def test_a_long_numeric_string_is_refused_by_the_same_bound(self):
+        """The parse itself needs no length limit, which is worth recording: a
+        10 MB numeric string (the API Gateway body limit, so the worst case a
+        client can send) parses in ~24ms and compares in microseconds, because
+        libmpdec is linear in the digit count. The superlinear cost is entirely in
+        `int()`, and the bound is already in front of that."""
+        import product_context
+
+        started = time.perf_counter()
+        assert product_context._declared_size('9' * 10_000_000) is None
+        assert time.perf_counter() - started < 1.0
+
+    def test_a_size_exactly_at_the_file_cap_is_still_accepted(self):
+        """The bound is the WIDEST cap and it is inclusive, so the largest legal
+        file is not collateral damage. A guard set one byte low would refuse it
+        with the same message the cap gives, which is exactly the kind of change
+        that hides in a green suite."""
+        import product_context
+
+        result, table, s3 = _create({'filename': 'huge.txt', 'content_type': 'text/plain',
+                                     'size_bytes': product_context.MAX_FILE_BYTES})
+        assert result['doc_id']
+        signed = s3.generate_presigned_url.call_args.kwargs['Params']['ContentLength']
+        assert signed == product_context.MAX_FILE_BYTES
+        assert table.put_item.call_args.kwargs['Item']['size_bytes'] == product_context.MAX_FILE_BYTES
 
 
 class TestDeclaredSizeIsBindingOnS3:

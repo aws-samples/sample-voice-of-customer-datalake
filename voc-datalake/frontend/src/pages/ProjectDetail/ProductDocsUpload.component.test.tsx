@@ -379,6 +379,65 @@ describe('DocsUpload', () => {
     expect(clicks).toHaveBeenCalledTimes(1)
   })
 
+  it('ignores a Space keyup this element never saw go down', async () => {
+    // The other side of activating on keyup: a release with no matching keydown
+    // here is not this element's gesture. It happens when focus arrives
+    // mid-keypress — the keydown went somewhere else (or to the browser), and
+    // only the release lands on the zone, which would open a file dialog the user
+    // never asked for.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const clicks = vi.fn()
+    getFileInput().addEventListener('click', clicks)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+
+    fireEvent.keyUp(zone, { key: ' ' })
+    expect(clicks).not.toHaveBeenCalled()
+
+    // The ordinary sequence still activates exactly once, so the guard did not
+    // simply disable Space.
+    fireEvent.keyDown(zone, { key: ' ' })
+    fireEvent.keyUp(zone, { key: ' ' })
+    expect(clicks).toHaveBeenCalledTimes(1)
+  })
+
+  it('activates once per Space press, with no arming left over', async () => {
+    // A flag that is set but never cleared would leave the NEXT stray keyup armed,
+    // which is the same bug with an extra step: two presses would then be three
+    // pickers.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const clicks = vi.fn()
+    getFileInput().addEventListener('click', clicks)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+
+    fireEvent.keyDown(zone, { key: ' ' })
+    fireEvent.keyUp(zone, { key: ' ' })
+    fireEvent.keyDown(zone, { key: ' ' })
+    fireEvent.keyUp(zone, { key: ' ' })
+    expect(clicks).toHaveBeenCalledTimes(2)
+
+    fireEvent.keyUp(zone, { key: ' ' })
+    expect(clicks).toHaveBeenCalledTimes(2)
+  })
+
+  it('disarms when focus leaves with Space still held', async () => {
+    // The release then happens on whatever took focus, so the keyup that would
+    // consume the flag never arrives here. Without the blur reset the zone stays
+    // armed indefinitely, waiting to spend it on an unrelated Space release.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const clicks = vi.fn()
+    getFileInput().addEventListener('click', clicks)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+
+    fireEvent.keyDown(zone, { key: ' ' })
+    fireEvent.blur(zone)
+    fireEvent.keyUp(zone, { key: ' ' })
+
+    expect(clicks).not.toHaveBeenCalled()
+  })
+
   it('opens the file picker exactly once per pointer activation', async () => {
     // Same guarantee for the mouse, and the reason the input is a SIBLING of the
     // drop zone rather than a child: input.click() dispatches a bubbling click,

@@ -228,6 +228,14 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
   // The single activation path for the hidden file input — see the drop zone.
   const openPicker = useCallback(() => { fileInput.current?.click() }, [])
 
+  // Set by a Space keydown ON THIS ELEMENT, consumed by its keyup. Space activates
+  // on keyup (a held key repeats keydown), and without this flag ANY Space release
+  // reaching the zone activates it — including one whose keydown landed somewhere
+  // else, which is what happens when focus arrives mid-keypress. A ref rather than
+  // state: it must not re-render, and the keyup has to read what the keydown wrote
+  // in the same gesture, not a value from the last render.
+  const spaceArmed = useRef(false)
+
   const onDelete = useCallback(async (docId: string) => {
     try {
       await projectsApi.deleteProductDoc(projectId, docId)
@@ -292,13 +300,23 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
             openPicker()
             return
           }
-          if (e.key === ' ') e.preventDefault()
+          if (e.key !== ' ') return
+          e.preventDefault()
+          // Arm, don't activate. Repeats just re-arm, so a held key still opens
+          // nothing.
+          spaceArmed.current = true
         }}
         onKeyUp={(e) => {
-          if (e.key !== ' ') return
+          // Only a Space this element saw go DOWN may activate it on the way up.
+          if (e.key !== ' ' || !spaceArmed.current) return
+          spaceArmed.current = false
           e.preventDefault()
           openPicker()
         }}
+        // Space held while focus moves away releases somewhere else, so the keyup
+        // never arrives to consume the flag. Disarming here stops that stale arm
+        // from being spent on the next Space release that happens to land here.
+        onBlur={() => { spaceArmed.current = false }}
         onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
         onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false) }}

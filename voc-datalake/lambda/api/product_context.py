@@ -135,6 +135,17 @@ _ACCEPTED_EXTENSIONS_LABEL = ', '.join(
     '.' + ext for ext in sorted(set(ALLOWED_CONTENT_TYPES.values()))
 )
 
+# EVERY status a product-doc record may hold — the canonical vocabulary, and the
+# one place to add to. `pending` is written here at upload; `extracting`, `ready`
+# and `failed` are written by lambda/product_doc_extractor/handler.py, which
+# partitions this same set into its NON_TERMINAL_STATUSES / TERMINAL_STATUSES and
+# logs a refused write differently for each. A status added here and nowhere else
+# would be reported by that handler as a malformed record, so the partition is
+# pinned against this tuple by
+# lambda/product_doc_extractor/test/test_status_lockstep.py. Mirrored in
+# frontend/src/api/types.ts as ProductDocStatus.
+PRODUCT_DOC_STATUSES = ('pending', 'extracting', 'ready', 'failed')
+
 # A pending/extracting record older than this is treated as never-extracted and
 # transitioned to failed on read. See _fail_if_stalled.
 EXTRACTION_STALL_SECONDS = 300
@@ -527,6 +538,29 @@ def _declared_size(value: object) -> int | None:
     # NaN and ±Infinity are finite-check failures, not parse failures — Decimal
     # accepts both strings happily.
     if not number.is_finite() or number != number.to_integral_value():
+        return None
+    # RESOURCE-EXHAUSTION GUARD, and the whole point is that it happens HERE, in
+    # the DECIMAL domain, before int(). `'1E+999999999'` is 12 bytes of request
+    # body that parses fine, is finite, and IS integral — so it passes every check
+    # above, and `int()` then materialises an integer of a billion digits (~415 MB)
+    # inside the request path. The cost is not linear either: measured on this
+    # runtime, int(Decimal('1E+1000000')) already takes ~30s, so a billion digits
+    # is a Lambda timeout, not a blip.
+    #
+    # THE TRAP: bounding after the conversion would be no guard at all, because the
+    # conversion IS the cost — the caller's `max_bytes` check runs too late for the
+    # same reason. Decimal comparison reads the exponent and coefficient instead of
+    # expanding them, so the same value is refused in microseconds. That also
+    # covers a long numeric string (`'9' * 10_000_000`), whose parse is linear and
+    # cheap but whose int() is not.
+    #
+    # The range is the widest one any caller can accept — MAX_FILE_BYTES is the
+    # larger of the two caps, 1 byte the smallest usable size — so nothing the
+    # boundary would have accepted is refused here, and everything refused here
+    # gets the boundary's own unchanged ValidationError. A negative bound is not
+    # decoration: `-1E+999999999` is below every cap, so an upper bound alone would
+    # still hand it to int().
+    if number < 1 or number > MAX_FILE_BYTES:
         return None
     return int(number)
 

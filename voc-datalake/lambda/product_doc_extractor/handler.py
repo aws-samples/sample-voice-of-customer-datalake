@@ -84,6 +84,12 @@ NON_TERMINAL_STATUSES = ('pending', 'extracting')
 # it hit: a terminal status is the API having failed a stalled record, and that
 # is the one worth alerting on. Anything outside either tuple is a malformed or
 # legacy record — see _log_refused_write.
+#
+# The two tuples must therefore PARTITION the whole vocabulary, which lives in
+# lambda/api/product_context.py as PRODUCT_DOC_STATUSES (not importable here — it
+# reaches powertools through shared/). test/test_status_lockstep.py pins them
+# against it, because a status added there and to neither tuple turns a well-formed
+# record into a "malformed" log line.
 TERMINAL_STATUSES = ('ready', 'failed')
 
 # Content types this handler can turn into text, mirroring ALLOWED_CONTENT_TYPES
