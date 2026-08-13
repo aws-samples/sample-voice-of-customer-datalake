@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
+import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
   getScore, calculatePriorityScore, collectPRFAQs, comparePRFAQs, DEFAULT_SCORE, isScorable,
   SCORABLE_TYPE_META,
@@ -230,6 +231,23 @@ describe('SCORABLE_TYPE_META display labels', () => {
   // nothing. This is the gate the badge itself never had: no Prioritization test
   // asserts the badge text, so un-qualifying these keys left that suite green.
   const t = i18n.getFixedT(null, 'feedbackForms')
+
+  it("keep working only while the app's nsSeparator is ':' — assert the real config", () => {
+    // The resolution test below runs against the TEST i18n instance (src/test/setup.ts),
+    // so it would stay green if the APP disabled the namespace separator — a common
+    // workaround for keys that contain colons. I18N_INIT_OPTIONS is the object
+    // src/i18n/config.ts hands to init(), imported from a side-effect-free module so
+    // reading it here does not start the HTTP backend.
+    expect(
+      I18N_INIT_OPTIONS.nsSeparator ?? ':',
+      'the app disabled/changed nsSeparator — every `prioritization:docType.*` read '
+      + '(the Prioritization badge, the Feedback Forms document picker) now renders '
+      + 'the raw key path',
+    ).toBe(':')
+    // And the test instance must agree, or the assertion below tests a different
+    // resolver than the app ships.
+    expect(i18n.options.nsSeparator ?? ':').toBe(':')
+  })
 
   it('resolve to real text, not the raw key path, from another namespace', () => {
     const entries = Object.entries(SCORABLE_TYPE_META)

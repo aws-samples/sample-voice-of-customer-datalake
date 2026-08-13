@@ -75,6 +75,7 @@
     "validationDescription": "Opcionalmente registre sobre qual projeto — e qual PRD ou PR/FAQ — este formulário coleta feedback. As avaliações reunidas aparecerão ao lado desse documento na página de Priorização. Deixe ambos vazios para um formulário independente, como uma pesquisa de site.",
     "validationDocumentHint": "Mantenha no projeto inteiro para preservar o vínculo quando um documento for regerado.",
     "validationDocumentLabel": "Documento (Opcional)",
+    "validationDocumentOption": "{{title}} ({{type}})",
     "validationLoadingLink": "Carregando o vínculo…",
     "validationNoProject": "-- Não vinculado --",
     "validationProjectHint": "Limpar o projeto desvincula este formulário.",

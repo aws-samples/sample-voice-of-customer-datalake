@@ -100,18 +100,26 @@ function storedOptionLabel(
  * admin to link a form to a proposal they cannot tell apart — and the two are
  * separate rows on the Prioritization page, where the ratings then show up.
  *
- * `(TYPE)` after the name rather than before it, following `CheckboxItem` in
- * `pages/ProjectDetail/PickerComponents` — the repo's other picker that shows a
- * document's type inline — so the two read the same way.
+ * The COMPOSITION is a translation key, not a template literal in code: this
+ * catalogue's own CJK labels use full-width parentheses (`ドキュメント（任意）`,
+ * `文档（可选）`) while Korean uses half-width with no space, so building
+ * `name (type)` here would print the wrong punctuation into three locales. The
+ * key also lets a locale reorder the two parts. Name after type follows
+ * `CheckboxItem` in `pages/ProjectDetail/PickerComponents`, the repo's other
+ * picker that shows a document's type inline.
  *
- * The label comes from `SCORABLE_TYPE_META`, the same source as the badge on the
- * Prioritization row this link feeds, so the type is named identically in both
- * places. The raw `document_type` is the fallback: a type made scorable without
- * display metadata then reads as its own slug rather than as empty parentheses.
- * Unreachable today — the list is filtered by `isScorable`, which reads the very
- * table the label comes from — and kept because that coupling is not enforced.
+ * The type label comes from `SCORABLE_TYPE_META`, the same source as the badge on
+ * the Prioritization row this link feeds, so the type is named identically in
+ * both places. The raw `document_type` is the fallback: a type made scorable
+ * without display metadata then reads as its own slug rather than as an empty
+ * pair of parentheses. Unreachable today — the list is filtered by `isScorable`,
+ * which reads the very table the label comes from — and kept because that
+ * coupling is not enforced.
  */
-function documentOptionLabel(doc: ProjectDocument, t: (key: string) => string): string {
+function documentOptionLabel(
+  doc: ProjectDocument,
+  t: (key: string, options?: Record<string, string>) => string,
+): string {
   const typeMeta = SCORABLE_TYPE_META[doc.document_type]
   const typeLabel = typeMeta ? t(typeMeta.i18nKey) : doc.document_type
   // `title` is declared `string` and `projectsApi` has no schema at its boundary,
@@ -120,7 +128,7 @@ function documentOptionLabel(doc: ProjectDocument, t: (key: string) => string): 
   // literal "undefined". Falling back to the id, the way DocumentsTab labels a
   // revision with no title — an opaque id at least identifies the record.
   const name = typeof doc.title === 'string' && doc.title.trim() !== '' ? doc.title : doc.document_id
-  return `${name} (${typeLabel})`
+  return t('editor.validationDocumentOption', { title: name, type: typeLabel })
 }
 
 export default function ValidationLinkPicker({

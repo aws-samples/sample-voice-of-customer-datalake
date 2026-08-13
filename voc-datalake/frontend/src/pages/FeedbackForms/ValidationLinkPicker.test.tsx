@@ -229,8 +229,10 @@ describe('validation link in the form editor', () => {
       expect(screen.getByText(PRFAQ_OPTION_LABEL)).toBeInTheDocument()
     })
     // Substring, not the full option text: what must not be offered is that
-    // document, under any label this picker might give it.
-    expect(screen.queryByText(/Research Notes/)).not.toBeInTheDocument()
+    // document, under any label this picker might give it. queryAll, because
+    // queryBy throws on multiple matches — the failure would then read "found
+    // multiple elements" instead of naming the leak.
+    expect(screen.queryAllByText(/Research Notes/)).toHaveLength(0)
   })
 
   it('keeps a link whose document no longer exists rather than silently clearing it', async () => {
