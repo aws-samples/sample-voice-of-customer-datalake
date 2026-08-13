@@ -193,20 +193,15 @@ def converse(
     inference_config = {'maxTokens': max_tokens}
     # `temperature` is dropped in three cases:
     #   - the caller passed None explicitly;
-    #   - the model rejects the parameter outright as deprecated (Sonnet 5,
-    #     both Opus generations) — so any surface can be pointed at them via
-    #     the picker without a 400;
+    #   - the model rejects the parameter outright as deprecated;
     #   - EXPLICIT extended thinking is on: Anthropic permits only
-    #     temperature=1 alongside thinking, and sending both is a hard 400
-    #     ("`temperature` may only be set to 1 when thinking is enabled").
-    #     Omitting it is equivalent to 1 and keeps one exit shape here.
+    #     temperature=1 alongside thinking, and sending both is a hard 400.
+    #     Omitting is equivalent to 1 and keeps one exit shape here.
     #
-    # That third case is a COMBINATION, not a per-model property, which is why
-    # the two capability flags alone couldn't catch it: it bites exactly the
-    # models that accept temperature AND take an explicit budget (Sonnet 4.6,
-    # Haiku 4.5). Live-caught on research's data_analysis step — the only
-    # in-repo caller with thinking_budget > 0 — where picking either model in
-    # the Settings model picker failed every Research job.
+    # Keep the third condition even though it looks redundant next to the
+    # capability flags: it is a COMBINATION, not a per-model property, so no
+    # per-model flag can encode it. It binds exactly the models that accept
+    # temperature AND take an explicit budget.
     if temperature is not None and not explicit_thinking and not omits_temperature(used_model):
         inference_config['temperature'] = temperature
     kwargs = {
@@ -231,12 +226,15 @@ def converse(
     # both temperature and the thinking budget can be dropped per model. The
     # earlier line alone made a request look like it carried a temperature and a
     # budget that Bedrock never saw, which is exactly the wrong starting point
-    # when triaging a ValidationException about those fields.
-    logger.info(
-        f"[BEDROCK] Effective params: temperature="
-        f"{inference_config.get('temperature', 'omitted')}, "
-        f"thinking={thinking_budget if explicit_thinking else 'omitted'}"
-    )
+    # when triaging a ValidationException about those fields. The drop REASON is
+    # spelled out so an operator reading only this line knows why it vanished
+    # instead of inferring it from the thinking value.
+    if 'temperature' in inference_config:
+        effective_temperature = inference_config['temperature']
+    else:
+        effective_temperature = 'omitted (explicit thinking)' if explicit_thinking else 'omitted'
+    effective_thinking = thinking_budget if explicit_thinking else 'omitted'
+    logger.info(f"[BEDROCK] Effective params: temperature={effective_temperature}, thinking={effective_thinking}")
     logger.info(f"[BEDROCK] Invoking Bedrock converse API for step '{step_name}'...")
     start_time = time.time()
 

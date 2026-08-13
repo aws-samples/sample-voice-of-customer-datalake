@@ -161,20 +161,25 @@ class TestConverse:
         assert cfg['maxTokens']  # other config still present
 
     @patch('shared.converse.get_bedrock_client')
-    def test_omits_temperature_when_explicit_thinking_enabled(self, mock_get_client):
-        """Anthropic allows only temperature=1 alongside extended thinking, so
-        sending both is a hard 400: "`temperature` may only be set to 1 when
-        thinking is enabled".
+    def test_temperature_and_thinking_sent_exactly_when_legal(self, mock_get_client):
+        """Full truth table for the two request fields, over EVERY allowlisted
+        model at both budgets.
 
-        This is a COMBINATION failure, invisible to either capability flag on its
-        own — it bites the models that accept temperature AND take an explicit
-        budget (Sonnet 4.6, Haiku 4.5). Live-caught: research's data_analysis
-        step is the only in-repo caller with thinking_budget > 0, so picking
-        either model in the Settings picker failed every Research job with a
-        ValidationException.
+        Anthropic permits only temperature=1 alongside extended thinking, so
+        sending both is a hard 400 ("`temperature` may only be set to 1 when
+        thinking is enabled"). That is a COMBINATION failure: both capability
+        flags were individually correct and nothing stated that the request they
+        JOINTLY produce has to be valid. A capability table cannot express a
+        constraint between capabilities, so the invariant belongs here.
 
-        Driven off the capability data rather than hardcoded ids so a newly
-        allowlisted model in the same combination is covered on arrival.
+        Asserting BOTH directions matters. "Never both fields" alone is also
+        satisfied by a regression that drops temperature for every model, which
+        would silently discard sampling control everywhere — so each case pins
+        what must be PRESENT as well as what must be absent.
+
+        Driven off the capability data rather than hardcoded model ids, so a
+        newly allowlisted model is covered on arrival and a retired one does not
+        turn this into a false negative.
         """
         mock_client = MagicMock()
         mock_client.converse.return_value = {
@@ -189,57 +194,46 @@ class TestConverse:
             uses_adaptive_thinking,
         )
 
-        at_risk = [m['id'] for m in ALLOWED_MODELS
-                   if not omits_temperature(m['id'])
-                   and not uses_adaptive_thinking(m['id'])]
-        # Without this the test would vacuously pass if the sets ever changed
-        # so that no model lands in the risky combination.
-        assert {'global.anthropic.claude-sonnet-4-6'} <= set(at_risk)
-
-        for model_id in at_risk:
-            mock_client.converse.reset_mock()
-            converse('Complex question', temperature=0.1, thinking_budget=5000,
-                     model_id=model_id)
-            kwargs = mock_client.converse.call_args.kwargs
-            assert 'temperature' not in kwargs['inferenceConfig'], model_id
-            # Dropping temperature must not silently disable thinking — the
-            # caller asked for a budget and this model does take one.
-            thinking = kwargs['additionalModelRequestFields']['thinking']
-            assert thinking['budget_tokens'] == 5000, model_id
-
-    @patch('shared.converse.get_bedrock_client')
-    def test_never_sends_temperature_together_with_explicit_thinking(self, mock_get_client):
-        """The invariant behind the bug above, asserted for EVERY allowlisted
-        model at both budgets.
-
-        The two capability flags were each individually correct; what was missing
-        was any statement that the request they jointly produce has to be valid.
-        A capability table cannot express a constraint BETWEEN capabilities, so
-        the invariant belongs in a test rather than in the model rows: a model
-        added later with any flag combination is covered on arrival.
-        """
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'R'}]}}
-        }
-        mock_get_client.return_value = mock_client
-
-        from shared.converse import converse
-        from shared.model_config import ALLOWED_MODELS
-
         checked = 0
         for model in ALLOWED_MODELS:
+            model_id = model['id']
             for budget in (0, 5000):
                 mock_client.converse.reset_mock()
                 converse('Q', temperature=0.1, thinking_budget=budget,
-                         model_id=model['id'])
+                         model_id=model_id)
                 kwargs = mock_client.converse.call_args.kwargs
                 sent_temperature = 'temperature' in kwargs['inferenceConfig']
-                sent_thinking = 'additionalModelRequestFields' in kwargs
-                assert not (sent_temperature and sent_thinking), (
-                    f"{model['id']} at budget={budget} sent both temperature and "
-                    f"an explicit thinking budget, which Bedrock rejects"
+                # Read the nested key rather than testing for the container, so
+                # an unrelated additionalModelRequestFields entry added later
+                # can't be mistaken for a thinking budget.
+                thinking = kwargs.get('additionalModelRequestFields', {}).get('thinking')
+
+                # 1. The bug itself: the two fields must never travel together.
+                assert not (sent_temperature and thinking), (
+                    f"{model_id} at budget={budget} sent both temperature and an "
+                    f"explicit thinking budget, which Bedrock rejects"
                 )
+
+                # 2. An explicit budget is sent exactly when the model takes one
+                #    — so suppressing temperature can never come at the cost of
+                #    silently disabling the thinking the caller asked for.
+                expect_thinking = budget > 0 and not uses_adaptive_thinking(model_id)
+                assert bool(thinking) == expect_thinking, (
+                    f"{model_id} at budget={budget}: expected explicit thinking="
+                    f"{expect_thinking}"
+                )
+                if expect_thinking:
+                    assert thinking['budget_tokens'] == budget, model_id
+                    # Thinking is in play, so temperature is illegal regardless
+                    # of what the model would otherwise accept.
+                    assert not sent_temperature, model_id
+                else:
+                    # No thinking in play, so the ONLY legitimate reason to drop
+                    # temperature is the model rejecting the parameter.
+                    assert sent_temperature == (not omits_temperature(model_id)), (
+                        f"{model_id} at budget={budget}: temperature presence "
+                        f"should follow omits_temperature() when thinking is off"
+                    )
                 checked += 1
         # Guards against the loop silently iterating nothing.
         assert checked == len(ALLOWED_MODELS) * 2
