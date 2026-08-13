@@ -20,7 +20,7 @@
  * any of the four hardcoded lists — a namespace IS a catalogue.
  */
 import { describe, it, expect } from 'vitest'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join, extname, basename } from 'node:path'
 import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from './options'
@@ -44,16 +44,28 @@ function shippedNamespaces(): string[] {
   return cataloguesIn(LOCALES_EN)
 }
 
-/**
- * The locales to check: the ones the app declares support for, not every directory
- * under `public/locales`.
- *
- * Reading the filesystem would make an unrelated subdirectory (`_templates/`) fail
- * the parity test with a message about catalogues. `supportedLngs` is also the more
- * meaningful set — it is what the language detector will accept.
- */
+/** The locales the app declares support for — what the detector will accept. */
 function supportedLocales(): string[] {
   return [...(I18N_INIT_OPTIONS.supportedLngs as string[])].sort()
+}
+
+/**
+ * Directories under `public/locales` that are not locales.
+ *
+ * A convention rather than a name list: anything starting with `_` or `.` is
+ * infrastructure (templates, tooling, dotfiles). Without this, such a directory
+ * fails the parity test with a message about missing catalogues.
+ */
+function isIgnoredLocaleDir(name: string): boolean {
+  return name.startsWith('_') || name.startsWith('.')
+}
+
+/** Locale directories present on disk, ignoring non-locale infrastructure. */
+function localeDirsOnDisk(): string[] {
+  return readdirSync(LOCALES, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !isIgnoredLocaleDir(e.name))
+    .map((e) => e.name)
+    .sort()
 }
 
 /**
@@ -258,13 +270,18 @@ describe('I18N_INIT_OPTIONS', () => {
     expect(locales.length, 'only one locale supported; parity across locales is untested')
       .toBeGreaterThan(1)
 
+    // Both directions, because deriving the loop from `supportedLngs` alone would
+    // quietly shrink this gate: a shipped directory absent from `supportedLngs`
+    // would never be visited, and pruning an entry while its catalogues stay on disk
+    // would reduce coverage instead of failing. Set equality first, then iterate.
+    expect(
+      localeDirsOnDisk(),
+      'catalogue directories and supportedLngs must be the same set — a directory '
+      + 'missing here ships translations nothing can select; one missing there is a '
+      + 'locale the detector accepts with no catalogues to load',
+    ).toEqual(locales)
+
     for (const locale of locales) {
-      // A declared locale with no directory at all is the sharper failure, so name it
-      // rather than letting readdirSync throw ENOENT.
-      expect(
-        existsSync(join(LOCALES, locale)),
-        `${locale} is in supportedLngs but ships no catalogue directory`,
-      ).toBe(true)
       expect(cataloguesIn(join(LOCALES, locale)), `locale ${locale}`).toEqual(shipped)
     }
   })
