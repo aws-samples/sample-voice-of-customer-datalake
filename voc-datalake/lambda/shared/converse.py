@@ -171,7 +171,7 @@ def converse(
     """
     used_model = model_id or get_active_model_id(surface)
     logger.info(f"[BEDROCK] Starting converse call for step '{step_name}' with model {used_model} (surface={surface})")
-    logger.info(f"[BEDROCK] Request params: max_tokens={max_tokens}, temperature={temperature}, thinking_budget={thinking_budget}")
+    logger.info(f"[BEDROCK] Requested params: max_tokens={max_tokens}, temperature={temperature}, thinking_budget={thinking_budget}")
     logger.info(f"[BEDROCK] Prompt length: {len(prompt)} chars, system_prompt length: {len(system_prompt)} chars")
     
     try:
@@ -184,12 +184,30 @@ def converse(
     messages = [{'role': 'user', 'content': [{'text': prompt}]}]
     system = [{'text': system_prompt}] if system_prompt else None
     
+    # Resolved BEFORE the inference config because enabling thinking also
+    # constrains `temperature` (see below). Models with always-on adaptive
+    # thinking (Sonnet 5, Opus 4.7+) reject an explicit budget, so the field is
+    # skipped for them — their thinking runs automatically.
+    explicit_thinking = thinking_budget > 0 and not uses_adaptive_thinking(used_model)
+
     inference_config = {'maxTokens': max_tokens}
-    # Some models run adaptive thinking always-on and reject `temperature` as
-    # deprecated (Sonnet 5, Opus 5). Omit it for those automatically — so any
-    # surface can be pointed at them via the picker without a 400 — and also
-    # when the caller explicitly passes temperature=None.
-    if temperature is not None and not omits_temperature(used_model):
+    # `temperature` is dropped in three cases:
+    #   - the caller passed None explicitly;
+    #   - the model rejects the parameter outright as deprecated (Sonnet 5,
+    #     both Opus generations) — so any surface can be pointed at them via
+    #     the picker without a 400;
+    #   - EXPLICIT extended thinking is on: Anthropic permits only
+    #     temperature=1 alongside thinking, and sending both is a hard 400
+    #     ("`temperature` may only be set to 1 when thinking is enabled").
+    #     Omitting it is equivalent to 1 and keeps one exit shape here.
+    #
+    # That third case is a COMBINATION, not a per-model property, which is why
+    # the two capability flags alone couldn't catch it: it bites exactly the
+    # models that accept temperature AND take an explicit budget (Sonnet 4.6,
+    # Haiku 4.5). Live-caught on research's data_analysis step — the only
+    # in-repo caller with thinking_budget > 0 — where picking either model in
+    # the Settings model picker failed every Research job.
+    if temperature is not None and not explicit_thinking and not omits_temperature(used_model):
         inference_config['temperature'] = temperature
     kwargs = {
         'modelId': used_model,
@@ -199,10 +217,8 @@ def converse(
     if system:
         kwargs['system'] = system
     
-    # Add extended thinking if budget specified. Models with always-on adaptive
-    # thinking (Sonnet 5) reject an explicit budget, so skip the field for them
-    # — their thinking runs automatically.
-    explicit_thinking = thinking_budget > 0 and not uses_adaptive_thinking(used_model)
+    # Add extended thinking if the resolved model takes an explicit budget
+    # (decided above, alongside the temperature it constrains).
     if explicit_thinking:
         kwargs['additionalModelRequestFields'] = {
             'thinking': {
@@ -211,6 +227,16 @@ def converse(
             }
         }
     
+    # What actually goes on the wire, which is NOT the requested params above:
+    # both temperature and the thinking budget can be dropped per model. The
+    # earlier line alone made a request look like it carried a temperature and a
+    # budget that Bedrock never saw, which is exactly the wrong starting point
+    # when triaging a ValidationException about those fields.
+    logger.info(
+        f"[BEDROCK] Effective params: temperature="
+        f"{inference_config.get('temperature', 'omitted')}, "
+        f"thinking={thinking_budget if explicit_thinking else 'omitted'}"
+    )
     logger.info(f"[BEDROCK] Invoking Bedrock converse API for step '{step_name}'...")
     start_time = time.time()
 
