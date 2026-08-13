@@ -1,5 +1,9 @@
 // API Types - extracted from client.ts to reduce file size
 
+// The derivation contract lives with its schema and resolver, so the runtime
+// validation and the declared type cannot drift apart.
+import type { DocumentDerivation } from './derivation'
+
 export interface FeedbackItem {
   feedback_id: string
   source_id: string
@@ -318,6 +322,36 @@ export interface ProjectDocument {
   // served from the /prototypes/* cache behavior with its own permissive CSP).
   // Absent on legacy prototypes; callers fall back to `content`/srcDoc.
   prototype_url?: string
+  /**
+   * What this document was built from — the one shape every document type uses
+   * (see api/derivation.ts). Absent on every document created before the field
+   * existed, and written as a sparse record when a document has no inputs, so
+   * read it through `resolveDerivation` rather than directly: that also
+   * reconstructs the answer from the legacy fields below.
+   */
+  derivation?: DocumentDerivation | null
+  // ── Pre-`derivation` lineage, still written, now declared ──
+  // These were on the wire long before this interface acknowledged them, and
+  // `resolveDerivation` reads them for documents that predate `derivation`.
+  // Both prototype ids are written as a REAL stored null (not an omitted key)
+  // when a prototype was built from only one of the two, hence `| null`.
+  /** The PRD a prototype was built from. */
+  source_prd_id?: string | null
+  /** The PR/FAQ a prototype was built from. */
+  source_prfaq_id?: string | null
+  /** The document ids a merge output was asked to merge (requested, not used). */
+  source_documents?: string[]
+  /** The instructions a merge output was produced with. */
+  merge_instructions?: string
+  /** Feedback items analyzed, on a research report. */
+  feedback_count?: number
+  /**
+   * The prototype this one revises, and the feedback that drove the revision.
+   * "This replaces that" is a DIFFERENT relation from "this was built from
+   * that", so these are deliberately not part of `derivation`.
+   */
+  revised_from_id?: string | null
+  revision_feedback?: string
   created_at: string
   updated_at?: string
 }

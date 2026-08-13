@@ -1,0 +1,222 @@
+{
+  "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
+  "stacks": {
+    "VocApiStack": {
+      "templateSha256": "149d573c20a51a6a3634a44038d3a1b4ab0cdd38e75a019af9f3a07e7a6f3bf4",
+      "names": {
+        "physicalNames": [
+          "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
+          "AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer",
+          "AWS::ApiGateway::RestApi Name = voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::ApiGateway::UsagePlan UsagePlanName = voc-mcp-throttle-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-chat-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-feedback-form-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-integrations-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-job-document-generator-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-job-document-merger-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-job-persona-generator-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-job-persona-importer-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-logs-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-manual-import-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-mcp-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-mcp-token-authorizer-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-metrics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-projects-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-s3-import-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-settings-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-users-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-feedback-form-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-integrations-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-job-document-generator-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-job-document-merger-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-job-persona-generator-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-job-persona-importer-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-logs-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-manual-import-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-mcp-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-mcp-authorizer-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-metrics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-projects-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-s3-import-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-settings-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-users-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-document-workflow-<AWS::AccountId>-<AWS::Region>",
+          "AWS::StepFunctions::StateMachine StateMachineName = voc-document-workflow-<AWS::AccountId>-<AWS::Region>"
+        ],
+        "exportNames": [],
+        "policyResources": [
+          "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-*-schedule*",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-*",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-webscraper-*",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-manual-import-processor-*"
+        ],
+        "environmentNames": [
+          "MANUAL_IMPORT_PROCESSOR_FUNCTION = voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>",
+          "POWERTOOLS_SERVICE_NAME = voc-chat-api",
+          "POWERTOOLS_SERVICE_NAME = voc-data-explorer-api",
+          "POWERTOOLS_SERVICE_NAME = voc-feedback-form-api",
+          "POWERTOOLS_SERVICE_NAME = voc-integrations-api",
+          "POWERTOOLS_SERVICE_NAME = voc-job-document-generator",
+          "POWERTOOLS_SERVICE_NAME = voc-job-document-merger",
+          "POWERTOOLS_SERVICE_NAME = voc-job-persona-generator",
+          "POWERTOOLS_SERVICE_NAME = voc-job-persona-importer",
+          "POWERTOOLS_SERVICE_NAME = voc-logs-api",
+          "POWERTOOLS_SERVICE_NAME = voc-manual-import-api",
+          "POWERTOOLS_SERVICE_NAME = voc-manual-import-processor",
+          "POWERTOOLS_SERVICE_NAME = voc-mcp-api",
+          "POWERTOOLS_SERVICE_NAME = voc-metrics-api",
+          "POWERTOOLS_SERVICE_NAME = voc-projects-api",
+          "POWERTOOLS_SERVICE_NAME = voc-s3-import-api",
+          "POWERTOOLS_SERVICE_NAME = voc-scrapers-api",
+          "POWERTOOLS_SERVICE_NAME = voc-settings-api",
+          "POWERTOOLS_SERVICE_NAME = voc-users-api",
+          "WEBSCRAPER_FUNCTION_NAME = voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>"
+        ]
+      }
+    },
+    "VocCoreStack": {
+      "templateSha256": "fe7c4c9e0e28570ee0a78d5d0511ac214393a11288e4730777ab8eb516899f44",
+      "names": {
+        "physicalNames": [
+          "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Cognito::UserPool UserPoolName = voc-user-pool-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Cognito::UserPoolClient ClientName = voc-web-client-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Cognito::UserPoolDomain Domain = voc-<AWS::AccountId>-<AWS::Region>",
+          "AWS::DynamoDB::Table TableName = voc-aggregates-<AWS::AccountId>-<AWS::Region>",
+          "AWS::DynamoDB::Table TableName = voc-conversations-<AWS::AccountId>-<AWS::Region>",
+          "AWS::DynamoDB::Table TableName = voc-feedback-<AWS::AccountId>-<AWS::Region>",
+          "AWS::DynamoDB::Table TableName = voc-idempotency-<AWS::AccountId>-<AWS::Region>",
+          "AWS::DynamoDB::Table TableName = voc-jobs-<AWS::AccountId>-<AWS::Region>",
+          "AWS::DynamoDB::Table TableName = voc-projects-<AWS::AccountId>-<AWS::Region>",
+          "AWS::DynamoDB::Table TableName = voc-watermarks-<AWS::AccountId>-<AWS::Region>",
+          "AWS::KMS::Alias AliasName = alias/voc-datalake-key-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-admin-bootstrap-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-cdn-signing-keys-<AWS::AccountId>-<AWS::Region>",
+          "AWS::S3::Bucket BucketName = voc-access-logs-<AWS::AccountId>-<AWS::Region>",
+          "AWS::S3::Bucket BucketName = voc-frontend-<AWS::AccountId>-<AWS::Region>",
+          "AWS::S3::Bucket BucketName = voc-raw-data-<AWS::AccountId>-<AWS::Region>",
+          "AWS::SecretsManager::Secret Name = voc-cdn-signing-key-<AWS::AccountId>-<AWS::Region>"
+        ],
+        "exportNames": [
+          "VocCoreStack:ExportsOutputFnGetAttAggregatesTable0F8EFB12Arn569244F4",
+          "VocCoreStack:ExportsOutputFnGetAttConversationsTableCD91EB96Arn4A2B28C6",
+          "VocCoreStack:ExportsOutputFnGetAttFeedbackTableF528636CArn024BA60E",
+          "VocCoreStack:ExportsOutputFnGetAttFeedbackTableF528636CStreamArnFE6812D2",
+          "VocCoreStack:ExportsOutputFnGetAttFrontendDistributionE6EAF405DomainNameBCB0DC7A",
+          "VocCoreStack:ExportsOutputFnGetAttIdempotencyTable22A5A209Arn796E3A97",
+          "VocCoreStack:ExportsOutputFnGetAttJobsTable1970BC16ArnC40C1624",
+          "VocCoreStack:ExportsOutputFnGetAttProjectsTableAA0A2089ArnA2260F04",
+          "VocCoreStack:ExportsOutputFnGetAttRawDataBucket57F26C03Arn307EA583",
+          "VocCoreStack:ExportsOutputFnGetAttVocIdentityPoolId9B6189CA",
+          "VocCoreStack:ExportsOutputFnGetAttVocKmsKeyDC572AD1Arn80682C77",
+          "VocCoreStack:ExportsOutputFnGetAttVocUserPool8153B431Arn76E5BFD2",
+          "VocCoreStack:ExportsOutputFnGetAttWatermarksTable48C36C42ArnC9FAD2C2",
+          "VocCoreStack:ExportsOutputFnGetAttWebsiteBucket75C24D94ArnD093C6EC",
+          "VocCoreStack:ExportsOutputRefAccessLogsBucket8398268993F214BC",
+          "VocCoreStack:ExportsOutputRefAggregatesTable0F8EFB129CB80975",
+          "VocCoreStack:ExportsOutputRefCdnSigningKeySecret1F5BD0A95EE94953",
+          "VocCoreStack:ExportsOutputRefCdnSigningPublicKey67AE99272D6BC2F5",
+          "VocCoreStack:ExportsOutputRefConversationsTableCD91EB96EE2E4585",
+          "VocCoreStack:ExportsOutputRefFeedbackTableF528636C490E5371",
+          "VocCoreStack:ExportsOutputRefFrontendDistributionE6EAF4056C7B575E",
+          "VocCoreStack:ExportsOutputRefIdempotencyTable22A5A209F6C0179A",
+          "VocCoreStack:ExportsOutputRefJobsTable1970BC16EDB4A824",
+          "VocCoreStack:ExportsOutputRefProjectsTableAA0A2089BD3C4802",
+          "VocCoreStack:ExportsOutputRefRawDataBucket57F26C0354920F72",
+          "VocCoreStack:ExportsOutputRefVocUserPool8153B431CCBEE992",
+          "VocCoreStack:ExportsOutputRefVocUserPoolVocWebClient7C73DABFF26A108F",
+          "VocCoreStack:ExportsOutputRefWatermarksTable48C36C42F5B0CC7C",
+          "VocCoreStack:ExportsOutputRefWebsiteBucket75C24D94B5689ED3",
+          "VocFrontendDomainName"
+        ],
+        "policyResources": [
+          "arn:aws:lambda:us-east-1:111111111111:function:*voc-chat-stream*"
+        ],
+        "environmentNames": []
+      }
+    },
+    "VocIngestionStack": {
+      "templateSha256": "477259a9981bade27ceec96e1f1363b4871700e0e89ff1173aac51cb9b92e51e",
+      "names": {
+        "physicalNames": [
+          "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Events::Rule Name = voc-ingest-app_reviews_ios-schedule-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Events::Rule Name = voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-ingestor-synthetic_reviews-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-synthetic_reviews-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
+          "AWS::S3::Bucket BucketName = voc-import-<AWS::AccountId>-<AWS::Region>",
+          "AWS::SQS::Queue QueueName = voc-processing-dlq-<AWS::AccountId>-<AWS::Region>",
+          "AWS::SQS::Queue QueueName = voc-processing-queue-<AWS::AccountId>-<AWS::Region>",
+          "AWS::SecretsManager::Secret Name = voc-datalake/api-credentials-<AWS::AccountId>-<AWS::Region>"
+        ],
+        "exportNames": [
+          "VocIngestionStack:ExportsOutputFnGetAttProcessingQueue6DC600C3ArnEF236E7B",
+          "VocIngestionStack:ExportsOutputFnGetAttS3ImportBucket676867E6ArnC6897B9B",
+          "VocIngestionStack:ExportsOutputRefProcessingQueue6DC600C3BF6B2149",
+          "VocIngestionStack:ExportsOutputRefS3ImportBucket676867E6394A2C6C",
+          "VocIngestionStack:ExportsOutputRefVocApiSecrets2054A4655D3D7F49"
+        ],
+        "policyResources": [],
+        "environmentNames": [
+          "POWERTOOLS_SERVICE_NAME = voc-ingestion"
+        ]
+      }
+    },
+    "VocProcessingStack": {
+      "templateSha256": "18fde97c1540237227e2e168b01da842c18d2f50fc95700445096ac83ad94a42",
+      "names": {
+        "physicalNames": [
+          "AWS::Lambda::Function FunctionName = voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-feedback-processor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-research-step-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-feedback-processor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-research-step-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-research-workflow-<AWS::AccountId>-<AWS::Region>",
+          "AWS::StepFunctions::StateMachine StateMachineName = voc-research-workflow-<AWS::AccountId>-<AWS::Region>"
+        ],
+        "exportNames": [
+          "VocProcessingStack:ExportsOutputRefResearchStateMachine1BD6F16090FC0238"
+        ],
+        "policyResources": [],
+        "environmentNames": [
+          "POWERTOOLS_SERVICE_NAME = voc-aggregator",
+          "POWERTOOLS_SERVICE_NAME = voc-processor",
+          "POWERTOOLS_SERVICE_NAME = voc-research-step"
+        ]
+      }
+    },
+    "VocWebSearchStack": {
+      "templateSha256": "0adf6b54c157c7d81365195954a4863bb2dbf62d3124af074870d89afb9dc6cb",
+      "names": {
+        "physicalNames": [
+          "AWS::BedrockAgentCore::Gateway Name = voc-web-search-<AWS::AccountId>-<AWS::Region>"
+        ],
+        "exportNames": [
+          "VocWebSearchStack:ExportsOutputFnGetAttWebSearchGatewayGatewayArnBA97E0DC",
+          "VocWebSearchStack:ExportsOutputFnGetAttWebSearchGatewayGatewayUrlE01706EF"
+        ],
+        "policyResources": [],
+        "environmentNames": []
+      }
+    }
+  }
+}

@@ -26,6 +26,7 @@ from shared.exceptions import (
     ConfigurationError, NotFoundError, ValidationError, ServiceError,
 )
 from shared.tables import get_projects_table
+from shared.derivation import DERIVATION_FIELD, build_derivation
 
 
 projects_table = get_projects_table()
@@ -631,6 +632,12 @@ def generate_report(project_id: str, body: dict) -> dict:
         'document_type': 'product_report',
         'title': title,
         'content': content,
+        # This report is synthesized from the project's product-context block
+        # (structured fields + extracted internal documents) and nothing else —
+        # no project documents, no feedback, no personas. Recording that is what
+        # keeps it from reading as "built from nothing": the block is always
+        # present here, because generate_report refuses to run without it.
+        DERIVATION_FIELD: build_derivation(product_context_included=True),
         'created_at': now,
     }
     projects_table.put_item(Item=item)
