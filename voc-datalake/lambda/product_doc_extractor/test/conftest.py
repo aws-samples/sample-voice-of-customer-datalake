@@ -12,6 +12,7 @@ constants (house style for this repo's Lambdas).
 import io
 import json
 import os
+import re
 import struct
 
 import pytest
@@ -70,9 +71,11 @@ class FakeS3:
 class FakeTable:
     """A single-item DynamoDB table stand-in."""
 
-    def __init__(self, item: dict | None = None, get_error: Exception | None = None):
+    def __init__(self, item: dict | None = None, get_error: Exception | None = None,
+                 update_error: Exception | None = None):
         self.item = item
         self.get_error = get_error
+        self.update_error = update_error
         self.updates: list[dict] = []
 
     def get_item(self, Key=None, **_kwargs):
@@ -81,8 +84,36 @@ class FakeTable:
         return {'Item': self.item} if self.item is not None else {}
 
     def update_item(self, **kwargs):
+        # Recorded BEFORE raising: an assertion about a refused write needs to see
+        # what was attempted, which is the whole point of a conditional write.
         self.updates.append(kwargs)
+        if self.update_error is not None:
+            raise self.update_error
         return {}
+
+
+def conditional_check_failed(*, by: str = 'code') -> Exception:
+    """A stand-in for DynamoDB's ConditionalCheckFailedException.
+
+    Two shapes, because the handler recognises two signals and each can appear
+    alone. `by='code'` is what boto3 actually raises: a dynamically-built
+    ClientError subclass carrying the error code in `response` — the class name is
+    a botocore implementation detail, so the code is the dependable half.
+    `by='name'` is the shape a test double or a future botocore produces: the
+    right class name and no response payload.
+    """
+    if by == 'code':
+        error = type('ClientError', (Exception,), {})('An error occurred')
+        error.response = {'Error': {'Code': 'ConditionalCheckFailedException',
+                                    'Message': 'The conditional request failed'}}
+        return error
+    return type('ConditionalCheckFailedException', (Exception,), {})(
+        'The conditional request failed'
+    )
+
+
+#: The handler's SET aliases, `#k0`, `#k1`, ... paired with `:v0`, `:v1`, ...
+_SET_ALIAS = re.compile(r'^#k(\d+)$')
 
 
 def written_attributes(table: FakeTable) -> list[dict]:
@@ -91,12 +122,24 @@ def written_attributes(table: FakeTable) -> list[dict]:
     The handler must alias `status`/`error` (both DynamoDB reserved words), so
     the assertions have to read through the aliases rather than grep the
     expression string — which would also pass if the alias mapping were wrong.
+
+    Only the SET aliases are un-aliased. The same names map also carries the
+    aliases the CONDITION needs (`#doc_status`), which pair with `:s0`/`:s1`
+    rather than with a `:v<i>` and are not attributes being written. Matching the
+    `#k<i>` shape explicitly, instead of slicing two characters off every alias,
+    means a future condition alias cannot make this helper raise a KeyError that
+    reads like a handler bug.
     """
     out = []
     for call in table.updates:
         names = call['ExpressionAttributeNames']
         values = call['ExpressionAttributeValues']
-        out.append({name: values[f':v{alias[2:]}'] for alias, name in names.items()})
+        written = {}
+        for alias, name in names.items():
+            match = _SET_ALIAS.match(alias)
+            if match:
+                written[name] = values[f':v{match.group(1)}']
+        out.append(written)
     return out
 
 
@@ -183,9 +226,10 @@ def wire(extractor):
 
     def _wire(*, body: bytes = b'', doc: dict | None = None,
               model_text: str = 'description', settings: dict | None = None,
-              settings_error: Exception | None = None):
+              settings_error: Exception | None = None,
+              update_error: Exception | None = None):
         s3 = FakeS3(body)
-        projects = FakeTable(doc)
+        projects = FakeTable(doc, update_error=update_error)
         aggregates = FakeTable(settings, get_error=settings_error)
         bedrock = MagicMock()
         bedrock.converse.return_value = {

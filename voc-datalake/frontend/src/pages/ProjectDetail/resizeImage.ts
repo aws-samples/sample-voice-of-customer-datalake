@@ -26,8 +26,14 @@
  * `lambda/shared/image_limits.py`); neither is importable from the frontend
  * bundle, so the number is repeated here. It is a limit of the Converse API's
  * message shape rather than of any single model, so the admin model picker
- * cannot move it. The server enforces it regardless of what this module does —
- * staying under it here is what turns a rejected upload into a working one.
+ * cannot move it.
+ *
+ * PINNED to those two by `lambda/shared/test/test_image_limits_lockstep.py`,
+ * which reads this line as SOURCE TEXT — so keep it a plain
+ * `export const NAME = <number>` on one line. A CLIENT cap above the SERVER cap
+ * is not a cosmetic disagreement: the ladder below would happily stop at a size
+ * the API then refuses, which is exactly the "the upload appears to work, then
+ * 400s" failure this rung exists to remove.
  */
 export const MAX_IMAGE_BYTES = 3_750_000
 
@@ -37,6 +43,12 @@ export const MAX_IMAGE_BYTES = 3_750_000
  * Claude downscales anything larger than roughly this on the long edge before
  * the model ever sees it, so bytes spent above this buy nothing: they cost
  * upload time and cap headroom and are then thrown away server-side.
+ *
+ * NOT a limit, and it has no server-side counterpart to be pinned against — the
+ * server's pixel cap is MAX_IMAGE_DIMENSION_PX (8000), an entirely different
+ * number for an entirely different purpose. This one is a quality/cost target
+ * chosen from model behaviour, so nothing rejects an image for exceeding it. Do
+ * not "restore" a lockstep test for it by inventing a server constant to match.
  */
 export const MAX_IMAGE_EDGE_PX = 1568
 

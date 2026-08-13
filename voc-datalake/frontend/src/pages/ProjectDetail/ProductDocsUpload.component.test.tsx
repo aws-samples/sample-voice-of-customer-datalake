@@ -270,6 +270,112 @@ describe('DocsUpload', () => {
     expect(reason.textContent).not.toContain('·')
   })
 
+  it('resizes an image over the general file cap instead of refusing it', async () => {
+    // The general 10 MiB cap used to be applied before the resize, so a 12 MB
+    // screenshot was refused as "too large" even though the very next step would
+    // have brought it to a few hundred KB. An image's size is not decided until
+    // the ladder has run; the cap that governs it is the image cap, on the
+    // PREPARED blob, and the server enforces that one itself.
+    stubImaging(3000, 2000)
+    const user = userEvent.setup({ applyAccept: false })
+    const oversized = imageFile('big-screenshot.png', 'image/png', 12_000_000)
+    render(<DocsUpload projectId="proj-1" />)
+
+    await user.upload(getFileInput(), oversized)
+
+    await waitFor(() => expect(mockCreateUploadUrl).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(/too large \(>10 MB\)/i)).not.toBeInTheDocument()
+    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls[0][1])
+    expect(declared.sizeBytes).toBeLessThan(oversized.size)
+  })
+
+  it('still refuses a text file over the general file cap', async () => {
+    // The other half of the change: the cap was not removed, it was scoped. A
+    // .md has no resize path, so nothing downstream would rescue it — and the
+    // server would refuse it after the round trip.
+    const user = userEvent.setup({ applyAccept: false })
+    const huge = new File(['# notes'], 'handbook.md', { type: 'text/markdown' })
+    Object.defineProperty(huge, 'size', { value: 12_000_000 })
+    render(<DocsUpload projectId="proj-1" />)
+
+    await user.upload(getFileInput(), huge)
+
+    expect(await screen.findByText(/too large \(>10 MB\): handbook\.md/i)).toBeInTheDocument()
+    expect(mockCreateUploadUrl).not.toHaveBeenCalled()
+  })
+
+  it('names a pasted JPEG .jpg, the extension the rest of the app uses', async () => {
+    // The extension came from the MIME subtype, so image/jpeg produced
+    // `pasted-….jpeg` while ALLOWED_MIME here, IMAGE_EXTENSIONS in resizeImage.ts
+    // and ALLOWED_CONTENT_TYPES server-side all say `.jpg`. Reachable because an
+    // image already inside both limits passes through resize untouched and keeps
+    // whatever name it was given.
+    stubImaging(400, 300)
+    const pasted = new File([new Uint8Array(512)], '', { type: 'image/jpeg' })
+    render(<DocsUpload projectId="proj-1" />)
+    await waitFor(() => expect(mockListProductDocs).toHaveBeenCalled())
+
+    fireEvent.paste(dropZone(), {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'image/jpeg', getAsFile: () => pasted }],
+        files: [pasted],
+      },
+    })
+
+    await waitFor(() => expect(mockCreateUploadUrl).toHaveBeenCalledTimes(1))
+    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls[0][1])
+    expect(declared.filename).toMatch(/^pasted-.+\.jpg$/)
+    expect(declared.filename).not.toMatch(/\.jpeg$/)
+  })
+
+  it('opens the file picker exactly once per keyboard activation', async () => {
+    // The drop zone is focusable so a keyboard user can reach it and paste. That
+    // focus stop then has to be activatable, and there must be exactly ONE
+    // activation path: a <label> wrapping the input can synthesize its own click
+    // on the control, and a nested input's programmatic click bubbles back into
+    // the wrapper's onClick. Either arrangement opens two dialogs. Counted on the
+    // input's own click, which is what actually opens the picker.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const clicks = vi.fn()
+    getFileInput().addEventListener('click', clicks)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+
+    fireEvent.keyDown(zone, { key: 'Enter' })
+    expect(clicks).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(zone, { key: ' ' })
+    expect(clicks).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens the file picker exactly once per pointer activation', async () => {
+    // Same guarantee for the mouse, and the reason the input is a SIBLING of the
+    // drop zone rather than a child: input.click() dispatches a bubbling click,
+    // so a nested input would re-enter the zone's own onClick.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const clicks = vi.fn()
+    getFileInput().addEventListener('click', clicks)
+
+    fireEvent.click(screen.getByRole('button', { name: /drop files here/i }))
+
+    expect(clicks).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes the drop zone as a button with an accessible name', async () => {
+    // A focusable div with no role announces as nothing; the name comes from the
+    // existing drop-zone string rather than a second one to translate.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+
+    expect(zone).toHaveAttribute('tabIndex', '0')
+    // Not a <label>: a label's own activation behaviour is the second path this
+    // restructure removes.
+    expect(zone.tagName).not.toBe('LABEL')
+  })
+
   it('tells the user that PDF and Word are not supported yet', async () => {
     render(<DocsUpload projectId="proj-1" />)
     await screen.findByText(/no documents yet/i)

@@ -4,13 +4,17 @@ Same shape of problem as ``test_avatar_image_model_lockstep.py``, and the same
 approach: read the other language as SOURCE TEXT rather than importing it, so a
 Python test can pin a TypeScript constant.
 
-Two sets of numbers are pinned here.
+Three sets of numbers are pinned here.
 
 1. The Bedrock Converse image limits. ``lib/utils/model-allowlist.ts`` is the
    source of truth (it sits next to the model allowlist the limits are argued
    against) and ``lambda/shared/image_limits.py`` mirrors them for the Lambdas.
 
-2. ``MAX_FILE_BYTES``, the upload cap. This duplication PREDATES visual
+2. ``MAX_IMAGE_BYTES`` in ``frontend/src/pages/ProjectDetail/resizeImage.ts`` —
+   a THIRD copy of the image cap, and the one the browser's downscale ladder
+   stops at. See TestBrowserImageCapLockstep for why its direction matters.
+
+3. ``MAX_FILE_BYTES``, the upload cap. This duplication PREDATES visual
    grounding: ``lambda/api/product_context.py`` and
    ``frontend/src/pages/ProjectDetail/ProductDocsUpload.tsx`` have each carried
    their own ``10 * 1024 * 1024`` with nothing holding them together, so lowering
@@ -51,21 +55,25 @@ def _ts_num_const(name: str) -> int:
 
 
 FRONTEND_SOURCE = 'frontend/src/pages/ProjectDetail/ProductDocsUpload.tsx'
+RESIZE_SOURCE = 'frontend/src/pages/ProjectDetail/resizeImage.ts'
 
 
-def _frontend_int_const(name: str) -> int:
-    """Read a plain-multiplication int constant out of a .tsx file.
+def _frontend_int_const(name: str, source: str = FRONTEND_SOURCE) -> int:
+    """Read a plain-multiplication int constant out of a frontend source file.
 
     Handles ``const NAME = 10 * 1024 * 1024`` rather than requiring a literal, so
-    the frontend keeps the form that documents where the number comes from.
+    the frontend keeps the form that documents where the number comes from, and
+    numeric separators (``3_750_000``) for the same reason. `source` is a
+    parameter because the caps are spread over two files in the same directory —
+    a .tsx and a .ts — and the reading is identical for both.
     """
-    path = _repo_root() / FRONTEND_SOURCE
+    path = _repo_root() / source
     if not path.is_file():
         # A backend test reaching into the frontend tree. Where only the lambda
         # sources are present (packaging, a partial checkout) there is nothing to
         # compare, and skipping beats a failure that says nothing about the code
         # under test. Same precedent as test_feedback_page_limit_lockstep.py.
-        pytest.skip(f'{FRONTEND_SOURCE} not present in this tree')
+        pytest.skip(f'{source} not present in this tree')
     # Trailing `;` optional: prettier's config here omits it, but a formatting
     # change must not turn this into a failure about the number being missing.
     match = re.search(
@@ -73,7 +81,7 @@ def _frontend_int_const(name: str) -> int:
         path.read_text(encoding='utf-8'),
         re.MULTILINE,
     )
-    assert match, f'{name} not found in {FRONTEND_SOURCE}'
+    assert match, f'{name} not found in {source}'
     value = 1
     for factor in match.group(1).split('*'):
         value *= int(factor.strip().replace('_', ''))
@@ -125,6 +133,51 @@ class TestConverseImageLimitsLockstep:
 
         assert MAX_IMAGE_BYTES == 3_750_000
         assert MAX_IMAGE_BYTES < 3_932_160
+
+
+class TestBrowserImageCapLockstep:
+    """`resizeImage.ts` carries a THIRD copy of the image byte cap.
+
+    The browser downscale ladder stops at the first rung under its own
+    ``MAX_IMAGE_BYTES``, and the API then refuses anything over the server's. If
+    the client's copy is ever the LARGER of the two, the ladder happily returns a
+    blob it considers fine and the upload 400s at the boundary — "the upload
+    appears to work, then fails", which is the whole defect this rung removes.
+    The reverse direction is merely wasteful (needless re-encoding), so both are
+    pinned by equality rather than by an inequality.
+    """
+
+    def test_the_browser_image_cap_matches_the_server(self):
+        from shared.image_limits import MAX_IMAGE_BYTES
+
+        client = _frontend_int_const('MAX_IMAGE_BYTES', RESIZE_SOURCE)
+        assert client == MAX_IMAGE_BYTES, (
+            f'{RESIZE_SOURCE} caps images at {client} but the server enforces '
+            f'{MAX_IMAGE_BYTES}. A client cap ABOVE the server one lets the '
+            'resize ladder finish on a blob the API then rejects; below it, the '
+            'browser re-encodes for no reason. Change both, or neither.'
+        )
+
+    def test_it_is_the_same_number_the_cdk_source_declares(self):
+        """Transitively implied by the test above, asserted anyway: it names the
+        actual source of truth, so a failure points at the file to edit rather
+        than at the Python mirror that happens to sit between them."""
+        assert _frontend_int_const('MAX_IMAGE_BYTES', RESIZE_SOURCE) == _ts_num_const('MAX_IMAGE_BYTES')
+
+    def test_the_browser_pixel_target_is_deliberately_not_pinned(self):
+        """MAX_IMAGE_EDGE_PX (1568) has NO server counterpart and must not grow
+        one. It is a quality/cost target taken from model behaviour — nothing
+        rejects an image for exceeding it — whereas the server's pixel limit,
+        MAX_IMAGE_DIMENSION_PX, is a hard cap at an entirely different value. This
+        test exists so that "the edge px isn't pinned" reads as a decision rather
+        than an oversight, and fails if the two are ever made equal, which would
+        only happen by someone pinning one to the other.
+        """
+        from shared.image_limits import MAX_IMAGE_DIMENSION_PX
+
+        browser_target = _frontend_int_const('MAX_IMAGE_EDGE_PX', RESIZE_SOURCE)
+        assert browser_target == 1568
+        assert browser_target != MAX_IMAGE_DIMENSION_PX
 
 
 class TestUploadCapLockstep:

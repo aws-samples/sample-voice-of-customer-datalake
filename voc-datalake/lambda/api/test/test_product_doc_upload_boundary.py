@@ -202,6 +202,48 @@ class TestSizeCapsArePerType:
                             'size_bytes': 0})
         table.put_item.assert_not_called()
 
+    @pytest.mark.parametrize('size_bytes', [
+        'not-a-number',
+        '',
+        {'bytes': 1000},
+        [1000],
+        float('nan'),
+        float('inf'),
+        None,
+    ])
+    def test_a_non_numeric_declared_size_is_a_client_error_not_a_crash(self, size_bytes):
+        """`size_bytes` is now signed into the presigned PUT as ContentLength, so
+        it is part of a security control rather than an advisory field — and a bare
+        `int(value)` over a JSON body raises TypeError / ValueError / OverflowError
+        on each of these, which surfaces as a 500 for what is plainly a bad
+        request. ApiError with a 400 is the whole assertion; the code path that
+        produced it is not.
+        """
+        error, table = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                                'size_bytes': size_bytes})
+        assert error.status_code == 400
+        table.put_item.assert_not_called()
+
+    def test_the_bad_size_error_reads_like_every_other_bad_size(self):
+        """A caller should not need a second vocabulary for "that is not a size":
+        the message is the one a zero or an over-cap value gets."""
+        unreadable, _ = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                                 'size_bytes': 'enormous'})
+        zero, _ = _reject({'filename': 'screen.png', 'content_type': 'image/png',
+                           'size_bytes': 0})
+        assert unreadable.message == zero.message
+
+    def test_a_numeric_string_is_still_accepted(self):
+        """Coercing defensively must not become coercing strictly: a client that
+        sends "50000" was working before and has to keep working."""
+        result, table, s3 = _create({'filename': 'screen.png', 'content_type': 'image/png',
+                                     'size_bytes': '50000'})
+        assert result['doc_id']
+        # And the SIGNED number is the integer, not the string — a str
+        # ContentLength would be signed and then never match the body's length.
+        assert s3.generate_presigned_url.call_args.kwargs['Params']['ContentLength'] == 50_000
+        assert table.put_item.call_args.kwargs['Item']['size_bytes'] == 50_000
+
     def test_the_cap_is_reported_in_mb_not_raw_bytes(self):
         from shared.image_limits import MAX_IMAGE_BYTES
 

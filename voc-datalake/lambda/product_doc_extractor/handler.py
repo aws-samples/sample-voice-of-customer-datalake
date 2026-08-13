@@ -5,8 +5,12 @@ WHAT IT DOES
     Fires on every object created under `projects/` in the raw-data bucket, keeps
     only the keys that are product-doc uploads, and turns each one into plain text
     at `projects/{project_id}/product_docs/extracted/{doc_id}.txt`. The DynamoDB
-    record written by `lambda/api/product_context.py::create_upload_url` is then
-    moved out of `pending` into exactly one terminal state, `ready` or `failed`.
+    record written by `lambda/api/product_context.py::create_upload_url` walks
+    `pending` -> `extracting` -> exactly one terminal state, `ready` or `failed`.
+
+    Every write is conditional on the record still being NON-terminal, because
+    the API's read path can fail a stalled record first and a late extraction must
+    not undo that — see _update_doc.
 
     Text (.md/.txt): reading the bytes IS the extraction — they are copied through
     byte-for-byte.
@@ -70,6 +74,11 @@ RAW_KEY_PATTERN = re.compile(
 )
 
 DOC_SK_PREFIX = 'PRODUCT_DOC#'
+
+# The statuses this handler may read from AND write over. `ready` and `failed`
+# are terminal and deliberately absent: see _update_doc for why writing over a
+# terminal record is worse than losing this extraction's result.
+NON_TERMINAL_STATUSES = ('pending', 'extracting')
 
 # Content types this handler can turn into text, mirroring ALLOWED_CONTENT_TYPES
 # in lambda/api/product_context.py (the upload boundary refuses everything else,
@@ -365,28 +374,111 @@ def _get_doc(project_id: str, doc_id: str) -> dict | None:
         return None
 
 
-def _update_doc(project_id: str, doc_id: str, values: dict) -> None:
-    """Write terminal state. `status` and `error` are DynamoDB reserved words, so
-    they are aliased — same pattern as shared/jobs.py::update_job_status.
+def _is_conditional_check_failure(error: Exception) -> bool:
+    """True for DynamoDB's ConditionalCheckFailedException, however it arrives.
 
-    Conditional on the record still existing, so a document deleted mid-flight
-    is not resurrected as a key-only item. ConditionalCheckFailedException is
-    therefore expected and swallowed along with everything else: nothing useful
-    remains to do with the failure at this point.
+    The error CODE in the response is the dependable signal — boto3's resource
+    layer raises a dynamically-built ClientError subclass, so its type name is a
+    botocore implementation detail. The type name is checked as well because a
+    test double raises the named exception with no response payload.
+    """
+    response = getattr(error, 'response', None)
+    code = (response.get('Error') or {}).get('Code') if isinstance(response, dict) else None
+    return (code == 'ConditionalCheckFailedException'
+            or type(error).__name__ == 'ConditionalCheckFailedException')
+
+
+def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
+    """Say WHICH of the two races refused the write. They mean different things.
+
+    A record that is simply gone was deleted mid-flight — ordinary housekeeping,
+    logged at INFO. A record that is already terminal is not: the API decided
+    this document had stalled and told the user to upload it again, so the result
+    this invocation just computed is being discarded on purpose. That has to be
+    greppable on its own rather than folded into the benign line, because it is
+    also the signal that extractions are running past
+    EXTRACTION_STALL_SECONDS and the two numbers need looking at.
+
+    Costs one extra get_item, and only on a path that is already exceptional.
+    """
+    current = _get_doc(project_id, doc_id)
+    if current is None:
+        logger.info(f'Product doc {doc_id} was deleted mid-extraction; write skipped')
+        return
+    logger.warning(
+        f'Product doc {doc_id} is already {current.get("status")}; refusing to '
+        f'overwrite {sorted(values)} onto it - the API already gave this document '
+        f'up as stalled and told the user to upload it again'
+    )
+
+
+def _update_doc(project_id: str, doc_id: str, values: dict) -> None:
+    """Write `values` onto the record, but ONLY while it is still non-terminal.
+
+    `status` and `error` are DynamoDB reserved words, so they are aliased — same
+    pattern as shared/jobs.py::update_job_status. The condition needs its own
+    alias for `status` because `status` is usually also one of `values`, and an
+    alias may not be reused across an update and a condition clause.
+
+    TWO conditions, guarding two different races:
+
+    `attribute_exists(pk)` — the user can delete a document while its extraction
+    is in flight, and an unconditional update_item would resurrect it as a
+    key-only item.
+
+    `#doc_status IN (:pending, :extracting)` — product_context.py::_fail_if_stalled
+    transitions a record that has not been extracted within
+    EXTRACTION_STALL_SECONDS to `failed`, with a message telling the user to
+    delete the document and upload it again. An extraction that finishes after
+    that point (a Lambda retry, a cold-start pileup, Bedrock latency) must not
+    overwrite that `failed` with `ready`, nor reset its `error` back to None.
+
+    Leaving a late success as `failed` costs the user one re-upload. Flipping it
+    to `ready` contradicts advice they have already been given and acted on, and
+    silently attaches extracted text to a document the UI has already declared
+    dead — so the failure that is cheaper to nobody is the one that is chosen.
     """
     names = {f'#k{i}': k for i, k in enumerate(values)}
     vals = {f':v{i}': v for i, v in enumerate(values.values())}
     expression = 'SET ' + ', '.join(f'#k{i} = :v{i}' for i in range(len(values)))
+    status_placeholders = [f':s{i}' for i in range(len(NON_TERMINAL_STATUSES))]
     try:
         _table(PROJECTS_TABLE).update_item(
             Key={'pk': f'PROJECT#{project_id}', 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
             UpdateExpression=expression,
-            ConditionExpression='attribute_exists(pk)',
-            ExpressionAttributeNames=names,
-            ExpressionAttributeValues=vals,
+            ConditionExpression=(
+                'attribute_exists(pk) AND #doc_status IN '
+                f'({", ".join(status_placeholders)})'
+            ),
+            ExpressionAttributeNames={**names, '#doc_status': 'status'},
+            ExpressionAttributeValues={
+                **vals,
+                **dict(zip(status_placeholders, NON_TERMINAL_STATUSES)),
+            },
         )
-    except Exception as e:  # noqa: BLE001 - includes the benign deleted-record race
-        logger.warning(f'Could not update product doc {doc_id}: {e}')
+    except Exception as e:  # noqa: BLE001 - a bookkeeping write must not fail the batch
+        if _is_conditional_check_failure(e):
+            _log_refused_write(project_id, doc_id, values)
+        else:
+            logger.warning(f'Could not update product doc {doc_id}: {e}')
+
+
+def _mark_extracting(project_id: str, doc_id: str) -> None:
+    """Publish the in-flight state, once, before the slow work starts.
+
+    `extracting` was declared in three places and written in none: the UI renders
+    a distinct "Extracting…" badge for it (ProductDocsUpload.tsx), ProductDocStatus
+    lists it, and product_context.py's STALLABLE_STATUSES includes it — so its
+    stall branch could never be reached either. One extra update_item per
+    document makes all three mean something, and lets the user tell "still
+    uploading" from "being analysed", which for an image is a Bedrock call long
+    enough to be worth distinguishing.
+
+    Best-effort by construction: _update_doc swallows its failures, so a lost
+    badge write cannot abort the extraction that follows. `pending` is stallable
+    too, so a document whose badge never landed is not stranded either.
+    """
+    _update_doc(project_id, doc_id, {'status': 'extracting'})
 
 
 def _mark_failed(project_id: str, doc_id: str, message: str) -> None:
@@ -546,11 +638,17 @@ def _process_record(record: dict) -> None:
         # Deleted mid-flight, or an object nobody registered. Nothing to update.
         logger.info(f'No product doc record for {doc_id}; skipping')
         return
-    if doc.get('status') in ('ready', 'failed'):
-        # Already terminal (a re-delivered event, or a manual re-upload of the
-        # same key). Re-running would re-bill a Bedrock call for no new answer.
+    if doc.get('status') not in NON_TERMINAL_STATUSES:
+        # Terminal already (a re-delivered event, a manual re-upload of the same
+        # key, or the API having failed it as stalled). Re-running would re-bill a
+        # Bedrock call for an answer _update_doc would then refuse to store, so
+        # this check and that condition are the same set on purpose.
         logger.info(f'Product doc {doc_id} is already {doc.get("status")}; skipping')
         return
+
+    # Before the S3 reads and the Bedrock call, not after: the whole value of the
+    # state is that it is visible WHILE the slow part runs.
+    _mark_extracting(project_id, doc_id)
 
     content_type = str(doc.get('content_type') or '')
     try:

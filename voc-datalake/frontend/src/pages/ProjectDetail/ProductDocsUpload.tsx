@@ -37,6 +37,19 @@ const ALLOWED_MIME = {
   'text/plain': '.txt',
 } as const
 
+type AllowedMime = keyof typeof ALLOWED_MIME
+
+/**
+ * Narrows a MIME string to a key of ALLOWED_MIME.
+ *
+ * A type guard rather than a cast, so the two places that index into the map are
+ * checked against it at runtime instead of asserting their way past the
+ * compiler — `file.type` is browser-supplied and can be anything, including ''.
+ */
+function isAllowedMime(value: string): value is AllowedMime {
+  return Object.hasOwn(ALLOWED_MIME, value)
+}
+
 /**
  * MIME types plus extensions. The MIME types are what the picker filters on
  * (same shape as ImportPersonaModal), and the extensions are there because
@@ -88,9 +101,15 @@ function pastedImages(clipboard: DataTransfer | null): readonly File[] {
  */
 function withSyntheticName(file: File): File {
   if (file.name) return file
-  const subtype = file.type.startsWith('image/') ? file.type.slice('image/'.length) : 'png'
+  // The extension comes from ALLOWED_MIME, not from the MIME subtype: the
+  // subtype of image/jpeg is "jpeg", while every other name in this app for that
+  // type ends `.jpg` (ALLOWED_MIME here, IMAGE_EXTENSIONS in resizeImage.ts,
+  // ALLOWED_CONTENT_TYPES server-side). A pasted JPEG already inside both limits
+  // passes through resize untouched and keeps whatever name it is given here, so
+  // the disagreement is reachable rather than theoretical.
+  const ext = isAllowedMime(file.type) ? ALLOWED_MIME[file.type] : '.png'
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  return new File([file], `pasted-${stamp}.${subtype}`, { type: file.type })
+  return new File([file], `pasted-${stamp}${ext}`, { type: file.type })
 }
 
 export function DocsUpload({ projectId }: { readonly projectId: string }) {
@@ -141,13 +160,20 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
   }, [inFlight, refresh])
 
   const uploadOne = useCallback(async (file: File) => {
-    if (!(file.type in ALLOWED_MIME)) {
+    if (!isAllowedMime(file.type)) {
       setUploadError(t('product.upload.errors.unsupportedType', {
         name: file.name, type: file.type || 'unknown', accepted: ACCEPTED_LABEL,
       }))
       return
     }
-    if (file.size > MAX_FILE_BYTES) {
+    // NON-IMAGES only. An image's size is not yet decided at this point: the
+    // resize ladder below re-encodes it, and what the server judges is the
+    // PREPARED blob against the image cap. Applying the general cap here refused
+    // a 12 MB screenshot as "too large" when the very next step would have
+    // brought it to a few hundred KB — a refusal for a limit that was never going
+    // to be the binding one. Images too big for the ladder still fail, with the
+    // message that names the real reason ('imageTooLarge').
+    if (!file.type.startsWith('image/') && file.size > MAX_FILE_BYTES) {
       setUploadError(t('product.upload.errors.tooLarge', { name: file.name }))
       return
     }
@@ -199,6 +225,9 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
     handleFiles(images.map(withSyntheticName))
   }, [handleFiles])
 
+  // The single activation path for the hidden file input — see the drop zone.
+  const openPicker = useCallback(() => { fileInput.current?.click() }, [])
+
   const onDelete = useCallback(async (docId: string) => {
     try {
       await projectsApi.deleteProductDoc(projectId, docId)
@@ -221,24 +250,41 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
       </div>
 
       {/*
-        Drag-and-drop wrapper. preventDefault on dragOver/dragEnter is required:
+        Drag-and-drop zone. preventDefault on dragOver/dragEnter is required:
         without it the browser falls back to "open the dropped file" and navigates
-        away from the app. The hidden file input still handles click-to-pick.
+        away from the app.
+
+        role="button" on a div rather than a <label> wrapping the input, and the
+        input is a SIBLING rather than a child. Both details are about there being
+        exactly ONE way to open the picker per input modality:
+          - a <label> associated with a file input has its own activation
+            behaviour, which on some browsers synthesizes a click on the control;
+            adding an Enter/Space handler that also calls input.click() can then
+            open two dialogs;
+          - if the input were nested, `input.click()` would bubble a click event
+            back up to this element's own onClick, which would call click() again.
+        A div with role="button" has no built-in keyboard activation, so onClick
+        (pointer) and onKeyDown (Enter/Space) are the only two paths and they
+        cannot fire for the same gesture. The div is still focusable, which is
+        what lets a keyboard user land here and paste — the input is
+        display:none and cannot take focus itself.
+
+        aria-label reuses the visible drop-zone string rather than introducing a
+        second one to translate; role="button" + that name is what makes the focus
+        stop announce as an activatable control.
       */}
-      <label
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={t('product.upload.dropZone')}
         className={`block border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
           dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
         }`}
-        // Focusable so a keyboard user can reach the drop zone and paste into
-        // it: the file input it wraps is display:none and therefore cannot take
-        // focus itself, which would leave paste with nowhere to land. Enter and
-        // Space then have to open the picker, or the focus stop would be a dead
-        // end for anyone not using a mouse.
-        tabIndex={0}
+        onClick={openPicker}
         onKeyDown={(e) => {
           if (e.key !== 'Enter' && e.key !== ' ') return
           e.preventDefault()
-          fileInput.current?.click()
+          openPicker()
         }}
         onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
@@ -250,19 +296,19 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
           handleFiles(e.dataTransfer.files)
         }}
       >
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          accept={ACCEPT_ATTR}
-          onChange={(e) => handleFiles(e.target.files)}
-          className="hidden"
-        />
         <div className="text-sm text-gray-600">
           <Upload size={20} className="mx-auto text-gray-400 mb-1" />
           {t('product.upload.dropZone')}
         </div>
-      </label>
+      </div>
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        accept={ACCEPT_ATTR}
+        onChange={(e) => handleFiles(e.target.files)}
+        className="hidden"
+      />
 
       {/* PDF/DOCX are named explicitly rather than just omitted: they used to be
           accepted here, so a user who uploaded one before needs to read "not
