@@ -219,6 +219,28 @@ interface FinishedStreamValues {
  * Extracted from the finish-effect so the effect body stays a plain
  * edge-detect-then-act, with the message-shaping branches out of the way.
  *
+ * The early return below drops the error alongside the partial text, which
+ * looks like it could swallow a server-reported reason on the cancel path. It
+ * cannot, today, and the reason is an invariant of the *server* rather than of
+ * this function — so it is written down here rather than left to be rediscovered:
+ *
+ * - The only emitter of `type: 'error'` is `sendErrorAndClose`
+ *   (`lambda/stream/src/lib/streaming.ts:81-95`), which writes the error, then
+ *   `done`, then `stream.end()` in one batch. The client therefore parses all
+ *   three from the same read and leaves the `for await` in the same tick, so the
+ *   `isStreaming` falling edge fires while the origin ref is still set and the
+ *   error IS saved by the `else if (error…)` branch. No human click can land in
+ *   between.
+ * - The other way `error` gets set is `useStreamChat`'s catch, which returns
+ *   early on `signal.aborted` — so a post-cancel failure sets nothing at all.
+ *
+ * Consequence, and the thing to check before trusting this again: if the server
+ * ever gains a mid-stream *non-fatal* `error` emitter — one that reports a
+ * reason and leaves the stream open, the way `persona_error` already does for
+ * `completedTurns` — this discard becomes reachable and the cancel path has to
+ * be revisited. Nothing here changes that behaviour; it only states the
+ * precondition it relies on.
+ *
  * @param convId The origin conversation, or null when there is nothing to save
  *   — a cancelled stream (`handleCancel` nulls the ref) or a stream that never
  *   recorded an origin.
@@ -312,7 +334,7 @@ export default function Chat() {
   // them as dependencies.  activeConversationId is intentionally NOT stored
   // here: we capture it at send time (see originConversationIdRef below) so
   // that switching conversations mid-stream does not redirect the reply.
-  const latestRef = useRef({
+  const latestRef = useRef<FinishedStreamValues>({
     streamingText,
     thinkingText,
     streamError,

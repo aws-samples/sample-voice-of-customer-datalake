@@ -159,6 +159,35 @@ describe('ChatTab history payload', () => {
     expect(history[1].content).toBe('an unattributed answer')
   })
 
+  it('prefixes a single attributed reply, not only a merged roundtable run', async () => {
+    // The positive counterpart to the two negatives around it. An ordinary
+    // `@Priya …` mention is NOT roundtable, yet handleSend still resolves an
+    // active persona and chatFinalize stores it, so the name must reach the
+    // model here too — there is no merge to hide behind on this path.
+    useProjectChatStore.setState({
+      messagesByProject: {
+        proj_history: [
+          {
+            role: 'user',
+            content: 'a question',
+          },
+          {
+            role: 'assistant',
+            content: 'an answer',
+            activePersona: { name: 'Priya, CFO' },
+          },
+        ],
+      },
+    })
+
+    await sendAQuestion()
+
+    // Exact equality, deliberately: `toContain('Priya')` would also pass on a
+    // variant that collects names at the top of a block, or that emits a
+    // different separator, so it would not catch the regression this pins.
+    expect(sentHistory()[1].content).toBe('Priya, CFO: an answer')
+  })
+
   it('does not prefix a user turn even when one carries a persona', async () => {
     // `activePersona` is only meaningful on an assistant turn.  Prefixing a user
     // turn would put words in the user's mouth, so the guard is on role too.

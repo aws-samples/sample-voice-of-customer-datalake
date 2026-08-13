@@ -10,7 +10,33 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { describe, it, expect } from 'vitest'
-import { MAX_HISTORY_ENTRIES, buildHistory, type HistoryEntry } from './chat'
+import {
+  MAX_HISTORY_ENTRIES, MAX_INTERVIEW_HISTORY_ENTRIES, buildHistory, type HistoryEntry,
+} from './chat'
+
+/**
+ * Read a sibling package's source that a coupling assertion below is pinned to.
+ *
+ * Deliberately NOT skipped when the file is missing. A skipped lockstep is a
+ * silent lockstep, and silence is the failure these assertions exist to prevent,
+ * so an unreachable source is still a failure — just one that explains itself
+ * instead of surfacing as a bare ENOENT that says nothing about why a *frontend*
+ * test wants a file from another package. Same idiom as the neighbouring
+ * `api/streamLimits.lockstep.test.ts`.
+ *
+ * @param filePath The file to read.
+ * @param purpose What the caller pins, named in the message so the reader does
+ *   not have to work out which coupling broke.
+ */
+function readPinnedSource(filePath: string, purpose: string): string {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(
+      `Cannot read ${filePath} from ${process.cwd()}. This test pins ${purpose}, so it needs `
+      + 'both packages checked out and must run from the frontend package root.',
+    )
+  }
+  return fs.readFileSync(filePath, 'utf8')
+}
 
 /**
  * Where the server's history window now lives.
@@ -52,6 +78,42 @@ function extractServerWindow(source: string): number | null {
   const match = SERVER_WINDOW_PATTERN.exec(source)
   if (match?.[1] === undefined) return null
   return Number(match[1].replaceAll('_', ''))
+}
+
+/**
+ * Where the product interview's own, tighter window lives.
+ *
+ * A different endpoint from `/chat/stream`, and a bare literal rather than a
+ * named constant, so it needs its own reader. `ProductTab.interviewHistory.test`
+ * asserts the client cap against *itself*, which stays green if the Python side
+ * drops to 8 — this is the assertion that does not.
+ */
+const INTERVIEW_PATH = path.join(__dirname, '../../../lambda/api/product_context.py')
+
+/**
+ * Matches the interview slice, e.g. `for m in history[-12:]:`.
+ *
+ * Whitespace-tolerant inside the brackets because the slice is a literal the
+ * formatter is free to respell; the digits are what this test is about.
+ *
+ * `\b` before `history` is load-bearing in the *other* direction: it stops the
+ * pattern borrowing a slice of some other list. A `_` is a word character, so
+ * there is no boundary in `chat_history[`, and a differently-named list
+ * therefore yields null — the loud direction — rather than a plausible wrong
+ * number.
+ */
+const SERVER_INTERVIEW_WINDOW_PATTERN = /\bhistory\[\s*-(\d+)\s*:\s*\]/
+
+/**
+ * Pull the interview's history window out of `product_context.py`.
+ *
+ * Null when the slice is absent or respelled beyond recognition, which the
+ * caller turns into a loud failure rather than a vacuous pass.
+ */
+function extractInterviewWindow(source: string): number | null {
+  const match = SERVER_INTERVIEW_WINDOW_PATTERN.exec(source)
+  if (match?.[1] === undefined) return null
+  return Number(match[1])
 }
 
 /** Alternating user/assistant conversation of the given length, user first. */
@@ -115,7 +177,10 @@ describe('MAX_HISTORY_ENTRIES vs the server window', () => {
     // *server's* slice has no such repair, so it can hand Bedrock a list
     // starting on an assistant turn. Staying at or under the window keeps the
     // repaired list the one the model actually sees.
-    const source = fs.readFileSync(BUDGET_PATH, 'utf8')
+    const source = readPinnedSource(
+      BUDGET_PATH,
+      "the client's history cap against the stream Lambda's own sliding window",
+    )
     const serverWindow = extractServerWindow(source)
 
     // Fail loudly, and diagnosably, if the constant moved beyond what
@@ -127,6 +192,68 @@ describe('MAX_HISTORY_ENTRIES vs the server window', () => {
       + 'moved, or is no longer a numeric literal, update extractServerWindow to match.',
     ).not.toBeNull()
     expect(MAX_HISTORY_ENTRIES).toBeLessThanOrEqual(Number(serverWindow))
+  })
+})
+
+describe('extractInterviewWindow', () => {
+  // Same reasoning as extractServerWindow's unit tests: the coupling assertion
+  // below must not be able to fail for a respelling that leaves the window
+  // alone, nor pass by reading a number that is not the window.
+  it.each([
+    ['the spelling the file actually uses', 'for m in history[-12:]:'],
+    ['a whitespace-padded slice', 'for m in history[-12 :]:'],
+    ['a bare slice with no loop', 'recent = history[ -12 : ]'],
+  ])('reads the window from %s', (_label, source) => {
+    expect(extractInterviewWindow(source)).toBe(12)
+  })
+
+  it('reads a different number rather than hard-coding the current one', () => {
+    // Guards against an extractor that "works" by returning 12 unconditionally.
+    expect(extractInterviewWindow('for m in history[-8:]:')).toBe(8)
+  })
+
+  it('returns null when there is no slice at all', () => {
+    // The loud direction: if the window is dropped, or moved to a named
+    // constant, this must red rather than pass vacuously forever.
+    expect(extractInterviewWindow('for m in history:')).toBeNull()
+  })
+
+  it('does not borrow a slice of a differently-named list', () => {
+    // A rename must fail loudly, not silently pin against some other list's
+    // window. `_` is a word character, so \bhistory cannot match `chat_history`.
+    expect(extractInterviewWindow('for m in chat_history[-4:]:')).toBeNull()
+    expect(extractInterviewWindow('for m in messages[-4:]:')).toBeNull()
+  })
+
+  it('does not match an open-ended or two-sided slice', () => {
+    // `history[-12]` is an index, not a window, and `history[-12:-2]` drops the
+    // newest turns — neither is the contract the client cap is pinned to.
+    expect(extractInterviewWindow('m = history[-12]')).toBeNull()
+    expect(extractInterviewWindow('for m in history[-12:-2]:')).toBeNull()
+  })
+})
+
+describe('MAX_INTERVIEW_HISTORY_ENTRIES vs the interview window', () => {
+  it('never exceeds the window the interview endpoint keeps', () => {
+    // The interview is a different endpoint with a tighter window, and the
+    // Python side spells it as a bare literal, so the coupling was previously
+    // prose only: ProductTab.interviewHistory.test asserts the client cap
+    // against itself and stays green if the server drops to 8.
+    const source = readPinnedSource(
+      INTERVIEW_PATH,
+      "the client's interview history cap against product_context.py's own slice",
+    )
+    const serverWindow = extractInterviewWindow(source)
+
+    // Fail loudly, and diagnosably, if the slice moved beyond what
+    // extractInterviewWindow understands, rather than passing vacuously.
+    expect(
+      serverWindow,
+      `Could not read the history slice from ${INTERVIEW_PATH}. If interview_turn now uses a `
+      + 'named constant, a different list name, or a different slice shape, update '
+      + 'extractInterviewWindow to match.',
+    ).not.toBeNull()
+    expect(MAX_INTERVIEW_HISTORY_ENTRIES).toBeLessThanOrEqual(Number(serverWindow))
   })
 })
 

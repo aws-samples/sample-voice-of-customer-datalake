@@ -22,7 +22,26 @@
  * server's slice does no shape repair. Trimming the oldest turns there could
  * leave the list starting on an assistant turn, which is exactly the shape
  * {@link buildHistory} exists to prevent. Capping here keeps the repaired list
- * the one the model sees.
+ * the one the model sees — but only as far as the *entry window* goes.
+ *
+ * Residual, open, and server-side: the server applies a second, aggregate
+ * character budget (`MAX_HISTORY_TOTAL_LENGTH = MAX_HISTORY_CONTENT_LENGTH * 4`)
+ * after the window, and `clampHistoryToBudget`'s newest-to-oldest walk
+ * (`lambda/stream/src/history-budget.ts:107-112`) has no role check. It keeps a
+ * contiguous window ending at the newest turn, so any odd kept-count starts on
+ * an assistant turn: a repaired 50-entry list is user-first and alternating, so
+ * dropping an odd number of the oldest turns hands Bedrock an assistant-first
+ * conversation. A long enough conversation therefore still reaches the model in
+ * the shape this module exists to prevent, no matter what the client sends.
+ *
+ * The client cannot honestly fix that. Doing so means replicating the server's
+ * aggregate arithmetic — the total, `truncateEntry`'s marker length, and the
+ * walk's stop condition — and any mismatch reproduces the same shape. Worse, the
+ * budget is *derived* rather than a numeric literal, so neither this file's
+ * reader nor `api/streamLimits.lockstep.test.ts` can pin it: the duplicate would
+ * be unguarded by construction. The fix belongs in `clampHistoryToBudget`, which
+ * only has to drop leading non-user entries after its walk — step 4 of
+ * {@link buildHistory}, one line, on the side that owns the number.
  *
  * `constants/chat.test.ts` reads that constant from source and fails if this
  * value ever exceeds it, so the coupling is checked rather than documented.

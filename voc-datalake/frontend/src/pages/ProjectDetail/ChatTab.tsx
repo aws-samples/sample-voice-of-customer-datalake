@@ -184,9 +184,26 @@ const EMPTY_MESSAGES: ChatMessage[] = []
  * `buildHistory`: the builder stays concerned only with *shape*, and knows
  * nothing about personas.
  *
- * Only assistant messages are prefixed — a user turn has no persona, and the
- * name is omitted when absent, so single-persona and VOC-style replies are
- * unchanged.
+ * Only assistant messages are prefixed — a user turn has no persona. What is
+ * left unchanged is a reply with *no* persona: a VOC-style answer, or any stored
+ * message from before attribution existed. A reply attributed to a *single*
+ * persona IS prefixed, and that is intended — an ordinary `@Priya …` mention
+ * takes the non-roundtable branch, where `handleSend` still calls
+ * `resolveActivePersona` and `chatFinalize` stores the result, so the name is
+ * present and reaches the model on the next send.
+ *
+ * Known residue, pre-existing and not fixed here: two personas mentioned
+ * individually (rather than via `@all`) is still non-roundtable, and
+ * `resolveActivePersona` keeps only `selectedPersonaIds[0]`, so both replies end
+ * up attributed to the first persona.
+ *
+ * The prefix costs `name.length + 2` characters against *both* server budgets —
+ * the per-turn ceiling (`MAX_HISTORY_CONTENT_LENGTH`, enforced by
+ * `truncateEntry`) and the aggregate one (`MAX_HISTORY_TOTAL_LENGTH`), where it
+ * can shift which turns survive the walk. It is also NOT idempotent: a second
+ * pass yields `Priya, CFO: Priya, CFO: …`. Both are why this must stay a
+ * send-time transform on a local copy and must never be written back to the
+ * store.
  */
 function toHistoryEntry(message: ChatMessage): {
   role: 'user' | 'assistant';

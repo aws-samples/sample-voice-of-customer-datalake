@@ -20,7 +20,7 @@ import { readSentHistory, hasAdjacentSameRole } from '../../test/historyPayload'
 // ---------------------------------------------------------------------------
 // Silence DOM warnings that do not affect correctness
 // ---------------------------------------------------------------------------
-// eslint-disable-next-line vitest/prefer-spy-on -- scrollIntoView is not a real jsdom method
+// scrollIntoView is not a real jsdom method, so it is assigned rather than spied on.
 Element.prototype.scrollIntoView = vi.fn()
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ const mockCancel = vi.fn()
 vi.mock('../../hooks/useStreamChat', () => ({
   useStreamChat: () => {
     // Using React state makes changes observable to the component.
-    // eslint-disable-next-line react-hooks/rules-of-hooks -- this IS a hook body
+    // Calling useState here is legitimate: this IS a hook body.
     const [state, setState] = React.useState<FakeStreamState>(defaultFakeState)
     setFakeStreamState = setState  // capture for test use
     return {
