@@ -402,20 +402,29 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
         """Belt and braces, and it survives a rewrite that no longer routes through
         the patched name.
 
-        `1E+300000` rather than `1E+999999999` on purpose: without the bound this
-        must FAIL rather than hang. Measured on this runtime,
-        `int(Decimal('1E+300000'))` costs ~2.7s (and the cost is superquadratic in
-        the digit count, which is why a billion digits is a Lambda timeout, not a
-        blip), so an unbounded implementation blows this budget by ~5x and says so
-        in seconds. The bounded path is ~10 microseconds — five orders of magnitude
-        inside the budget — so there is no machine slow enough to make this flaky
-        without every other test in the suite timing out first.
+        Not `1E+999999999`: without the bound this must FAIL rather than hang, so
+        the exponent has to be one an unbounded implementation still finishes.
+
+        THE BUDGET IS CHOSEN FOR MARGIN ON BOTH SIDES, which is why it is not
+        simply "generous". Measured on this runtime: the bounded path is ~10µs,
+        and `int(Decimal('1E+1000000'))` costs ~30s. So 5s sits ~500,000x above
+        the real cost and ~6x below the failure — a contended runner cannot reach
+        it without every other test in this suite timing out first, and an
+        unbounded implementation cannot duck under it.
+
+        Widening the budget further would make this test WORSE, not safer: the
+        cost being detected is fixed, so every second added moves the threshold
+        toward it. That is the trap in treating a timing assertion as merely
+        needing more headroom — headroom is bounded above by the thing it detects.
+        The deterministic `_NeverConvertibleDecimal` test above is the primary
+        guard precisely because it needs no budget at all; this one exists to
+        survive a rewrite that no longer routes through the patched name.
         """
         import product_context
 
         started = time.perf_counter()
-        assert product_context._declared_size('1E+300000') is None
-        assert time.perf_counter() - started < 0.5
+        assert product_context._declared_size('1E+1000000') is None
+        assert time.perf_counter() - started < 5.0
 
     def test_a_long_numeric_string_is_refused_by_the_same_bound(self):
         """The parse itself needs no length limit, which is worth recording: a
@@ -427,7 +436,9 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
 
         started = time.perf_counter()
         assert product_context._declared_size('9' * 10_000_000) is None
-        assert time.perf_counter() - started < 1.0
+        # ~24ms actual against 5s, and an unbounded int() on ten million digits is
+        # minutes — so the same both-sides margin as the test above.
+        assert time.perf_counter() - started < 5.0
 
     def test_a_size_exactly_at_the_file_cap_is_still_accepted(self):
         """The bound is the WIDEST cap and it is inclusive, so the largest legal
