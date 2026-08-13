@@ -4,6 +4,7 @@
   "configureEndpoint": "Please configure your API endpoint in Settings to use the AI chat",
   "copyMessage": "Copy message",
   "emptyState": "Start a conversation about your customer feedback",
+  "errorPrefix": "Error: {{message}}",
   "export": {
     "copied": "Copied!",
     "copyConversation": "Copy conversation",

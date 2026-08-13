@@ -302,6 +302,61 @@ describe('cancel / Stop button (issue #265 defect 1 related)', () => {
     expect(conv?.messages.filter((m) => m.role === 'assistant')).toHaveLength(0)
   })
 
+  it('shows the server reason in the saved error message, not a raw i18n key', async () => {
+    // The other half of the `event.error ?? …` fix, one layer further out.
+    // `useStreamChat.test.ts` proves the hook puts the server's reason into
+    // `error`; this proves the reason survives the *render* site, which is where
+    // it was actually being lost: `saveFinishedStream` formats it with
+    // `translate('errorPrefix', { message: error })`, and that key was missing
+    // from every catalogue, so i18next fell back to emitting the key and threw
+    // the interpolation away. Live-confirmed before the fix — a forced server
+    // rejection put the literal string "errorPrefix" in the chat.
+    //
+    // The setup file loads the real en/*.json into i18next precisely so
+    // assertions can match translated strings, so this test is only possible
+    // because the catalogues are real rather than stubbed.
+    const serverReason = "Invalid enum value. Expected 'user' | 'assistant', received 'system'"
+    const user = userEvent.setup()
+    const id = useChatStore.getState().createConversation()
+    act(() => {
+      useChatStore.setState({ activeConversationId: id })
+    })
+    mockSendMessageImpl.mockImplementation(() => {
+      act(() => {
+        getSetState()((prev) => ({ ...prev, isStreaming: true }))
+      })
+      return Promise.resolve()
+    })
+    render(<Chat />, { wrapper: createWrapper() })
+    expect(setFakeStreamState).toBeDefined()
+    const input = screen.getByPlaceholderText(/Ask about your feedback/i)
+    await user.type(input, 'a question')
+    await user.click(screen.getByRole('button', { name: /send/i }))
+    await waitFor(() => expect(mockSendMessageImpl).toHaveBeenCalled())
+
+    // The server failed: a reason arrives and no text was ever streamed, which
+    // is the branch that formats the error. Falling edge in the same update, as
+    // `sendErrorAndClose` sends error+done+end in one write.
+    act(() => {
+      getSetState()((prev) => ({
+        ...prev, isStreaming: false, streamingText: '', error: serverReason,
+      }))
+    })
+
+    const saved = await waitFor(() => {
+      const conv = useChatStore.getState().conversations.find((c) => c.id === id)
+      const assistant = conv?.messages.filter((m) => m.role === 'assistant') ?? []
+      expect(assistant).toHaveLength(1)
+      return assistant[0]
+    })
+    // Contains the reason verbatim: asserting "non-empty" or "contains Error"
+    // would pass on the buggy code, which rendered a bare key.
+    expect(saved.content).toContain(serverReason)
+    // And the key itself must never reach the user. This is the assertion that
+    // reds if the catalogue entry is removed again.
+    expect(saved.content).not.toContain('errorPrefix')
+  })
+
   it('never sends two consecutive user turns after a cancelled stream', async () => {
     // handleCancel deliberately discards the partial reply, which leaves the
     // conversation ending in an unanswered user turn.  buildHistory must drop

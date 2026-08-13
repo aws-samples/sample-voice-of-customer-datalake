@@ -4,6 +4,7 @@
   "configureEndpoint": "请在设置中配置API端点以使用AI聊天",
   "copyMessage": "复制消息",
   "emptyState": "开始一段关于客户反馈的对话",
+  "errorPrefix": "错误：{{message}}",
   "export": {
     "copied": "已复制！",
     "copyConversation": "复制对话",
