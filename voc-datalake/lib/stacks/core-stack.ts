@@ -610,6 +610,20 @@ export class VocCoreStack extends VocStack {
         DEFAULT_MODEL_ID: documentsSurfaceDefaultModelId,
         MAX_IMAGE_BYTES: String(MAX_IMAGE_BYTES),
         MAX_IMAGE_DIMENSION_PX: String(MAX_IMAGE_DIMENSION_PX),
+        // The handler emits structured JSON from a stdlib Formatter (it cannot
+        // import powertools — see its module docstring), so these are NOT the
+        // POWERTOOLS_* names used by every other function here: a
+        // POWERTOOLS_SERVICE_NAME on a function with no powertools would promise
+        // a library that is absent. The emitted FIELD is still `service`, so an
+        // operator's CloudWatch query is unchanged across functions.
+        //
+        // A LITERAL, not `uniqueName()`: this is a log label, not a physical
+        // resource name, so it must not carry the account/region suffix — every
+        // POWERTOOLS_SERVICE_NAME in this app is a bare literal for the same
+        // reason. Namespacing it also made the value a CloudFormation token,
+        // which is not a string a runtime field can be compared against.
+        SERVICE_NAME: 'voc-product-doc-extractor',
+        LOG_LEVEL: 'INFO',
       },
       logGroup: new logs.LogGroup(this, 'ProductDocExtractorLambdaLogs', {
         retention: logs.RetentionDays.TWO_WEEKS,

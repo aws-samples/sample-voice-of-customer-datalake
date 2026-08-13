@@ -520,4 +520,20 @@ describe('VocCoreStack product doc extractor', () => {
       expect(env[key], `${key} must be injected`).toBeDefined();
     }
   });
+  it('injects the structured-logging variables under their non-powertools names', () => {
+    // The handler emits JSON from a stdlib Formatter subclass because it cannot
+    // import powertools (that would need a layer, and building one would force
+    // container bundling into this stack). So the names are SERVICE_NAME and
+    // LOG_LEVEL rather than POWERTOOLS_SERVICE_NAME: a POWERTOOLS_* variable on
+    // a function with no powertools would promise a library that is absent.
+    // The emitted FIELD is still `service`, so an operator's query is unchanged.
+    const env = extractorFunction().Environment.Variables;
+    expect(env.LOG_LEVEL).toBe('INFO');
+    // A bare string, not a namespaced physical name: the handler compares it to
+    // nothing, it only labels a log field, and `uniqueName()` would make it an
+    // unresolved token here — plus it would show up in the baseline's name
+    // inventory as if a resource name had been added.
+    expect(env.SERVICE_NAME).toBe('voc-product-doc-extractor');
+    expect(env).not.toHaveProperty('POWERTOOLS_SERVICE_NAME');
+  });
 });

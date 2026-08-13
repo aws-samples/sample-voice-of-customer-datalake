@@ -682,6 +682,22 @@ def _fail_if_stalled(project_id: str, item: dict) -> dict:
     return {**item, 'status': 'failed', 'error': message}
 
 
+def _is_injectable(doc: dict) -> bool:
+    """Whether ONE document's extracted text may be put into a prompt.
+
+    Split out of _injectable_docs so that build_product_context_block can apply
+    the same predicate to a list it was HANDED as well as to one it read itself.
+    Without that, a caller passing an unfiltered list would inject the very image
+    descriptions the filter below exists to keep out — the parameter would fail
+    open, and it would do so silently.
+    """
+    return bool(
+        doc.get('status') == 'ready'
+        and doc.get('s3_extracted_key')
+        and doc.get('content_type') not in IMAGE_CONTENT_TYPES
+    )
+
+
 def _injectable_docs(project_id: str) -> list[dict]:
     """Ready documents whose extracted text may be put into a prompt.
 
@@ -701,14 +717,11 @@ def _injectable_docs(project_id: str) -> list[dict]:
 
     Shared with generate_report on purpose: its "is there anything to summarize"
     gate and this injection must agree, or the report would refuse to run over
-    content it would have used, or run over content it cannot see.
+    content it would have used, or run over content it cannot see. Agreeing on the
+    PREDICATE is not enough — that gate reads this list ONCE and hands it to
+    build_product_context_block, so the two also agree on the DATA.
     """
-    return [
-        d for d in _list_doc_items(project_id)
-        if d.get('status') == 'ready'
-        and d.get('s3_extracted_key')
-        and d.get('content_type') not in IMAGE_CONTENT_TYPES
-    ]
+    return [d for d in _list_doc_items(project_id) if _is_injectable(d)]
 
 
 def _fenced(text: str) -> str:
@@ -855,6 +868,24 @@ def delete_doc(project_id: str, doc_id: str) -> dict:
 
 # ── PRD/PR-FAQ injection helper ──────────────────────────────────────────────
 
+def _product_context_included(has_any: object, docs: list[dict] | None) -> bool:
+    """Whether a product report's context block actually carries anything.
+
+    The two arguments are exactly what generate_report built the block from, read
+    once each — so this answers from the data, not from an argument about the
+    data. `docs=None` is "not read", which only happens when `has_any` already
+    settled it.
+
+    ITS FALSE CASE IS UNREACHABLE through generate_report: the gate raises before
+    a report exists. That is the point rather than a reason to drop it. A literal
+    `True` would be a claim nothing verifies, in the one field whose whole job is
+    to record what a document was built from, and it would silently become wrong
+    the day the gate is relaxed or reordered. Tested directly for that reason —
+    see test_product_report_single_read.py.
+    """
+    return bool(has_any or docs)
+
+
 @tracer.capture_method
 def generate_report(project_id: str, body: dict) -> dict:
     """
@@ -873,17 +904,33 @@ def generate_report(project_id: str, body: dict) -> dict:
 
     ctx = get_context(project_id)['context']
     has_any = any(ctx.get(k) for k in STRING_FIELDS) or ctx.get('current_state')
+    # ONE read of the document list, handed to BOTH the gate below and the block
+    # that follows. Reading it twice was a time-of-check/time-of-use race: the
+    # predicate agreed with itself, but the DATA did not have to. A document
+    # deleted between the two reads passed the gate and was then absent from the
+    # block, so the report was synthesized from the
+    # "(No product context provided.)" placeholder — and recorded as having had
+    # product context, because the derivation below asserted it.
+    #
+    # None means NOT READ, and that is the honest value here rather than an empty
+    # list: filled fields answer the gate on their own, so no read is needed, and
+    # `docs=None` tells build_product_context_block to read for itself exactly as
+    # it does for every other caller. Passing `[]` would instead tell it this
+    # project HAS no documents and silently drop them from the block.
+    #
+    # The short-circuit is kept for the same reason it was there — the query only
+    # runs when the fields are empty — and it is also where the race lived: `and`
+    # short-circuits, so the second read only ever happened on this path, which is
+    # exactly the project whose documents are its only content. A project with
+    # fields is one query either way; a documents-only project used to be two.
+    docs = None if has_any else _injectable_docs(project_id)
     # No fields and no injectable documents? then there is nothing to summarize.
-    # `_injectable_docs` is the same predicate build_product_context_block uses, so
-    # this gate cannot admit a project whose only content that function declines to
-    # include — which would generate a report from an empty block. Short-circuiting
-    # matters: the DynamoDB query only runs when the fields are empty.
-    if not has_any and not _injectable_docs(project_id):
+    if not has_any and not docs:
         raise ValidationError(
             'Add at least one product context field or upload an internal document before generating a report.'
         )
 
-    context_block = build_product_context_block(project_id)
+    context_block = build_product_context_block(project_id, docs=docs)
 
     from shared.prompts import get_response_language_instruction
     language_instruction = get_response_language_instruction(response_language)
@@ -943,9 +990,16 @@ def generate_report(project_id: str, body: dict) -> dict:
         # This report is synthesized from the project's product-context block
         # (structured fields + extracted internal documents) and nothing else —
         # no project documents, no feedback, no personas. Recording that is what
-        # keeps it from reading as "built from nothing": the block is always
-        # present here, because generate_report refuses to run without it.
-        DERIVATION_FIELD: build_derivation(product_context_included=True),
+        # keeps it from reading as "built from nothing".
+        #
+        # DERIVED from the two inputs the block was actually built from, not
+        # asserted as True. The gate above does make the False case unreachable,
+        # so a literal would be correct today — and would still be a claim this
+        # code does not check, in the one field whose entire job is to say what a
+        # document was built from.
+        DERIVATION_FIELD: build_derivation(
+            product_context_included=_product_context_included(has_any, docs),
+        ),
         'created_at': now,
     }
     projects_table.put_item(Item=item)
@@ -957,7 +1011,7 @@ def generate_report(project_id: str, body: dict) -> dict:
     return {'success': True, 'document': item}
 
 
-def build_product_context_block(project_id: str) -> str:
+def build_product_context_block(project_id: str, docs: list[dict] | None = None) -> str:
     """
     Build the {product_context} string that is injected into the PRD/PR-FAQ chains.
     Combines the structured context with the extracted text of READY uploaded docs,
@@ -966,6 +1020,15 @@ def build_product_context_block(project_id: str) -> str:
     Two things the extracted half is NOT: unfiltered (images are excluded until
     rung 3 selects them deliberately — see _injectable_docs) and undelimited
     (each body is fenced as untrusted quoted content — see UNTRUSTED_DOC_BEGIN).
+
+    `docs` is an ALREADY-READ document list, for a caller that has one and must
+    build the block from the same list it inspected rather than from a second
+    read of the table — generate_report is the only such caller, and the race it
+    closes is described there. Omitted, the list is read here exactly as before,
+    so every other caller (projects.py, jobs/document_generator) is unchanged.
+    `_is_injectable` is applied either way: a handed-in list is filtered too, so
+    the parameter cannot become a back door for the image descriptions rung 3
+    owns.
     """
     ctx_resp = get_context(project_id)
     ctx = ctx_resp['context']
@@ -1000,7 +1063,10 @@ def build_product_context_block(project_id: str) -> str:
 
     bucket = os.environ.get('RAW_DATA_BUCKET')
     if bucket:
-        ready = _injectable_docs(project_id)
+        ready = (
+            _injectable_docs(project_id) if docs is None
+            else [d for d in docs if _is_injectable(d)]
+        )
         ready.sort(key=lambda d: d.get('created_at', ''))
         budget = MAX_EXTRACTED_INJECTION_CHARS
         doc_blocks: list[str] = []

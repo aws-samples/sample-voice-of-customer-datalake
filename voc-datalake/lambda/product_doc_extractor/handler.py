@@ -27,11 +27,17 @@ WHY NO aws_lambda_powertools, AND NO `lambda/shared/` IMPORTS
     needs Docker). Stdlib + boto3 only, like the two Python handlers CoreStack
     already ships (`lambda/custom_resources/admin_bootstrap.py`, `model_pin.py`).
 
-    The cost of that isolation is this file re-implements two small things that
+    The cost of that isolation is this file re-implements three small things that
     exist in `shared/`: model resolution (see _resolve_model_id, which mirrors
-    `shared/model_config.py::get_active_model_id` exactly) and the reserved-word
-    aliasing in the status writes (pattern from `shared/jobs.py`). Both are pinned
-    by tests.
+    `shared/model_config.py::get_active_model_id` exactly), the reserved-word
+    aliasing in the status writes (pattern from `shared/jobs.py`), and structured
+    JSON logging with per-record context (see JsonFormatter — powertools' output
+    shape and `append_keys` behaviour, in a stdlib Formatter subclass). All three
+    are pinned by tests.
+
+    WHAT THE ISOLATION DOES NOT COST is structured logs. Emitting plain text
+    because powertools is unavailable would be a non-sequitur: the JSON shape is
+    a formatter, not a library.
 
 WHY NO NEW PIP DEPENDENCY
     Image dimensions are read from the file header with `struct` (see
@@ -48,8 +54,140 @@ from urllib.parse import unquote_plus
 
 import boto3
 
+# ── Structured logging (stdlib only, see the module docstring) ───────────────
+# Every other Lambda in this app emits powertools JSON. This one cannot import
+# powertools, but STRUCTURED LOGGING DOES NOT REQUIRE IT — a Formatter subclass
+# is the whole mechanism.
+#
+# It matters here more than anywhere else: this is the one component whose
+# failure reaches the user as a single short sentence and nothing more, so a
+# diagnosis happens entirely in CloudWatch. `doc_id` appears in 18 log lines; as
+# an f-string substring it is a text search, as a field it is a filter.
+#
+# SERVICE_NAME rather than POWERTOOLS_SERVICE_NAME on purpose: the name of the
+# variable would otherwise promise a library this function deliberately does not
+# have. The emitted FIELD is `service`, matching what powertools writes, so an
+# operator's query is the same across every function.
+SERVICE_NAME = os.environ.get('SERVICE_NAME', 'voc-product-doc-extractor')
+
+#: Fields merged into EVERY log record by JsonFormatter. Set once per S3 record
+#: in _process_record and cleared there in a `finally`, which is what gives all
+#: 18 existing log lines their identifiers without editing a single call site —
+#: the same thing powertools' `Logger.append_keys` does.
+_log_context: dict = {}
+
+#: Attribute names logging puts on a record itself, so that everything ELSE in
+#: `record.__dict__` can be treated as a caller's `extra=`. Taken from a real
+#: LogRecord rather than typed out: a name added by a future Python version would
+#: otherwise start appearing in the JSON as if it were an extra. `message` and
+#: `asctime` are added by Formatter.format and are not present on a fresh record.
+_RECORD_ATTRS = frozenset(
+    logging.LogRecord('', 0, '', 0, '', (), None).__dict__
+) | {'asctime', 'message'}
+
+
+def _stringify(value: object) -> str:
+    """Last-resort rendering for a value json cannot serialise.
+
+    A log call must never be the thing that breaks an extraction, so this cannot
+    raise either — a __repr__ that throws is rare but it is not impossible, and
+    the alternative is losing the line.
+    """
+    try:
+        return repr(value)
+    except Exception:  # noqa: BLE001 - a log line must not raise
+        return f'<unrepresentable {type(value).__name__}>'
+
+
+class JsonFormatter(logging.Formatter):
+    """One JSON object per log record: level, message, timestamp, service, fields.
+
+    `_log_context` is merged at FORMAT time, which is what lets a value set once
+    per S3 record reach lines logged arbitrarily deep in the call stack.
+
+    Nothing here may raise. Two defences, for two different failures: `default=`
+    handles a value json does not know (it is consulted per value), and the
+    fallback below handles a structure json cannot walk AT ALL — a circular
+    reference, for which `default=` is never called and json raises ValueError.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        # What logging.Formatter.format does first, and not decoration: other
+        # handlers on the same record read `record.message` (pytest's capture
+        # handler is one), so a formatter that skips it leaves them with an
+        # AttributeError on a record this one has already formatted.
+        record.message = record.getMessage()
+        payload: dict = {
+            'level': record.levelname,
+            'message': record.message,
+            'timestamp': self.formatTime(record),
+            'service': SERVICE_NAME,
+        }
+        extras = {k: v for k, v in record.__dict__.items() if k not in _RECORD_ATTRS}
+        for key, value in {**_log_context, **extras}.items():
+            # setdefault, so a stray `extra={'level': ...}` cannot rewrite the
+            # four fields above into something a query no longer matches.
+            payload.setdefault(key, value)
+        if record.exc_info:
+            # logger.exception's whole point. Without this the traceback is lost,
+            # which for the extractor's catch-all handlers is the only record of
+            # WHY a document failed.
+            payload['exception'] = self.formatException(record.exc_info)
+        if record.stack_info:
+            payload['stack'] = self.formatStack(record.stack_info)
+        try:
+            return json.dumps(payload, default=_stringify)
+        except (TypeError, ValueError):
+            flattened = {
+                k: v if isinstance(v, (str, int, float, bool, type(None))) else _stringify(v)
+                for k, v in payload.items()
+            }
+            return json.dumps(flattened, default=_stringify)
+
+
+def _log_level() -> int:
+    """The configured level, defaulting to INFO — the app-wide convention."""
+    name = (os.environ.get('LOG_LEVEL') or '').strip().upper()
+    return logging.getLevelNamesMapping().get(name, logging.INFO)
+
+
+#: True inside Lambda. A reserved runtime variable, always present there and
+#: never elsewhere, which is the only thing that reliably distinguishes "the
+#: handler on the root logger is the runtime's" from "it belongs to whatever is
+#: hosting this import". See _configure_logging for why that distinction decides
+#: a behaviour rather than a comment.
+IN_LAMBDA = bool(os.environ.get('AWS_LAMBDA_FUNCTION_NAME'))
+
+
+def _configure_logging(target: logging.Logger, *, replace_existing: bool) -> None:
+    """Attach a JSON handler to `target`, WITHOUT a second copy of every line.
+
+    THE DUPLICATE: the Lambda runtime pre-installs its own handler on the root
+    logger, which emits plain text. Adding ours beside it logs every line twice —
+    and a doubled line reads like a retry, not like a formatting mistake, so it
+    misleads exactly the person reading the log during a diagnosis. Inside Lambda
+    the runtime's handler is therefore detached first.
+
+    WHY THAT IS CONDITIONAL, rather than "take over whatever handler is already
+    there": handlers we did not create are not ours to reformat. Setting this
+    formatter on the host's handler was tried, and outside Lambda the host is
+    pytest — whose capture handler populates `record.message` as a side effect of
+    its own formatter, so six unrelated tests started failing with
+    AttributeError, and only when the suites ran in one process. Nothing outside
+    Lambda pre-installs a plain-text handler on our behalf anyway, so there is no
+    duplicate to prevent there and nothing to justify the intrusion.
+    """
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter())
+    if replace_existing:
+        for existing in list(target.handlers):
+            target.removeHandler(existing)
+    target.addHandler(handler)
+    target.setLevel(_log_level())
+
+
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+_configure_logging(logger, replace_existing=IN_LAMBDA)
 
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -650,6 +788,12 @@ def _extract_image(bucket: str, key: str, content_type: str, actual_size: int) -
 # ── Per-record processing ───────────────────────────────────────────────────
 
 def _process_record(record: dict) -> None:
+    """Read one S3 notification, then extract that document under its log context.
+
+    The identifiers are not available before the key pattern matches, so the
+    context is set here and the work delegated — which is also why the clear can
+    be a `finally` around a single call rather than around the whole body.
+    """
     s3_event = record.get('s3') or {}
     bucket = (s3_event.get('bucket') or {}).get('name') or RAW_DATA_BUCKET
     obj = s3_event.get('object') or {}
@@ -665,6 +809,24 @@ def _process_record(record: dict) -> None:
     project_id = match.group('project_id')
     doc_id = match.group('doc_id')
 
+    # Attach this document's identifiers to every line logged from here down,
+    # including from _resolve_model_id and the branch helpers, without touching
+    # any of those call sites.
+    _log_context.update({'project_id': project_id, 'doc_id': doc_id, 's3_key': key})
+    try:
+        _extract_document(project_id, doc_id, bucket, key, obj)
+    finally:
+        # LOAD-BEARING, not tidiness. A batch loops records (see lambda_handler),
+        # so a context left in place would attribute the NEXT document's lines —
+        # and lambda_handler's own unhandled-error line — to this doc_id. A field
+        # that names the wrong document is worse than no field: it sends the
+        # person reading it to the wrong record.
+        _log_context.clear()
+
+
+def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: dict) -> None:
+    """Extract ONE registered product document. Split from _process_record so that
+    the log context above is set and cleared around the whole of it."""
     doc = _get_doc(project_id, doc_id)
     if not doc:
         # Deleted mid-flight, or an object nobody registered. Nothing to update.
