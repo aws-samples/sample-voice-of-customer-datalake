@@ -91,9 +91,10 @@ function arrayLiteral(file: string, variable: string): string[] {
  * namespace called `ns` and reports the app as broken. It did, on the first run.
  * `scripts/i18n-check.mjs` has the same blind spot and warns about that comment.
  *
- * Block comments are stripped only where `/*` opens the line, so a `/*` inside a
- * string or regex literal cannot pair with a later `*␘/` and delete real code
- * between them — that would be a false negative, the worse direction for a gate.
+ * Block comments are stripped only where a line OPENS one, so an inline block-comment
+ * marker inside a string or regex literal cannot pair with a later terminator and
+ * delete the real code between them. That direction is a false negative, which is the
+ * worse one for a gate: it would read green while covering less.
  */
 function stripComments(source: string): string {
   const lines = source.split('\n')
