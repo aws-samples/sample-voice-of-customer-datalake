@@ -17,8 +17,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { projectKey, projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
-import { isScorable } from '../Prioritization/prioritizationUtils'
-import type { Project } from '../../api/types'
+import { isScorable, SCORABLE_TYPE_META } from '../Prioritization/prioritizationUtils'
+import type { Project, ProjectDocument } from '../../api/types'
 import type { ReactElement } from 'react'
 
 /** The link, as the editor holds it. '' on either field means "not set". */
@@ -89,6 +89,31 @@ function storedOptionLabel(
   return state === 'missing'
     ? t('editor.validationUnknownDocument')
     : t('editor.validationUnverifiedDocument')
+}
+
+/**
+ * One document's option text: its title, plus the type it is.
+ *
+ * The type is here because the title alone does not identify the document. A
+ * project's PRD and its PR/FAQ are generated from the same feature idea and
+ * routinely carry the same or near-identical titles, so a list of names asks the
+ * admin to link a form to a proposal they cannot tell apart — and the two are
+ * separate rows on the Prioritization page, where the ratings then show up.
+ *
+ * `(TYPE)` after the name rather than before it, following `CheckboxItem` in
+ * `pages/ProjectDetail/PickerComponents` — the repo's other picker that shows a
+ * document's type inline — so the two read the same way.
+ *
+ * The label comes from `SCORABLE_TYPE_META`, the same source as the badge on the
+ * Prioritization row this link feeds, so the type is named identically in both
+ * places. The raw `document_type` is the fallback: a type made scorable without
+ * display metadata then reads as its own slug rather than as empty parentheses.
+ * Unreachable today — the list is filtered by `isScorable`, which reads the very
+ * table the label comes from — and kept because that coupling is not enforced.
+ */
+function documentOptionLabel(doc: ProjectDocument, t: (key: string) => string): string {
+  const typeMeta = SCORABLE_TYPE_META[doc.document_type]
+  return `${doc.title} (${typeMeta ? t(typeMeta.i18nKey) : doc.document_type})`
 }
 
 export default function ValidationLinkPicker({
@@ -202,7 +227,9 @@ export default function ValidationLinkPicker({
               </option>
             )}
             {documents.map((doc) => (
-              <option key={doc.document_id} value={doc.document_id}>{doc.title}</option>
+              <option key={doc.document_id} value={doc.document_id}>
+                {documentOptionLabel(doc, t)}
+              </option>
             ))}
           </select>
           <p className="text-xs text-gray-500 mt-1">{t('editor.validationDocumentHint')}</p>

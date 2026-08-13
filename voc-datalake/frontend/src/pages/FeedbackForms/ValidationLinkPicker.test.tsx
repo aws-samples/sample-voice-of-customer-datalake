@@ -105,6 +105,15 @@ async function openValidationTab(formName: string) {
 const projectSelect = () => screen.getByLabelText(t('feedbackForms:editor.validationProjectLabel'))
 const documentSelect = () => screen.getByLabelText(t('feedbackForms:editor.validationDocumentLabel'))
 
+/**
+ * The full option text for the `doc_prfaq` fixture: title, then its type.
+ *
+ * Spelled out as a literal rather than composed from `documentOptionLabel` — a
+ * test that builds the expected string the way the component does passes for any
+ * format, including one that drops the type entirely.
+ */
+const PRFAQ_OPTION_LABEL = 'Feature A PR/FAQ (PR/FAQ)'
+
 describe('validation link in the form editor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -182,7 +191,7 @@ describe('validation link in the form editor', () => {
     })
     await user.selectOptions(projectSelect(), 'p1')
     await waitFor(() => {
-      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      expect(screen.getByText(PRFAQ_OPTION_LABEL)).toBeInTheDocument()
     })
     await user.selectOptions(documentSelect(), 'doc_prfaq')
     await user.click(screen.getByText('Save Changes'))
@@ -217,9 +226,11 @@ describe('validation link in the form editor', () => {
     await openValidationTab('PR/FAQ concept test')
 
     await waitFor(() => {
-      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      expect(screen.getByText(PRFAQ_OPTION_LABEL)).toBeInTheDocument()
     })
-    expect(screen.queryByText('Research Notes')).not.toBeInTheDocument()
+    // Substring, not the full option text: what must not be offered is that
+    // document, under any label this picker might give it.
+    expect(screen.queryByText(/Research Notes/)).not.toBeInTheDocument()
   })
 
   it('keeps a link whose document no longer exists rather than silently clearing it', async () => {
@@ -279,7 +290,7 @@ describe('validation link in the form editor', () => {
     // Once it lands, the real title replaces the placeholder and no "missing"
     // label ever appeared.
     await waitFor(() => {
-      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      expect(screen.getByText(PRFAQ_OPTION_LABEL)).toBeInTheDocument()
     })
     expect(
       screen.queryByText(t('feedbackForms:editor.validationLoadingLink')),
@@ -379,14 +390,44 @@ describe('validation link in the form editor', () => {
     await openValidationTab('PR/FAQ concept test')
 
     await waitFor(() => {
-      expect(screen.getByText(`Doc ${scorableTypes[0]}`)).toBeInTheDocument()
+      expect(documentSelect().querySelectorAll('option').length).toBeGreaterThan(1)
     })
+    // Matched on the option's VALUE, not its text: the text now carries a
+    // per-type label this test deliberately knows nothing about — it asserts
+    // only that every scorable type is offered.
+    const optionValues = [...documentSelect().querySelectorAll('option')].map((o) => o.value)
     for (const type of scorableTypes) {
       expect(
-        screen.getByText(`Doc ${type}`),
+        optionValues,
         `${type} is scorable on Prioritization but the picker will not link to it`,
-      ).toBeInTheDocument()
+      ).toContain(`doc_${type}`)
     }
+  })
+
+  it('labels every option with the document type, not the title alone', async () => {
+    // The reason this matters: a project's PRD and PR/FAQ come from the same
+    // feature idea and routinely carry the SAME title, so a list of names cannot
+    // be used to pick between them — and they are separate rows on the
+    // Prioritization page, where this form's ratings then appear.
+    mockGetProject.mockResolvedValue({
+      project_id: 'p1',
+      documents: [
+        { document_id: 'doc_prd', document_type: 'prd', title: 'Instant payouts', content: '', created_at: '' },
+        { document_id: 'doc_prfaq', document_type: 'prfaq', title: 'Instant payouts', content: '', created_at: '' },
+      ],
+    })
+
+    await openValidationTab('PR/FAQ concept test')
+
+    // Full option text, spelled out: the two same-titled documents are now
+    // distinguishable, and each says which one it is.
+    await waitFor(() => {
+      expect(screen.getByText('Instant payouts (PRD)')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Instant payouts (PR/FAQ)')).toBeInTheDocument()
+    // And the bare title is no longer any option's text — if it were, the two
+    // would still be indistinguishable.
+    expect(screen.queryByText('Instant payouts')).not.toBeInTheDocument()
   })
 
   it('does not claim to be loading when the project list request fails', async () => {
