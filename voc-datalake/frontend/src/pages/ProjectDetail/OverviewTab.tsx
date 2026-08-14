@@ -30,7 +30,7 @@ import { usePrototypeBuild, type PrototypeBuildControl } from './usePrototypeBui
 import type { ReactNode } from 'react'
 import type { TFunction } from 'i18next'
 import type {
-  ProjectPersona, ProjectDocument, Project, ProductContext,
+  ProjectPersona, ProjectDocument, Project, ProductContext, ProductDoc,
 } from '../../api/types'
 
 interface OverviewTabProps {
@@ -39,6 +39,15 @@ interface OverviewTabProps {
   readonly documents: ProjectDocument[]
   /** Undefined while loading, or if the request failed — the card then shows no state. */
   readonly productContext?: ProductContext
+  /**
+   * The project's uploaded product docs, for the prototype card's visual picker.
+   *
+   * A prop rather than a fetch of its own, matching `productContext`: this tab is
+   * pure and its data comes from the page's queries (see `useProjectData`), which
+   * is also what keeps a failed list from costing the other five cards their
+   * state — undefined simply means no visuals are on offer.
+   */
+  readonly productDocs?: ProductDoc[]
   readonly onGeneratePersonas: () => void
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
@@ -53,6 +62,7 @@ export default function OverviewTab({
   personas,
   documents,
   productContext,
+  productDocs,
   onGeneratePersonas,
   onGenerateDoc,
   onRunResearch,
@@ -67,6 +77,7 @@ export default function OverviewTab({
     personas,
     documents,
     productContext,
+    productDocs,
   })
 
   const prototypeBuild = usePrototypeBuild({
@@ -77,6 +88,8 @@ export default function OverviewTab({
     prdOptions: prototypeSources.prdOptions,
     prfaqOptions: prototypeSources.prfaqOptions,
     researchOptions: prototypeSources.researchOptions,
+    visualOptions: prototypeSources.visualOptions,
+    visualsNotReady: prototypeSources.visualsNotReady,
     onJobStarted,
   })
 
@@ -542,8 +555,9 @@ function SourceRow({
 }
 
 /**
- * The two optional inputs a prototype build can be told to read: the project's
- * product context, and specific research reports.
+ * The optional inputs a prototype build can be told to read: the project's
+ * product context, specific research reports, and uploaded visuals to take the
+ * palette and layout from.
  *
  * On the card rather than inside `ConfirmModal`, and that placement is the whole
  * design decision: `confirmKeyFor` returns null — no dialog at all — for a project
@@ -610,6 +624,78 @@ function PrototypeExtraSources({
           ) : null}
         </>
       )}
+      <PrototypeVisualSources extras={extras} t={t} />
+    </div>
+  )
+}
+
+/**
+ * The uploaded mockups a build can take its palette and layout from.
+ *
+ * NO MASTER TICK-BOX, unlike research, and that follows the API rather than taste:
+ * there is no `use_visuals` field, so a master would be UI state with nothing to
+ * send it to — and it would introduce the two nonsense states the backend's
+ * `_validated_product_doc_ids` docstring rejects, "on with an empty list" and "off
+ * with ids". The ticked list IS the request, so the boxes that decide it are the
+ * only control there is.
+ *
+ * What replaces the master is a plain group heading carrying the count, and the
+ * same indented rail the research sub-list uses once opened — so the group still
+ * reads as one thing among the extra sources rather than as loose boxes, and a row
+ * here looks and behaves exactly like a report row one section up. Always expanded
+ * for a reason beyond consistency: with no flag to record, a collapsed group would
+ * hide ticked ids that are still being sent.
+ */
+function PrototypeVisualSources({
+  extras, t,
+}: {
+  readonly extras: PrototypeBuildControl['extras']
+  readonly t: TFunction<'projectDetail'>
+}) {
+  // Nothing ready and nothing pending: no images uploaded at all, so there is
+  // nothing to offer and nothing to explain. Same rule as the research box —
+  // a section whose only possible contribution is empty is an invitation to a no-op.
+  if (extras.visualOptions.length === 0 && extras.visualsNotReady === 0) return null
+
+  return (
+    <div data-testid="prototype-visual-sources">
+      <p className="text-xs font-medium text-gray-600">
+        {/* `total`, not `count`: no plural suffixes to translate eight times for a
+            number that only ever appears in parentheses, matching `useResearch`. */}
+        {t('documents.prototype.visuals', { total: extras.visualOptions.length })}
+      </p>
+      {extras.visualOptions.length === 0 ? null : (
+        <div data-testid="prototype-visual-list" className="ml-5 space-y-1 border-l pl-2">
+          {extras.visualOptions.map((option) => {
+            const checked = extras.selectedVisualIds.includes(option.doc_id)
+            return (
+              <SourceCheckbox
+                key={option.doc_id}
+                label={option.filename}
+                checked={checked}
+                // At the bound the unticked boxes stop accepting, rather than
+                // letting the API refuse the whole build after the choice is made.
+                disabled={!checked && extras.visualLimitReached}
+                onChange={() => extras.onToggleVisualId(option.doc_id)}
+              />
+            )
+          })}
+        </div>
+      )}
+      {extras.visualLimitReached ? (
+        <p className="text-xs text-amber-700">
+          {t('documents.prototype.visualsLimit', { max: extras.maxVisualIds })}
+        </p>
+      ) : null}
+      {/* Said rather than left to be noticed: these images exist in the Product
+          tab, and a picker that lists two of the three a user just uploaded, with
+          no explanation, reads as a bug. Non-image uploads get no note — a
+          Markdown file is not a visual that failed to appear. */}
+      {extras.visualsNotReady > 0 ? (
+        <p className="text-xs text-gray-500">
+          {t('documents.prototype.visualsNotReady', { total: extras.visualsNotReady })}
+        </p>
+      ) : null}
     </div>
   )
 }

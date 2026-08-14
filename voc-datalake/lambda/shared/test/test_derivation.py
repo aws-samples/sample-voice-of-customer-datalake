@@ -84,10 +84,12 @@ class TestBuildDerivation:
         derivation = build_derivation(
             feedback_count=12,
             persona_ids=['persona_1', 'persona_2'],
+            visual_document_ids=['a1b2c3d4e5f60718'],
             product_context_included=True,
         )
         assert derivation['feedback_count'] == 12
         assert derivation['persona_ids'] == ['persona_1', 'persona_2']
+        assert derivation['visual_document_ids'] == ['a1b2c3d4e5f60718']
         assert derivation['product_context_included'] is True
 
     def test_empty_derivation_answers_no_inputs_without_missing_keys(self):
@@ -96,6 +98,7 @@ class TestBuildDerivation:
             'selected_document_count': 0,
             'feedback_count': 0,
             'persona_ids': [],
+            'visual_document_ids': [],
             'product_context_included': False,
         }
 
@@ -115,6 +118,7 @@ class TestBuildDerivation:
             sources=[derivation_source('doc_1', ROLE_MERGE_INPUT)],
             feedback_count=3,
             persona_ids=['persona_1'],
+            visual_document_ids=['a1b2c3d4e5f60718'],
             product_context_included=True,
         )
         assert set(derivation) == {
@@ -122,6 +126,67 @@ class TestBuildDerivation:
             'selected_document_count',
             'feedback_count',
             'persona_ids',
+            'visual_document_ids',
             'product_context_included',
         }
         assert set(derivation['sources'][0]) == {'document_id', 'role'}
+
+
+class TestVisualDocumentIds:
+    """Uploaded IMAGE product documents ("visuals") whose extracted descriptions
+    were injected as a visual brief.
+
+    A plain id list, following `persona_ids` rather than `sources`: a visual is
+    not a ProjectDocument, so a `sources` entry would promise a title lookup that
+    can only ever come back unresolved. These tests pin the id-list contract, not
+    a role.
+    """
+
+    def test_records_the_visuals_that_grounded_the_generation(self):
+        """The honesty requirement: a prototype must be able to say which
+        uploaded visual it was built from."""
+        derivation = build_derivation(visual_document_ids=['a1b2c3d4e5f60718'])
+
+        assert derivation['visual_document_ids'] == ['a1b2c3d4e5f60718']
+
+    def test_keeps_only_usable_identifiers(self):
+        """Same tolerance as persona_ids — junk is dropped, not raised, because
+        provenance bookkeeping must not fail the job that produced the document."""
+        derivation = build_derivation(
+            visual_document_ids=['a1b2c3d4e5f60718', '', None, 7, {'document_id': 'x'}],
+        )
+
+        assert derivation['visual_document_ids'] == ['a1b2c3d4e5f60718']
+
+    def test_preserves_selection_order(self):
+        """The revision flow re-reads this list to inherit the base prototype's
+        visual selection, so the order the user chose has to survive."""
+        derivation = build_derivation(visual_document_ids=['vis_c', 'vis_a', 'vis_b'])
+
+        assert derivation['visual_document_ids'] == ['vis_c', 'vis_a', 'vis_b']
+
+    def test_no_visuals_reads_as_an_empty_list_not_a_missing_key(self):
+        """Every existing writer omits the argument. Absent must mean "no
+        visuals", answerable without a KeyError at the read side."""
+        assert build_derivation()['visual_document_ids'] == []
+        assert build_derivation(persona_ids=['persona_1'])['visual_document_ids'] == []
+
+    def test_is_never_turned_into_a_source_entry(self):
+        """The design decision, pinned: recording a visual must not add a
+        `sources` entry, because the frontend resolver looks every source id up
+        in the project's ProjectDocument list and a visual is stored elsewhere —
+        it would render as a bare hex id under "Built from"."""
+        derivation = build_derivation(visual_document_ids=['a1b2c3d4e5f60718'])
+
+        assert derivation['sources'] == []
+        assert derivation['selected_document_count'] == 0
+
+    def test_needs_no_new_role_in_the_closed_vocabulary(self):
+        """The other half of that decision: no ROLE_* was added, so the
+        Python↔TypeScript role lockstep is unaffected by this field."""
+        assert DERIVATION_ROLES == (
+            'reference',
+            'prototype_prd',
+            'prototype_prfaq',
+            'merge_input',
+        )

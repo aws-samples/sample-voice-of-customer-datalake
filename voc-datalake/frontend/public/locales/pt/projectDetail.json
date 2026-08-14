@@ -72,7 +72,9 @@
         "reference": "Referência"
       },
       "selectedUsed": "{{used}} de {{selected}} documentos selecionados utilizados",
-      "unavailable": "Não está mais disponível"
+      "unavailable": "Não está mais disponível",
+      "visualsUsed_one": "{{count}} maquete utilizada",
+      "visualsUsed_other": "{{count}} maquetes utilizadas"
     },
     "editDocument": "Editar documento",
     "newDocument": "Novo Documento",
@@ -107,7 +109,10 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "Iniciado — acompanhe em Tarefas em Segundo Plano.",
       "useProductContext": "Descrição do produto ou serviço",
-      "useResearch": "Relatórios de pesquisa ({{total}})"
+      "useResearch": "Relatórios de pesquisa ({{total}})",
+      "visuals": "Maquetes visuais ({{total}})",
+      "visualsLimit": "No máximo {{max}} maquetes por build",
+      "visualsNotReady": "{{total}} ainda em processamento"
     },
     "revision": {
       "feedback": "Comentários: {{feedback}}",

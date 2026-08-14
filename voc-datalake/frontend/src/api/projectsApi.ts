@@ -274,6 +274,20 @@ export const projectsApi = {
     // against `RESEARCH#{id}` in this project; one that names nothing is a 4xx.
     use_research?: boolean;
     selected_research_ids?: string[];
+    // Visual grounding: uploaded IMAGE product docs whose extracted design
+    // description the generator injects, so the prototype takes its palette and
+    // layout from the mockup instead of the default theme.
+    //
+    // There is NO `use_visuals` companion, unlike the research pair above: a
+    // non-empty list is itself the request. A flag beside a list would admit a
+    // "flag on, empty list" state that means nothing and a "flag off, ids present"
+    // state that only a convention could resolve. Consequence: these ids are
+    // validated whenever they are sent — there is no "off" for the check to skip —
+    // so an id that does not name a product doc IN THIS PROJECT is a 4xx, and at
+    // most `MAX_SELECTED_PRODUCT_DOC_IDS` of them may be named. Order is
+    // precedence: where two visuals disagree, the generator's prompt prefers the
+    // first.
+    selected_product_doc_ids?: string[];
   }) =>
     fetchApi<{
       success: boolean;

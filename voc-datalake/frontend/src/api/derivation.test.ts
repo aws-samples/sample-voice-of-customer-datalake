@@ -17,6 +17,22 @@ import {
 const PRD = { document_id: 'prd_1', document_type: 'prd', title: 'Onboarding PRD' }
 const PRFAQ = { document_id: 'prfaq_1', document_type: 'prfaq', title: 'Onboarding PR/FAQ' }
 
+/**
+ * The record that records nothing, written out key by key.
+ *
+ * Comparing `emptyDerivation()` against itself would pass even if a field of the
+ * contract were left out of it, which is the one way a new recorded input goes
+ * missing everywhere at once. This literal is what makes that a failure.
+ */
+const EMPTY_RECORD = {
+  sources: [],
+  selected_document_count: 0,
+  feedback_count: 0,
+  persona_ids: [],
+  visual_document_ids: [],
+  product_context_included: false,
+}
+
 describe('the role vocabulary', () => {
   it('is closed and lists the four relations the backend creates', () => {
     expect(DERIVATION_ROLES).toEqual(['reference', 'prototype_prd', 'prototype_prfaq', 'merge_input'])
@@ -101,6 +117,100 @@ describe('a declared derivation whose every selected document was dropped', () =
     expect(resolved.origin).toBe('declared')
     expect(resolved.sources).toEqual([])
     expect(resolved.selected_document_count).toBe(5)
+  })
+})
+
+describe('a document grounded in uploaded visuals', () => {
+  // The ids are product-document ids (secrets.token_hex(8)), stored under a
+  // different sort key from the ProjectDocuments the resolver resolves against —
+  // which is why they are recorded as a plain id list and never come back with a
+  // title. Same shape, same reason, as persona_ids.
+  const grounded = {
+    document_id: 'prototype_2',
+    derivation: {
+      sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
+      selected_document_count: 1,
+      feedback_count: 0,
+      persona_ids: [],
+      visual_document_ids: ['a1b2c3d4e5f60718', 'ff00ee11dd22cc33'],
+      product_context_included: false,
+    },
+  }
+
+  it('keeps the recorded visual ids, in order', () => {
+    expect(resolveDerivation(grounded, [PRD]).visual_document_ids).toEqual([
+      'a1b2c3d4e5f60718',
+      'ff00ee11dd22cc33',
+    ])
+  })
+
+  it('keeps them through normalization alone, before any resolving', () => {
+    expect(normalizeDerivation(grounded.derivation).visual_document_ids).toEqual([
+      'a1b2c3d4e5f60718',
+      'ff00ee11dd22cc33',
+    ])
+  })
+
+  it('does not turn a visual into a source', () => {
+    // A source promises a title lookup; a visual id can never satisfy one, so it
+    // stays out of `sources` rather than sitting there permanently unresolved.
+    expect(resolveDerivation(grounded, [PRD]).sources.map((s) => s.document_id)).toEqual(['prd_1'])
+  })
+
+  it('drops junk entries and keeps the valid ids around them', () => {
+    const resolved = resolveDerivation({
+      derivation: {
+        ...grounded.derivation,
+        visual_document_ids: ['vis_1', 42, null, '', {}, ['vis_x'], 'vis_2'],
+      },
+    })
+    expect(resolved.visual_document_ids).toEqual(['vis_1', 'vis_2'])
+  })
+
+  it.each([
+    ['a string', 'vis_1'],
+    ['an object', { 0: 'vis_1' }],
+    ['a real stored null', null],
+    ['a number', 7],
+  ])('degrades a wholly unreadable value to an empty list, keeping the rest: %s', (_case, value) => {
+    const resolved = resolveDerivation({
+      derivation: { ...grounded.derivation, visual_document_ids: value },
+    })
+    expect(resolved.visual_document_ids).toEqual([])
+    // The rest of the record is untouched: one bad field costs exactly itself.
+    expect(resolved.sources.map((s) => s.document_id)).toEqual(['prd_1'])
+    expect(resolved.selected_document_count).toBe(1)
+    expect(resolved.origin).toBe('declared')
+  })
+
+  it('is a derivation even when a visual is the only recorded input', () => {
+    // The decisive case. Nothing else was recorded, so if visuals did not count
+    // as a derivation this document would fall through to the legacy
+    // reconstruction — which cannot express a visual at all — and lose the only
+    // input it has. The legacy source_prd_id below makes that fall-through
+    // visible: it would surface as a prototype_prd source, origin 'legacy'.
+    const visualOnly = {
+      document_id: 'prototype_3',
+      source_prd_id: 'prd_1',
+      derivation: {
+        sources: [],
+        selected_document_count: 0,
+        feedback_count: 0,
+        persona_ids: [],
+        visual_document_ids: ['9f8e7d6c5b4a3928'],
+        product_context_included: false,
+      },
+    }
+    const resolved = resolveDerivation(visualOnly, [PRD])
+    expect(resolved.origin).toBe('declared')
+    expect(resolved.visual_document_ids).toEqual(['9f8e7d6c5b4a3928'])
+    expect(resolved.sources).toEqual([])
+  })
+
+  it('reports no visuals for a legacy document, because no legacy shape had any', () => {
+    const resolved = resolveDerivation({ document_id: 'prototype_0', source_prd_id: 'prd_1' }, [PRD])
+    expect(resolved.origin).toBe('legacy')
+    expect(resolved.visual_document_ids).toEqual([])
   })
 })
 
@@ -245,7 +355,7 @@ describe('a document with no recoverable lineage', () => {
   ])('reports exactly that, and does not throw: %s', (_case, input) => {
     const resolved = resolveDerivation(input)
     expect(resolved.origin).toBe('none')
-    expect(resolved).toEqual({ ...emptyDerivation(), sources: [], origin: 'none' })
+    expect(resolved).toEqual({ ...EMPTY_RECORD, origin: 'none' })
   })
 })
 
@@ -282,6 +392,7 @@ describe('a malformed record', () => {
         selected_document_count: 'nonsense',
         feedback_count: -3,
         persona_ids: ['persona_1', 42, null, ''],
+        visual_document_ids: { 0: 'vis_1' },
         product_context_included: 'yes',
       },
     })
@@ -289,6 +400,7 @@ describe('a malformed record', () => {
     expect(resolved.selected_document_count).toBe(0)
     expect(resolved.feedback_count).toBe(0)
     expect(resolved.persona_ids).toEqual(['persona_1'])
+    expect(resolved.visual_document_ids).toEqual([])
     expect(resolved.product_context_included).toBe(false)
   })
 
@@ -305,7 +417,7 @@ describe('a malformed record', () => {
 
   it('normalizes any value to a usable derivation', () => {
     for (const raw of [undefined, null, 0, '', [], 'x', { sources: null }]) {
-      expect(normalizeDerivation(raw)).toEqual(emptyDerivation())
+      expect(normalizeDerivation(raw)).toEqual(EMPTY_RECORD)
     }
   })
 })

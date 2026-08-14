@@ -20,7 +20,7 @@
  * deliberate persona selection.
  */
 import type {
-  ProductContext, ProjectDocument, ProjectPersona,
+  ProductContext, ProductDoc, ProjectDocument, ProjectPersona,
 } from '../../api/types'
 import {
   PRODUCT_CONTEXT_FIELD_COUNT, countFilledProductContextFields,
@@ -56,6 +56,25 @@ export const REMIX_MIN_DOCUMENTS = 2
  * throw. This module is where the option lists are derived and is mocked nowhere.
  */
 export const MAX_SELECTED_RESEARCH_IDS = 10
+
+/**
+ * How many uploaded visuals (images) one prototype build may name.
+ *
+ * The same number as `MAX_SELECTED_PRODUCT_DOC_IDS` in
+ * `lambda/api/projects_handler.py`, which enforces it, and kept in lockstep by
+ * `lambda/api/test/test_visual_selection_bound_lockstep.py` — which reads THIS
+ * LINE as source text under `^export const MAX_SELECTED_PRODUCT_DOC_IDS =
+ * <digits>`, so the same shape rule applies as above: one line, column 0, a bare
+ * integer literal, exactly one assignment.
+ *
+ * Much smaller than the research bound, and not for budget reasons. The prototype
+ * prompt drives ONE set of eight `:root` CSS custom properties, and every selected
+ * visual contributes a concrete palette for those same eight slots — so several
+ * mockups with different palettes are contradictory instructions rather than more
+ * grounding. Four describes one product's screens and keeps a coherent palette the
+ * likely reading. That rationale lives in full beside the enforcing copy.
+ */
+export const MAX_SELECTED_PRODUCT_DOC_IDS = 4
 
 export interface OverviewStepState {
   /** Position in the sequence, 1-based, as shown on the card. */
@@ -97,6 +116,22 @@ export interface PrototypeSourceOption {
 }
 
 /**
+ * One uploaded visual a prototype build can be grounded in.
+ *
+ * A separate shape from `PrototypeSourceOption` rather than a mapping onto it,
+ * because a visual is NOT a project document: it is a product doc, keyed by
+ * `doc_id` and named by its `filename`, living under a different DynamoDB sort
+ * key. Calling its id `document_id` would invite a lookup in the project's
+ * document list that can only ever come back empty — the same reason
+ * `derivation.visual_document_ids` is a plain id list rather than `sources`
+ * entries with a role.
+ */
+export interface PrototypeVisualOption {
+  readonly doc_id: string
+  readonly filename: string
+}
+
+/**
  * Which of the two prototype source documents exist, and which specific ones the
  * build could read.
  *
@@ -127,6 +162,29 @@ export interface PrototypeSources {
    * `selectedResearchIds` apart from `selectedDocumentIds`.
    */
   readonly researchOptions: ReadonlyArray<PrototypeSourceOption>
+  /**
+   * The uploaded visuals the build can be grounded in — READY IMAGES ONLY, in the
+   * order the API listed them (newest first, as `list_docs` sorts).
+   *
+   * The two exclusions are the same two the backend applies when it assembles the
+   * visual brief (`build_visual_brief_block`): a doc that is not an image has no
+   * palette to read, and one that is not `ready` has no extracted description yet.
+   * Offering either would let a user tick something the build silently ignores,
+   * which is worse than not offering it — the prototype would come back ungrounded
+   * with nothing said.
+   */
+  readonly visualOptions: ReadonlyArray<PrototypeVisualOption>
+  /**
+   * How many uploaded IMAGES exist but cannot be offered yet, because extraction
+   * has not finished or failed.
+   *
+   * Reported rather than dropped silently: the user uploaded these minutes ago in
+   * the Product tab, and a list that shows two of their three screenshots with no
+   * explanation reads as a bug. Non-image uploads are NOT counted — a Markdown
+   * file is not a visual that failed to appear, it is a different input entirely
+   * (it reaches the prompt through the product-context tick-box instead).
+   */
+  readonly visualsNotReady: number
 }
 
 export interface OverviewState {
@@ -150,10 +208,20 @@ interface DeriveInput {
    * claim the description is empty.
    */
   readonly productContext?: ProductContext
+  /**
+   * The project's uploaded product docs, or undefined while the list is loading
+   * or after it failed.
+   *
+   * Optional and empty-defaulted rather than required: nothing else on the
+   * Overview grid reads it, and a caller that cannot supply it gets no visual
+   * options, which is exactly today's behaviour — a build that names no visuals.
+   * A failed list must not cost the other five cards their state.
+   */
+  readonly productDocs?: ReadonlyArray<ProductDoc>
 }
 
 export function deriveOverviewState({
-  personas, documents, productContext,
+  personas, documents, productContext, productDocs = [],
 }: DeriveInput): OverviewState {
   const filled = productContext == null ? undefined : countFilledProductContextFields(productContext)
   const researchOptions = sourceOptions(documents, 'research')
@@ -220,8 +288,41 @@ export function deriveOverviewState({
       prdOptions,
       prfaqOptions,
       researchOptions,
+      visualOptions: visualOptions(productDocs),
+      visualsNotReady: productDocs.filter((d) => isVisual(d) && d.status !== 'ready').length,
     },
   }
+}
+
+/**
+ * True for a product doc that is an image, whatever kind.
+ *
+ * A prefix test rather than the closed set the upload boundary enforces
+ * (`ALLOWED_MIME` in ProductDocsUpload, `IMAGE_CONTENT_TYPES` server-side), and
+ * lenient in the safe direction: an image type stored by a future client is still
+ * offered, and if the backend then declines to read it the build is merely
+ * ungrounded — whereas a stricter test here would hide a perfectly usable
+ * screenshot from the only control that can select it.
+ */
+function isVisual(doc: ProductDoc): boolean {
+  return doc.content_type.startsWith('image/')
+}
+
+/**
+ * The visuals a build may name: ready images, in the order the API listed them.
+ *
+ * Not re-sorted. `list_docs` already returns product docs newest first, so this
+ * preserves the ordering the Product tab shows the same files in — and the ORDER
+ * SENT is the tick order rather than this one anyway (see
+ * `usePrototypeBuild.selectedVisualIds`), because the prompt tells the model the
+ * first visual wins where two disagree.
+ */
+function visualOptions(
+  productDocs: ReadonlyArray<ProductDoc>,
+): ReadonlyArray<PrototypeVisualOption> {
+  return productDocs
+    .filter((doc) => isVisual(doc) && doc.status === 'ready')
+    .map((doc) => ({ doc_id: doc.doc_id, filename: doc.filename }))
 }
 
 /**

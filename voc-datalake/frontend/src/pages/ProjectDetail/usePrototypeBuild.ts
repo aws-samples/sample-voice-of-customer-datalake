@@ -26,9 +26,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
-import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
+import { MAX_SELECTED_PRODUCT_DOC_IDS, MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import { useTransientFlag } from './useTransientFlag'
-import type { PrototypeSourceOption } from './overviewState'
+import type { PrototypeSourceOption, PrototypeVisualOption } from './overviewState'
 
 /** Exactly one of the two source documents exists, so the build needs a confirm. */
 function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
@@ -122,8 +122,10 @@ export interface PrototypeBuildControl {
     readonly onSelectPrfaq: (documentId: string) => void
   }
   /**
-   * The two optional inputs, off by default so a build that touches nothing here
-   * sends the request it always did.
+   * The optional inputs, all off/empty by default so a build that touches nothing
+   * here sends the request it always did: the product-context flag, the research
+   * flag-and-list pair, and the visual list (which has no flag — see
+   * `selectedVisualIds`).
    *
    * These live on the card rather than in the confirm dialog, and that is a
    * requirement rather than a preference: `confirmKeyFor` deliberately returns
@@ -147,12 +149,43 @@ export interface PrototypeBuildControl {
      */
     readonly researchLimitReached: boolean
     readonly maxResearchIds: number
+    /**
+     * The uploaded visuals on offer — ready images only, as `overviewState`
+     * filters them. Empty means nothing to offer, so the caller can render on
+     * `length > 0` without a second condition.
+     */
+    readonly visualOptions: ReadonlyArray<PrototypeVisualOption>
+    /**
+     * The visuals this build will be grounded in, IN THE ORDER THEY WERE TICKED,
+     * and only those still on offer.
+     *
+     * There is no `useVisuals` flag beside this list, and that is the API's shape
+     * rather than an omission here: a non-empty list IS the request. A flag would
+     * admit a "flag on, empty list" state that means nothing and a "flag off, ids
+     * present" state that needs a convention nobody reading the request body can
+     * see — the argument `_validated_product_doc_ids` makes in
+     * `lambda/api/projects_handler.py`.
+     *
+     * Tick order, not option order: the generator's prompt tells the model that
+     * where two visuals disagree the FIRST one wins, so the order is a ranking the
+     * user expressed and re-sorting it would silently re-rank their choice.
+     */
+    readonly selectedVisualIds: ReadonlyArray<string>
+    readonly onToggleVisualId: (docId: string) => void
+    /**
+     * True when no further visual can be added. Same reason as research: the API
+     * rejects an over-long list, and a 400 arrives after the choice was made.
+     */
+    readonly visualLimitReached: boolean
+    readonly maxVisualIds: number
+    /** Uploaded images not `ready` yet, so not selectable — reported, not hidden. */
+    readonly visualsNotReady: number
   }
 }
 
 export function usePrototypeBuild({
   projectId, hasPrd, hasPrfaq, hasExistingPrototype, prdOptions = [], prfaqOptions = [],
-  researchOptions = [], onJobStarted,
+  researchOptions = [], visualOptions = [], visualsNotReady = 0, onJobStarted,
 }: {
   readonly projectId: string
   readonly hasPrd: boolean
@@ -174,6 +207,15 @@ export function usePrototypeBuild({
    * build reads none — today's behaviour.
    */
   readonly researchOptions?: ReadonlyArray<PrototypeSourceOption>
+  /**
+   * The project's selectable visuals — ready images only, already filtered by
+   * `overviewState`. Optional and empty-defaulted for the same reason as the
+   * research list: a caller that offers no visual selection sends no visual ids,
+   * and the build reads none.
+   */
+  readonly visualOptions?: ReadonlyArray<PrototypeVisualOption>
+  /** Uploaded images still extracting or failed, passed through for the UI note. */
+  readonly visualsNotReady?: number
   /**
    * The project already has a prototype, so this build makes an additional one.
    *
@@ -204,6 +246,14 @@ export function usePrototypeBuild({
   // back: the document list refetches when a job completes, so a chosen report
   // can be deleted under an open card, and an id the API cannot resolve is a 4xx.
   const [chosenResearchIds, setChosenResearchIds] = useState<ReadonlyArray<string>>([])
+  // The visuals the user has ticked, in tick order. Filtered against the live
+  // options below for the same reason the reports are: the Product tab can delete
+  // an upload while this card is open, and the API rejects an id it cannot resolve.
+  //
+  // No `useVisuals` boolean beside it, deliberately — the API has no such field, so
+  // inventing one here would be UI state with nothing to send it to, and the two
+  // could then disagree about what the build reads.
+  const [chosenVisualIds, setChosenVisualIds] = useState<ReadonlyArray<string>>([])
   const [busy, setBusy] = useState(false)
   // Lowers itself: the panel takes over, so the line must not outlive the gap.
   const started = useTransientFlag()
@@ -226,6 +276,17 @@ export function usePrototypeBuild({
     [chosenResearchIds, researchOptions],
   )
 
+  // Only visuals still on offer, in tick order. Same filter as the reports above,
+  // and load-bearing for the same reason: an upload deleted from the Product tab
+  // under this card would otherwise send an id the API cannot resolve, turning
+  // someone else's deletion into this build's 400.
+  const selectedVisualIds = useMemo(
+    () => chosenVisualIds.filter(
+      (id) => visualOptions.some((option) => option.doc_id === id),
+    ),
+    [chosenVisualIds, visualOptions],
+  )
+
   const onToggleResearch = useCallback((next: boolean) => {
     setUseResearch(next)
     // Ticking pre-selects the reports on offer, newest first, up to the bound the
@@ -245,6 +306,18 @@ export function usePrototypeBuild({
       // drop.
       if (current.length >= MAX_SELECTED_RESEARCH_IDS) return current
       return [...current, documentId]
+    })
+  }, [])
+
+  const onToggleVisualId = useCallback((docId: string) => {
+    setChosenVisualIds((current) => {
+      if (current.includes(docId)) return current.filter((id) => id !== docId)
+      // Refuse at the bound rather than send a list the API rejects — the same
+      // rule as the reports, with a much smaller number behind it because each
+      // extra visual is another palette competing for one set of CSS variables.
+      if (current.length >= MAX_SELECTED_PRODUCT_DOC_IDS) return current
+      // Appended, never sorted: this is the precedence order the prompt reads.
+      return [...current, docId]
     })
   }, [])
 
@@ -294,6 +367,11 @@ export function usePrototypeBuild({
         // Never sent while the box is unticked: ids left behind by a box the user
         // turned off are not a selection.
         selected_research_ids: useResearch ? [...selectedResearchIds] : [],
+        // Visuals have no gating flag to check first, which is the whole shape
+        // difference from the line above: the list IS the request, so it is sent
+        // as it stands. Empty is the request this hook made before visuals
+        // existed — the backend reads [] as "no visuals selected".
+        selected_product_doc_ids: [...selectedVisualIds],
       })
       started.set()
       onJobStarted?.()
@@ -303,7 +381,7 @@ export function usePrototypeBuild({
       setBusy(false)
     }
   }, [projectId, hasPrd, hasPrfaq, prdId, prfaqId, useProductContext, useResearch,
-      selectedResearchIds, i18n.language, onJobStarted, started])
+      selectedResearchIds, selectedVisualIds, i18n.language, onJobStarted, started])
 
   const onClick = useCallback(() => {
     if (confirmKey != null) {
@@ -355,6 +433,12 @@ export function usePrototypeBuild({
       onToggleResearchId,
       researchLimitReached: selectedResearchIds.length >= MAX_SELECTED_RESEARCH_IDS,
       maxResearchIds: MAX_SELECTED_RESEARCH_IDS,
+      visualOptions,
+      selectedVisualIds,
+      onToggleVisualId,
+      visualLimitReached: selectedVisualIds.length >= MAX_SELECTED_PRODUCT_DOC_IDS,
+      maxVisualIds: MAX_SELECTED_PRODUCT_DOC_IDS,
+      visualsNotReady,
     },
   }
 }

@@ -72,7 +72,9 @@
         "reference": "参考文档"
       },
       "selectedUsed": "已选择 {{selected}} 个文档，使用 {{used}} 个",
-      "unavailable": "已不可用"
+      "unavailable": "已不可用",
+      "visualsUsed_one": "已使用 {{count}} 份视觉稿",
+      "visualsUsed_other": "已使用 {{count}} 份视觉稿"
     },
     "editDocument": "编辑文档",
     "newDocument": "新建文档",
@@ -107,7 +109,10 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "已开始 — 可在后台任务中查看进度。",
       "useProductContext": "产品/服务说明",
-      "useResearch": "研究报告（{{total}}）"
+      "useResearch": "研究报告（{{total}}）",
+      "visuals": "视觉稿（{{total}}）",
+      "visualsLimit": "每次构建最多 {{max}} 份视觉稿",
+      "visualsNotReady": "{{total}} 份仍在处理中"
     },
     "revision": {
       "feedback": "反馈：{{feedback}}",

@@ -154,6 +154,7 @@ class TestReferenceDocumentProvenance:
             'selected_document_count': 0,
             'feedback_count': 0,
             'persona_ids': [],
+            'visual_document_ids': [],
             'product_context_included': False,
         }
 
@@ -332,5 +333,6 @@ class TestStepFunctionsPath:
             'selected_document_count': 0,
             'feedback_count': 0,
             'persona_ids': [],
+            'visual_document_ids': [],
             'product_context_included': False,
         }

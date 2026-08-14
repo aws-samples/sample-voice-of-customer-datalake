@@ -72,7 +72,9 @@
         "reference": "Referenz"
       },
       "selectedUsed": "{{used}} von {{selected}} ausgewählten Dokumenten verwendet",
-      "unavailable": "Nicht mehr verfügbar"
+      "unavailable": "Nicht mehr verfügbar",
+      "visualsUsed_one": "{{count}} Mockup verwendet",
+      "visualsUsed_other": "{{count}} Mockups verwendet"
     },
     "editDocument": "Dokument bearbeiten",
     "newDocument": "Neues Dokument",
@@ -107,7 +109,10 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "Gestartet — Verfolgen Sie den Fortschritt unter Hintergrundaufgaben.",
       "useProductContext": "Produkt-/Servicebeschreibung",
-      "useResearch": "Rechercheberichte ({{total}})"
+      "useResearch": "Rechercheberichte ({{total}})",
+      "visuals": "Visuelle Mockups ({{total}})",
+      "visualsLimit": "Höchstens {{max}} Mockups pro Build",
+      "visualsNotReady": "{{total}} werden noch verarbeitet"
     },
     "revision": {
       "feedback": "Rückmeldung: {{feedback}}",

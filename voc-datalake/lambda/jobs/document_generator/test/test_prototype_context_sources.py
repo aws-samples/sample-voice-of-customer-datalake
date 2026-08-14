@@ -1,9 +1,11 @@
 """
-The two extra sources a prototype build can be told to read: the project's
-product context, and specific research reports.
+The extra sources a prototype build can be told to read: the project's product
+context, specific research reports, and the uploaded visuals it selected.
 
-Both are opt-in per build (`use_product_context`, `use_research` +
-`selected_research_ids` in `doc_config`). Three properties:
+The first two are opt-in per build via a switch (`use_product_context`,
+`use_research` + `selected_research_ids` in `doc_config`); the third has no
+switch, because a non-empty `selected_product_doc_ids` IS the request. Three
+properties:
 
 1. **Ticked reaches the prompt, unticked does not**, and the document's
    `derivation` says which of the two happened. A build that claims grounding it
@@ -18,17 +20,20 @@ Both are opt-in per build (`use_product_context`, `use_research` +
    research reports: with fewer non-research documents, "scoped to research"
    and "reused the general picker" would be the same test.
 
-3. **Asking for neither leaves the prompt byte-identical to what this path
+3. **Asking for NONE of them leaves the prompt byte-identical to what this path
    produced before the feature existed.** Pinned against a golden file captured
    on the pre-change tree (`golden/prototype_prompt_baseline.txt`), because a
    substring assertion cannot see an added blank line or a reordered section.
+   Every optional section — the visual brief included — therefore has to render
+   to the empty string, not to a heading with nothing under it.
 
 Every fixture supplies enough table responses for a build to COMPLETE, so a
 test that expects a failure fails for the reason it names rather than because
 the mock ran out of answers.
 """
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -47,6 +52,96 @@ RESEARCH_A = {'document_id': 'research_a', 'title': 'Churn interviews', 'content
 RESEARCH_B = {'document_id': 'research_b', 'title': 'Pricing survey', 'content': 'RESEARCH B findings'}
 
 GOLDEN_PROMPT = Path(__file__).parent / 'golden' / 'prototype_prompt_baseline.txt'
+
+
+# ── Visual-brief fixtures ─────────────────────────────────────────────────────
+#
+# Product documents, in the shape `lambda/api/test/test_visual_brief.py` uses, so
+# the producer's tests and the consumer's cannot drift on what a stored visual
+# looks like.
+
+def _visual(doc_id: str, created_at: str = '2026-08-13T10:00:00+00:00') -> dict:
+    """A product-doc record that qualifies as a visual: an image, `ready`, extracted."""
+    return {
+        'doc_id': doc_id,
+        'filename': f'{doc_id}.png',
+        'content_type': 'image/png',
+        'size_bytes': 2048,
+        'status': 'ready',
+        'extracted_chars': 100,
+        's3_extracted_key': f'projects/p/product_docs/extracted/{doc_id}.txt',
+        'created_at': created_at,
+    }
+
+
+MOCKUP = _visual('mockup')
+SCREENSHOT = _visual('screenshot', created_at='2026-08-13T11:00:00+00:00')
+
+#: Descriptions distinctive enough that "this visual reached the prompt" cannot be
+#: confused with the other one, or with anything the template itself says.
+MOCKUP_BODY = 'PALETTE MOCKUP: magenta #FF00FF accent, desktop top-nav, 4px corners'
+SCREENSHOT_BODY = 'PALETTE SCREENSHOT: mint #00FF88 accent, phone shell, 20px corners'
+
+#: Keyed by S3 KEY rather than by doc_id, so a body cannot be attributed to the
+#: wrong document — the wrong key raises KeyError instead of returning text.
+VISUAL_BODIES = {
+    MOCKUP['s3_extracted_key']: MOCKUP_BODY,
+    SCREENSHOT['s3_extracted_key']: SCREENSHOT_BODY,
+}
+
+#: The section's own heading, as the handler writes it.
+VISUAL_HEADING = 'VISUAL BRIEF'
+
+#: What can follow the visual brief in the template. Used to slice the section out
+#: so an assertion can say a description landed INSIDE it — `in prompt` alone would
+#: pass just as happily with the description dumped into the product-context block.
+#: `\n\nRequirements:` closes the last section, so the list always has a member.
+_SECTIONS_AFTER_THE_VISUAL_BRIEF = (
+    '\n\nPRODUCT CONTEXT', '\n\nPRD:', '\n\nPR/FAQ:', '\n\nRESEARCH FINDINGS:',
+    '\n\nRequirements:',
+)
+
+
+def _visual_section(prompt: str) -> str:
+    """The visual-brief section as it appears in the prompt.
+
+    `index` raises if the heading is absent, which is the loud failure to want
+    here — a test asking for the section has already asserted it exists.
+    """
+    start = prompt.index(VISUAL_HEADING)
+    return prompt[start:min(
+        prompt.index(marker, start)
+        for marker in _SECTIONS_AFTER_THE_VISUAL_BRIEF
+        if marker in prompt[start:]
+    )]
+
+
+@contextmanager
+def _visuals(docs, *, bodies=None, unreadable=()):
+    """The project's product documents, and the extracted text behind them.
+
+    Patches the PRODUCER's own two reads (`_list_doc_items`, `_s3`) rather than
+    stubbing the producer, so these tests run the real `build_visual_brief_block`
+    — its selection filter, its fences and its used-id bookkeeping included. A
+    stub would let the consumer agree with a producer that does not exist.
+
+    `unreadable` names S3 keys whose read raises, which is how a producer honestly
+    returns fewer ids than were selected.
+    """
+    from api import product_context
+
+    text = VISUAL_BODIES if bodies is None else bodies
+    s3 = MagicMock()
+
+    def get_object(Bucket, Key):  # capitalised kwargs are boto3's own
+        if Key in unreadable:
+            raise RuntimeError('NoSuchKey')
+        return {'Body': MagicMock(read=lambda: text[Key].encode('utf-8'))}
+
+    s3.get_object.side_effect = get_object
+    with patch.object(product_context, '_list_doc_items', return_value=list(docs)), \
+            patch.object(product_context, '_s3', return_value=s3):
+        yield
 
 
 def _wire(mock_dynamodb, *, prd_pages=(), prfaq_pages=(), documents=None, project_name='My Project'):
@@ -734,6 +829,233 @@ class TestTheDerivationReportsWhatWasUsed:
         assert _saved(mock_dynamodb)['derivation']['product_context_included'] is False
 
 
+class TestSelectedVisualsGroundTheLookAndFeel:
+    """
+    `selected_product_doc_ids` names uploaded mockups/screenshots whose extracted
+    DESCRIPTION is injected as a brief for the look and feel. There is no
+    `use_visuals` switch: a non-empty list is the request.
+
+    THE FIXTURE IS THE ARGUMENT. Every test here gives the project TWO ready
+    visuals and selects one or both, because a single-document project cannot tell
+    "the selection was honoured" from "everything ready was included" — and the
+    second is what happens without this change, since a project's ready documents
+    already reach prompts through `build_product_context_block`.
+    """
+
+    def test_a_selected_visual_lands_in_the_visual_brief_and_the_unselected_one_is_absent(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The discriminating case. Both documents are images, both `ready`, both
+        extracted; they differ only in whether the build asked for them.
+
+        The description must also land in the VISUAL-BRIEF section rather than in
+        the product-context/internal-documents block — the other route by which a
+        ready document reaches this prompt, and the one that ignores the selection.
+        `use_product_context` is not ticked here, so that route is not even open.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with _visuals([MOCKUP, SCREENSHOT]):
+            _run(sample_job_event, lambda_context,
+                 selected_product_doc_ids=[MOCKUP['doc_id']])
+
+        prompt = _prompt(mock_converse)
+        assert MOCKUP_BODY in _visual_section(prompt)
+        assert SCREENSHOT_BODY not in prompt
+        # Not even named: a heading with nothing under it spends budget telling the
+        # model about a visual it cannot see.
+        assert SCREENSHOT['filename'] not in prompt
+        # And it did not arrive through the product-context route, which would have
+        # included both documents and honoured no selection at all.
+        assert 'PRODUCT CONTEXT' not in prompt
+        assert '### Internal documents' not in prompt
+
+    def test_the_section_tells_the_model_to_take_the_palette_and_layout_from_the_visuals(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """A section that quotes the description and asks for nothing is a wasted
+        section: the system prompt's neutral indigo defaults still win, because
+        nothing told the model otherwise. The instruction is worded against that
+        prompt's own levers — the `:root` custom properties, the phone-shell/top-nav
+        choice — so these assertions are on the redirection, not on the quote.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with _visuals([MOCKUP, SCREENSHOT]):
+            _run(sample_job_event, lambda_context,
+                 selected_product_doc_ids=[MOCKUP['doc_id']])
+
+        section = _visual_section(_prompt(mock_converse))
+        assert 'ACT ON THE VISUAL BRIEF ABOVE' in section
+        # The theme levers, named as the system prompt names them.
+        assert ':root custom property' in section
+        assert '--primary' in section
+        assert 'in preference to the neutral defaults' in section
+        assert 'LAYOUT MODE' in section
+        # Precedence, which the producer guarantees by order and only the prompt
+        # can state.
+        assert 'EARLIER one wins' in section
+
+    def test_the_brief_sits_beside_brand_ahead_of_the_document_sections(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event,
+        lambda_context, stub_product_context,
+    ):
+        """Placement is the argument for the section being where it is: it is an
+        instruction about look and feel, so it belongs with BRAND — the other
+        look-and-feel lever — rather than among the sections that say what the
+        product does. Adjacency is asserted as ONE substring; two `in` checks would
+        pass with the brief anywhere in the prompt.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with _visuals([MOCKUP, SCREENSHOT]):
+            _run(sample_job_event, lambda_context, brand='UNNI',
+                 use_product_context=True,
+                 selected_product_doc_ids=[MOCKUP['doc_id']])
+
+        prompt = _prompt(mock_converse)
+        assert f'BRAND: UNNI\n\n\n{VISUAL_HEADING}' in prompt
+        assert prompt.index(VISUAL_HEADING) < prompt.index(DISTINCTIVE_CONTEXT)
+        assert prompt.index(DISTINCTIVE_CONTEXT) < prompt.index('\n\nPRD:')
+
+    def test_two_visuals_appear_in_the_order_they_were_selected(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """Order is load-bearing, because the section tells the model the earlier
+        visual wins a disagreement. Requested in the REVERSE of stored order, which
+        is the only arrangement that can tell "the caller's order" from a
+        `created_at` sort — in stored order the two agree.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with _visuals([MOCKUP, SCREENSHOT]):  # stored: mockup, then screenshot
+            _run(sample_job_event, lambda_context,
+                 selected_product_doc_ids=[SCREENSHOT['doc_id'], MOCKUP['doc_id']])
+
+        prompt = _prompt(mock_converse)
+        assert prompt.index(SCREENSHOT_BODY) < prompt.index(MOCKUP_BODY)
+        # The record is in the same order, so "the first visual won" is readable
+        # from the derivation and from the prompt as the same claim.
+        assert _saved(mock_dynamodb)['derivation']['visual_document_ids'] == [
+            'screenshot', 'mockup',
+        ]
+
+
+class TestTheDerivationRecordsTheVisualsThatWereUsed:
+    def test_the_recorded_ids_follow_the_producer_not_the_request(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """TWO visuals selected, ONE of them unreadable. The producer reports only
+        what reached the text, and the record has to follow that — a build that
+        recorded `selected_product_doc_ids` would claim grounding on a description
+        the model never saw, which is the whole failure this field exists to make
+        visible.
+
+        The S3 failure is planted in the producer's own read rather than stubbing
+        the producer's return value, so this fails if the consumer starts recording
+        the request even while the producer stays correct.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with _visuals([MOCKUP, SCREENSHOT], unreadable=[MOCKUP['s3_extracted_key']]):
+            _run(sample_job_event, lambda_context,
+                 selected_product_doc_ids=[MOCKUP['doc_id'], SCREENSHOT['doc_id']])
+
+        prompt = _prompt(mock_converse)
+        assert MOCKUP_BODY not in prompt
+        assert SCREENSHOT_BODY in _visual_section(prompt)
+        # Two selected, one used, one recorded.
+        assert _saved(mock_dynamodb)['derivation']['visual_document_ids'] == ['screenshot']
+
+    def test_a_visual_gains_no_sources_entry_and_does_not_change_the_document_count(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """A visual is a product document under its own sort key, not a
+        ProjectDocument, so a `sources` entry for it would never resolve to a title
+        and would render as a bare hex id in the panel whose job is to explain
+        provenance (see shared/derivation.py). `selected_document_count` counts
+        REFERENCE documents, so it must not move either — the visuals are counted
+        separately, in their own list.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with _visuals([MOCKUP, SCREENSHOT]):
+            _run(sample_job_event, lambda_context,
+                 selected_product_doc_ids=[MOCKUP['doc_id'], SCREENSHOT['doc_id']])
+
+        derivation = _saved(mock_dynamodb)['derivation']
+        assert derivation['visual_document_ids'] == ['mockup', 'screenshot']
+        # Exactly the PRD and PR/FAQ this build read, and nothing else.
+        assert derivation['sources'] == [
+            {'document_id': 'aa_prd_new', 'role': 'prototype_prd'},
+            {'document_id': 'prfaq_1', 'role': 'prototype_prfaq'},
+        ]
+        assert derivation['selected_document_count'] == 2
+
+    def test_a_producer_failure_does_not_fail_the_build_and_claims_no_visuals(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """`build_visual_brief_block` documents that it never raises. The wrapper is
+        defensive anyway, because "never raises" is a promise a later edit can break
+        — and the prototype is the artifact the user asked for. Losing it because an
+        optional look-and-feel section could not be assembled is the worse outcome.
+
+        The raise is planted in the producer, which is where a real failure lands;
+        stubbing the wrapper would test the stub.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with patch(
+            'api.product_context.build_visual_brief_block',
+            side_effect=RuntimeError('DynamoDB is having a day'),
+        ):
+            _run(sample_job_event, lambda_context,
+                 selected_product_doc_ids=[MOCKUP['doc_id']])
+
+        item = _saved(mock_dynamodb)
+        assert item['document_type'] == 'prototype'
+        assert VISUAL_HEADING not in _prompt(mock_converse)
+        assert item['derivation']['visual_document_ids'] == []
+
+
+class TestVisualsAreReadOnlyWhenSelected:
+    @pytest.mark.parametrize('selection', [
+        pytest.param({}, id='absent'),
+        # What the API actually sends for a build that ticked nothing: the key is
+        # always present, holding []. A gate tested only for absence is a gate
+        # tested on a shape production does not produce.
+        pytest.param({'selected_product_doc_ids': []}, id='empty'),
+        pytest.param({'selected_product_doc_ids': None}, id='null'),
+    ])
+    def test_no_selection_does_not_call_the_producer(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event,
+        lambda_context, selection,
+    ):
+        """The selection IS the switch. With no ids there is nothing to look up, and
+        a build that pays for the lookup and discards the empty answer is the same
+        defect one step earlier — invisible in the prompt (the producer answers
+        `('', [])`, so the section is empty either way) and only observable here.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        with patch(
+            'api.product_context.build_visual_brief_block', return_value=('', []),
+        ) as producer:
+            _run(sample_job_event, lambda_context, **selection)
+
+        producer.assert_not_called()
+        assert VISUAL_HEADING not in _prompt(mock_converse)
+        assert _saved(mock_dynamodb)['derivation']['visual_document_ids'] == []
+
+
 class TestAskingForNeitherChangesNothing:
     def test_the_prompt_is_byte_identical_to_the_pre_feature_prompt(
         self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
@@ -760,3 +1082,18 @@ class TestAskingForNeitherChangesNothing:
         _run(sample_job_event, lambda_context, title='Golden Prototype')
 
         assert _prompt(mock_converse) == GOLDEN_PROMPT.read_text(encoding='utf-8')
+
+    def test_no_visual_brief_heading_appears_when_nothing_is_selected(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        """The golden comparison above already covers this, byte for byte. This
+        names the failure so a diff does not have to be read to find it: an
+        optional section that renders a heading (or a bare blank line) when nothing
+        was asked for is a bug in the section, not in the golden file.
+        """
+        _wire_one_of_each(mock_dynamodb)
+        mock_converse.return_value = HTML
+
+        _run(sample_job_event, lambda_context)
+
+        assert VISUAL_HEADING not in _prompt(mock_converse)

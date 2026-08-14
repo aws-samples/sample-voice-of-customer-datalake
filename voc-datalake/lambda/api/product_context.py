@@ -101,6 +101,29 @@ MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_DOCS_PER_PROJECT = 20
 MAX_EXTRACTED_INJECTION_CHARS = 50_000
 
+# ── Visual-brief budget (build_visual_brief_block) ───────────────────────────
+# Two caps, because neither bounds the section on its own — the same pair, and the
+# same reason, as RESEARCH_PER_DOC_CAP / RESEARCH_TOTAL_CAP in
+# lambda/jobs/document_generator/handler.py.
+#
+# Per visual. An image's extracted text is a DESCRIPTION, not a file body: the
+# extractor asks for a palette, a component inventory and a layout mode, capped at
+# MAX_DESCRIPTION_TOKENS (4096) — so a maximal one is ~16k characters and a typical
+# one is a small fraction of that. 3000 is deliberately the figure a reference spec
+# document already gets in the prototype prompt (RESEARCH_PER_DOC_CAP, and the
+# reference-document slice `_gather_context` applies): a visual is allowed to be as
+# loud as one spec document and no louder. It binds only on a description that ran
+# long, and what it cuts is the tail — the palette and layout lines the prompt acts
+# on come first.
+MAX_VISUAL_BRIEF_DOC_CHARS = 3_000
+# Across all selected visuals. The per-visual cap alone is not a bound on the
+# section: MAX_DOCS_PER_PROJECT is 20, so a caller ticking every image could spend
+# 60,000 characters of a prompt that also carries a PRD, a PR/FAQ, research and (on
+# a revision) 24,000 characters of prior HTML. 9000 is three visuals at full size,
+# which is enough to ground a palette, a layout mode and one component inventory;
+# past that the descriptions largely restate each other.
+MAX_VISUAL_BRIEF_TOTAL_CHARS = 9_000
+
 # Text formats we can extract with nothing more than a decode.
 TEXT_CONTENT_TYPES = {
     'text/markdown': 'md',
@@ -1104,3 +1127,109 @@ def build_product_context_block(project_id: str, docs: list[dict] | None = None)
     if not sections:
         return "(No product context provided.)"
     return '\n\n'.join(sections)
+
+
+# ── Visual brief — the SELECTED image documents, for the prototype prompt ─────
+
+def build_visual_brief_block(project_id: str, doc_ids) -> tuple[str, list[str]]:
+    """The quoted descriptions of the image documents a build SELECTED.
+
+    Returns `(block, used_doc_ids)`: the assembled text (or `''` when nothing
+    usable was found) and the ids whose text actually reached that text, in the
+    order they appear in it.
+
+    `used_doc_ids` IS THE PROVENANCE RECORD, so it lists what was USED, never what
+    was requested — the convention `lambda/shared/derivation.py` documents for
+    `sources`. Everything that drops an id (unknown, not an image, not ready,
+    unreadable, empty, or refused by the total budget) therefore drops it from this
+    list too, so a caller recording it cannot claim a visual the model never saw.
+
+    THIS IS NOT `_injectable_docs`, AND THE TWO MUST NOT BE MERGED. That predicate
+    excludes images on purpose (see its docstring); this one accepts nothing else.
+    A selected TEXT document is ignored here precisely because it already reaches
+    the prompt through `build_product_context_block` — including it in both would
+    spend the budget twice for one document and say the same thing in two voices.
+
+    ORDER FOLLOWS `doc_ids`, NOT `created_at`. The caller's order is meaningful:
+    the consuming prompt tells the model that where two visuals disagree the first
+    one wins, so re-sorting here would silently re-rank the user's choice. Wording
+    that precedence is the consumer's job; this function only guarantees the order.
+
+    Args:
+        project_id: the project whose documents may be selected.
+        doc_ids: the selected `doc_id`s, in precedence order. Any iterable; ids
+            that are not non-empty strings, and ids that name nothing in this
+            project, are ignored rather than raising — the value arrives from a
+            request body, and one bad element must not fail a build.
+
+    NEVER RAISES. An S3 read that fails, or extracted text that is empty or
+    whitespace, skips that one visual and continues, logged as a warning exactly as
+    the surrounding code does. Nothing on this path is worth failing a build for.
+    """
+    bucket = os.environ.get('RAW_DATA_BUCKET')
+    requested = [d for d in (doc_ids or []) if isinstance(d, str) and d]
+    if not bucket or not requested:
+        return '', []
+
+    # Keyed by doc_id so the loop below can follow the CALLER's order. Filtered
+    # first, so an id naming a text document is as absent as an id naming nothing —
+    # one skip path, not two.
+    eligible = {
+        d.get('doc_id'): d
+        for d in _list_doc_items(project_id)
+        if d.get('status') == 'ready'
+        and d.get('s3_extracted_key')
+        and d.get('content_type') in IMAGE_CONTENT_TYPES
+    }
+
+    budget = MAX_VISUAL_BRIEF_TOTAL_CHARS
+    blocks: list[str] = []
+    used: list[str] = []
+    for doc_id in requested:
+        doc = eligible.get(doc_id)
+        # `doc_id in used` de-duplicates: a repeated id would otherwise be fenced
+        # twice, charged twice, and reported twice as its own provenance.
+        if doc is None or doc_id in used:
+            continue
+        try:
+            obj = _s3().get_object(Bucket=bucket, Key=doc['s3_extracted_key'])
+            text = obj['Body'].read().decode('utf-8', errors='replace')
+        except Exception as e:  # noqa: BLE001 - one unreadable visual is not a build failure
+            logger.warning(f'Failed reading extracted text for visual {doc_id}: {e}')
+            continue
+
+        chunk = text.strip()[:MAX_VISUAL_BRIEF_DOC_CHARS]
+        # Spent front-to-back, and ALL-OR-NOTHING per visual: a description that
+        # does not fit is skipped whole rather than fenced half-written, because
+        # half a palette listing is not a smaller version of the instruction — it is
+        # a different one. Front-to-back is safe here in a way it is not in
+        # `_research_section` (which shares the budget equally): there, every named
+        # report is recorded as used regardless, so dropping the tail made the
+        # record a lie. Here the record follows the text, so a skip is honest.
+        #
+        # `continue`, not `break`: a later small visual still fits after an
+        # oversized one was refused, and the ids that do get in keep the caller's
+        # relative order either way.
+        if not chunk or len(chunk) > budget:
+            continue
+        budget -= len(chunk)
+        # The budget counts the DOCUMENT's characters; the heading and the fence are
+        # ours, so they are not charged to it — same accounting as
+        # build_product_context_block. `_fenced` only ever shrinks the body (the
+        # marker is longer than its replacement), so sanitising after the slice
+        # cannot push a visual back over its cap.
+        blocks.append(
+            f"#### {doc.get('filename')}\n"
+            f'{UNTRUSTED_DOC_BEGIN}\n{_fenced(chunk)}\n{UNTRUSTED_DOC_END}'
+        )
+        used.append(doc_id)
+
+    if not blocks:
+        return '', []
+
+    block = (
+        '### Visual references (uploaded images)\n'
+        + UNTRUSTED_DOC_NOTICE + '\n\n'
+        + '\n\n'.join(blocks)
+    )
+    return block, used
