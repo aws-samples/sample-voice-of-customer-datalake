@@ -310,6 +310,13 @@ export function usePrototypeBuild({
   // same two reasons as the reports above. The filter stops an upload deleted from
   // the Product tab under this card becoming this build's 400; the slice stops a
   // visual that merely re-extracted and came back doing the same thing.
+  //
+  // ⚠️ THIS IS ALSO WHAT THE TICK-BOXES RENDER FROM, so a box shows what will be
+  // SENT, not what is stored. In the re-extraction case above that means the id
+  // beyond the bound visibly un-ticks itself once its doc returns `ready`. That is
+  // deliberate: honest about the request, where showing it ticked would promise a
+  // grounding the build will not have. Do NOT "fix" it by exposing
+  // `chosenVisualIds` instead — that is the state the slice exists to not trust.
   const selectedVisualIds = useMemo(
     () => chosenVisualIds
       .filter((id) => isOfferedVisual(visualOptions, id))
