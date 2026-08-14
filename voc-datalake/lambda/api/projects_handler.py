@@ -349,7 +349,6 @@ def handle_generate_personas_job(event: dict) -> dict:
     import time
     
     logger.info(f"[JOB] ========== ASYNC PERSONA JOB STARTED ==========")
-    logger.info(f"[JOB] Event: {event}")
     job_start = time.time()
     
     project_id = event['project_id']
@@ -357,7 +356,6 @@ def handle_generate_personas_job(event: dict) -> dict:
     filters = event['filters']
     
     logger.info(f"[JOB] Project: {project_id}, Job: {job_id}")
-    logger.info(f"[JOB] Filters: {filters}")
     
     def progress_callback(progress: int, step: str):
         logger.info(f"[JOB] Progress callback: {progress}% - {step}")
@@ -755,8 +753,6 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
     try:
-        logger.info(f"Received event: {json.dumps(event)}")
-        
         # Route async job invocations
         job_type = event.get('job_type')
         if job_type == 'generate_personas':

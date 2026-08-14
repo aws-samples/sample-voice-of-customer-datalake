@@ -366,4 +366,52 @@ class TestDocumentCRUDEndpoints:
         assert body['success'] is True
 
 
+class TestSensitiveEventLogging:
+    """Tests that request and job payloads are not written to logs."""
+
+    @patch('projects_handler.logger.info')
+    def test_api_gateway_event_is_not_logged(
+        self, mock_log_info, api_gateway_event, lambda_context
+    ):
+        """Credentials and request bodies must not appear in info logs."""
+        from projects_handler import lambda_handler
+
+        secret = 'v37-sensitive-api-payload'
+        event = api_gateway_event(
+            method='GET',
+            path='/projects/config',
+            headers={
+                'Authorization': f'Bearer {secret}',
+                'Cookie': f'session={secret}',
+            },
+        )
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert secret not in str(mock_log_info.call_args_list)
+
+    @patch('projects_handler.logger.info')
+    @patch('projects_handler.generate_personas')
+    @patch('projects_handler.update_job_status')
+    def test_async_job_payload_is_not_logged(
+        self, mock_update_job_status, mock_generate_personas, mock_log_info
+    ):
+        """Job filters can contain customer input and must not be logged raw."""
+        from projects_handler import handle_generate_personas_job
+
+        secret = 'v37-sensitive-job-payload'
+        mock_generate_personas.return_value = {'success': True}
+        event = {
+            'job_type': 'generate_personas',
+            'project_id': 'project-1',
+            'job_id': 'job-1',
+            'filters': {'custom_instructions': secret},
+        }
+
+        result = handle_generate_personas_job(event)
+
+        assert result == {'success': True}
+        assert secret not in str(mock_log_info.call_args_list)
+
 
