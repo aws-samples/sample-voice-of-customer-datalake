@@ -263,6 +263,18 @@ export function usePersonaImageInput({
    * showing, so the listener does not exist for the text step at all, and the
    * no-file early return means an ordinary text paste anywhere keeps its default,
    * including into the persona textarea.
+   *
+   * WHAT A document LISTENER CANNOT KNOW is whether something else is on top of
+   * the modal, so it is worth saying why nothing is. ProjectDetail renders every
+   * modal wrapper as a sibling on independent state, and no state machine makes
+   * them exclusive — what does is this modal's own `fixed inset-0` backdrop, which
+   * covers the viewport and leaves every trigger behind it unclickable while it is
+   * open. The other paste handlers on this page (ProductDocsUpload's pane,
+   * ChatTab's attachments) live in other tabs, behind the same backdrop. So the
+   * exclusivity is a CONSEQUENCE of the overlay rather than something enforced:
+   * anything that could raise a surface ABOVE this one — a toast with a paste
+   * target, a second overlay at a higher z-index — would need this listener to
+   * check it is still topmost, or to move back to the panel with a focus trap.
    */
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
