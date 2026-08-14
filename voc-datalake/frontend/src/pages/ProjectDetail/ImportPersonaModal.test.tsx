@@ -248,11 +248,24 @@ describe('ImportPersonaModal image input paths', () => {
     return screen.getByTestId('persona-dropzone')
   }
 
-  /** The modal panel — the box a near-miss drop lands on. */
+  /**
+   * The modal panel — the box a near-miss drop lands on.
+   *
+   * By testid for the same reason the zone is: `.max-w-2xl` is a layout utility
+   * that a wider modal would change with no behaviour change at all, and the
+   * failure would read as "modal panel not found" from a test about drop
+   * cancellation.
+   */
   function panel(): HTMLElement {
-    const found = dropZone().closest('.max-w-2xl')
-    if (!(found instanceof HTMLElement)) throw new Error('modal panel not found')
-    return found
+    return screen.getByTestId('persona-import-panel')
+  }
+
+  /**
+   * The dimmed area covering the viewport — the biggest miss region there is, and
+   * where the cancel handlers actually live.
+   */
+  function backdrop(): HTMLElement {
+    return screen.getByTestId('persona-import-backdrop')
   }
 
   function importButton(): HTMLElement {
@@ -380,6 +393,36 @@ describe('ImportPersonaModal image input paths', () => {
     expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
   })
 
+  it('unmarks the zone when the drag is released somewhere else entirely', async () => {
+    // A drag that ENTERS the zone and is then released over the footer or the
+    // dimmed backdrop fires no dragleave for the zone — the browser does not
+    // report leaving an element the drag left by being dropped elsewhere — so the
+    // purple highlight stayed on until the modal was closed, showing a state that
+    // was not true.
+    stubImaging(800, 600)
+    await openImageStep()
+    fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
+
+    fireEvent.drop(backdrop(), {
+      dataTransfer: { files: [imageFile('card.png', 'image/png', 512)], types: ['Files'] },
+    })
+
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
+  })
+
+  it('unmarks the zone when a drag is abandoned rather than dropped', async () => {
+    // dragend is the other way a drag ends without the zone hearing about it: the
+    // user dragged in, changed their mind, and let go outside the window.
+    await openImageStep()
+    fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
+
+    fireEvent(document, new Event('dragend', { bubbles: true }))
+
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
+  })
+
   it('cancels a drop that misses the zone, instead of navigating away from the modal', async () => {
     // The zone is p-8 inside a max-w-2xl panel, so most of the modal — heading,
     // type buttons, hint, info box, footer — is a few pixels off it. A drop there
@@ -403,6 +446,64 @@ describe('ImportPersonaModal image input paths', () => {
     // selects something, so a near-miss is inert rather than a second target.
     expect(screen.queryByText('card.png')).not.toBeInTheDocument()
     expect(importButton()).toBeDisabled()
+  })
+
+  it('cancels a drop on the dimmed backdrop, which is most of the screen', async () => {
+    // The handlers were on the max-w-2xl panel only, and the backdrop covers the
+    // whole viewport — so the LARGEST miss region, and the one a user aiming at a
+    // small centred panel is most likely to hit, still reached the browser default
+    // and navigated away from the app entirely. They are on the backdrop now,
+    // which is an ancestor of the panel, so one pair covers both.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    const missed = fireEvent.drop(backdrop(), {
+      dataTransfer: { files: [imageFile('card.png', 'image/png', 512)], types: ['Files'] },
+    })
+    const draggedOver = fireEvent.dragOver(backdrop(), {
+      dataTransfer: { files: [], types: ['Files'] },
+    })
+
+    expect(missed).toBe(false)
+    expect(draggedOver).toBe(false)
+    expect(screen.queryByText('card.png')).not.toBeInTheDocument()
+    expect(importButton()).toBeDisabled()
+  })
+
+  it('leaves a TEXT drag into the persona textarea alone, unlike a file drag', async () => {
+    // The control for the two cancel tests above, and a regression they caused:
+    // the cancel handler sits on the backdrop, an ancestor of the textarea, and
+    // dropping dragged text on a textarea is exactly how a browser inserts it at
+    // the caret. Cancelling every drag there killed that insertion silently —
+    // the same "the UI took the gesture and nothing happened" defect this change
+    // exists to remove, one element out. So the cancel is gated on the drag
+    // actually carrying files.
+    render(<ImportHarness />)
+    const textarea = screen.getByPlaceholderText(/Paste your persona description/i)
+
+    const textDrop = fireEvent.drop(textarea, {
+      dataTransfer: { types: ['text/plain'], getData: () => 'persona notes', files: [] },
+    })
+    const textDragOver = fireEvent.dragOver(textarea, {
+      dataTransfer: { types: ['text/plain'], getData: () => 'persona notes', files: [] },
+    })
+
+    // Not cancelled ⇒ the browser still inserts the text at the caret.
+    expect(textDrop).toBe(true)
+    expect(textDragOver).toBe(true)
+  })
+
+  it('still cancels a FILE drag over the text step, where nothing wants it', async () => {
+    // The other half of the gate: a file drop is destructive wherever it lands,
+    // including over the text step, so the type of the drag decides this — not
+    // which step is showing.
+    render(<ImportHarness />)
+
+    const fileDrop = fireEvent.drop(backdrop(), {
+      dataTransfer: { files: [imageFile('card.png', 'image/png', 512)], types: ['Files'] },
+    })
+
+    expect(fileDrop).toBe(false)
   })
 
   it('cancels the drop so the browser does not navigate to the file', async () => {
@@ -596,7 +697,7 @@ describe('ImportPersonaModal image input paths', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 
-  it('does not still be showing a refusal after a round trip through the text step', async () => {
+  it('shows no refusal after a round trip through the text step', async () => {
     // The hook outlives the section: FileUploadSection returns null for the text
     // step while ImportPersonaModal — and therefore the error — stays mounted. The
     // selection is cleared by handleTypeChange, so the alert came back over an
@@ -651,12 +752,43 @@ describe('ImportPersonaModal image input paths', () => {
     ])
 
     expect(await screen.findByText('first.png')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('Only the first image was used')
+    // role="status", NOT role="alert": the drop succeeded. An assertive alert
+    // would interrupt a screen-reader user to announce a failure that did not
+    // happen, and the red styling says the same to everyone else.
+    expect(screen.getByRole('status')).toHaveTextContent('Only the first image was used')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     // The notice is about the file that WAS taken, so it survives its acceptance
     // rather than being cleared by it.
     await waitFor(() => expect(importButton()).toBeEnabled())
-    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByText('second.png')).not.toBeInTheDocument()
+  })
+
+  it('reports a refusal as an alert, as the control for that notice being a status', async () => {
+    // The pair that keeps the severity split honest: same slot, same position,
+    // different role and colour, because one of the two describes a failure.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    dropFiles([new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })])
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not an image we can read/i)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('lets a refusal replace a multi-file notice, rather than showing both', async () => {
+    // A multi-file drop whose FIRST file is unreadable produces both a notice and a
+    // refusal. Only one slot exists, and the failure is what the user must act on.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    dropFiles([
+      new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }),
+      imageFile('second.png', 'image/png', 512),
+    ])
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not an image we can read/i)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('says nothing extra for a single-file drop, as the control for that notice', async () => {
@@ -667,6 +799,7 @@ describe('ImportPersonaModal image input paths', () => {
 
     expect(await screen.findByText('only.png')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('lets a newer selection win when an older attempt fails after it', async () => {

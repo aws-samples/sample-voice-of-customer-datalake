@@ -145,6 +145,26 @@ export function dragLeavesElement(event: {
 }
 
 /**
+ * Whether a drag is carrying FILES rather than text.
+ *
+ * The distinction decides whether cancelling the drag is a fix or a new bug. A
+ * file drag that reaches the browser's default NAVIGATES to the file, so it has
+ * to be cancelled wherever it can land. A TEXT drag's default is how a browser
+ * inserts dragged text at the caret of a `<textarea>`, so cancelling it at an
+ * ancestor silently destroys that insertion — the same "the UI took the gesture
+ * and nothing happened" defect, one element out.
+ *
+ * `'Files'` is the type the drag-and-drop spec puts on `types` for a file drag,
+ * and it is what every browser reports. `Array.from` because `types` is a
+ * read-only array-like, and no assertion, which this codebase's lint bans.
+ */
+export function dragCarriesFiles(event: {
+  readonly dataTransfer: Pick<DataTransfer, 'types'> | null
+}): boolean {
+  return toArray(event.dataTransfer?.types).includes('Files')
+}
+
+/**
  * A pasted bitmap has no filename. Synthesize one — a name is what the user
  * reads back to confirm what they just supplied, and rendering `''` gives a
  * blank row that looks like nothing happened.

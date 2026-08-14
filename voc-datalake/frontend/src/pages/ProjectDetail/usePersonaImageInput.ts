@@ -29,17 +29,33 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  IMAGE_EXTENSIONS_LABEL, dragLeavesElement, isAcceptedImageMime, pastedImages, toArray,
-  withSyntheticName,
+  IMAGE_EXTENSIONS_LABEL, dragCarriesFiles, dragLeavesElement, isAcceptedImageMime, pastedImages,
+  toArray, withSyntheticName,
 } from '../../utils/imageInput'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 
+/**
+ * What the zone has to say about the last attempt.
+ *
+ * The `kind` is not decoration. A refusal and the "only the first image was
+ * used" note are both single-line messages under the zone, but one describes a
+ * failure and the other describes something that WORKED — rendering the second
+ * as red text in an assertive `role="alert"` tells a screen-reader user their
+ * successful drop was an error, and tells everyone else the same in colour. One
+ * slot with a severity keeps them distinguishable without a second element to
+ * arbitrate between when both would apply: a refusal simply replaces the notice.
+ */
+export interface PersonaImageMessage {
+  readonly text: string
+  readonly kind: 'error' | 'notice'
+}
+
 export interface PersonaImageInput {
   /**
-   * Localized reason the last attempt was refused (or the note that only the
-   * first of several files was used), or null.
+   * Why the last attempt was refused, or the note that only the first of several
+   * files was used, or null. Carries its own severity — see PersonaImageMessage.
    */
-  readonly error: string | null
+  readonly message: PersonaImageMessage | null
   /** True while an accepted-or-not drag sits over the zone. */
   readonly dragActive: boolean
   readonly onDragEnter: (e: React.DragEvent) => void
@@ -50,20 +66,30 @@ export interface PersonaImageInput {
 }
 
 /**
- * Swallows a drag that MISSES the drop zone, for the modal panel around it.
+ * Swallows a FILE drag that misses the drop zone, for the modal around it.
  *
- * The zone is a fraction of the panel, so most of the modal is a few pixels away
- * from it — and a drop that lands there reaches the browser's default, which
- * NAVIGATES to the dropped file and destroys the modal along with anything
- * already selected. That is the worst outcome in this flow and the one a user
- * cannot tell apart from a crash.
+ * The zone is a fraction of the panel, and the panel is a fraction of the
+ * viewport the backdrop covers — so nearly everything on screen while this modal
+ * is open is a few pixels off the only element that wanted the drop. A file drop
+ * landing there reaches the browser's default, which NAVIGATES to the dropped
+ * file and destroys the modal along with anything already selected. That is the
+ * worst outcome in this flow and the one a user cannot tell apart from a crash,
+ * so it is cancelled on the BACKDROP, which is an ancestor of everything else the
+ * modal renders.
+ *
+ * ONLY file drags, which is the whole reason for the guard. A text drag's default
+ * is how a browser inserts dragged text at the caret of the persona textarea, and
+ * that textarea is a descendant of the same backdrop: cancelling every drag here
+ * would silently swallow the insertion — the identical "the UI took the gesture
+ * and nothing happened" defect this change exists to remove, one element out.
  *
  * Cancel-ONLY, and deliberately not a second drop target: the dashed zone stays
  * the single place where a drop selects something. A plain function rather than
- * part of the hook, because it holds no state and belongs to the panel, which
+ * part of the hook, because it holds no state and belongs to the backdrop, which
  * outlives the image step.
  */
-export function cancelDragEvent(e: React.DragEvent) {
+export function cancelFileDragEvent(e: React.DragEvent) {
+  if (!dragCarriesFiles(e)) return
   e.preventDefault()
 }
 
@@ -90,8 +116,11 @@ export function usePersonaImageInput({
   readonly onFileChange: (file: File) => void
 }): PersonaImageInput {
   const { t } = useTranslation('projectDetail')
-  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<PersonaImageMessage | null>(null)
   const [dragActive, setDragActive] = useState(false)
+
+  /** A refusal: red, and announced assertively, because something failed. */
+  const refuse = useCallback((text: string) => setMessage({ text, kind: 'error' }), [])
 
   /**
    * Which attempt is allowed to write state.
@@ -104,18 +133,20 @@ export function usePersonaImageInput({
    */
   const attempt = useRef(0)
 
-  const prepare = useCallback(async (file: File, notice: string | null) => {
+  const prepare = useCallback(async (file: File, notice: PersonaImageMessage | null) => {
     attempt.current += 1
     const ticket = attempt.current
     // A new attempt invalidates whatever the last one said. Without this a
     // refusal outlives the thing it was about: it is still on screen after a
     // later file was accepted, describing a file the user already abandoned.
-    setError(notice)
+    setMessage(notice)
     // The type is judged on the file as supplied. Refusing here — before a name
     // is synthesized — keeps the message about what the user actually dropped: a
     // nameless non-image would otherwise be reported under an invented `.png`.
     if (!isAcceptedImageMime(file.type)) {
-      setError(t('importPersona.errors.unsupportedType', {
+      // A refusal REPLACES the notice: if a multi-file drop's first file is also
+      // unreadable, the failure is the thing the user needs to read.
+      refuse(t('importPersona.errors.unsupportedType', {
         type: file.type || t('importPersona.errors.unknownType'),
         accepted: IMAGE_EXTENSIONS_LABEL,
       }))
@@ -127,7 +158,7 @@ export function usePersonaImageInput({
       if (ticket !== attempt.current) return
       // `notice`, not null: a multi-file drop's "only the first was used" note is
       // about the accepted file and has to survive its acceptance.
-      setError(notice)
+      setMessage(notice)
       // A File, not the Blob: the caller reads `name` for what it shows the user
       // and `type` for the media_type it sends, and both must describe the
       // prepared bytes rather than the original's.
@@ -139,12 +170,12 @@ export function usePersonaImageInput({
       // Nothing else is cleared on failure, so a bad second attempt cannot throw
       // away a good first one's SELECTION — only the message it left behind.
       if (isImagePrepError(e) && e.failure === 'too-large') {
-        setError(t('imageErrors.tooLarge', { name: named.name }))
+        refuse(t('imageErrors.tooLarge', { name: named.name }))
         return
       }
-      setError(t('imageErrors.unreadable', { name: named.name }))
+      refuse(t('imageErrors.unreadable', { name: named.name }))
     }
-  }, [onFileChange, t])
+  }, [onFileChange, refuse, t])
 
   /**
    * One persona card per import, so only the first file is taken — the same
@@ -161,7 +192,11 @@ export function usePersonaImageInput({
     const all = toArray(files)
     const [first] = all
     if (!first) return
-    void prepare(first, all.length > 1 ? t('importPersona.errors.onlyFirstImage') : null)
+    // A NOTICE, not an error: the first file was taken, so this reports what
+    // happened rather than a failure, and must not be announced as one.
+    void prepare(first, all.length > 1
+      ? { text: t('importPersona.errors.onlyFirstImage'), kind: 'notice' }
+      : null)
   }, [prepare, t])
 
   const onDragEnter = useCallback((e: React.DragEvent) => {
@@ -189,6 +224,32 @@ export function usePersonaImageInput({
     setDragActive(false)
     handleFiles(e.dataTransfer?.files ?? null)
   }, [handleFiles])
+
+  /**
+   * Unmarks the zone when a drag ENDS anywhere other than on it.
+   *
+   * The zone's own `onDragLeave` and `onDrop` are not enough. A drag that enters
+   * the zone and is then released over the footer, the info box or the dimmed
+   * backdrop fires no `dragleave` for the zone at all — the browser does not
+   * report leaving an element the drag left by being dropped elsewhere — so the
+   * purple highlight stayed on until the modal was closed, advertising a state
+   * that was not true.
+   *
+   * On document rather than as a handler the caller puts on the backdrop, because
+   * the cancelling ancestor is the backdrop and the backdrop is rendered ABOVE
+   * this hook's owner: FileUploadSection holds the hook precisely so leaving the
+   * image step unmounts it, and lifting the hook to reach the backdrop would give
+   * that back. `dragend` covers a drag abandoned outside the window entirely.
+   */
+  useEffect(() => {
+    const clear = () => setDragActive(false)
+    document.addEventListener('drop', clear)
+    document.addEventListener('dragend', clear)
+    return () => {
+      document.removeEventListener('drop', clear)
+      document.removeEventListener('dragend', clear)
+    }
+  }, [])
 
   /**
    * WHY document AND NOT a React onPaste on the panel: React delegates, so a
@@ -227,7 +288,7 @@ export function usePersonaImageInput({
   }, [handleFiles])
 
   return {
-    error,
+    message,
     dragActive,
     onDragEnter,
     onDragOver: onDragEnter,

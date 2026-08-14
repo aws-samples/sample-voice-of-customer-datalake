@@ -9,8 +9,8 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  IMAGE_ACCEPT_ATTR, IMAGE_EXTENSIONS_LABEL, IMAGE_MIME_EXTENSIONS, dragLeavesElement,
-  isAcceptedImageMime, pastedImages, toArray, withSyntheticName,
+  IMAGE_ACCEPT_ATTR, IMAGE_EXTENSIONS_LABEL, IMAGE_MIME_EXTENSIONS, dragCarriesFiles,
+  dragLeavesElement, isAcceptedImageMime, pastedImages, toArray, withSyntheticName,
 } from './imageInput'
 
 /** A clipboard whose `items` are populated, as a copied bitmap produces. */
@@ -207,5 +207,35 @@ describe('dragLeavesElement', () => {
 
   it('is false for the zone itself, which contains() reports as contained', () => {
     expect(dragLeavesElement({ currentTarget: zone, relatedTarget: zone })).toBe(false)
+  })
+})
+
+/**
+ * The predicate that decides whether cancelling a drag is a fix or a new bug.
+ *
+ * A file drag has to be cancelled wherever it can land, because the browser's
+ * default NAVIGATES to the file. A text drag must NOT be, because its default is
+ * how a browser inserts dragged text at a textarea's caret — and the element doing
+ * the cancelling is an ancestor of exactly such a textarea.
+ */
+describe('dragCarriesFiles', () => {
+  it('is true for a file drag, which every browser marks with the Files type', () => {
+    expect(dragCarriesFiles({ dataTransfer: { types: ['Files'] } })).toBe(true)
+  })
+
+  it('is true for a file drag that also carries text flavours', () => {
+    // Dragging a file out of some apps attaches its path as text as well.
+    expect(dragCarriesFiles({ dataTransfer: { types: ['text/plain', 'Files'] } })).toBe(true)
+  })
+
+  it('is false for a text drag, whose default inserts the text at the caret', () => {
+    expect(dragCarriesFiles({ dataTransfer: { types: ['text/plain', 'text/html'] } })).toBe(false)
+  })
+
+  it('is false for a drag with no types and for an absent dataTransfer', () => {
+    // Both shapes are reachable: jsdom and some synthetic events omit them, and
+    // defaulting to true would cancel a text drag on the strength of nothing.
+    expect(dragCarriesFiles({ dataTransfer: { types: [] } })).toBe(false)
+    expect(dragCarriesFiles({ dataTransfer: null })).toBe(false)
   })
 })

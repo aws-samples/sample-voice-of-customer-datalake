@@ -259,6 +259,9 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         role="button"
         tabIndex={0}
         aria-label={t('product.upload.dropZone')}
+        // A stable hook for the drag-state test, so a restyle of the zone cannot
+        // fail as if the drag handlers broke. The classes below stay the styling.
+        data-drag-active={dragActive}
         className={`block border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
           dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
         }`}

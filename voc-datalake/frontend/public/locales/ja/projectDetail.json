@@ -325,26 +325,6 @@
     "workarounds": "対処法（1 行に 1 つ）",
     "workaroundsPlaceholder": "現在の対応方法..."
   },
-  "personaSections": {
-    "behaviorsHabits": "行動と習慣",
-    "blockers": "障害",
-    "contextEnvironment": "コンテキストと環境",
-    "currentChallenges": "現在の課題",
-    "currentSolutions": "現在のソリューション",
-    "currentWorkarounds": "現在の回避策",
-    "desiredOutcome": "望ましい結果",
-    "goalsMotivations": "目標と動機",
-    "identityDemographics": "アイデンティティと属性",
-    "painPoints": "ペインポイントと不満",
-    "primaryGoal": "主要目標",
-    "representativeQuotes": "代表的な引用",
-    "scenario": "シナリオ",
-    "secondaryGoals": "副次的な目標",
-    "timeConstraints": "時間的制約:",
-    "toolsUsed": "使用ツール",
-    "trigger": "トリガー",
-    "underlyingMotivations": "潜在的な動機"
-  },
   "personas": {
     "addNote": "ノートを追加",
     "addResearchNotes": "リサーチノートを追加",
@@ -366,6 +346,26 @@
     "researchNotes": "リサーチノート",
     "reviews": "{{count}}件のレビュー",
     "selectToView": "ペルソナを選択して詳細を表示"
+  },
+  "personaSections": {
+    "behaviorsHabits": "行動と習慣",
+    "blockers": "障害",
+    "contextEnvironment": "コンテキストと環境",
+    "currentChallenges": "現在の課題",
+    "currentSolutions": "現在のソリューション",
+    "currentWorkarounds": "現在の回避策",
+    "desiredOutcome": "望ましい結果",
+    "goalsMotivations": "目標と動機",
+    "identityDemographics": "アイデンティティと属性",
+    "painPoints": "ペインポイントと不満",
+    "primaryGoal": "主要目標",
+    "representativeQuotes": "代表的な引用",
+    "scenario": "シナリオ",
+    "secondaryGoals": "副次的な目標",
+    "timeConstraints": "時間的制約:",
+    "toolsUsed": "使用ツール",
+    "trigger": "トリガー",
+    "underlyingMotivations": "潜在的な動機"
   },
   "product": {
     "fields": {

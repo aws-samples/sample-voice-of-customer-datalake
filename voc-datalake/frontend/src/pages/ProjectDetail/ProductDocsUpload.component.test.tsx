@@ -466,6 +466,59 @@ describe('DocsUpload', () => {
     expect(zone.tagName).not.toBe('LABEL')
   })
 
+  /**
+   * The drag highlight, for the containment guard this zone shares with the
+   * persona dropzone.
+   *
+   * The guard was added to both zones but asserted only for the persona one, so
+   * deleting it here left all of this suite passing — a behaviour change with no
+   * test that fails when reverted, which is not how anything else in this diff is
+   * argued.
+   */
+  it('keeps the zone marked when the drag merely moves onto its own children', async () => {
+    // dragenter/dragleave fire on descendants and BUBBLE, and this zone has an
+    // icon and a label inside it. Without the relatedTarget containment guard the
+    // leave reported for a child unmarks a zone the pointer is still inside, and
+    // the next dragover marks it again — a visible flicker of the highlight.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+    // Read from data-drag-active rather than the border-blue-500 Tailwind class: a
+    // restyle is not a behaviour change and must not fail here. Baseline included,
+    // so this cannot pass on a zone that is always marked.
+    expect(zone).toHaveAttribute('data-drag-active', 'false')
+
+    fireEvent.dragEnter(zone, { dataTransfer: { files: [], types: ['Files'] } })
+    expect(zone).toHaveAttribute('data-drag-active', 'true')
+
+    const child = zone.querySelector('div')
+    if (!(child instanceof HTMLElement)) throw new Error('zone child not found')
+    // A real MouseEvent, NOT fireEvent.dragLeave(zone, { relatedTarget: child }):
+    // jsdom has no DragEvent, so testing-library builds a plain `Event` for the
+    // drag family and relatedTarget is dropped on the floor — the handler would
+    // see undefined and the guard could never be exercised.
+    fireEvent(zone, new MouseEvent('dragleave', {
+      bubbles: true, cancelable: true, relatedTarget: child,
+    }))
+
+    expect(zone).toHaveAttribute('data-drag-active', 'true')
+  })
+
+  it('unmarks the zone when the drag really does leave it', async () => {
+    // Control: the guard must not be satisfiable by never unmarking at all.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+    fireEvent.dragEnter(zone, { dataTransfer: { files: [], types: ['Files'] } })
+    expect(zone).toHaveAttribute('data-drag-active', 'true')
+
+    fireEvent(zone, new MouseEvent('dragleave', {
+      bubbles: true, cancelable: true, relatedTarget: document.body,
+    }))
+
+    expect(zone).toHaveAttribute('data-drag-active', 'false')
+  })
+
   it('tells the user that PDF and Word are not supported yet', async () => {
     render(<DocsUpload projectId="proj-1" />)
     await screen.findByText(/no documents yet/i)

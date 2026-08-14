@@ -325,26 +325,6 @@
     "workarounds": "해결 방법 (줄당 하나)",
     "workaroundsPlaceholder": "현재 대처 방식..."
   },
-  "personaSections": {
-    "behaviorsHabits": "행동 및 습관",
-    "blockers": "장애물",
-    "contextEnvironment": "맥락 및 환경",
-    "currentChallenges": "현재 과제",
-    "currentSolutions": "현재 솔루션",
-    "currentWorkarounds": "현재 해결 방법",
-    "desiredOutcome": "원하는 결과",
-    "goalsMotivations": "목표 및 동기",
-    "identityDemographics": "신원 및 인구통계",
-    "painPoints": "통증점 및 불만",
-    "primaryGoal": "주요 목표",
-    "representativeQuotes": "대표 인용문",
-    "scenario": "시나리오",
-    "secondaryGoals": "보조 목표",
-    "timeConstraints": "시간 제약:",
-    "toolsUsed": "사용 도구",
-    "trigger": "트리거",
-    "underlyingMotivations": "근본 동기"
-  },
   "personas": {
     "addNote": "노트 추가",
     "addResearchNotes": "연구 노트 추가",
@@ -366,6 +346,26 @@
     "researchNotes": "연구 노트",
     "reviews": "{{count}}개 리뷰",
     "selectToView": "페르소나를 선택하여 상세 정보를 확인하세요"
+  },
+  "personaSections": {
+    "behaviorsHabits": "행동 및 습관",
+    "blockers": "장애물",
+    "contextEnvironment": "맥락 및 환경",
+    "currentChallenges": "현재 과제",
+    "currentSolutions": "현재 솔루션",
+    "currentWorkarounds": "현재 해결 방법",
+    "desiredOutcome": "원하는 결과",
+    "goalsMotivations": "목표 및 동기",
+    "identityDemographics": "신원 및 인구통계",
+    "painPoints": "통증점 및 불만",
+    "primaryGoal": "주요 목표",
+    "representativeQuotes": "대표 인용문",
+    "scenario": "시나리오",
+    "secondaryGoals": "보조 목표",
+    "timeConstraints": "시간 제약:",
+    "toolsUsed": "사용 도구",
+    "trigger": "트리거",
+    "underlyingMotivations": "근본 동기"
   },
   "product": {
     "fields": {

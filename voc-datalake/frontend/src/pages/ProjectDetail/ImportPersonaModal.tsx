@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IMAGE_ACCEPT_ATTR } from '../../utils/imageInput'
-import { cancelDragEvent, usePersonaImageInput } from './usePersonaImageInput'
+import { cancelFileDragEvent, usePersonaImageInput } from './usePersonaImageInput'
 
 type ImportType = 'image' | 'text'
 
@@ -169,10 +169,26 @@ function FileUploadSection({
       </label>
       {/* Paste is the third way in, and nothing in the zone said so. */}
       <p className="mt-2 text-xs text-gray-400">{t('importPersona.pasteScreenshotHint')}</p>
-      {imageInput.error !== null && (
-        <div role="alert" className="mt-2 text-xs text-red-600 inline-flex items-center gap-1">
-          <AlertCircle size={12} /> {imageInput.error}
-        </div>
+      {/*
+        One slot, two severities. A refusal is red, carries the alert icon and is
+        announced assertively through role="alert", because something failed and
+        the user has to act. The "only the first image was used" notice describes a
+        drop that WORKED: rendering it the same way told a screen-reader user their
+        successful drop was an error and interrupted them to say so, so it reads as
+        neutral gray under role="status" — still announced, politely, and still in
+        the same place so it cannot be missed. The hook guarantees only one of the
+        two is ever live (a refusal replaces the notice).
+      */}
+      {imageInput.message !== null && (
+        imageInput.message.kind === 'error' ? (
+          <div role="alert" className="mt-2 text-xs text-red-600 inline-flex items-center gap-1">
+            <AlertCircle size={12} /> {imageInput.message.text}
+          </div>
+        ) : (
+          <div role="status" className="mt-2 text-xs text-gray-500">
+            {imageInput.message.text}
+          </div>
+        )
       )}
     </div>
   )
@@ -223,15 +239,23 @@ export default function ImportPersonaModal({
   const { t } = useTranslation('projectDetail')
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    // The BACKDROP swallows file drags that miss the dashed zone, not the panel.
+    // This div covers the viewport while the modal is open, and the dimmed area
+    // outside the small centred panel is the region a user aiming at the zone is
+    // most likely to miss; a file drop there reaches the browser's default, which
+    // NAVIGATES to the dropped file and takes the modal — and any image already
+    // chosen — with it. Being an ancestor of the panel, one pair of handlers here
+    // covers both. Cancel-only on purpose: the zone stays the single place where a
+    // drop selects something. Only FILE drags are cancelled, so a text drag into
+    // the persona textarea keeps the default that inserts it; see
+    // cancelFileDragEvent.
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      data-testid="persona-import-backdrop"
+      onDragOver={cancelFileDragEvent}
+      onDrop={cancelFileDragEvent}
+    >
       {/*
-        The panel swallows drags that MISS the dashed zone. The zone is p-8 inside
-        this max-w-2xl panel, so most of the modal — heading, type buttons, hint,
-        info box, footer — is a few pixels away from it, and a drop landing there
-        would reach the browser's default, which NAVIGATES to the dropped file and
-        takes the modal (and any image already chosen) with it. Cancel-only on
-        purpose: the zone stays the single place where a drop selects something.
-
         Paste is NOT handled here. A React onPaste is delegated, so it fires only
         for a paste whose target is inside this subtree, and nothing focuses the
         panel on open — the ordinary "open the modal, press ⌘V" gesture targets
@@ -240,8 +264,10 @@ export default function ImportPersonaModal({
       */}
       <div
         className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
-        onDragOver={cancelDragEvent}
-        onDrop={cancelDragEvent}
+        // A stable hook for the tests, so the panel is not located through the
+        // `max-w-2xl` layout utility: widening the modal is not a behaviour change
+        // and must not fail a test about drop cancellation.
+        data-testid="persona-import-panel"
       >
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">{t('importPersona.title')}</h2>

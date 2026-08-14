@@ -325,26 +325,6 @@
     "workarounds": "Workarounds (one per line)",
     "workaroundsPlaceholder": "How they currently cope..."
   },
-  "personaSections": {
-    "behaviorsHabits": "Behaviors & Habits",
-    "blockers": "Blockers",
-    "contextEnvironment": "Context & Environment",
-    "currentChallenges": "Current Challenges",
-    "currentSolutions": "Current Solutions",
-    "currentWorkarounds": "Current Workarounds",
-    "desiredOutcome": "Desired Outcome",
-    "goalsMotivations": "Goals & Motivations",
-    "identityDemographics": "Identity & Demographics",
-    "painPoints": "Pain Points & Frustrations",
-    "primaryGoal": "Primary Goal",
-    "representativeQuotes": "Representative Quotes",
-    "scenario": "Scenario",
-    "secondaryGoals": "Secondary Goals",
-    "timeConstraints": "Time constraints:",
-    "toolsUsed": "Tools Used",
-    "trigger": "Trigger",
-    "underlyingMotivations": "Underlying Motivations"
-  },
   "personas": {
     "addNote": "Add Note",
     "addResearchNotes": "Add Your Research Notes",
@@ -366,6 +346,26 @@
     "researchNotes": "Research Notes",
     "reviews": "{{count}} reviews",
     "selectToView": "Select a persona to view details"
+  },
+  "personaSections": {
+    "behaviorsHabits": "Behaviors & Habits",
+    "blockers": "Blockers",
+    "contextEnvironment": "Context & Environment",
+    "currentChallenges": "Current Challenges",
+    "currentSolutions": "Current Solutions",
+    "currentWorkarounds": "Current Workarounds",
+    "desiredOutcome": "Desired Outcome",
+    "goalsMotivations": "Goals & Motivations",
+    "identityDemographics": "Identity & Demographics",
+    "painPoints": "Pain Points & Frustrations",
+    "primaryGoal": "Primary Goal",
+    "representativeQuotes": "Representative Quotes",
+    "scenario": "Scenario",
+    "secondaryGoals": "Secondary Goals",
+    "timeConstraints": "Time constraints:",
+    "toolsUsed": "Tools Used",
+    "trigger": "Trigger",
+    "underlyingMotivations": "Underlying Motivations"
   },
   "product": {
     "fields": {

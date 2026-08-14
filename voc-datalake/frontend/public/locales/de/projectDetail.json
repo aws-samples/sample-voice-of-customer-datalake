@@ -325,26 +325,6 @@
     "workarounds": "Workarounds (eins pro Zeile)",
     "workaroundsPlaceholder": "Wie sie derzeit damit umgehen..."
   },
-  "personaSections": {
-    "behaviorsHabits": "Verhaltensweisen & Gewohnheiten",
-    "blockers": "Hindernisse",
-    "contextEnvironment": "Kontext & Umgebung",
-    "currentChallenges": "Aktuelle Herausforderungen",
-    "currentSolutions": "Aktuelle Lösungen",
-    "currentWorkarounds": "Aktuelle Workarounds",
-    "desiredOutcome": "Gewünschtes Ergebnis",
-    "goalsMotivations": "Ziele & Motivationen",
-    "identityDemographics": "Identität & Demografie",
-    "painPoints": "Schmerzpunkte & Frustrationen",
-    "primaryGoal": "Hauptziel",
-    "representativeQuotes": "Repräsentative Zitate",
-    "scenario": "Szenario",
-    "secondaryGoals": "Sekundäre Ziele",
-    "timeConstraints": "Zeitliche Einschränkungen:",
-    "toolsUsed": "Verwendete Tools",
-    "trigger": "Auslöser",
-    "underlyingMotivations": "Zugrundeliegende Motivationen"
-  },
   "personas": {
     "addNote": "Notiz hinzufügen",
     "addResearchNotes": "Forschungsnotizen hinzufügen",
@@ -366,6 +346,26 @@
     "researchNotes": "Forschungsnotizen",
     "reviews": "{{count}} Bewertungen",
     "selectToView": "Wählen Sie eine Persona aus, um Details anzuzeigen"
+  },
+  "personaSections": {
+    "behaviorsHabits": "Verhaltensweisen & Gewohnheiten",
+    "blockers": "Hindernisse",
+    "contextEnvironment": "Kontext & Umgebung",
+    "currentChallenges": "Aktuelle Herausforderungen",
+    "currentSolutions": "Aktuelle Lösungen",
+    "currentWorkarounds": "Aktuelle Workarounds",
+    "desiredOutcome": "Gewünschtes Ergebnis",
+    "goalsMotivations": "Ziele & Motivationen",
+    "identityDemographics": "Identität & Demografie",
+    "painPoints": "Schmerzpunkte & Frustrationen",
+    "primaryGoal": "Hauptziel",
+    "representativeQuotes": "Repräsentative Zitate",
+    "scenario": "Szenario",
+    "secondaryGoals": "Sekundäre Ziele",
+    "timeConstraints": "Zeitliche Einschränkungen:",
+    "toolsUsed": "Verwendete Tools",
+    "trigger": "Auslöser",
+    "underlyingMotivations": "Zugrundeliegende Motivationen"
   },
   "product": {
     "fields": {

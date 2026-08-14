@@ -325,26 +325,6 @@
     "workarounds": "变通方案（每行一个）",
     "workaroundsPlaceholder": "他们目前的应对方式..."
   },
-  "personaSections": {
-    "behaviorsHabits": "行为与习惯",
-    "blockers": "阻碍因素",
-    "contextEnvironment": "背景与环境",
-    "currentChallenges": "当前挑战",
-    "currentSolutions": "现有解决方案",
-    "currentWorkarounds": "当前变通方案",
-    "desiredOutcome": "期望结果",
-    "goalsMotivations": "目标与动机",
-    "identityDemographics": "身份与人口统计",
-    "painPoints": "痛点与困扰",
-    "primaryGoal": "主要目标",
-    "representativeQuotes": "代表性引述",
-    "scenario": "场景",
-    "secondaryGoals": "次要目标",
-    "timeConstraints": "时间限制：",
-    "toolsUsed": "使用的工具",
-    "trigger": "触发因素",
-    "underlyingMotivations": "潜在动机"
-  },
   "personas": {
     "addNote": "添加备注",
     "addResearchNotes": "添加研究笔记",
@@ -366,6 +346,26 @@
     "researchNotes": "研究笔记",
     "reviews": "{{count}} 条评价",
     "selectToView": "选择一个用户角色查看详情"
+  },
+  "personaSections": {
+    "behaviorsHabits": "行为与习惯",
+    "blockers": "阻碍因素",
+    "contextEnvironment": "背景与环境",
+    "currentChallenges": "当前挑战",
+    "currentSolutions": "现有解决方案",
+    "currentWorkarounds": "当前变通方案",
+    "desiredOutcome": "期望结果",
+    "goalsMotivations": "目标与动机",
+    "identityDemographics": "身份与人口统计",
+    "painPoints": "痛点与困扰",
+    "primaryGoal": "主要目标",
+    "representativeQuotes": "代表性引述",
+    "scenario": "场景",
+    "secondaryGoals": "次要目标",
+    "timeConstraints": "时间限制：",
+    "toolsUsed": "使用的工具",
+    "trigger": "触发因素",
+    "underlyingMotivations": "潜在动机"
   },
   "product": {
     "fields": {
