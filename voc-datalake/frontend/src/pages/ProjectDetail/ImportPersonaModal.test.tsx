@@ -99,6 +99,31 @@ describe('ImportPersonaModal file picker', () => {
     expect(screen.getByRole('heading', { name: 'Upload Image' })).toBeInTheDocument()
   })
 
+  /**
+   * Every string this section renders from the catalogue is asserted, not just the
+   * two the PDF removal touched. A missing key makes t() return the key NAME, so an
+   * unasserted string shows the user `importPersona.clickToUpload` and no test
+   * notices — which a probe deleting each key from all eight catalogues confirmed
+   * for exactly these two before they were pinned here.
+   */
+  it('renders the empty dropzone prompt from the catalogue', () => {
+    render(<ImportPersonaModal {...defaultProps} importType="image" />)
+
+    expect(screen.getByText('Click to upload or drag and drop')).toBeInTheDocument()
+  })
+
+  it('renders the chosen-file prompt from the catalogue', () => {
+    render(
+      <ImportPersonaModal {...defaultProps} importType="image" importFileName="shot.png" />,
+    )
+
+    expect(screen.getByText('shot.png')).toBeInTheDocument()
+    expect(screen.getByText('Click to change file')).toBeInTheDocument()
+    // Control: the two states are mutually exclusive, so asserting the second
+    // without this would pass on a section that renders both at once.
+    expect(screen.queryByText('Click to upload or drag and drop')).not.toBeInTheDocument()
+  })
+
   it('keeps Import disabled for whitespace-only content, as the server would', () => {
     // The API refuses blank content before it creates a job, so the button has to
     // use the same predicate. `=== ''` did not: a spacebar press enabled Import and
