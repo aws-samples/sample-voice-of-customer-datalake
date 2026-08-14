@@ -28,29 +28,31 @@ const defaultProps = {
   onImport: vi.fn(),
 }
 
-/** The type picker, whose buttons are the affordance under test. */
-function importTypeButtons(): HTMLElement[] {
-  const heading = screen.getByRole('heading', { name: 'Import From' })
-  const picker = heading.parentElement?.querySelector('div')
-  if (!picker) throw new Error('import type picker not found')
-  return Array.from(picker.querySelectorAll('button'))
-}
+/**
+ * Each option is identified by its accessible name — the label and description
+ * the user actually reads — rather than by walking the DOM from the heading. A
+ * selector like `heading.parentElement.querySelector('div')` breaks the moment
+ * anyone adds a wrapper, which would report the PDF button as gone for a reason
+ * that has nothing to do with the PDF button.
+ */
+const OPTION_NAMES = {
+  image: /Screenshot or card/i,
+  text: /Paste content/i,
+  pdf: /pdf|Upload document/i,
+} as const
 
 describe('ImportPersonaModal import type options', () => {
   it('offers image and text, and does not offer PDF', () => {
     render(<ImportPersonaModal {...defaultProps} />)
 
-    const labels = importTypeButtons().map((b) => b.textContent ?? '')
+    // Presence half — without it, "no PDF" would also pass on a picker that
+    // rendered nothing at all.
+    expect(screen.getByRole('button', { name: OPTION_NAMES.image })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: OPTION_NAMES.text })).toBeInTheDocument()
 
-    // Presence half — without it, "no PDF" would also pass on an empty picker.
-    expect(labels.some((l) => l.includes('Image'))).toBe(true)
-    expect(labels.some((l) => l.includes('Text'))).toBe(true)
-    expect(importTypeButtons()).toHaveLength(2)
-
-    // Absence half. Checked against the picker's own buttons rather than the
-    // whole document, so an unrelated mention of PDF elsewhere could not mask a
-    // returning button (or fake a passing test).
-    expect(labels.some((l) => /pdf/i.test(l))).toBe(false)
+    // Absence half, scoped to buttons: an unrelated mention of PDF in prose
+    // cannot mask a returning button, and cannot fake a passing test either.
+    expect(screen.queryByRole('button', { name: OPTION_NAMES.pdf })).not.toBeInTheDocument()
   })
 
   it('renders no PDF option text anywhere in the modal', () => {

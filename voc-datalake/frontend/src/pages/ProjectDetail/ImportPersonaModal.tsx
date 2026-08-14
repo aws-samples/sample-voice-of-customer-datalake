@@ -18,11 +18,18 @@ import { useTranslation } from 'react-i18next'
 
 type ImportType = 'image' | 'text'
 
-// Only 'image' takes a file, so these are no longer per-type choices. Kept as
-// named constants rather than inlined so the picker filter and the hint the user
-// reads cannot drift apart.
+// Only 'image' takes a file, so this is no longer a per-type choice. These four
+// are exactly the formats Bedrock Converse can read, and the API enforces the
+// same set (shared/persona_import.py, via shared/image_limits.py) — the picker
+// filter is a convenience, not the guard. The hint the user reads comes from
+// `importPersona.imageFormats`.
 const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/gif,image/webp'
-const FILE_TYPE_HINT = 'PNG, JPG, GIF, WebP'
+
+// RETAINED DEAD KEYS, on purpose: `importPersona.pdf`, `pdfDesc`, `pdfOnly`,
+// `uploadPdf` and `importTypePdf` are still in all eight catalogues, already
+// translated, and unused until PDF extraction lands (tracked with the PDF work,
+// not here). i18n:check reports them as extra, which is informational — deleting
+// them would mean re-translating five strings later for no gain now.
 
 interface ImportPersonaModalProps {
   readonly importType: ImportType
@@ -77,11 +84,12 @@ function FileUploadSection({
   importFileName: string
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 }>) {
+  const { t } = useTranslation('projectDetail')
   if (importType !== 'image') return null
 
   return (
     <div>
-      <h3 className="font-medium mb-3">Upload Image</h3>
+      <h3 className="font-medium mb-3">{t('importPersona.uploadImage')}</h3>
       <label className="block">
         <div className={clsx(
           'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
@@ -90,14 +98,14 @@ function FileUploadSection({
           {importFileName === '' ? (
             <div>
               <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-              <p className="text-gray-600">Click to upload or drag and drop</p>
-              <p className="text-sm text-gray-400 mt-1">{FILE_TYPE_HINT}</p>
+              <p className="text-gray-600">{t('importPersona.clickToUpload')}</p>
+              <p className="text-sm text-gray-400 mt-1">{t('importPersona.imageFormats')}</p>
             </div>
           ) : (
             <div>
               <CheckCircle size={32} className="mx-auto mb-2 text-purple-500" />
               <p className="font-medium text-purple-700">{importFileName}</p>
-              <p className="text-sm text-gray-500 mt-1">Click to change file</p>
+              <p className="text-sm text-gray-500 mt-1">{t('importPersona.clickToChange')}</p>
             </div>
           )}
         </div>

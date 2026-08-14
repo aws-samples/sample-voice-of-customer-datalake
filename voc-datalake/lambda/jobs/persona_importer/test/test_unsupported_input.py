@@ -43,7 +43,12 @@ def _job_error_messages(mock_jobs_table) -> list[str]:
 class TestRefusesUnreadableInput:
     """`pdf` and friends raise, and cost nothing."""
 
-    @pytest.mark.parametrize('input_type', ['pdf', 'PDF', ' pdf ', 'docx', 'video', ''])
+    # `''` is deliberately NOT here: blank means "caller sent no type" and resolves
+    # to the long-standing 'text' default, at this layer exactly as at the API.
+    # See test_blank_type_defaults_to_text_here_too, which pins that agreement —
+    # the two layers holding different opinions about a blank type is precisely the
+    # drift shared/persona_import.py exists to prevent.
+    @pytest.mark.parametrize('input_type', ['pdf', 'PDF', ' pdf ', 'docx', 'video', 'audio'])
     def test_unsupported_type_raises_without_calling_bedrock(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock,
         sample_job_event, lambda_context, input_type
@@ -85,8 +90,13 @@ class TestRefusesUnreadableInput:
         errors = _job_error_messages(mock_jobs_table)
         assert errors, 'the failure must be recorded on the job, not only raised'
         reason = ' '.join(errors)
-        assert 'could not be read' in reason
+        # Names the format the user chose, says it is "not yet" rather than
+        # "never", and points at what they can do instead. No input_type jargon
+        # and no traceback: they picked a file, not a field value.
+        assert 'PDF' in reason
         assert 'not supported yet' in reason
+        assert 'pasted text or an image' in reason
+        assert 'input_type' not in reason
         mock_bedrock.converse.assert_not_called()
 
 
@@ -134,6 +144,83 @@ class TestRefusesEmptyContent:
         mock_bedrock.converse.assert_not_called()
 
 
+class TestRefusesUnreadableImageFormat:
+    """`input_type='image'` does not license any media_type.
+
+    The format in a Converse image block is derived from media_type, so a
+    media_type this platform cannot read is a second way to reach the model with
+    something it will not understand — including a PDF, by declaring it an image.
+    """
+
+    @pytest.mark.parametrize('media_type', [
+        'application/pdf',     # the pdf refusal, routed around via input_type
+        'image/svg+xml',       # a real image type Converse does not accept
+        'image/tiff',
+        'text/plain',
+        '',                    # no format to derive; guessing it is a silent lie
+        None,
+    ])
+    def test_unreadable_media_type_raises_without_calling_bedrock(
+        self, mock_dynamodb, mock_jobs_table, mock_bedrock,
+        sample_job_event, lambda_context, media_type
+    ):
+        from jobs.persona_importer.handler import lambda_handler
+
+        event = _job_event(sample_job_event, {
+            'input_type': 'image', 'content': 'aGVsbG8=', 'media_type': media_type,
+        })
+
+        with pytest.raises(ServiceError):
+            lambda_handler(event, lambda_context)
+
+        mock_bedrock.converse.assert_not_called()
+        mock_dynamodb['table'].put_item.assert_not_called()
+
+    @pytest.mark.parametrize('media_type', [
+        'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'IMAGE/PNG', ' image/png ',
+    ])
+    def test_the_four_readable_formats_are_accepted(
+        self, mock_dynamodb, mock_jobs_table, mock_bedrock, mock_avatar_generation,
+        sample_job_event, mock_bedrock_persona_response, lambda_context, media_type
+    ):
+        """POSITIVE CONTROL for the parametrised refusals above: without it,
+        "rejects application/pdf" is indistinguishable from "rejects every image".
+        """
+        from jobs.persona_importer.handler import lambda_handler
+
+        mock_bedrock.converse.return_value = mock_bedrock_persona_response
+        event = _job_event(sample_job_event, {
+            'input_type': 'image', 'content': 'aGVsbG8=', 'media_type': media_type,
+        })
+
+        result = lambda_handler(event, lambda_context)
+
+        assert result['success'] is True
+        mock_bedrock.converse.assert_called_once()
+
+    def test_converse_gets_the_subtype_not_the_file_extension(
+        self, mock_dynamodb, mock_jobs_table, mock_bedrock, mock_avatar_generation,
+        sample_job_event, mock_bedrock_persona_response, lambda_context
+    ):
+        """Converse wants `jpeg`; `jpg` is the S3 file extension and is NOT a valid
+        Converse image format. The two live side by side in
+        shared/image_limits.py, so reaching for the wrong one is a live mistake.
+        """
+        from jobs.persona_importer.handler import lambda_handler
+
+        mock_bedrock.converse.return_value = mock_bedrock_persona_response
+        event = _job_event(sample_job_event, {
+            'input_type': 'image', 'content': 'aGVsbG8=', 'media_type': 'image/jpeg',
+        })
+
+        lambda_handler(event, lambda_context)
+
+        blocks = mock_bedrock.converse.call_args.kwargs['messages'][0]['content']
+        image_blocks = [b['image'] for b in blocks if 'image' in b]
+        assert image_blocks, 'an image import must send an image block'
+        assert image_blocks[0]['format'] == 'jpeg'
+
+
 class TestSupportedInputStillReachesBedrock:
     """POSITIVE CONTROL for every `assert_not_called` above.
 
@@ -155,6 +242,33 @@ class TestSupportedInputStillReachesBedrock:
         assert result['success'] is True
         mock_bedrock.converse.assert_called_once()
         mock_dynamodb['table'].put_item.assert_called_once()
+
+    @pytest.mark.parametrize('import_config', [
+        {'content': 'Name: Sarah Chen'},
+        {'input_type': '', 'content': 'Name: Sarah Chen'},
+        {'input_type': '   ', 'content': 'Name: Sarah Chen'},
+        {'input_type': None, 'content': 'Name: Sarah Chen'},
+    ])
+    def test_blank_type_defaults_to_text_here_too(
+        self, mock_dynamodb, mock_jobs_table, mock_bedrock, mock_avatar_generation,
+        sample_job_event, mock_bedrock_persona_response, lambda_context, import_config
+    ):
+        """Blank means "no type was sent", and resolves to text at BOTH layers.
+
+        The API has defaulted a missing `input_type` to 'text' since long before
+        this change, so a job refusing the same input would turn a request the
+        boundary accepted into a background failure — the silent disagreement that
+        two hand-synchronised allowlists produce.
+        """
+        from jobs.persona_importer.handler import lambda_handler
+
+        mock_bedrock.converse.return_value = mock_bedrock_persona_response
+
+        result = lambda_handler(_job_event(sample_job_event, import_config), lambda_context)
+
+        assert result['success'] is True
+        mock_bedrock.converse.assert_called_once()
+        assert mock_dynamodb['table'].put_item.call_args.kwargs['Item']['imported_from'] == 'text'
 
     def test_a_padded_uppercase_type_is_normalised_rather_than_refused(
         self, mock_dynamodb, mock_jobs_table, mock_bedrock, mock_avatar_generation,
@@ -191,6 +305,6 @@ class TestPlaceholderIsGoneFromTheSource:
         # POSITIVE CONTROL: proves the file was actually read and that a substring
         # search over it can succeed, so the assertion below cannot pass vacuously
         # on an empty string or a wrong path.
-        assert 'SUPPORTED_INPUT_TYPES' in source
+        assert 'validate_import_config' in source
 
         assert '[PDF content' not in source

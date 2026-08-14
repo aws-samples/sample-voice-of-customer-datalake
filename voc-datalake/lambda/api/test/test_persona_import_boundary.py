@@ -182,7 +182,8 @@ class TestSupportedImportTypesStillWork:
         removes.
         """
         status, _, create_job, _ = _post_import(
-            api_gateway_event, lambda_context, {'input_type': raw, 'content': 'x'},
+            api_gateway_event, lambda_context,
+            {'input_type': raw, 'content': 'x', 'media_type': 'image/png'},
         )
 
         assert status == 200
@@ -207,3 +208,126 @@ class TestSupportedImportTypesStillWork:
         assert response_body['success'] is True
         assert create_job.call_args[0][3]['input_type'] == 'text'
         invoke.assert_called_once()
+
+
+class TestEmptyContentIsRefusedAtTheBoundary:
+    """An import with nothing in it must not buy a job row either.
+
+    This was the gap the first cut of this change left: `input_type` was allowlisted
+    before `create_job`, but `content` was forwarded unchecked, so a blank upload
+    still wrote a job, invoked the importer and failed inside it — the exact cost
+    the boundary exists to avoid, and the exact argument used against rejecting
+    `pdf` in the job alone.
+    """
+
+    @pytest.mark.parametrize('body', [
+        {'input_type': 'text', 'content': ''},
+        {'input_type': 'text', 'content': '   \n\t '},
+        {'input_type': 'text'},
+        {'input_type': 'image', 'content': '', 'media_type': 'image/png'},
+        {'input_type': 'text', 'content': None},
+        {'input_type': 'text', 'content': 12345},
+    ])
+    def test_blank_content_is_refused_with_no_job_and_no_lambda_invoke(
+        self, api_gateway_event, lambda_context, body
+    ):
+        status, response_body, create_job, invoke = _post_import(
+            api_gateway_event, lambda_context, body,
+        )
+
+        assert status == 400
+        assert 'nothing to read' in response_body['error'].lower()
+        create_job.assert_not_called()
+        invoke.assert_not_called()
+
+    def test_a_pdf_with_blank_content_is_still_told_it_is_a_pdf(
+        self, api_gateway_event, lambda_context
+    ):
+        """Check order is part of the contract: type before content.
+
+        Otherwise someone who picks a PDF and gets an empty read is told their file
+        was empty, which sends them off to fix the wrong thing.
+        """
+        _, body, create_job, invoke = _post_import(
+            api_gateway_event, lambda_context, {'input_type': 'pdf', 'content': ''},
+        )
+
+        assert 'not supported yet' in body['error']
+        create_job.assert_not_called()
+        invoke.assert_not_called()
+
+
+class TestImageMediaTypeIsAllowlisted:
+    """`input_type='image'` is not a licence to send any media_type.
+
+    The job derives the Converse image `format` from media_type, so
+    `input_type='image'` with `media_type='application/pdf'` was a way to route a
+    PDF straight past the pdf refusal and into the model.
+    """
+
+    @pytest.mark.parametrize('media_type', [
+        'application/pdf', 'image/svg+xml', 'image/tiff', 'text/plain', '', None, 42,
+    ])
+    def test_unreadable_media_type_is_refused_before_create_job(
+        self, api_gateway_event, lambda_context, media_type
+    ):
+        status, body, create_job, invoke = _post_import(
+            api_gateway_event, lambda_context,
+            {'input_type': 'image', 'content': 'aGVsbG8=', 'media_type': media_type},
+        )
+
+        assert status == 400
+        assert 'could not be read' in body['error']
+        create_job.assert_not_called()
+        invoke.assert_not_called()
+
+    @pytest.mark.parametrize('media_type', [
+        'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'IMAGE/PNG', ' image/png ',
+    ])
+    def test_the_four_readable_formats_are_accepted(
+        self, api_gateway_event, lambda_context, media_type
+    ):
+        """POSITIVE CONTROL: without it, "refuses application/pdf" and "refuses
+        every image" are the same passing test."""
+        status, _, create_job, invoke = _post_import(
+            api_gateway_event, lambda_context,
+            {'input_type': 'image', 'content': 'aGVsbG8=', 'media_type': media_type},
+        )
+
+        assert status == 200
+        create_job.assert_called_once()
+        invoke.assert_called_once()
+
+    def test_a_text_import_is_not_asked_for_a_media_type(
+        self, api_gateway_event, lambda_context
+    ):
+        """The image guard must stay scoped to images.
+
+        Pasted text has no media type and never did; requiring one here would break
+        the default path for every caller.
+        """
+        status, _, create_job, invoke = _post_import(
+            api_gateway_event, lambda_context,
+            {'input_type': 'text', 'content': 'pasted persona notes'},
+        )
+
+        assert status == 200
+        create_job.assert_called_once()
+        invoke.assert_called_once()
+
+
+class TestBothLayersShareOneContract:
+    """The API and the job must not be able to disagree about what is readable.
+
+    They used to hold two independently maintained tuples, kept in step by a
+    comment. The drift that matters is silent: the API accepting something the job
+    refuses turns a clear 400 into a background job that fails later.
+    """
+
+    def test_the_api_validates_with_the_same_callable_the_job_uses(self):
+        import projects_handler
+        from jobs.persona_importer import handler as job_handler
+        from shared import persona_import
+
+        assert projects_handler.validate_import_config is persona_import.validate_import_config
+        assert job_handler.validate_import_config is persona_import.validate_import_config
