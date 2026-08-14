@@ -111,6 +111,7 @@
       "useProductContext": "产品/服务说明",
       "useResearch": "研究报告（{{total}}）",
       "visuals": "视觉稿（{{total}}）",
+      "visualsFailed": "{{total}} 份处理失败 — 请重新上传后使用",
       "visualsLimit": "每次构建最多 {{max}} 份视觉稿",
       "visualsNotReady": "{{total}} 份仍在处理中"
     },

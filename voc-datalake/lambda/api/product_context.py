@@ -22,6 +22,7 @@ import os
 import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
+from collections.abc import Iterable
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
@@ -101,6 +102,22 @@ MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_DOCS_PER_PROJECT = 20
 MAX_EXTRACTED_INJECTION_CHARS = 50_000
 
+# ── How many visuals one prototype build may name ────────────────────────────
+# Enforced at the API boundary (projects_handler.`_validated_product_doc_ids`, which
+# imports this) and mirrored in the frontend picker, kept in step by
+# lambda/api/test/test_visual_selection_bound_lockstep.py.
+#
+# Small, and NOT for read cost. The prototype prompt drives ONE set of eight `:root`
+# CSS custom properties, and every selected visual contributes a concrete palette for
+# those same eight slots — so several mockups with different palettes are
+# contradictory instructions rather than more grounding. Four describes one product's
+# screens and keeps a coherent palette the likely reading.
+#
+# Lives HERE, beside the budget it bounds, rather than in projects_handler: the total
+# budget below is DERIVED from it, and the two disagreeing is the one failure this
+# feature can have that no test would notice (see MAX_VISUAL_BRIEF_TOTAL_CHARS).
+MAX_SELECTED_PRODUCT_DOC_IDS = 4
+
 # ── Visual-brief budget (build_visual_brief_block) ───────────────────────────
 # Two caps, because neither bounds the section on its own — the same pair, and the
 # same reason, as RESEARCH_PER_DOC_CAP / RESEARCH_TOTAL_CAP in
@@ -116,13 +133,21 @@ MAX_EXTRACTED_INJECTION_CHARS = 50_000
 # long, and what it cuts is the tail — the palette and layout lines the prompt acts
 # on come first.
 MAX_VISUAL_BRIEF_DOC_CHARS = 3_000
-# Across all selected visuals. The per-visual cap alone is not a bound on the
-# section: MAX_DOCS_PER_PROJECT is 20, so a caller ticking every image could spend
-# 60,000 characters of a prompt that also carries a PRD, a PR/FAQ, research and (on
-# a revision) 24,000 characters of prior HTML. 9000 is three visuals at full size,
-# which is enough to ground a palette, a layout mode and one component inventory;
-# past that the descriptions largely restate each other.
-MAX_VISUAL_BRIEF_TOTAL_CHARS = 9_000
+# Across all selected visuals, and DERIVED rather than chosen — this is the fix for a
+# real defect, not a tidy-up.
+#
+# An independent number here can silently contradict the arity bound: at 4 ids × 3000
+# chars a hardcoded 9000 refused the FOURTH visual outright (the refusal is
+# all-or-nothing, so it is dropped whole), while the picker had offered four and its
+# limit note said four. The derivation stayed honest — it records what was used — but
+# the UI's promise did not, and nothing anywhere said so. Deriving it means the budget
+# can never refuse a selection the boundary accepted, and raising the bound cannot
+# reintroduce the gap.
+#
+# It is still a real bound on the section, because the arity bound is small: 12,000
+# characters, the same figure RESEARCH_TOTAL_CAP allows, in a prompt that also carries
+# a PRD, a PR/FAQ, research and (on a revision) 24,000 characters of prior HTML.
+MAX_VISUAL_BRIEF_TOTAL_CHARS = MAX_SELECTED_PRODUCT_DOC_IDS * MAX_VISUAL_BRIEF_DOC_CHARS
 
 # Text formats we can extract with nothing more than a decode.
 TEXT_CONTENT_TYPES = {
@@ -1131,7 +1156,9 @@ def build_product_context_block(project_id: str, docs: list[dict] | None = None)
 
 # ── Visual brief — the SELECTED image documents, for the prototype prompt ─────
 
-def build_visual_brief_block(project_id: str, doc_ids) -> tuple[str, list[str]]:
+def build_visual_brief_block(
+    project_id: str, doc_ids: Iterable[str] | None,
+) -> tuple[str, list[str]]:
     """The quoted descriptions of the image documents a build SELECTED.
 
     Returns `(block, used_doc_ids)`: the assembled text (or `''` when nothing

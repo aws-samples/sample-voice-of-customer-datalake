@@ -111,6 +111,7 @@
       "useProductContext": "Descripción del producto o servicio",
       "useResearch": "Informes de investigación ({{total}})",
       "visuals": "Maquetas visuales ({{total}})",
+      "visualsFailed": "{{total}} con error — vuelve a subirlas para usarlas",
       "visualsLimit": "Máximo {{max}} maquetas por compilación",
       "visualsNotReady": "{{total}} en procesamiento"
     },

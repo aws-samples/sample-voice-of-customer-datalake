@@ -111,6 +111,7 @@
       "useProductContext": "製品・サービスの説明",
       "useResearch": "リサーチレポート ({{total}})",
       "visuals": "ビジュアルモックアップ ({{total}})",
+      "visualsFailed": "{{total}} 件は処理に失敗しました — 再アップロードしてください",
       "visualsLimit": "1 回のビルドで最大 {{max}} 件のモックアップ",
       "visualsNotReady": "{{total}} 件は処理中です"
     },

@@ -20,7 +20,7 @@
  * deliberate persona selection.
  */
 import type {
-  ProductContext, ProductDoc, ProjectDocument, ProjectPersona,
+  ProductContext, ProductDoc, ProductDocStatus, ProjectDocument, ProjectPersona,
 } from '../../api/types'
 import {
   PRODUCT_CONTEXT_FIELD_COUNT, countFilledProductContextFields,
@@ -175,16 +175,31 @@ export interface PrototypeSources {
    */
   readonly visualOptions: ReadonlyArray<PrototypeVisualOption>
   /**
-   * How many uploaded IMAGES exist but cannot be offered yet, because extraction
-   * has not finished or failed.
+   * How many uploaded IMAGES cannot be offered YET, because extraction has not
+   * finished — `pending` or `extracting`, a state that resolves on its own.
    *
    * Reported rather than dropped silently: the user uploaded these minutes ago in
    * the Product tab, and a list that shows two of their three screenshots with no
    * explanation reads as a bug. Non-image uploads are NOT counted — a Markdown
    * file is not a visual that failed to appear, it is a different input entirely
    * (it reaches the prompt through the product-context tick-box instead).
+   *
+   * Counted as "anything not ready and not failed" rather than as the two names
+   * literally, so a status this client does not know stays reported as in-flight
+   * instead of vanishing from both counts. Together with `visualsFailed` that
+   * makes the two numbers cover every unselectable image — no upload goes
+   * unmentioned, which is the property the note exists for.
    */
-  readonly visualsNotReady: number
+  readonly visualsExtracting: number
+  /**
+   * How many uploaded IMAGES will NEVER be offered, because extraction failed.
+   *
+   * Split from the count above rather than folded into it, because the two need
+   * opposite advice: waiting resolves one and never resolves the other. Reported
+   * together they said "still being processed" about a `failed` doc forever, which
+   * sent the user back to wait for something that will not arrive.
+   */
+  readonly visualsFailed: number
 }
 
 export interface OverviewState {
@@ -289,7 +304,11 @@ export function deriveOverviewState({
       prfaqOptions,
       researchOptions,
       visualOptions: visualOptions(productDocs),
-      visualsNotReady: productDocs.filter((d) => isVisual(d) && d.status !== 'ready').length,
+      // `failed` first, then everything else that is not `ready`: the two
+      // predicates are complements over the unselectable images, so every upload
+      // lands in exactly one count and none is dropped.
+      visualsExtracting: countVisuals(productDocs, (s) => s !== 'ready' && s !== 'failed'),
+      visualsFailed: countVisuals(productDocs, (s) => s === 'failed'),
     },
   }
 }
@@ -323,6 +342,20 @@ function visualOptions(
   return productDocs
     .filter((doc) => isVisual(doc) && doc.status === 'ready')
     .map((doc) => ({ doc_id: doc.doc_id, filename: doc.filename }))
+}
+
+/**
+ * How many uploaded IMAGES are in a given extraction state.
+ *
+ * One helper for both unselectable counts rather than two filters differing in a
+ * comparison: `isVisual` is the part that is easy to forget, and forgetting it on
+ * one of them would report a Markdown upload as a visual that failed to appear.
+ */
+function countVisuals(
+  productDocs: ReadonlyArray<ProductDoc>,
+  matches: (status: ProductDocStatus) => boolean,
+): number {
+  return productDocs.filter((doc) => isVisual(doc) && matches(doc.status)).length
 }
 
 /**

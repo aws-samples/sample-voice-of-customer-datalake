@@ -111,6 +111,7 @@
       "useProductContext": "제품/서비스 설명",
       "useResearch": "리서치 보고서 ({{total}}개)",
       "visuals": "비주얼 목업 ({{total}}개)",
+      "visualsFailed": "{{total}}개는 처리에 실패했습니다 — 다시 업로드하세요",
       "visualsLimit": "한 번의 빌드에 최대 {{max}}개 목업",
       "visualsNotReady": "{{total}}개는 처리 중입니다"
     },

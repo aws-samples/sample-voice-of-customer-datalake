@@ -419,6 +419,44 @@ class TestTheBudgetIsBounded:
         assert _fenced_bodies(block) == ['A' * _PER_DOC_CAP] * len(used)
 
 
+class TestTheBudgetCannotRefuseWhatTheBoundaryAccepted:
+    """The total budget is DERIVED from the arity bound, and this is why.
+
+    An independently chosen total silently contradicted the bound: at 4 ids x 3000
+    chars a hardcoded 9000 refused the FOURTH visual outright (the refusal is
+    all-or-nothing), while the API had accepted four and the picker's limit note
+    said four. The derivation stayed honest — it records what was used — but the UI's
+    promise did not, and nothing anywhere said so.
+
+    Asserted as a PROPERTY of the two constants and then end to end, because the
+    property is what must hold: a future change to either number cannot reintroduce
+    the gap without failing here.
+    """
+
+    def test_the_total_budget_holds_a_full_selection_at_the_arity_bound(self):
+        import product_context
+
+        assert (product_context.MAX_VISUAL_BRIEF_TOTAL_CHARS
+                >= product_context.MAX_SELECTED_PRODUCT_DOC_IDS
+                * product_context.MAX_VISUAL_BRIEF_DOC_CHARS)
+
+    def test_a_full_selection_of_maximal_visuals_all_reach_the_block(self):
+        """The end-to-end half. The property test above passes on two constants that
+        happen to agree; this one proves the producer actually admits all of them."""
+        import product_context
+
+        bound = product_context.MAX_SELECTED_PRODUCT_DOC_IDS
+        per_doc = product_context.MAX_VISUAL_BRIEF_DOC_CHARS
+        docs = [_doc(f'shot{i}', 'image/png') for i in range(bound)]
+        block, used = _brief(
+            docs, [d['doc_id'] for d in docs],
+            extracted={d['s3_extracted_key']: 'A' * per_doc for d in docs},
+        )
+
+        assert used == [d['doc_id'] for d in docs]
+        assert _fenced_bodies(block) == ['A' * per_doc] * bound
+
+
 class TestOneFailureDoesNotTakeTheOthers:
     def test_an_s3_failure_skips_that_visual_and_returns_the_other(self):
         """Nothing here may fail a build. And the other visual still arriving is what

@@ -212,6 +212,53 @@ describe('a document grounded in uploaded visuals', () => {
     expect(resolved.origin).toBe('legacy')
     expect(resolved.visual_document_ids).toEqual([])
   })
+
+  /**
+   * THE ONLY CASE THAT EXISTS IN PRODUCTION DATA, and the one the other tests here
+   * do not cover: every prototype already in DynamoDB has a `derivation` written
+   * before this field existed, so the key is ABSENT rather than present-and-junk.
+   *
+   * The risk it guards is total, not partial. `DocumentDerivationSchema` now
+   * declares `visual_document_ids` and the object carries `.catch(() =>
+   * emptyDerivation())`, so a schema that did not tolerate `undefined` would make
+   * EVERY existing prototype parse to the empty record, read as `isEmpty`, fall
+   * through to the legacy reconstruction, and lose the sources it does record —
+   * every document losing its provenance the day the field shipped, with nothing
+   * failing anywhere.
+   *
+   * `sources` is asserted intact rather than just the empty list: this passes
+   * trivially against a record that degraded to empty, which is exactly the failure
+   * being ruled out.
+   */
+  it('reads a record written before the field existed, without losing what it does record', () => {
+    const beforeTheField = {
+      sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
+      selected_document_count: 1,
+      feedback_count: 0,
+      persona_ids: [],
+      product_context_included: true,
+      // no visual_document_ids
+    }
+
+    const resolved = resolveDerivation(
+      { derivation: beforeTheField, source_prd_id: 'prd_1' },
+      [],
+    )
+
+    expect(resolved.visual_document_ids).toEqual([])
+    // Declared, NOT reconstructed from source_prd_id — the fixture carries that
+    // legacy field too, so a fall-through would be invisible without this.
+    expect(resolved.origin).toBe('declared')
+    expect(resolved.sources).toEqual([
+      { document_id: 'prd_1', role: 'prototype_prd', title: null, document_type: null, resolved: false },
+    ])
+    expect(resolved.product_context_included).toBe(true)
+  })
+
+  it('normalizes an absent field to an empty list', () => {
+    expect(normalizeDerivation({ persona_ids: ['p1'] }).visual_document_ids).toEqual([])
+  })
+
 })
 
 describe('resolving sources against the project documents', () => {

@@ -29,7 +29,10 @@ Pattern follows test_research_selection_bound_lockstep.py (same directory).
 import re
 from pathlib import Path
 
-PYTHON_SOURCE = 'lambda/api/projects_handler.py'
+# The constant moved here from projects_handler so the visual-brief character
+# budget could be DERIVED from it — an independently chosen budget had silently
+# refused the fourth visual this bound allows. projects_handler imports it.
+PYTHON_SOURCE = 'lambda/api/product_context.py'
 FRONTEND_SOURCE = 'frontend/src/pages/ProjectDetail/overviewState.ts'
 
 PYTHON_PATTERN = r'^MAX_SELECTED_PRODUCT_DOC_IDS\s*=\s*(\d+)'

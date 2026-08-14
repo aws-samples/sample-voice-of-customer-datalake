@@ -111,6 +111,7 @@
       "useProductContext": "Produkt-/Servicebeschreibung",
       "useResearch": "Rechercheberichte ({{total}})",
       "visuals": "Visuelle Mockups ({{total}})",
+      "visualsFailed": "{{total}} fehlgeschlagen — erneut hochladen, um sie zu nutzen",
       "visualsLimit": "Höchstens {{max}} Mockups pro Build",
       "visualsNotReady": "{{total}} werden noch verarbeitet"
     },

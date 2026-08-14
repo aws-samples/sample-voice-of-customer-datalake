@@ -3,6 +3,34 @@ Document Generator Job Lambda Handler
 
 Generates PRD or PR-FAQ documents using multi-step LLM chains with project context.
 Uses the same prompt templates and chain patterns as the synchronous projects.py path.
+
+VISUAL GROUNDING (`{visual_brief_section}` in PROTOTYPE_HTML_USER_TEMPLATE)
+--------------------------------------------------------------------------
+A prototype build can name uploaded mockups, whose extracted descriptions are
+assembled by `api.product_context.build_visual_brief_block` and injected as a visual
+brief. Three properties of that section, all load-bearing:
+
+- **Placed beside `{brand_section}`**, not among the document sections, because it is
+  the same KIND of instruction: both say what the thing should LOOK like, while the
+  sections below say what it DOES. The alternative placement is not neutral — an
+  image description reaching the prompt inside `### Internal documents` is a paragraph
+  competing with a spec, ordered by `created_at` and sharing the product-context
+  budget with unrelated files.
+- **The selection IS the request.** There is deliberately no `use_visuals` flag (see
+  `_validated_product_doc_ids` in api/projects_handler.py for the argument), so an
+  absent or empty list means the producer is never called: no S3 read, no section, and
+  a prompt byte-identical to the one this path produced before visuals existed. That
+  last property is what the golden-prompt test in
+  test/golden/prototype_prompt_baseline.txt pins.
+- **Worded against the levers PROTOTYPE_HTML_SYSTEM_PROMPT already defines** — the
+  eight `:root` custom properties, the phone-shell/top-nav choice, the neutral indigo
+  defaults — so the brief redirects those levers instead of introducing a second,
+  competing vocabulary. The eight property names are NOT restated in the user prompt
+  on purpose: they are declared once, in the system prompt, and a second copy would
+  drift from it silently.
+
+The ids recorded in the document's `derivation` are the ones the PRODUCER reported as
+used, never the ones the request selected — see the comment at that call site.
 """
 
 import os
@@ -776,22 +804,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     brand = (doc_config.get('brand') or '').strip()
     brand_section = f'BRAND: {brand}\n' if brand else ''
 
-    # Visual grounding, sited beside BRAND rather than among the document
-    # sections because it is the same KIND of instruction: both tell the model
-    # what the thing should look like, while the sections below tell it what the
-    # thing does.
-    #
-    # THE SELECTION IS THE REQUEST. There is deliberately no `use_visuals` flag to
-    # read (see projects_handler's note where the ids are validated), so an empty
-    # or absent list means the producer is never called — no read, no section, and
-    # a prompt byte-identical to the one this path produced before visuals existed.
-    #
-    # The instruction is worded against the levers the SYSTEM prompt already
-    # defines (the `:root` custom properties, the phone-shell/top-nav choice, the
-    # neutral indigo defaults), so the brief redirects those levers instead of
-    # introducing a second, competing vocabulary. The eight property names are not
-    # restated here on purpose: they are declared once, in the system prompt, and a
-    # second copy would drift.
+    # Beside BRAND because it is the same KIND of instruction; empty selection means
+    # the producer is never called. See "Visual grounding" in the module docstring.
     visual_brief_section = ''
     used_visual_ids: list[str] = []
     if doc_config.get('selected_product_doc_ids'):

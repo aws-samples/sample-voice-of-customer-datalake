@@ -111,6 +111,7 @@
       "useProductContext": "Product / service description",
       "useResearch": "Research reports ({{total}})",
       "visuals": "Visual mockups ({{total}})",
+      "visualsFailed": "{{total}} failed to process — upload again to use",
       "visualsLimit": "At most {{max}} visuals per build",
       "visualsNotReady": "{{total}} still being processed"
     },

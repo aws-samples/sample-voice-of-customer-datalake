@@ -12,9 +12,10 @@
  * `t()` resolves against the real en catalogue (src/test/setup.ts), so a key that
  * is missing or has moved renders its raw path and these matchers fail.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import i18n from 'i18next'
 import OverviewTab from './OverviewTab'
 import { MAX_SELECTED_PRODUCT_DOC_IDS } from './overviewState'
 import { emptyProductContext } from './productContextFields'
@@ -113,6 +114,39 @@ function productDoc(overrides: Partial<ProductDoc> & { doc_id: string; filename:
 
 const VISUAL_A = productDoc({ doc_id: 'pd_a', filename: 'home-screen.png' })
 const VISUAL_B = productDoc({ doc_id: 'pd_b', filename: 'settings-screen.png' })
+/** Extraction has not finished — it will, so the note asks for patience. */
+const VISUAL_EXTRACTING = productDoc({
+  doc_id: 'pd_wip', filename: 'wip.png', status: 'extracting', extracted_chars: 0,
+})
+/** Extraction failed — it will never finish, so the note has to ask for an upload. */
+const VISUAL_FAILED = productDoc({
+  doc_id: 'pd_bad',
+  filename: 'broken.png',
+  status: 'failed',
+  extracted_chars: 0,
+  error: 'Extraction failed',
+})
+
+/** One visual label from the real en catalogue, with its count interpolated. */
+const label = (
+  key: 'visuals' | 'visualsLimit' | 'visualsNotReady' | 'visualsFailed',
+  value: number,
+) => en.documents.prototype[key].replace(/\{\{total\}\}|\{\{max\}\}/, String(value))
+
+/**
+ * A note's wording WITHOUT its count, for asserting the line is absent whatever
+ * number it would have carried.
+ *
+ * The exact string is the right assertion for presence — the count is half of what
+ * the line says — but the wrong one for absence: `not.toBeInTheDocument` on
+ * "1 failed…" also passes while the code renders "2 failed…", which is exactly the
+ * kind of off-by-a-fixture pass these two counts can produce.
+ */
+const noteStem = (key: 'visualsNotReady' | 'visualsFailed') =>
+  en.documents.prototype[key].replace('{{total}}', '').trim()
+
+/** Everything the visual group says, as one string. */
+const visualNotes = () => screen.getByTestId('prototype-visual-sources').textContent ?? ''
 
 const buildButton = () => screen.getByRole('button', { name: /build prototype/i })
 const productContextBox = () => screen.getByRole('checkbox', { name: /product \/ service description/i })
@@ -242,9 +276,6 @@ describe('which research reports the build reads', () => {
  * `build_visual_brief_block` applies before a visual reaches the prompt at all.
  */
 describe('which uploaded visuals the build reads', () => {
-  const label = (key: 'visuals' | 'visualsLimit' | 'visualsNotReady', value: number) =>
-    en.documents.prototype[key].replace(/\{\{total\}\}|\{\{max\}\}/, String(value))
-
   it('offers the visuals immediately, with no master box to turn them on', () => {
     // There is no `use_visuals` field to hold, so a master would be UI state with
     // nothing to send it to — and a collapsed group would hide ticked ids that are
@@ -294,7 +325,7 @@ describe('which uploaded visuals the build reads', () => {
     renderTab([PRD, PRFAQ], FILLED_CONTEXT, [
       VISUAL_A,
       productDoc({ doc_id: 'pd_text', filename: 'notes.md', content_type: 'text/markdown' }),
-      productDoc({ doc_id: 'pd_wip', filename: 'wip.png', status: 'extracting', extracted_chars: 0 }),
+      VISUAL_EXTRACTING,
     ])
 
     expect(screen.getByRole('checkbox', { name: 'home-screen.png' })).toBeInTheDocument()
@@ -370,6 +401,44 @@ describe('which uploaded visuals the build reads', () => {
     expect(sentBody().selected_product_doc_ids).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
   })
 
+  it('lets a visual be ticked again after a full selection loses one to a deletion', async () => {
+    // The bound guard and `visualLimitReached` must measure the SAME list. The guard
+    // used to count the raw stored ids while the flag counted only ids still on
+    // offer, so: tick the maximum, have one deleted from the Product tab, and the
+    // flag said "not at the bound" — the remaining boxes rendered ENABLED — while
+    // the guard still counted the maximum and swallowed every click. A control that
+    // looks available and does nothing is worse than a disabled one.
+    //
+    // The replacement is asserted as SENT rather than as merely checked: the click
+    // could set the box while the id never reaches the request.
+    const user = userEvent.setup()
+    const all = Array.from(
+      { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
+      (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
+    )
+    const atBound = all.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)
+    const spare = all[MAX_SELECTED_PRODUCT_DOC_IDS]
+    const { rerender } = renderTab([PRD, PRFAQ], FILLED_CONTEXT, all)
+
+    for (const option of atBound) {
+      await user.click(screen.getByRole('checkbox', { name: option.filename }))
+    }
+    // The first ticked visual is deleted elsewhere; the rest, and the spare, remain.
+    rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, [...atBound.slice(1), spare]))
+
+    const spareBox = screen.getByRole('checkbox', { name: spare.filename })
+    expect(spareBox).toBeEnabled()
+    await user.click(spareBox)
+    await user.click(buildButton())
+
+    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    const sent = sentBody().selected_product_doc_ids
+    expect(sent).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
+    expect(sent).toContain(spare.doc_id)
+    // And the deleted one is gone rather than merely displaced.
+    expect(sent).not.toContain(atBound[0].doc_id)
+  })
+
   it('drops a visual deleted between the tick and the click', async () => {
     // The doc list refetches on mount and focus, and the Product tab can delete an
     // upload while this card is open. Sending its id would be a 4xx — someone
@@ -386,6 +455,80 @@ describe('which uploaded visuals the build reads', () => {
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toEqual(['pd_a'])
+  })
+})
+
+/**
+ * The two reasons an uploaded image cannot be offered, told apart.
+ *
+ * One count for both said "still being processed" about a `failed` extraction
+ * forever, sending the user back to wait for something that will never arrive. The
+ * fixture that discriminates is a `failed` doc: the original only ever used
+ * `extracting`, which is why the defect shipped — every assertion about it passed
+ * either way.
+ */
+describe('an image that cannot be offered says which kind of wait it is', () => {
+  it('reports an extracting image as in flight, not as failed', () => {
+    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING])
+
+    expect(screen.getByText(label('visualsNotReady', 1))).toBeInTheDocument()
+    expect(visualNotes()).not.toContain(noteStem('visualsFailed'))
+  })
+
+  it('reports a failed image as failed, not as in flight', () => {
+    // THE discriminating case. Under the old single count this line read "1 still
+    // being processed" — advice to wait for an extraction that has already given
+    // up, with no mention that uploading the file again is the way out.
+    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_FAILED])
+
+    expect(screen.getByText(label('visualsFailed', 1))).toBeInTheDocument()
+    expect(visualNotes()).not.toContain(noteStem('visualsNotReady'))
+  })
+
+  it('reports both counts when one image is extracting and another failed', () => {
+    // Independent lines, not a winner: the user has one file to wait for and a
+    // different one to re-upload, and either note alone hides half of that.
+    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING, VISUAL_FAILED])
+
+    expect(screen.getByText(label('visualsNotReady', 1))).toBeInTheDocument()
+    expect(screen.getByText(label('visualsFailed', 1))).toBeInTheDocument()
+  })
+
+  it('reports neither line when every uploaded image is ready', () => {
+    // The positive control: without it, "reports the failed ones" is
+    // indistinguishable from "always shows both lines".
+    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+
+    expect(visualNotes()).not.toContain(noteStem('visualsNotReady'))
+    expect(visualNotes()).not.toContain(noteStem('visualsFailed'))
+  })
+
+  it('offers neither the failed nor the extracting image as selectable', () => {
+    // Counting them must not have made them tickable: neither has an extracted
+    // description, so `build_visual_brief_block` would ignore either one — a box
+    // that contributes nothing to the build it appears to configure.
+    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING, VISUAL_FAILED])
+
+    expect(screen.getByRole('checkbox', { name: 'home-screen.png' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'wip.png' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'broken.png' })).not.toBeInTheDocument()
+    // The heading counts what is SELECTABLE, so neither of the two shows up there.
+    expect(screen.getByText(label('visuals', 1))).toBeInTheDocument()
+  })
+})
+
+describe('the visual tick-boxes are a named group', () => {
+  it('exposes the heading as the group\'s accessible name', () => {
+    // Asserted through the role and its computed name rather than through the
+    // markup, so the association is what is tested: the research sub-list gets it
+    // from its master checkbox and this list has no master by design, so without
+    // an explicit group the rows announce as loose checkboxes carrying filenames
+    // and nothing says what ticking one does.
+    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+
+    const group = screen.getByRole('group', { name: label('visuals', 2) })
+    expect(group).toContainElement(screen.getByRole('checkbox', { name: 'home-screen.png' }))
+    expect(group).toContainElement(screen.getByRole('checkbox', { name: 'settings-screen.png' }))
   })
 })
 
@@ -472,6 +615,10 @@ describe('the card no longer presents PRD/PR-FAQ as the whole input list', () =>
     expect(prototype.visuals).toContain('{{total}}')
     expect(prototype.visualsLimit).toContain('{{max}}')
     expect(prototype.visualsNotReady).toContain('{{total}}')
+    // `{{total}}` and not i18next `count`, matching every neighbouring label: a
+    // plural-suffixed key would be two more strings per catalogue for a number
+    // that only ever opens a short grey line.
+    expect(prototype.visualsFailed).toContain('{{total}}')
   })
 
   it.each([
@@ -484,7 +631,36 @@ describe('the card no longer presents PRD/PR-FAQ as the whole input list', () =>
     // count assertion above proves the key exists; this proves it was translated.
     expect(catalogue.documents.prototype.visuals).not.toBe(en.documents.prototype.visuals)
     expect(catalogue.documents.prototype.visualsLimit).not.toBe(en.documents.prototype.visualsLimit)
+    expect(catalogue.documents.prototype.visualsFailed)
+      .not.toBe(en.documents.prototype.visualsFailed)
     expect(catalogue.documents.derivation.visualsUsed_other)
       .not.toBe(en.documents.derivation.visualsUsed_other)
+  })
+})
+
+describe('the failed note renders from a non-English catalogue', () => {
+  // The catalogue assertions above prove the key exists in all eight and differs
+  // from English. This proves the COMPONENT resolves it in a non-English locale:
+  // a value filed under a slightly different path in a translated catalogue
+  // satisfies both of those and still renders its raw dotted key to a German user.
+  // Same shape as McpAccessTab.structure.test.tsx, which registers `de` the same
+  // way — the harness itself loads only `en`.
+  beforeAll(async () => {
+    i18n.addResourceBundle('de', 'projectDetail', de)
+    await i18n.changeLanguage('de')
+  })
+
+  afterAll(async () => {
+    await i18n.changeLanguage('en')
+  })
+
+  it('renders the German wording, not the key path or the English string', () => {
+    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_FAILED])
+
+    expect(screen.getByText(
+      de.documents.prototype.visualsFailed.replace('{{total}}', '1'),
+    )).toBeInTheDocument()
+    expect(visualNotes()).not.toContain('documents.prototype.visualsFailed')
+    expect(visualNotes()).not.toContain(noteStem('visualsFailed'))
   })
 })

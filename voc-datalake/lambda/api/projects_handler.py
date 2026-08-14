@@ -44,6 +44,12 @@ from product_context import (
     # under is the same string that has to be read back to validate a selection,
     # and a second copy of the literal here would be a silent partition split.
     DOC_SK_PREFIX as PRODUCT_DOC_SK_PREFIX,
+    # Same reasoning, and it earned it: this bound was declared here and the
+    # visual-brief character budget was chosen independently over there, so the
+    # budget silently refused the FOURTH visual the bound had already allowed.
+    # The budget is now derived from this number, which is why the number lives
+    # beside it.
+    MAX_SELECTED_PRODUCT_DOC_IDS,
 )
 
 # API resolver with standard CORS
@@ -672,17 +678,10 @@ def _validated_research_ids(project_id: str, raw: Any, field: str) -> list[str]:
     return document_ids
 
 
-# Deliberately much smaller than MAX_SELECTED_RESEARCH_IDS, and not for budget
-# reasons. The prototype prompt drives a SINGLE set of eight `:root` CSS custom
-# properties (--primary … --surface, see PROTOTYPE_HTML_SYSTEM_PROMPT in
-# lambda/jobs/document_generator/handler.py). Every selected visual contributes a
-# concrete palette for those same eight slots, so several mockups with different
-# palettes are not more grounding — they are contradictory instructions for one
-# set of variables, and the model resolves the contradiction by picking or
-# blending arbitrarily. Four is enough to describe one product's screens (a
-# couple of screens plus a component sheet) and few enough that a coherent
-# palette is still the likely reading. The read cost is a secondary benefit.
-MAX_SELECTED_PRODUCT_DOC_IDS = 4
+# MAX_SELECTED_PRODUCT_DOC_IDS is imported from product_context, not declared here.
+# It reads much smaller than MAX_SELECTED_RESEARCH_IDS above and the reason is not
+# budget — the full argument lives with the constant, beside the character budget
+# that is derived from it.
 
 
 def _validated_product_doc_ids(project_id: str, raw: Any, field: str) -> list[str]:

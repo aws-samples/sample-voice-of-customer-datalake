@@ -784,9 +784,17 @@ function inheritedExtraSources(
     //
     // Filtered against the PRODUCT docs, not the documents: the API answers 404 for
     // an id it cannot resolve, so a mockup deleted after the build would otherwise
-    // make this prototype unrevisable for good. Presence is the test, not
-    // readiness — the API resolves any product doc, and the generator skips one
-    // whose description is not extracted yet rather than failing the build.
+    // make this prototype unrevisable for good.
+    //
+    // PRESENCE is the test, NOT readiness, and the difference is visible to the
+    // user: a visual whose extraction has since FAILED still passes this filter, so
+    // the revision sends it, the API accepts it, and the generator then skips it —
+    // the revision quietly comes back with less grounding than the prototype it
+    // revises. Filtering on `status === 'ready'` instead would not fix that, it
+    // would only move the silence one layer earlier; and it would newly drop a
+    // visual that is merely mid-re-extraction, which resolves on its own. Saying it
+    // belongs with `feedbackRebased` (which already tells the user when an inherited
+    // SOURCE was dropped) and is left for that follow-up rather than half-done here.
     visualIds: derivation.visual_document_ids
       .filter((docId) => productDocs == null || productDocs.some((d) => d.doc_id === docId))
       .slice(0, MAX_SELECTED_PRODUCT_DOC_IDS),

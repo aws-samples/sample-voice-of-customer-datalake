@@ -178,14 +178,23 @@ export interface PrototypeBuildControl {
      */
     readonly visualLimitReached: boolean
     readonly maxVisualIds: number
-    /** Uploaded images not `ready` yet, so not selectable — reported, not hidden. */
-    readonly visualsNotReady: number
+    /**
+     * Uploaded images still extracting, so not selectable YET — reported, not
+     * hidden.
+     */
+    readonly visualsExtracting: number
+    /**
+     * Uploaded images whose extraction FAILED, so never selectable. Separate from
+     * the count above because waiting fixes one and never fixes the other.
+     */
+    readonly visualsFailed: number
   }
 }
 
 export function usePrototypeBuild({
   projectId, hasPrd, hasPrfaq, hasExistingPrototype, prdOptions = [], prfaqOptions = [],
-  researchOptions = [], visualOptions = [], visualsNotReady = 0, onJobStarted,
+  researchOptions = [], visualOptions = [], visualsExtracting = 0, visualsFailed = 0,
+  onJobStarted,
 }: {
   readonly projectId: string
   readonly hasPrd: boolean
@@ -214,8 +223,16 @@ export function usePrototypeBuild({
    * and the build reads none.
    */
   readonly visualOptions?: ReadonlyArray<PrototypeVisualOption>
-  /** Uploaded images still extracting or failed, passed through for the UI note. */
-  readonly visualsNotReady?: number
+  /**
+   * Uploaded images still extracting, and uploaded images whose extraction
+   * failed, passed through for the UI's two notes.
+   *
+   * Two numbers rather than one, because a single "not ready" count could only be
+   * worded one way and one of the two wordings is always wrong: "still being
+   * processed" about a `failed` doc says it will resolve, and it will not.
+   */
+  readonly visualsExtracting?: number
+  readonly visualsFailed?: number
   /**
    * The project already has a prototype, so this build makes an additional one.
    *
@@ -270,9 +287,7 @@ export function usePrototypeBuild({
   // Only reports still on offer. A stale id would be rejected by the API, which
   // would turn someone else's deletion into this build's failure.
   const selectedResearchIds = useMemo(
-    () => chosenResearchIds.filter(
-      (id) => researchOptions.some((option) => option.document_id === id),
-    ),
+    () => chosenResearchIds.filter((id) => isOfferedResearch(researchOptions, id)),
     [chosenResearchIds, researchOptions],
   )
 
@@ -281,9 +296,7 @@ export function usePrototypeBuild({
   // under this card would otherwise send an id the API cannot resolve, turning
   // someone else's deletion into this build's 400.
   const selectedVisualIds = useMemo(
-    () => chosenVisualIds.filter(
-      (id) => visualOptions.some((option) => option.doc_id === id),
-    ),
+    () => chosenVisualIds.filter((id) => isOfferedVisual(visualOptions, id)),
     [chosenVisualIds, visualOptions],
   )
 
@@ -299,27 +312,23 @@ export function usePrototypeBuild({
   }, [researchOptions])
 
   const onToggleResearchId = useCallback((documentId: string) => {
-    setChosenResearchIds((current) => {
-      if (current.includes(documentId)) return current.filter((id) => id !== documentId)
-      // Refuse at the bound rather than send a list the API rejects: a 400 arrives
-      // after the user has already chosen, and says nothing about which report to
-      // drop.
-      if (current.length >= MAX_SELECTED_RESEARCH_IDS) return current
-      return [...current, documentId]
-    })
-  }, [])
+    setChosenResearchIds((current) => toggleWithinBound(
+      current,
+      documentId,
+      (id) => isOfferedResearch(researchOptions, id),
+      MAX_SELECTED_RESEARCH_IDS,
+    ))
+  }, [researchOptions])
 
   const onToggleVisualId = useCallback((docId: string) => {
-    setChosenVisualIds((current) => {
-      if (current.includes(docId)) return current.filter((id) => id !== docId)
-      // Refuse at the bound rather than send a list the API rejects — the same
-      // rule as the reports, with a much smaller number behind it because each
-      // extra visual is another palette competing for one set of CSS variables.
-      if (current.length >= MAX_SELECTED_PRODUCT_DOC_IDS) return current
-      // Appended, never sorted: this is the precedence order the prompt reads.
-      return [...current, docId]
-    })
-  }, [])
+    // Appended, never sorted: this is the precedence order the prompt reads.
+    setChosenVisualIds((current) => toggleWithinBound(
+      current,
+      docId,
+      (id) => isOfferedVisual(visualOptions, id),
+      MAX_SELECTED_PRODUCT_DOC_IDS,
+    ))
+  }, [visualOptions])
 
   // THREE reasons to stop and ask, through the ConfirmModal pattern every other
   // guarded action uses (this began as a window.confirm, which cannot be styled):
@@ -438,9 +447,65 @@ export function usePrototypeBuild({
       onToggleVisualId,
       visualLimitReached: selectedVisualIds.length >= MAX_SELECTED_PRODUCT_DOC_IDS,
       maxVisualIds: MAX_SELECTED_PRODUCT_DOC_IDS,
-      visualsNotReady,
+      visualsExtracting,
+      visualsFailed,
     },
   }
+}
+
+/**
+ * Add or remove an id in a bounded selection, counting ONLY ids still on offer.
+ *
+ * The filter is the whole point, and it fixes a real defect rather than tidying:
+ * both `researchLimitReached` and `visualLimitReached` are derived from the
+ * FILTERED selection (ids whose document still exists), while this guard used to
+ * count the raw stored list. Tick four visuals, have one deleted from the Product
+ * tab, and the two disagreed — the flag said three so the remaining boxes rendered
+ * enabled, and every click on them was silently swallowed by a guard counting four.
+ * A control that looks available and does nothing is worse than a disabled one.
+ *
+ * Shared by both toggles rather than written twice: they had the same bug because
+ * they were the same code, and one guard means a fix cannot land on one and miss
+ * the other.
+ *
+ * Removal is never bounded — dropping an id always works, even from an over-long
+ * inherited list, which is what keeps a selection recoverable if the bound is ever
+ * lowered.
+ */
+/**
+ * True while `id` still names one of the reports/visuals on offer.
+ *
+ * Two named predicates rather than the `.some()` written inline at each of the
+ * four places that asks: the two option lists are keyed differently
+ * (`document_id` vs `doc_id`), so inlining it is the same question spelled four
+ * ways — and at the toggle call sites the inline form nests five functions deep,
+ * which `sonarjs/no-nested-functions` rejects.
+ */
+function isOfferedResearch(
+  options: ReadonlyArray<PrototypeSourceOption>,
+  id: string,
+): boolean {
+  return options.some((option) => option.document_id === id)
+}
+
+function isOfferedVisual(
+  options: ReadonlyArray<PrototypeVisualOption>,
+  id: string,
+): boolean {
+  return options.some((option) => option.doc_id === id)
+}
+
+function toggleWithinBound(
+  current: ReadonlyArray<string>,
+  id: string,
+  isStillOnOffer: (id: string) => boolean,
+  max: number,
+): ReadonlyArray<string> {
+  if (current.includes(id)) return current.filter((existing) => existing !== id)
+  // Refuse at the bound rather than send a list the API rejects: a 400 arrives
+  // after the user has already chosen, and says nothing about what to give up.
+  if (current.filter(isStillOnOffer).length >= max) return current
+  return [...current, id]
 }
 
 /**

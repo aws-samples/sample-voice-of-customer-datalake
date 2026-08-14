@@ -89,7 +89,8 @@ export default function OverviewTab({
     prfaqOptions: prototypeSources.prfaqOptions,
     researchOptions: prototypeSources.researchOptions,
     visualOptions: prototypeSources.visualOptions,
-    visualsNotReady: prototypeSources.visualsNotReady,
+    visualsExtracting: prototypeSources.visualsExtracting,
+    visualsFailed: prototypeSources.visualsFailed,
     onJobStarted,
   })
 
@@ -639,7 +640,9 @@ function PrototypeExtraSources({
  * with ids". The ticked list IS the request, so the boxes that decide it are the
  * only control there is.
  *
- * What replaces the master is a plain group heading carrying the count, and the
+ * What replaces the master is a group heading carrying the count — named to
+ * assistive tech through `role="group"`/`aria-labelledby`, since with no master
+ * checkbox there is nothing else to associate the rows with — and the
  * same indented rail the research sub-list uses once opened — so the group still
  * reads as one thing among the extra sources rather than as loose boxes, and a row
  * here looks and behaves exactly like a report row one section up. Always expanded
@@ -652,14 +655,28 @@ function PrototypeVisualSources({
   readonly extras: PrototypeBuildControl['extras']
   readonly t: TFunction<'projectDetail'>
 }) {
-  // Nothing ready and nothing pending: no images uploaded at all, so there is
-  // nothing to offer and nothing to explain. Same rule as the research box —
-  // a section whose only possible contribution is empty is an invitation to a no-op.
-  if (extras.visualOptions.length === 0 && extras.visualsNotReady === 0) return null
+  const headingId = useId()
+  // Nothing ready, nothing extracting and nothing failed: no images uploaded at
+  // all, so there is nothing to offer and nothing to explain. Same rule as the
+  // research box — a section whose only possible contribution is empty is an
+  // invitation to a no-op.
+  if (extras.visualOptions.length === 0
+    && extras.visualsExtracting === 0
+    && extras.visualsFailed === 0) return null
 
   return (
-    <div data-testid="prototype-visual-sources">
-      <p className="text-xs font-medium text-gray-600">
+    // `role="group"` + `aria-labelledby`, so the tick-boxes are programmatically
+    // associated with the heading that names them: without it the rows announce as
+    // loose checkboxes with filenames and nothing says what selecting one does.
+    // The research sub-list gets that association from its master checkbox; this
+    // list has no master by design (there is no `use_visuals` field to hold), so
+    // the association has to be stated.
+    //
+    // A role on the existing div rather than a `fieldset`/`legend`: it introduces
+    // no new element, so the `ml-5 … border-l pl-2` rail and every text size stay
+    // exactly as they were, and the heading keeps carrying the count.
+    <div data-testid="prototype-visual-sources" role="group" aria-labelledby={headingId}>
+      <p id={headingId} className="text-xs font-medium text-gray-600">
         {/* `total`, not `count`: no plural suffixes to translate eight times for a
             number that only ever appears in parentheses, matching `useResearch`. */}
         {t('documents.prototype.visuals', { total: extras.visualOptions.length })}
@@ -690,10 +707,23 @@ function PrototypeVisualSources({
       {/* Said rather than left to be noticed: these images exist in the Product
           tab, and a picker that lists two of the three a user just uploaded, with
           no explanation, reads as a bug. Non-image uploads get no note — a
-          Markdown file is not a visual that failed to appear. */}
-      {extras.visualsNotReady > 0 ? (
+          Markdown file is not a visual that failed to appear.
+
+          TWO lines rather than one count, and independent so both can show at
+          once: waiting resolves the first and never resolves the second. Under one
+          "still being processed" line a failed extraction sent the user back to
+          wait for something that will not arrive. */}
+      {extras.visualsExtracting > 0 ? (
         <p className="text-xs text-gray-500">
-          {t('documents.prototype.visualsNotReady', { total: extras.visualsNotReady })}
+          {t('documents.prototype.visualsNotReady', { total: extras.visualsExtracting })}
+        </p>
+      ) : null}
+      {/* amber, not gray: this one asks for an action (upload the file again)
+          rather than for patience, and amber-700 is the colour the other
+          action-needed lines on this card use. */}
+      {extras.visualsFailed > 0 ? (
+        <p className="text-xs text-amber-700">
+          {t('documents.prototype.visualsFailed', { total: extras.visualsFailed })}
         </p>
       ) : null}
     </div>
