@@ -1,7 +1,11 @@
 """
 Persona Importer Job Lambda Handler
 
-Imports personas from PDF, image, or text using LLM extraction.
+Imports personas from an image or pasted text using LLM extraction.
+
+PDF is NOT handled: nothing in this repo extracts text from a PDF, so a PDF
+import is refused (here and, first, at the API boundary in
+api/projects_handler.py) rather than half-worked. See SUPPORTED_INPUT_TYPES.
 """
 
 import os
@@ -15,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
+from shared.exceptions import ValidationError
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.model_config import get_active_model_id
 from api.projects import generate_persona_avatar
@@ -22,6 +27,12 @@ from api.projects import generate_persona_avatar
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
+
+# The only inputs this handler can turn into prompt content: text goes in as
+# text, an image goes in as a Converse image block. Kept in step with
+# api/projects_handler.py::SUPPORTED_IMPORT_TYPES, which refuses everything else
+# before a job is created.
+SUPPORTED_INPUT_TYPES = ('text', 'image')
 
 
 @job_handler(error_message='Persona import failed')
@@ -42,11 +53,52 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
     
     ctx.update_progress(10, 'extracting_persona')
     
-    input_type = import_config.get('input_type', 'text')
-    content = import_config.get('content', '')
+    # Both values are normalised to a plain string first, so the guards below
+    # compare what they think they are comparing. A non-string (None, a number, a
+    # nested object) becomes '' and is refused, rather than reaching `str(None)`
+    # and being read as the three readable characters "None".
+    raw_input_type = import_config.get('input_type', 'text')
+    input_type = raw_input_type.strip().lower() if isinstance(raw_input_type, str) else ''
+    raw_content = import_config.get('content')
+    content = raw_content if isinstance(raw_content, str) else ''
     media_type = import_config.get('media_type', '')
     
     logger.info(f"[IMPORT_PERSONA_JOB] Starting import from {input_type} for project {project_id}")
+    
+    # LAST LINE OF DEFENCE. The allowlist in api/projects_handler.py is the first
+    # one and stops a click from ever creating this job — but a job row queued
+    # before that allowlist shipped, a replayed async invoke, or a future caller
+    # can still arrive here, and this Lambda has exactly two possible answers to
+    # an input it cannot read: refuse, or fabricate.
+    #
+    # It used to fabricate. Anything that was not 'image' fell through to a
+    # hardcoded placeholder sentence — one line of prose asking the model to
+    # extract a persona "from this document", with the document itself nowhere in
+    # the prompt — and the model obligingly extracted one from that sentence. A
+    # complete invention, presented to the user as their file.
+    #
+    # A test asserts that placeholder's opening literal appears nowhere in this
+    # file, so it cannot come back by being reintroduced further down.
+    #
+    # Blank content is the same fabrication by a second route (the model invents
+    # from nothing), so it is refused too. It is checked for images as well as
+    # text: zero bytes is not a readable image either, and there is no input for
+    # which empty content is valid.
+    #
+    # The wording is user-facing on purpose: shared/jobs.py::job_handler writes
+    # f'{error_message}: {str(e)[:200]}' into the job record, so this string is
+    # what the person who clicked Import reads. It says what they can do about it
+    # instead of naming an input_type they never chose.
+    if input_type not in SUPPORTED_INPUT_TYPES:
+        raise ValidationError(
+            'That file could not be read. Persona import accepts pasted text or '
+            'an image — PDF documents are not supported yet.'
+        )
+    if not content.strip():
+        raise ValidationError(
+            'There was nothing to read. Paste the persona description, or upload '
+            'an image, and try again.'
+        )
     
     system_prompt = """You are a UX researcher expert at extracting persona information from documents and images.
 Extract persona data from the provided input and output a structured JSON object.
@@ -67,9 +119,10 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
             'text': f"Extract the persona information from this image.\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
         })
     else:
-        text_content = content if input_type == 'text' else "[PDF content - extract persona from this document]"
+        # `input_type` is 'text' here — the guard above left no other possibility,
+        # so there is no fallback content to substitute and nothing to invent.
         converse_content.append({
-            'text': f"Extract the persona information from this text:\n\n---\n{text_content}\n---\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
+            'text': f"Extract the persona information from this text:\n\n---\n{content}\n---\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
         })
     
     ctx.update_progress(30, 'calling_ai')

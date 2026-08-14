@@ -74,7 +74,9 @@ export const projectsApi = {
     fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, { method: 'DELETE' }),
 
   importPersona: (projectId: string, data: {
-    input_type: 'pdf' | 'image' | 'text';
+    // No 'pdf': the API refuses it (nothing extracts PDF text), so advertising it
+    // in the client type would be a compile-time promise the server breaks.
+    input_type: 'image' | 'text';
     content: string;
     media_type?: string
   }) =>

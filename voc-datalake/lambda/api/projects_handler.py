@@ -115,13 +115,76 @@ def api_create_persona(project_id: str):
     return create_persona(project_id, app.current_event.json_body)
 
 
+# ── Persona import: what this platform can actually read ─────────────────────
+# Extraction happens in lambda/jobs/persona_importer/handler.py, which can only
+# turn two things into prompt input: text the user pasted, and an image (the
+# Bedrock Converse API takes those natively).
+SUPPORTED_IMPORT_TYPES = ('text', 'image')
+
+# Types we intend to support but cannot yet: NOTHING in this repo extracts text
+# from a PDF. Kept separate from "unsupported" on purpose, mirroring
+# product_context.DEFERRED_CONTENT_TYPES — "we will never take this" and "not
+# yet" are different answers, and a caller has to be able to tell them apart.
+#
+# This one was ACCEPTED until now, and the import appeared to work: the job was
+# created, Bedrock was billed, and the model was handed the literal string
+# "[PDF content - extract persona from this document]" instead of the file, so it
+# invented a persona with no connection to the upload. Refusing is the honest
+# interim answer until a PDF extractor exists.
+DEFERRED_IMPORT_TYPES = {'pdf': 'PDF'}
+
+# Derived so adding a supported type cannot leave either user-facing message
+# stale. The two messages stay DISTINCT strings: a caller must be able to tell
+# "not yet" from "never", which is the whole reason DEFERRED exists.
+_ACCEPTED_IMPORT_TYPES_LABEL = ', '.join(SUPPORTED_IMPORT_TYPES)
+_UNSUPPORTED_IMPORT_MESSAGE = (
+    f'Unsupported import type. Accepted: {_ACCEPTED_IMPORT_TYPES_LABEL}.'
+)
+
+
+def validate_import_type(raw: object) -> str:
+    """Normalised `input_type`, or ValidationError naming what IS accepted.
+
+    Absent, None or blank keeps this endpoint's long-standing `'text'` default, so
+    no caller that worked before starts failing. Anything else is trimmed and
+    compared case-insensitively, so `'PDF '` is refused as the PDF it is rather
+    than sliding into the unsupported branch by accident.
+
+    A non-string is refused rather than coerced: `str(123)` would be answered as
+    if the caller had asked for a type called "123", and `raw in
+    DEFERRED_IMPORT_TYPES` on an unhashable body value (a list, an object) would
+    raise TypeError and surface as a 500 for what is plainly a bad request.
+    """
+    if raw is None:
+        return 'text'
+    if not isinstance(raw, str):
+        raise ValidationError(_UNSUPPORTED_IMPORT_MESSAGE)
+
+    input_type = raw.strip().lower()
+    if not input_type:
+        return 'text'
+    if input_type in DEFERRED_IMPORT_TYPES:
+        raise ValidationError(
+            f'{DEFERRED_IMPORT_TYPES[input_type]} import is not supported yet. '
+            f'Accepted for now: {_ACCEPTED_IMPORT_TYPES_LABEL}.'
+        )
+    if input_type not in SUPPORTED_IMPORT_TYPES:
+        raise ValidationError(_UNSUPPORTED_IMPORT_MESSAGE)
+    return input_type
+
+
 @app.post("/projects/<project_id>/personas/import")
 @tracer.capture_method
 def api_import_persona(project_id: str):
-    """Import a persona from PDF, image, or text - runs as background job."""
+    """Import a persona from an image or pasted text - runs as background job."""
     body = app.current_event.json_body or {}
     config = {
-        'input_type': body.get('input_type', 'text'),
+        # INVARIANT (tested): the type is validated BEFORE create_job, so a
+        # refused import leaves no job row behind and never reaches Bedrock.
+        # Rejecting only inside the job Lambda would still cost a job record, a
+        # Lambda invoke and a model call per attempt, and the user would watch a
+        # job run and fail instead of being told at the click.
+        'input_type': validate_import_type(body.get('input_type')),
         'content': body.get('content', ''),
         'media_type': body.get('media_type', '')
     }

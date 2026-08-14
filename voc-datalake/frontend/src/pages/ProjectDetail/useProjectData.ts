@@ -359,7 +359,7 @@ export function usePersonaMutations({
 
   const importPersonaMut = useMutation({
     mutationFn: (data: {
-      input_type: 'pdf' | 'image' | 'text';
+      input_type: 'image' | 'text';
       content: string;
       media_type?: string
     }) =>
