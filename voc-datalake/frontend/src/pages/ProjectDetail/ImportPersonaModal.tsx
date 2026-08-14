@@ -12,9 +12,12 @@
  */
 import clsx from 'clsx'
 import {
-  Upload, Image, FileText, CheckCircle, X, Loader2,
+  Upload, Image, FileText, CheckCircle, X, Loader2, AlertCircle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IMAGE_ACCEPT_ATTR } from '../../utils/imageInput'
+import { usePersonaImageInput } from './usePersonaImageInput'
+import type { PersonaImageInput } from './usePersonaImageInput'
 
 type ImportType = 'image' | 'text'
 
@@ -23,7 +26,11 @@ type ImportType = 'image' | 'text'
 // same set (shared/persona_import.py, via shared/image_limits.py) — the picker
 // filter is a convenience, not the guard. The hint the user reads comes from
 // `importPersona.imageFormats`.
-const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/gif,image/webp'
+//
+// Derived from the shared map (utils/imageInput.ts) rather than written out, so
+// the picker, the drop handler and the paste handler cannot end up accepting
+// three different sets.
+const ACCEPTED_FILE_TYPES = IMAGE_ACCEPT_ATTR
 
 // RETAINED DEAD KEYS, on purpose: `importPersona.pdf`, `pdfDesc`, `pdfOnly`,
 // `uploadPdf` and `importTypePdf` are still in all eight catalogues, already
@@ -74,15 +81,30 @@ function ImportTypeButton({
   )
 }
 
+/**
+ * The dropzone's border/background for its three states.
+ *
+ * The drag-over state deliberately reuses the populated state's purple family
+ * rather than introducing a colour: it is the same "this zone is holding
+ * something" signal one moment earlier, and a darker border is what distinguishes
+ * it (the same relationship ProductDocsUpload's zone uses for its own hover and
+ * drag states).
+ */
+function zoneStyle(dragActive: boolean, hasFile: boolean): string {
+  if (dragActive) return 'border-purple-500 bg-purple-50'
+  if (hasFile) return 'border-purple-300 bg-purple-50'
+  return 'border-gray-300 hover:border-purple-300'
+}
+
 // File upload section component
 function FileUploadSection({
   importType,
   importFileName,
-  onFileChange,
+  imageInput,
 }: Readonly<{
   importType: ImportType
   importFileName: string
-  onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  imageInput: PersonaImageInput
 }>) {
   const { t } = useTranslation('projectDetail')
   if (importType !== 'image') return null
@@ -91,10 +113,26 @@ function FileUploadSection({
     <div>
       <h3 className="font-medium mb-3">{t('importPersona.uploadImage')}</h3>
       <label className="block">
-        <div className={clsx(
-          'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
-          importFileName === '' ? 'border-gray-300 hover:border-purple-300' : 'border-purple-300 bg-purple-50',
-        )}>
+        {/*
+          The drag handlers sit on the VISIBLE div, not on the input: the input is
+          `hidden`, so it has no box to drop on and never sees a DragEvent. A
+          <label> wrapping a hidden input buys click-to-open and nothing else,
+          which is exactly why the advertised "or drag and drop" did nothing.
+
+          preventDefault on enter/over (in the hook) is not decoration — without
+          it the browser's default wins and NAVIGATES to the dropped file,
+          discarding the whole modal.
+        */}
+        <div
+          className={clsx(
+            'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
+            zoneStyle(imageInput.dragActive, importFileName !== ''),
+          )}
+          onDragEnter={imageInput.onDragEnter}
+          onDragOver={imageInput.onDragOver}
+          onDragLeave={imageInput.onDragLeave}
+          onDrop={imageInput.onDrop}
+        >
           {importFileName === '' ? (
             <div>
               <Upload size={32} className="mx-auto mb-2 text-gray-400" />
@@ -113,9 +151,16 @@ function FileUploadSection({
           type="file"
           accept={ACCEPTED_FILE_TYPES}
           className="hidden"
-          onChange={onFileChange}
+          onChange={imageInput.onPickerChange}
         />
       </label>
+      {/* Paste is the third way in, and nothing in the zone said so. */}
+      <p className="mt-2 text-xs text-gray-400">{t('importPersona.pasteScreenshotHint')}</p>
+      {imageInput.error !== null && (
+        <div role="alert" className="mt-2 text-xs text-red-600 inline-flex items-center gap-1">
+          <AlertCircle size={12} /> {imageInput.error}
+        </div>
+      )}
     </div>
   )
 }
@@ -157,18 +202,33 @@ export default function ImportPersonaModal({
   onClose,
   onImport,
 }: ImportPersonaModalProps) {
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      onFileChange(file)
-    }
-  }
+  // All three input paths — picker, drop, paste — go through this, so they
+  // cannot disagree about what is accepted or about how an image is prepared.
+  const imageInput = usePersonaImageInput({
+    enabled: importType === 'image',
+    onFileChange,
+  })
 
   const { t } = useTranslation('projectDetail')
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+      {/*
+        onPaste sits on the modal's own subtree rather than on window: a React
+        paste handler only fires for events originating inside this subtree, which
+        is what leaves every paste elsewhere on the page — and, via the hook's
+        no-file early return, every text paste in here, including into the persona
+        textarea — completely untouched.
+
+        On the panel rather than on the dropzone because a pasting user has to
+        have focus SOMEWHERE, and the dropzone is not focusable; with the handler
+        on the zone alone, the ordinary "open the modal, press ⌘V" gesture would
+        still do nothing.
+      */}
+      <div
+        className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
+        onPaste={imageInput.onPaste}
+      >
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">{t('importPersona.title')}</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -189,7 +249,7 @@ export default function ImportPersonaModal({
             </div>
           </div>
 
-          <FileUploadSection importType={importType} importFileName={importFileName} onFileChange={handleFileInputChange} />
+          <FileUploadSection importType={importType} importFileName={importFileName} imageInput={imageInput} />
           <TextInputSection importType={importType} importContent={importContent} onContentChange={onContentChange} />
 
           {/* Info */}

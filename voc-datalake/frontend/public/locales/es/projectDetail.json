@@ -130,6 +130,12 @@
     "cancel": "Cancelar",
     "clickToChange": "Haz clic para cambiar archivo",
     "clickToUpload": "Haz clic para cargar o arrastra y suelta",
+    "errors": {
+      "unsupportedType": "Ese archivo no es una imagen que podamos leer ({{type}}). Se aceptan: {{accepted}}",
+      "unknownType": "tipo desconocido",
+      "imageTooLarge": "{{name}} sigue siendo demasiado grande después de redimensionarla. Prueba con una captura más pequeña o recórtala.",
+      "imageUnreadable": "No se pudo leer esa imagen: {{name}}"
+    },
     "image": "Imagen",
     "imageDesc": "Captura de pantalla o tarjeta",
     "imageFormats": "Formatos: PNG, JPG, GIF, WebP",
@@ -141,6 +147,7 @@
     "importTypeText": "texto",
     "pasteContent": "Pegar contenido de persona",
     "pastePlaceholder": "Pega la descripción de tu persona, notas de investigación de usuarios o cualquier texto que describa la persona...",
+    "pasteScreenshotHint": "O pega una captura de pantalla desde el portapapeles",
     "pdf": "PDF",
     "pdfDesc": "Cargar documento",
     "pdfOnly": "Solo archivos PDF",

@@ -130,6 +130,12 @@
     "cancel": "Annuler",
     "clickToChange": "Cliquez pour changer le fichier",
     "clickToUpload": "Cliquez pour télécharger ou glissez-déposez",
+    "errors": {
+      "unsupportedType": "Ce fichier n’est pas une image lisible ({{type}}). Formats acceptés : {{accepted}}",
+      "unknownType": "type inconnu",
+      "imageTooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
+      "imageUnreadable": "Impossible de lire cette image : {{name}}"
+    },
     "image": "Illustration",
     "imageDesc": "Capture d'écran ou carte",
     "imageFormats": "Formats : PNG, JPG, GIF, WebP",
@@ -141,6 +147,7 @@
     "importTypeText": "texte",
     "pasteContent": "Coller le contenu de la persona",
     "pastePlaceholder": "Collez la description de votre persona, vos notes de recherche utilisateur, ou tout texte décrivant la persona...",
+    "pasteScreenshotHint": "Ou collez une capture d’écran depuis le presse-papiers",
     "pdf": "PDF",
     "pdfDesc": "Télécharger un document",
     "pdfOnly": "Fichiers PDF uniquement",

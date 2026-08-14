@@ -130,6 +130,12 @@
     "cancel": "キャンセル",
     "clickToChange": "クリックして変更",
     "clickToUpload": "クリックしてアップロード、またはドラッグ&ドロップ",
+    "errors": {
+      "unsupportedType": "このファイルは読み取れる画像ではありません（{{type}}）。対応形式: {{accepted}}",
+      "unknownType": "不明な形式",
+      "imageTooLarge": "{{name}} は縮小してもまだサイズが大きすぎます。より小さいスクリーンショットを使うか、切り取ってください。",
+      "imageUnreadable": "この画像を読み取れませんでした: {{name}}"
+    },
     "image": "画像",
     "imageDesc": "スクリーンショットまたはカード",
     "imageFormats": "PNG、JPG、GIF、WebP",
@@ -141,6 +147,7 @@
     "importTypeText": "テキスト",
     "pasteContent": "ペルソナコンテンツを貼り付け",
     "pastePlaceholder": "ペルソナの説明、ユーザーリサーチノート、またはペルソナを説明するテキストを貼り付けてください...",
+    "pasteScreenshotHint": "クリップボードからスクリーンショットを貼り付けることもできます",
     "pdf": "PDF",
     "pdfDesc": "ドキュメントをアップロード",
     "pdfOnly": "PDFファイルのみ",

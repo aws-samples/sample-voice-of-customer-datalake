@@ -130,6 +130,12 @@
     "cancel": "취소",
     "clickToChange": "클릭하여 파일 변경",
     "clickToUpload": "클릭하여 업로드 또는 드래그 앤 드롭",
+    "errors": {
+      "unsupportedType": "읽을 수 있는 이미지가 아닙니다 ({{type}}). 지원 형식: {{accepted}}",
+      "unknownType": "알 수 없는 형식",
+      "imageTooLarge": "{{name}}은(는) 크기를 줄인 뒤에도 여전히 너무 큽니다. 더 작은 스크린샷을 사용하거나 잘라내세요.",
+      "imageUnreadable": "이 이미지를 읽을 수 없습니다: {{name}}"
+    },
     "image": "이미지",
     "imageDesc": "스크린샷 또는 카드",
     "imageFormats": "PNG, JPG, GIF, WebP 형식",
@@ -141,6 +147,7 @@
     "importTypeText": "텍스트",
     "pasteContent": "페르소나 콘텐츠 붙여넣기",
     "pastePlaceholder": "페르소나 설명, 사용자 조사 노트 또는 페르소나를 설명하는 텍스트를 붙여넣으세요...",
+    "pasteScreenshotHint": "또는 클립보드에서 스크린샷을 붙여넣으세요",
     "pdf": "PDF",
     "pdfDesc": "문서 업로드",
     "pdfOnly": "PDF 파일만 가능",

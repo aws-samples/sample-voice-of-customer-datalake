@@ -130,6 +130,12 @@
     "cancel": "Abbrechen",
     "clickToChange": "Klicken, um Datei zu ändern",
     "clickToUpload": "Klicken zum Hochladen oder per Drag & Drop",
+    "errors": {
+      "unsupportedType": "Diese Datei ist kein lesbares Bild ({{type}}). Zulässig: {{accepted}}",
+      "unknownType": "unbekannter Typ",
+      "imageTooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
+      "imageUnreadable": "Dieses Bild konnte nicht gelesen werden: {{name}}"
+    },
     "image": "Bild",
     "imageDesc": "Screenshot oder Karte",
     "imageFormats": "Formate: PNG, JPG, GIF, WebP",
@@ -141,6 +147,7 @@
     "importTypeText": "Text",
     "pasteContent": "Persona-Inhalt einfügen",
     "pastePlaceholder": "Fügen Sie Ihre Persona-Beschreibung, Nutzerforschungsnotizen oder beliebigen Text ein, der die Persona beschreibt...",
+    "pasteScreenshotHint": "Oder füge einen Screenshot aus der Zwischenablage ein",
     "pdf": "PDF",
     "pdfDesc": "Dokument hochladen",
     "pdfOnly": "Nur PDF-Dateien",

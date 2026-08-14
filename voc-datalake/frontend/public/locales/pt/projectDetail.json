@@ -130,6 +130,12 @@
     "cancel": "Cancelar",
     "clickToChange": "Clique para alterar arquivo",
     "clickToUpload": "Clique para fazer upload ou arraste e solte",
+    "errors": {
+      "unsupportedType": "Esse arquivo não é uma imagem que possamos ler ({{type}}). Aceitos: {{accepted}}",
+      "unknownType": "tipo desconhecido",
+      "imageTooLarge": "{{name}} continua muito grande depois do redimensionamento. Tente uma captura menor ou recorte-a.",
+      "imageUnreadable": "Não foi possível ler esta imagem: {{name}}"
+    },
     "image": "Imagem",
     "imageDesc": "Screenshot ou card",
     "imageFormats": "Formatos: PNG, JPG, GIF, WebP",
@@ -141,6 +147,7 @@
     "importTypeText": "texto",
     "pasteContent": "Colar Conteúdo da Persona",
     "pastePlaceholder": "Cole a descrição da persona, notas de pesquisa do usuário ou qualquer texto descrevendo a persona...",
+    "pasteScreenshotHint": "Ou cole uma captura de tela da área de transferência",
     "pdf": "PDF",
     "pdfDesc": "Enviar documento",
     "pdfOnly": "Apenas arquivos PDF",

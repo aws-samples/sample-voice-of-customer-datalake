@@ -130,6 +130,12 @@
     "cancel": "取消",
     "clickToChange": "点击更改文件",
     "clickToUpload": "点击上传或拖放",
+    "errors": {
+      "unsupportedType": "该文件不是可读取的图片（{{type}}）。支持：{{accepted}}",
+      "unknownType": "未知类型",
+      "imageTooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
+      "imageUnreadable": "无法读取该图片：{{name}}"
+    },
     "image": "图片",
     "imageDesc": "截图或卡片",
     "imageFormats": "PNG、JPG、GIF、WebP",
@@ -141,6 +147,7 @@
     "importTypeText": "文本",
     "pasteContent": "粘贴用户角色内容",
     "pastePlaceholder": "粘贴您的用户角色描述、用户研究笔记或任何描述用户角色的文本...",
+    "pasteScreenshotHint": "也可以从剪贴板粘贴截图",
     "pdf": "PDF",
     "pdfDesc": "上传文档",
     "pdfOnly": "仅限 PDF 文件",

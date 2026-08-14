@@ -130,6 +130,12 @@
     "cancel": "Cancel",
     "clickToChange": "Click to change file",
     "clickToUpload": "Click to upload or drag and drop",
+    "errors": {
+      "unsupportedType": "That file is not an image we can read ({{type}}). Accepted: {{accepted}}",
+      "unknownType": "unknown type",
+      "imageTooLarge": "{{name}} is still too large after resizing. Try a smaller screenshot, or crop it.",
+      "imageUnreadable": "Could not read that image: {{name}}"
+    },
     "image": "Image",
     "imageDesc": "Screenshot or card",
     "imageFormats": "PNG, JPG, GIF, WebP",
@@ -141,6 +147,7 @@
     "importTypeText": "text",
     "pasteContent": "Paste Persona Content",
     "pastePlaceholder": "Paste your persona description, user research notes, or any text describing the persona...",
+    "pasteScreenshotHint": "Or paste a screenshot from your clipboard",
     "pdf": "PDF",
     "pdfDesc": "Upload document",
     "pdfOnly": "PDF files only",
