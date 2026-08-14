@@ -374,6 +374,28 @@ describe('ImportPersonaModal image input paths', () => {
     expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
   })
 
+  it('leaves a TEXT drag over the zone alone, as the control for the file drag above', async () => {
+    // preventDefault on dragenter/dragover is what MAKES an element a drop
+    // target, so an ungated zone volunteers for a text drag — and then onDrop
+    // gets an empty dataTransfer.files and returns silently, which is the
+    // "gesture taken, nothing happened" defect this change exists to remove. It
+    // also painted the accept highlight for a drop it would discard. Ungated, the
+    // browser keeps its "you cannot drop that here" cursor instead.
+    await openImageStep()
+
+    const draggedOver = fireEvent.dragOver(dropZone(), {
+      dataTransfer: { types: ['text/plain'], files: [] },
+    })
+    const entered = fireEvent.dragEnter(dropZone(), {
+      dataTransfer: { types: ['text/plain'], files: [] },
+    })
+
+    // fireEvent returns true when NOTHING called preventDefault.
+    expect(draggedOver).toBe(true)
+    expect(entered).toBe(true)
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
+  })
+
   it('keeps the zone marked when the drag merely moves onto its own children', async () => {
     // dragenter/dragleave fire on descendants and BUBBLE, and this zone has an
     // icon and two <p>s. Without the relatedTarget containment guard the leave

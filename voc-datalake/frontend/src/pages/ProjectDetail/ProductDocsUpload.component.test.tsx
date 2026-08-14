@@ -519,6 +519,28 @@ describe('DocsUpload', () => {
     expect(zone).toHaveAttribute('data-drag-active', 'false')
   })
 
+  it('leaves a TEXT drag over the zone alone, as the control for the file drag above', async () => {
+    // preventDefault on dragenter/dragover is what MAKES this a drop target, so an
+    // ungated zone volunteers for a text drag it then discards silently in onDrop,
+    // and paints the accept highlight for it. Ungated, the browser keeps its "you
+    // cannot drop that here" cursor. Same guard, same reason, as the persona zone.
+    render(<DocsUpload projectId="proj-1" />)
+    await screen.findByText(/no documents yet/i)
+    const zone = screen.getByRole('button', { name: /drop files here/i })
+
+    const draggedOver = fireEvent.dragOver(zone, {
+      dataTransfer: { types: ['text/plain'], files: [] },
+    })
+    const entered = fireEvent.dragEnter(zone, {
+      dataTransfer: { types: ['text/plain'], files: [] },
+    })
+
+    // fireEvent returns true when NOTHING called preventDefault.
+    expect(draggedOver).toBe(true)
+    expect(entered).toBe(true)
+    expect(zone).toHaveAttribute('data-drag-active', 'false')
+  })
+
   it('tells the user that PDF and Word are not supported yet', async () => {
     render(<DocsUpload projectId="proj-1" />)
     await screen.findByText(/no documents yet/i)

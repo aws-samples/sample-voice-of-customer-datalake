@@ -157,6 +157,14 @@ export function dragLeavesElement(event: {
  * `'Files'` is the type the drag-and-drop spec puts on `types` for a file drag,
  * and it is what every browser reports. `Array.from` because `types` is a
  * read-only array-like, and no assertion, which this codebase's lint bans.
+ *
+ * NO VENDOR BRANCH IS NEEDED, and adding one is the tempting wrong edit. Firefox
+ * additionally exposes `application/x-moz-file` in `types` for a file drag, but
+ * always ALONGSIDE the spec-mandated `'Files'` entry, never instead of it — so
+ * checking `'Files'` alone already covers it. Loosening this predicate (an `||`
+ * for a vendor type, or "any non-text type") re-enables the browser default this
+ * guard exists to suppress: a file drop that reaches it NAVIGATES away from the
+ * app, destroying the modal and anything already selected.
  */
 export function dragCarriesFiles(event: {
   readonly dataTransfer: Pick<DataTransfer, 'types'> | null

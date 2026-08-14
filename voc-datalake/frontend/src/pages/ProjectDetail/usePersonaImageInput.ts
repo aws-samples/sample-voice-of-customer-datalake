@@ -200,9 +200,17 @@ export function usePersonaImageInput({
   }, [prepare, t])
 
   const onDragEnter = useCallback((e: React.DragEvent) => {
-    // preventDefault on enter/over is what makes this a drop target at all:
-    // without it the browser keeps its default and NAVIGATES to the dropped
-    // file, replacing the app.
+    // FILES ONLY, and both halves of this matter. preventDefault on enter/over is
+    // what MAKES an element a drop target, so running it for a text drag has the
+    // zone volunteer for something onDrop then throws away: handleFiles gets an
+    // empty dataTransfer.files and returns silently — the "gesture taken, nothing
+    // happened" defect this whole change exists to remove. Left ungated, the
+    // browser keeps its "you cannot drop that here" cursor, which is the honest
+    // signal. And setDragActive would paint the purple "this zone is holding
+    // something" highlight for a drop that cannot be accepted.
+    if (!dragCarriesFiles(e)) return
+    // For a file drag it is required: without it the browser keeps its default
+    // and NAVIGATES to the dropped file, replacing the app.
     e.preventDefault()
     e.stopPropagation()
     setDragActive(true)

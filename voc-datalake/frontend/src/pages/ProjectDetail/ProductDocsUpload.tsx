@@ -24,7 +24,8 @@ import { projectsApi } from '../../api/projectsApi'
 // bitmap, image/jpeg vs .jpg, clipboardData.items not always populated). They
 // now live in utils/imageInput.ts so there is one copy, not two.
 import {
-  IMAGE_MIME_EXTENSIONS, dragLeavesElement, pastedImages, toArray, withSyntheticName,
+  IMAGE_MIME_EXTENSIONS, dragCarriesFiles, dragLeavesElement, pastedImages, toArray,
+  withSyntheticName,
 } from '../../utils/imageInput'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 import type { ProductDoc } from '../../api/types'
@@ -294,8 +295,23 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         // never arrives to consume the flag. Disarming here stops that stale arm
         // from being spent on the next Space release that happens to land here.
         onBlur={() => { spaceArmed.current = false }}
-        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
+        // FILES ONLY. preventDefault on enter/over is what MAKES this a drop
+        // target, so running it for a text drag has the zone volunteer for
+        // something onDrop discards silently, and paints the accept highlight for
+        // it. Ungated, the browser keeps its "you cannot drop that here" cursor.
+        // Same guard, for the same reason, as the persona zone.
+        onDragEnter={(e) => {
+          if (!dragCarriesFiles(e)) return
+          e.preventDefault()
+          e.stopPropagation()
+          setDragActive(true)
+        }}
+        onDragOver={(e) => {
+          if (!dragCarriesFiles(e)) return
+          e.preventDefault()
+          e.stopPropagation()
+          setDragActive(true)
+        }}
         // dragleave bubbles from this zone's own icon and label, so a drag moving
         // across them reports leaving a zone the pointer is still inside: the
         // highlight flickered off and back on. Same guard the persona zone uses.
