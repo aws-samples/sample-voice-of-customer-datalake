@@ -124,6 +124,10 @@
     "selectAtLeastOne": "Selecione pelo menos um item em cada seção; caso contrário, a exportação incluiria tudo.",
     "title": "Exportar"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} continua muito grande depois do redimensionamento. Tente uma captura menor ou recorte-a.",
+    "unreadable": "Não foi possível ler esta imagem: {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extrairá informações de persona do seu {{type}} e criará uma persona estruturada com um avatar gerado por IA.",
     "aiPoweredImport": "Importação Alimentada por IA:",
@@ -131,10 +135,9 @@
     "clickToChange": "Clique para alterar arquivo",
     "clickToUpload": "Clique para fazer upload ou arraste e solte",
     "errors": {
-      "unsupportedType": "Esse arquivo não é uma imagem que possamos ler ({{type}}). Aceitos: {{accepted}}",
+      "onlyFirstImage": "Apenas a primeira imagem foi usada.",
       "unknownType": "tipo desconhecido",
-      "imageTooLarge": "{{name}} continua muito grande depois do redimensionamento. Tente uma captura menor ou recorte-a.",
-      "imageUnreadable": "Não foi possível ler esta imagem: {{name}}"
+      "unsupportedType": "Esse arquivo não é uma imagem que possamos ler ({{type}}). Aceitos: {{accepted}}"
     },
     "image": "Imagem",
     "imageDesc": "Screenshot ou card",
@@ -325,6 +328,26 @@
     "workarounds": "Soluções Alternativas (uma por linha)",
     "workaroundsPlaceholder": "Como eles lidam atualmente..."
   },
+  "personaSections": {
+    "behaviorsHabits": "Comportamentos & Hábitos",
+    "blockers": "Bloqueadores",
+    "contextEnvironment": "Contexto & Ambiente",
+    "currentChallenges": "Desafios Atuais",
+    "currentSolutions": "Soluções Atuais",
+    "currentWorkarounds": "Soluções Alternativas Atuais",
+    "desiredOutcome": "Resultado Desejado",
+    "goalsMotivations": "Objetivos & Motivações",
+    "identityDemographics": "Identidade & Dados Demográficos",
+    "painPoints": "Pontos de Dor & Frustrações",
+    "primaryGoal": "Objetivo Principal",
+    "representativeQuotes": "Citações Representativas",
+    "scenario": "Cenário",
+    "secondaryGoals": "Objetivos Secundários",
+    "timeConstraints": "Restrições de tempo:",
+    "toolsUsed": "Ferramentas Utilizadas",
+    "trigger": "Gatilho",
+    "underlyingMotivations": "Motivações Subjacentes"
+  },
   "personas": {
     "addNote": "Adicionar Nota",
     "addResearchNotes": "Adicione Suas Notas de Pesquisa",
@@ -347,26 +370,6 @@
     "researchNotes": "Notas de Pesquisa",
     "reviews": "{{count}} avaliações",
     "selectToView": "Selecione uma persona para visualizar detalhes"
-  },
-  "personaSections": {
-    "behaviorsHabits": "Comportamentos & Hábitos",
-    "blockers": "Bloqueadores",
-    "contextEnvironment": "Contexto & Ambiente",
-    "currentChallenges": "Desafios Atuais",
-    "currentSolutions": "Soluções Atuais",
-    "currentWorkarounds": "Soluções Alternativas Atuais",
-    "desiredOutcome": "Resultado Desejado",
-    "goalsMotivations": "Objetivos & Motivações",
-    "identityDemographics": "Identidade & Dados Demográficos",
-    "painPoints": "Pontos de Dor & Frustrações",
-    "primaryGoal": "Objetivo Principal",
-    "representativeQuotes": "Citações Representativas",
-    "scenario": "Cenário",
-    "secondaryGoals": "Objetivos Secundários",
-    "timeConstraints": "Restrições de tempo:",
-    "toolsUsed": "Ferramentas Utilizadas",
-    "trigger": "Gatilho",
-    "underlyingMotivations": "Motivações Subjacentes"
   },
   "product": {
     "fields": {
@@ -422,8 +425,6 @@
       "dropZone": "Solte arquivos aqui, cole uma captura ou clique para enviar",
       "empty": "Ainda não há documentos.",
       "errors": {
-        "imageTooLarge": "{{name}} continua muito grande depois do redimensionamento. Tente uma captura menor ou recorte-a.",
-        "imageUnreadable": "Não foi possível ler esta imagem: {{name}}",
         "tooLarge": "Muito grande (>10 MB): {{name}}",
         "unsupportedType": "Tipo não suportado: {{name}} ({{type}}). Aceitos: {{accepted}}",
         "uploadFailed": "{{name}}: falha no envio — {{message}}"

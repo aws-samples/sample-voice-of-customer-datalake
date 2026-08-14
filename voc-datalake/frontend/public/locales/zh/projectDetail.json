@@ -124,6 +124,10 @@
     "selectAtLeastOne": "请在每个部分中至少选择一项，否则导出将包含全部内容。",
     "title": "导出"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
+    "unreadable": "无法读取该图片：{{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude 将从您的 {{type}} 中提取人物角色信息，并创建一个带有 AI 生成头像的结构化人物角色。",
     "aiPoweredImport": "AI 驱动导入：",
@@ -131,10 +135,9 @@
     "clickToChange": "点击更改文件",
     "clickToUpload": "点击上传或拖放",
     "errors": {
-      "unsupportedType": "该文件不是可读取的图片（{{type}}）。支持：{{accepted}}",
+      "onlyFirstImage": "仅使用了第一张图片。",
       "unknownType": "未知类型",
-      "imageTooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
-      "imageUnreadable": "无法读取该图片：{{name}}"
+      "unsupportedType": "该文件不是可读取的图片（{{type}}）。支持：{{accepted}}"
     },
     "image": "图片",
     "imageDesc": "截图或卡片",
@@ -322,6 +325,26 @@
     "workarounds": "变通方案（每行一个）",
     "workaroundsPlaceholder": "他们目前的应对方式..."
   },
+  "personaSections": {
+    "behaviorsHabits": "行为与习惯",
+    "blockers": "阻碍因素",
+    "contextEnvironment": "背景与环境",
+    "currentChallenges": "当前挑战",
+    "currentSolutions": "现有解决方案",
+    "currentWorkarounds": "当前变通方案",
+    "desiredOutcome": "期望结果",
+    "goalsMotivations": "目标与动机",
+    "identityDemographics": "身份与人口统计",
+    "painPoints": "痛点与困扰",
+    "primaryGoal": "主要目标",
+    "representativeQuotes": "代表性引述",
+    "scenario": "场景",
+    "secondaryGoals": "次要目标",
+    "timeConstraints": "时间限制：",
+    "toolsUsed": "使用的工具",
+    "trigger": "触发因素",
+    "underlyingMotivations": "潜在动机"
+  },
   "personas": {
     "addNote": "添加备注",
     "addResearchNotes": "添加研究笔记",
@@ -343,26 +366,6 @@
     "researchNotes": "研究笔记",
     "reviews": "{{count}} 条评价",
     "selectToView": "选择一个用户角色查看详情"
-  },
-  "personaSections": {
-    "behaviorsHabits": "行为与习惯",
-    "blockers": "阻碍因素",
-    "contextEnvironment": "背景与环境",
-    "currentChallenges": "当前挑战",
-    "currentSolutions": "现有解决方案",
-    "currentWorkarounds": "当前变通方案",
-    "desiredOutcome": "期望结果",
-    "goalsMotivations": "目标与动机",
-    "identityDemographics": "身份与人口统计",
-    "painPoints": "痛点与困扰",
-    "primaryGoal": "主要目标",
-    "representativeQuotes": "代表性引述",
-    "scenario": "场景",
-    "secondaryGoals": "次要目标",
-    "timeConstraints": "时间限制：",
-    "toolsUsed": "使用的工具",
-    "trigger": "触发因素",
-    "underlyingMotivations": "潜在动机"
   },
   "product": {
     "fields": {
@@ -418,8 +421,6 @@
       "dropZone": "将文件拖放到此处、粘贴截图，或点击上传",
       "empty": "暂无文档。",
       "errors": {
-        "imageTooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
-        "imageUnreadable": "无法读取该图片：{{name}}",
         "tooLarge": "文件过大（>10 MB）：{{name}}",
         "unsupportedType": "不支持的类型：{{name}}（{{type}}）。支持：{{accepted}}",
         "uploadFailed": "{{name}}：上传失败 — {{message}}"

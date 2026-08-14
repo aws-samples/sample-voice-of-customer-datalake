@@ -124,6 +124,10 @@
     "selectAtLeastOne": "Sélectionnez au moins un élément dans chaque section, sinon l’export inclurait tout.",
     "title": "Exporter"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
+    "unreadable": "Impossible de lire cette image : {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extraira les informations de persona de votre {{type}} et créera un persona structuré avec un avatar généré par IA.",
     "aiPoweredImport": "Import alimenté par IA :",
@@ -131,10 +135,9 @@
     "clickToChange": "Cliquez pour changer le fichier",
     "clickToUpload": "Cliquez pour télécharger ou glissez-déposez",
     "errors": {
-      "unsupportedType": "Ce fichier n’est pas une image lisible ({{type}}). Formats acceptés : {{accepted}}",
+      "onlyFirstImage": "Seule la première image a été utilisée.",
       "unknownType": "type inconnu",
-      "imageTooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
-      "imageUnreadable": "Impossible de lire cette image : {{name}}"
+      "unsupportedType": "Ce fichier n’est pas une image lisible ({{type}}). Formats acceptés : {{accepted}}"
     },
     "image": "Illustration",
     "imageDesc": "Capture d'écran ou carte",
@@ -325,6 +328,26 @@
     "workarounds": "Contournements (un par ligne)",
     "workaroundsPlaceholder": "Comment ils s'en sortent actuellement..."
   },
+  "personaSections": {
+    "behaviorsHabits": "Comportements et habitudes",
+    "blockers": "Obstacles",
+    "contextEnvironment": "Contexte et environnement",
+    "currentChallenges": "Défis actuels",
+    "currentSolutions": "Solutions actuelles",
+    "currentWorkarounds": "Solutions de contournement actuelles",
+    "desiredOutcome": "Résultat souhaité",
+    "goalsMotivations": "Objectifs et motivations",
+    "identityDemographics": "Identité et démographie",
+    "painPoints": "Points de friction et frustrations",
+    "primaryGoal": "Objectif principal",
+    "representativeQuotes": "Citations représentatives",
+    "scenario": "Scénario",
+    "secondaryGoals": "Objectifs secondaires",
+    "timeConstraints": "Contraintes de temps :",
+    "toolsUsed": "Outils utilisés",
+    "trigger": "Déclencheur",
+    "underlyingMotivations": "Motivations sous-jacentes"
+  },
   "personas": {
     "addNote": "Ajouter une note",
     "addResearchNotes": "Ajouter vos notes de recherche",
@@ -347,26 +370,6 @@
     "researchNotes": "Notes de recherche",
     "reviews": "{{count}} avis",
     "selectToView": "Sélectionnez un persona pour voir les détails"
-  },
-  "personaSections": {
-    "behaviorsHabits": "Comportements et habitudes",
-    "blockers": "Obstacles",
-    "contextEnvironment": "Contexte et environnement",
-    "currentChallenges": "Défis actuels",
-    "currentSolutions": "Solutions actuelles",
-    "currentWorkarounds": "Solutions de contournement actuelles",
-    "desiredOutcome": "Résultat souhaité",
-    "goalsMotivations": "Objectifs et motivations",
-    "identityDemographics": "Identité et démographie",
-    "painPoints": "Points de friction et frustrations",
-    "primaryGoal": "Objectif principal",
-    "representativeQuotes": "Citations représentatives",
-    "scenario": "Scénario",
-    "secondaryGoals": "Objectifs secondaires",
-    "timeConstraints": "Contraintes de temps :",
-    "toolsUsed": "Outils utilisés",
-    "trigger": "Déclencheur",
-    "underlyingMotivations": "Motivations sous-jacentes"
   },
   "product": {
     "fields": {
@@ -422,8 +425,6 @@
       "dropZone": "Déposez des fichiers ici, collez une capture ou cliquez pour envoyer",
       "empty": "Aucun document pour le moment.",
       "errors": {
-        "imageTooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
-        "imageUnreadable": "Impossible de lire cette image : {{name}}",
         "tooLarge": "Trop volumineux (>10 Mo) : {{name}}",
         "unsupportedType": "Type non pris en charge : {{name}} ({{type}}). Formats acceptés : {{accepted}}",
         "uploadFailed": "{{name}} : échec de l’envoi — {{message}}"

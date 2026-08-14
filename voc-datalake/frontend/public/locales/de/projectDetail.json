@@ -124,6 +124,10 @@
     "selectAtLeastOne": "Wählen Sie in jedem Abschnitt mindestens ein Element aus, sonst würde der Export alles enthalten.",
     "title": "Exportieren"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
+    "unreadable": "Dieses Bild konnte nicht gelesen werden: {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extrahiert Persona-Informationen aus Ihrem {{type}} und erstellt eine strukturierte Persona mit einem KI-generierten Avatar.",
     "aiPoweredImport": "KI-gestützter Import:",
@@ -131,10 +135,9 @@
     "clickToChange": "Klicken, um Datei zu ändern",
     "clickToUpload": "Klicken zum Hochladen oder per Drag & Drop",
     "errors": {
-      "unsupportedType": "Diese Datei ist kein lesbares Bild ({{type}}). Zulässig: {{accepted}}",
+      "onlyFirstImage": "Es wurde nur das erste Bild verwendet.",
       "unknownType": "unbekannter Typ",
-      "imageTooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
-      "imageUnreadable": "Dieses Bild konnte nicht gelesen werden: {{name}}"
+      "unsupportedType": "Diese Datei ist kein lesbares Bild ({{type}}). Zulässig: {{accepted}}"
     },
     "image": "Bild",
     "imageDesc": "Screenshot oder Karte",
@@ -322,6 +325,26 @@
     "workarounds": "Workarounds (eins pro Zeile)",
     "workaroundsPlaceholder": "Wie sie derzeit damit umgehen..."
   },
+  "personaSections": {
+    "behaviorsHabits": "Verhaltensweisen & Gewohnheiten",
+    "blockers": "Hindernisse",
+    "contextEnvironment": "Kontext & Umgebung",
+    "currentChallenges": "Aktuelle Herausforderungen",
+    "currentSolutions": "Aktuelle Lösungen",
+    "currentWorkarounds": "Aktuelle Workarounds",
+    "desiredOutcome": "Gewünschtes Ergebnis",
+    "goalsMotivations": "Ziele & Motivationen",
+    "identityDemographics": "Identität & Demografie",
+    "painPoints": "Schmerzpunkte & Frustrationen",
+    "primaryGoal": "Hauptziel",
+    "representativeQuotes": "Repräsentative Zitate",
+    "scenario": "Szenario",
+    "secondaryGoals": "Sekundäre Ziele",
+    "timeConstraints": "Zeitliche Einschränkungen:",
+    "toolsUsed": "Verwendete Tools",
+    "trigger": "Auslöser",
+    "underlyingMotivations": "Zugrundeliegende Motivationen"
+  },
   "personas": {
     "addNote": "Notiz hinzufügen",
     "addResearchNotes": "Forschungsnotizen hinzufügen",
@@ -343,26 +366,6 @@
     "researchNotes": "Forschungsnotizen",
     "reviews": "{{count}} Bewertungen",
     "selectToView": "Wählen Sie eine Persona aus, um Details anzuzeigen"
-  },
-  "personaSections": {
-    "behaviorsHabits": "Verhaltensweisen & Gewohnheiten",
-    "blockers": "Hindernisse",
-    "contextEnvironment": "Kontext & Umgebung",
-    "currentChallenges": "Aktuelle Herausforderungen",
-    "currentSolutions": "Aktuelle Lösungen",
-    "currentWorkarounds": "Aktuelle Workarounds",
-    "desiredOutcome": "Gewünschtes Ergebnis",
-    "goalsMotivations": "Ziele & Motivationen",
-    "identityDemographics": "Identität & Demografie",
-    "painPoints": "Schmerzpunkte & Frustrationen",
-    "primaryGoal": "Hauptziel",
-    "representativeQuotes": "Repräsentative Zitate",
-    "scenario": "Szenario",
-    "secondaryGoals": "Sekundäre Ziele",
-    "timeConstraints": "Zeitliche Einschränkungen:",
-    "toolsUsed": "Verwendete Tools",
-    "trigger": "Auslöser",
-    "underlyingMotivations": "Zugrundeliegende Motivationen"
   },
   "product": {
     "fields": {
@@ -418,8 +421,6 @@
       "dropZone": "Dateien hier ablegen, Screenshot einfügen oder klicken zum Hochladen",
       "empty": "Noch keine Dokumente.",
       "errors": {
-        "imageTooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
-        "imageUnreadable": "Dieses Bild konnte nicht gelesen werden: {{name}}",
         "tooLarge": "Zu groß (>10 MB): {{name}}",
         "unsupportedType": "Nicht unterstützter Typ: {{name}} ({{type}}). Zulässig: {{accepted}}",
         "uploadFailed": "{{name}}: Upload fehlgeschlagen — {{message}}"

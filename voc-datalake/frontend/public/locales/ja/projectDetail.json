@@ -124,6 +124,10 @@
     "selectAtLeastOne": "各セクションで少なくとも1件を選択してください。選択しない場合、エクスポートにすべてが含まれます。",
     "title": "エクスポート"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} は縮小してもまだサイズが大きすぎます。より小さいスクリーンショットを使うか、切り取ってください。",
+    "unreadable": "この画像を読み取れませんでした: {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claudeが{{type}}からペルソナ情報を抽出し、AI生成アバター付きの構造化ペルソナを作成します。",
     "aiPoweredImport": "AI搭載インポート:",
@@ -131,10 +135,9 @@
     "clickToChange": "クリックして変更",
     "clickToUpload": "クリックしてアップロード、またはドラッグ&ドロップ",
     "errors": {
-      "unsupportedType": "このファイルは読み取れる画像ではありません（{{type}}）。対応形式: {{accepted}}",
+      "onlyFirstImage": "最初の画像のみを使用しました。",
       "unknownType": "不明な形式",
-      "imageTooLarge": "{{name}} は縮小してもまだサイズが大きすぎます。より小さいスクリーンショットを使うか、切り取ってください。",
-      "imageUnreadable": "この画像を読み取れませんでした: {{name}}"
+      "unsupportedType": "このファイルは読み取れる画像ではありません（{{type}}）。対応形式: {{accepted}}"
     },
     "image": "画像",
     "imageDesc": "スクリーンショットまたはカード",
@@ -322,6 +325,26 @@
     "workarounds": "対処法（1 行に 1 つ）",
     "workaroundsPlaceholder": "現在の対応方法..."
   },
+  "personaSections": {
+    "behaviorsHabits": "行動と習慣",
+    "blockers": "障害",
+    "contextEnvironment": "コンテキストと環境",
+    "currentChallenges": "現在の課題",
+    "currentSolutions": "現在のソリューション",
+    "currentWorkarounds": "現在の回避策",
+    "desiredOutcome": "望ましい結果",
+    "goalsMotivations": "目標と動機",
+    "identityDemographics": "アイデンティティと属性",
+    "painPoints": "ペインポイントと不満",
+    "primaryGoal": "主要目標",
+    "representativeQuotes": "代表的な引用",
+    "scenario": "シナリオ",
+    "secondaryGoals": "副次的な目標",
+    "timeConstraints": "時間的制約:",
+    "toolsUsed": "使用ツール",
+    "trigger": "トリガー",
+    "underlyingMotivations": "潜在的な動機"
+  },
   "personas": {
     "addNote": "ノートを追加",
     "addResearchNotes": "リサーチノートを追加",
@@ -343,26 +366,6 @@
     "researchNotes": "リサーチノート",
     "reviews": "{{count}}件のレビュー",
     "selectToView": "ペルソナを選択して詳細を表示"
-  },
-  "personaSections": {
-    "behaviorsHabits": "行動と習慣",
-    "blockers": "障害",
-    "contextEnvironment": "コンテキストと環境",
-    "currentChallenges": "現在の課題",
-    "currentSolutions": "現在のソリューション",
-    "currentWorkarounds": "現在の回避策",
-    "desiredOutcome": "望ましい結果",
-    "goalsMotivations": "目標と動機",
-    "identityDemographics": "アイデンティティと属性",
-    "painPoints": "ペインポイントと不満",
-    "primaryGoal": "主要目標",
-    "representativeQuotes": "代表的な引用",
-    "scenario": "シナリオ",
-    "secondaryGoals": "副次的な目標",
-    "timeConstraints": "時間的制約:",
-    "toolsUsed": "使用ツール",
-    "trigger": "トリガー",
-    "underlyingMotivations": "潜在的な動機"
   },
   "product": {
     "fields": {
@@ -418,8 +421,6 @@
       "dropZone": "ファイルをここにドロップ、スクリーンショットを貼り付け、またはクリックしてアップロード",
       "empty": "まだドキュメントがありません。",
       "errors": {
-        "imageTooLarge": "{{name}} は縮小してもまだサイズが大きすぎます。より小さいスクリーンショットを使うか、切り取ってください。",
-        "imageUnreadable": "この画像を読み取れませんでした: {{name}}",
         "tooLarge": "サイズ超過（>10 MB）: {{name}}",
         "unsupportedType": "未対応の形式: {{name}}（{{type}}）。対応形式: {{accepted}}",
         "uploadFailed": "{{name}}: アップロード失敗 — {{message}}"

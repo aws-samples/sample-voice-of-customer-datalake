@@ -24,7 +24,7 @@ import { projectsApi } from '../../api/projectsApi'
 // bitmap, image/jpeg vs .jpg, clipboardData.items not always populated). They
 // now live in utils/imageInput.ts so there is one copy, not two.
 import {
-  IMAGE_MIME_EXTENSIONS, pastedImages, toArray, withSyntheticName,
+  IMAGE_MIME_EXTENSIONS, dragLeavesElement, pastedImages, toArray, withSyntheticName,
 } from '../../utils/imageInput'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 import type { ProductDoc } from '../../api/types'
@@ -165,9 +165,14 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
       if (!putResp.ok) throw new Error(`S3 PUT ${putResp.status}`)
     } catch (e: unknown) {
       if (isImagePrepError(e)) {
+        // `imageErrors.*`, not `product.upload.errors.*`: these two describe the
+        // same two ImagePrepError failures from the same resizeImage.ts that the
+        // persona-import modal reports, and the strings were byte-identical in all
+        // eight catalogues. One copy, so a reword cannot leave the two panes
+        // saying different things about identical behaviour.
         setUploadError(e.failure === 'too-large'
-          ? t('product.upload.errors.imageTooLarge', { name: file.name })
-          : t('product.upload.errors.imageUnreadable', { name: file.name }))
+          ? t('imageErrors.tooLarge', { name: file.name })
+          : t('imageErrors.unreadable', { name: file.name }))
         return
       }
       const msg = e instanceof Error ? e.message : 'Upload failed'
@@ -288,7 +293,15 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         onBlur={() => { spaceArmed.current = false }}
         onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
-        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false) }}
+        // dragleave bubbles from this zone's own icon and label, so a drag moving
+        // across them reports leaving a zone the pointer is still inside: the
+        // highlight flickered off and back on. Same guard the persona zone uses.
+        onDragLeave={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (!dragLeavesElement(e)) return
+          setDragActive(false)
+        }}
         onDrop={(e) => {
           e.preventDefault()
           e.stopPropagation()

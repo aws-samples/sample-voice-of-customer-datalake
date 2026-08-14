@@ -16,8 +16,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IMAGE_ACCEPT_ATTR } from '../../utils/imageInput'
-import { usePersonaImageInput } from './usePersonaImageInput'
-import type { PersonaImageInput } from './usePersonaImageInput'
+import { cancelDragEvent, usePersonaImageInput } from './usePersonaImageInput'
 
 type ImportType = 'image' | 'text'
 
@@ -96,18 +95,27 @@ function zoneStyle(dragActive: boolean, hasFile: boolean): string {
   return 'border-gray-300 hover:border-purple-300'
 }
 
-// File upload section component
+/**
+ * File upload section.
+ *
+ * Owns the image-input hook, and is rendered by the parent ONLY for the image
+ * type rather than returning null for the others. That is what makes leaving the
+ * image step unmount the hook, and it is load-bearing: a refusal is about one
+ * attempt at one file, and the selection it describes is cleared by
+ * handleTypeChange, so an error that survived the step came back rendered over an
+ * empty zone. Unmounting also takes the document-level paste listener with it.
+ */
 function FileUploadSection({
-  importType,
   importFileName,
-  imageInput,
+  onFileChange,
 }: Readonly<{
-  importType: ImportType
   importFileName: string
-  imageInput: PersonaImageInput
+  onFileChange: (file: File) => void
 }>) {
   const { t } = useTranslation('projectDetail')
-  if (importType !== 'image') return null
+  // All three input paths — picker, drop, paste — go through this, so they cannot
+  // disagree about what is accepted or about how an image is prepared.
+  const imageInput = usePersonaImageInput({ onFileChange })
 
   return (
     <div>
@@ -124,6 +132,11 @@ function FileUploadSection({
           discarding the whole modal.
         */}
         <div
+          // A stable hook for the tests, so a restyle of the zone (a shade, a
+          // switch to `outline`, a utility rename) cannot fail as if the drop
+          // handlers broke. The classes below stay the actual styling.
+          data-testid="persona-dropzone"
+          data-drag-active={imageInput.dragActive}
           className={clsx(
             'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
             zoneStyle(imageInput.dragActive, importFileName !== ''),
@@ -175,15 +188,20 @@ function TextInputSection({
   importContent: string
   onContentChange: (content: string) => void
 }>) {
+  // `importPersona.pasteContent` and `pastePlaceholder` have been in all eight
+  // catalogues, translated, the whole time these two strings were hardcoded
+  // English — so every non-English user read them in English. Reading the keys is
+  // the entire fix; the English values are unchanged.
+  const { t } = useTranslation('projectDetail')
   if (importType !== 'text') return null
 
   return (
     <div>
-      <h3 className="font-medium mb-3">Paste Persona Content</h3>
+      <h3 className="font-medium mb-3">{t('importPersona.pasteContent')}</h3>
       <textarea
         value={importContent}
         onChange={(e) => onContentChange(e.target.value)}
-        placeholder="Paste your persona description, user research notes, or any text describing the persona..."
+        placeholder={t('importPersona.pastePlaceholder')}
         rows={10}
         className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
       />
@@ -202,32 +220,28 @@ export default function ImportPersonaModal({
   onClose,
   onImport,
 }: ImportPersonaModalProps) {
-  // All three input paths — picker, drop, paste — go through this, so they
-  // cannot disagree about what is accepted or about how an image is prepared.
-  const imageInput = usePersonaImageInput({
-    enabled: importType === 'image',
-    onFileChange,
-  })
-
   const { t } = useTranslation('projectDetail')
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       {/*
-        onPaste sits on the modal's own subtree rather than on window: a React
-        paste handler only fires for events originating inside this subtree, which
-        is what leaves every paste elsewhere on the page — and, via the hook's
-        no-file early return, every text paste in here, including into the persona
-        textarea — completely untouched.
+        The panel swallows drags that MISS the dashed zone. The zone is p-8 inside
+        this max-w-2xl panel, so most of the modal — heading, type buttons, hint,
+        info box, footer — is a few pixels away from it, and a drop landing there
+        would reach the browser's default, which NAVIGATES to the dropped file and
+        takes the modal (and any image already chosen) with it. Cancel-only on
+        purpose: the zone stays the single place where a drop selects something.
 
-        On the panel rather than on the dropzone because a pasting user has to
-        have focus SOMEWHERE, and the dropzone is not focusable; with the handler
-        on the zone alone, the ordinary "open the modal, press ⌘V" gesture would
-        still do nothing.
+        Paste is NOT handled here. A React onPaste is delegated, so it fires only
+        for a paste whose target is inside this subtree, and nothing focuses the
+        panel on open — the ordinary "open the modal, press ⌘V" gesture targets
+        <body> and would have been a no-op. The hook listens on document while the
+        image step is showing instead; see the WHY there.
       */}
       <div
         className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
-        onPaste={imageInput.onPaste}
+        onDragOver={cancelDragEvent}
+        onDrop={cancelDragEvent}
       >
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">{t('importPersona.title')}</h2>
@@ -249,7 +263,13 @@ export default function ImportPersonaModal({
             </div>
           </div>
 
-          <FileUploadSection importType={importType} importFileName={importFileName} imageInput={imageInput} />
+          {/* Rendered conditionally rather than self-suppressing: the section
+              owns the image-input hook, and leaving the image step has to UNMOUNT
+              it so a refusal cannot come back over an empty zone and the paste
+              listener cannot outlive the step. See usePersonaImageInput. */}
+          {importType === 'image' && (
+            <FileUploadSection importFileName={importFileName} onFileChange={onFileChange} />
+          )}
           <TextInputSection importType={importType} importContent={importContent} onContentChange={onContentChange} />
 
           {/* Info */}

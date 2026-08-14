@@ -107,21 +107,41 @@ function isImageType(type: string): boolean {
  * Filters on the `image/` prefix rather than on the accepted four, so a pasted
  * BMP reaches the caller and can be refused out loud — a paste that silently
  * does nothing is indistinguishable from a missing handler.
+ *
+ * The prefix is also the CEILING, not just the floor: copying from Word, Excel
+ * or Outlook, and copying a file in Finder/Explorer, put non-image file flavours
+ * (`text/rtf`, `application/vnd.*`, an arbitrary file) on the clipboard next to
+ * the text the user thinks they copied. Widening this to every file would turn
+ * those ordinary text pastes into a cancelled paste plus a red refusal about a
+ * file the user never chose, which is a worse answer than ignoring a flavour they
+ * never meant to send. A file DROP is unambiguous by comparison, and is still
+ * refused out loud by the callers that take one.
  */
 export function pastedImages(clipboard: DataTransfer | null): readonly File[] {
   return clipboardFiles(clipboard, isImageType)
 }
 
 /**
- * Every file carried by a paste, image or not.
+ * Whether a `dragleave` means the pointer actually left `currentTarget`.
  *
- * The distinction from `pastedImages` is what lets a caller tell "this paste
- * carried nothing but text, leave it entirely alone" apart from "this paste
- * carried a PDF, say why it cannot be used" — two answers a user needs to be
- * able to tell apart, and the reason a refusal is not silence.
+ * `dragenter`/`dragleave` fire on descendants and bubble, so dragging across a
+ * drop zone's own icon and labels delivers a `dragleave` for the zone while the
+ * pointer is still inside it — the highlight drops and is re-set by the next
+ * `dragover`, a visible flicker.  A leave whose `relatedTarget` is still inside
+ * the zone is therefore not a leave.
+ *
+ * `relatedTarget` is null when the drag left the window entirely, which IS a real
+ * leave — hence the default of true, without which an abandoned drag would leave
+ * a zone highlighted forever. instanceof rather than casts: both values are
+ * browser-supplied, and this codebase's lint bans type assertions.
  */
-export function pastedFiles(clipboard: DataTransfer | null): readonly File[] {
-  return clipboardFiles(clipboard, () => true)
+export function dragLeavesElement(event: {
+  readonly currentTarget: EventTarget | null
+  readonly relatedTarget: EventTarget | null
+}): boolean {
+  const { currentTarget, relatedTarget } = event
+  if (!(currentTarget instanceof Node) || !(relatedTarget instanceof Node)) return true
+  return !currentTarget.contains(relatedTarget)
 }
 
 /**

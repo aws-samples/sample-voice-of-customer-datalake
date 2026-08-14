@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  render, screen, fireEvent, waitFor,
+  act, render, screen, fireEvent, waitFor,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ImportPersonaModal from './ImportPersonaModal'
@@ -236,11 +236,23 @@ describe('ImportPersonaModal image input paths', () => {
     })))
   }
 
-  /** The visible drop target — the element the handlers have to be on. */
+  /**
+   * The visible drop target — the element the handlers have to be on.
+   *
+   * By testid rather than by `.border-dashed`: a restyle (a shade, a switch to
+   * `outline`, a utility rename) must not fail as if the drop handlers broke, and
+   * a class selector would silently pick the wrong box if a second dashed element
+   * ever appeared in this modal.
+   */
   function dropZone(): HTMLElement {
-    const zone = document.querySelector('.border-dashed')
-    if (!(zone instanceof HTMLElement)) throw new Error('drop zone not found')
-    return zone
+    return screen.getByTestId('persona-dropzone')
+  }
+
+  /** The modal panel — the box a near-miss drop lands on. */
+  function panel(): HTMLElement {
+    const found = dropZone().closest('.max-w-2xl')
+    if (!(found instanceof HTMLElement)) throw new Error('modal panel not found')
+    return found
   }
 
   function importButton(): HTMLElement {
@@ -249,6 +261,20 @@ describe('ImportPersonaModal image input paths', () => {
 
   function dropFiles(files: readonly File[]) {
     fireEvent.drop(dropZone(), { dataTransfer: { files, types: ['Files'] } })
+  }
+
+  /**
+   * A `dragleave` on `from` whose pointer went to `to`.
+   *
+   * A real MouseEvent rather than `fireEvent.dragLeave(el, { relatedTarget })`:
+   * jsdom has no DragEvent, so testing-library builds a plain `Event` for the drag
+   * family and `relatedTarget` is dropped on the floor — the handler would see
+   * `undefined` and the containment guard could never be exercised.
+   */
+  function dragLeaveTowards(from: HTMLElement, to: HTMLElement) {
+    fireEvent(from, new MouseEvent('dragleave', {
+      bubbles: true, cancelable: true, relatedTarget: to,
+    }))
   }
 
   function pasteFiles(target: HTMLElement, files: readonly File[], kind = 'file') {
@@ -323,15 +349,60 @@ describe('ImportPersonaModal image input paths', () => {
 
   it('marks the zone while a drag is over it, and unmarks it on leave', async () => {
     await openImageStep()
-    // Baseline: the idle zone is the neutral gray the empty state uses, so the
-    // assertion below cannot pass on a zone that is always highlighted.
-    expect(dropZone()).toHaveClass('border-gray-300')
+    // The drag state is read from data-drag-active rather than from the Tailwind
+    // border colour: a restyle is not a behaviour change and must not fail here.
+    // Baseline included, so this cannot pass on a zone that is always marked.
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
 
     fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
-    expect(dropZone()).toHaveClass('border-purple-500')
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
 
     fireEvent.dragLeave(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
-    expect(dropZone()).toHaveClass('border-gray-300')
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
+  })
+
+  it('keeps the zone marked when the drag merely moves onto its own children', async () => {
+    // dragenter/dragleave fire on descendants and BUBBLE, and this zone has an
+    // icon and two <p>s. Without the relatedTarget containment guard the leave
+    // reported for a child unmarks a zone the pointer is still inside, and the
+    // next dragover marks it again — a visible flicker of the highlight.
+    await openImageStep()
+    fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
+
+    const child = dropZone().querySelector('p')
+    if (!(child instanceof HTMLElement)) throw new Error('zone child not found')
+    dragLeaveTowards(dropZone(), child)
+
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
+    // Control: a leave for something OUTSIDE the zone still unmarks it, so the
+    // guard cannot be satisfied by never unmarking at all.
+    dragLeaveTowards(dropZone(), panel())
+    expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
+  })
+
+  it('cancels a drop that misses the zone, instead of navigating away from the modal', async () => {
+    // The zone is p-8 inside a max-w-2xl panel, so most of the modal — heading,
+    // type buttons, hint, info box, footer — is a few pixels off it. A drop there
+    // used to reach the browser default, which NAVIGATES to the dropped file and
+    // takes the modal and any chosen image with it: the worst outcome in this
+    // flow, and indistinguishable from a crash.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    const nearMiss = fireEvent.drop(panel(), {
+      dataTransfer: { files: [imageFile('card.png', 'image/png', 512)], types: ['Files'] },
+    })
+    const draggedOver = fireEvent.dragOver(panel(), {
+      dataTransfer: { files: [], types: ['Files'] },
+    })
+
+    // fireEvent returns false when a handler called preventDefault.
+    expect(nearMiss).toBe(false)
+    expect(draggedOver).toBe(false)
+    // Cancelled, NOT accepted: the dashed zone stays the single place where a drop
+    // selects something, so a near-miss is inert rather than a second target.
+    expect(screen.queryByText('card.png')).not.toBeInTheDocument()
+    expect(importButton()).toBeDisabled()
   })
 
   it('cancels the drop so the browser does not navigate to the file', async () => {
@@ -353,6 +424,37 @@ describe('ImportPersonaModal image input paths', () => {
     // Settle the selection the drop started, so its state update lands inside the
     // test rather than after it (React reports an unwrapped update otherwise).
     expect(await screen.findByText('card.png')).toBeInTheDocument()
+  })
+
+  it('selects a screenshot pasted with focus nowhere in particular', async () => {
+    // THE ORDINARY GESTURE: open the modal, press ⌘V. Nothing focuses the panel on
+    // open — focus stays on the PersonasTab trigger, or lands on <body> — so a
+    // React onPaste on the panel, which only fires for a target inside its own
+    // subtree, never ran for the gesture the paste hint advertises. The target
+    // here is document.body deliberately: it is outside the modal's subtree.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    pasteFiles(document.body, [new File([new Uint8Array(2048)], 'clip.png', { type: 'image/png' })])
+
+    expect(await screen.findByText('clip.png')).toBeInTheDocument()
+    await waitFor(() => expect(importButton()).toBeEnabled())
+  })
+
+  it('ignores a paste once the text step is showing, listener and all', async () => {
+    // Control for the document-level listener: it is registered only while the
+    // image step is showing, so it cannot reach across the rest of the app. The
+    // text step's own paste behaviour is untouched.
+    stubImaging(800, 600)
+    const user = await openImageStep()
+    await user.click(screen.getByRole('button', { name: /Paste content/i }))
+
+    const pasted = pasteFiles(document.body, [
+      new File([new Uint8Array(2048)], 'clip.png', { type: 'image/png' }),
+    ])
+
+    expect(pasted).toBe(true)
+    expect(screen.queryByText('clip.png')).not.toBeInTheDocument()
   })
 
   it('selects a pasted screenshot and gives the nameless bitmap a name', async () => {
@@ -434,16 +536,166 @@ describe('ImportPersonaModal image input paths', () => {
     expect(importButton()).toBeDisabled()
   })
 
-  it('refuses a pasted .docx and says why', async () => {
+  it('refuses a DROPPED .docx and says why', async () => {
+    // A drop is unambiguous: the user chose that file, so silence would be the
+    // bug being fixed here. Compare the pasted .docx below, which is not.
     stubImaging(800, 600)
     await openImageStep()
 
-    pasteFiles(dropZone(), [new File(['PK'], 'persona.docx', {
+    dropFiles([new File(['PK'], 'persona.docx', {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     })])
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/not an image we can read/i)
     expect(importButton()).toBeDisabled()
+  })
+
+  it('leaves a paste whose only file flavour is a document completely alone', async () => {
+    // Copying from Word/Excel/Outlook, or copying a file in Finder/Explorer, puts
+    // a non-image file flavour on the clipboard NEXT TO the text the user thinks
+    // they copied. Refusing those would turn an ordinary text paste into a
+    // cancelled paste plus a red error about a file the user never chose — worse
+    // than ignoring a flavour they never meant to send. A DROP of the same file is
+    // refused out loud (above), because a drop IS a choice.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    const pasted = pasteFiles(dropZone(), [new File(['PK'], 'persona.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })])
+
+    expect(pasted).toBe(true)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('refuses a pasted BMP out loud, because that one really was meant as an image', async () => {
+    // The filter is the `image/` prefix, not the accepted four, precisely so a
+    // bitmap format the model cannot read still reaches the refusal instead of
+    // vanishing.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    const pasted = pasteFiles(dropZone(), [new File([new Uint8Array(64)], 'shot.bmp', { type: 'image/bmp' })])
+
+    expect(pasted).toBe(false)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not an image we can read/i)
+    expect(screen.getByRole('alert')).toHaveTextContent('image/bmp')
+  })
+
+  it('clears a refusal once an image is accepted', async () => {
+    // The mirror of "a refusal keeps the earlier selection": a message about a
+    // file the user has already replaced is describing something abandoned.
+    stubImaging(800, 600)
+    await openImageStep()
+    dropFiles([new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })])
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    dropFiles([imageFile('card.png', 'image/png', 512)])
+
+    expect(await screen.findByText('card.png')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+
+  it('does not still be showing a refusal after a round trip through the text step', async () => {
+    // The hook outlives the section: FileUploadSection returns null for the text
+    // step while ImportPersonaModal — and therefore the error — stays mounted. The
+    // selection is cleared by handleTypeChange, so the alert came back over an
+    // empty zone, describing a file that was no longer anywhere in the modal.
+    stubImaging(800, 600)
+    const user = await openImageStep()
+    dropFiles([new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })])
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Paste content/i }))
+    await user.click(screen.getByRole('button', { name: /Screenshot or card/i }))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // Control: the zone is back and empty, so this is not passing on a modal that
+    // rendered nothing.
+    expect(screen.getByText('Click to upload or drag and drop')).toBeInTheDocument()
+  })
+
+  it('accepts the same file again after refusing it, which needs the picker value cleared', async () => {
+    // An <input type="file"> emits no change event when the file chosen is the one
+    // it already holds. After a refusal that made re-picking the SAME file a dead
+    // end: the user's obvious next move — pick it again — did nothing at all.
+    // Refused first (the imaging stub is missing, so the resize fails), then the
+    // very same File is offered again with imaging working.
+    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.reject(new Error('bad bytes'))))
+    const user = await openImageStep()
+    const input = document.querySelector('input[type="file"]')
+    if (!(input instanceof HTMLInputElement)) throw new Error('file input not found')
+    const same = imageFile('retry.png', 'image/png', 4_000_000)
+
+    await user.upload(input, same)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not read that image/i)
+    expect(input.value).toBe('')
+
+    stubImaging(800, 600)
+    await user.upload(input, same)
+
+    expect(await screen.findByText('retry.png')).toBeInTheDocument()
+    await waitFor(() => expect(importButton()).toBeEnabled())
+  })
+
+  it('says so when a multi-file drop keeps only the first image', async () => {
+    // One persona card per import, but taking the first SILENTLY is the milder
+    // version of this whole defect: three dropped screenshots would look like they
+    // worked and two would be gone with no explanation.
+    stubImaging(800, 600)
+    await openImageStep()
+
+    dropFiles([
+      imageFile('first.png', 'image/png', 512),
+      imageFile('second.png', 'image/png', 512),
+    ])
+
+    expect(await screen.findByText('first.png')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Only the first image was used')
+    // The notice is about the file that WAS taken, so it survives its acceptance
+    // rather than being cleared by it.
+    await waitFor(() => expect(importButton()).toBeEnabled())
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.queryByText('second.png')).not.toBeInTheDocument()
+  })
+
+  it('says nothing extra for a single-file drop, as the control for that notice', async () => {
+    stubImaging(800, 600)
+    await openImageStep()
+
+    dropFiles([imageFile('only.png', 'image/png', 512)])
+
+    expect(await screen.findByText('only.png')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('lets a newer selection win when an older attempt fails after it', async () => {
+    // prepare() is async and nothing serializes two drops. A slow failure from the
+    // first can settle AFTER the second succeeded, which paired a good filename
+    // with a red refusal about a file already replaced.
+    const gate: { release: () => void } = { release: () => undefined }
+    const slowFailure = new Promise((_, reject) => { gate.release = () => reject(new Error('bad bytes')) })
+    vi.stubGlobal('createImageBitmap', vi.fn(() => slowFailure))
+    await openImageStep()
+
+    dropFiles([imageFile('slow.png', 'image/png', 4_000_000)])
+    // Second attempt starts and finishes while the first is still pending.
+    stubImaging(800, 600)
+    dropFiles([imageFile('fast.png', 'image/png', 512)])
+    expect(await screen.findByText('fast.png')).toBeInTheDocument()
+
+    // The stale rejection is given room to propagate all the way through
+    // resizeImageForUpload's await chain and into a render BEFORE the absence is
+    // asserted. `waitFor(no alert)` would instead pass on its very first check —
+    // before the late failure had written anything — and would hold even with the
+    // latest-wins guard removed, which a mutation run confirmed.
+    await act(async () => {
+      gate.release()
+      await new Promise((resolve) => { setTimeout(resolve, 0) })
+    })
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText('fast.png')).toBeInTheDocument()
   })
 
   it('leaves a paste carrying no file completely alone', async () => {
