@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
-from shared.persona_import import converse_image_format, validate_import_config
+from shared.persona_import import validate_import_config
+from shared.image_limits import converse_image_format
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.model_config import get_active_model_id
 from api.projects import generate_persona_avatar

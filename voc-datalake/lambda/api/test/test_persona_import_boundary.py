@@ -278,6 +278,12 @@ class TestImageMediaTypeIsAllowlisted:
 
         assert status == 400
         assert 'could not be read' in body['error']
+        # The message ENUMERATES what the field takes, derived from
+        # CONVERSE_IMAGE_FORMATS. Asserting only the prose above would still pass
+        # if the derivation produced an empty list, leaving the caller with a
+        # refusal that does not say what would have worked.
+        for accepted in ('image/png', 'image/jpeg', 'image/gif', 'image/webp'):
+            assert accepted in body['error']
         create_job.assert_not_called()
         invoke.assert_not_called()
 

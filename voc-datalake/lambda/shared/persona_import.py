@@ -19,7 +19,7 @@ without pulling in a new dependency.
 """
 
 from shared.exceptions import ValidationError
-from shared.image_limits import CONVERSE_IMAGE_FORMATS
+from shared.image_limits import CONVERSE_IMAGE_FORMATS, converse_image_format
 
 # The only two things the importer can turn into prompt content: text the user
 # pasted, and an image sent as a Converse image block.
@@ -75,19 +75,6 @@ def normalise_input_type(raw: object) -> str:
     if not isinstance(raw, str):
         return ''
     return raw.strip().lower() or DEFAULT_INPUT_TYPE
-
-
-def converse_image_format(media_type: object) -> str | None:
-    """The Converse `format` for a media type, or None if the model cannot read it.
-
-    The single place that turns a media type into a format. The job used to derive
-    it as `media_type.split('/')[-1]`, which is right for three of the four types
-    and wrong for the fourth: JPEG's subtype is 'jpeg' but the S3 extension is
-    'jpg', and the two sit next to each other in shared/image_limits.py.
-    """
-    if not isinstance(media_type, str):
-        return None
-    return CONVERSE_IMAGE_FORMATS.get(media_type.strip().lower())
 
 
 def validate_import_config(raw_input_type: object, content: object,

@@ -66,3 +66,22 @@ CONVERSE_IMAGE_FORMATS = {
     'image/gif': 'gif',
     'image/webp': 'webp',
 }
+
+
+def converse_image_format(media_type: object) -> str | None:
+    """The Converse `format` for a media type, or None if the model cannot read it.
+
+    The single place a media type becomes a format. Lives here, beside the map it
+    reads, rather than in a caller: it is a property of the Converse image block,
+    and any prompt path that attaches an image needs it.
+
+    Callers used to derive this as ``media_type.split('/')[-1]``, which is right for
+    three of the four accepted types and wrong for the fourth — JPEG's subtype is
+    'jpeg' while its S3 extension is 'jpg', and the two maps sit side by side above.
+
+    Returns None rather than raising: the answer "the model cannot read this" is a
+    normal result at a validation boundary, and each caller words its own refusal.
+    """
+    if not isinstance(media_type, str):
+        return None
+    return CONVERSE_IMAGE_FORMATS.get(media_type.strip().lower())
