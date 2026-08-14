@@ -258,7 +258,6 @@ describe('a document grounded in uploaded visuals', () => {
   it('normalizes an absent field to an empty list', () => {
     expect(normalizeDerivation({ persona_ids: ['p1'] }).visual_document_ids).toEqual([])
   })
-
 })
 
 describe('resolving sources against the project documents', () => {

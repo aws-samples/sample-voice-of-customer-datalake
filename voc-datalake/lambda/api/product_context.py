@@ -20,9 +20,9 @@ generate_prfaq and substituted into the {product_context} placeholder.
 """
 import os
 import secrets
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from decimal import Decimal
-from collections.abc import Iterable
 from typing import Any
 
 from boto3.dynamodb.conditions import Key

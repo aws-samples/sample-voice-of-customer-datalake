@@ -286,17 +286,34 @@ export function usePrototypeBuild({
 
   // Only reports still on offer. A stale id would be rejected by the API, which
   // would turn someone else's deletion into this build's failure.
+  // Sliced as well as filtered, and the slice is not belt-and-braces — the stored
+  // list can genuinely exceed the bound. `toggleWithinBound` counts only ids still
+  // ON OFFER, so an id that leaves the options list stops being counted while it
+  // stays in state: tick the maximum, have one leave, tick a replacement, and the
+  // one that left comes back. For research that needs a deletion and a restore; for
+  // visuals it needs neither, because a doc that re-enters `extracting` leaves the
+  // options and returns `ready` on its own.
+  //
+  // The slice is what makes the invariant hold at the only place it matters — the
+  // request — rather than depending on every path into state. Pruning state when the
+  // options change would need an effect, and `react-hooks/set-state-in-effect` is an
+  // error in this repo. The inherited path in DocumentsTab already slices for the
+  // sibling reason (a bound that is LOWERED later), so both paths now agree.
   const selectedResearchIds = useMemo(
-    () => chosenResearchIds.filter((id) => isOfferedResearch(researchOptions, id)),
+    () => chosenResearchIds
+      .filter((id) => isOfferedResearch(researchOptions, id))
+      .slice(0, MAX_SELECTED_RESEARCH_IDS),
     [chosenResearchIds, researchOptions],
   )
 
-  // Only visuals still on offer, in tick order. Same filter as the reports above,
-  // and load-bearing for the same reason: an upload deleted from the Product tab
-  // under this card would otherwise send an id the API cannot resolve, turning
-  // someone else's deletion into this build's 400.
+  // Only visuals still on offer, in tick order, and never more than the bound —
+  // same two reasons as the reports above. The filter stops an upload deleted from
+  // the Product tab under this card becoming this build's 400; the slice stops a
+  // visual that merely re-extracted and came back doing the same thing.
   const selectedVisualIds = useMemo(
-    () => chosenVisualIds.filter((id) => isOfferedVisual(visualOptions, id)),
+    () => chosenVisualIds
+      .filter((id) => isOfferedVisual(visualOptions, id))
+      .slice(0, MAX_SELECTED_PRODUCT_DOC_IDS),
     [chosenVisualIds, visualOptions],
   )
 
@@ -454,25 +471,6 @@ export function usePrototypeBuild({
 }
 
 /**
- * Add or remove an id in a bounded selection, counting ONLY ids still on offer.
- *
- * The filter is the whole point, and it fixes a real defect rather than tidying:
- * both `researchLimitReached` and `visualLimitReached` are derived from the
- * FILTERED selection (ids whose document still exists), while this guard used to
- * count the raw stored list. Tick four visuals, have one deleted from the Product
- * tab, and the two disagreed — the flag said three so the remaining boxes rendered
- * enabled, and every click on them was silently swallowed by a guard counting four.
- * A control that looks available and does nothing is worse than a disabled one.
- *
- * Shared by both toggles rather than written twice: they had the same bug because
- * they were the same code, and one guard means a fix cannot land on one and miss
- * the other.
- *
- * Removal is never bounded — dropping an id always works, even from an over-long
- * inherited list, which is what keeps a selection recoverable if the bound is ever
- * lowered.
- */
-/**
  * True while `id` still names one of the reports/visuals on offer.
  *
  * Two named predicates rather than the `.some()` written inline at each of the
@@ -495,6 +493,29 @@ function isOfferedVisual(
   return options.some((option) => option.doc_id === id)
 }
 
+/**
+ * Add or remove an id in a bounded selection, counting ONLY ids still on offer.
+ *
+ * Counting the filtered list fixes a real defect rather than tidying: both
+ * `researchLimitReached` and `visualLimitReached` are derived from the FILTERED
+ * selection, while this guard used to count the raw stored list. Tick four visuals,
+ * have one deleted from the Product tab, and the two disagreed — the flag said
+ * three so the remaining boxes rendered enabled, and every click on them was
+ * silently swallowed by a guard counting four. A control that looks available and
+ * does nothing is worse than a disabled one.
+ *
+ * ⚠️ It follows that the STORED list can exceed the bound: an id that leaves the
+ * options stops being counted while it stays in state, and can come back. That is
+ * why the two `useMemo`s above SLICE as well as filter — the invariant is enforced
+ * where it matters, at the request, rather than depending on every path into state.
+ *
+ * Shared by both toggles rather than written twice: they had the same bug because
+ * they were the same code, and one guard means a fix cannot land on one and miss
+ * the other.
+ *
+ * Removal is never bounded — dropping an id always works, even from an over-long
+ * list, which is what keeps a selection recoverable if the bound is ever lowered.
+ */
 function toggleWithinBound(
   current: ReadonlyArray<string>,
   id: string,

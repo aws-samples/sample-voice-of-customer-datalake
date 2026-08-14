@@ -439,6 +439,44 @@ describe('which uploaded visuals the build reads', () => {
     expect(sent).not.toContain(atBound[0].doc_id)
   })
 
+  it('never sends more than the bound after a visual re-extracts and returns', async () => {
+    // The one that needs NO deletion, which is what makes it the reachable case.
+    // `toggleWithinBound` counts only ids still on offer, so a visual that
+    // re-enters `extracting` stops being counted while it stays in state: tick the
+    // maximum, one re-extracts, tick a replacement, extraction finishes — and the
+    // stored list is one over the bound. Unsliced, the request carries that extra id
+    // and the API answers 400 naming a length the user never chose, which is exactly
+    // what the bound exists to prevent.
+    const user = userEvent.setup()
+    const all = Array.from(
+      { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
+      (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
+    )
+    const atBound = all.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)
+    const spare = all[MAX_SELECTED_PRODUCT_DOC_IDS]
+    const { rerender } = renderTab([PRD, PRFAQ], FILLED_CONTEXT, all)
+
+    for (const option of atBound) {
+      await user.click(screen.getByRole('checkbox', { name: option.filename }))
+    }
+    // The first ticked visual goes back to extracting, so it leaves the options...
+    const reExtracting = { ...atBound[0], status: 'extracting' as const }
+    rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, [reExtracting, ...atBound.slice(1), spare]))
+    // ...the user tops the selection back up...
+    await user.click(screen.getByRole('checkbox', { name: spare.filename }))
+    // ...and then extraction finishes, so it is offered again.
+    rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, all))
+    await user.click(buildButton())
+
+    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    const sent = sentBody().selected_product_doc_ids
+    // The bound holds, and the survivors are the earliest ticks rather than an
+    // arbitrary subset — a slice keeps the precedence order the prompt reads.
+    expect(sent).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
+    expect(sent).toEqual(atBound.map((d) => d.doc_id))
+    expect(sent).not.toContain(spare.doc_id)
+  })
+
   it('drops a visual deleted between the tick and the click', async () => {
     // The doc list refetches on mount and focus, and the Product tab can delete an
     // upload while this card is open. Sending its id would be a 4xx — someone
