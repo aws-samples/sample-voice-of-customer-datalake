@@ -203,3 +203,44 @@ class TestUploadCapLockstep:
         from shared.image_limits import MAX_IMAGE_BYTES
 
         assert MAX_IMAGE_BYTES < _product_context().MAX_FILE_BYTES
+
+
+class TestTheTwoImageMapsStayDeliberate:
+    """Storage and readability are separate sets, and must diverge only on purpose.
+
+    ``IMAGE_CONTENT_TYPE_EXTENSIONS`` answers "where do I store it?";
+    ``CONVERSE_IMAGE_FORMATS`` answers "can the model read it?". They hold the same
+    keys today, and a prompt path (persona import) allowlists against the second.
+
+    This is a TRIPWIRE, not a coupling. Adding a type to the storage map — an
+    avatar format, say — should fail here so that whether the model can read it is
+    an explicit answer rather than a silent yes.
+    """
+
+    def test_both_maps_cover_the_same_content_types(self):
+        from shared.image_limits import (
+            CONVERSE_IMAGE_FORMATS,
+            IMAGE_CONTENT_TYPE_EXTENSIONS,
+        )
+
+        assert set(CONVERSE_IMAGE_FORMATS) == set(IMAGE_CONTENT_TYPE_EXTENSIONS)
+
+    def test_the_maps_disagree_on_jpeg_which_is_the_whole_point(self):
+        """The one value that differs, pinned so nobody 'tidies' it into one map.
+
+        Converse rejects 'jpg'; S3 keys have always used '.jpg'. A single map would
+        have to break one of the two.
+        """
+        from shared.image_limits import (
+            CONVERSE_IMAGE_FORMATS,
+            IMAGE_CONTENT_TYPE_EXTENSIONS,
+        )
+
+        assert CONVERSE_IMAGE_FORMATS['image/jpeg'] == 'jpeg'
+        assert IMAGE_CONTENT_TYPE_EXTENSIONS['image/jpeg'] == 'jpg'
+
+    def test_every_converse_format_is_one_of_the_four_the_api_accepts(self):
+        """Guards against a typo'd value, which no key-set check would catch."""
+        from shared.image_limits import CONVERSE_IMAGE_FORMATS
+
+        assert set(CONVERSE_IMAGE_FORMATS.values()) == {'png', 'jpeg', 'gif', 'webp'}

@@ -15,6 +15,7 @@ from shared.api import create_api_resolver, validate_days, validate_int, api_han
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
+from shared.persona_import import validate_import_config
 from shared.tokens import hash_token
 
 from boto3.dynamodb.conditions import Key
@@ -118,12 +119,20 @@ def api_create_persona(project_id: str):
 @app.post("/projects/<project_id>/personas/import")
 @tracer.capture_method
 def api_import_persona(project_id: str):
-    """Import a persona from PDF, image, or text - runs as background job."""
+    """Import a persona from an image or pasted text - runs as background job."""
     body = app.current_event.json_body or {}
+    content = body.get('content', '')
+    media_type = body.get('media_type', '')
+    # INVARIANT (tested): validated BEFORE create_job, so a refused import leaves
+    # no job row behind, no Lambda invoke and no Bedrock spend. Rejecting only
+    # inside the job would still cost all three per attempt, and the user would
+    # watch a job run and fail instead of being told at the click. The rules live
+    # in shared/persona_import.py because the job checks them again.
+    input_type = validate_import_config(body.get('input_type'), content, media_type)
     config = {
-        'input_type': body.get('input_type', 'text'),
-        'content': body.get('content', ''),
-        'media_type': body.get('media_type', '')
+        'input_type': input_type,
+        'content': content,
+        'media_type': media_type
     }
     job_id, _ = create_job(project_id, 'import_persona', 'import_config', config)
     invoke_lambda_async(PERSONA_IMPORTER_FUNCTION, {

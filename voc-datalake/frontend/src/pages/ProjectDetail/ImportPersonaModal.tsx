@@ -1,13 +1,35 @@
 /**
- * ImportPersonaModal - Modal for importing personas from PDF, image, or text
+ * ImportPersonaModal - Modal for importing personas from an image or pasted text
+ *
+ * PDF USED TO BE OFFERED HERE and could not work. Nothing in this platform
+ * extracts text from a PDF, so the file was never read: the job handed the model
+ * a placeholder sentence instead and the model invented a persona from it, with
+ * nothing in this UI to say so. A button that cannot work is the defect the user
+ * actually meets, so the affordance is gone until a PDF extractor exists. The
+ * API (lambda/api/projects_handler.py) and the job Lambda refuse `pdf` too — the
+ * three layers are independent, because a UI that stops offering something does
+ * not stop an old queued job or a hand-rolled caller.
  */
 import clsx from 'clsx'
 import {
-  Upload, FileUp, Image, FileText, CheckCircle, X, Loader2,
+  Upload, Image, FileText, CheckCircle, X, Loader2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-type ImportType = 'pdf' | 'image' | 'text'
+type ImportType = 'image' | 'text'
+
+// Only 'image' takes a file, so this is no longer a per-type choice. These four
+// are exactly the formats Bedrock Converse can read, and the API enforces the
+// same set (shared/persona_import.py, via shared/image_limits.py) — the picker
+// filter is a convenience, not the guard. The hint the user reads comes from
+// `importPersona.imageFormats`.
+const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/gif,image/webp'
+
+// RETAINED DEAD KEYS, on purpose: `importPersona.pdf`, `pdfDesc`, `pdfOnly`,
+// `uploadPdf` and `importTypePdf` are still in all eight catalogues, already
+// translated, and unused until PDF extraction lands (tracked with the PDF work,
+// not here). i18n:check reports them as extra, which is informational — deleting
+// them would mean re-translating five strings later for no gain now.
 
 interface ImportPersonaModalProps {
   readonly importType: ImportType
@@ -22,18 +44,6 @@ interface ImportPersonaModalProps {
   readonly onImport: () => void
 }
 
-function getAcceptedFileTypes(importType: ImportType): string {
-  return importType === 'pdf' ? '.pdf,application/pdf' : 'image/png,image/jpeg,image/gif,image/webp'
-}
-
-function getFileTypeLabel(importType: ImportType): string {
-  return importType === 'pdf' ? 'PDF files only' : 'PNG, JPG, GIF, WebP'
-}
-
-function getUploadLabel(importType: ImportType): string {
-  return importType === 'pdf' ? 'PDF Document' : 'Image'
-}
-
 // Import type button component
 function ImportTypeButton({
   icon,
@@ -42,7 +52,7 @@ function ImportTypeButton({
   isSelected,
   onClick,
 }: Readonly<{
-  icon: typeof FileUp
+  icon: typeof Image
   label: string
   description: string
   isSelected: boolean
@@ -74,11 +84,12 @@ function FileUploadSection({
   importFileName: string
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 }>) {
-  if (importType !== 'pdf' && importType !== 'image') return null
+  const { t } = useTranslation('projectDetail')
+  if (importType !== 'image') return null
 
   return (
     <div>
-      <h3 className="font-medium mb-3">Upload {getUploadLabel(importType)}</h3>
+      <h3 className="font-medium mb-3">{t('importPersona.uploadImage')}</h3>
       <label className="block">
         <div className={clsx(
           'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
@@ -87,20 +98,20 @@ function FileUploadSection({
           {importFileName === '' ? (
             <div>
               <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-              <p className="text-gray-600">Click to upload or drag and drop</p>
-              <p className="text-sm text-gray-400 mt-1">{getFileTypeLabel(importType)}</p>
+              <p className="text-gray-600">{t('importPersona.clickToUpload')}</p>
+              <p className="text-sm text-gray-400 mt-1">{t('importPersona.imageFormats')}</p>
             </div>
           ) : (
             <div>
               <CheckCircle size={32} className="mx-auto mb-2 text-purple-500" />
               <p className="font-medium text-purple-700">{importFileName}</p>
-              <p className="text-sm text-gray-500 mt-1">Click to change file</p>
+              <p className="text-sm text-gray-500 mt-1">{t('importPersona.clickToChange')}</p>
             </div>
           )}
         </div>
         <input
           type="file"
-          accept={getAcceptedFileTypes(importType)}
+          accept={ACCEPTED_FILE_TYPES}
           className="hidden"
           onChange={onFileChange}
         />
@@ -166,8 +177,13 @@ export default function ImportPersonaModal({
           {/* Import Type Selection */}
           <div>
             <h3 className="font-medium mb-3">{t('importPersona.importFrom')}</h3>
-            <div className="grid grid-cols-3 gap-3">
-              <ImportTypeButton icon={FileUp} label={t('importPersona.pdf')} description={t('importPersona.pdfDesc')} isSelected={importType === 'pdf'} onClick={() => onTypeChange('pdf')} />
+            <div className="grid grid-cols-2 gap-3">
+              {/* A PDF button used to sit here. The `importPersona.pdf` and
+                  `importPersona.pdfDesc` keys are deliberately LEFT IN all eight
+                  locale catalogues, ready for when PDF returns: an unused key is
+                  informational in `npm run i18n:check`, whereas editing eight
+                  catalogues to delete two keys risks moving that gate's counts
+                  for no gain. */}
               <ImportTypeButton icon={Image} label={t('importPersona.image')} description={t('importPersona.imageDesc')} isSelected={importType === 'image'} onClick={() => onTypeChange('image')} />
               <ImportTypeButton icon={FileText} label={t('importPersona.text')} description={t('importPersona.textDesc')} isSelected={importType === 'text'} onClick={() => onTypeChange('text')} />
             </div>
@@ -187,7 +203,10 @@ export default function ImportPersonaModal({
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('importPersona.cancel')}</button>
           <button
             onClick={onImport}
-            disabled={importContent === '' || isImporting}
+            // Same predicate as the server's empty-content guard, so a
+            // whitespace-only paste is a disabled button rather than a 400 the
+            // user has to read to discover there was nothing to send.
+            disabled={importContent.trim() === '' || isImporting}
             className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50 hover:bg-purple-700"
           >
             {isImporting ? (

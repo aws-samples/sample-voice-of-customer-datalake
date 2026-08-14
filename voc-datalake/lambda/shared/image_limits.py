@@ -37,9 +37,51 @@ MAX_IMAGES_PER_MESSAGE = 20
 # Image content types this platform accepts, mapped to the file extension used
 # for the S3 object key. These are exactly the four formats Converse understands,
 # so accepting anything else would mean storing a file no prompt can ever use.
+#
+# STORAGE, not readability. Do not use this as the "can the model read it?" set:
+# widening it to store a new type (an avatar format, say) would silently widen
+# every prompt path that borrowed it. CONVERSE_IMAGE_FORMATS below is that set.
 IMAGE_CONTENT_TYPE_EXTENSIONS = {
     'image/png': 'png',
     'image/jpeg': 'jpg',
     'image/gif': 'gif',
     'image/webp': 'webp',
 }
+
+# The same four content types mapped to the `format` a Converse image block wants.
+# Separate from the map above for two reasons, both load-bearing:
+#
+#  1. The VALUES genuinely differ. Converse names JPEG 'jpeg'; the S3 extension is
+#     'jpg', which Converse rejects. Deriving one from the other by string
+#     surgery (`content_type.split('/')[-1]`) happens to work for three of four.
+#  2. The two answer different questions — "where do I store it?" and "can the
+#     model read it?" — and a path that needs the second must not be widened by a
+#     change made for the first.
+#
+# test_image_limits_lockstep.py asserts the two keep the same KEYS, so adding a
+# type to one is a loud decision about the other rather than a silent one.
+CONVERSE_IMAGE_FORMATS = {
+    'image/png': 'png',
+    'image/jpeg': 'jpeg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+}
+
+
+def converse_image_format(media_type: object) -> str | None:
+    """The Converse `format` for a media type, or None if the model cannot read it.
+
+    The single place a media type becomes a format. Lives here, beside the map it
+    reads, rather than in a caller: it is a property of the Converse image block,
+    and any prompt path that attaches an image needs it.
+
+    Callers used to derive this as ``media_type.split('/')[-1]``, which is right for
+    three of the four accepted types and wrong for the fourth — JPEG's subtype is
+    'jpeg' while its S3 extension is 'jpg', and the two maps sit side by side above.
+
+    Returns None rather than raising: the answer "the model cannot read this" is a
+    normal result at a validation boundary, and each caller words its own refusal.
+    """
+    if not isinstance(media_type, str):
+        return None
+    return CONVERSE_IMAGE_FORMATS.get(media_type.strip().lower())
