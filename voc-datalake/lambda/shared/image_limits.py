@@ -37,9 +37,32 @@ MAX_IMAGES_PER_MESSAGE = 20
 # Image content types this platform accepts, mapped to the file extension used
 # for the S3 object key. These are exactly the four formats Converse understands,
 # so accepting anything else would mean storing a file no prompt can ever use.
+#
+# STORAGE, not readability. Do not use this as the "can the model read it?" set:
+# widening it to store a new type (an avatar format, say) would silently widen
+# every prompt path that borrowed it. CONVERSE_IMAGE_FORMATS below is that set.
 IMAGE_CONTENT_TYPE_EXTENSIONS = {
     'image/png': 'png',
     'image/jpeg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+}
+
+# The same four content types mapped to the `format` a Converse image block wants.
+# Separate from the map above for two reasons, both load-bearing:
+#
+#  1. The VALUES genuinely differ. Converse names JPEG 'jpeg'; the S3 extension is
+#     'jpg', which Converse rejects. Deriving one from the other by string
+#     surgery (`content_type.split('/')[-1]`) happens to work for three of four.
+#  2. The two answer different questions — "where do I store it?" and "can the
+#     model read it?" — and a path that needs the second must not be widened by a
+#     change made for the first.
+#
+# test_image_limits_lockstep.py asserts the two keep the same KEYS, so adding a
+# type to one is a loud decision about the other rather than a silent one.
+CONVERSE_IMAGE_FORMATS = {
+    'image/png': 'png',
+    'image/jpeg': 'jpeg',
     'image/gif': 'gif',
     'image/webp': 'webp',
 }

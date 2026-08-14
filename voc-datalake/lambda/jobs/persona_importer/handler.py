@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
-from shared.persona_import import validate_import_config
+from shared.persona_import import converse_image_format, validate_import_config
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.model_config import get_active_model_id
 from api.projects import generate_persona_avatar
@@ -77,10 +77,10 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
     if input_type == 'image':
         converse_content.append({
             'image': {
-                # Validated above, so there is no format to guess. Converse wants
-                # the subtype ('jpeg'), NOT the file extension ('jpg') that
-                # image_limits maps for S3 keys.
-                'format': media_type.strip().lower().split('/')[-1],
+                # Looked up, not derived: validate_import_config already refused
+                # anything absent from this map, and splitting the media type would
+                # send Converse 'jpg', which it rejects.
+                'format': converse_image_format(media_type),
                 'source': {'bytes': base64.b64decode(content)}
             }
         })

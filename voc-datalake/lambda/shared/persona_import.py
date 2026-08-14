@@ -19,7 +19,7 @@ without pulling in a new dependency.
 """
 
 from shared.exceptions import ValidationError
-from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS
+from shared.image_limits import CONVERSE_IMAGE_FORMATS
 
 # The only two things the importer can turn into prompt content: text the user
 # pasted, and an image sent as a Converse image block.
@@ -38,8 +38,11 @@ DEFAULT_INPUT_TYPE = 'text'
 _ACCEPTS = 'Persona import accepts pasted text or an image.'
 
 # Derived, so adding a format in shared/image_limits.py cannot leave the message
-# naming a set it no longer describes.
-_IMAGE_FORMATS_LABEL = ', '.join(sorted(set(IMAGE_CONTENT_TYPE_EXTENSIONS.values())))
+# naming a set it no longer describes. Names CONTENT TYPES, not prose formats,
+# because media_type is the field the caller got wrong — echoing "PNG, JPG" back
+# at an API client that sent 'application/pdf' says less than listing what the
+# field will accept. The modal's translated hint is the prose version.
+_ACCEPTED_MEDIA_TYPES_LABEL = ', '.join(sorted(CONVERSE_IMAGE_FORMATS))
 
 UNSUPPORTED_TYPE_MESSAGE = f'Unsupported import type. {_ACCEPTS}'
 
@@ -49,7 +52,7 @@ EMPTY_CONTENT_MESSAGE = (
 )
 
 UNSUPPORTED_IMAGE_MESSAGE = (
-    f'That image could not be read. Accepted formats: {_IMAGE_FORMATS_LABEL}.'
+    f'That image could not be read. Accepted: {_ACCEPTED_MEDIA_TYPES_LABEL}.'
 )
 
 
@@ -74,6 +77,19 @@ def normalise_input_type(raw: object) -> str:
     return raw.strip().lower() or DEFAULT_INPUT_TYPE
 
 
+def converse_image_format(media_type: object) -> str | None:
+    """The Converse `format` for a media type, or None if the model cannot read it.
+
+    The single place that turns a media type into a format. The job used to derive
+    it as `media_type.split('/')[-1]`, which is right for three of the four types
+    and wrong for the fourth: JPEG's subtype is 'jpeg' but the S3 extension is
+    'jpg', and the two sit next to each other in shared/image_limits.py.
+    """
+    if not isinstance(media_type, str):
+        return None
+    return CONVERSE_IMAGE_FORMATS.get(media_type.strip().lower())
+
+
 def validate_import_config(raw_input_type: object, content: object,
                            media_type: object) -> str:
     """The normalised input type, or ValidationError naming what IS accepted.
@@ -93,14 +109,15 @@ def validate_import_config(raw_input_type: object, content: object,
     if not (content if isinstance(content, str) else '').strip():
         raise ValidationError(EMPTY_CONTENT_MESSAGE)
 
-    # An image's format is taken from media_type, so an unreadable one cannot be
-    # waved through: 'application/pdf' here would otherwise pass the type
-    # allowlist and reach Converse as an image block claiming format 'pdf'.
-    # Blank is refused rather than assumed to be PNG — guessing the format is a
-    # silent wrong answer, and these four are exactly what the picker advertises.
-    if input_type == 'image':
-        normalised = media_type.strip().lower() if isinstance(media_type, str) else ''
-        if normalised not in IMAGE_CONTENT_TYPE_EXTENSIONS:
-            raise ValidationError(UNSUPPORTED_IMAGE_MESSAGE)
+    # An image's Converse `format` is derived from media_type, so an unreadable one
+    # cannot be waved through: 'application/pdf' here would otherwise pass the type
+    # allowlist and reach Converse as an image block claiming format 'pdf'. Blank
+    # is refused rather than assumed to be PNG — guessing is a silent wrong answer.
+    #
+    # Checked against CONVERSE_IMAGE_FORMATS, the "can the model read it?" set, and
+    # deliberately NOT against the S3 extension map: widening that map to store a
+    # new type would otherwise widen this allowlist too.
+    if input_type == 'image' and converse_image_format(media_type) is None:
+        raise ValidationError(UNSUPPORTED_IMAGE_MESSAGE)
 
     return input_type

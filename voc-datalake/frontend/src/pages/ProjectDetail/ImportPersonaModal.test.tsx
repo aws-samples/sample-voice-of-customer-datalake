@@ -99,6 +99,26 @@ describe('ImportPersonaModal file picker', () => {
     expect(screen.getByRole('heading', { name: 'Upload Image' })).toBeInTheDocument()
   })
 
+  it('keeps Import disabled for whitespace-only content, as the server would', () => {
+    // The API refuses blank content before it creates a job, so the button has to
+    // use the same predicate. `=== ''` did not: a spacebar press enabled Import and
+    // the user's first feedback was a 400 telling them there was nothing to read.
+    // An expression, not a string attribute: JSX does not process escapes, so
+    // importContent="\n" would be a literal backslash-n and NOT whitespace —
+    // the test would pass against a button that ignores whitespace entirely.
+    render(<ImportPersonaModal {...defaultProps} importContent={'   \n\t '} />)
+
+    expect(screen.getByRole('button', { name: /Import Persona/i })).toBeDisabled()
+  })
+
+  it('enables Import once there is real content', () => {
+    // Control: without it, "disabled on whitespace" also passes on a button that
+    // is disabled always.
+    render(<ImportPersonaModal {...defaultProps} importContent="Name: Sarah Chen" />)
+
+    expect(screen.getByRole('button', { name: /Import Persona/i })).toBeEnabled()
+  })
+
   it('shows the text area and no file picker on the default text type', () => {
     render(<ImportPersonaModal {...defaultProps} />)
 
