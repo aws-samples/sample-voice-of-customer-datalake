@@ -27,13 +27,33 @@ const categoryItemSchema = z.object({ name: z.string() }).passthrough();
 
 // Mirrors lambda/shared/api.py::DEFAULT_CATEGORIES. When nothing is configured,
 // get_configured_categories() falls back to this list, and the enrichment
-// prompt uses the same names, so the counters exist under these names. Falling
-// back to an empty array here would report an empty section where the metrics
-// surface reports counts.
+// prompt uses the same names (lambda/processor/handler.py::DEFAULT_CATEGORIES),
+// so the counters exist under these names. Falling back to an empty array here
+// would report an empty section where the metrics surface reports counts.
+// Note the admin UI's own GET /settings/categories still answers `[]` for an
+// unconfigured deployment (lambda/api/settings_handler.py::get_categories_config);
+// aligning that third surface is deliberately out of this module's scope.
 const DEFAULT_CATEGORIES = [
   'delivery', 'customer_support', 'product_quality', 'pricing',
   'website', 'app', 'billing', 'returns', 'communication', 'other',
 ] as const;
+
+// The taxonomy changes at human speed, so re-reading it on every chat turn buys
+// nothing and sits in front of time-to-first-token. 300s matches
+// CATEGORIES_CACHE_TTL in lambda/shared/api.py, whose reader this one mirrors.
+// A failed read caches for much less, so a throttling blip cannot pin streaming
+// chat to the default taxonomy for a full five minutes (the shape used by
+// src/bedrock/model-override.ts).
+const CATEGORY_CACHE_TTL_MS = 300_000;
+const CATEGORY_ERROR_CACHE_TTL_MS = 10_000;
+
+const categoryCache: { names: string[] | null; expires: number } = { names: null, expires: 0 };
+
+/** Reset the container-level taxonomy cache (tests). */
+export function clearCategoryCache(): void {
+  categoryCache.names = null;
+  categoryCache.expires = 0;
+}
 
 interface VocChatContext {
   systemPrompt: string;
@@ -66,6 +86,63 @@ function parseContextFilters(contextHint: string): Record<string, string> {
   return filters;
 }
 
+function utcDateString(now: Date, daysAgo: number): string {
+  const d = new Date(now);
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * One metric partition's trailing window, summed, newest date inclusive.
+ *
+ * `sk` is 'YYYY-MM-DD' and ISO dates sort lexicographically, so a window is a
+ * contiguous sort-key range that BETWEEN bounds server-side: a fixed number of
+ * requests regardless of `days`, not one query per day. This mirrors
+ * lambda/api/metrics_handler.py::_query_metric_window, which was deliberately
+ * moved off per-day reads for exactly that reason — and it matters most here,
+ * because this sum sits in front of the first streamed token.
+ *
+ * Paging is bounded rather than `while (true)`: one date yields at most one item
+ * and an unfiltered page yields at least one, so a window of `days` dates cannot
+ * span more than `days` pages. Exhausting the bound means that invariant no
+ * longer holds, so the window really is partial — log it instead of returning a
+ * quietly short answer.
+ */
+async function sumMetricWindow(
+  docClient: DynamoDBDocumentClient,
+  aggregatesTable: string,
+  metricKey: string,
+  bounds: { oldest: string; newest: string },
+  pagesLeft: number,
+  startKey?: Record<string, unknown>,
+): Promise<number> {
+  const resp = await docClient.send(
+    new QueryCommand({
+      TableName: aggregatesTable,
+      KeyConditionExpression: 'pk = :pk AND sk BETWEEN :oldest AND :newest',
+      ExpressionAttributeValues: {
+        ':pk': metricKey,
+        ':oldest': bounds.oldest,
+        ':newest': bounds.newest,
+      },
+      ExclusiveStartKey: startKey,
+    }),
+  );
+  const total = (resp.Items ?? []).reduce(
+    (sum: number, item) => sum + Number(item.count ?? item.value ?? 0),
+    0,
+  );
+  const lastKey = resp.LastEvaluatedKey;
+  if (!lastKey) return total;
+  if (pagesLeft <= 1) {
+    console.warn(`sumMetricWindow: paging hit its bound for ${metricKey}; window is partial`);
+    return total;
+  }
+  return total + (await sumMetricWindow(
+    docClient, aggregatesTable, metricKey, bounds, pagesLeft - 1, lastKey,
+  ));
+}
+
 async function sumDailyMetric(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
@@ -73,39 +150,48 @@ async function sumDailyMetric(
   days: number,
 ): Promise<number> {
   const now = new Date();
-  const totals = await Promise.all(
-    Array.from({ length: days }, (_, i) => {
-      const d = new Date(now);
-      d.setUTCDate(d.getUTCDate() - i);
-      return d.toISOString().slice(0, 10);
-    }).map(async (dateStr) => {
-      try {
-        const resp = await docClient.send(
-          new QueryCommand({
-            TableName: aggregatesTable,
-            KeyConditionExpression: 'pk = :pk AND sk = :sk',
-            ExpressionAttributeValues: { ':pk': metricKey, ':sk': dateStr },
-          }),
-        );
-        const items = resp.Items ?? [];
-        return items.length > 0 ? Number(items[0].count ?? items[0].value ?? 0) : 0;
-      } catch {
-        return 0;
-      }
-    }),
-  );
-  return totals.reduce((sum, v) => sum + v, 0);
+  const bounds = { oldest: utcDateString(now, days - 1), newest: utcDateString(now, 0) };
+  try {
+    return await sumMetricWindow(docClient, aggregatesTable, metricKey, bounds, days);
+  } catch (error) {
+    console.warn(
+      `sumMetricWindow: read failed for ${metricKey}: ${error instanceof Error ? error.name : 'UnknownError'}`,
+    );
+    return 0;
+  }
+}
+
+/**
+ * The names in a stored `categories` list, or the empty array when the stored
+ * list is present but names nothing.
+ *
+ * A configured-but-nameless list yields [] rather than the defaults, exactly as
+ * Python does: `get_raw_categories_config` returns the raw list, and
+ * `get_configured_categories` sees a truthy list so never reaches its fallback,
+ * leaving the name filter to produce [].
+ */
+function namesFromStoredList(cats: unknown[]): string[] {
+  return cats
+    .map((c: unknown) => {
+      const parsed = categoryItemSchema.safeParse(c);
+      return parsed.success ? parsed.data.name : '';
+    })
+    .filter(Boolean);
 }
 
 /**
  * The configured category names, matching lambda/shared/api.py
  * (`get_raw_categories_config` + `get_configured_categories`) item-for-item:
  * one key, the `name` field, and DEFAULT_CATEGORIES when nothing is configured.
+ *
+ * The three stored shapes Python treats as "not configured" — item absent,
+ * `categories` missing, `categories: []` — all fall through to the defaults
+ * here too, because `item.get('categories')` is falsy for an empty list.
  */
-async function getConfiguredCategories(
+async function readConfiguredCategories(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
-): Promise<string[]> {
+): Promise<{ names: string[]; ttl: number }> {
   try {
     const resp = await docClient.send(
       new QueryCommand({
@@ -115,24 +201,37 @@ async function getConfiguredCategories(
       }),
     );
     const items = resp.Items ?? [];
-    if (items.length > 0) {
-      const firstItem: Record<string, unknown> = items[0];
-      const cats = firstItem.categories;
-      if (Array.isArray(cats) && cats.length > 0) {
-        // A configured-but-nameless list yields [] here, exactly as the Python
-        // reader does — it only falls back when the item itself is absent.
-        return cats
-          .map((c: unknown) => {
-            const parsed = categoryItemSchema.safeParse(c);
-            return parsed.success ? parsed.data.name : '';
-          })
-          .filter(Boolean);
-      }
+    const firstItem: Record<string, unknown> = items.length > 0 ? items[0] : {};
+    const cats: unknown = firstItem.categories;
+    if (Array.isArray(cats) && cats.length > 0) {
+      return { names: namesFromStoredList(cats), ttl: CATEGORY_CACHE_TTL_MS };
     }
+    return { names: [...DEFAULT_CATEGORIES], ttl: CATEGORY_CACHE_TTL_MS };
   } catch (error) {
-    console.warn('Could not fetch categories from settings; using defaults:', error);
+    // A failed read is NOT the same as "nothing configured": a tenant that has
+    // configured a taxonomy is briefly described by the default one instead.
+    // Python's reader makes the same trade (it logs and falls through to the
+    // fallback), so the two surfaces still agree; the short error TTL keeps the
+    // window small rather than caching a wrong answer for five minutes.
+    console.warn(
+      `getConfiguredCategories: settings read failed (${error instanceof Error ? error.name : 'UnknownError'}); using the default taxonomy`,
+    );
+    return { names: [...DEFAULT_CATEGORIES], ttl: CATEGORY_ERROR_CACHE_TTL_MS };
   }
-  return [...DEFAULT_CATEGORIES];
+}
+
+async function getConfiguredCategories(
+  docClient: DynamoDBDocumentClient,
+  aggregatesTable: string,
+): Promise<string[]> {
+  const now = Date.now();
+  if (categoryCache.names !== null && now < categoryCache.expires) {
+    return categoryCache.names;
+  }
+  const { names, ttl } = await readConfiguredCategories(docClient, aggregatesTable);
+  categoryCache.names = names;
+  categoryCache.expires = now + ttl;
+  return names;
 }
 
 async function fetchCategoryCounts(
@@ -141,13 +240,19 @@ async function fetchCategoryCounts(
   days: number,
 ): Promise<[string, number][]> {
   const categories = await getConfiguredCategories(docClient, aggregatesTable);
-  const counts: [string, number][] = [];
-  for (const cat of categories) {
-    const count = await sumDailyMetric(docClient, aggregatesTable, `METRIC#daily_category#${cat}`, days);
-    if (count > 0) counts.push([cat, count]);
-  }
-  counts.sort((a, b) => b[1] - a[1]);
-  return counts.slice(0, 5);
+  // Concurrent, not serial: the taxonomy has ten names by default, and awaiting
+  // each sum in turn put ten sequential round trips in front of the first
+  // streamed token.
+  const counts = await Promise.all(
+    categories.map(async (cat): Promise<[string, number]> => [
+      cat,
+      await sumDailyMetric(docClient, aggregatesTable, `METRIC#daily_category#${cat}`, days),
+    ]),
+  );
+  return counts
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
 }
 
 function buildSystemPrompt(responseLanguage?: SupportedLanguage): string {

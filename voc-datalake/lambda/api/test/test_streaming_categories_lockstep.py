@@ -30,7 +30,11 @@ each of them:
   * the field read off each category object (`name`, because the counter
     partitions are named after the enrichment output),
   * the not-configured fallback (DEFAULT_CATEGORIES, so the two surfaces report
-    the same categories for the same table rather than one reporting nothing).
+    the same categories for the same table rather than one reporting nothing) —
+    at all THREE of its copies, including the pipe-delimited string in
+    lambda/processor/handler.py, which is the copy that decides which names the
+    enrichment model may emit and therefore the only reason falling back to that
+    list is right rather than arbitrary.
 
 The Zod schema at the top of voc-context.ts is part of the same contract: if it
 requires `id` while the read takes `name`, a configured category that carries no
@@ -48,23 +52,31 @@ from pathlib import Path
 
 PYTHON_READER_SOURCE = 'lambda/shared/api.py'
 PYTHON_WRITER_SOURCE = 'lambda/api/settings_handler.py'
+PROCESSOR_SOURCE = 'lambda/processor/handler.py'
 STREAM_SOURCE = 'lambda/stream/src/context/voc-context.ts'
 
+# Quoting is not part of the contract, so no pattern here insists on it: these
+# three modules already use different conventions, and a reformat must not fail a
+# pin whose subject is the key's VALUE.
+_Q = r"""['"]"""
+
 # The key as the streaming reader declares it, as two module constants.
-STREAM_PK_PATTERN = r"^const CATEGORY_SETTINGS_PK = '([^']+)';"
-STREAM_SK_PATTERN = r"^const CATEGORY_SETTINGS_SK = '([^']+)';"
+STREAM_PK_PATTERN = rf'^const CATEGORY_SETTINGS_PK = {_Q}([^\'"]+){_Q};'
+STREAM_SK_PATTERN = rf'^const CATEGORY_SETTINGS_SK = {_Q}([^\'"]+){_Q};'
 # The key as the Python reader spends it, inline in the get_item call.
 PYTHON_READER_KEY_PATTERN = (
-    r"get_item\(Key=\{'pk':\s*'([^']+)',\s*'sk':\s*'([^']+)'\}\)"
+    rf'get_item\(\s*Key=\{{\s*{_Q}pk{_Q}:\s*{_Q}([^\'"]+){_Q},'
+    rf'\s*{_Q}sk{_Q}:\s*{_Q}([^\'"]+){_Q},?\s*\}}\s*\)'
 )
 # The key as the writer declares it, as two module constants.
-PYTHON_WRITER_PK_PATTERN = r'^CATEGORIES_PK = "([^"]+)"'
-PYTHON_WRITER_SK_PATTERN = r'^CATEGORIES_SK = "([^"]+)"'
+PYTHON_WRITER_PK_PATTERN = rf'^CATEGORIES_PK = {_Q}([^\'"]+){_Q}'
+PYTHON_WRITER_SK_PATTERN = rf'^CATEGORIES_SK = {_Q}([^\'"]+){_Q}'
 
-# The never-written partition streaming chat used to ask for, assembled rather
-# than written out so that a repository-wide search for it keeps returning
-# nothing outside build artifacts — which is itself part of the fix.
+# The never-written key streaming chat used to ask for, assembled rather than
+# written out so that a repository-wide search for it keeps returning nothing
+# outside build artifacts — which is itself part of the fix.
 ABANDONED_PK = 'CONFIG' + '#categories'
+ABANDONED_SK = 'CURR' + 'ENT'
 
 
 def _read(relative: str) -> str:
@@ -95,39 +107,93 @@ def _stream_key() -> tuple[str, str]:
     return pk, sk
 
 
-def _stream_reader_body() -> str:
-    """The body of getConfiguredCategories in the streaming module.
+def _stream_function_body(marker: str) -> str:
+    """The body of one function in the streaming module.
 
-    Scoped so another function's return cannot answer for this one. The body ends
-    at the next top-level declaration, which in this module is always a `function`
-    or `async function` at column 0.
+    Scoped so another function cannot answer for this one — every field and
+    fallback assertion in this file reads a body, never the whole file, because a
+    comment or an unrelated helper elsewhere in the module must not be able to
+    satisfy a pin whose whole purpose is to fail when this reader drifts. The
+    body ends at the next top-level declaration, which in this module is always a
+    `function`, `async function` or exported form at column 0.
     """
     source = _read(STREAM_SOURCE)
-    marker = 'async function getConfiguredCategories('
     start = source.find(marker)
     assert start != -1, (
-        f'{marker} not found in {STREAM_SOURCE} — if the reader was renamed, '
+        f'{marker} not found in {STREAM_SOURCE} — if the function was renamed, '
         f'update this helper.'
     )
     rest = source[start + len(marker):]
-    next_decl = re.search(r'^(async )?function ', rest, re.MULTILINE)
-    return rest[:next_decl.start()] if next_decl else rest
+    next_decl = re.search(r'^(export )?(async )?function ', rest, re.MULTILINE)
+    assert next_decl, (
+        f'No declaration follows {marker} in {STREAM_SOURCE}, so this helper can '
+        f'no longer tell where the body ends and would scope the assertion to the '
+        f'rest of the file — which would let unrelated code satisfy it. If the '
+        f'function is now the last declaration in the module, give this helper an '
+        f'explicit end marker rather than letting it over-scope.'
+    )
+    return rest[:next_decl.start()]
+
+
+def _stream_reader_body() -> str:
+    """The body of getConfiguredCategories's read in the streaming module.
+
+    The reader was split so the cache wraps it: `readConfiguredCategories` is
+    the part that spends the key, maps the field and chooses the fallback, so
+    that is the body these assertions scope to.
+    """
+    return _stream_function_body('async function readConfiguredCategories(')
+
+
+def _stream_not_configured_path() -> str:
+    """The reader's not-configured path only: everything before its `catch`.
+
+    The distinction is load-bearing. A read that THREW and a table with nothing
+    configured are different situations that happen to share an answer, and each
+    has its own return. Pinning the fallback against the whole body would let the
+    not-configured path return `[]` — the original bug, for the overwhelmingly
+    common case — while the error path alone keeps returning the defaults and the
+    assertion stays green.
+    """
+    body = _stream_reader_body()
+    catch = re.search(r'\}\s*catch\b', body)
+    assert catch, (
+        f'{STREAM_SOURCE}::readConfiguredCategories no longer has a `catch`, so '
+        f'this helper cannot separate its not-configured path from its error '
+        f'path. The settings read must not be able to break a chat turn — if the '
+        f'error handling moved, move this helper with it rather than widening it '
+        f'to the whole body.'
+    )
+    return body[:catch.start()]
+
+
+def _python_function_body(source: str, marker: str, where: str) -> str:
+    """The body of one top-level function in a Python module.
+
+    Scoped so another function in the same module cannot satisfy an assertion
+    about this one. The body ends at the next top-level `def`.
+    """
+    start = source.find(marker)
+    assert start != -1, (
+        f'{marker} not found in {where} — if the function was renamed, update the '
+        f'marker in this test file.'
+    )
+    rest = source[start + len(marker):]
+    next_def = re.search(r'^def ', rest, re.MULTILINE)
+    return rest[:next_def.start()] if next_def else rest
 
 
 def _python_reader_key() -> tuple[str, str]:
     """The pk/sk of the categories get_item in shared/api.py.
 
     Scoped to `get_raw_categories_config` so another reader in the module cannot
-    satisfy this test. The function body ends at the next top-level `def`.
+    satisfy this test.
     """
-    source = _read(PYTHON_READER_SOURCE)
-    marker = 'def get_raw_categories_config('
-    start = source.find(marker)
-    assert start != -1, f'{marker} not found in {PYTHON_READER_SOURCE}'
-    next_def = re.search(r'^def ', source[start + len(marker):], re.MULTILINE)
-    end = start + len(marker) + (next_def.start() if next_def else len(source))
+    body = _python_function_body(
+        _read(PYTHON_READER_SOURCE), 'def get_raw_categories_config(', PYTHON_READER_SOURCE,
+    )
     pk, sk = _single(
-        source[start:end], PYTHON_READER_KEY_PATTERN,
+        body, PYTHON_READER_KEY_PATTERN,
         f'{PYTHON_READER_SOURCE}::get_raw_categories_config', 'categories get_item Key',
     )
     return pk, sk
@@ -160,6 +226,22 @@ def _stream_default_categories() -> list[str]:
     return re.findall(r"'([^']+)'", match.group(1))
 
 
+def _processor_default_categories() -> list[str]:
+    """The default taxonomy as the ENRICHMENT PROMPT spells it: one pipe-delimited
+    string, not a list.
+
+    This is the third copy, and the one that decides which category names the
+    model may emit — so it is the copy the other two's fallback depends on for
+    being true rather than merely self-consistent.
+    """
+    source = _read(PROCESSOR_SOURCE)
+    literal = _single(
+        source, r'^DEFAULT_CATEGORIES = "([^"]+)"', PROCESSOR_SOURCE,
+        'DEFAULT_CATEGORIES string literal',
+    )[0]
+    return literal.split('|')
+
+
 class TestCategorySettingsKeyLockstep:
     def test_the_streaming_reader_asks_for_the_key_the_writer_writes(self):
         assert _stream_key() == _python_writer_key(), (
@@ -184,6 +266,14 @@ class TestCategorySettingsKeyLockstep:
             f'nothing in this repository writes. Its only occurrence used to be '
             f'this module\'s own read.'
         )
+        # Both halves, not just the partition: the sort key is equally
+        # never-written, and a reader that got the partition right and this wrong
+        # still reads no item and still empties the section.
+        assert ABANDONED_SK not in source, (
+            f"{STREAM_SOURCE} still mentions the sort key '{ABANDONED_SK}'. The "
+            f'settings item is written under a different sort key, so this one '
+            f'returns no item however right the partition is.'
+        )
 
 
 class TestCategoryNameFieldLockstep:
@@ -196,21 +286,29 @@ class TestCategoryNameFieldLockstep:
     """
 
     def test_the_python_reader_maps_categories_to_their_name(self):
-        source = _read(PYTHON_READER_SOURCE)
-        assert re.search(r"cat\.get\('name'\)", source), (
+        # Scoped to the mapping function: a `cat.get('name')` in some other
+        # helper elsewhere in this module must not be able to satisfy a pin on
+        # what THIS function maps to.
+        body = _python_function_body(
+            _read(PYTHON_READER_SOURCE), 'def get_configured_categories(', PYTHON_READER_SOURCE,
+        )
+        assert re.search(r"cat\.get\('name'\)", body), (
             f'{PYTHON_READER_SOURCE}::get_configured_categories no longer maps '
             f'each category to its `name`. If the owning side changed field, the '
             f'streaming mirror and the aggregator partitions must change with it.'
         )
 
     def test_the_streaming_reader_maps_categories_to_their_name(self):
-        source = _read(STREAM_SOURCE)
-        assert 'parsed.data.name' in source, (
+        # Scoped to the mapping function for the same reason, and because the
+        # negative assertion below would otherwise fire on a mere mention of the
+        # field in a comment anywhere in the module.
+        body = _stream_function_body('function namesFromStoredList(')
+        assert 'parsed.data.name' in body, (
             f'{STREAM_SOURCE} no longer reads `name` off each parsed category. '
             f'The counter partitions are named after the category name, so any '
             f'other field sums partitions that do not exist.'
         )
-        assert 'parsed.data.id' not in source, (
+        assert 'parsed.data.id' not in body, (
             f'{STREAM_SOURCE} reads an internal identifier instead of the '
             f'taxonomy name. That names counter partitions the aggregator never '
             f'writes, so the section is empty however right the item key is.'
@@ -264,19 +362,49 @@ class TestNotConfiguredFallbackLockstep:
         """Declaring the list is not the same as spending it. A reader that keeps
         DEFAULT_CATEGORIES for documentation and still returns `[]` on the
         unconfigured path keeps the comparison above green while the section
-        stays empty — the exact shape of the original bug."""
-        reader = _stream_reader_body()
-        assert 'DEFAULT_CATEGORIES' in reader, (
-            f'{STREAM_SOURCE}::getConfiguredCategories no longer returns '
-            f'DEFAULT_CATEGORIES from its not-configured path. Python returns the '
-            f'default list there, so returning an empty array makes streaming chat '
-            f'report no categories for a table the metrics surface reports counts '
-            f'for.'
+        stays empty — the exact shape of the original bug.
+
+        Pinned as a positive match on the RETURN, not as a ban on the text
+        `return []`: Python really does answer `[]` for a configured-but-nameless
+        list, so a reader that spells that outcome out explicitly is correct and
+        must not fail here.
+
+        Scoped to the not-configured path rather than the whole body, so that
+        returning the defaults from the error path alone cannot answer for it."""
+        reader = _stream_not_configured_path()
+        assert re.search(r'\[\s*\.\.\.\s*DEFAULT_CATEGORIES\s*\]', reader), (
+            f'{STREAM_SOURCE}::readConfiguredCategories no longer returns a copy '
+            f'of DEFAULT_CATEGORIES from its not-configured path. Python returns '
+            f'the default list there, so returning an empty array makes streaming '
+            f'chat report no categories for a table the metrics surface reports '
+            f'counts for. Declaring the list without returning it keeps the '
+            f'sibling comparison green while the section stays empty.'
         )
-        assert 'return [];' not in reader, (
-            f'{STREAM_SOURCE}::getConfiguredCategories still returns an empty '
-            f'array on some path. That is the fallback difference this contract '
-            f'removed.'
+
+    def test_the_enrichment_prompt_offers_the_same_default_list(self):
+        """The third copy, and the one the other two depend on.
+
+        lambda/processor/handler.py decides which category names the enrichment
+        model may emit when no taxonomy is configured. That is the only reason
+        falling back to the default list is right rather than arbitrary: the
+        `METRIC#daily_category#<name>` counters exist under exactly those names.
+        If this copy disagrees with the readers' fallback, the counters are
+        written under names neither reader ever asks for — so the Top Categories
+        section is empty again while both readers agree with each other, and
+        every other assertion in this file stays green."""
+        processor_defaults = _processor_default_categories()
+        assert processor_defaults == _python_default_categories(), (
+            f'{PROCESSOR_SOURCE} lets the enrichment model emit '
+            f'{processor_defaults} but {PYTHON_READER_SOURCE} falls back to '
+            f'{_python_default_categories()}. The counters are written under the '
+            f'names the model emits, so the readers would ask for partitions that '
+            f'are never written.'
+        )
+        assert processor_defaults == _stream_default_categories(), (
+            f'{PROCESSOR_SOURCE} lets the enrichment model emit '
+            f'{processor_defaults} but {STREAM_SOURCE} falls back to '
+            f'{_stream_default_categories()}. Streaming chat would ask for '
+            f'counter partitions the enrichment output never names.'
         )
 
     def test_the_default_list_is_not_empty(self):
