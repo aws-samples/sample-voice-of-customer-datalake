@@ -3,7 +3,7 @@ Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import DEFAULT, MagicMock, patch
 from datetime import datetime, timezone
 
 
@@ -369,39 +369,76 @@ class TestDocumentCRUDEndpoints:
 class TestSensitiveEventLogging:
     """Tests that request and job payloads are not written to logs."""
 
-    @patch('projects_handler.logger.info')
-    def test_api_gateway_event_is_not_logged(
-        self, mock_log_info, api_gateway_event, lambda_context
-    ):
-        """Credentials and request bodies must not appear in info logs."""
-        from projects_handler import lambda_handler
+    LOG_METHODS = ('debug', 'info', 'warning', 'error', 'exception', 'critical')
 
-        secret = 'v37-sensitive-api-payload'
+    @staticmethod
+    def _render_log_calls(log_methods):
+        return str(
+            [
+                call
+                for method in TestSensitiveEventLogging.LOG_METHODS
+                for call in log_methods[method].call_args_list
+            ]
+        )
+
+    @patch('projects_handler.create_project')
+    def test_api_gateway_event_is_not_logged(
+        self, mock_create_project, api_gateway_event, lambda_context
+    ):
+        """Credentials and request bodies must not appear at any log level."""
+        from projects_handler import lambda_handler, logger
+
+        secrets = {
+            'authorization': 'v37-sensitive-authorization',
+            'cookie': 'v37-sensitive-cookie',
+            'body': 'v37-sensitive-request-body',
+        }
+        mock_create_project.return_value = {
+            'success': True,
+            'project': {'description': secrets['body']},
+        }
         event = api_gateway_event(
-            method='GET',
-            path='/projects/config',
+            method='POST',
+            path='/projects',
+            body={'name': 'Test', 'description': secrets['body']},
             headers={
-                'Authorization': f'Bearer {secret}',
-                'Cookie': f'session={secret}',
+                'Authorization': f"Bearer {secrets['authorization']}",
+                'Cookie': f"session={secrets['cookie']}",
             },
         )
 
-        response = lambda_handler(event, lambda_context)
+        with patch.multiple(
+            logger,
+            **{method: DEFAULT for method in self.LOG_METHODS},
+        ) as log_methods:
+            response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
-        assert secret not in str(mock_log_info.call_args_list)
+        logged_calls = self._render_log_calls(log_methods)
+        assert all(secret not in logged_calls for secret in secrets.values())
+        log_methods['info'].assert_any_call(
+            'Request received',
+            extra={
+                'method': 'POST',
+                'resource': '/projects',
+                'request_id': 'test-request-id',
+            },
+        )
+        log_methods['info'].assert_any_call(
+            'Request completed',
+            extra={'status_code': 200},
+        )
 
-    @patch('projects_handler.logger.info')
-    @patch('projects_handler.generate_personas')
+    @patch('projects.projects_table', None)
     @patch('projects_handler.update_job_status')
     def test_async_job_payload_is_not_logged(
-        self, mock_update_job_status, mock_generate_personas, mock_log_info
+        self, mock_update_job_status
     ):
-        """Job filters can contain customer input and must not be logged raw."""
-        from projects_handler import handle_generate_personas_job
+        """Job filters must remain protected across the downstream call path."""
+        from projects_handler import handle_generate_personas_job, logger
+        from shared.exceptions import ServiceError
 
         secret = 'v37-sensitive-job-payload'
-        mock_generate_personas.return_value = {'success': True}
         event = {
             'job_type': 'generate_personas',
             'project_id': 'project-1',
@@ -409,9 +446,15 @@ class TestSensitiveEventLogging:
             'filters': {'custom_instructions': secret},
         }
 
-        result = handle_generate_personas_job(event)
+        with patch.multiple(
+            logger,
+            **{method: DEFAULT for method in self.LOG_METHODS},
+        ) as log_methods:
+            with pytest.raises(ServiceError):
+                handle_generate_personas_job(event)
 
-        assert result == {'success': True}
-        assert secret not in str(mock_log_info.call_args_list)
-
-
+        assert secret not in self._render_log_calls(log_methods)
+        log_methods['info'].assert_any_call(
+            '[JOB] Project: project-1, Job: job-1'
+        )
+        log_methods['info'].assert_any_call('[PERSONA] Project: project-1')

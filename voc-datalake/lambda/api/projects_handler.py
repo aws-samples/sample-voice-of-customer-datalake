@@ -13,7 +13,7 @@ from shared.logging import logger, tracer
 from shared.aws import (
     get_dynamodb_resource, get_bedrock_client, invoke_self_async, BEDROCK_MODEL_ID
 )
-from shared.api import create_api_resolver, validate_days, validate_int, api_handler, DecimalEncoder
+from shared.api import create_api_resolver, validate_days, validate_int, api_handler
 from shared.converse import converse
 from shared.tables import get_jobs_table, get_aggregates_table
 from shared.jobs import create_job, update_job_status
@@ -765,8 +765,20 @@ def lambda_handler(event: dict, context: Any) -> dict:
             return handle_import_persona_job(event)
         
         # Normal API Gateway request
+        request_context = event.get('requestContext') or {}
+        logger.info(
+            'Request received',
+            extra={
+                'method': event.get('httpMethod'),
+                'resource': event.get('resource'),
+                'request_id': request_context.get('requestId'),
+            },
+        )
         result = app.resolve(event, context)
-        logger.info(f"Returning result: {json.dumps(result, cls=DecimalEncoder)}")
+        logger.info(
+            'Request completed',
+            extra={'status_code': result.get('statusCode')},
+        )
         return result
         
     except Exception as e:
