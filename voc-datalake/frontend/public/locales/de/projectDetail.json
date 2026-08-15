@@ -130,12 +130,21 @@
     "selectAtLeastOne": "Wählen Sie in jedem Abschnitt mindestens ein Element aus, sonst würde der Export alles enthalten.",
     "title": "Exportieren"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
+    "unreadable": "Dieses Bild konnte nicht gelesen werden: {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extrahiert Persona-Informationen aus Ihrem {{type}} und erstellt eine strukturierte Persona mit einem KI-generierten Avatar.",
     "aiPoweredImport": "KI-gestützter Import:",
     "cancel": "Abbrechen",
     "clickToChange": "Klicken, um Datei zu ändern",
     "clickToUpload": "Klicken zum Hochladen oder per Drag & Drop",
+    "errors": {
+      "onlyFirstImage": "Es wurde nur das erste Bild verwendet.",
+      "unknownType": "unbekannter Typ",
+      "unsupportedType": "Diese Datei ist kein lesbares Bild ({{type}}). Zulässig: {{accepted}}"
+    },
     "image": "Bild",
     "imageDesc": "Screenshot oder Karte",
     "imageFormats": "Formate: PNG, JPG, GIF, WebP",
@@ -147,6 +156,7 @@
     "importTypeText": "Text",
     "pasteContent": "Persona-Inhalt einfügen",
     "pastePlaceholder": "Fügen Sie Ihre Persona-Beschreibung, Nutzerforschungsnotizen oder beliebigen Text ein, der die Persona beschreibt...",
+    "pasteScreenshotHint": "Oder füge einen Screenshot aus der Zwischenablage ein",
     "pdf": "PDF",
     "pdfDesc": "Dokument hochladen",
     "pdfOnly": "Nur PDF-Dateien",
@@ -417,8 +427,6 @@
       "dropZone": "Dateien hier ablegen, Screenshot einfügen oder klicken zum Hochladen",
       "empty": "Noch keine Dokumente.",
       "errors": {
-        "imageTooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
-        "imageUnreadable": "Dieses Bild konnte nicht gelesen werden: {{name}}",
         "tooLarge": "Zu groß (>10 MB): {{name}}",
         "unsupportedType": "Nicht unterstützter Typ: {{name}} ({{type}}). Zulässig: {{accepted}}",
         "uploadFailed": "{{name}}: Upload fehlgeschlagen — {{message}}"

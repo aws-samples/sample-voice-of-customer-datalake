@@ -130,12 +130,21 @@
     "selectAtLeastOne": "请在每个部分中至少选择一项，否则导出将包含全部内容。",
     "title": "导出"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
+    "unreadable": "无法读取该图片：{{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude 将从您的 {{type}} 中提取人物角色信息，并创建一个带有 AI 生成头像的结构化人物角色。",
     "aiPoweredImport": "AI 驱动导入：",
     "cancel": "取消",
     "clickToChange": "点击更改文件",
     "clickToUpload": "点击上传或拖放",
+    "errors": {
+      "onlyFirstImage": "仅使用了第一张图片。",
+      "unknownType": "未知类型",
+      "unsupportedType": "该文件不是可读取的图片（{{type}}）。支持：{{accepted}}"
+    },
     "image": "图片",
     "imageDesc": "截图或卡片",
     "imageFormats": "PNG、JPG、GIF、WebP",
@@ -147,6 +156,7 @@
     "importTypeText": "文本",
     "pasteContent": "粘贴用户角色内容",
     "pastePlaceholder": "粘贴您的用户角色描述、用户研究笔记或任何描述用户角色的文本...",
+    "pasteScreenshotHint": "也可以从剪贴板粘贴截图",
     "pdf": "PDF",
     "pdfDesc": "上传文档",
     "pdfOnly": "仅限 PDF 文件",
@@ -417,8 +427,6 @@
       "dropZone": "将文件拖放到此处、粘贴截图，或点击上传",
       "empty": "暂无文档。",
       "errors": {
-        "imageTooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
-        "imageUnreadable": "无法读取该图片：{{name}}",
         "tooLarge": "文件过大（>10 MB）：{{name}}",
         "unsupportedType": "不支持的类型：{{name}}（{{type}}）。支持：{{accepted}}",
         "uploadFailed": "{{name}}：上传失败 — {{message}}"

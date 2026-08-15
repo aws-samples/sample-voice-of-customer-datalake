@@ -130,12 +130,21 @@
     "selectAtLeastOne": "Sélectionnez au moins un élément dans chaque section, sinon l’export inclurait tout.",
     "title": "Exporter"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
+    "unreadable": "Impossible de lire cette image : {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extraira les informations de persona de votre {{type}} et créera un persona structuré avec un avatar généré par IA.",
     "aiPoweredImport": "Import alimenté par IA :",
     "cancel": "Annuler",
     "clickToChange": "Cliquez pour changer le fichier",
     "clickToUpload": "Cliquez pour télécharger ou glissez-déposez",
+    "errors": {
+      "onlyFirstImage": "Seule la première image a été utilisée.",
+      "unknownType": "type inconnu",
+      "unsupportedType": "Ce fichier n’est pas une image lisible ({{type}}). Formats acceptés : {{accepted}}"
+    },
     "image": "Illustration",
     "imageDesc": "Capture d'écran ou carte",
     "imageFormats": "Formats : PNG, JPG, GIF, WebP",
@@ -147,6 +156,7 @@
     "importTypeText": "texte",
     "pasteContent": "Coller le contenu de la persona",
     "pastePlaceholder": "Collez la description de votre persona, vos notes de recherche utilisateur, ou tout texte décrivant la persona...",
+    "pasteScreenshotHint": "Ou collez une capture d’écran depuis le presse-papiers",
     "pdf": "PDF",
     "pdfDesc": "Télécharger un document",
     "pdfOnly": "Fichiers PDF uniquement",
@@ -205,8 +215,8 @@
   },
   "mcp": {
     "activeTokens": "Tokens actifs ({{count}})",
-    "activeTokens_one": "Tokens actifs ({{count}})",
     "activeTokens_many": "Tokens actifs ({{count}})",
+    "activeTokens_one": "Tokens actifs ({{count}})",
     "activeTokens_other": "Tokens actifs ({{count}})",
     "cancel": "Annuler",
     "collapseLabel": "Réduire",
@@ -337,8 +347,8 @@
     "noNotesYet": "Aucune note pour le moment",
     "noPersonasYet": "Aucun persona pour le moment",
     "notePlaceholder": "Tapez votre observation ou insight de recherche...",
-    "notesCount_one": "{{count}} remarque",
     "notesCount_many": "{{count}} notes",
+    "notesCount_one": "{{count}} remarque",
     "notesCount_other": "{{count}} remarques",
     "notesTip": "💡 Conseil : Ajoutez des observations provenant d'entretiens utilisateurs, tests d'utilisabilité ou analyses de données qui se rapportent à ce persona.",
     "pressEnter": "Appuyez sur Entrée ↵",
@@ -421,14 +431,12 @@
       "dropZone": "Déposez des fichiers ici, collez une capture ou cliquez pour envoyer",
       "empty": "Aucun document pour le moment.",
       "errors": {
-        "imageTooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
-        "imageUnreadable": "Impossible de lire cette image : {{name}}",
         "tooLarge": "Trop volumineux (>10 Mo) : {{name}}",
         "unsupportedType": "Type non pris en charge : {{name}} ({{type}}). Formats acceptés : {{accepted}}",
         "uploadFailed": "{{name}} : échec de l’envoi — {{message}}"
       },
-      "extractedChars_one": "{{count}} caractère extrait",
       "extractedChars_many": "{{count}} caractères extraits",
+      "extractedChars_one": "{{count}} caractère extrait",
       "extractedChars_other": "{{count}} caractères extraits",
       "heading": "Documents internes",
       "hint": "Images et texte — 20 max",

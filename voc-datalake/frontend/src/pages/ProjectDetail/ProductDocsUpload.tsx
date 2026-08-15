@@ -19,6 +19,14 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+// pastedImages/withSyntheticName/toArray were module-private here until the
+// persona-import modal needed the same three traps solved (a nameless pasted
+// bitmap, image/jpeg vs .jpg, clipboardData.items not always populated). They
+// now live in utils/imageInput.ts so there is one copy, not two.
+import {
+  IMAGE_MIME_EXTENSIONS, dragCarriesFiles, dragLeavesElement, pastedImages, toArray,
+  withSyntheticName,
+} from '../../utils/imageInput'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 import type { ProductDoc } from '../../api/types'
 
@@ -29,10 +37,11 @@ import type { ProductDoc } from '../../api/types'
  * "not supported yet". Listing them here would only move that refusal later.
  */
 const ALLOWED_MIME = {
-  'image/png': '.png',
-  'image/jpeg': '.jpg',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
+  // The four image types come from the shared map rather than being restated:
+  // they are the same set the persona-import modal, the resize helper and the
+  // server all name, and `.jpg` for image/jpeg is the detail a second copy gets
+  // wrong.
+  ...IMAGE_MIME_EXTENSIONS,
   'text/markdown': '.md',
   'text/plain': '.txt',
 } as const
@@ -72,45 +81,6 @@ const ACCEPTED_LABEL = [...new Set(Object.values(ALLOWED_MIME))]
 // lambda/shared/test/test_image_limits_lockstep.py, which reads this line as
 // source text — keep it a single plain multiplication.
 const MAX_FILE_BYTES = 10 * 1024 * 1024
-
-/** Tolerates a clipboard/file collection that is absent rather than empty. */
-function toArray<T>(source: ArrayLike<T> | undefined | null): readonly T[] {
-  return source ? Array.from(source) : []
-}
-
-/**
- * Images carried by a paste.
- *
- * Prefers `items` (the shape every browser fills for a copied bitmap) and falls
- * back to `files`, which is the only one populated for some paste sources.
- * Returning empty is what lets a text paste through untouched.
- */
-function pastedImages(clipboard: DataTransfer | null): readonly File[] {
-  if (!clipboard) return []
-  const fromItems = toArray(clipboard.items)
-    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => file !== null)
-  if (fromItems.length > 0) return fromItems
-  return toArray(clipboard.files).filter((file) => file.type.startsWith('image/'))
-}
-
-/**
- * A pasted bitmap has no filename. Synthesize one — the list would otherwise
- * render a blank row, and `filename` is required by the upload API.
- */
-function withSyntheticName(file: File): File {
-  if (file.name) return file
-  // The extension comes from ALLOWED_MIME, not from the MIME subtype: the
-  // subtype of image/jpeg is "jpeg", while every other name in this app for that
-  // type ends `.jpg` (ALLOWED_MIME here, IMAGE_EXTENSIONS in resizeImage.ts,
-  // ALLOWED_CONTENT_TYPES server-side). A pasted JPEG already inside both limits
-  // passes through resize untouched and keeps whatever name it is given here, so
-  // the disagreement is reachable rather than theoretical.
-  const ext = isAllowedMime(file.type) ? ALLOWED_MIME[file.type] : '.png'
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  return new File([file], `pasted-${stamp}${ext}`, { type: file.type })
-}
 
 export function DocsUpload({ projectId }: { readonly projectId: string }) {
   // Owns its namespace so i18next-parser attributes product.upload.* keys to
@@ -196,9 +166,14 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
       if (!putResp.ok) throw new Error(`S3 PUT ${putResp.status}`)
     } catch (e: unknown) {
       if (isImagePrepError(e)) {
+        // `imageErrors.*`, not `product.upload.errors.*`: these two describe the
+        // same two ImagePrepError failures from the same resizeImage.ts that the
+        // persona-import modal reports, and the strings were byte-identical in all
+        // eight catalogues. One copy, so a reword cannot leave the two panes
+        // saying different things about identical behaviour.
         setUploadError(e.failure === 'too-large'
-          ? t('product.upload.errors.imageTooLarge', { name: file.name })
-          : t('product.upload.errors.imageUnreadable', { name: file.name }))
+          ? t('imageErrors.tooLarge', { name: file.name })
+          : t('imageErrors.unreadable', { name: file.name }))
         return
       }
       const msg = e instanceof Error ? e.message : 'Upload failed'
@@ -285,6 +260,9 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         role="button"
         tabIndex={0}
         aria-label={t('product.upload.dropZone')}
+        // A stable hook for the drag-state test, so a restyle of the zone cannot
+        // fail as if the drag handlers broke. The classes below stay the styling.
+        data-drag-active={dragActive}
         className={`block border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
           dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
         }`}
@@ -317,9 +295,32 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         // never arrives to consume the flag. Disarming here stops that stale arm
         // from being spent on the next Space release that happens to land here.
         onBlur={() => { spaceArmed.current = false }}
-        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
-        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false) }}
+        // FILES ONLY. preventDefault on enter/over is what MAKES this a drop
+        // target, so running it for a text drag has the zone volunteer for
+        // something onDrop discards silently, and paints the accept highlight for
+        // it. Ungated, the browser keeps its "you cannot drop that here" cursor.
+        // Same guard, for the same reason, as the persona zone.
+        onDragEnter={(e) => {
+          if (!dragCarriesFiles(e)) return
+          e.preventDefault()
+          e.stopPropagation()
+          setDragActive(true)
+        }}
+        onDragOver={(e) => {
+          if (!dragCarriesFiles(e)) return
+          e.preventDefault()
+          e.stopPropagation()
+          setDragActive(true)
+        }}
+        // dragleave bubbles from this zone's own icon and label, so a drag moving
+        // across them reports leaving a zone the pointer is still inside: the
+        // highlight flickered off and back on. Same guard the persona zone uses.
+        onDragLeave={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (!dragLeavesElement(e)) return
+          setDragActive(false)
+        }}
         onDrop={(e) => {
           e.preventDefault()
           e.stopPropagation()
