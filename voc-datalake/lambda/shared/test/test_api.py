@@ -3,9 +3,10 @@ Tests for shared/api.py - API utilities for VoC Lambda functions.
 """
 
 import json
-import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestDecimalEncoder:
@@ -15,7 +16,7 @@ class TestDecimalEncoder:
         """Converts Decimal to float in JSON output."""
         from shared.api import DecimalEncoder
         
-        data = {'price': Decimal('19.99'), 'count': Decimal('5')}
+        data = {'price': Decimal('19.99'), 'count': Decimal(5)}
         result = json.dumps(data, cls=DecimalEncoder)
         
         assert result == '{"price": 19.99, "count": 5.0}'
@@ -240,8 +241,9 @@ class TestCreateApiResolver:
 
     def test_returns_api_gateway_resolver(self):
         """Returns configured APIGatewayRestResolver."""
-        from shared.api import create_api_resolver
         from aws_lambda_powertools.event_handler import APIGatewayRestResolver
+
+        from shared.api import create_api_resolver
         
         resolver = create_api_resolver()
         
@@ -261,7 +263,7 @@ class TestGetConfiguredCategories:
 
     def test_returns_categories_from_dynamodb(self):
         """Returns categories from DynamoDB settings."""
-        from shared.api import get_configured_categories, clear_categories_cache
+        from shared.api import clear_categories_cache, get_configured_categories
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -283,7 +285,11 @@ class TestGetConfiguredCategories:
 
     def test_returns_default_when_table_none(self):
         """Returns default categories when table is None."""
-        from shared.api import get_configured_categories, DEFAULT_CATEGORIES, clear_categories_cache
+        from shared.api import (
+            DEFAULT_CATEGORIES,
+            clear_categories_cache,
+            get_configured_categories,
+        )
         clear_categories_cache()
         
         result = get_configured_categories(None)
@@ -292,7 +298,11 @@ class TestGetConfiguredCategories:
 
     def test_returns_default_on_dynamodb_error(self):
         """Returns default categories on DynamoDB error."""
-        from shared.api import get_configured_categories, DEFAULT_CATEGORIES, clear_categories_cache
+        from shared.api import (
+            DEFAULT_CATEGORIES,
+            clear_categories_cache,
+            get_configured_categories,
+        )
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -304,7 +314,7 @@ class TestGetConfiguredCategories:
 
     def test_caches_categories(self):
         """Caches categories for subsequent calls."""
-        from shared.api import get_configured_categories, clear_categories_cache
+        from shared.api import clear_categories_cache, get_configured_categories
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -322,7 +332,11 @@ class TestGetConfiguredCategories:
 
     def test_returns_default_when_no_item(self):
         """Returns default when no settings item exists."""
-        from shared.api import get_configured_categories, DEFAULT_CATEGORIES, clear_categories_cache
+        from shared.api import (
+            DEFAULT_CATEGORIES,
+            clear_categories_cache,
+            get_configured_categories,
+        )
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -338,7 +352,7 @@ class TestClearCategoriesCache:
 
     def test_clears_cache(self):
         """Clears the categories cache."""
-        from shared.api import get_configured_categories, clear_categories_cache
+        from shared.api import clear_categories_cache, get_configured_categories
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -480,3 +494,85 @@ class TestRequireAdmin:
         from shared.exceptions import AuthorizationError
         with pytest.raises(AuthorizationError):
             require_admin(self._event(None))
+
+
+class TestGetCallerSubject:
+    """Tests for get_caller_subject — fail-closed identity extraction."""
+
+    def _event(self, sub):
+        claims = {} if sub is None else {'sub': sub}
+        return {'requestContext': {'authorizer': {'claims': claims}}}
+
+    def test_returns_sub_when_present(self):
+        from shared.api import get_caller_subject
+        assert get_caller_subject(self._event('abc-123')) == 'abc-123'
+
+    def test_raises_authorization_error_when_sub_missing(self):
+        """Fail closed: absent sub must raise, not return a fallback."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject(self._event(None))
+
+    def test_raises_authorization_error_when_sub_empty_string(self):
+        """An empty sub string must be treated as absent."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject(self._event(''))
+
+    def test_raises_authorization_error_when_claims_missing(self):
+        """No requestContext at all must raise, not crash."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({})
+
+    def test_raises_authorization_error_when_authorizer_missing(self):
+        """requestContext without authorizer must raise."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {}})
+
+    def test_raises_authorization_error_when_sub_whitespace_only(self):
+        """A whitespace-only sub must be treated as absent (fail closed)."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject(self._event('   '))
+
+    def test_raises_authorization_error_when_authorizer_is_none(self):
+        """requestContext.authorizer=null must raise, not crash with AttributeError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': None}})
+
+    def test_raises_authorization_error_when_claims_is_none(self):
+        """requestContext.authorizer.claims=null must raise, not crash."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': {'claims': None}}})
+
+    def test_two_different_subs_yield_different_values(self):
+        """Two callers with different subs must never collide."""
+        from shared.api import get_caller_subject
+        sub_a = get_caller_subject(self._event('user-a-111'))
+        sub_b = get_caller_subject(self._event('user-b-222'))
+        assert sub_a != sub_b
+
+    def test_raises_authorization_error_when_request_context_is_none(self):
+        """requestContext=null must raise AuthorizationError, not AttributeError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': None})
+
+    def test_raises_authorization_error_when_sub_is_non_string(self):
+        """A non-string sub (e.g. integer from custom authorizer) must raise AuthorizationError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': {'claims': {'sub': 123}}}})
