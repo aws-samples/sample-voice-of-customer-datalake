@@ -272,7 +272,6 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     
     logger.info(f"[PERSONA] ========== STARTING PERSONA GENERATION ==========")
     logger.info(f"[PERSONA] Project: {project_id}")
-    logger.info(f"[PERSONA] Filters: {filters}")
     overall_start = time.time()
     
     def update_progress(progress: int, step: str):

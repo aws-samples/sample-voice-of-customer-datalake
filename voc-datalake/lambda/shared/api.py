@@ -228,7 +228,7 @@ def api_handler(func):
         def lambda_handler(event, context):
             return app.resolve(event, context)
     """
-    @logger.inject_lambda_context
+    @logger.inject_lambda_context(log_event=False)
     @tracer.capture_lambda_handler
     @metrics.log_metrics(capture_cold_start_metric=True)
     @functools.wraps(func)

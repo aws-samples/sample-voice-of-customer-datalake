@@ -528,7 +528,12 @@ class TestApiHandlerDecorator:
     def test_calls_wrapped_function(self, mock_logger, mock_tracer, mock_metrics):
         """Calls the wrapped function with event and context."""
         # Setup mocks to pass through
-        mock_logger.inject_lambda_context = lambda f: f
+        def passthrough_decorator(func=None, **kwargs):
+            if func is not None:
+                return func
+            return lambda wrapped: wrapped
+
+        mock_logger.inject_lambda_context.side_effect = passthrough_decorator
         mock_tracer.capture_lambda_handler = lambda f: f
         mock_metrics.log_metrics = lambda **kwargs: lambda f: f
         
@@ -548,3 +553,4 @@ class TestApiHandlerDecorator:
         
         assert len(call_tracker) == 1
         assert call_tracker[0][0] == event
+        mock_logger.inject_lambda_context.assert_called_once_with(log_event=False)
