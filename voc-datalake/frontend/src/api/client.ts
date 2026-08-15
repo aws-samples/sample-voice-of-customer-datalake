@@ -17,6 +17,7 @@ import type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
   S3ImportSource,
   S3ImportFile,
   FeedbackForm,
@@ -46,6 +47,7 @@ export type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
   S3ImportSource,
   S3ImportFile,
   FeedbackFormConfig,
@@ -478,8 +480,21 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.deleteDocument(projectId, documentId)),
 
   // Prioritization
-  getPrioritizationScores: () => 
-    fetchApi<{ scores: Record<string, PrioritizationScore> }>('/projects/prioritization'),
+  /**
+   * The caller's own ballots, plus what every reviewer together said.
+   *
+   * `aggregates` is optional in the TYPE but not on the wire: the field is
+   * additive, and declaring it required would make a response from a deployment
+   * running the older handler fail to type-check against a client that only reads
+   * `scores`. See `PrioritizationAggregate` for what a row means — notably that a
+   * document nobody scored is absent, and that a row can outlive its document, so
+   * a consumer should intersect these keys with the live document list.
+   */
+  getPrioritizationScores: () =>
+    fetchApi<{
+      scores: Record<string, PrioritizationScore>
+      aggregates?: Record<string, PrioritizationAggregate>
+    }>('/projects/prioritization'),
   
   /**
    * Save only the changed scores (incremental/diff update).

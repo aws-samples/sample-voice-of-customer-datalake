@@ -449,6 +449,33 @@ class TestAPartialEntryLeavesTheOtherAxesAlone:
         assert entry['time_to_market'] == 0
         assert entry['notes'] == ''
 
+    def test_a_notes_only_first_save_reads_back_a_zero_time_to_market(
+        self, api_gateway_event, lambda_context
+    ):
+        """Pins the documented consequence of writing only what was sent, rather
+        than leaving it described in a docstring.
+
+        With no prior ballot there is nothing to fall back on, so an axis the
+        caller never sent is simply absent — and `_axis_value` reads absent as 0.0.
+        For `time_to_market` that diverges from the page, whose own DEFAULT_SCORE
+        is 3 and whose `PRFAQRow` reads `time_to_market !== 3` as "touched": a
+        reviewer who only left a note therefore appears to have deliberately rated
+        it lowest. Deliberately not corrected on the read, because seeding the
+        frontend's default would put a number nobody entered into a field named for
+        what a reviewer scored; the aggregate makes the distinction instead, by
+        asking whether the axis is carried at all."""
+        table = FakeAggregatesTable()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'no numbers yet'}}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+        entry = body['scores']['doc-1']
+        assert entry['time_to_market'] == 0
+        assert entry['notes'] == 'no numbers yet'
+        # ...and the aggregate does NOT read that 0 as a vote.
+        assert body['aggregates'] == {}
+
     def test_an_entry_with_no_recognised_field_still_stamps_the_ballot(
         self, api_gateway_event, lambda_context
     ):
@@ -743,6 +770,299 @@ class TestAggregateArithmetic:
 
         assert body['scores'] == {}, "carol has scored nothing, so her sliders start empty"
         assert body['aggregates']['doc-1']['reviewer_count'] == 1
+
+
+class TestAnAxisLessBallotIsNotAVote:
+    """A ballot that scored nothing must not vote zero.
+
+    Accepting `{}` (or a notes-only entry) as a legal PATCH is right on the WRITE
+    side — it changes no axis. The hole was on the READ side: once stored, the
+    ballot item exists, so it was counted as one reviewer and every axis it did
+    not carry was read as 0.0. That is the same "an all-zero ballot inflates
+    reviewer_count and drags every mean down" defect `_validated_ballot_entry`
+    refuses a non-dict to prevent, re-entering through a different door — and
+    reachable from the shipped page, whose notes textarea saves through the same
+    path as the sliders.
+    """
+
+    @staticmethod
+    def _seeded(api_gateway_event, lambda_context, by_reviewer):
+        table = FakeAggregatesTable()
+        for subject, scores in by_reviewer.items():
+            _patch_scores(table, api_gateway_event, lambda_context, scores, subject=subject)
+        return table
+
+    def test_a_notes_only_ballot_does_not_count_as_a_reviewer(
+        self, api_gateway_event, lambda_context
+    ):
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'notes': 'agree'}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+
+    def test_a_notes_only_ballot_leaves_the_real_reviewers_means_intact(
+        self, api_gateway_event, lambda_context
+    ):
+        """Was 2.5 on every axis: one reviewer scoring 5 across the board, averaged
+        against a reviewer who moved no slider at all."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'notes': 'agree'}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        aggregate = body['aggregates']['doc-1']
+        for axis in ('impact', 'time_to_market', 'confidence', 'strategic_fit'):
+            assert aggregate[axis] == 5, axis
+
+    def test_a_notes_only_ballot_manufactures_no_disagreement(
+        self, api_gateway_event, lambda_context
+    ):
+        """`score_spread` is the field most damaged by this, because an axis-less
+        ballot always sits at composite 0 — so it reported the maximum possible
+        disagreement (5.0) out of a reviewer who expressed no numbers."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'notes': 'agree'}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['score_spread'] == 0
+
+    def test_several_notes_only_ballots_still_leave_one_reviewer(
+        self, api_gateway_event, lambda_context
+    ):
+        """Each extra note-only reviewer used to pull the mean further down: two
+        took it to 1.67."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'notes': 'agree'}},
+            'carol': {'doc-1': {'notes': 'same'}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+        assert body['aggregates']['doc-1']['impact'] == 5
+
+    def test_a_document_only_commented_on_has_no_aggregate_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """Presence in `aggregates` means somebody SCORED it, so a document that
+        only carries notes is absent rather than a row of zeros."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'bob': {'doc-1': {'notes': 'no opinion yet'}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='bob')
+
+        assert body['aggregates'] == {}
+        # ...but the note itself is not lost: it is still the caller's ballot.
+        assert body['scores']['doc-1']['notes'] == 'no opinion yet'
+
+    def test_a_notes_only_ballot_is_still_saved(self, api_gateway_event, lambda_context):
+        """Not counting it as a vote must not turn it into a refusal — commenting
+        without scoring is a thing a reviewer may legitimately do."""
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': {'notes': 'later'}}, subject='bob')
+
+        assert status == 200
+        assert table.ballot('doc-1', 'bob')['notes'] == 'later'
+
+    def test_a_partially_scored_ballot_counts_only_on_the_axes_it_carries(
+        self, api_gateway_event, lambda_context
+    ):
+        """Bob scored impact only. His silence on the other three axes is not a
+        zero, so alice's numbers stand there — while impact is the mean of both."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 4, 'time_to_market': 4,
+                                'confidence': 4, 'strategic_fit': 4}},
+            'bob': {'doc-1': {'impact': 2}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        aggregate = body['aggregates']['doc-1']
+        assert aggregate['reviewer_count'] == 2, 'bob scored an axis, so he voted'
+        assert aggregate['impact'] == 3
+        assert aggregate['time_to_market'] == 4
+        assert aggregate['confidence'] == 4
+        assert aggregate['strategic_fit'] == 4
+
+    def test_an_axis_nobody_scored_reports_zero_rather_than_failing(
+        self, api_gateway_event, lambda_context
+    ):
+        """Averaging over the reviewers who scored an axis has to survive the case
+        where that set is empty — a divide by zero would be a 500 on the page's
+        primary read."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 4}},
+        })
+
+        status, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert status == 200
+        assert body['aggregates']['doc-1']['impact'] == 4
+        assert body['aggregates']['doc-1']['confidence'] == 0
+
+    def test_a_legacy_entry_with_no_axes_is_not_a_reviewer_either(
+        self, api_gateway_event, lambda_context
+    ):
+        """The same rule applies to the pre-ballot map, whose entries may predate
+        an axis entirely."""
+        table = FakeAggregatesTable(items=[{
+            'pk': PARTITION, 'sk': LEGACY_SK,
+            'scores': {'doc-1': {'notes': 'no numbers'}},
+        }])
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates'] == {}
+
+
+class TestAnExplicitNullAxisMeansLeaveItAlone:
+    """`{'impact': null}` must not destroy a stored score.
+
+    The omission rule was membership (`axis not in entry`), which counts a key
+    whose value is null as sent — so it went through `validate_int(default=0)` and
+    clamped a reviewer's stored 4 to 0. That is the partial-write data loss this
+    save path exists to prevent, surviving for one specific encoding of "no value".
+    Read as ABSENT rather than refused, because a serialiser that writes untouched
+    fields as null is expressing precisely the intent the PATCH verb already has,
+    and `shared/api.py` documents the same null-is-absent reading for `validate_bool`.
+    """
+
+    def test_a_null_axis_preserves_the_stored_score(self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context, {'doc-1': AXES},
+                      subject='alice')
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': {'impact': None}}, subject='alice')
+
+        assert status == 200
+        assert table.ballot('doc-1', 'alice')['impact'] == AXES['impact']
+
+    def test_a_null_axis_is_absent_from_the_update_expression(
+        self, api_gateway_event, lambda_context
+    ):
+        """Asserted on the expression, not the end state: assigning the axis to the
+        value it already holds leaves identical state while still being a write
+        that could clobber a concurrent one."""
+        table = FakeAggregatesTable()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 3, 'confidence': None}}, subject='alice')
+
+        expression = table.update_item_calls[0]['UpdateExpression']
+        assert 'impact' in expression
+        assert 'confidence' not in expression
+
+    def test_a_null_note_preserves_the_stored_note(self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {**AXES, 'notes': 'keep me'}}, subject='alice')
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': None}}, subject='alice')
+
+        assert table.ballot('doc-1', 'alice')['notes'] == 'keep me'
+
+    def test_an_all_null_entry_scores_nothing_and_votes_nothing(
+        self, api_gateway_event, lambda_context
+    ):
+        """The null-is-absent reading and the axis-less-is-not-a-vote reading have
+        to agree, or a body of nulls would land a ballot that votes zero."""
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': {axis: None for axis in
+                       ('impact', 'time_to_market', 'confidence', 'strategic_fit')}},
+            subject='alice',
+        )
+
+        assert status == 200
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+        assert body['aggregates'] == {}
+
+    def test_a_zero_is_still_a_deliberate_score(self, api_gateway_event, lambda_context):
+        """The whole distinction rests on this: null is silence, 0 is a vote. Read
+        them the same way and "I rate this lowest" becomes unexpressible."""
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context, {'doc-1': AXES},
+                      subject='alice')
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 0}}, subject='alice')
+
+        assert table.ballot('doc-1', 'alice')['impact'] == 0
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+
+
+class TestDuplicateDocumentKeysAreRefused:
+    """Two keys that differ only in whitespace address the same ballot.
+
+    Both were written, so one silently overwrote the other with the winner decided
+    by object order rather than by anything the caller said — and `updated_count`
+    reported two documents saved where one ballot exists. Refused up front, in the
+    same pass as the ids and the entry types, so the "nothing malformed can leave a
+    multi-document save half-persisted" guarantee stays true.
+    """
+
+    def test_two_keys_differing_only_in_whitespace_are_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': {'impact': 5}, ' doc-1': {'impact': 1}}, subject='alice',
+        )
+
+        assert status == 400
+        assert 'distinct' in body['error']
+
+    def test_a_duplicate_key_writes_nothing_at_all(self, api_gateway_event, lambda_context):
+        """Refused BEFORE the first write, so neither of the two conflicting values
+        lands and the other documents in the same save are untouched."""
+        table = FakeAggregatesTable()
+
+        _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-ok': AXES, 'doc-1': {'impact': 5}, 'doc-1 ': {'impact': 1}},
+            subject='alice',
+        )
+
+        assert table.update_item_calls == []
+        assert table.ballot_keys == []
+
+    def test_distinct_keys_are_still_accepted(self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': AXES, 'doc-2': AXES}, subject='alice',
+        )
+
+        assert status == 200
+        assert body['updated_count'] == 2
+        assert table.ballot_keys == [
+            'BALLOT#doc-1#user:alice', 'BALLOT#doc-2#user:alice',
+        ]
 
 
 class TestResponseStaysBackwardCompatible:

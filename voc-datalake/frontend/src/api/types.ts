@@ -433,6 +433,38 @@ export interface PrioritizationScore {
   notes: string
 }
 
+/**
+ * What every reviewer together said about one document.
+ *
+ * A sibling of `scores` on `GET /projects/prioritization`. Where `scores` holds
+ * the CALLER'S OWN ballot, this holds the cross-reviewer view: each axis is the
+ * mean over the reviewers who scored that axis, and `score_spread` is the range
+ * of the composite priority score — weighted exactly as `calculatePriorityScore`,
+ * so it is expressed in the notches the page already sorts by. Zero spread means
+ * agreement, or a single reviewer.
+ *
+ * Two things a consumer has to know, both decided on the backend
+ * (`_aggregate_scores` in `projects_handler.py`) and repeated here because this
+ * is where a frontend author reads:
+ *
+ *  - Documents NOBODY scored are absent, so presence means "somebody scored
+ *    this" — do not treat a missing key as a zero row.
+ *  - A row OUTLIVES its document. Ballots live in the aggregates table and
+ *    deleting a document does not reach into it, so intersect these keys with the
+ *    live document list rather than using the map as a document index.
+ *
+ * `reviewer_count` counts reviewers who scored at least one axis; a ballot
+ * carrying only a note is a legal save but not a vote and is not counted.
+ */
+export interface PrioritizationAggregate {
+  impact: number
+  time_to_market: number
+  confidence: number
+  strategic_fit: number
+  reviewer_count: number
+  score_spread: number
+}
+
 export interface S3ImportSource {
   name: string
   display_name: string

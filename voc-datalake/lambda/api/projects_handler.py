@@ -598,9 +598,21 @@ def _axis_value(entry: Any, axis: str) -> float:
     `impact`, `confidence` and `strategic_fit` — but NOT for `time_to_market`,
     whose frontend default is 3 and which `PRFAQRow` reads as its untouched signal
     (`time_to_market !== 3`). So a stored ballot missing `time_to_market` reads
-    back as a deliberate lowest-possible score rather than "not set". The save
-    path is what keeps that unreachable: it only ever writes axes the caller
-    actually sent, so an axis is absent only for a legacy entry predating it.
+    back as a deliberate lowest-possible score rather than "not set".
+
+    An axis is absent whenever the caller has never sent it, which happens two
+    ways: a legacy entry predating the axis, AND — because the save only writes
+    the axes it was given — any ballot whose first-ever save was partial. A
+    reviewer who saves only `notes`, or only `impact`, therefore reads back
+    `time_to_market: 0.0`, which the page renders as the lowest possible
+    time-to-market and `PRFAQRow` treats as touched. Pinned by
+    `test_a_notes_only_first_save_reads_back_a_zero_time_to_market`.
+
+    Not corrected on the read: seeding an absent axis from the frontend's default
+    would put a number nobody entered into a field named for what a reviewer
+    scored, and the aggregate would then have no way to tell it from a vote. The
+    aggregate instead asks `_carries_axis` and skips what was never scored, which
+    is the same distinction made where it can be made honestly.
     """
     if not isinstance(entry, dict):
         return 0.0
@@ -610,8 +622,41 @@ def _axis_value(entry: Any, axis: str) -> float:
         return 0.0
 
 
+def _carries_axis(entry: Any, axis: str) -> bool:
+    """Whether an entry expressed a value for one axis at all.
+
+    Distinct from `_axis_value(entry, axis) == 0`, which cannot tell a deliberate
+    zero from silence — the distinction the aggregate depends on. `None` counts as
+    absent, matching the save path (which skips a null axis rather than clamping
+    it) and the legacy map (whose entries predate axes that did not exist yet).
+    """
+    return isinstance(entry, dict) and entry.get(axis) is not None
+
+
+def _is_a_vote(entry: Any) -> bool:
+    """Whether an entry says anything about ANY axis.
+
+    A ballot carrying only `notes` (or nothing at all) is a legal PATCH — the verb
+    means "change what I sent" and a reviewer may well comment without scoring —
+    but it is not a vote, and counting it as one is how an aggregate lies: every
+    axis it does not carry reads as 0.0 through `_axis_value`, so one notes-only
+    reviewer beside one who scored 5 across the board reported a team mean of 2.5
+    and a 5.0 spread, the maximum possible disagreement, manufactured out of
+    somebody who expressed no numbers.
+    """
+    return any(_carries_axis(entry, axis) for axis in SCORE_AXES)
+
+
 def _composite(entry: Any) -> float:
-    """The weighted priority score of one ballot."""
+    """The weighted priority score of one ballot.
+
+    Absent axes weigh as 0, exactly as they do on the page: `calculatePriorityScore`
+    reads whatever `getScore` handed it, and the axes this can see are the axes the
+    reviewer sent. So a ballot scoring only `impact` sits lower in the composite
+    than a fully-scored one carrying the same number — a known and deliberate
+    floor, since renormalising the weights over the present axes would put the
+    spread in a different unit than the column the page sorts by.
+    """
     return sum(_axis_value(entry, axis) * weight for axis, weight in COMPOSITE_WEIGHTS.items())
 
 
@@ -682,6 +727,17 @@ def _aggregate_scores(
     save against a document removes its legacy entry in the same request (see
     `_drop_legacy_score`).
 
+    Only entries that scored at least one axis count. A ballot carrying just
+    `notes` is a legal save but not a vote, and counting it as one let a reviewer
+    who moved no slider drag every mean toward zero and inflate `score_spread` to
+    the maximum — reachable from the shipped page, whose notes textarea saves
+    through the same path as the sliders. Each axis is likewise averaged over the
+    reviewers who actually scored THAT axis, so a partially-scored ballot cannot
+    depress the axes it says nothing about. An axis nobody scored reports 0.0,
+    which is the same "no number here" the page already renders for an unscored
+    document; `reviewer_count` is the count of reviewers who scored something, not
+    of reviewers who scored every axis.
+
     Response size: one row per document that anybody has scored — reviewers are
     collapsed into a mean here rather than listed, so the response grows with
     documents alone, not documents x reviewers the way storage does. Documents
@@ -695,17 +751,18 @@ def _aggregate_scores(
         entries: list[Any] = list(ballots_by_document.get(document_id, []))
         if document_id in (legacy_scores or {}):
             entries.append(legacy_scores[document_id])
-        if not entries:
+        votes = [entry for entry in entries if _is_a_vote(entry)]
+        if not votes:
             continue
-        composites = [_composite(entry) for entry in entries]
+        composites = [_composite(entry) for entry in votes]
+        means = {}
+        for axis in SCORE_AXES:
+            scored = [_axis_value(entry, axis) for entry in votes
+                      if _carries_axis(entry, axis)]
+            means[axis] = round(sum(scored) / len(scored), 2) if scored else 0.0
         aggregates[document_id] = {
-            **{
-                axis: round(
-                    sum(_axis_value(entry, axis) for entry in entries) / len(entries), 2
-                )
-                for axis in SCORE_AXES
-            },
-            'reviewer_count': len(entries),
+            **means,
+            'reviewer_count': len(votes),
             # Zero for a single reviewer, which is the honest reading: one ballot
             # cannot disagree with itself.
             'score_spread': round(max(composites) - min(composites), 2),
@@ -824,6 +881,17 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
     own ballot. The verb is PATCH, so an omitted axis means "leave it alone".
     `notes` follows the same rule for the same reason.
 
+    "Sent" means CARRIES A VALUE, not merely present as a key: an explicit
+    `null` is treated as absent. Membership alone (`axis not in entry`) counted a
+    null as sent and clamped it to 0 through `validate_int`, so `{'impact': null}`
+    destroyed a reviewer's stored 4 — the same partial-write loss this method
+    exists to prevent, surviving for one encoding of "no value". Since the intent
+    here is "leave an unspecified axis alone", a serialiser that writes untouched
+    fields as `null` is expressing exactly that intent and must be read that way
+    (`validate_bool` in shared/api.py records the same null-is-absent reading).
+    `notes` follows suit, so a null note preserves the stored text instead of
+    blanking it.
+
     Present axes still go through `validate_int`, so an out-of-range slider is
     clamped to 0-5 rather than failing a whole multi-document save over one axis.
     """
@@ -841,7 +909,7 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
     }
 
     for axis in SCORE_AXES:
-        if axis not in entry:
+        if not _carries_axis(entry, axis):
             continue
         assignments.append(f'#{axis} = :{axis}')
         names[f'#{axis}'] = axis
@@ -852,7 +920,7 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
             max_val=MAX_AXIS_VALUE,
         )
 
-    if 'notes' in entry:
+    if entry.get('notes') is not None:
         notes = entry.get('notes')
         assignments.append('#notes = :notes')
         names['#notes'] = 'notes'
@@ -922,6 +990,23 @@ def api_patch_prioritization_scores():
         (_validated_ballot_document_id(document_id), _validated_ballot_entry(entry))
         for document_id, entry in changed_scores.items()
     ]
+    # Two keys differing only in surrounding whitespace address the SAME ballot
+    # once stripped, so writing both silently let one entry overwrite the other —
+    # with the winner decided by object order rather than by anything the caller
+    # said — and still reported `updated_count` as if two documents had been saved.
+    # Refused rather than de-duplicated, for the same reason `_validated_ballot_entry`
+    # refuses a non-dict: the request states two different scores for one document
+    # and there is no way to know which was meant. Refusing also keeps
+    # `updated_count` and MAX_BALLOTS_PER_SAVE counted in the unit they claim —
+    # ballots written, not keys received.
+    seen: set[str] = set()
+    for document_id, _ in validated:
+        if document_id in seen:
+            raise ValidationError(
+                'scores keys must be distinct document ids; two keys differing '
+                'only in surrounding whitespace address the same ballot'
+            )
+        seen.add(document_id)
 
     table = get_aggregates_table()
     if not table:

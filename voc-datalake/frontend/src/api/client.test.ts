@@ -1147,6 +1147,45 @@ describe('API Client', () => {
       )
       expect(result).toEqual(mockScores)
     })
+
+    it('passes through the aggregates the endpoint returns beside scores', async () => {
+      // `aggregates` exists so a later frontend change can show what every
+      // reviewer together said. Type-erasing it would leave the next author
+      // reaching for a cast, with nothing saying the field is already on the wire.
+      const response = {
+        scores: {
+          doc1: {
+            document_id: 'doc1', impact: 5, time_to_market: 3, confidence: 2, strategic_fit: 4, notes: '',
+          },
+        },
+        aggregates: {
+          doc1: {
+            impact: 4, time_to_market: 3, confidence: 2, strategic_fit: 4, reviewer_count: 2, score_spread: 0.4,
+          },
+        },
+      }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(response),
+      })
+
+      const result = await api.getPrioritizationScores()
+
+      expect(result.aggregates?.doc1.reviewer_count).toBe(2)
+      expect(result.aggregates?.doc1.score_spread).toBe(0.4)
+    })
+
+    it('still resolves when an older deployment omits aggregates', async () => {
+      // Which is why the field is optional in the type rather than required.
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ scores: {} }),
+      })
+
+      const result = await api.getPrioritizationScores()
+
+      expect(result.aggregates).toBeUndefined()
+    })
   })
 
   describe('savePrioritizationScores', () => {
