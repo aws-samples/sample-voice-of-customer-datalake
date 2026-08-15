@@ -31,15 +31,18 @@ class TestGetPromptsDir:
     def test_raises_not_found(self, tmp_path):
         """get_prompts_dir raises FileNotFoundError when no dir exists."""
         from shared.prompts import get_prompts_dir
-        # Patch __file__ to point to a location with no prompts dir nearby
-        str(tmp_path / "shared" / "prompts.py")
-        with patch('shared.prompts.Path') as mp:
-            mock_false = MagicMock()
-            mock_false.exists.return_value = False
+        mock_false = MagicMock()
+        mock_false.exists.return_value = False
+        mock_false.__truediv__ = lambda self, x: mock_false
+        mock_false.parent = mock_false
+        # REPO_PROMPTS_DIR is resolved once at import, so patching Path alone no longer
+        # reaches the local-dev branch — it would find the real directory and return it.
+        # All three candidates have to be made absent for "nothing exists" to be the case
+        # under test.
+        with patch('shared.prompts.Path') as mp, \
+                patch('shared.prompts.REPO_PROMPTS_DIR', mock_false):
             mp.return_value = mock_false
             mp.cwd.return_value = mock_false
-            mock_false.__truediv__ = lambda self, x: mock_false
-            mock_false.parent = mock_false
             with pytest.raises(FileNotFoundError):
                 get_prompts_dir()
 
@@ -219,10 +222,11 @@ class TestConvenienceFunctions:
         ml.assert_called_with('avatar-generation.json')
 
 
-# Repo location of the prompt files (the production loader's local fallback
-# doesn't resolve from the test cwd). Single definition so the contract
-# fixture and the encoding test can't drift independently.
-REPO_PROMPTS_DIR = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
+# Repo location of the prompt files (the production loader's local fallback doesn't
+# resolve from the test cwd, so these tests pin the resolver at this directory). Taken
+# from shared.prompts rather than recomputed: the resolver's own local branch is this same
+# constant, so a test can no longer look somewhere the production code does not.
+from shared.prompts import REPO_PROMPTS_DIR
 
 
 def _extract_slots(text: str) -> set:

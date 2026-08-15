@@ -37,6 +37,15 @@ RESEARCH_ANALYSIS_PROMPTS = 'research-analysis.json'
 AVATAR_GENERATION_PROMPTS = 'avatar-generation.json'
 
 
+# Repo location of the prompt files, defined once. get_prompts_dir() uses it as its
+# local-development branch, and tests that need to bypass the /var/task and cwd branches
+# monkeypatch the resolver to point here. Exported rather than recomputed per test file:
+# it had been derived independently in two test trees, so a moved prompts directory would
+# be reported by whichever of their assertions happened to run first, and the resolver
+# could disagree with both.
+REPO_PROMPTS_DIR = Path(__file__).resolve().parent.parent / 'api' / 'prompts'
+
+
 def get_prompts_dir() -> Path:
     """Get the prompts directory path."""
     # Lambda packages prompts at the root level
@@ -45,9 +54,8 @@ def get_prompts_dir() -> Path:
         return lambda_path
     
     # Local development / tests - repo layout keeps them in lambda/api/prompts
-    repo_path = Path(__file__).parent.parent / 'api' / 'prompts'
-    if repo_path.exists():
-        return repo_path
+    if REPO_PROMPTS_DIR.exists():
+        return REPO_PROMPTS_DIR
     
     # Fallback - try current working directory
     cwd_path = Path.cwd() / 'prompts'

@@ -2,7 +2,6 @@
 Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -338,7 +337,7 @@ class TestPersonaPromptVersionIsStamped:
         # get_prompts_dir() fall through to a CWD-relative path, and clear the lru_cache
         # on both sides so neither an earlier test's cached config is read here nor this
         # one's is left behind. Mirrors the fixture in shared/test/test_prompt_utils.py.
-        repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
+        repo_prompts = prompts_module.REPO_PROMPTS_DIR
         assert repo_prompts.exists(), f'prompts directory moved? expected it at {repo_prompts}'
         monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
         prompts_module.load_prompt_file.cache_clear()
