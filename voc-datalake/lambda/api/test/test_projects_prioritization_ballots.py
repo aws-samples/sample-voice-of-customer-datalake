@@ -279,22 +279,249 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         assert body['success'] is True
         assert table.update_item_calls == []
 
-    @pytest.mark.parametrize('bad_key', ['', '   ', 'doc#1', 'x' * 300])
+    @pytest.mark.parametrize('bad_key,expected', [
+        ('', 'non-empty'),
+        ('   ', 'non-empty'),
+        ('doc#1', "must not contain '#'"),
+        ('x' * 300, 'at most 256 characters'),
+    ])
     def test_an_unusable_document_id_is_refused_before_any_write(
-        self, api_gateway_event, lambda_context, bad_key
+        self, api_gateway_event, lambda_context, bad_key, expected
     ):
         """'#' is the sort-key delimiter and a server-minted document id never
         contains one; an id carrying it would make the key ambiguous to parse.
         Refused BEFORE the first write, so a bad key in a multi-document save
-        cannot leave the request half-persisted."""
+        cannot leave the request half-persisted.
+
+        Each rule gets its OWN message: one shared message left a caller unable to
+        tell a delimiter collision from an over-long id."""
         table = FakeAggregatesTable()
 
-        status, _ = _patch_scores(
+        status, body = _patch_scores(
             table, api_gateway_event, lambda_context, {'doc-ok': AXES, bad_key: AXES}
         )
 
         assert status == 400
+        assert expected in body['error']
         assert table.update_item_calls == []
+
+    @pytest.mark.parametrize('bad_entry', ['nonsense', None, [1, 2], 7, True])
+    def test_a_non_object_score_entry_is_refused_before_any_write(
+        self, api_gateway_event, lambda_context, bad_entry
+    ):
+        """Coercing a non-object into a ballot wrote a well-formed ALL-ZERO vote,
+        indistinguishable from a deliberate one — inflating `reviewer_count` and
+        dragging every axis mean down in the aggregate. The value's TYPE is the
+        diagnostic that the caller meant something other than what would be
+        inferred, so it is a 400, not a clamp."""
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-ok': AXES, 'doc-bad': bad_entry},
+        )
+
+        assert status == 400
+        assert 'must be objects' in body['error']
+        assert table.update_item_calls == []
+        assert table.ballot_keys == []
+
+    def test_a_save_larger_than_the_bound_is_refused(self, api_gateway_event, lambda_context):
+        """Each document costs TWO writes, so an unbounded body turns one
+        invocation into hundreds of sequential round trips — and a timeout part way
+        through half-persists the save. A 400 naming the bound beats that."""
+        table = FakeAggregatesTable()
+        oversized = {f'doc-{i}': AXES for i in range(101)}
+
+        status, body = _patch_scores(table, api_gateway_event, lambda_context, oversized)
+
+        assert status == 400
+        assert 'at most 100 documents' in body['error']
+        assert table.update_item_calls == []
+
+    def test_a_save_at_the_bound_is_accepted(self, api_gateway_event, lambda_context):
+        """The bound is a ceiling on absurdity, not a limit the product can hit —
+        so exactly MAX_BALLOTS_PER_SAVE documents still saves."""
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {f'doc-{i}': AXES for i in range(100)},
+        )
+
+        assert status == 200
+        assert body['updated_count'] == 100
+
+    def test_a_failure_part_way_through_still_reports_a_server_error(
+        self, api_gateway_event, lambda_context
+    ):
+        """A throttle on document 3 of 10 leaves 1-2 durable. Validation cannot
+        cause that, only a write failure can, so the request is a 500 and the count
+        of documents that DID persist is logged rather than silently lost."""
+        table = FakeAggregatesTable()
+        real_update = table.update_item
+        calls = {'n': 0}
+
+        def failing_update(**kwargs):
+            calls['n'] += 1
+            if calls['n'] > 2:
+                raise ClientError(
+                    {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
+                    'UpdateItem',
+                )
+            return real_update(**kwargs)
+
+        table.update_item = failing_update
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': AXES, 'doc-2': AXES}, subject='alice',
+        )
+
+        assert status == 500
+        assert 'updated_count' not in body
+
+
+class TestAPartialEntryLeavesTheOtherAxesAlone:
+    """The verb is PATCH. Writing all four axes unconditionally, with an absent one
+    defaulting to 0, meant a body carrying only `impact` silently rewrote the
+    reviewer's other three axes to zero — this PR's own defect class, relocated
+    from between reviewers to inside one reviewer's ballot."""
+
+    def test_a_partial_entry_does_not_disturb_the_axes_it_omits(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context, {'doc-1': AXES},
+                      subject='alice')
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 5}}, subject='alice')
+
+        ballot = table.ballot('doc-1', 'alice')
+        assert ballot['impact'] == 5
+        assert ballot['time_to_market'] == AXES['time_to_market']
+        assert ballot['confidence'] == AXES['confidence']
+        assert ballot['strategic_fit'] == AXES['strategic_fit']
+
+    def test_a_partial_entry_does_not_blank_an_existing_note(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {**AXES, 'notes': 'keep me'}}, subject='alice')
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 1}}, subject='alice')
+
+        assert table.ballot('doc-1', 'alice')['notes'] == 'keep me'
+
+    def test_an_omitted_axis_is_absent_from_the_update_expression(
+        self, api_gateway_event, lambda_context
+    ):
+        """Asserted on the expression, not just the end state: an expression that
+        assigned the axis to its existing value would leave the same state while
+        still being a write that could clobber a concurrent one."""
+        table = FakeAggregatesTable()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 5}}, subject='alice')
+
+        expression = table.update_item_calls[0]['UpdateExpression']
+        assert 'impact' in expression
+        for axis in ('time_to_market', 'confidence', 'strategic_fit', 'notes'):
+            assert axis not in expression
+
+    def test_a_first_ever_partial_save_still_creates_a_readable_ballot(
+        self, api_gateway_event, lambda_context
+    ):
+        """No prior ballot to preserve, so a partial entry creates one carrying
+        only what was sent — and the read fills the rest in for the page."""
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': {'impact': 4}}, subject='alice')
+
+        assert status == 200
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+        entry = body['scores']['doc-1']
+        assert entry['impact'] == 4
+        assert entry['time_to_market'] == 0
+        assert entry['notes'] == ''
+
+    def test_an_entry_with_no_recognised_field_still_stamps_the_ballot(
+        self, api_gateway_event, lambda_context
+    ):
+        """An empty object is a valid, if pointless, PATCH: it changes no axis. It
+        must not be read as "set every axis to zero"."""
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context, {'doc-1': AXES},
+                      subject='alice')
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': {}}, subject='alice')
+
+        assert status == 200
+        ballot = table.ballot('doc-1', 'alice')
+        assert ballot['impact'] == AXES['impact']
+        assert ballot['reviewer'] == 'user:alice'
+
+
+class TestBoundedAxisAndNoteValues:
+    """The two decisions the change made where the task left room: an out-of-range
+    axis is CLAMPED rather than refused (the value is bounded either way, and a
+    clamp keeps one odd axis from failing a whole multi-document save), and a note
+    is truncated because it is stored verbatim and re-read on every page load.
+    Both are silent behaviours, so a test is the only thing that keeps a later
+    refactor from changing them unnoticed."""
+
+    @staticmethod
+    def _saved(api_gateway_event, lambda_context, entry):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context, {'doc-1': entry},
+                      subject='alice')
+        return table.ballot('doc-1', 'alice')
+
+    def test_an_axis_above_the_ceiling_is_clamped_not_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        assert self._saved(api_gateway_event, lambda_context, {'impact': 99})['impact'] == 5
+
+    def test_an_axis_below_the_floor_is_clamped_not_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        ballot = self._saved(api_gateway_event, lambda_context, {'time_to_market': -4})
+        assert ballot['time_to_market'] == 0
+
+    def test_a_fractional_axis_is_truncated_to_an_integer(
+        self, api_gateway_event, lambda_context
+    ):
+        """Sliders are integers; 2.7 becomes 2 rather than being stored as a
+        Decimal the page would render between two notches."""
+        assert self._saved(api_gateway_event, lambda_context,
+                           {'confidence': 2.7})['confidence'] == 2
+
+    def test_a_numeric_string_axis_is_accepted(self, api_gateway_event, lambda_context):
+        """A form post or an over-eager serialiser sends '3'; the number it plainly
+        means is stored."""
+        assert self._saved(api_gateway_event, lambda_context,
+                           {'strategic_fit': '3'})['strategic_fit'] == 3
+
+    def test_an_unparseable_axis_falls_back_to_the_floor(
+        self, api_gateway_event, lambda_context
+    ):
+        assert self._saved(api_gateway_event, lambda_context,
+                           {'impact': 'high'})['impact'] == 0
+
+    def test_an_over_long_note_is_truncated_to_the_bound(
+        self, api_gateway_event, lambda_context
+    ):
+        ballot = self._saved(api_gateway_event, lambda_context, {'notes': 'x' * 2500})
+
+        assert len(ballot['notes']) == 2000
+
+    def test_a_non_string_note_is_stored_as_empty(self, api_gateway_event, lambda_context):
+        assert self._saved(api_gateway_event, lambda_context, {'notes': 42})['notes'] == ''
 
 
 class TestReviewerIdentityFailsClosed:
@@ -575,27 +802,50 @@ class TestWholeMapOverwriteRouteIsGone:
     caller's map. It has no caller in the product, and under per-reviewer ballots
     there is no honest thing for it to mean.
 
-    Asserted at the route table rather than by sending a PUT: with the literal
-    route gone, `PUT /projects/<project_id>` now matches that path (as it does for
-    any other unknown /projects/<x>), so a request-level assertion would be
-    describing the generic project route, not this one. The unused frontend client
-    function is deliberately left for the frontend pull request.
+    It was NOT dead code before this change: Powertools sorts routes into static
+    and dynamic buckets at registration time and resolves static first regardless
+    of registration order, so `PUT /projects/prioritization` really did reach the
+    old handler and really did overwrite the shared map. Deleting it is therefore a
+    BEHAVIOUR CHANGE, not a cleanup.
+
+    Which is also why the path is refused explicitly rather than simply left
+    unregistered: with no literal route, that same static-before-dynamic ordering
+    sends the path to `PUT /projects/<project_id>` and so to
+    `update_project('prioritization')`, whose `update_item` upserts — answering 200
+    while discarding the scores and leaving a phantom project item. Reporting
+    success for data it dropped is worse than the route that at least stored
+    something.
     """
 
-    @staticmethod
-    def _prioritization_routes():
-        import projects_handler
+    def test_the_whole_map_overwrite_is_refused(self, api_gateway_event, lambda_context):
+        from unittest.mock import patch as patch_fn
 
-        return {
-            route.method
-            for route in projects_handler.app._static_routes
-            if 'prioritization' in str(route.rule)
-        }
+        with patch_fn('projects_handler.update_project') as update_project:
+            status, body = _call(
+                FakeAggregatesTable(),
+                _event(api_gateway_event, method='PUT', body={'scores': {'doc-1': AXES}}),
+                lambda_context,
+            )
 
-    def test_only_get_and_patch_are_registered(self):
-        assert self._prioritization_routes() == {'GET', 'PATCH'}
+        assert status == 400
+        assert body['success'] is False
+        assert 'no longer supported' in body['error']
+        assert update_project.call_count == 0, \
+            'the path must not fall through to the generic project route'
 
-    def test_the_handler_no_longer_exists(self):
+    def test_the_refusal_writes_nothing(self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable()
+
+        _call(
+            table,
+            _event(api_gateway_event, method='PUT', body={'scores': {'doc-1': AXES}}),
+            lambda_context,
+        )
+
+        assert table.put_item_calls == []
+        assert table.update_item_calls == []
+
+    def test_the_old_whole_map_handler_no_longer_exists(self):
         import projects_handler
 
         assert not hasattr(projects_handler, 'api_save_prioritization_scores')
@@ -627,3 +877,103 @@ class TestAFailedReadIsNotAnUnscoredBacklog:
 
         assert status == 500
         assert 'scores' not in body
+
+
+class TestTheDocumentedScaleCeilingHasAnObservableEdge:
+    """Following LastEvaluatedKey forever made the documented ceiling (documents x
+    reviewers in one partition) manifest as a slowly-worsening GET and eventually a
+    Lambda timeout on the page's PRIMARY read. A refusal that names the ceiling is
+    diagnosable; a timeout is not — and truncating would be worse still, since a
+    silently-short window is how this codebase has been bitten before."""
+
+    def test_a_partition_past_the_page_cap_is_refused_not_truncated(
+        self, api_gateway_event, lambda_context
+    ):
+        import projects_handler
+
+        table = FakeAggregatesTable(page_size=1)
+        for i in range(projects_handler.MAX_PRIORITIZATION_PAGES + 5):
+            table.items[(PARTITION, f'BALLOT#doc-{i:03d}#user:alice')] = {
+                'pk': PARTITION, 'sk': f'BALLOT#doc-{i:03d}#user:alice', **AXES,
+            }
+
+        status, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert status == 500
+        assert 'scores' not in body, 'a short read must not look like a small backlog'
+
+    def test_a_partition_within_the_page_cap_reads_every_page(
+        self, api_gateway_event, lambda_context
+    ):
+        import projects_handler
+
+        pages = projects_handler.MAX_PRIORITIZATION_PAGES
+        table = FakeAggregatesTable(page_size=1)
+        for i in range(pages):
+            table.items[(PARTITION, f'BALLOT#doc-{i:03d}#user:alice')] = {
+                'pk': PARTITION, 'sk': f'BALLOT#doc-{i:03d}#user:alice', **AXES,
+            }
+
+        status, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert status == 200
+        assert len(body['scores']) == pages
+
+
+class TestReviewerIdentityComesFromTheSharedHelper:
+    """`shared.api.get_caller_subject` is the one place this codebase reads the
+    authenticated subject. A second local copy of the same logic is what this repo
+    normally forbids outright — a comment saying "keep these in step" cannot fail
+    CI — so the route delegates rather than reimplementing."""
+
+    def test_the_route_delegates_to_the_shared_helper(
+        self, api_gateway_event, lambda_context
+    ):
+        import projects_handler
+
+        table = FakeAggregatesTable()
+        with patch('projects_handler.get_caller_subject', return_value='alice') as helper:
+            with patch('projects_handler.get_aggregates_table', return_value=table):
+                projects_handler.lambda_handler(
+                    _event(api_gateway_event, method='PATCH', body={'scores': {'doc-1': AXES}}),
+                    lambda_context,
+                )
+
+        assert helper.call_count == 1
+        assert table.ballot('doc-1', 'alice') is not None
+
+    def test_there_is_no_second_local_implementation(self):
+        import projects_handler
+
+        assert not hasattr(projects_handler, '_caller_subject'), \
+            'reading the subject twice, two ways, is how the two silently drift'
+
+
+class TestTheLegacyMigrationNeverFailsALandedBallot:
+    """The ballot is already durably written by the time the migration runs, so any
+    failure there would tell a reviewer their vote failed when it landed."""
+
+    def test_an_unexpected_migration_error_does_not_fail_the_save(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable(items=[{
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'doc-1': {'impact': 1}},
+        }])
+        real_update = table.update_item
+
+        def update(**kwargs):
+            if kwargs['Key']['sk'] == LEGACY_SK:
+                raise ClientError(
+                    {'Error': {'Code': 'ValidationException'}}, 'UpdateItem',
+                )
+            return real_update(**kwargs)
+
+        table.update_item = update
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context, {'doc-1': AXES}, subject='alice'
+        )
+
+        assert status == 200
+        assert body['updated_count'] == 1
+        assert table.ballot('doc-1', 'alice')['impact'] == AXES['impact']
