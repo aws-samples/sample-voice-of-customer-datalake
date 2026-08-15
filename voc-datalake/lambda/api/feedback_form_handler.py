@@ -447,7 +447,14 @@ def submit_form_feedback(form_id: str):
         'rating': body.get('rating'),
         'created_at': now.isoformat(),
         'ingested_at': now.isoformat(),
-        'brand_name': BRAND_NAME,
+        # The FORM's brand, not the deployment's: _get_form_source_pk builds the
+        # stats partition from the form's stored brand_name, so stamping the
+        # environment variable here would split a form's submissions across two
+        # partitions the day the deployment's brand name changes — new ones under
+        # the new brand, the stats read still querying the old. Falls back to
+        # BRAND_NAME for a form recorded without one. The form record is already
+        # loaded above for the enabled check, so this costs no extra read.
+        'brand_name': form.get('brand_name') or BRAND_NAME,
         'url': body.get('page_url'),
         'preset_category': form.get('category', ''),
         'preset_subcategory': form.get('subcategory', ''),
@@ -609,10 +616,16 @@ def get_form_submissions(form_id: str):
 @app.get("/feedback-forms/<form_id>/stats")
 @tracer.capture_method
 def get_form_stats(form_id: str):
-    """Get quick stats for a form (lightweight endpoint for card display)."""
+    """Get quick stats for a form (lightweight endpoint for card display).
+
+    Fails loudly, like get_form_submissions above. The count this returns is
+    rendered next to a prioritization score, so "0 submissions" is a claim about
+    the product, not a placeholder: a read that could not be completed must not
+    be reported as a form nobody answered.
+    """
     if not feedback_table:
-        return {'success': True, 'stats': {'total_submissions': 0, 'avg_rating': None}}
-    
+        raise ConfigurationError('Feedback table not configured')
+
     source_channel = f'form_{form_id}'
     source_pk = _get_form_source_pk(form_id)
     
@@ -654,7 +667,7 @@ def get_form_stats(form_id: str):
         }
     except Exception as e:
         logger.error(f"Error fetching form stats: {e}")
-        return {'success': True, 'stats': {'total_submissions': 0, 'avg_rating': None}}
+        raise ServiceError('Failed to fetch form stats')
 
 
 # ============================================

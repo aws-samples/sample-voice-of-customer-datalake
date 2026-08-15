@@ -4,7 +4,7 @@ Tests for feedback_form_handler.py - /feedback-forms/* endpoints.
 import json
 import re
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -120,6 +120,51 @@ def _fields_the_widget_reads() -> set[str]:
     fields = set(_WIDGET_CONFIG_READ.findall(source))
     assert fields, f'found no config reads in {WIDGET_SOURCE.name} — did it move?'
     return fields
+
+
+# An enabled form recorded under the brand the deployment carried when it was
+# created — the pre-rename half of the partition-split cases below.
+_FORM_WITH_LEGACY_BRAND = {
+    'form_id': 'form-123',
+    'name': 'Product Form',
+    'enabled': True,
+    'brand_name': 'Acme Classic',
+}
+
+
+def _queried_partition(query_kwargs: dict) -> str:
+    """The pk a stats/submissions query was aimed at.
+
+    Read off the KeyConditionExpression the handler actually passed rather than
+    reconstructed from the brand under test, so the assertion still means
+    something if the handler starts building the partition differently.
+    """
+    return query_kwargs['KeyConditionExpression'].get_expression()['values'][1]
+
+
+def _fake_feedback_table(items_by_pk: dict[str, list[dict]]):
+    """A feedback table that answers a query from the partition it was asked for.
+
+    The point of the brand tests below is that a write and a read must agree on
+    ONE partition, which a mock returning the same Items for every pk cannot
+    show. This one returns nothing for a partition it was never given items for
+    — exactly how a real rename-split reads — and applies the handler's
+    source_channel filter, so a submission is only "found" if both the partition
+    and the channel line up.
+    """
+    table = MagicMock()
+
+    def query(**kwargs):
+        pk = _queried_partition(kwargs)
+        channel = kwargs.get('ExpressionAttributeValues', {}).get(':sc')
+        items = [
+            item for item in items_by_pk.get(pk, [])
+            if channel is None or item.get('source_channel') == channel
+        ]
+        return {'Items': items}
+
+    table.query.side_effect = query
+    return table
 
 
 class TestListForms:
@@ -944,4 +989,253 @@ class TestValidationLinkBoundary:
             f'{sorted(writable_identifiers - link_fields)} can be written by a '
             'PUT but is absent from LINK_FIELDS, so validate_link_fields never '
             'sees it.'
+        )
+
+
+class TestFormStatsNeverReportsAZeroItDidNotMeasure:
+    """GET /feedback-forms/<id>/stats must fail loudly rather than answer 0.
+
+    The count this route returns is rendered next to a prioritization score, so
+    'total_submissions: 0' is read as "customers were asked and did not answer" —
+    evidence that lowers a score. A DynamoDB failure, or a Lambda deployed
+    without FEEDBACK_TABLE, must therefore be reported as a failure and not be
+    indistinguishable from an unanswered form (issue #312). get_form_submissions
+    on the same table has always done this; stats now matches it.
+    """
+
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_failed_stats_read_is_an_error_not_a_zero_count(
+        self, mock_aggregates, mock_feedback, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """A query that raises returns 500, and no count at all."""
+        mock_aggregates.get_item.return_value = {
+            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
+        }
+        mock_feedback.query.side_effect = Exception('ProvisionedThroughputExceeded')
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 500
+        assert body['success'] is False
+        assert 'error' in body
+        # The specific regression: a zero must not be reported for a read that
+        # never completed, under any key.
+        assert 'stats' not in body
+        assert 'total_submissions' not in response['body']
+
+    @patch('feedback_form_handler.feedback_table', None)
+    @patch('feedback_form_handler.aggregates_table')
+    def test_an_unconfigured_feedback_table_is_a_configuration_error(
+        self, mock_aggregates, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """No table configured is a deployment fault, not an empty form."""
+        mock_aggregates.get_item.return_value = {
+            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
+        }
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 500
+        assert body['success'] is False
+        assert 'not configured' in body['error'].lower()
+        assert 'stats' not in body
+
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_successful_stats_read_still_reports_the_counts(
+        self, mock_aggregates, mock_feedback, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """The happy path is unchanged — including a genuine, measured zero."""
+        mock_aggregates.get_item.return_value = {
+            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
+        }
+        mock_feedback.query.return_value = {
+            'Items': [
+                {'feedback_id': 'fb-1', 'rating': 5},
+                {'feedback_id': 'fb-2', 'rating': 4},
+                {'feedback_id': 'fb-3'},
+            ]
+        }
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['success'] is True
+        assert body['form_id'] == 'form-123'
+        assert body['stats']['total_submissions'] == 3
+        assert body['stats']['avg_rating'] == 4.5
+        assert body['stats']['rating_count'] == 2
+
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_form_with_no_submissions_still_reports_a_measured_zero(
+        self, mock_aggregates, mock_feedback, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """Failing loudly must not have turned "nobody answered" into an error:
+        an empty partition is a legitimate 200 with a zero count."""
+        mock_aggregates.get_item.return_value = {
+            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
+        }
+        mock_feedback.query.return_value = {'Items': []}
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['stats']['total_submissions'] == 0
+        assert body['stats']['avg_rating'] is None
+
+
+class TestSubmissionsStayInThePartitionTheStatsReadQueries:
+    """A submission must land where that form's stats read looks for it.
+
+    _get_form_source_pk builds the partition from the FORM's stored brand_name,
+    falling back to the environment only when the form has none. So the write has
+    to stamp the form's brand too: stamping the deployment's BRAND_NAME splits a
+    form's submissions across two partitions the moment the deployment is renamed
+    — new submissions under the new brand, the stats read still querying the old,
+    and the form reporting 0 with the data sitting intact elsewhere.
+
+    Fixed at the write site deliberately. Making the READ prefer the environment
+    would instead strand every submission collected before the rename.
+    """
+
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
+    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_submission_is_stamped_with_the_forms_brand_not_the_environments(
+        self, mock_aggregates, mock_sqs, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """The enqueued record carries the form's stored brand after a rename."""
+        mock_aggregates.get_item.return_value = {'Item': dict(_FORM_WITH_LEGACY_BRAND)}
+
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'Still a great product', 'rating': 5},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        enqueued = json.loads(mock_sqs.send_message.call_args.kwargs['MessageBody'])
+        assert enqueued['brand_name'] == 'Acme Classic'
+
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
+    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_submission_after_a_rename_is_found_by_that_forms_stats_read(
+        self, mock_aggregates, mock_sqs, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """End to end over the split: submit under the renamed deployment, then
+        read the stats, with the feedback table only answering the partition the
+        record was actually written to."""
+        mock_aggregates.get_item.return_value = {'Item': dict(_FORM_WITH_LEGACY_BRAND)}
+
+        submit_event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'Still a great product', 'rating': 4},
+        )
+        submit_response = feedback_form_handler.lambda_handler(
+            submit_event, lambda_context
+        )
+        assert submit_response['statusCode'] == 200
+
+        enqueued = json.loads(mock_sqs.send_message.call_args.kwargs['MessageBody'])
+        # The processor writes pk = SOURCE#<brand_name> (lambda/processor/handler.py).
+        stored = {
+            'feedback_id': enqueued['id'],
+            'rating': enqueued['rating'],
+            'source_channel': enqueued['source_channel'],
+        }
+        partition = f"SOURCE#{enqueued['brand_name']}"
+
+        stats_event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+        with patch(
+            'feedback_form_handler.feedback_table',
+            _fake_feedback_table({partition: [stored]}),
+        ):
+            stats_response = feedback_form_handler.lambda_handler(
+                stats_event, lambda_context
+            )
+
+        body = json.loads(stats_response['body'])
+        assert stats_response['statusCode'] == 200
+        assert body['stats']['total_submissions'] == 1, (
+            'the submission landed in a partition this form\'s stats read does '
+            'not query — the brand-rename split is back'
+        )
+        assert body['stats']['avg_rating'] == 4.0
+
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
+    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_form_stored_without_a_brand_falls_back_to_the_environment(
+        self, mock_aggregates, mock_sqs, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """The read's own fallback, mirrored on the write: a legacy form record
+        with no brand_name must still agree with _get_form_source_pk."""
+        mock_aggregates.get_item.return_value = {
+            'Item': {'form_id': 'form-123', 'name': 'Legacy Form', 'enabled': True}
+        }
+
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'Legacy submission'},
+        )
+
+        feedback_form_handler.lambda_handler(event, lambda_context)
+
+        enqueued = json.loads(mock_sqs.send_message.call_args.kwargs['MessageBody'])
+        assert enqueued['brand_name'] == 'Acme Rebranded'
+        assert (
+            f"SOURCE#{enqueued['brand_name']}"
+            == feedback_form_handler._get_form_source_pk('form-123')
         )
