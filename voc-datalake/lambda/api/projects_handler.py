@@ -40,6 +40,16 @@ from product_context import (
     list_docs as pc_list_docs,
     create_upload_url as pc_create_upload_url,
     delete_doc as pc_delete_doc,
+    # Imported rather than re-declared: the `sk` prefix a product doc is written
+    # under is the same string that has to be read back to validate a selection,
+    # and a second copy of the literal here would be a silent partition split.
+    DOC_SK_PREFIX as PRODUCT_DOC_SK_PREFIX,
+    # Same reasoning, and it earned it: this bound was declared here and the
+    # visual-brief character budget was chosen independently over there, so the
+    # budget silently refused the FOURTH visual the bound had already allowed.
+    # The budget is now derived from this number, which is why the number lives
+    # beside it.
+    MAX_SELECTED_PRODUCT_DOC_IDS,
 )
 
 # API resolver with standard CORS
@@ -668,6 +678,54 @@ def _validated_research_ids(project_id: str, raw: Any, field: str) -> list[str]:
     return document_ids
 
 
+# MAX_SELECTED_PRODUCT_DOC_IDS is imported from product_context, not declared here.
+# It reads much smaller than MAX_SELECTED_RESEARCH_IDS above and the reason is not
+# budget — the full argument lives with the constant, beside the character budget
+# that is derived from it.
+
+
+def _validated_product_doc_ids(project_id: str, raw: Any, field: str) -> list[str]:
+    """
+    Check that every client-supplied product-doc id names an uploaded visual in
+    THIS project, and return them in the order they were sent. Absent, null or
+    empty means "no visuals selected" and is valid.
+
+    There is no companion `use_visuals` switch, which is the one way this differs
+    from `selected_research_ids`. A non-empty list IS the request: a flag beside a
+    list admits a "flag on, empty list" state that means nothing, and a "flag off,
+    ids present" state that has to be resolved by a documented convention nobody
+    reading the request body can see. So this list is always validated when it is
+    sent, and every id in it is a claim the caller made.
+
+    Each id goes through `_validated_source_id` under the `PRODUCT_DOC#` prefix,
+    so ownership, type and the per-entry length bound are decided exactly as they
+    are for `source_prd_id` — an id from another project, or a PRD id offered as a
+    visual, does not resolve. That keyed read IS the check: there is no separate
+    ownership test to forget, because `pk` is the project and `sk` carries the
+    type. Same trust boundary as the rest, and the same reason: the named doc's
+    extracted description goes straight into a Bedrock prompt.
+
+    The arity bound is checked BEFORE the first read, so a 500-entry list costs
+    one 400 rather than 500 keyed reads and then a 400. Duplicates are collapsed
+    after: the same mockup named twice would otherwise be read twice and its
+    palette repeated in the prompt.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValidationError(f'{field} must be a list of document ids')
+    if len(raw) > MAX_SELECTED_PRODUCT_DOC_IDS:
+        raise ValidationError(
+            f'{field} names more than {MAX_SELECTED_PRODUCT_DOC_IDS} documents'
+        )
+    document_ids: list[str] = []
+    for entry in raw:
+        document_id = _validated_source_id(project_id, PRODUCT_DOC_SK_PREFIX, entry, field)
+        if document_id and document_id not in document_ids:
+            document_ids.append(document_id)
+    return document_ids
+
+
 @app.post("/projects/<project_id>/build-prototype")
 @tracer.capture_method
 def api_build_prototype(project_id: str):
@@ -735,6 +793,16 @@ def api_build_prototype(project_id: str):
         'selected_research_ids': _validated_research_ids(
             project_id, body.get('selected_research_ids'), 'selected_research_ids',
         ) if use_research else [],
+        # Visual grounding: uploaded mockups/screenshots whose extracted design
+        # description the generator injects. No `use_visuals` switch beside it, on
+        # purpose — unlike the research pair above, a non-empty list is itself the
+        # request, so there is no state where a flag and a list can disagree. The
+        # consequence is that these ids are validated whenever they are sent
+        # (there is no "off" for the check to skip), which is the `base_prototype_id`
+        # rule rather than the `selected_research_ids` one.
+        'selected_product_doc_ids': _validated_product_doc_ids(
+            project_id, body.get('selected_product_doc_ids'), 'selected_product_doc_ids',
+        ),
     }
     job_id, _ = create_job(project_id, 'build_prototype', 'doc_config', doc_config, status='pending')
     invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {

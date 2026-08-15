@@ -3,6 +3,34 @@ Document Generator Job Lambda Handler
 
 Generates PRD or PR-FAQ documents using multi-step LLM chains with project context.
 Uses the same prompt templates and chain patterns as the synchronous projects.py path.
+
+VISUAL GROUNDING (`{visual_brief_section}` in PROTOTYPE_HTML_USER_TEMPLATE)
+--------------------------------------------------------------------------
+A prototype build can name uploaded mockups, whose extracted descriptions are
+assembled by `api.product_context.build_visual_brief_block` and injected as a visual
+brief. Three properties of that section, all load-bearing:
+
+- **Placed beside `{brand_section}`**, not among the document sections, because it is
+  the same KIND of instruction: both say what the thing should LOOK like, while the
+  sections below say what it DOES. The alternative placement is not neutral — an
+  image description reaching the prompt inside `### Internal documents` is a paragraph
+  competing with a spec, ordered by `created_at` and sharing the product-context
+  budget with unrelated files.
+- **The selection IS the request.** There is deliberately no `use_visuals` flag (see
+  `_validated_product_doc_ids` in api/projects_handler.py for the argument), so an
+  absent or empty list means the producer is never called: no S3 read, no section, and
+  a prompt byte-identical to the one this path produced before visuals existed. That
+  last property is what the golden-prompt test in
+  test/golden/prototype_prompt_baseline.txt pins.
+- **Worded against the levers PROTOTYPE_HTML_SYSTEM_PROMPT already defines** — the
+  eight `:root` custom properties, the phone-shell/top-nav choice, the neutral indigo
+  defaults — so the brief redirects those levers instead of introducing a second,
+  competing vocabulary. The eight property names are NOT restated in the user prompt
+  on purpose: they are declared once, in the system prompt, and a second copy would
+  drift from it silently.
+
+The ids recorded in the document's `derivation` are the ones the PRODUCER reported as
+used, never the ones the request selected — see the comment at that call site.
 """
 
 import os
@@ -177,6 +205,36 @@ def _product_context(project_id: str) -> tuple[str, bool]:
     return block, block != NO_PRODUCT_CONTEXT
 
 
+def _visual_brief(project_id: str, doc_ids) -> tuple[str, list[str]]:
+    """The quoted descriptions of the SELECTED visuals, plus the ids that are in them.
+
+    A thin, defensive wrapper in the same shape as `_product_context` above, and
+    for the same two reasons: the producer lives in the API module, so the import
+    is lazy (this job's package does not depend on `api` at module load), and a
+    failure to assemble an optional section must not cost the user the prototype
+    they asked for. `build_visual_brief_block` documents that it never raises;
+    the try is for the import and for that promise being broken later.
+
+    The returned ids are what the producer says REACHED the text, so the caller
+    can record them as provenance without checking anything — never the ids that
+    were requested. On any failure there is no section and nothing to claim.
+    """
+    try:
+        from api.product_context import build_visual_brief_block
+        return build_visual_brief_block(project_id, doc_ids)
+    # The blanket catch is deliberate, and its breadth is the point: this section is
+    # optional, so ANY failure assembling it — a bad import, a boto3 error, the
+    # producer's never-raises promise broken later — must cost the user nothing but
+    # the grounding. Narrowing it would let an unforeseen error fail a build that had
+    # everything it needed. `_product_context` above catches identically and is one
+    # of this repo's pre-existing BLE001 findings; the suppression is here rather
+    # than there so this change holds the lint count at its baseline instead of
+    # moving it in either direction.
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to build visual brief: {e}")
+        return '', []
+
+
 def _generate_prd(ctx: JobContext, feature_idea: str, feedback_context: str,
                   personas_context: str, doc_config: dict,
                   product_context: str = NO_PRODUCT_CONTEXT) -> tuple[str, dict]:
@@ -341,7 +399,7 @@ Produce a polished, tap-through prototype. Remember: ONE HTML document, output n
 PROTOTYPE_HTML_USER_TEMPLATE = """Build a clickable HTML prototype for the product/feature below. Output ONE complete HTML document only — no prose, no code fences.
 
 PROJECT: {project_name}
-{brand_section}{product_context_section}{prd_section}{prfaq_section}{research_section}
+{brand_section}{visual_brief_section}{product_context_section}{prd_section}{prfaq_section}{research_section}
 
 Requirements:
 - Single self-contained HTML file (inline CSS + vanilla JS), offline-first, no external resources.
@@ -746,6 +804,30 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     brand = (doc_config.get('brand') or '').strip()
     brand_section = f'BRAND: {brand}\n' if brand else ''
 
+    # Beside BRAND because it is the same KIND of instruction; empty selection means
+    # the producer is never called. See "Visual grounding" in the module docstring.
+    visual_brief_section = ''
+    used_visual_ids: list[str] = []
+    if doc_config.get('selected_product_doc_ids'):
+        visual_brief_block, used_visual_ids = _visual_brief(
+            project_id, doc_config.get('selected_product_doc_ids')
+        )
+        if visual_brief_block:
+            visual_brief_section = (
+                '\n\nVISUAL BRIEF — uploaded mockups/screenshots of the look and feel '
+                'to build:\n'
+                f'{visual_brief_block}\n\n'
+                'ACT ON THE VISUAL BRIEF ABOVE. Take the theme from these visuals in '
+                'preference to the neutral defaults: set every :root custom property '
+                'from the palette they describe (their dominant accent is --primary, '
+                'and the lighter/soft/tint/background/text tones follow from what they '
+                'show), take the LAYOUT MODE from them (a phone shell or a full-width '
+                'top-nav web layout, whichever they depict), and match their corner '
+                'radii, spacing and type weight. Where two visuals disagree, the '
+                'EARLIER one wins. They describe the look, not the feature: what the '
+                'screens contain and do still comes from the sections below.'
+            )
+
     # Optional extra grounding, ticked per build on the prototype card. Both
     # default off, so a request that asks for neither produces the prompt this
     # path has always produced, byte for byte.
@@ -822,6 +904,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
         brand_section=brand_section,
+        visual_brief_section=visual_brief_section,
         product_context_section=product_context_section,
         prd_section=prd_section,
         prfaq_section=prfaq_section,
@@ -904,11 +987,23 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
                 # cannot silently differ.
                 *(derivation_source(_document_id_of(d), ROLE_REFERENCE) for d in research_docs),
             ],
+            # Reference documents only. The visuals below are counted separately,
+            # in `visual_document_ids`, because they are not ProjectDocuments and
+            # a reader resolving this count against the document list would come
+            # up short by however many were selected.
             selected_document_count=len([d for d in (prd, prfaq) if d]) + len(research_docs),
             # Whether the product-context block actually carried anything, not
             # whether it was asked for: a build that ticked the box on a project
             # that describes nothing must not claim it was grounded.
             product_context_included=product_context_included,
+            # The visuals the PRODUCER said reached the prompt, never the ids the
+            # request selected — the same invariant as `product_context_included`
+            # just above and as the research sources. A build that selected three
+            # visuals of which one was unreadable records two, so the record cannot
+            # claim grounding the model never saw. Deliberately NOT `sources`
+            # entries: a visual is a product document under its own sort key, so a
+            # `sources` lookup would never resolve it (see shared/derivation.py).
+            visual_document_ids=used_visual_ids,
         ),
         'created_at': now,
     }

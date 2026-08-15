@@ -72,7 +72,9 @@
         "reference": "参照"
       },
       "selectedUsed": "選択された{{selected}}件のうち{{used}}件を使用",
-      "unavailable": "現在は利用できません"
+      "unavailable": "現在は利用できません",
+      "visualsUsed_one": "ビジュアル{{count}}件を使用",
+      "visualsUsed_other": "ビジュアル{{count}}件を使用"
     },
     "editDocument": "ドキュメントを編集",
     "newDocument": "新規ドキュメント",
@@ -107,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。",
       "useProductContext": "製品・サービスの説明",
-      "useResearch": "リサーチレポート ({{total}})"
+      "useResearch": "リサーチレポート ({{total}})",
+      "visuals": "ビジュアルモックアップ ({{total}})",
+      "visualsFailed": "{{total}} 件は処理に失敗しました — 再アップロードしてください",
+      "visualsLimit": "1 回のビルドで最大 {{max}} 件のモックアップ",
+      "visualsNotReady": "{{total}} 件は処理中です"
     },
     "revision": {
       "feedback": "フィードバック: {{feedback}}",
