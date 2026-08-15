@@ -646,6 +646,12 @@ def _drop_legacy_score(table, document_id: str) -> None:
     value and a real ballot are both counted. Conditional so that the common case
     (already migrated, or never present) is a no-op rather than a resurrection of
     an empty `scores` map.
+
+    Attempted on every save rather than only when the caller's GET saw a legacy
+    entry: the alternative is trusting a client-supplied "please migrate" flag, or
+    reading the shared map first — which is the read-modify-write this change
+    exists to remove. The steady-state cost is one refused conditional write per
+    saved document, which is bounded by the documents in one save.
     """
     try:
         table.update_item(
