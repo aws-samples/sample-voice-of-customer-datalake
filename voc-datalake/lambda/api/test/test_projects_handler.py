@@ -2,6 +2,7 @@
 Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -308,9 +309,11 @@ class TestPersonaCeilingIsShared:
         tree importing cleanly. Same isolation argument that moved the avatar cache fixture
         out of the root conftest, applied in the other direction.
         """
+        # Top-level `projects`, not `api.projects`: that is how projects_handler imports
+        # it, and mixing the two paths would give this tree two module objects for one
+        # file, each re-running the module's client and table wiring.
+        from projects import AVATAR_MAX_CONCURRENCY
         from shared.api import MAX_PERSONAS_PER_GENERATION
-
-        from api.projects import AVATAR_MAX_CONCURRENCY
 
         assert AVATAR_MAX_CONCURRENCY == MAX_PERSONAS_PER_GENERATION
 
@@ -327,13 +330,23 @@ class TestPersonaPromptVersionIsStamped:
     the api tree.
     """
 
-    def test_the_stamped_version_matches_the_prompt_file(self):
-        from shared.prompts import load_prompt_file
+    def test_the_stamped_version_matches_the_prompt_file(self, monkeypatch):
+        from projects import PERSONA_PROMPT_VERSION
+        from shared import prompts as prompts_module
 
-        from api.projects import PERSONA_PROMPT_VERSION
+        # Pin the loader at the repo's prompt directory rather than letting
+        # get_prompts_dir() fall through to a CWD-relative path, and clear the lru_cache
+        # on both sides so neither an earlier test's cached config is read here nor this
+        # one's is left behind. Mirrors the fixture in shared/test/test_prompt_utils.py.
+        repo_prompts = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
+        assert repo_prompts.exists(), f'prompts directory moved? expected it at {repo_prompts}'
+        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: repo_prompts)
+        prompts_module.load_prompt_file.cache_clear()
+        try:
+            config = prompts_module.load_prompt_file('persona-generation.json')
+        finally:
+            prompts_module.load_prompt_file.cache_clear()
 
-        load_prompt_file.cache_clear()
-        config = load_prompt_file('persona-generation.json')
         assert config['version'] == PERSONA_PROMPT_VERSION, (
             'persona-generation.json and the stamped prompt_version disagree — personas '
             'would record a version that did not generate them'

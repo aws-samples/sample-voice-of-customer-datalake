@@ -592,12 +592,17 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             # keying translations off it, so step names are not part of the i18n surface.
             update_progress(85, 'generating_avatars')
 
-            # Tracing survives the fan-out: `generate_persona_avatar` and its Bedrock legs
-            # are @tracer-decorated, and under a Lambda context put_subsegment re-resolves
-            # the segment per thread from _X_AMZN_TRACE_ID, so worker subsegments attach to
-            # the invocation with the right trace and parent ids. Verified with three
-            # threads. Noted because "subsegments on non-main threads are dropped" is true
-            # of some X-Ray setups and has been raised against this block more than once.
+            # On tracing across the fan-out: `generate_persona_avatar` and its Bedrock legs
+            # are @tracer-decorated, and under a Lambda context aws-xray-sdk's
+            # put_subsegment re-resolves the segment per thread from _X_AMZN_TRACE_ID, so
+            # worker subsegments should attach to the invocation with the right trace and
+            # parent ids. A reviewer confirmed that empirically across three threads; it is
+            # not pinned by a test here, because a test would be asserting aws-xray-sdk's
+            # own context behaviour rather than anything this repo controls. If the avatar
+            # leg ever goes missing from X-Ray after an sdk upgrade, this is the reason to
+            # check first. Recorded because "subsegments on non-main threads are dropped"
+            # is true of some X-Ray setups and has been raised against this block
+            # repeatedly.
             def _avatar_for(persona_id: str, persona: dict) -> dict:
                 return generate_persona_avatar({'persona_id': persona_id, **persona})
 

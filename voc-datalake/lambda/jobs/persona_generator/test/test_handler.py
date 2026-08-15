@@ -124,6 +124,21 @@ class TestAvatarMetricsActuallyReachCloudWatch:
     so it holds however the flush is wired.
     """
 
+    @pytest.fixture(autouse=True)
+    def _empty_metrics_store(self):
+        """Clear the shared store on both sides.
+
+        Before, because a metric left by an earlier test would make the flush assertion
+        pass without anything flushing here. After, because these tests deliberately add
+        to a process-wide singleton, and leaving it dirty makes some later test's result
+        depend on ordering.
+        """
+        from shared.logging import metrics
+
+        metrics.clear_metrics()
+        yield
+        metrics.clear_metrics()
+
     @staticmethod
     def _flushed_metric_names(captured_stdout: str) -> set[str]:
         """Metric names in the EMF documents the handler printed."""
@@ -149,9 +164,6 @@ class TestAvatarMetricsActuallyReachCloudWatch:
 
         from jobs.persona_generator.handler import lambda_handler
 
-        # A stale store from an earlier test would make this pass without the flush.
-        metrics.clear_metrics()
-
         def count_an_avatar_failure_like_generate_personas_does(*args, **kwargs):
             metrics.add_metric(name='AvatarGenerationFailed', unit='Count', value=1)
             return {'success': True, 'personas': [], 'metadata': {}}
@@ -174,11 +186,8 @@ class TestAvatarMetricsActuallyReachCloudWatch:
         assertion above could pass on anything the handler always emits — it also flushes
         a ColdStart metric — rather than on the counter under test.
         """
-        from shared.logging import metrics
-
         from jobs.persona_generator.handler import lambda_handler
 
-        metrics.clear_metrics()
         lambda_handler(persona_generation_event, lambda_context)
 
         assert 'AvatarGenerationFailed' not in self._flushed_metric_names(
