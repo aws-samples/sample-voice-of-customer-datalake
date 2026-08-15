@@ -5,10 +5,10 @@
  * Every backend path that creates a project document writes a `derivation` map
  * (see lambda/shared/derivation.py): an ordered list of contributing documents,
  * each naming a source document id and the role it played, plus the non-document
- * inputs (how much feedback, which personas, whether the project's
- * product-context block was included). Documents written BEFORE that field
- * existed still explain themselves: `resolveDerivation` reconstructs the same
- * shape from the three lineage shapes that were already on the wire —
+ * inputs (how much feedback, which personas, which uploaded visuals, whether
+ * the project's product-context block was included). Documents written BEFORE
+ * that field existed still explain themselves: `resolveDerivation` reconstructs
+ * the same shape from the three lineage shapes that were already on the wire —
  * `source_prd_id`/`source_prfaq_id` on a prototype, `source_documents` on a
  * merge output, and `feedback_count` on a research report — none of which was
  * declared anywhere in the frontend until now.
@@ -92,6 +92,19 @@ export interface DocumentDerivation {
   selected_document_count: number
   feedback_count: number
   persona_ids: string[]
+  /**
+   * Ids of the uploaded IMAGE documents ("visuals") whose extracted descriptions
+   * were injected into a prototype's generation prompt.
+   *
+   * A plain id list, NOT `sources` entries carrying a role, because these ids
+   * are NOT resolved to a title or a type and cannot be: a visual is a product
+   * document, stored under a different DynamoDB sort key with a
+   * `secrets.token_hex(8)` id, so it never appears in the ProjectDocument list
+   * `resolveDerivation` resolves sources against. Giving it a role would promise
+   * a lookup that can only ever come back unresolved. `persona_ids` is the same
+   * shape in the same record for the same reason.
+   */
+  visual_document_ids: string[]
   product_context_included: boolean
 }
 
@@ -147,6 +160,7 @@ export const DocumentDerivationSchema = z
     selected_document_count: z.preprocess(toCount, z.number()),
     feedback_count: z.preprocess(toCount, z.number()),
     persona_ids: idListSchema,
+    visual_document_ids: idListSchema,
     product_context_included: z.boolean().catch(false),
   })
   .catch(() => emptyDerivation())
@@ -158,6 +172,7 @@ export function emptyDerivation(): DocumentDerivation {
     selected_document_count: 0,
     feedback_count: 0,
     persona_ids: [],
+    visual_document_ids: [],
     product_context_included: false,
   }
 }
@@ -205,7 +220,9 @@ function derivationFromLegacyFields(document: Record<string, unknown>): Document
     // than inventing a drop that may not have happened.
     selected_document_count: sources.length,
     // The one non-document input any legacy shape recorded: a research report's
-    // feedback item count.
+    // feedback item count. `visual_document_ids` is deliberately left at the
+    // empty default from emptyDerivation(): no legacy shape ever expressed a
+    // visual, so a reconstructed derivation has none — there is nothing to read.
     feedback_count: toCount(document.feedback_count),
   }
 }
@@ -221,6 +238,12 @@ function derivationFromLegacyFields(document: Record<string, unknown>): Document
  * document as having no derivation, fell through to the legacy path, and
  * reported `origin: 'none'` — so the Documents tab rendered nothing for the one
  * document with the most to explain.
+ *
+ * `visual_document_ids` counts for the same reason. A prototype grounded in an
+ * uploaded screenshot alone records nothing else — no sources, no feedback, no
+ * personas — so leaving the visuals out here would send exactly that document to
+ * the legacy reconstruction, which cannot express a visual at all, and discard
+ * the only input it ever had.
  */
 function isEmpty(derivation: DocumentDerivation): boolean {
   return (
@@ -228,6 +251,7 @@ function isEmpty(derivation: DocumentDerivation): boolean {
     derivation.selected_document_count === 0 &&
     derivation.feedback_count === 0 &&
     derivation.persona_ids.length === 0 &&
+    derivation.visual_document_ids.length === 0 &&
     !derivation.product_context_included
   )
 }

@@ -7,6 +7,7 @@ in avatar-generation.json ("image_model") to create the images.
 import hashlib
 import json
 import os
+import threading
 import boto3
 
 from shared.logging import logger, tracer
@@ -53,6 +54,81 @@ _SUPPORTED_OUTPUT_FORMATS = frozenset({'png', 'jpeg'})
 # embeds the format, so changing output_format would otherwise leave the old
 # object orphaned forever.
 _HISTORICAL_EXTENSIONS = ('png', 'jpeg', 'jpg', 'webp')
+
+# Region-pinned image-model clients, cached for the life of the execution
+# environment (one per region, since the region is config-driven). Building a
+# boto3 client costs a botocore session + endpoint resolution, and the persona
+# generator used to pay that per persona — with the avatar loop now concurrent,
+# several threads would also build clients simultaneously. boto3 clients are
+# thread-safe to USE but creating them is not, hence the lock.
+_image_model_clients: dict[str, object] = {}
+_image_model_clients_lock = threading.Lock()
+
+
+# Connection pool for the shared image-model client. Caching the client turned it from
+# "one per persona" into "one shared by every avatar thread", and botocore's default pool
+# is 10 — exactly the fan-out ceiling, i.e. zero headroom. urllib3 builds that pool with
+# block=False, so a connection over the limit is served by a throwaway socket plus a
+# "Connection pool is full" warning rather than by queueing: the degradation is silent and
+# no test would catch it. Sized above the ceiling so the pool is never the binding limit.
+#
+# Kept as a literal here rather than importing shared.api because this module keeps a
+# deliberately narrow import graph (see the lazy imports below, and the guard test that
+# importing it must not pull in `cryptography`). A lockstep test pins it to
+# MAX_PERSONAS_PER_GENERATION so the two cannot drift.
+IMAGE_CLIENT_POOL_CONNECTIONS = 16
+
+# Retries: botocore's default is the `legacy` mode, which does not back off on
+# throttling. A 10-wide fan-out against on-demand image-model quota makes
+# ThrottlingException the expected failure, and `standard` is what turns it into a retry
+# instead of an avatar that silently comes back empty.
+IMAGE_CLIENT_MAX_ATTEMPTS = 3
+IMAGE_CLIENT_READ_TIMEOUT = 120
+IMAGE_CLIENT_CONNECT_TIMEOUT = 10
+
+
+def get_image_model_client(region: str):
+    """Bedrock runtime client pinned to the image model's region, cached.
+
+    Cached per region rather than globally because the region comes from
+    avatar-generation.json, so a config change must not keep handing back a
+    client for the old region.
+
+    Configured explicitly rather than on botocore defaults: this one client now serves
+    every avatar thread, so the connection pool and the retry mode are properties of the
+    fan-out, not of a single call. See the constants above for why each value.
+    """
+    client = _image_model_clients.get(region)
+    if client is None:
+        with _image_model_clients_lock:
+            client = _image_model_clients.get(region)
+            if client is None:
+                # Imported here, not at module scope, to keep this module's import graph
+                # narrow — same reason shared.aws is imported inside the functions below.
+                from botocore.config import Config
+                logger.info(f"[PERSONA_AVATAR] Creating Bedrock client for {region} (image model region)")
+                client = boto3.client(
+                    'bedrock-runtime',
+                    region_name=region,
+                    config=Config(
+                        max_pool_connections=IMAGE_CLIENT_POOL_CONNECTIONS,
+                        retries={'mode': 'standard', 'max_attempts': IMAGE_CLIENT_MAX_ATTEMPTS},
+                        read_timeout=IMAGE_CLIENT_READ_TIMEOUT,
+                        connect_timeout=IMAGE_CLIENT_CONNECT_TIMEOUT,
+                    ),
+                )
+                _image_model_clients[region] = client
+    return client
+
+
+def clear_image_model_client_cache() -> None:
+    """Drop the cached region-pinned clients.
+
+    Exists for tests: the cache lives for the whole process, so a test that
+    patches boto3 would otherwise be served a client built by an earlier test.
+    """
+    with _image_model_clients_lock:
+        _image_model_clients.clear()
 
 
 def get_image_model_config() -> dict:
@@ -222,10 +298,11 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
 
     try:
         # The image model is region-pinned; the IAM grant is built from the same
-        # values via imageModelArn() in lib/utils/model-allowlist.ts.
-        logger.info(f"[PERSONA_AVATAR] Creating Bedrock client for {model_region} (image model region)")
-        bedrock_runtime = boto3.client('bedrock-runtime', region_name=model_region)
-        
+        # values via imageModelArn() in lib/utils/model-allowlist.ts. The client
+        # is cached per region for the execution environment, so a batch of
+        # personas builds it once instead of once each.
+        bedrock_runtime = get_image_model_client(model_region)
+
         # Stability text-to-image request format (shared by stable-image-core,
         # stable-image-ultra and sd3-5-large). Note this is NOT interchangeable
         # with the Nova Canvas taskType/textToImageParams body it replaced — a
@@ -267,7 +344,18 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
         
         logger.info(f"[PERSONA_AVATAR] Uploading avatar to S3: s3://{s3_bucket}/{s3_key}")
         
-        s3_client = boto3.client('s3')
+        # The shared accessor, not boto3.client('s3'), for two reasons that both arrived
+        # with the concurrent avatar loop:
+        #  1. This function now runs on several threads at once. boto3 clients are
+        #     thread-safe to USE but building one is not (aws/boto3#1592) — the same
+        #     hazard the region-pinned client above is cached to avoid. get_s3_client()
+        #     is module-cached, so the construction happens once.
+        #  2. It pins signature_version='s3v4', which RAW_DATA_BUCKET needs because it is
+        #     KMS-encrypted. Constructing the client here inherited botocore's default
+        #     signer instead.
+        # Imported inside the function to keep this module's import graph narrow.
+        from shared.aws import get_s3_client
+        s3_client = get_s3_client()
         s3_client.put_object(
             Bucket=s3_bucket,
             Key=s3_key,

@@ -102,8 +102,12 @@ class TestImageModelConfigIsHonoured:
         def client_factory(service, **kwargs):
             return mock_bedrock_runtime if service == 'bedrock-runtime' else mock_s3
 
+        # The S3 client now comes from shared.aws.get_s3_client (module-cached and
+        # s3v4-pinned) rather than being built here, so it is stubbed at that accessor.
+        # shared.avatar.boto3 still covers the region-pinned image-model client.
         with patch('shared.avatar.get_avatar_prompt_config', return_value=config), \
              patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='prompt'), \
+             patch('shared.aws.get_s3_client', return_value=mock_s3), \
              patch('shared.avatar.boto3') as mock_boto3:
             mock_boto3.client.side_effect = client_factory
             from shared.avatar import generate_persona_avatar
@@ -210,6 +214,7 @@ class TestAvatarsAreNotShippedAsPng:
 
         with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg), \
              patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.aws.get_s3_client', return_value=mock_s3), \
              patch('shared.avatar.boto3') as mock_boto3:
             mock_boto3.client.side_effect = client_factory
             from shared.avatar import generate_persona_avatar
@@ -251,6 +256,7 @@ class TestFormatChangeDoesNotOrphanOldAvatars:
 
         with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg), \
              patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.aws.get_s3_client', return_value=mock_s3), \
              patch('shared.avatar.boto3') as mock_boto3:
             mock_boto3.client.side_effect = client_factory
             from shared.avatar import generate_persona_avatar
@@ -293,6 +299,7 @@ class TestFormatChangeDoesNotOrphanOldAvatars:
 
         with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg), \
              patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.aws.get_s3_client', return_value=mock_s3), \
              patch('shared.avatar.boto3') as mock_boto3:
             mock_boto3.client.side_effect = client_factory
             from shared.avatar import generate_persona_avatar

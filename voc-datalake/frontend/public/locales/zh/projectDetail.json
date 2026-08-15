@@ -29,6 +29,7 @@
     "mentionHint": "输入 <at> 提及人物角色，<atAll> 提及圆桌讨论，或 <hash> 提及文档",
     "projectAiChat": "项目 AI 聊天",
     "roundtable": "🎙️ 圆桌讨论：全部 {{count}} 个人物角色",
+    "send": "发送消息",
     "startConversation": "开始对话",
     "stop": "停止",
     "tryExample": "尝试：\"@all 你们对我们的入门流程有什么看法？\"",
@@ -71,7 +72,9 @@
         "reference": "参考文档"
       },
       "selectedUsed": "已选择 {{selected}} 个文档，使用 {{used}} 个",
-      "unavailable": "已不可用"
+      "unavailable": "已不可用",
+      "visualsUsed_one": "已使用 {{count}} 份视觉稿",
+      "visualsUsed_other": "已使用 {{count}} 份视觉稿"
     },
     "editDocument": "编辑文档",
     "newDocument": "新建文档",
@@ -106,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "已开始 — 可在后台任务中查看进度。",
       "useProductContext": "产品/服务说明",
-      "useResearch": "研究报告（{{total}}）"
+      "useResearch": "研究报告（{{total}}）",
+      "visuals": "视觉稿（{{total}}）",
+      "visualsFailed": "{{total}} 份处理失败 — 请重新上传后使用",
+      "visualsLimit": "每次构建最多 {{max}} 份视觉稿",
+      "visualsNotReady": "{{total}} 份仍在处理中"
     },
     "revision": {
       "feedback": "反馈：{{feedback}}",
@@ -123,12 +130,21 @@
     "selectAtLeastOne": "请在每个部分中至少选择一项，否则导出将包含全部内容。",
     "title": "导出"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
+    "unreadable": "无法读取该图片：{{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude 将从您的 {{type}} 中提取人物角色信息，并创建一个带有 AI 生成头像的结构化人物角色。",
     "aiPoweredImport": "AI 驱动导入：",
     "cancel": "取消",
     "clickToChange": "点击更改文件",
     "clickToUpload": "点击上传或拖放",
+    "errors": {
+      "onlyFirstImage": "仅使用了第一张图片。",
+      "unknownType": "未知类型",
+      "unsupportedType": "该文件不是可读取的图片（{{type}}）。支持：{{accepted}}"
+    },
     "image": "图片",
     "imageDesc": "截图或卡片",
     "imageFormats": "PNG、JPG、GIF、WebP",
@@ -140,6 +156,7 @@
     "importTypeText": "文本",
     "pasteContent": "粘贴用户角色内容",
     "pastePlaceholder": "粘贴您的用户角色描述、用户研究笔记或任何描述用户角色的文本...",
+    "pasteScreenshotHint": "也可以从剪贴板粘贴截图",
     "pdf": "PDF",
     "pdfDesc": "上传文档",
     "pdfOnly": "仅限 PDF 文件",
@@ -405,19 +422,21 @@
     "subtitle": "此处的信息将作为当前产品上下文自动注入 PRD 和 PR/FAQ 的生成。",
     "title": "产品/服务描述",
     "upload": {
+      "accepted": "PNG、JPEG、GIF、WebP 最大 3.5 MB · MD、TXT 最大 10 MB",
       "delete": "删除文档",
-      "dropZone": "将文件拖放到此处，或点击上传",
+      "dropZone": "将文件拖放到此处、粘贴截图，或点击上传",
       "empty": "暂无文档。",
       "errors": {
         "tooLarge": "文件过大（>10 MB）：{{name}}",
-        "unsupportedType": "不支持的类型：{{name}}（{{type}}）",
+        "unsupportedType": "不支持的类型：{{name}}（{{type}}）。支持：{{accepted}}",
         "uploadFailed": "{{name}}：上传失败 — {{message}}"
       },
       "extractedChars_one": "已提取 {{count}} 个字符",
       "extractedChars_other": "已提取 {{count}} 个字符",
       "heading": "内部文档",
-      "hint": "PDF、DOCX、MD、TXT — 每个最大 10 MB，最多 20 个",
+      "hint": "图片和文本 — 最多 20 个",
       "loading": "加载中…",
+      "notYet": "暂不支持 PDF 和 Word (.docx)。",
       "statusExtracting": "提取中…",
       "statusFailed": "失败",
       "statusReady": "就绪",

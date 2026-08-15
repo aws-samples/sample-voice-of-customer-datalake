@@ -122,3 +122,49 @@ export const IMAGE_MODEL_REGION = 'us-west-2';
 export function imageModelArn(): string {
   return `arn:aws:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`;
 }
+
+/**
+ * ── Image limits for visual grounding ─────────────────────────────────────────
+ *
+ * Caps for any image this platform sends to Bedrock as part of a prompt. Mirrored
+ * in `lambda/shared/image_limits.py`; a lockstep test
+ * (`lambda/shared/test/test_image_limits_lockstep.py`) reads this file as source
+ * text and fails on drift.
+ *
+ * WHY HARDCODED NUMBERS ARE SAFE HERE, given the admin model picker:
+ *
+ * These are limits of the Bedrock **Converse API request shape**, not of any one
+ * model — `Message.content` accepts at most 20 images, each no larger than
+ * 3.75 MB and no more than 8000 px on either side. See
+ * https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Message.html
+ *
+ * Because the constraint lives on the API surface *above* the model, repointing a
+ * surface through the picker cannot move it. And the picker can only ever choose
+ * an Anthropic Claude: every entry in ALLOWED_MODEL_IDS is one, and Anthropic's
+ * own documented vision limits (5 MB per image, 8000x8000 px) are looser than or
+ * equal to the API's. So the API figure is the binding one for the entire
+ * allowlist — and for any further Claude added to it. That is what makes a
+ * constant here durable rather than something that quietly goes stale the next
+ * time the picker gains a model.
+ *
+ * WHY 3_750_000 AND NOT 3_932_160: "3.75 MB" is ambiguous between the decimal
+ * reading (3.75 * 1000^2 = 3,750,000) and the binary one (3.75 * 1024^2 =
+ * 3,932,160). The decimal reading is 4.6% lower, so enforcing it keeps us inside
+ * the limit under *either* interpretation. Do not "fix" this upward: the higher
+ * number is only correct if the docs mean MiB, and a rejected Converse call is a
+ * worse outcome than a slightly conservative cap.
+ */
+export const MAX_IMAGE_BYTES = 3_750_000;
+
+/** Max pixels on either side of an image in a Converse message. */
+export const MAX_IMAGE_DIMENSION_PX = 8000;
+
+/**
+ * Max images in a single Converse message.
+ *
+ * Not load-bearing yet — the extractor attaches one image per call, so nothing
+ * currently counts against this. It is defined now so that a later rung putting
+ * several visuals into one prompt reaches for this constant instead of inventing
+ * its own number next to the other two.
+ */
+export const MAX_IMAGES_PER_MESSAGE = 20;

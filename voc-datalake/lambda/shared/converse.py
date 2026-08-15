@@ -86,6 +86,33 @@ class BedrockThrottlingError(Exception):
     pass
 
 
+def _temperature_note(
+    sent: bool,
+    temperature: float | None,
+    model_id: str,
+    explicit_thinking: bool,
+) -> str:
+    """Name the REAL reason `temperature` is or is not on the wire.
+
+    Several suppression causes can hold at once — a caller passing None together
+    with an explicit budget (reachable today), or a model that both rejects
+    temperature and takes an explicit budget (reachable as soon as one is
+    allowlisted). Attributing the drop to whichever cause is checked first would
+    point an operator at the wrong one, which defeats the purpose of logging the
+    reason at all. So the branches mirror the suppression condition in order,
+    most caller-proximate first.
+    """
+    if sent:
+        return str(temperature)
+    if temperature is None:
+        return 'omitted (caller passed None)'
+    if omits_temperature(model_id):
+        return 'omitted (model rejects it)'
+    if explicit_thinking:
+        return 'omitted (explicit thinking)'
+    return 'omitted'  # pragma: no cover — no suppression cause left to name
+
+
 def _raised_empty_budget(current_max: int) -> int | None:
     """Next maxTokens to try after a model returned zero visible text.
 
@@ -171,7 +198,7 @@ def converse(
     """
     used_model = model_id or get_active_model_id(surface)
     logger.info(f"[BEDROCK] Starting converse call for step '{step_name}' with model {used_model} (surface={surface})")
-    logger.info(f"[BEDROCK] Request params: max_tokens={max_tokens}, temperature={temperature}, thinking_budget={thinking_budget}")
+    logger.info(f"[BEDROCK] Requested params: max_tokens={max_tokens}, temperature={temperature}, thinking_budget={thinking_budget}")
     logger.info(f"[BEDROCK] Prompt length: {len(prompt)} chars, system_prompt length: {len(system_prompt)} chars")
     
     try:
@@ -184,12 +211,25 @@ def converse(
     messages = [{'role': 'user', 'content': [{'text': prompt}]}]
     system = [{'text': system_prompt}] if system_prompt else None
     
+    # Resolved BEFORE the inference config because enabling thinking also
+    # constrains `temperature` (see below). Models with always-on adaptive
+    # thinking (Sonnet 5, Opus 4.7+) reject an explicit budget, so the field is
+    # skipped for them — their thinking runs automatically.
+    explicit_thinking = thinking_budget > 0 and not uses_adaptive_thinking(used_model)
+
     inference_config = {'maxTokens': max_tokens}
-    # Some models run adaptive thinking always-on and reject `temperature` as
-    # deprecated (Sonnet 5, Opus 5). Omit it for those automatically — so any
-    # surface can be pointed at them via the picker without a 400 — and also
-    # when the caller explicitly passes temperature=None.
-    if temperature is not None and not omits_temperature(used_model):
+    # `temperature` is dropped in three cases:
+    #   - the caller passed None explicitly;
+    #   - the model rejects the parameter outright as deprecated;
+    #   - EXPLICIT extended thinking is on: Anthropic permits only
+    #     temperature=1 alongside thinking, and sending both is a hard 400.
+    #     Omitting is equivalent to 1 and keeps one exit shape here.
+    #
+    # Keep the third condition even though it looks redundant next to the
+    # capability flags: it is a COMBINATION, not a per-model property, so no
+    # per-model flag can encode it. It binds exactly the models that accept
+    # temperature AND take an explicit budget.
+    if temperature is not None and not explicit_thinking and not omits_temperature(used_model):
         inference_config['temperature'] = temperature
     kwargs = {
         'modelId': used_model,
@@ -199,10 +239,8 @@ def converse(
     if system:
         kwargs['system'] = system
     
-    # Add extended thinking if budget specified. Models with always-on adaptive
-    # thinking (Sonnet 5) reject an explicit budget, so skip the field for them
-    # — their thinking runs automatically.
-    explicit_thinking = thinking_budget > 0 and not uses_adaptive_thinking(used_model)
+    # Add extended thinking if the resolved model takes an explicit budget
+    # (decided above, alongside the temperature it constrains).
     if explicit_thinking:
         kwargs['additionalModelRequestFields'] = {
             'thinking': {
@@ -211,6 +249,21 @@ def converse(
             }
         }
     
+    # What actually goes on the wire, which is NOT the requested params above:
+    # both temperature and the thinking budget can be dropped per model. The
+    # earlier line alone made a request look like it carried a temperature and a
+    # budget that Bedrock never saw, which is exactly the wrong starting point
+    # when triaging a ValidationException about those fields. The drop REASON is
+    # spelled out so an operator reading only this line knows why it vanished
+    # instead of inferring it from the thinking value.
+    effective_temperature = _temperature_note(
+        sent='temperature' in inference_config,
+        temperature=temperature,
+        model_id=used_model,
+        explicit_thinking=explicit_thinking,
+    )
+    effective_thinking = thinking_budget if explicit_thinking else 'omitted'
+    logger.info(f"[BEDROCK] Effective params: temperature={effective_temperature}, thinking={effective_thinking}")
     logger.info(f"[BEDROCK] Invoking Bedrock converse API for step '{step_name}'...")
     start_time = time.time()
 

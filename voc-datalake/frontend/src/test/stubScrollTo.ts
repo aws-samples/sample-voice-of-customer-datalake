@@ -32,3 +32,26 @@ export function stubElementScrollTo(): () => void {
     }
   }
 }
+
+/**
+ * The same treatment for `Element.prototype.scrollIntoView`, which jsdom also
+ * omits — components that scroll a message list into view in an effect need it.
+ *
+ * Prefer this over patching the prototype at module scope: the stub would then
+ * outlive the file that installed it, which only goes unnoticed because Vitest
+ * isolates per file by default.
+ */
+export function stubElementScrollIntoView(): () => void {
+  const existed = 'scrollIntoView' in Element.prototype
+  const original = Element.prototype.scrollIntoView
+
+  Element.prototype.scrollIntoView = vi.fn()
+
+  return () => {
+    if (existed) {
+      Element.prototype.scrollIntoView = original
+    } else {
+      Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+    }
+  }
+}

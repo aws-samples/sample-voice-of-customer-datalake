@@ -160,6 +160,135 @@ class TestConverse:
         assert 'temperature' not in cfg
         assert cfg['maxTokens']  # other config still present
 
+    @patch('shared.converse.get_bedrock_client')
+    def test_temperature_and_thinking_sent_exactly_when_legal(self, mock_get_client):
+        """Full truth table for the two request fields, over EVERY allowlisted
+        model at both budgets.
+
+        Anthropic permits only temperature=1 alongside extended thinking, so
+        sending both is a hard 400 ("`temperature` may only be set to 1 when
+        thinking is enabled"). That is a COMBINATION failure: both capability
+        flags were individually correct and nothing stated that the request they
+        JOINTLY produce has to be valid. A capability table cannot express a
+        constraint between capabilities, so the invariant belongs here.
+
+        Asserting BOTH directions matters. "Never both fields" alone is also
+        satisfied by a regression that drops temperature for every model, which
+        would silently discard sampling control everywhere — so each case pins
+        what must be PRESENT as well as what must be absent.
+
+        Driven off the capability data rather than hardcoded model ids, so a
+        newly allowlisted model is covered on arrival and a retired one does not
+        turn this into a false negative.
+        """
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'R'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        from shared.model_config import (
+            ALLOWED_MODELS,
+            omits_temperature,
+            uses_adaptive_thinking,
+        )
+
+        # The loop count below proves the loop RAN, but not that any model can
+        # actually reach the illegal pairing — if every model that accepts
+        # temperature stops taking an explicit budget, case 1 goes quietly
+        # vacuous. Data-driven so no id is pinned. If this fires, the allowlist
+        # no longer contains a model that can produce the bug: confirm that is
+        # intended, then this test's regression half can be retired with it.
+        assert any(
+            not omits_temperature(m['id']) and not uses_adaptive_thinking(m['id'])
+            for m in ALLOWED_MODELS
+        ), "no allowlisted model can pair temperature with an explicit thinking budget"
+
+        checked = 0
+        for model in ALLOWED_MODELS:
+            model_id = model['id']
+            for budget in (0, 5000):
+                mock_client.converse.reset_mock()
+                converse('Q', temperature=0.1, thinking_budget=budget,
+                         model_id=model_id)
+                kwargs = mock_client.converse.call_args.kwargs
+                sent_temperature = 'temperature' in kwargs['inferenceConfig']
+                # Read the nested key rather than testing for the container, so
+                # an unrelated additionalModelRequestFields entry added later
+                # can't be mistaken for a thinking budget.
+                thinking = kwargs.get('additionalModelRequestFields', {}).get('thinking')
+
+                # 1. The bug itself: the two fields must never travel together.
+                assert not (sent_temperature and thinking), (
+                    f"{model_id} at budget={budget} sent both temperature and an "
+                    f"explicit thinking budget, which Bedrock rejects"
+                )
+
+                # 2. An explicit budget is sent exactly when the model takes one
+                #    — so suppressing temperature can never come at the cost of
+                #    silently disabling the thinking the caller asked for.
+                expect_thinking = budget > 0 and not uses_adaptive_thinking(model_id)
+                assert bool(thinking) == expect_thinking, (
+                    f"{model_id} at budget={budget}: expected explicit thinking="
+                    f"{expect_thinking}"
+                )
+                if expect_thinking:
+                    assert thinking['budget_tokens'] == budget, model_id
+                    # Thinking is in play, so temperature is illegal regardless
+                    # of what the model would otherwise accept.
+                    assert not sent_temperature, model_id
+                else:
+                    # No thinking in play, so the ONLY legitimate reason to drop
+                    # temperature is the model rejecting the parameter.
+                    assert sent_temperature == (not omits_temperature(model_id)), (
+                        f"{model_id} at budget={budget}: temperature presence "
+                        f"should follow omits_temperature() when thinking is off"
+                    )
+                checked += 1
+        # Guards against the loop silently iterating nothing.
+        assert checked == len(ALLOWED_MODELS) * 2
+
+    def test_temperature_note_names_the_actual_suppression_cause(self):
+        """The `Effective params` log exists to tell an operator WHY temperature
+        vanished, so attributing it to the wrong cause is worse than silence.
+
+        Causes can co-occur — `temperature=None` with an explicit budget is
+        reachable today — so this pins each one against a case where a naive
+        first-match-wins order would misreport it.
+        """
+        from shared.converse import _temperature_note
+
+        # What is under test is the ORDER the causes are checked in, not the
+        # capability lookup, so the lookup is stubbed and the ids are synthetic.
+        # Sourcing a real "rejects temperature" model from ALLOWED_MODELS would
+        # couple this to the allowlist's contents and fail if every model ever
+        # accepts temperature — the same false negative the invariant test's
+        # guard is careful to make deliberate, but here it would be incidental
+        # rather than meaningful: fixture availability says nothing about the
+        # system. Real models are covered by the invariant test above.
+        ACCEPTS = 'model-that-accepts-temperature'
+        REJECTS = 'model-that-rejects-temperature'
+
+        with patch('shared.converse.omits_temperature',
+                   lambda model_id: model_id == REJECTS):
+            # Sent: report the value, not a reason.
+            assert _temperature_note(True, 0.1, ACCEPTS, False) == '0.1'
+
+            # None wins over a co-occurring explicit budget — the caller's choice
+            # is the reason, and blaming thinking here would send an operator
+            # hunting a model-capability problem that does not exist.
+            assert _temperature_note(False, None, ACCEPTS, True) == 'omitted (caller passed None)'
+            assert _temperature_note(False, None, ACCEPTS, False) == 'omitted (caller passed None)'
+
+            # Model capability, including alongside an explicit budget.
+            assert _temperature_note(False, 0.1, REJECTS, False) == 'omitted (model rejects it)'
+            assert _temperature_note(False, 0.1, REJECTS, True) == 'omitted (model rejects it)'
+
+            # Only when the caller asked for it and the model accepts it is
+            # thinking the real cause.
+            assert _temperature_note(False, 0.1, ACCEPTS, True) == 'omitted (explicit thinking)'
+
 
 class TestConverseRetry:
     """Tests for converse retry functionality."""

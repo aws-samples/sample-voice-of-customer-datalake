@@ -29,6 +29,7 @@
     "mentionHint": "<at>でペルソナ、<atAll>でラウンドテーブル、<hash>でドキュメントを入力",
     "projectAiChat": "プロジェクトAIチャット",
     "roundtable": "🎙️ ラウンドテーブル: 全{{count}}個のペルソナ",
+    "send": "メッセージを送信",
     "startConversation": "会話を開始",
     "stop": "停止",
     "tryExample": "試す: \"@all オンボーディングフローについてどう思いますか?\"",
@@ -71,7 +72,9 @@
         "reference": "参照"
       },
       "selectedUsed": "選択された{{selected}}件のうち{{used}}件を使用",
-      "unavailable": "現在は利用できません"
+      "unavailable": "現在は利用できません",
+      "visualsUsed_one": "ビジュアル{{count}}件を使用",
+      "visualsUsed_other": "ビジュアル{{count}}件を使用"
     },
     "editDocument": "ドキュメントを編集",
     "newDocument": "新規ドキュメント",
@@ -106,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "開始しました — バックグラウンドジョブで進行状況を確認できます。",
       "useProductContext": "製品・サービスの説明",
-      "useResearch": "リサーチレポート ({{total}})"
+      "useResearch": "リサーチレポート ({{total}})",
+      "visuals": "ビジュアルモックアップ ({{total}})",
+      "visualsFailed": "{{total}} 件は処理に失敗しました — 再アップロードしてください",
+      "visualsLimit": "1 回のビルドで最大 {{max}} 件のモックアップ",
+      "visualsNotReady": "{{total}} 件は処理中です"
     },
     "revision": {
       "feedback": "フィードバック: {{feedback}}",
@@ -123,12 +130,21 @@
     "selectAtLeastOne": "各セクションで少なくとも1件を選択してください。選択しない場合、エクスポートにすべてが含まれます。",
     "title": "エクスポート"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} は縮小してもまだサイズが大きすぎます。より小さいスクリーンショットを使うか、切り取ってください。",
+    "unreadable": "この画像を読み取れませんでした: {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claudeが{{type}}からペルソナ情報を抽出し、AI生成アバター付きの構造化ペルソナを作成します。",
     "aiPoweredImport": "AI搭載インポート:",
     "cancel": "キャンセル",
     "clickToChange": "クリックして変更",
     "clickToUpload": "クリックしてアップロード、またはドラッグ&ドロップ",
+    "errors": {
+      "onlyFirstImage": "最初の画像のみを使用しました。",
+      "unknownType": "不明な形式",
+      "unsupportedType": "このファイルは読み取れる画像ではありません（{{type}}）。対応形式: {{accepted}}"
+    },
     "image": "画像",
     "imageDesc": "スクリーンショットまたはカード",
     "imageFormats": "PNG、JPG、GIF、WebP",
@@ -140,6 +156,7 @@
     "importTypeText": "テキスト",
     "pasteContent": "ペルソナコンテンツを貼り付け",
     "pastePlaceholder": "ペルソナの説明、ユーザーリサーチノート、またはペルソナを説明するテキストを貼り付けてください...",
+    "pasteScreenshotHint": "クリップボードからスクリーンショットを貼り付けることもできます",
     "pdf": "PDF",
     "pdfDesc": "ドキュメントをアップロード",
     "pdfOnly": "PDFファイルのみ",
@@ -405,19 +422,21 @@
     "subtitle": "ここの情報は、現在の製品コンテキストとして PRD・PR/FAQ の生成に自動的に注入されます。",
     "title": "製品／サービス説明",
     "upload": {
+      "accepted": "PNG、JPEG、GIF、WebP は 3.5 MB まで · MD、TXT は 10 MB まで",
       "delete": "ドキュメントを削除",
-      "dropZone": "ファイルをここにドロップするか、クリックしてアップロード",
+      "dropZone": "ファイルをここにドロップ、スクリーンショットを貼り付け、またはクリックしてアップロード",
       "empty": "まだドキュメントがありません。",
       "errors": {
         "tooLarge": "サイズ超過（>10 MB）: {{name}}",
-        "unsupportedType": "未対応の形式: {{name}}（{{type}}）",
+        "unsupportedType": "未対応の形式: {{name}}（{{type}}）。対応形式: {{accepted}}",
         "uploadFailed": "{{name}}: アップロード失敗 — {{message}}"
       },
       "extractedChars_one": "{{count}} 文字を抽出済み",
       "extractedChars_other": "{{count}} 文字を抽出済み",
       "heading": "社内ドキュメント",
-      "hint": "PDF、DOCX、MD、TXT — 各 10 MB まで、最大 20 件",
+      "hint": "画像とテキスト — 最大 20 件",
       "loading": "読み込み中…",
+      "notYet": "PDF と Word（.docx）はまだ対応していません。",
       "statusExtracting": "抽出中…",
       "statusFailed": "失敗",
       "statusReady": "準備完了",

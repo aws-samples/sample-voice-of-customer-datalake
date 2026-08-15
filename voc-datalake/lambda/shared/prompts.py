@@ -18,10 +18,36 @@ DEFAULT_STEP_MAX_TOKENS = 4096
 # (research: the sync chain builder AND the async step accessor; avatar: the
 # prompt config AND the image-model block) can't drift by typo.
 PERSONA_GENERATION_PROMPTS = 'persona-generation.json'
+
+# The persona chain's steps, in execution order, and the one whose output is persisted.
+# Named for the same reason the filenames above are: the caller that parses the personas
+# has to find the synthesis result, and it used to do that positionally ("the last
+# result"), which was correct only while this list happened to end on it. Reading by name
+# means appending a step here cannot silently redirect that parse.
+#
+# ⚠️ persona_synthesis stays LAST for a separate reason recorded in
+# get_persona_generation_steps: converse_chain keeps its results local and re-raises, so
+# any step after the one whose output is saved is a window where finished, already-billed
+# personas get thrown away.
+PERSONA_SYNTHESIS_STEP = 'persona_synthesis'
+PERSONA_CHAIN_STEPS = ('research_analysis', PERSONA_SYNTHESIS_STEP)
 PRD_GENERATION_PROMPTS = 'prd-generation.json'
 PRFAQ_GENERATION_PROMPTS = 'prfaq-generation.json'
 RESEARCH_ANALYSIS_PROMPTS = 'research-analysis.json'
 AVATAR_GENERATION_PROMPTS = 'avatar-generation.json'
+
+
+# Repo location of the prompt files, defined once. get_prompts_dir() uses it as its
+# local-development branch, and tests that need to bypass the /var/task and cwd branches
+# monkeypatch the resolver to point here. Exported rather than recomputed per test file:
+# it had been derived independently in two test trees, so a moved prompts directory would
+# be reported by whichever of their assertions happened to run first, and the resolver
+# could disagree with both.
+#
+# Deliberately not .resolve()'d, matching the expression this replaced: resolving would
+# follow symlinks, which changes which directory this names under a symlinked deployment
+# root. Extracting a constant should not quietly alter where production code looks.
+REPO_PROMPTS_DIR = Path(__file__).parent.parent / 'api' / 'prompts'
 
 
 def get_prompts_dir() -> Path:
@@ -32,9 +58,8 @@ def get_prompts_dir() -> Path:
         return lambda_path
     
     # Local development / tests - repo layout keeps them in lambda/api/prompts
-    repo_path = Path(__file__).parent.parent / 'api' / 'prompts'
-    if repo_path.exists():
-        return repo_path
+    if REPO_PROMPTS_DIR.exists():
+        return REPO_PROMPTS_DIR
     
     # Fallback - try current working directory
     cwd_path = Path.cwd() / 'prompts'
@@ -232,9 +257,15 @@ def get_persona_generation_steps(
         'response_language': response_language,
     }
     
+    # persona_synthesis is LAST on purpose: its output is the JSON that gets
+    # saved, so nothing billed runs after the personas exist. A third
+    # 'validation' step used to follow it — it cost about half the job's wall
+    # clock (131s of 268s measured for 2 personas), its output was never read
+    # for persona data, and a failure in it threw away personas that
+    # persona_synthesis had already produced.
     return build_chain_steps(
         PERSONA_GENERATION_PROMPTS,
-        ['research_analysis', 'persona_synthesis', 'validation'],
+        list(PERSONA_CHAIN_STEPS),
         context
     )
 

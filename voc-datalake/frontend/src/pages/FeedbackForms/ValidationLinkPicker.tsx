@@ -17,8 +17,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { projectKey, projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
-import { isScorable } from '../Prioritization/prioritizationUtils'
-import type { Project } from '../../api/types'
+import { isScorable, SCORABLE_TYPE_META } from '../Prioritization/prioritizationUtils'
+import type { Project, ProjectDocument } from '../../api/types'
 import type { ReactElement } from 'react'
 
 /** The link, as the editor holds it. '' on either field means "not set". */
@@ -89,6 +89,46 @@ function storedOptionLabel(
   return state === 'missing'
     ? t('editor.validationUnknownDocument')
     : t('editor.validationUnverifiedDocument')
+}
+
+/**
+ * One document's option text: its title, plus the type it is.
+ *
+ * The type is here because the title alone does not identify the document. A
+ * project's PRD and its PR/FAQ are generated from the same feature idea and
+ * routinely carry the same or near-identical titles, so a list of names asks the
+ * admin to link a form to a proposal they cannot tell apart — and the two are
+ * separate rows on the Prioritization page, where the ratings then show up.
+ *
+ * The COMPOSITION is a translation key, not a template literal in code: this
+ * catalogue's own CJK labels use full-width parentheses (`ドキュメント（任意）`,
+ * `文档（可选）`) while Korean uses half-width with no space, so building
+ * `name (type)` here would print the wrong punctuation into three locales. The
+ * key also lets a locale reorder the two parts. Name after type follows
+ * `CheckboxItem` in `pages/ProjectDetail/PickerComponents`, the repo's other
+ * picker that shows a document's type inline.
+ *
+ * The type label comes from `SCORABLE_TYPE_META`, the same source as the badge on
+ * the Prioritization row this link feeds, so the type is named identically in
+ * both places. The raw `document_type` is the fallback: a type made scorable
+ * without display metadata then reads as its own slug rather than as an empty
+ * pair of parentheses. Unreachable today — the list is filtered by `isScorable`,
+ * which reads the very table the label comes from — and kept because that
+ * coupling is not enforced.
+ */
+function documentOptionLabel(
+  doc: ProjectDocument,
+  t: (key: string, options?: Record<string, string>) => string,
+): string {
+  const typeMeta = SCORABLE_TYPE_META[doc.document_type]
+  const typeLabel = typeMeta ? t(typeMeta.i18nKey) : doc.document_type
+  // `title` is declared `string` and `projectsApi` has no schema at its boundary,
+  // so nothing enforces that. It matters here and not before this change: `{title}`
+  // rendered an empty option for a missing title, while interpolating it prints the
+  // literal "undefined". Falling back to the id, the way DocumentsTab labels a
+  // revision with no title — an opaque id at least identifies the record.
+  const name = typeof doc.title === 'string' && doc.title.trim() !== '' ? doc.title : doc.document_id
+  return t('editor.validationDocumentOption', { title: name, type: typeLabel })
 }
 
 export default function ValidationLinkPicker({
@@ -202,7 +242,9 @@ export default function ValidationLinkPicker({
               </option>
             )}
             {documents.map((doc) => (
-              <option key={doc.document_id} value={doc.document_id}>{doc.title}</option>
+              <option key={doc.document_id} value={doc.document_id}>
+                {documentOptionLabel(doc, t)}
+              </option>
             ))}
           </select>
           <p className="text-xs text-gray-500 mt-1">{t('editor.validationDocumentHint')}</p>

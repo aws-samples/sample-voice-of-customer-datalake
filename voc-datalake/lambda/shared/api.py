@@ -3,39 +3,31 @@ Shared API utilities for VoC Lambda functions.
 Provides common helpers, encoders, validators, and decorators.
 """
 
-import functools
 import json
 import os
-from datetime import datetime, timezone
+import functools
 from decimal import Decimal
+from datetime import datetime, timezone
 
-from aws_lambda_powertools.event_handler import (
-    APIGatewayRestResolver,
-    CORSConfig,
-    Response,
-    content_types,
-)
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig, Response, content_types
 
+from shared.logging import logger, tracer, metrics
 from shared.exceptions import (
     ApiError,
-    AuthorizationError,
-    ConfigurationError,
-    ConflictError,
-    NotFoundError,
-    ServiceError,
     ValidationError,
+    NotFoundError,
+    ConfigurationError,
+    ServiceError,
+    AuthorizationError,
+    ConflictError,
 )
 
 # Date-basis values live in shared.feedback (the data layer) so job Lambdas
 # don't import API-resolver machinery for constants; re-exported here for
 # API handlers and backward compatibility.
 from shared.feedback import (  # noqa: F401 — re-export
-    DATE_BASIS_IMPORTED,
-    DATE_BASIS_REVIEW,
-    VALID_DATE_BASES,
-    validate_date_basis,
+    DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, VALID_DATE_BASES, validate_date_basis,
 )
-from shared.logging import logger, metrics, tracer
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -52,6 +44,14 @@ def decimal_default(obj):
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+# The most personas one generation may produce. Lives here rather than beside
+# validate_persona_count because two other places size themselves against it: the avatar
+# fan-out's max_workers and the image-model client's connection pool. Those were
+# independent literals whose only link was a comment, and a comment cannot fail CI — so
+# raising this ceiling used to silently halve the fan-out benefit while every test passed.
+MAX_PERSONAS_PER_GENERATION = 10
 
 
 def validate_days(
@@ -88,6 +88,35 @@ def validate_int(
         return default
 
 
+def validate_bool(value: object, default: bool, field: str = 'value') -> bool:
+    """Validate a boolean request field, refusing anything that is not a real bool.
+
+    The other validators here clamp or fall back, which is right for a number whose
+    worst case is a bounded value. A boolean has no such middle: coercing an unexpected
+    value picks one of the two behaviours silently, and for a flag that gates billed work
+    the wrong pick costs money in the direction the caller did not ask for. ``"false"``
+    from a form post or an over-eager serialiser is the realistic case.
+
+    Absent (``None``) yields ``default`` — an omitted field must keep behaving as it did
+    before the field existed. Note this treats an explicit JSON ``null`` as absent, since
+    ``dict.get`` cannot distinguish the two; that is deliberate and harmless, because both
+    mean "the caller expressed no preference".
+
+    Raises:
+        ValidationError: for any non-boolean value, which the API resolver maps to a 400.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    # Type name only, not the value: the type is the diagnostic ("you sent a string"),
+    # while the value is unbounded caller input and echoing it into a response body buys
+    # nothing the caller does not already have.
+    raise ValidationError(
+        f'{field} must be true or false, got {type(value).__name__}'
+    )
+
+
 def get_caller_groups(event: dict) -> list[str]:
     """Extract Cognito group memberships from the API Gateway authorizer claims.
 
@@ -120,6 +149,8 @@ def get_caller_subject(event: dict) -> str:
     The ``sub`` claim is the stable, immutable identifier assigned by Cognito
     at user-creation time.  Unlike a username (which can be reused) or an
     email (which can change), it never refers to a different person.
+
+    The returned value identifies a person and must not be logged.
 
     Raises:
         AuthorizationError: If the ``sub`` claim is absent or empty.  These
@@ -294,29 +325,31 @@ def api_handler(func):
 
 # Re-export exceptions for convenience
 __all__ = [
+    'DecimalEncoder',
+    'validate_days',
+    'validate_limit', 
+    'validate_int',
+    'validate_bool',
+    'validate_date_basis',
+    'MAX_PERSONAS_PER_GENERATION',
     'DATE_BASIS_IMPORTED',
     'DATE_BASIS_REVIEW',
+    'create_cors_config',
+    'create_api_resolver',
+    'api_handler',
+    'get_caller_groups',
+    'get_caller_subject',
+    'require_admin',
+    'get_configured_categories',
     'DEFAULT_CATEGORIES',
     # Exceptions
     'ApiError',
-    'AuthorizationError',
-    'ConfigurationError',
-    'ConflictError',
-    'DecimalEncoder',
-    'NotFoundError',
-    'ServiceError',
     'ValidationError',
-    'api_handler',
-    'create_api_resolver',
-    'create_cors_config',
-    'get_caller_groups',
-    'get_caller_subject',
-    'get_configured_categories',
-    'require_admin',
-    'validate_date_basis',
-    'validate_days',
-    'validate_int',
-    'validate_limit',
+    'NotFoundError',
+    'ConfigurationError',
+    'ServiceError',
+    'AuthorizationError',
+    'ConflictError',
 ]
 
 

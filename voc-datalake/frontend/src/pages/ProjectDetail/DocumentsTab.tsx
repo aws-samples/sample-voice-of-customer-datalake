@@ -13,19 +13,25 @@ import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
 import { resolveDerivation, type DerivationRole, type DerivationSource } from '../../api/derivation'
 import { ordinalByType, resolveRevision, type DocumentOrdinal } from '../../api/documentLineage'
-import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
+import { MAX_SELECTED_PRODUCT_DOC_IDS, MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
 import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../components/PrototypeLinkActions'
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import type {
-  ProjectDocument, Project,
+  ProjectDocument, Project, ProductDoc,
 } from '../../api/types'
 
 interface DocumentsTabProps {
   readonly project: Project
   readonly documents: ProjectDocument[]
+  /**
+   * The project's uploaded product docs, used only to drop an inherited visual that
+   * has since been deleted — see `inheritedExtraSources`. Undefined means the list
+   * is unknown, which is NOT the same as empty.
+   */
+  readonly productDocs?: ProductDoc[]
   readonly selectedDoc: ProjectDocument | null
   readonly onSelectDoc: (doc: ProjectDocument) => void
   readonly onEditDoc: () => void
@@ -43,6 +49,7 @@ interface DocumentsTabProps {
 export default function DocumentsTab({
   project,
   documents,
+  productDocs,
   selectedDoc,
   onSelectDoc,
   onEditDoc,
@@ -159,7 +166,7 @@ export default function DocumentsTab({
                   sourcesDropped={hasDroppedSource(selectedDoc, documents)}
                   // The optional inputs the BASE was built with, not today's
                   // defaults — see `inheritedExtraSources`.
-                  extraSources={inheritedExtraSources(selectedDoc, documents)}
+                  extraSources={inheritedExtraSources(selectedDoc, documents, productDocs)}
                   onJobStarted={onJobStarted}
                 />
               ) : (
@@ -260,6 +267,13 @@ function PrototypeFeedbackButton({
         use_product_context: extraSources.useProductContext,
         use_research: extraSources.useResearch,
         selected_research_ids: extraSources.useResearch ? [...extraSources.researchIds] : [],
+        // Inherited for the same reason, and the reason bites harder here: a
+        // visually-grounded prototype takes its whole palette and layout from these
+        // mockups, so dropping them makes the revision come back in the default
+        // theme — the largest possible unrequested change, from a button that only
+        // promised to act on the feedback. No flag to gate them on: the list is the
+        // request, exactly as the build card sends it.
+        selected_product_doc_ids: [...extraSources.visualIds],
       })
       // The form closes but the text is kept: the revision can still fail
       // minutes later, in the jobs panel, and clearing it would mean retyping
@@ -547,6 +561,15 @@ function DerivationFooter({
       ? t('documents.derivation.personasUsed', { count: derivation.persona_ids.length })
       : null,
     derivation.product_context_included ? t('documents.derivation.productContext') : null,
+    // A COUNT on this line rather than rows in the sources list above, and that
+    // follows from the data: these ids name product docs, which are not in the
+    // project's document list, so `resolveDerivation` can never give them a title
+    // or a type — every row would render a raw id beside "No longer available".
+    // The count is the whole truthful answer. Nothing at all when there are none,
+    // like the two inputs beside it.
+    derivation.visual_document_ids.length > 0
+      ? t('documents.derivation.visualsUsed', { count: derivation.visual_document_ids.length })
+      : null,
   ].filter((label): label is string => label !== null)
 
   return (
@@ -680,6 +703,22 @@ export interface InheritedExtraSources {
    */
   readonly useResearch: boolean
   readonly researchIds: ReadonlyArray<string>
+  /**
+   * The visuals the base prototype was grounded in, read straight off its recorded
+   * `visual_document_ids`.
+   *
+   * No flag beside it, unlike the research pair, because the API has none — the
+   * list IS the request.
+   *
+   * Filtered against the project's PRODUCT docs rather than its documents, which is
+   * the other difference: a visual is a product doc and never appears in the
+   * `ProjectDocument` list, so the filter the reports use would drop every visual
+   * instead of only the deleted ones. The filter itself is required for the same
+   * reason theirs is — the API answers 404 for a product-doc id it cannot resolve,
+   * so one mockup deleted from the Product tab after the build would make this
+   * prototype unrevisable, permanently, from the only button that revises it.
+   */
+  readonly visualIds: ReadonlyArray<string>
 }
 
 /**
@@ -708,6 +747,18 @@ export interface InheritedExtraSources {
 function inheritedExtraSources(
   doc: ProjectDocument,
   documents: readonly ProjectDocument[],
+  /**
+   * The project's uploaded product docs, or undefined when that list is not known
+   * — still loading, or the request failed.
+   *
+   * Undefined is deliberately NOT the same as an empty list. Empty means the
+   * project has no uploads, so an inherited visual is genuinely gone and must be
+   * dropped; undefined means nothing was learned, and dropping on that would let a
+   * failed side request quietly strip a revision of its entire visual grounding.
+   * Unknown therefore sends the ids as recorded and lets the API decide, which is
+   * exactly the behaviour before this argument existed.
+   */
+  productDocs?: readonly ProductDoc[],
 ): InheritedExtraSources {
   const derivation = resolveDerivation(doc, documents)
   const researchIds = derivation.sources
@@ -722,6 +773,31 @@ function inheritedExtraSources(
     .slice(0, MAX_SELECTED_RESEARCH_IDS)
   return {
     useProductContext: derivation.product_context_included,
+    // The recorded visuals, in the order the base build read them — that order is
+    // the model's precedence rule, so preserving it is what makes the revision look
+    // like the prototype it revises rather than a re-ranked version of it.
+    //
+    // Sliced for the same reason as the reports: today the API capped the base
+    // build, so this cannot exceed the bound, and the line earns itself the day the
+    // bound is LOWERED — without it every prototype built under the old one becomes
+    // un-revisable, with a 400 naming a list length the user never chose.
+    //
+    // Filtered against the PRODUCT docs, not the documents: the API answers 404 for
+    // an id it cannot resolve, so a mockup deleted after the build would otherwise
+    // make this prototype unrevisable for good.
+    //
+    // PRESENCE is the test, NOT readiness, and the difference is visible to the
+    // user: a visual whose extraction has since FAILED still passes this filter, so
+    // the revision sends it, the API accepts it, and the generator then skips it —
+    // the revision quietly comes back with less grounding than the prototype it
+    // revises. Filtering on `status === 'ready'` instead would not fix that, it
+    // would only move the silence one layer earlier; and it would newly drop a
+    // visual that is merely mid-re-extraction, which resolves on its own. Saying it
+    // belongs with `feedbackRebased` (which already tells the user when an inherited
+    // SOURCE was dropped) and is left for that follow-up rather than half-done here.
+    visualIds: derivation.visual_document_ids
+      .filter((docId) => productDocs == null || productDocs.some((d) => d.doc_id === docId))
+      .slice(0, MAX_SELECTED_PRODUCT_DOC_IDS),
     // Inherited research means research: no reports, no flag. Deriving the flag
     // from the ids here — after the filter that drops deleted reports and after
     // the slice — is what keeps it true of the list actually being sent.
