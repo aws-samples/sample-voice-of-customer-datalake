@@ -227,9 +227,6 @@ class TestConvenienceFunctions:
         ml.assert_called_with('avatar-generation.json')
 
 
-
-
-
 def _extract_slots(text: str) -> set:
     """All {placeholder}-shaped spans in text — broad on purpose: malformed
     slots like {launch date} or {launch_date } are exactly the typo class
