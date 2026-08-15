@@ -80,6 +80,16 @@ DEFAULT_FORM_CONFIG = {
 }
 
 # Fields that can be updated via PUT
+#
+# `brand_name` is deliberately absent, and that is a decision rather than an
+# omission: it is the form's partition key input (see _form_source_pk), so
+# editing it moves where this form's stats read looks WITHOUT moving the
+# submissions already stored under the old value — the exact stranding this
+# module's write/read agreement exists to prevent, only triggered by hand. A
+# form's brand is therefore set once (build_form_item, or _anchor_form_brand for
+# a record created without one) and then fixed for the life of the form. If a
+# brand ever genuinely needs correcting, it needs a migration that rewrites the
+# feedback records' partition too, not a PUT.
 UPDATABLE_FIELDS = [
     'name', 'enabled', 'title', 'description', 'question', 'placeholder',
     'rating_enabled', 'rating_type', 'rating_max', 'submit_button_text',
@@ -145,24 +155,61 @@ def _anchor_form_brand(form_id: str, effective_brand: str) -> None:
     and that value stands, which is the outcome we want either way. Best effort:
     the submission itself must not fail because the anchor did not stick, since
     the record being enqueued already carries the same brand.
+
+    Writes updated_at as well, because brand_name is not an internal detail: it
+    is published by item_to_form AND by the public item_to_widget_config, and
+    every other write path here maintains updated_at (build_form_item sets it,
+    update_form always appends it). A published field that changes with no trace
+    of when is harder to explain later than the split this prevents.
     """
     try:
         aggregates_table.update_item(
             Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
-            UpdateExpression='SET brand_name = :brand',
+            UpdateExpression='SET brand_name = :brand, updated_at = :now',
+            # attribute_exists(sk) leads, because UpdateItem is an UPSERT and
+            # attribute_not_exists(brand_name) is SATISFIED by a missing item: a
+            # form deleted between submit_form_feedback's get_item and this write
+            # (a widget on a customer's site racing DELETE /feedback-forms/<id>)
+            # would otherwise be written back as a bare {pk, sk, brand_name}
+            # stub — a nameless row in list_forms whose own form_id is '', and a
+            # deleted form answering 200 with total_submissions 0 again on the
+            # very route this change made honest. Existence-first turns that into
+            # a ConditionalCheckFailedException, i.e. nothing.
+            #
+            # The parentheses are load-bearing: `A AND B OR C` would let
+            # brand_name = '' satisfy the condition on its own and reopen it.
             ConditionExpression=(
-                'attribute_not_exists(brand_name) OR brand_name = :empty'
+                'attribute_exists(sk) AND '
+                '(attribute_not_exists(brand_name) OR brand_name = :empty)'
             ),
-            ExpressionAttributeValues={':brand': effective_brand, ':empty': ''},
+            ExpressionAttributeValues={
+                ':brand': effective_brand,
+                ':empty': '',
+                ':now': datetime.now(timezone.utc).isoformat(),
+            },
         )
         logger.info(f"Anchored form {form_id} to brand '{effective_brand}'")
-    except ClientError as e:
-        if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
-            # The form already carries a brand — already anchored, nothing to do.
+    except Exception as e:  # noqa: BLE001 - see below; a submission outlives it
+        # One handler, so there is exactly one place this can be logged from.
+        # Deliberately blind: an anchor is a convenience for future reads, and no
+        # failure of it — throttling, a denied grant, a bug in this function — is
+        # worth dropping a customer's feedback for. The record already on its way
+        # to the queue carries the same brand either way.
+        if _is_conditional_check_failure(e):
+            # The condition did its job: the form already carries a brand, or the
+            # record no longer exists. The stored state wins; nothing to do.
             return
         logger.warning(f"Could not anchor brand_name for form {form_id}: {e}")
-    except Exception as e:
-        logger.warning(f"Could not anchor brand_name for form {form_id}: {e}")
+
+
+def _is_conditional_check_failure(error: Exception) -> bool:
+    """Was this DynamoDB refusing a write because its condition did not hold?"""
+    if not isinstance(error, ClientError):
+        return False
+    return (
+        error.response.get('Error', {}).get('Code')
+        == 'ConditionalCheckFailedException'
+    )
 
 
 def build_form_item(body: dict, form_id: str | None = None) -> dict:
@@ -693,8 +740,13 @@ def get_form_submissions(form_id: str):
             'submissions': items[:limit]
         }
     except ApiError:
-        # A typed exception already carries its own status; re-raised so the
-        # blanket handler below cannot downgrade a 404 or a 400 to a 500.
+        # Precautionary, not currently reachable: the only typed raise on this
+        # route (_load_form_for_query) happens ABOVE the try, and nothing inside
+        # it raises an ApiError today. It is here so that when something in this
+        # block eventually does — a validation of a page of items, a helper that
+        # 404s — its status survives instead of being flattened to a 500 by the
+        # handler below. Pinned by a test that raises a typed exception from
+        # feedback_table.query; without this clause that test gets a 500.
         raise
     except Exception as e:
         logger.error(f"Error fetching submissions: {e}")
@@ -762,8 +814,11 @@ def get_form_stats(form_id: str):
             }
         }
     except ApiError:
-        # See get_form_submissions: a typed exception keeps its own status rather
-        # than being reported as a server fault by the handler below.
+        # See get_form_submissions: precautionary. No statement in this block
+        # raises a typed exception today (the form load, which does, is above the
+        # try), but a future one would otherwise be reported as a server fault —
+        # and would take the FeedbackFormStatsReadFailed metric with it, which is
+        # meant to count read failures rather than every 4xx-shaped cause.
         raise
     except Exception as e:
         # This read failure was previously reported as a zero count and so was

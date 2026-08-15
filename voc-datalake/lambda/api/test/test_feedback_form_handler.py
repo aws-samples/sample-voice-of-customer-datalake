@@ -3,10 +3,13 @@ Tests for feedback_form_handler.py - /feedback-forms/* endpoints.
 """
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import boto3
 import pytest
+from moto import mock_aws
 
 WIDGET_SOURCE = Path(__file__).resolve().parents[1] / 'static' / 'feedback-widget.js'
 
@@ -1205,27 +1208,65 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
 
     @patch('feedback_form_handler.feedback_table')
     @patch('feedback_form_handler.aggregates_table')
-    def test_a_missing_form_is_reported_as_missing_not_as_a_server_fault(
+    def test_a_typed_failure_inside_the_stats_query_keeps_its_own_status(
         self, mock_aggregates, mock_feedback, api_gateway_event, lambda_context,
         feedback_form_handler
     ):
         """The blanket `except Exception` must not downgrade a typed exception.
-        NotFoundError raised inside the route carries 404; swallowing it into
-        ServiceError would report a client's bad form id as a server outage and
-        make it invisible in error triage."""
-        mock_aggregates.get_item.return_value = {}
-        mock_feedback.query.side_effect = AssertionError('should not be reached')
+
+        This raises the typed exception from INSIDE the try block, which is what
+        makes it a test of the `except ApiError: raise` guard. The obvious
+        spelling — a missing form, which raises NotFoundError — proves nothing
+        about the guard: that raise happens in _load_form_for_query, above the
+        try, so it reaches the caller whether the guard exists or not (this test
+        used to be written that way and passed with both guards deleted).
+
+        Currently no statement inside the try raises an ApiError, so the guard is
+        precautionary; the mock stands in for the future one that does. Delete
+        the guard and this is a 500.
+        """
+        mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
+        mock_feedback.query.side_effect = feedback_form_handler.NotFoundError(
+            'Form not found'
+        )
 
         event = api_gateway_event(
             method='GET',
-            path='/feedback-forms/does-not-exist/stats',
-            path_params={'form_id': 'does-not-exist'},
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
         )
 
         response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 404, (
-            'a typed exception was converted to a 500 by the blanket handler'
+            'a typed exception raised inside the try was converted to a 500 by '
+            'the blanket handler'
+        )
+
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_typed_failure_inside_the_submissions_query_keeps_its_own_status(
+        self, mock_aggregates, mock_feedback, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """The same guard on the sibling route, which has the same shape and so
+        the same way of being silently correct-for-the-wrong-reason."""
+        mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
+        mock_feedback.query.side_effect = feedback_form_handler.ValidationError(
+            'limit must be a number'
+        )
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/submissions',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400, (
+            'a typed exception raised inside the try was converted to a 500 by '
+            'the blanket handler'
         )
 
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
@@ -1523,6 +1564,62 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
         assert 'attribute_not_exists(brand_name)' in kwargs['ConditionExpression']
         assert kwargs['ExpressionAttributeValues'][':empty'] == ''
         assert kwargs['ExpressionAttributeValues'][':brand'] == 'Acme Original'
+        # UpdateItem is an upsert and attribute_not_exists(brand_name) is
+        # satisfied by a MISSING item, so existence has to be required
+        # separately or this write recreates a form someone just deleted.
+        assert 'attribute_exists(sk)' in kwargs['ConditionExpression']
+        # And the parentheses are part of the guard, not formatting: without them
+        # `attribute_exists(sk) AND attribute_not_exists(brand_name) OR
+        # brand_name = :empty` is satisfied by brand_name = '' alone, on a
+        # non-existent item, which is exactly the case being excluded.
+        assert '(attribute_not_exists(brand_name) OR brand_name = :empty)' in (
+            kwargs['ConditionExpression']
+        )
+
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
+    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_anchor_records_when_it_changed_the_form(
+        self, mock_aggregates, mock_sqs, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """brand_name is published by item_to_form and by the PUBLIC widget
+        config, so the anchor changes what the management UI and the widget on a
+        customer's site report. Every other write path here maintains updated_at
+        (build_form_item sets it, update_form always appends it); a published
+        field that moves with no timestamp is the kind of change nobody can
+        account for six months later."""
+        mock_aggregates.get_item.return_value = {
+            'Item': _form_with_legacy_brand(brand_name='')
+        }
+
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'Anything'},
+        )
+
+        feedback_form_handler.lambda_handler(event, lambda_context)
+
+        kwargs = mock_aggregates.update_item.call_args.kwargs
+        assert 'updated_at' in kwargs['UpdateExpression']
+        # A real ISO-8601 instant, not a placeholder that only satisfies the
+        # assertion above.
+        datetime.fromisoformat(kwargs['ExpressionAttributeValues'][':now'])
+
+    def test_the_brand_is_not_editable_through_the_public_form_api(
+        self, feedback_form_handler
+    ):
+        """A deliberate decision, recorded as a test because the anchor makes the
+        stored brand permanent and an obvious "fix" for that is to let PUT change
+        it. It must not: brand_name is the input to _form_source_pk, so editing it
+        moves where this form's stats read looks WITHOUT moving the submissions
+        already written under the old value — the stranding this module's
+        write/read agreement exists to prevent, triggered by hand. Correcting a
+        brand needs a migration that rewrites the feedback partition too."""
+        assert 'brand_name' not in feedback_form_handler.UPDATABLE_FIELDS
 
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
@@ -1614,3 +1711,185 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
             f"SOURCE#{enqueued['source_platform']}"
             == feedback_form_handler._form_source_pk(form)
         )
+
+
+class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
+    """The backfill must not be able to bring a deleted form back.
+
+    DynamoDB's UpdateItem is an UPSERT, and `attribute_not_exists(brand_name)` is
+    SATISFIED by an item that is not there at all — so a condition written only
+    about brand_name lets the anchor CREATE the record it meant to amend. The
+    window is real: `POST /feedback-forms/<id>/submit` is public and
+    unauthenticated, so a widget on a customer's site can be mid-submission when
+    an operator deletes the form, between this route's get_item and its anchor
+    write. The role has UpdateItem on the aggregates table
+    (`aggregatesTable.grantReadWriteData` in api-stack.ts), so nothing else stops
+    it.
+
+    What a resurrected record would cost is worse than the split the anchor
+    prevents: it is a bare {pk, sk, brand_name, updated_at} stub, which
+    list_forms renders as a nameless row whose own form_id is '' (so its delete
+    and edit actions cannot address it), and — on the very route this change made
+    honest — a deleted form goes back to answering 200 with total_submissions 0,
+    because _load_form_for_query now finds an Item.
+
+    Backed by a real (moto) table rather than a mock, because "UpdateItem creates
+    the item" is DynamoDB's behaviour, not the handler's: asserting the condition
+    string is what the sibling class does, and it cannot show that the string
+    actually excludes this.
+    """
+
+    @staticmethod
+    def _aggregates_table_that_loses_the_form_mid_request(table):
+        """The real table, with the form deleted the instant it is read.
+
+        Stands in for the race: get_item answers with the record submit_form_feedback
+        is about to trust, and by the time the anchor writes, the DELETE has landed.
+        Every call goes to the real table, so the condition is evaluated by
+        DynamoDB and not by this test's idea of it.
+        """
+        racing = MagicMock()
+
+        def get_item(**kwargs):
+            response = table.get_item(**kwargs)
+            table.delete_item(Key=kwargs['Key'])
+            return response
+
+        racing.get_item.side_effect = get_item
+        racing.update_item.side_effect = table.update_item
+        return racing
+
+    @staticmethod
+    def _table_with_a_brandless_form():
+        table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
+            TableName='test-aggregates-anchor',
+            KeySchema=[
+                {'AttributeName': 'pk', 'KeyType': 'HASH'},
+                {'AttributeName': 'sk', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'pk', 'AttributeType': 'S'},
+                {'AttributeName': 'sk', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        # A form created while BRAND_NAME was unset: build_form_item stores ''.
+        table.put_item(Item={
+            'pk': 'FEEDBACK_FORM',
+            'sk': 'FORM#form-123',
+            'form_id': 'form-123',
+            'name': 'Product Form',
+            'enabled': True,
+            'brand_name': '',
+        })
+        return table
+
+    @mock_aws
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
+    @patch('feedback_form_handler.sqs')
+    def test_a_form_deleted_mid_submission_is_not_written_back(
+        self, mock_sqs, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The delete wins, and the anchor is a no-op rather than a resurrection."""
+        table = self._table_with_a_brandless_form()
+        racing = self._aggregates_table_that_loses_the_form_mid_request(table)
+
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'In flight when the form was deleted', 'rating': 5},
+        )
+
+        with patch('feedback_form_handler.aggregates_table', racing):
+            response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        # The submission itself still succeeds: it was accepted before the delete
+        # and its record already carries the brand, so dropping it would be the
+        # worse outcome — the anchor has always been best effort.
+        assert response['statusCode'] == 200
+        assert mock_sqs.send_message.called
+
+        assert 'Item' not in table.get_item(
+            Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123'}
+        ), (
+            'the anchor upserted a deleted form back into existence — '
+            'attribute_not_exists(brand_name) is satisfied by a missing item, so '
+            'the condition has to require the item to exist as well'
+        )
+
+    @mock_aws
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
+    @patch('feedback_form_handler.sqs')
+    def test_the_stats_route_still_reports_that_form_as_gone(
+        self, mock_sqs, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The consequence that matters to this change: a phantom record makes
+        _load_form_for_query find an Item, so /stats answers 200 with
+        total_submissions 0 for a deleted form — reopening the false zero this PR
+        closed, for exactly the ids most likely to be read just after a delete."""
+        table = self._table_with_a_brandless_form()
+        racing = self._aggregates_table_that_loses_the_form_mid_request(table)
+
+        submit_event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'In flight when the form was deleted'},
+        )
+        with patch('feedback_form_handler.aggregates_table', racing):
+            feedback_form_handler.lambda_handler(submit_event, lambda_context)
+
+        stats_event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+        with patch('feedback_form_handler.aggregates_table', table), patch(
+            'feedback_form_handler.feedback_table', _fake_feedback_table({})
+        ):
+            stats_response = feedback_form_handler.lambda_handler(
+                stats_event, lambda_context
+            )
+
+        body = json.loads(stats_response['body'])
+        assert stats_response['statusCode'] == 404, (
+            'a deleted form is answering the stats route again, which means the '
+            'anchor recreated it'
+        )
+        assert 'total_submissions' not in body
+
+    @mock_aws
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
+    @patch('feedback_form_handler.sqs')
+    def test_a_form_that_is_still_there_is_anchored_as_before(
+        self, mock_sqs, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The boundary the existence check must not have crossed: requiring the
+        item to exist is only correct if it still lets the ordinary brandless form
+        be anchored. Over-tighten the condition and the backfill quietly stops
+        working, which the failure it tolerates would hide."""
+        table = self._table_with_a_brandless_form()
+
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'An ordinary submission', 'rating': 4},
+        )
+
+        with patch('feedback_form_handler.aggregates_table', table):
+            response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        item = table.get_item(
+            Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123'}
+        )['Item']
+        assert item['brand_name'] == 'Acme Original'
+        # And the rest of the record is intact — an update, never a replacement.
+        assert item['name'] == 'Product Form'
+        assert item['enabled'] is True
+        datetime.fromisoformat(item['updated_at'])
