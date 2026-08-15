@@ -585,8 +585,19 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         # is still saved, with avatar_url/avatar_prompt left at None.
         if generate_avatars and persona_items:
             logger.info(f"[PERSONA] Generating {len(persona_items)} avatar(s) concurrently...")
+            # One step for the whole batch, replacing the per-persona
+            # 'generating_avatar_{i}' steps — they were sequential progress and the work
+            # no longer is. No locale keys to add: the jobs panel renders the raw step
+            # with `current_step.replaceAll('_', ' ')` (JobsSection.tsx) rather than
+            # keying translations off it, so step names are not part of the i18n surface.
             update_progress(85, 'generating_avatars')
 
+            # Tracing survives the fan-out: `generate_persona_avatar` and its Bedrock legs
+            # are @tracer-decorated, and under a Lambda context put_subsegment re-resolves
+            # the segment per thread from _X_AMZN_TRACE_ID, so worker subsegments attach to
+            # the invocation with the right trace and parent ids. Verified with three
+            # threads. Noted because "subsegments on non-main threads are dropped" is true
+            # of some X-Ray setups and has been raised against this block more than once.
             def _avatar_for(persona_id: str, persona: dict) -> dict:
                 return generate_persona_avatar({'persona_id': persona_id, **persona})
 
@@ -597,6 +608,14 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 a partially-instrumented counter is worse than none, because it reads as
                 a healthy number during a real outage. The persona is still saved; only
                 its avatar is missing, which is why this warns rather than raising.
+
+                These counters do reach CloudWatch: `generate_personas` has exactly one
+                production caller, jobs/persona_generator/handler.py, whose lambda_handler
+                carries @metrics.log_metrics and imports this same shared `metrics`
+                singleton, so the store is flushed when that handler returns. The namespace
+                comes from Metrics(namespace="VoC") in shared/logging.py, not from a
+                per-function POWERTOOLS_METRICS_NAMESPACE. Called on the main thread only
+                (the result loop), so no cross-thread store access.
                 """
                 metrics.add_metric(name='AvatarGenerationFailed', unit='Count', value=1)
                 logger.warning(

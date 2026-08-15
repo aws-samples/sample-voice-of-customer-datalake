@@ -109,8 +109,11 @@ def validate_bool(value: object, default: bool, field: str = 'value') -> bool:
         return default
     if isinstance(value, bool):
         return value
+    # Type name only, not the value: the type is the diagnostic ("you sent a string"),
+    # while the value is unbounded caller input and echoing it into a response body buys
+    # nothing the caller does not already have.
     raise ValidationError(
-        f'{field} must be true or false, got {type(value).__name__} {value!r}'
+        f'{field} must be true or false, got {type(value).__name__}'
     )
 
 

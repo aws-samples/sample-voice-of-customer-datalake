@@ -566,19 +566,13 @@ class TestConcurrencyCeilingsCannotDrift:
     against the maximum persona count. Those were independent literals whose only link
     was a comment, and a comment does not fail CI: raising the persona ceiling used to
     halve the fan-out benefit while every test still passed.
+
+    Only the half of the lockstep that needs nothing outside `shared` lives here. The two
+    assertions that must import `api.projects` / `projects_handler` are in
+    lambda/api/test/test_projects_handler.py (TestPersonaCeilingIsShared) — the shared test
+    tree should not depend on the api tree importing cleanly, which is the same isolation
+    argument that moved the avatar cache fixture out of the root conftest.
     """
-
-    def test_the_worker_ceiling_is_the_persona_ceiling(self):
-        # `api` and `shared` are separate isort sections here, hence the blank line.
-        from api.projects import AVATAR_MAX_CONCURRENCY
-
-        from shared.api import MAX_PERSONAS_PER_GENERATION
-
-        assert AVATAR_MAX_CONCURRENCY == MAX_PERSONAS_PER_GENERATION
-
-    # NOTE: the matching assertion that validate_persona_count actually enforces this
-    # ceiling lives in lambda/api/test/test_projects_handler.py — `projects_handler` is a
-    # top-level module on the api tree's sys.path, not importable from here.
 
     def test_the_client_pool_covers_the_worker_ceiling(self):
         from shared.api import MAX_PERSONAS_PER_GENERATION

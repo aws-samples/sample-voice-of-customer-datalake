@@ -302,6 +302,43 @@ class TestPersonaCeilingIsShared:
             == MAX_PERSONAS_PER_GENERATION
         ), 'the route admits more personas than the fan-out and the client pool are sized for'
 
+    def test_the_worker_ceiling_is_the_persona_ceiling(self):
+        """Lives here, not beside the pool assertion in shared/test/test_avatar.py: this
+        one has to import `api.projects`, and the shared tree should not depend on the api
+        tree importing cleanly. Same isolation argument that moved the avatar cache fixture
+        out of the root conftest, applied in the other direction.
+        """
+        from shared.api import MAX_PERSONAS_PER_GENERATION
+
+        from api.projects import AVATAR_MAX_CONCURRENCY
+
+        assert AVATAR_MAX_CONCURRENCY == MAX_PERSONAS_PER_GENERATION
+
+
+class TestPersonaPromptVersionIsStamped:
+    """Every persona stores llm_metadata.prompt_version so it stays attributable to the
+    chain that produced it. The value is a literal in api/projects.py (house style, cf.
+    processor/handler.py's PROMPT_VERSION) rather than read back out of the prompt file,
+    so nothing but this test stops the two from drifting — and a drifted pair means stored
+    personas name a prompt version that never generated them.
+
+    In the api test tree because it imports `api.projects`; the sibling assertion about the
+    file's step list lives in shared/test/test_prompt_utils.py, which needs nothing from
+    the api tree.
+    """
+
+    def test_the_stamped_version_matches_the_prompt_file(self):
+        from shared.prompts import load_prompt_file
+
+        from api.projects import PERSONA_PROMPT_VERSION
+
+        load_prompt_file.cache_clear()
+        config = load_prompt_file('persona-generation.json')
+        assert config['version'] == PERSONA_PROMPT_VERSION, (
+            'persona-generation.json and the stamped prompt_version disagree — personas '
+            'would record a version that did not generate them'
+        )
+
 
 class TestGeneratePersonasEndpoint:
     """POST /projects/<id>/personas/generate assembles the filters dict.
