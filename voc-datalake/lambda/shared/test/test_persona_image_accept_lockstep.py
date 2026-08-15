@@ -100,7 +100,10 @@ class TestClientAcceptedImageTypesLockstep:
         client map's VALUES are extensions and cannot be derived from, or replaced
         by, the Converse formats even though the keys are identical.
         """
-        from shared.image_limits import CONVERSE_IMAGE_FORMATS, IMAGE_CONTENT_TYPE_EXTENSIONS
+        from shared.image_limits import (
+            CONVERSE_IMAGE_FORMATS,
+            IMAGE_CONTENT_TYPE_EXTENSIONS,
+        )
 
         client = _frontend_mime_map('IMAGE_MIME_EXTENSIONS')
         assert client['image/jpeg'] == '.jpg'
