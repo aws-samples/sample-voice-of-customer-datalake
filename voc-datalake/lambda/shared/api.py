@@ -143,6 +143,31 @@ def get_caller_groups(event: dict) -> list[str]:
         return []
 
 
+def get_caller_subject(event: dict) -> str:
+    """Return the Cognito subject (``sub``) for the authenticated caller.
+
+    The ``sub`` claim is the stable, immutable identifier assigned by Cognito
+    at user-creation time.  Unlike a username (which can be reused) or an
+    email (which can change), it never refers to a different person.
+
+    The returned value identifies a person and must not be logged.
+
+    Raises:
+        AuthorizationError: If the ``sub`` claim is absent or empty.  These
+            routes are protected by the Cognito authorizer, so an absent claim
+            indicates misconfiguration rather than an anonymous request — the
+            handler must fail closed rather than fall back to a shared key.
+    """
+    request_context = event.get('requestContext')
+    authorizer = request_context.get('authorizer') if isinstance(request_context, dict) else None
+    claims = authorizer.get('claims', {}) if isinstance(authorizer, dict) else {}
+    raw_sub = claims.get('sub') if isinstance(claims, dict) else None
+    sub = raw_sub.strip() if isinstance(raw_sub, str) else ''
+    if sub:
+        return sub
+    raise AuthorizationError('Caller identity could not be determined')
+
+
 def require_admin(event: dict) -> None:
     """Raise AuthorizationError (403) unless the caller is in the admins group.
 
@@ -313,6 +338,7 @@ __all__ = [
     'create_api_resolver',
     'api_handler',
     'get_caller_groups',
+    'get_caller_subject',
     'require_admin',
     'get_configured_categories',
     'DEFAULT_CATEGORIES',
