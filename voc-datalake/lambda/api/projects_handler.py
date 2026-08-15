@@ -11,7 +11,15 @@ from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
-from shared.api import create_api_resolver, validate_days, validate_int, api_handler, validate_date_basis
+from shared.api import (
+    create_api_resolver,
+    validate_days,
+    validate_int,
+    validate_bool,
+    api_handler,
+    validate_date_basis,
+    MAX_PERSONAS_PER_GENERATION,
+)
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
@@ -63,8 +71,14 @@ PERSONA_IMPORTER_FUNCTION = os.environ.get('PERSONA_IMPORTER_FUNCTION', '')
 
 
 def validate_persona_count(value, default=3):
-    """Validate persona count parameter."""
-    return validate_int(value, default=default, min_val=1, max_val=10)
+    """Validate persona count parameter.
+
+    The ceiling is shared: the avatar fan-out's worker count and the image-model client's
+    connection pool both size themselves against it, so it cannot live here as a literal.
+    """
+    return validate_int(
+        value, default=default, min_val=1, max_val=MAX_PERSONAS_PER_GENERATION
+    )
 
 
 # ============================================
@@ -207,6 +221,25 @@ def api_generate_personas(project_id: str):
         # the rest of the project. Without this, generated personas were always
         # English even when Settings → Language was set to 한국어.
         'response_language': body.get('response_language'),
+        # generate_personas already honoured this flag, but it never reached the filters
+        # dict, so every request paid for the image model.
+        #
+        # Validated, not coerced. Every other field here is defaulted or validated, and
+        # this one gates billed image-model calls: `"false"` from a form post or an
+        # over-eager serialiser means "no avatars" to the caller, so accepting it as True
+        # bills N image generations nobody asked for, silently. So an explicit
+        # non-boolean is a 400, while an omitted field still means "avatars on" and no
+        # existing client changes behaviour. (JSON `null` reads as absent — dict.get
+        # cannot tell it from a missing key.)
+        #
+        # Deliberately API/script-only: no SPA caller sends it, and the frontend type
+        # does not declare it. The dashboard always wants avatars, so there is no UI to
+        # add; this exists for scripted and backfill callers that want personas without
+        # paying for images. Not an oversight — if the SPA ever grows a "skip avatars"
+        # toggle, that is when the field earns a place in the TS type.
+        'generate_avatars': validate_bool(
+            body.get('generate_avatars'), default=True, field='generate_avatars'
+        ),
     }
     job_id, _ = create_job(project_id, 'generate_personas', 'filters', filters, ttl_minutes=30*24*60)
     invoke_lambda_async(PERSONA_GENERATOR_FUNCTION, {

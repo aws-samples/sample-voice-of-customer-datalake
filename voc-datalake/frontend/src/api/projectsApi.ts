@@ -43,13 +43,15 @@ export const projectsApi = {
     days?: number
     response_language?: string
   }) =>
+    // Async since the work moved to the persona-generator Lambda: the route answers
+    // with a job id and the UI polls the jobs list. It has not returned `personas`
+    // (or an `analysis` blob) for some time — the old synchronous shape lingered here
+    // as a type that no longer described any response the endpoint sends.
     fetchApi<{
       success: boolean;
-      personas: ProjectPersona[];
-      analysis?: {
-        research: string;
-        validation: string
-      }
+      job_id: string;
+      status: string;
+      message: string;
     }>(`/projects/${projectId}/personas/generate`, {
       method: 'POST',
       body: JSON.stringify({ ...getDateBasisBodyParams(), ...(filters ?? {}) }),

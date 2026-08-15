@@ -49,6 +49,14 @@ SIGNING_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-
 SIGNING_KEY_PAIR_ID = 'K2TESTKEYPAIRID'
 
 
+# NOTE: shared.avatar's client-cache reset fixture deliberately lives in
+# lambda/shared/test/conftest.py, not here. At this level it was autouse for every Python
+# test in the repo, so ~1,400 tests imported shared.avatar for the benefit of about ten,
+# and any import-time problem in that module would have failed collection for the whole
+# suite — which matters because shared.avatar keeps a deliberately narrow import graph
+# (it has its own guard test that importing it must not pull in `cryptography`).
+
+
 @pytest.fixture(scope='session')
 def cdn_signing_keypair():
     """A real 2048-bit RSA keypair, generated once per test session.
