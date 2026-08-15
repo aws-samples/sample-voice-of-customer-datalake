@@ -12,12 +12,19 @@ from pathlib import Path
 from aws_lambda_powertools.event_handler import Response
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 # Shared module imports
-from shared.logging import logger, tracer
+from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, validate_limit
-from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from shared.exceptions import (
+    ApiError,
+    ConfigurationError,
+    ValidationError,
+    NotFoundError,
+    ServiceError,
+)
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -114,6 +121,48 @@ def validate_link_fields(body: dict) -> None:
             raise ValidationError(
                 f'{field} must be at most {LINK_FIELD_MAX_LENGTH} characters'
             )
+
+
+def _anchor_form_brand(form_id: str, effective_brand: str) -> None:
+    """Pin a form with no stored brand to the brand its submissions are going to.
+
+    build_form_item writes 'brand_name': BRAND_NAME, so a form created while
+    BRAND_NAME was unset is stored with ''. For those records BOTH sides of the
+    partition fall through to the live environment variable — the write's
+    `form.get('brand_name') or BRAND_NAME` and _form_source_pk's identical
+    fallback. They agree at any instant, so nothing looks wrong, but the
+    agreement is only as stable as the environment: rename the deployment and
+    every submission collected before the rename becomes unreachable to the
+    form's own stats read. That is exactly the stranding the write-site fix was
+    chosen to avoid.
+
+    Writing the resolved brand back onto the form record removes the dependence
+    on the environment for good: from here on both sides read a stored value the
+    next deployment cannot move.
+
+    Conditional so it is idempotent and can never overwrite a real brand — if a
+    concurrent submission (or an admin edit) got there first, the condition fails
+    and that value stands, which is the outcome we want either way. Best effort:
+    the submission itself must not fail because the anchor did not stick, since
+    the record being enqueued already carries the same brand.
+    """
+    try:
+        aggregates_table.update_item(
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
+            UpdateExpression='SET brand_name = :brand',
+            ConditionExpression=(
+                'attribute_not_exists(brand_name) OR brand_name = :empty'
+            ),
+            ExpressionAttributeValues={':brand': effective_brand, ':empty': ''},
+        )
+        logger.info(f"Anchored form {form_id} to brand '{effective_brand}'")
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+            # The form already carries a brand — already anchored, nothing to do.
+            return
+        logger.warning(f"Could not anchor brand_name for form {form_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Could not anchor brand_name for form {form_id}: {e}")
 
 
 def build_form_item(body: dict, form_id: str | None = None) -> dict:
@@ -423,9 +472,20 @@ def submit_form_feedback(form_id: str):
         logger.error(f"Error fetching form: {e}")
         raise ServiceError('Failed to load form configuration')
     
+    # The FORM's brand, not the deployment's: the stats read builds its partition
+    # from the form's stored brand_name (_form_source_pk), so stamping BRAND_NAME
+    # here would split a form's submissions across two partitions the day the
+    # deployment is renamed. `or` rather than a get() default because a stored ''
+    # must take the fallback too — that is how the read side treats it.
+    effective_brand = form.get('brand_name') or BRAND_NAME
+    if not form.get('brand_name') and effective_brand:
+        # Store it, so this form stops depending on the environment variable —
+        # see _anchor_form_brand.
+        _anchor_form_brand(form_id, effective_brand)
+
     now = datetime.now(timezone.utc)
     feedback_id = str(uuid.uuid4())
-    
+
     # Build normalized record with category routing
     metadata = {
         'form_id': form_id,
@@ -447,14 +507,10 @@ def submit_form_feedback(form_id: str):
         'rating': body.get('rating'),
         'created_at': now.isoformat(),
         'ingested_at': now.isoformat(),
-        # The FORM's brand, not the deployment's: _get_form_source_pk builds the
-        # stats partition from the form's stored brand_name, so stamping the
-        # environment variable here would split a form's submissions across two
-        # partitions the day the deployment's brand name changes — new ones under
-        # the new brand, the stats read still querying the old. Falls back to
-        # BRAND_NAME for a form recorded without one. The form record is already
-        # loaded above for the enabled check, so this costs no extra read.
-        'brand_name': form.get('brand_name') or BRAND_NAME,
+        # Resolved above, from the form record already loaded for the enabled
+        # check: the form's own brand, so this submission lands in the partition
+        # _form_source_pk queries for the whole life of the form.
+        'brand_name': effective_brand,
         'url': body.get('page_url'),
         'preset_category': form.get('category', ''),
         'preset_subcategory': form.get('subcategory', ''),
@@ -519,20 +575,56 @@ def get_form_iframe(form_id: str):
 # Form Stats & Submissions
 # ============================================
 
-def _get_form_source_pk(form_id: str) -> str:
-    """Get the source pk for querying feedback by form."""
+def _form_source_pk(form: dict) -> str:
+    """The feedback partition this form's submissions live in.
+
+    Pure: derived from the form record the caller already holds, never from a
+    read of its own. A partition GUESSED from a failed form read is the whole
+    problem — it resolves to BRAND_NAME, which after a rename is a partition the
+    form's submissions were never written to, so the query finds nothing and the
+    route reports 0 submissions for a form that has them (issue #312's false zero
+    arriving by another door). Callers get the record from _load_form_for_query,
+    which fails loudly instead.
+
+    Mirrors submit_form_feedback's write side: the form's own brand, the
+    deployment's only for a form recorded without one, and `or` rather than a
+    get() default so a stored '' takes the fallback on both sides alike.
+    """
+    effective_brand = form.get('brand_name') or BRAND_NAME
+    return f"SOURCE#{effective_brand}" if effective_brand else 'SOURCE#feedback_form'
+
+
+def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
+    """Load a form record for a stats/submissions query, failing loudly.
+
+    One get_item answers both questions those routes need, so neither has to be
+    guessed:
+
+    - Does this form exist? A form id that was deleted (or never existed) must be
+      a 404, not a 200 with a measured-looking 0 — LinkedFormEvidence renders
+      that zero as evidence against a work item and has an `evidence.unavailable`
+      branch waiting for the error.
+    - Which feedback partition are its submissions in? See _form_source_pk: a
+      degraded fallback here queries the wrong partition after a brand rename.
+
+    Both failure modes previously produced HTTP 200 with total_submissions: 0 on
+    the stats route, which is the exact defect issue #312 is about.
+    """
     try:
-        form_response = aggregates_table.get_item(
+        response = aggregates_table.get_item(
             Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
         )
-        form = form_response.get('Item')
-        form_brand_name = form.get('brand_name', '') if form else ''
     except Exception as e:
-        logger.warning(f"Could not fetch form brand_name: {e}")
-        form_brand_name = ''
-    
-    effective_brand = form_brand_name or BRAND_NAME
-    return f"SOURCE#{effective_brand}" if effective_brand else 'SOURCE#feedback_form'
+        # Surfaced as a metric because this failure used to be invisible: it was
+        # reported to the caller as a zero count and to operations as nothing.
+        metrics.add_metric(name='FeedbackFormReadFailed', unit='Count', value=1)
+        logger.error(f"Error fetching form {form_id}: {e}")
+        raise ServiceError(read_failure_message) from e
+
+    form = response.get('Item')
+    if not form:
+        raise NotFoundError('Form not found')
+    return form
 
 
 @app.get("/feedback-forms/<form_id>/submissions")
@@ -544,23 +636,15 @@ def get_form_submissions(form_id: str):
     
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
-    
-    # Verify form exists
-    try:
-        response = aggregates_table.get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
-        )
-        if not response.get('Item'):
-            raise NotFoundError('Form not found')
-    except NotFoundError:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching form: {e}")
-        raise ServiceError('Failed to fetch form')
-    
+
+    # One read answers both the 404 and the partition, where this route used to
+    # do its own existence check and then have _get_form_source_pk re-read the
+    # same record (and swallow a failure of it).
+    form = _load_form_for_query(form_id, 'Failed to fetch form')
+
     source_channel = f'form_{form_id}'
-    source_pk = _get_form_source_pk(form_id)
-    
+    source_pk = _form_source_pk(form)
+
     try:
         items = []
         total_rating = 0
@@ -608,9 +692,13 @@ def get_form_submissions(form_id: str):
             },
             'submissions': items[:limit]
         }
+    except ApiError:
+        # A typed exception already carries its own status; re-raised so the
+        # blanket handler below cannot downgrade a 404 or a 400 to a 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching submissions: {e}")
-        raise ServiceError('Failed to fetch submissions')
+        raise ServiceError('Failed to fetch submissions') from e
 
 
 @app.get("/feedback-forms/<form_id>/stats")
@@ -622,13 +710,21 @@ def get_form_stats(form_id: str):
     rendered next to a prioritization score, so "0 submissions" is a claim about
     the product, not a placeholder: a read that could not be completed must not
     be reported as a form nobody answered.
+
+    That applies to EVERY read this route makes, not just the feedback query: an
+    unconfigured table, a failed form lookup, a form that no longer exists and a
+    failed feedback query all used to arrive as total_submissions: 0.
     """
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
 
+    # 404 for a deleted form, and the partition its submissions are in, from the
+    # one read — never a partition guessed from a read that failed.
+    form = _load_form_for_query(form_id, 'Failed to fetch form stats')
+
     source_channel = f'form_{form_id}'
-    source_pk = _get_form_source_pk(form_id)
-    
+    source_pk = _form_source_pk(form)
+
     try:
         total_rating = 0
         rating_count = 0
@@ -665,9 +761,16 @@ def get_form_stats(form_id: str):
                 'rating_count': rating_count,
             }
         }
+    except ApiError:
+        # See get_form_submissions: a typed exception keeps its own status rather
+        # than being reported as a server fault by the handler below.
+        raise
     except Exception as e:
+        # This read failure was previously reported as a zero count and so was
+        # invisible in dashboards; the metric is what makes it observable.
+        metrics.add_metric(name='FeedbackFormStatsReadFailed', unit='Count', value=1)
         logger.error(f"Error fetching form stats: {e}")
-        raise ServiceError('Failed to fetch form stats')
+        raise ServiceError('Failed to fetch form stats') from e
 
 
 # ============================================
