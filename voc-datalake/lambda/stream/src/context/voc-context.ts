@@ -9,7 +9,31 @@ import type { SupportedLanguage } from './language.js';
 
 const SENTIMENT_LABELS = ['positive', 'negative', 'neutral', 'mixed'] as const;
 
-const categoryItemSchema = z.object({ id: z.string() }).passthrough();
+// The configured category taxonomy lives in the aggregates table under ONE key,
+// written by the PUT /settings/categories handler (lambda/api/settings_handler.py,
+// CATEGORIES_PK/CATEGORIES_SK) and read by the Python owner of this contract
+// (lambda/shared/api.py::get_raw_categories_config). Any other key is never
+// written, so reading it empties the Top Categories section on every turn.
+// Pinned from Python by lambda/api/test/test_streaming_categories_lockstep.py.
+const CATEGORY_SETTINGS_PK = 'SETTINGS#categories';
+const CATEGORY_SETTINGS_SK = 'config';
+
+// The daily counter partitions are named after the ENRICHMENT OUTPUT, which is
+// the category NAME (see lambda/aggregator/handler.py) — hence `name` here, not
+// any internal identifier. `name` is the only required property: a configured
+// category that carries no `id` must survive the parse, because the writer does
+// not guarantee one.
+const categoryItemSchema = z.object({ name: z.string() }).passthrough();
+
+// Mirrors lambda/shared/api.py::DEFAULT_CATEGORIES. When nothing is configured,
+// get_configured_categories() falls back to this list, and the enrichment
+// prompt uses the same names, so the counters exist under these names. Falling
+// back to an empty array here would report an empty section where the metrics
+// surface reports counts.
+const DEFAULT_CATEGORIES = [
+  'delivery', 'customer_support', 'product_quality', 'pricing',
+  'website', 'app', 'billing', 'returns', 'communication', 'other',
+] as const;
 
 interface VocChatContext {
   systemPrompt: string;
@@ -73,6 +97,11 @@ async function sumDailyMetric(
   return totals.reduce((sum, v) => sum + v, 0);
 }
 
+/**
+ * The configured category names, matching lambda/shared/api.py
+ * (`get_raw_categories_config` + `get_configured_categories`) item-for-item:
+ * one key, the `name` field, and DEFAULT_CATEGORIES when nothing is configured.
+ */
 async function getConfiguredCategories(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
@@ -82,26 +111,28 @@ async function getConfiguredCategories(
       new QueryCommand({
         TableName: aggregatesTable,
         KeyConditionExpression: 'pk = :pk AND sk = :sk',
-        ExpressionAttributeValues: { ':pk': 'CONFIG#categories', ':sk': 'CURRENT' },
+        ExpressionAttributeValues: { ':pk': CATEGORY_SETTINGS_PK, ':sk': CATEGORY_SETTINGS_SK },
       }),
     );
     const items = resp.Items ?? [];
     if (items.length > 0) {
       const firstItem: Record<string, unknown> = items[0];
       const cats = firstItem.categories;
-      if (Array.isArray(cats)) {
+      if (Array.isArray(cats) && cats.length > 0) {
+        // A configured-but-nameless list yields [] here, exactly as the Python
+        // reader does — it only falls back when the item itself is absent.
         return cats
           .map((c: unknown) => {
             const parsed = categoryItemSchema.safeParse(c);
-            return parsed.success ? parsed.data.id : '';
+            return parsed.success ? parsed.data.name : '';
           })
           .filter(Boolean);
       }
     }
-  } catch {
-    // fallback
+  } catch (error) {
+    console.warn('Could not fetch categories from settings; using defaults:', error);
   }
-  return [];
+  return [...DEFAULT_CATEGORIES];
 }
 
 async function fetchCategoryCounts(
