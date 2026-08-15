@@ -43,7 +43,11 @@ AVATAR_GENERATION_PROMPTS = 'avatar-generation.json'
 # it had been derived independently in two test trees, so a moved prompts directory would
 # be reported by whichever of their assertions happened to run first, and the resolver
 # could disagree with both.
-REPO_PROMPTS_DIR = Path(__file__).resolve().parent.parent / 'api' / 'prompts'
+#
+# Deliberately not .resolve()'d, matching the expression this replaced: resolving would
+# follow symlinks, which changes which directory this names under a symlinked deployment
+# root. Extracting a constant should not quietly alter where production code looks.
+REPO_PROMPTS_DIR = Path(__file__).parent.parent / 'api' / 'prompts'
 
 
 def get_prompts_dir() -> Path:

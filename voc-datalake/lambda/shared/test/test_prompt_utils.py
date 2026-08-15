@@ -5,6 +5,11 @@ import pytest
 from unittest.mock import patch, mock_open, MagicMock
 from pathlib import Path
 
+# Repo location of the prompt files. Imported from the module under test rather than
+# recomputed here: get_prompts_dir()'s local-dev branch IS this constant, so these tests
+# can no longer pin the loader at a directory the production code does not look in.
+from shared.prompts import REPO_PROMPTS_DIR
+
 
 class TestGetPromptsDir:
     @patch('shared.prompts.Path')
@@ -28,14 +33,14 @@ class TestGetPromptsDir:
         # Non-empty is the invariant; don't bake in the file format.
         assert any(prompts_dir.iterdir())
 
-    def test_raises_not_found(self, tmp_path):
+    def test_raises_not_found(self):
         """get_prompts_dir raises FileNotFoundError when no dir exists."""
         from shared.prompts import get_prompts_dir
         mock_false = MagicMock()
         mock_false.exists.return_value = False
         mock_false.__truediv__ = lambda self, x: mock_false
         mock_false.parent = mock_false
-        # REPO_PROMPTS_DIR is resolved once at import, so patching Path alone no longer
+        # REPO_PROMPTS_DIR is computed once at import, so patching Path alone no longer
         # reaches the local-dev branch — it would find the real directory and return it.
         # All three candidates have to be made absent for "nothing exists" to be the case
         # under test.
@@ -222,11 +227,7 @@ class TestConvenienceFunctions:
         ml.assert_called_with('avatar-generation.json')
 
 
-# Repo location of the prompt files (the production loader's local fallback doesn't
-# resolve from the test cwd, so these tests pin the resolver at this directory). Taken
-# from shared.prompts rather than recomputed: the resolver's own local branch is this same
-# constant, so a test can no longer look somewhere the production code does not.
-from shared.prompts import REPO_PROMPTS_DIR
+
 
 
 def _extract_slots(text: str) -> set:
