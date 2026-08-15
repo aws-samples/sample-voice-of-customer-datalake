@@ -22,11 +22,19 @@ from shared.api import (
 )
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
-from shared.exceptions import NotFoundError, ServiceError, ValidationError
+from shared.exceptions import (
+    ApiError,
+    AuthorizationError,
+    ConfigurationError,
+    NotFoundError,
+    ServiceError,
+    ValidationError,
+)
 from shared.persona_import import validate_import_config
 from shared.tokens import hash_token
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 import boto3
 
 from projects import (
@@ -405,55 +413,392 @@ def api_delete_job(project_id: str, job_id: str):
 # ============================================
 # Prioritization Routes
 # ============================================
+#
+# One ballot per reviewer per document, not one shared score map.
+#
+# Storage lives in ONE partition, with the identity in the sort key:
+#
+#     pk = 'PRIORITIZATION'
+#     sk = 'BALLOT#{document_id}#user:{cognito_sub}'
+#
+# Why this shape:
+#   * A reviewer's save is a single `update_item` on its OWN key, so two
+#     reviewers saving at the same moment cannot lose each other's edits. The
+#     previous shape was a read-modify-write of one shared `scores` map, which
+#     silently dropped the slower writer's numbers and recorded nobody's name.
+#   * The page's read stays ONE paginated query on `pk = 'PRIORITIZATION'`,
+#     which also returns the legacy `SCORES` item in the same call. Partitioning
+#     per document would instead cost one read per document, on a page that
+#     already fans out per project.
+#   * The reviewer segment is namespaced by KIND ('user:' today) so that a later
+#     anonymous ballot ('anon:') can never land on a signed-in reviewer's key.
+#     Anonymous voting is deliberately NOT implemented here.
+#
+# Parsing assumption: document ids and Cognito subjects are both server-minted
+# and contain no '#', which is what makes `BALLOT#{id}#{kind}:{subject}` safely
+# splittable. Client-supplied document ids are checked against that assumption
+# in `_validated_ballot_document_id` rather than trusted.
+#
+# Scale ceiling: ballots grow as documents x reviewers inside a single partition.
+# That suits a team-sized backlog (tens of documents, tens of reviewers) and is
+# read in one paginated query. A much larger deployment would need re-keying —
+# e.g. a partition per period, or per document once the read is already fanned
+# out — not a bigger page size.
+PRIORITIZATION_PK = 'PRIORITIZATION'
+
+# The pre-ballot item: one map of document_id -> score, written by every
+# reviewer. Read through (INVARIANT: nothing looks lost) and migrated away entry
+# by entry on first write, so there is no migration script to run.
+LEGACY_SCORES_SK = 'SCORES'
+
+BALLOT_SK_PREFIX = 'BALLOT#'
+REVIEWER_KIND_USER = 'user'
+
+# The four axes a reviewer scores, and the weights the composite score uses.
+# The weights mirror `calculatePriorityScore` in the frontend's
+# prioritizationUtils.ts — the aggregate's spread has to be in the same unit the
+# page already sorts by, or "spread" would describe a different number than the
+# one on screen.
+SCORE_AXES = ('impact', 'time_to_market', 'confidence', 'strategic_fit')
+COMPOSITE_WEIGHTS = {
+    'impact': 0.4,
+    'time_to_market': 0.3,
+    'strategic_fit': 0.2,
+    'confidence': 0.1,
+}
+
+# Sliders are 0-5. Out-of-range numbers are clamped rather than refused: the
+# value is bounded either way and a clamp keeps a save from failing wholesale
+# over one axis.
+MIN_AXIS_VALUE = 0
+MAX_AXIS_VALUE = 5
+
+# A note is free text a reviewer types beside the sliders. Bounded because it is
+# stored verbatim and read back on every page load.
+MAX_BALLOT_NOTE_LEN = 2000
+
+
+def _caller_subject() -> str:
+    """Return the authenticated Cognito subject of the caller, or raise.
+
+    Fails CLOSED on purpose. A placeholder such as 'unknown' would merge every
+    reviewer without a readable subject into one bucket — precisely the defect
+    per-reviewer ballots exist to remove — and it would do so silently, writing
+    a ballot that claims to be someone.
+
+    NOTE: this collapses onto `shared.api.get_caller_subject` once the open pull
+    request introducing that helper merges; it is local here only to avoid
+    editing shared/api.py while that change is in flight.
+    """
+    request_context = app.current_event.raw_event.get('requestContext') or {}
+    claims = (request_context.get('authorizer') or {}).get('claims') or {}
+    subject = claims.get('sub')
+    if not isinstance(subject, str) or not subject.strip():
+        raise AuthorizationError('Authenticated reviewer identity is required')
+    return subject.strip()
+
+
+def _reviewer_segment(subject: str) -> str:
+    """The kind-namespaced reviewer half of a ballot sort key."""
+    return f'{REVIEWER_KIND_USER}:{subject}'
+
+
+def _ballot_sk(document_id: str, subject: str) -> str:
+    return f'{BALLOT_SK_PREFIX}{document_id}#{_reviewer_segment(subject)}'
+
+
+def _parse_ballot_sk(sk: str) -> tuple[str, str] | None:
+    """Split a ballot sort key into (document_id, reviewer_segment).
+
+    Returns None for anything that is not a ballot, so an unrelated item in the
+    partition (the legacy SCORES map, or a future sibling record) is skipped
+    rather than misread as a ballot. Safe because neither half contains '#'
+    (see the module comment above).
+    """
+    if not sk.startswith(BALLOT_SK_PREFIX):
+        return None
+    remainder = sk[len(BALLOT_SK_PREFIX):]
+    document_id, _, reviewer = remainder.rpartition('#')
+    if not document_id or not reviewer:
+        return None
+    return document_id, reviewer
+
+
+def _validated_ballot_document_id(raw: Any) -> str:
+    """Check that a client-supplied score key can be a ballot sort key.
+
+    '#' is refused rather than escaped: it is the sort-key delimiter, server-minted
+    document ids never contain it, and an id carrying one would make the key
+    ambiguous to `_parse_ballot_sk`. The length bound keeps an absurd id a 400
+    naming the field instead of a DynamoDB ValidationException surfacing as a 500
+    (a sort key is capped at 1024 bytes; MAX_SOURCE_DOCUMENT_ID_LEN is the same
+    bound the aiming fields in this module already use).
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValidationError('scores keys must be document ids')
+    document_id = raw.strip()
+    if '#' in document_id:
+        raise ValidationError('scores keys must be document ids')
+    if len(document_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+        raise ValidationError('scores keys must be document ids')
+    return document_id
+
+
+def _axis_value(entry: Any, axis: str) -> float:
+    """Read one axis out of a stored ballot or a legacy score map entry.
+
+    Values come back from DynamoDB as Decimal and may be absent (a legacy entry
+    written before an axis existed), so this normalises to float and treats
+    anything unreadable as 0.0 — the same "unscored" value the page shows.
+    """
+    if not isinstance(entry, dict):
+        return 0.0
+    try:
+        return float(entry.get(axis) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _composite(entry: Any) -> float:
+    """The weighted priority score of one ballot."""
+    return sum(_axis_value(entry, axis) * weight for axis, weight in COMPOSITE_WEIGHTS.items())
+
+
+def _score_payload(document_id: str, entry: Any) -> dict:
+    """One entry of the `scores` map the deployed frontend consumes.
+
+    Deliberately unchanged in shape: the frontend is NOT changing in this
+    request, so the values it shows and edits are now the CALLER'S OWN ballot
+    under exactly the keys it already reads.
+    """
+    notes = entry.get('notes') if isinstance(entry, dict) else None
+    return {
+        'document_id': document_id,
+        'impact': _axis_value(entry, 'impact'),
+        'time_to_market': _axis_value(entry, 'time_to_market'),
+        'confidence': _axis_value(entry, 'confidence'),
+        'strategic_fit': _axis_value(entry, 'strategic_fit'),
+        'notes': notes if isinstance(notes, str) else '',
+    }
+
+
+def _read_prioritization_partition() -> list[dict]:
+    """Every item under `pk = 'PRIORITIZATION'`, in ONE paginated query.
+
+    Paginated because DynamoDB caps a query page at 1MB: without following
+    LastEvaluatedKey a large-enough backlog would silently return only the
+    reviewers whose ballots happened to sort first.
+    """
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+    items: list[dict] = []
+    query_kwargs: dict[str, Any] = {
+        'KeyConditionExpression': Key('pk').eq(PRIORITIZATION_PK),
+    }
+    while True:
+        response = table.query(**query_kwargs)
+        items.extend(response.get('Items', []))
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            return items
+        query_kwargs['ExclusiveStartKey'] = last_key
+
+
+def _aggregate_scores(
+    ballots_by_document: dict[str, list[dict]], legacy_scores: dict
+) -> dict:
+    """Per document: the mean of each axis, how many reviewers scored it, and the
+    spread of the composite score.
+
+    A surviving legacy entry counts as exactly ONE unattributed ballot. It cannot
+    be double-counted with a real ballot for the same document, because the first
+    save against a document removes its legacy entry in the same request (see
+    `_drop_legacy_score`).
+    """
+    aggregates: dict[str, dict] = {}
+    for document_id in set(ballots_by_document) | set(legacy_scores or {}):
+        entries: list[Any] = list(ballots_by_document.get(document_id, []))
+        if document_id in (legacy_scores or {}):
+            entries.append(legacy_scores[document_id])
+        if not entries:
+            continue
+        composites = [_composite(entry) for entry in entries]
+        aggregates[document_id] = {
+            **{
+                axis: round(
+                    sum(_axis_value(entry, axis) for entry in entries) / len(entries), 2
+                )
+                for axis in SCORE_AXES
+            },
+            'reviewer_count': len(entries),
+            # Zero for a single reviewer, which is the honest reading: one ballot
+            # cannot disagree with itself.
+            'score_spread': round(max(composites) - min(composites), 2),
+        }
+    return aggregates
+
+
+def _drop_legacy_score(table, document_id: str) -> None:
+    """Remove one document's entry from the legacy shared map, if it is still there.
+
+    Migrate-on-write, so no migration script and no window in which a legacy
+    value and a real ballot are both counted. Conditional so that the common case
+    (already migrated, or never present) is a no-op rather than a resurrection of
+    an empty `scores` map.
+    """
+    try:
+        table.update_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': LEGACY_SCORES_SK},
+            UpdateExpression='REMOVE #scores.#document',
+            ConditionExpression='attribute_exists(#scores.#document)',
+            ExpressionAttributeNames={'#scores': 'scores', '#document': document_id},
+        )
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
+            raise
+
 
 @app.get("/projects/prioritization")
 @tracer.capture_method
 def api_get_prioritization_scores():
-    try:
-        response = get_aggregates_table().get_item(Key={'pk': 'PRIORITIZATION', 'sk': 'SCORES'})
-        return {'scores': response.get('Item', {}).get('scores', {})}
-    except Exception as e:
-        logger.warning(f"Failed to get prioritization scores: {e}")
-        return {'scores': {}}
+    """Return the caller's own ballots plus the cross-reviewer aggregate.
 
+    `scores` keeps the exact shape the deployed frontend consumes, holding the
+    CALLER'S values (or a legacy value where the caller has no ballot yet), so
+    the page keeps showing and editing the caller's own numbers with no frontend
+    change. `aggregates` is new and additive, for a later frontend change.
 
-@app.put("/projects/prioritization")
-@tracer.capture_method
-def api_save_prioritization_scores():
-    body = app.current_event.json_body or {}
+    A failed read RAISES. Returning an empty map made "the read failed" and
+    "nobody has scored anything" indistinguishable, so a transient DynamoDB error
+    looked like an unscored backlog — and a save from that state would then
+    persist zeros over real ballots.
+    """
+    subject = _caller_subject()
     try:
-        get_aggregates_table().put_item(Item={
-            'pk': 'PRIORITIZATION', 'sk': 'SCORES',
-            'scores': body.get('scores', {}),
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        })
-        return {'success': True}
+        items = _read_prioritization_partition()
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f"Failed to save prioritization scores: {e}")
-        raise ServiceError('Failed to save prioritization scores')
+        logger.exception(f"Failed to read prioritization ballots: {e}")
+        raise ServiceError('Failed to read prioritization scores') from e
+
+    caller_segment = _reviewer_segment(subject)
+    legacy_scores: dict = {}
+    ballots_by_document: dict[str, list[dict]] = {}
+    caller_ballots: dict[str, dict] = {}
+
+    for item in items:
+        sk = item.get('sk') or ''
+        if sk == LEGACY_SCORES_SK:
+            stored = item.get('scores')
+            legacy_scores = stored if isinstance(stored, dict) else {}
+            continue
+        parsed = _parse_ballot_sk(sk)
+        if not parsed:
+            continue
+        document_id, reviewer = parsed
+        ballots_by_document.setdefault(document_id, []).append(item)
+        if reviewer == caller_segment:
+            caller_ballots[document_id] = item
+
+    scores = {
+        document_id: _score_payload(document_id, ballot)
+        for document_id, ballot in caller_ballots.items()
+    }
+    # Read-through: a document the caller has not scored, but which carries a
+    # pre-ballot value, still shows that value rather than looking unscored.
+    for document_id, entry in legacy_scores.items():
+        if document_id not in scores:
+            scores[document_id] = _score_payload(document_id, entry)
+
+    return {
+        'scores': scores,
+        'aggregates': _aggregate_scores(ballots_by_document, legacy_scores),
+    }
 
 
 @app.patch("/projects/prioritization")
 @tracer.capture_method
 def api_patch_prioritization_scores():
+    """Persist the caller's own ballot for each document in the request.
+
+    Body shape is unchanged (`{'scores': {document_id: {...}}}`) because the
+    deployed frontend is unchanged; every entry is written as the CALLER'S ballot.
+
+    Each document is one `update_item` on the caller's own key — never a
+    read-modify-write of a shared map — so concurrent reviewers cannot overwrite
+    each other. No `ttl` attribute is ever written: the aggregates table expires
+    anything carrying one, and a ballot is a durable decision record.
+    """
+    subject = _caller_subject()
     body = app.current_event.json_body or {}
-    changed_scores = body.get('scores', {})
+    changed_scores = body.get('scores') or {}
+    if not isinstance(changed_scores, dict):
+        raise ValidationError('scores must be an object keyed by document id')
     if not changed_scores:
         return {'success': True, 'message': 'No changes to save'}
+
+    # Validate every key BEFORE the first write, so a malformed id cannot leave
+    # half the request persisted.
+    validated = [
+        (_validated_ballot_document_id(document_id), entry)
+        for document_id, entry in changed_scores.items()
+    ]
+
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+    now = datetime.now(timezone.utc).isoformat()
+
     try:
-        table = get_aggregates_table()
-        response = table.get_item(Key={'pk': 'PRIORITIZATION', 'sk': 'SCORES'})
-        existing_scores = response.get('Item', {}).get('scores', {})
-        merged_scores = {**existing_scores, **changed_scores}
-        table.put_item(Item={
-            'pk': 'PRIORITIZATION', 'sk': 'SCORES',
-            'scores': merged_scores,
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        })
-        return {'success': True, 'updated_count': len(changed_scores)}
+        for document_id, entry in validated:
+            notes = entry.get('notes') if isinstance(entry, dict) else ''
+            if not isinstance(notes, str):
+                notes = ''
+            table.update_item(
+                Key={'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(document_id, subject)},
+                UpdateExpression=(
+                    'SET #impact = :impact, #time_to_market = :time_to_market, '
+                    '#confidence = :confidence, #strategic_fit = :strategic_fit, '
+                    '#notes = :notes, #document_id = :document_id, '
+                    '#reviewer = :reviewer, #updated_at = :updated_at'
+                ),
+                ExpressionAttributeNames={
+                    '#impact': 'impact',
+                    '#time_to_market': 'time_to_market',
+                    '#confidence': 'confidence',
+                    '#strategic_fit': 'strategic_fit',
+                    '#notes': 'notes',
+                    '#document_id': 'document_id',
+                    '#reviewer': 'reviewer',
+                    '#updated_at': 'updated_at',
+                },
+                ExpressionAttributeValues={
+                    **{
+                        f':{axis}': validate_int(
+                            (entry or {}).get(axis) if isinstance(entry, dict) else None,
+                            default=MIN_AXIS_VALUE,
+                            min_val=MIN_AXIS_VALUE,
+                            max_val=MAX_AXIS_VALUE,
+                        )
+                        for axis in SCORE_AXES
+                    },
+                    ':notes': notes[:MAX_BALLOT_NOTE_LEN],
+                    ':document_id': document_id,
+                    ':reviewer': _reviewer_segment(subject),
+                    ':updated_at': now,
+                },
+            )
+            # Same save: the pre-ballot value for this document goes away, so it
+            # is never counted alongside the ballot that replaced it.
+            _drop_legacy_score(table, document_id)
+        return {'success': True, 'updated_count': len(validated)}
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f"Failed to patch prioritization scores: {e}")
-        raise ServiceError('Failed to save prioritization scores')
+        logger.exception(f"Failed to save prioritization ballot: {e}")
+        raise ServiceError('Failed to save prioritization scores') from e
 
 
 # ============================================
