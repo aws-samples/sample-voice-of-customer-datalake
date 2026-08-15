@@ -25,6 +25,7 @@ from shared.tables import get_jobs_table, get_aggregates_table, get_projects_tab
 from shared.jobs import create_job
 from shared.exceptions import (
     ApiError,
+    AuthorizationError,
     ConfigurationError,
     NotFoundError,
     ServiceError,
@@ -445,8 +446,11 @@ MAX_SOURCE_DOCUMENT_ID_LEN = 256
 #
 # Parsing assumption: document ids and Cognito subjects are both server-minted
 # and contain no '#', which is what makes `BALLOT#{id}#{kind}:{subject}` safely
-# splittable. Client-supplied document ids are checked against that assumption
-# in `_validated_ballot_document_id` rather than trusted.
+# splittable. BOTH halves are CHECKED against that assumption rather than trusted
+# — document ids in `_validated_ballot_document_id`, the reviewer subject in
+# `_caller_reviewer_subject`. A '#' in either half mis-splits the key silently:
+# the write succeeds, the ballot becomes unreadable, and a phantom document id
+# appears in `aggregates`.
 #
 # Scale ceiling: ballots grow as documents x reviewers inside a single partition.
 # That suits a team-sized backlog (tens of documents, tens of reviewers) and is
@@ -510,8 +514,34 @@ def _caller_reviewer_subject() -> str:
     placeholder such as 'unknown' would merge every reviewer without a readable
     subject into one bucket — precisely the defect per-reviewer ballots exist to
     remove — and would do so silently, writing a ballot that claims to be someone.
+
+    Also CHECKS the no-'#' assumption the module comment above declares, rather
+    than trusting it the way it was trusted before. '#' is the sort-key delimiter
+    and `_parse_ballot_sk` splits on it, so a subject carrying one mis-splits the
+    key three silent ways at once: the save answers 200, the reviewer's own ballot
+    is unreadable in `scores` so the page shows it as unscored and they re-enter
+    it, and `aggregates` gains a row under a document id that does not exist —
+    which `PrioritizationAggregate` tells consumers means "somebody scored this".
+    The write also lands on a key no read can address, so it is unreclaimable
+    without a scan.
+
+    A Cognito `sub` is a v4 UUID, so this is not reachable through the Cognito
+    authorizer today. Checked anyway because the module comment presents the
+    assumption as load-bearing, document ids are already held to it, and it stops
+    being free the moment the 'anon:' kind the key is namespaced for arrives —
+    an anonymous identifier is whatever its implementer chooses, not something
+    Cognito minted. Failing closed here is one line; the corruption it prevents
+    is silent and unrecoverable.
+
+    The message names the rule and never echoes the subject, which identifies a
+    person and must not be logged (`get_caller_subject`'s own contract).
     """
-    return get_caller_subject(app.current_event.raw_event)
+    subject = get_caller_subject(app.current_event.raw_event)
+    if '#' in subject:
+        raise AuthorizationError(
+            "Caller identity must not contain '#', the ballot sort-key delimiter"
+        )
+    return subject
 
 
 def _reviewer_segment(subject: str) -> str:
@@ -528,8 +558,9 @@ def _parse_ballot_sk(sk: str) -> tuple[str, str] | None:
 
     Returns None for anything that is not a ballot, so an unrelated item in the
     partition (the legacy SCORES map, or a future sibling record) is skipped
-    rather than misread as a ballot. Safe because neither half contains '#'
-    (see the module comment above).
+    rather than misread as a ballot. The `rpartition` is safe because neither half
+    contains '#' — an invariant the write path ENFORCES on both halves rather than
+    assuming (see the module comment above).
     """
     if not sk.startswith(BALLOT_SK_PREFIX):
         return None
@@ -647,15 +678,37 @@ def _is_a_vote(entry: Any) -> bool:
     return any(_carries_axis(entry, axis) for axis in SCORE_AXES)
 
 
+def _is_fully_scored(entry: Any) -> bool:
+    """Whether an entry expressed a value for EVERY axis.
+
+    The precondition for comparing one ballot's composite against another's.
+    `_composite` weighs an absent axis as 0, so a ballot that scored fewer axes
+    always sits lower — comparing it against a fully-scored one measures how
+    COMPLETELY each reviewer scored rather than how much they disagreed. Two
+    reviewers who agreed exactly on the only axis they both scored reported a
+    spread of 2.4 out of 5.0 before this existed.
+    """
+    return all(_carries_axis(entry, axis) for axis in SCORE_AXES)
+
+
 def _composite(entry: Any) -> float:
     """The weighted priority score of one ballot.
 
     Absent axes weigh as 0, exactly as they do on the page: `calculatePriorityScore`
     reads whatever `getScore` handed it, and the axes this can see are the axes the
     reviewer sent. So a ballot scoring only `impact` sits lower in the composite
-    than a fully-scored one carrying the same number — a known and deliberate
-    floor, since renormalising the weights over the present axes would put the
-    spread in a different unit than the column the page sorts by.
+    than a fully-scored one carrying the same number.
+
+    That floor is why `score_spread` compares only fully-scored ballots rather
+    than every voting one (see `_aggregate_scores`). Renormalising the weights
+    over the present axes would be the other way to make partial ballots
+    comparable, and is deliberately NOT done: renormalised weights no longer sum
+    to 1.0 against the four-axis 0-5 scale, so the composite — and therefore the
+    spread — would silently leave the unit the page's own column sorts by, for
+    some ballots and not others. That scale is what
+    `test_prioritization_weights_lockstep.py` exists to protect. Restricting
+    WHICH ballots are compared keeps every composite on the scale; changing how
+    one is computed would not.
     """
     return sum(_axis_value(entry, axis) * weight for axis, weight in COMPOSITE_WEIGHTS.items())
 
@@ -738,6 +791,19 @@ def _aggregate_scores(
     document; `reviewer_count` is the count of reviewers who scored something, not
     of reviewers who scored every axis.
 
+    `score_spread` compares only FULLY-scored ballots, and is 0.0 below two of
+    them. It is the range of `_composite`, which floors an absent axis at 0, so a
+    partially-scored ballot always composites lower than a complete one carrying
+    the same numbers — including it measured how completely each reviewer scored
+    rather than how far apart they were. Two reviewers who agreed exactly on the
+    one axis they both scored reported a spread of 2.4 out of a 5.0 range, and
+    adding real disagreement barely moved it. Excluded rather than renormalised,
+    which would take the composite off the scale the page sorts by (see
+    `_composite`). So `reviewer_count` can exceed the number of ballots the spread
+    compares: the means describe everyone who scored, the spread describes only
+    those who can be compared like for like, and zero spread still means the
+    comparable reviewers agreed.
+
     Response size: one row per document that anybody has scored — reviewers are
     collapsed into a mean here rather than listed, so the response grows with
     documents alone, not documents x reviewers the way storage does. Documents
@@ -754,18 +820,25 @@ def _aggregate_scores(
         votes = [entry for entry in entries if _is_a_vote(entry)]
         if not votes:
             continue
-        composites = [_composite(entry) for entry in votes]
         means = {}
         for axis in SCORE_AXES:
             scored = [_axis_value(entry, axis) for entry in votes
                       if _carries_axis(entry, axis)]
             means[axis] = round(sum(scored) / len(scored), 2) if scored else 0.0
+        # Only ballots that scored EVERY axis are comparable: `_composite` floors
+        # an absent axis at 0, so including a partial ballot would measure how
+        # completely each reviewer scored instead of how much they disagreed.
+        comparable = [_composite(entry) for entry in votes if _is_fully_scored(entry)]
         aggregates[document_id] = {
             **means,
             'reviewer_count': len(votes),
-            # Zero for a single reviewer, which is the honest reading: one ballot
-            # cannot disagree with itself.
-            'score_spread': round(max(composites) - min(composites), 2),
+            # Zero below two comparable ballots, which is the honest reading:
+            # one ballot cannot disagree with itself, and there is no second
+            # fully-scored opinion to disagree with it.
+            'score_spread': (
+                round(max(comparable) - min(comparable), 2) if len(comparable) > 1
+                else 0.0
+            ),
         }
     return aggregates
 
@@ -796,6 +869,17 @@ def _drop_legacy_score(table, document_id: str) -> None:
     reviewer their vote failed when it landed. Only the conditional failure (the
     already-migrated no-op) is expected; anything else is logged so a stuck
     migration is visible without being fatal.
+
+    RETIREMENT: this path is PERMANENT unless someone deliberately makes "drained"
+    observable first. Nothing here can tell a drained map from an empty one — the
+    conditional fails identically whether the entry was just migrated or never
+    existed, and removing the last member leaves an empty `scores` map rather than
+    deleting the item. So "delete this once every deployment has drained" is a
+    condition that can never be shown to have fired, and the one refused
+    conditional write per saved document is the standing cost of keeping it. A
+    future change that wants the path gone has to add the marker it would key on
+    (delete the item when the map empties, or stamp a `migrated_at` on it) as its
+    first step, not assume one exists.
     """
     try:
         table.update_item(

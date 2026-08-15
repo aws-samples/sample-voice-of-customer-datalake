@@ -591,6 +591,101 @@ class TestReviewerIdentityFailsClosed:
         assert not any('unknown' in sk or 'anonymous' in sk for (_, sk) in table.items)
 
 
+class TestAReviewerSubjectCannotCorruptTheBallotKey:
+    """'#' is the sort-key delimiter, and the subject is interpolated into the key.
+
+    A subject carrying one made `_parse_ballot_sk`'s `rpartition('#')` mis-split
+    the key, failing three ways at once and all of them silently: the save answered
+    200, the reviewer's own ballot was unreadable so the page showed it as unscored,
+    and `aggregates` grew a row under a document id that never existed. The write
+    landed on a key no read could address, so it was unreclaimable without a scan.
+
+    A Cognito `sub` is a v4 UUID, so this is not reachable through the authorizer
+    today. Pinned because the module comment presents the no-'#' rule as
+    load-bearing, document ids are already held to it, and the 'anon:' kind the key
+    is namespaced for would supply identifiers nobody vetted.
+    """
+
+    @pytest.mark.parametrize('subject', [
+        'has#hash', '#leading', 'trailing#', 'a#b#c', 'user:spoofed#x',
+    ])
+    def test_a_subject_containing_the_delimiter_is_refused_on_save(
+        self, api_gateway_event, lambda_context, subject
+    ):
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context, {'doc-1': AXES}, subject=subject
+        )
+
+        assert status == 403
+        assert body['success'] is False
+        assert "'#'" in body['error']
+        assert table.update_item_calls == [], 'nothing may be written under a bad key'
+        assert table.ballot_keys == []
+
+    @pytest.mark.parametrize('subject', ['has#hash', '#leading', 'trailing#'])
+    def test_a_subject_containing_the_delimiter_is_refused_on_read(
+        self, api_gateway_event, lambda_context, subject
+    ):
+        """Refused on the read too: `scores` is a specific caller's ballots, and a
+        key that cannot be built is a key that cannot be matched — answering an
+        empty map would show the reviewer their own votes as unscored."""
+        table = FakeAggregatesTable()
+
+        status, body = _get_scores(
+            table, api_gateway_event, lambda_context, subject=subject
+        )
+
+        assert status == 403
+        assert body['success'] is False
+
+    def test_the_refusal_never_echoes_the_subject(
+        self, api_gateway_event, lambda_context
+    ):
+        """The subject identifies a person and must not be logged or returned
+        (`get_caller_subject`'s contract). The message names the RULE."""
+        table = FakeAggregatesTable()
+
+        _, body = _patch_scores(
+            table, api_gateway_event, lambda_context, {'doc-1': AXES},
+            subject='sensitive#identity',
+        )
+
+        assert 'sensitive' not in json.dumps(body)
+
+    def test_no_phantom_document_row_can_be_created(
+        self, api_gateway_event, lambda_context
+    ):
+        """The consequence worth blocking on: a mis-split key put a row in
+        `aggregates` under a document id that does not exist, which
+        `PrioritizationAggregate` tells consumers means 'somebody scored this'."""
+        table = FakeAggregatesTable()
+
+        _patch_scores(
+            table, api_gateway_event, lambda_context, {'doc-1': AXES}, subject='has#hash'
+        )
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+        assert body['aggregates'] == {}
+
+    def test_an_ordinary_subject_is_still_accepted(
+        self, api_gateway_event, lambda_context
+    ):
+        """The guard must not refuse the identifiers Cognito actually mints."""
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context, {'doc-1': AXES},
+            subject='b3f1c2de-4a5b-6c7d-8e9f-0a1b2c3d4e5f',
+        )
+
+        assert status == 200
+        assert table.ballot_keys == [
+            'BALLOT#doc-1#user:b3f1c2de-4a5b-6c7d-8e9f-0a1b2c3d4e5f'
+        ]
+
+
 class TestLegacyScoresReadThroughAndMigrateOnWrite:
     """The pre-ballot shared map is not migrated by a script: it is read through so
     nothing looks lost, and its entries are removed as reviewers save over them."""
@@ -930,6 +1025,157 @@ class TestAnAxisLessBallotIsNotAVote:
         _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
 
         assert body['aggregates'] == {}
+
+
+class TestTheSpreadOnlyComparesComparableBallots:
+    """`score_spread` must measure DISAGREEMENT, not completeness.
+
+    `_composite` floors an absent axis at 0, so a partially-scored ballot always
+    composites lower than a complete one carrying the same numbers. Ranging over
+    every voting ballot therefore reported disagreement between reviewers who
+    agreed exactly, purely because one of them scored fewer axes — and the field's
+    own documented contract ("zero spread means agreement") made that a lie a
+    consumer would act on. Only fully-scored ballots are compared; below two of
+    them the spread is 0.0.
+
+    Fixed by restricting WHICH ballots are compared rather than renormalising
+    `_composite`'s weights: renormalised weights leave the four-axis 0-5 scale, so
+    the spread would stop being in the unit the page sorts by — the property
+    `test_prioritization_weights_lockstep.py` protects.
+    """
+
+    @staticmethod
+    def _seeded(api_gateway_event, lambda_context, by_reviewer):
+        table = FakeAggregatesTable()
+        for subject, scores in by_reviewer.items():
+            _patch_scores(table, api_gateway_event, lambda_context, scores, subject=subject)
+        return table
+
+    def test_reviewers_agreeing_on_their_shared_axis_report_no_disagreement(
+        self, api_gateway_event, lambda_context
+    ):
+        """The reported defect: alice scores all four axes at 4, bob scores only
+        `impact: 4`. Nobody contradicted anybody, and the spread said 2.4/5.0."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 4, 'time_to_market': 4,
+                                'confidence': 4, 'strategic_fit': 4}},
+            'bob': {'doc-1': {'impact': 4}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        aggregate = body['aggregates']['doc-1']
+        assert aggregate['score_spread'] == 0.0
+        # The means still describe everyone who scored, so the partial ballot is
+        # counted as a reviewer even though it cannot be compared.
+        assert aggregate['reviewer_count'] == 2
+        assert aggregate['impact'] == 4
+
+    def test_two_fully_scored_reviewers_still_report_the_composite_range(
+        self, api_gateway_event, lambda_context
+    ):
+        """The fix must not flatten real disagreement.
+
+        alice: 5*.4 + 5*.3 + 5*.2 + 5*.1 = 5.0
+        bob:   1*.4 + 1*.3 + 1*.2 + 1*.1 = 1.0
+        """
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'impact': 1, 'time_to_market': 1,
+                              'confidence': 1, 'strategic_fit': 1}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['score_spread'] == pytest.approx(4.0)
+
+    def test_one_fully_scored_ballot_beside_a_partial_one_has_no_spread(
+        self, api_gateway_event, lambda_context
+    ):
+        """Fewer than two comparable ballots means there is nothing to compare —
+        even when the partial one disagrees on the axis it did score."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'impact': 1}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        aggregate = body['aggregates']['doc-1']
+        assert aggregate['score_spread'] == 0.0
+        assert aggregate['reviewer_count'] == 2
+
+    def test_two_reviewers_scoring_disjoint_axes_report_no_spread(
+        self, api_gateway_event, lambda_context
+    ):
+        """Neither ballot is comparable, so there is no disagreement to report —
+        previously this manufactured 1.5 out of two reviewers who never addressed
+        the same axis."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5}},
+            'bob': {'doc-1': {'confidence': 5}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['score_spread'] == 0.0
+
+    def test_a_partial_ballot_does_not_widen_a_real_disagreement(
+        self, api_gateway_event, lambda_context
+    ):
+        """Two comparable ballots set the spread; a third partial one is ignored by
+        it rather than stretching it to the floor."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'impact': 3, 'time_to_market': 3,
+                              'confidence': 3, 'strategic_fit': 3}},
+            'carol': {'doc-1': {'impact': 1}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        aggregate = body['aggregates']['doc-1']
+        assert aggregate['score_spread'] == pytest.approx(2.0)
+        assert aggregate['reviewer_count'] == 3
+
+    def test_a_legacy_entry_missing_an_axis_is_not_compared_either(
+        self, api_gateway_event, lambda_context
+    ):
+        """The reachable source of a partial entry: a pre-ballot value predating an
+        axis, read through beside a real ballot for the same document."""
+        table = FakeAggregatesTable(items=[{
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'doc-1': {'impact': 4}},
+        }])
+        _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-2': {'impact': 4, 'time_to_market': 4,
+                       'confidence': 4, 'strategic_fit': 4}},
+            subject='alice',
+        )
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['score_spread'] == 0.0
+
+    def test_a_fully_scored_zero_ballot_is_still_comparable(
+        self, api_gateway_event, lambda_context
+    ):
+        """A deliberate zero on every axis is a vote, not silence, so it must still
+        set the spread against a high ballot — the distinction `_carries_axis`
+        exists to preserve."""
+        table = self._seeded(api_gateway_event, lambda_context, {
+            'alice': {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                'confidence': 5, 'strategic_fit': 5}},
+            'bob': {'doc-1': {'impact': 0, 'time_to_market': 0,
+                              'confidence': 0, 'strategic_fit': 0}},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['score_spread'] == pytest.approx(5.0)
 
 
 class TestAnExplicitNullAxisMeansLeaveItAlone:
