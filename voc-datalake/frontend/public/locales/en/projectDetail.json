@@ -72,7 +72,9 @@
         "reference": "Reference"
       },
       "selectedUsed": "{{used}} of {{selected}} selected documents used",
-      "unavailable": "No longer available"
+      "unavailable": "No longer available",
+      "visualsUsed_one": "{{count}} visual used",
+      "visualsUsed_other": "{{count}} visuals used"
     },
     "editDocument": "Edit document",
     "newDocument": "New Document",
@@ -107,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "Started — track it in Background Jobs.",
       "useProductContext": "Product / service description",
-      "useResearch": "Research reports ({{total}})"
+      "useResearch": "Research reports ({{total}})",
+      "visuals": "Visual mockups ({{total}})",
+      "visualsFailed": "{{total}} failed to process — upload again to use",
+      "visualsLimit": "At most {{max}} visuals per build",
+      "visualsNotReady": "{{total}} still being processed"
     },
     "revision": {
       "feedback": "Feedback: {{feedback}}",

@@ -15,8 +15,14 @@ Every creating path now ALSO writes a single `derivation` map:
       'selected_document_count': 5,
       'feedback_count': 12,
       'persona_ids': ['persona_1'],
+      'visual_document_ids': ['a1b2c3d4e5f60718'],
       'product_context_included': True,
     }
+
+Ids and counts only — never copied content. `persona_ids` and
+`visual_document_ids` are plain id lists rather than `sources` entries because
+they do not name ProjectDocuments; see `build_derivation` for why that
+distinction is load-bearing.
 
 Two properties the callers must preserve:
 
@@ -69,6 +75,16 @@ def _count(value) -> int:
         return 0
 
 
+def _ids(values) -> list[str]:
+    """The usable identifiers in an id list, in order.
+
+    Shared by every plain id list in the record so they cannot drift apart in
+    what they consider usable. Same tolerance as `_count`: a surprising entry is
+    dropped rather than allowed to fail the job that produced the document.
+    """
+    return [v for v in values if isinstance(v, str) and v]
+
+
 def derivation_source(document_id: str | None, role: str) -> dict | None:
     """One `sources` entry, or None when there is nothing to record.
 
@@ -95,6 +111,7 @@ def build_derivation(
     selected_document_count: int = 0,
     feedback_count: int = 0,
     persona_ids=(),
+    visual_document_ids=(),
     product_context_included: bool = False,
 ) -> dict:
     """Assemble the `derivation` map for a document item.
@@ -106,6 +123,9 @@ def build_derivation(
             selected — may exceed len(sources) when the caller capped them.
         feedback_count: feedback items actually used, not the requested limit.
         persona_ids: persona ids actually used.
+        visual_document_ids: ids of the uploaded IMAGE product documents
+            ("visuals") whose extracted descriptions were injected as a visual
+            brief. Ids only, never the descriptions.
         product_context_included: whether the project product-context block was
             injected into the prompt.
 
@@ -115,6 +135,18 @@ def build_derivation(
         'sources': [s for s in sources if s],
         'selected_document_count': _count(selected_document_count),
         'feedback_count': _count(feedback_count),
-        'persona_ids': [p for p in persona_ids if isinstance(p, str) and p],
+        'persona_ids': _ids(persona_ids),
+        # A plain id list, deliberately NOT `sources` entries with a role of
+        # their own, and deliberately NOT resolved to a title ANYWHERE — not
+        # here, not in the frontend resolver. A `sources` entry promises a
+        # lookup: the resolver finds each document_id in the project's
+        # ProjectDocument list to render a title and a type badge. A visual is
+        # not a ProjectDocument — it is a product document, stored under a
+        # different sort key with a `secrets.token_hex(8)` id — so it would
+        # always come back `resolved: false` and render as a bare hex string in
+        # the one panel whose whole job is to explain provenance. An unreadable
+        # identifier there is worse than no entry. `persona_ids` above is the
+        # same shape in this same record for exactly this reason; follow it.
+        'visual_document_ids': _ids(visual_document_ids),
         'product_context_included': bool(product_context_included),
     }

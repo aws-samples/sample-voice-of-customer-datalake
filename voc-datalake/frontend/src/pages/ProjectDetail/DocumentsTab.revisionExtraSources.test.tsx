@@ -15,12 +15,13 @@
  * where the generator writes what it actually used.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentsTab from './DocumentsTab'
-import { MAX_SELECTED_RESEARCH_IDS } from './overviewState'
+import { MAX_SELECTED_PRODUCT_DOC_IDS, MAX_SELECTED_RESEARCH_IDS } from './overviewState'
+import en from '../../../public/locales/en/projectDetail.json'
 import type { DocumentDerivation } from '../../api/derivation'
-import type { Project, ProjectDocument } from '../../api/types'
+import type { ProductDoc, Project, ProjectDocument } from '../../api/types'
 
 const mockBuildPrototype = vi.fn()
 vi.mock('../../api/projectsApi', () => ({
@@ -56,6 +57,7 @@ function derivation(overrides: Partial<DocumentDerivation>): DocumentDerivation 
     selected_document_count: 0,
     feedback_count: 0,
     persona_ids: [],
+    visual_document_ids: [],
     product_context_included: false,
     ...overrides,
   }
@@ -90,11 +92,35 @@ const BASE = doc({
   }),
 })
 
-function renderTab(documents: ProjectDocument[], selected: ProjectDocument) {
+/** A ready image upload — the only kind the visual picker offers. */
+function productDoc(docId: string): ProductDoc {
+  return {
+    doc_id: docId,
+    filename: `${docId}.png`,
+    content_type: 'image/png',
+    size_bytes: 1024,
+    status: 'ready',
+    error: null,
+    extracted_chars: 400,
+    created_at: '2026-05-01T00:00:00Z',
+  }
+}
+
+function renderTab(
+  documents: ProjectDocument[],
+  selected: ProjectDocument,
+  /**
+   * Undefined by default, which is the "list unknown" case every fixture here
+   * except the two visual-deletion ones wants: inherited ids pass through
+   * untouched, so those tests keep asserting inheritance and not the filter.
+   */
+  productDocs?: ProductDoc[],
+) {
   render(
     <DocumentsTab
       project={project}
       documents={documents}
+      productDocs={productDocs}
       selectedDoc={selected}
       onSelectDoc={vi.fn()}
       onEditDoc={vi.fn()}
@@ -155,6 +181,10 @@ describe('a revision keeps the inputs its base was built with', () => {
     expect(body.use_product_context).toBe(false)
     expect(body.use_research).toBe(false)
     expect(body.selected_research_ids).toEqual([])
+    // The positive control for the visuals too: a base built without any must
+    // revise without any, or "inherits the visuals" would be indistinguishable
+    // from "always sends visuals".
+    expect(body.selected_product_doc_ids).toEqual([])
   })
 
   it('inherits nothing from a prototype built before the derivation existed', async () => {
@@ -217,6 +247,88 @@ describe('a revision keeps the inputs its base was built with', () => {
     expect(body.use_research).toBe(true)
   })
 
+  it('sends the visuals the base was grounded in, in the recorded order', async () => {
+    // The defect this closes is the loudest of the family: a visually-grounded
+    // prototype takes its whole palette and layout from these mockups, so dropping
+    // them brings the revision back in the default indigo theme — from a button
+    // that only promised to act on the feedback.
+    //
+    // Recorded order, not sorted: the generator prefers the FIRST visual where two
+    // disagree, so re-ranking them would re-theme the revision.
+    const grounded = doc({
+      document_id: 'proto_visual',
+      prototype_format: 'html',
+      source_prd_id: 'prd_1',
+      derivation: derivation({
+        sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
+        selected_document_count: 1,
+        visual_document_ids: ['pd_b', 'pd_a'],
+      }),
+    })
+    renderTab([grounded, PRD, RESEARCH_A, RESEARCH_B], grounded)
+
+    const body = await revise()
+
+    expect(body.selected_product_doc_ids).toEqual(['pd_b', 'pd_a'])
+    // Nothing else was inherited by accident: visuals are their own input, with no
+    // flag of their own and no effect on the research pair.
+    expect(body.use_research).toBe(false)
+    expect(body.source_prd_id).toBe('prd_1')
+  })
+
+  it('drops an inherited visual that has since been deleted', async () => {
+    // The API answers 404 for a product-doc id it cannot resolve, so keeping a
+    // deleted mockup would make this prototype unrevisable FOREVER, from the only
+    // button that revises it — a harder failure than the research equivalent,
+    // which is why the fallback is worth its own filter. The surviving id is
+    // asserted too: returning [] would also pass a "not sent" assertion.
+    const grounded = doc({
+      document_id: 'proto_visual',
+      prototype_format: 'html',
+      derivation: derivation({ visual_document_ids: ['pd_gone', 'pd_a'] }),
+    })
+    renderTab([grounded, PRD], grounded, [productDoc('pd_a')])
+
+    const body = await revise()
+
+    expect(body.selected_product_doc_ids).toEqual(['pd_a'])
+  })
+
+  it('sends the inherited visuals unchanged while the upload list is unknown', async () => {
+    // Undefined is not empty. The product-doc list is a side request that can fail,
+    // and treating "we did not learn" as "they are all gone" would let one failed
+    // request strip a revision of its entire visual grounding — the exact silent
+    // re-theming this inheritance exists to prevent.
+    const grounded = doc({
+      document_id: 'proto_visual',
+      prototype_format: 'html',
+      derivation: derivation({ visual_document_ids: ['pd_gone', 'pd_a'] }),
+    })
+    renderTab([grounded, PRD], grounded)
+
+    const body = await revise()
+
+    expect(body.selected_product_doc_ids).toEqual(['pd_gone', 'pd_a'])
+  })
+
+  it('still revises a base carrying more visuals than the current bound allows', async () => {
+    // Same shape as the research case above and unreachable for the same reason
+    // today: the API capped the base build. It becomes reachable the day the bound
+    // is LOWERED, and then every visually-grounded prototype built under the old
+    // one is un-revisable.
+    const extra = Array.from({ length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 }, (_, i) => `pd_over_${i}`)
+    const overBound = doc({
+      document_id: 'proto_visual_over',
+      prototype_format: 'html',
+      derivation: derivation({ visual_document_ids: extra }),
+    })
+    renderTab([overBound, PRD], overBound)
+
+    const body = await revise()
+
+    expect(body.selected_product_doc_ids).toEqual(extra.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS))
+  })
+
   it('inherits only research, never another document type recorded as a reference', async () => {
     // The scoping property, on the read side: a reference-role source that is not
     // research must not be offered to a research-only field, which the API would
@@ -238,5 +350,62 @@ describe('a revision keeps the inputs its base was built with', () => {
     const body = await revise()
 
     expect(body.selected_research_ids).toEqual(['research_a'])
+  })
+})
+
+/**
+ * The other half of the same record: what the provenance panel says the base was
+ * grounded in.
+ *
+ * Here rather than in DocumentsTab.derivation.test.tsx because it needs exactly the
+ * fixture this file already has — a prototype whose `derivation` carries
+ * `visual_document_ids` — and because the read and the display come from that one
+ * field. If it ever stops being reported, the same fixture shows both that the
+ * revision still inherits it and that the user can no longer see it.
+ */
+describe('the provenance panel reports visuals as a count', () => {
+  const panel = () => screen.getByTestId('document-derivation')
+
+  it('states how many visuals a prototype was built from', () => {
+    // A COUNT, not rows: these ids name product docs, which are never in the
+    // project's document list, so every row would render a raw id beside "No longer
+    // available". Two, not one, so the plural form is the one under test — `_one`
+    // would render for a single visual and pass a looser matcher either way.
+    const grounded = doc({
+      document_id: 'proto_visual',
+      prototype_format: 'html',
+      derivation: derivation({
+        sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
+        selected_document_count: 1,
+        visual_document_ids: ['pd_a', 'pd_b'],
+      }),
+    })
+    renderTab([grounded, PRD], grounded)
+
+    expect(within(panel()).getByText(
+      new RegExp(en.documents.derivation.visualsUsed_other.replace('{{count}}', '2')),
+    )).toBeInTheDocument()
+    // The ids themselves are NOT shown: they resolve to nothing, so printing them
+    // would be provenance the reader cannot act on.
+    expect(within(panel()).queryByText(/pd_a/)).not.toBeInTheDocument()
+  })
+
+  it('says nothing about visuals for a prototype that used none', () => {
+    // The fixture has a derivation worth rendering (a source and a feedback count),
+    // so the panel IS on screen — otherwise "says nothing about visuals" would pass
+    // for the wrong reason, on a panel that renders nothing at all.
+    const plain = doc({
+      document_id: 'proto_plain',
+      prototype_format: 'html',
+      derivation: derivation({
+        sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
+        selected_document_count: 1,
+        feedback_count: 12,
+      }),
+    })
+    renderTab([plain, PRD], plain)
+
+    expect(within(panel()).getByText(/12 feedback items used/)).toBeInTheDocument()
+    expect(within(panel()).queryByText(/visual/i)).not.toBeInTheDocument()
   })
 })

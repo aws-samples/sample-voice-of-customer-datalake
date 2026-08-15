@@ -72,7 +72,9 @@
         "reference": "참조"
       },
       "selectedUsed": "선택한 {{selected}}개 중 {{used}}개 사용",
-      "unavailable": "더 이상 사용할 수 없음"
+      "unavailable": "더 이상 사용할 수 없음",
+      "visualsUsed_one": "비주얼 {{count}}개 사용",
+      "visualsUsed_other": "비주얼 {{count}}개 사용"
     },
     "editDocument": "문서 편집",
     "newDocument": "새 문서",
@@ -107,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "시작했습니다 — 백그라운드 작업에서 진행 상황을 확인하세요.",
       "useProductContext": "제품/서비스 설명",
-      "useResearch": "리서치 보고서 ({{total}}개)"
+      "useResearch": "리서치 보고서 ({{total}}개)",
+      "visuals": "비주얼 목업 ({{total}}개)",
+      "visualsFailed": "{{total}}개는 처리에 실패했습니다 — 다시 업로드하세요",
+      "visualsLimit": "한 번의 빌드에 최대 {{max}}개 목업",
+      "visualsNotReady": "{{total}}개는 처리 중입니다"
     },
     "revision": {
       "feedback": "피드백: {{feedback}}",

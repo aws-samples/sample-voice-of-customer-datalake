@@ -72,7 +72,9 @@
         "reference": "Référence"
       },
       "selectedUsed": "{{used}} document(s) utilisé(s) sur {{selected}} sélectionné(s)",
-      "unavailable": "Plus disponible"
+      "unavailable": "Plus disponible",
+      "visualsUsed_one": "{{count}} maquette utilisée",
+      "visualsUsed_other": "{{count}} maquettes utilisées"
     },
     "editDocument": "Modifier le document",
     "newDocument": "Nouveau document",
@@ -107,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "Lancé — suivez la progression dans Tâches en arrière-plan.",
       "useProductContext": "Description du produit ou service",
-      "useResearch": "Rapports de recherche ({{total}})"
+      "useResearch": "Rapports de recherche ({{total}})",
+      "visuals": "Maquettes visuelles ({{total}})",
+      "visualsFailed": "{{total}} en échec — importez-les à nouveau pour les utiliser",
+      "visualsLimit": "Au maximum {{max}} maquettes par génération",
+      "visualsNotReady": "{{total}} en cours de traitement"
     },
     "revision": {
       "feedback": "Retour : {{feedback}}",

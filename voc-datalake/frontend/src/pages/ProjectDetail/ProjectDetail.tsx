@@ -56,7 +56,7 @@ export default function ProjectDetail() {
 
   // Data fetching
   const {
-    data, isLoading, jobsData, productContext, queryClient,
+    data, isLoading, jobsData, productContext, productDocs, queryClient,
   } = useProjectData({
     id,
     apiEndpoint: config.apiEndpoint,
@@ -279,6 +279,7 @@ export default function ProjectDetail() {
         personas={personas}
         documents={documents}
         productContext={productContext}
+        productDocs={productDocs}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}
