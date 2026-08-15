@@ -4,6 +4,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 """
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
 
@@ -63,6 +64,12 @@ Build against the project material provided here rather than from assumptions.
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
+
+# Ceiling on parallel avatar generations inside one persona generation. Matches
+# the maximum persona count validate_persona_count admits (projects_handler.py),
+# so today every persona in a batch gets its own worker; the cap exists so a
+# future higher persona limit cannot fan out unboundedly against Bedrock.
+AVATAR_MAX_CONCURRENCY = 10
 
 
 def generate_persona_avatar(persona_data: dict, s3_bucket: str = None) -> dict:
@@ -429,24 +436,25 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         logger.info(f"[PERSONA] LLM chain completed in {llm_time}ms")
         
         logger.info("[PERSONA] Step 5/6: Parsing personas from LLM output...")
-        # Parse personas from output
+        # Parse personas from the LAST chain step's output. That step is
+        # persona_synthesis (see get_persona_generation_steps), the one that
+        # emits the JSON array, and nothing billed runs after it — so a later
+        # failure can no longer discard personas that already exist.
         personas_data = []
-        for idx, result_text in enumerate([results[1], results[2]]):
-            logger.info(f"[PERSONA] Trying to parse result {idx}, length: {len(result_text)} chars")
-            json_match = re.search(r'\[\s*\{[\s\S]*\}\s*\]', result_text)
-            if json_match:
-                try:
-                    parsed = json.loads(json_match.group())
-                    if isinstance(parsed, list) and len(parsed) > 0:
-                        personas_data = parsed
-                        logger.info(f"[PERSONA] Successfully parsed {len(personas_data)} personas from result {idx}")
-                        break
-                except json.JSONDecodeError as e:
-                    logger.warning(f"[PERSONA] JSON parse failed for result {idx}: {e}")
-                    continue
-            else:
-                logger.warning(f"[PERSONA] No JSON array found in result {idx}")
-        
+        synthesis_text = results[-1] if results else ''
+        logger.info(f"[PERSONA] Parsing persona_synthesis output, length: {len(synthesis_text)} chars")
+        json_match = re.search(r'\[\s*\{[\s\S]*\}\s*\]', synthesis_text)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group())
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    personas_data = parsed
+                    logger.info(f"[PERSONA] Successfully parsed {len(personas_data)} personas")
+            except json.JSONDecodeError as e:
+                logger.warning(f"[PERSONA] JSON parse failed for persona_synthesis output: {e}")
+        else:
+            logger.warning("[PERSONA] No JSON array found in persona_synthesis output")
+
         if not personas_data:
             logger.error("[PERSONA] Failed to parse personas from any LLM output")
             raise ServiceError('Failed to parse persona data from LLM response')
@@ -483,11 +491,19 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         # Save personas to project
         now = datetime.now(timezone.utc).isoformat()
         saved_personas = []
-        
+
+        # One id stamp for the whole batch: the per-persona index already makes
+        # each id unique, and the avatar seed is derived from the id, so a stable
+        # id keeps the same persona reproducing the same image.
+        id_stamp = datetime.now().strftime('%Y%m%d%H%M%S')
+
+        # Build every persona item first, in parsed order. Avatars are attached
+        # afterwards (concurrently) and the writes then follow this same order,
+        # so which avatar call finishes first cannot reorder the personas.
+        persona_items = []
         for i, persona in enumerate(personas_data):
-            persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}"
-            logger.info(f"[PERSONA] Saving persona {i+1}/{len(personas_data)}: {persona.get('name', 'unnamed')}")
-            
+            persona_id = f"persona_{id_stamp}_{i}"
+
             # Build the full persona item with all 8 sections
             item = {
                 'pk': f'PROJECT#{project_id}',
@@ -521,22 +537,46 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 },
             }
             
-            # Generate avatar if enabled
-            if generate_avatars:
-                logger.info(f"[PERSONA] Generating avatar for persona {i+1}...")
-                update_progress(85 + i * 3, f'generating_avatar_{i+1}')
-                try:
-                    avatar_result = generate_persona_avatar({'persona_id': persona_id, **persona})
-                    item['avatar_url'] = avatar_result.get('avatar_url')
-                    item['avatar_prompt'] = avatar_result.get('avatar_prompt')
-                    logger.info(f"[PERSONA] Avatar generated: {item['avatar_url']}")
-                except Exception as e:
-                    logger.warning(f"[PERSONA] Avatar generation failed for persona {i+1}: {e}")
-            
+            persona_items.append((persona_id, persona, item))
+
+        # Avatars: one unit of work per persona, run concurrently. Each call is
+        # ~5s of waiting on Bedrock (prompt writer + image model) and they don't
+        # touch each other, so a sequential loop just added 5s per persona — up
+        # to 50s at the 10-persona ceiling validate_persona_count allows.
+        # Failure stays isolated per persona: a persona whose avatar call raises
+        # is still saved, with avatar_url/avatar_prompt left at None.
+        if generate_avatars and persona_items:
+            logger.info(f"[PERSONA] Generating {len(persona_items)} avatar(s) concurrently...")
+            update_progress(85, 'generating_avatars')
+
+            def _avatar_for(persona_id: str, persona: dict) -> dict:
+                return generate_persona_avatar({'persona_id': persona_id, **persona})
+
+            with ThreadPoolExecutor(max_workers=min(len(persona_items), AVATAR_MAX_CONCURRENCY)) as pool:
+                futures = {
+                    pool.submit(_avatar_for, persona_id, persona): item
+                    for persona_id, persona, item in persona_items
+                }
+                for future, item in futures.items():
+                    try:
+                        avatar_result = future.result()
+                        item['avatar_url'] = avatar_result.get('avatar_url')
+                        item['avatar_prompt'] = avatar_result.get('avatar_prompt')
+                        logger.info(f"[PERSONA] Avatar generated for {item['persona_id']}: {item['avatar_url']}")
+                    except Exception as e:
+                        logger.warning(
+                            f"[PERSONA] Avatar generation failed for {item['persona_id']} "
+                            f"(saving persona without one): {e}"
+                        )
+
+        # Write in parsed order so the stored order and the response order match
+        # the LLM's order regardless of avatar completion order.
+        for i, (persona_id, persona, item) in enumerate(persona_items):
+            logger.info(f"[PERSONA] Saving persona {i+1}/{len(persona_items)}: {persona.get('name', 'unnamed')}")
             projects_table.put_item(Item=item)
             saved_personas.append(item)
             logger.info(f"[PERSONA] Saved persona: {persona.get('name')}")
-        
+
         # Set persona count to the new total (we cleared the old set above, so
         # this is a replace, not an increment — keeps the count accurate).
         projects_table.update_item(
@@ -552,9 +592,12 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         return {
             'success': True,
             'personas': saved_personas,
+            # No 'validation' key: the chain's third step is gone (it was the
+            # single largest cost in the job and nothing read its output — this
+            # response shape's only consumer, the jobs panel, reads persona_id,
+            # document_id and title).
             'analysis': {
                 'research': results[0],
-                'validation': results[2]
             },
             'metadata': {
                 'feedback_count': len(feedback_items),

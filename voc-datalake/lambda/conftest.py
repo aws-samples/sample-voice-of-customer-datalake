@@ -49,6 +49,23 @@ SIGNING_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-
 SIGNING_KEY_PAIR_ID = 'K2TESTKEYPAIRID'
 
 
+@pytest.fixture(autouse=True)
+def _reset_image_model_client_cache():
+    """Drop shared.avatar's cached region-pinned Bedrock clients between tests.
+
+    That client is built once per execution environment (so a batch of personas
+    doesn't rebuild it per avatar), which means the cache outlives a single
+    test: without this, a test that patches `shared.avatar.boto3` would be
+    handed a client another test built and its assertions on client creation
+    would pass or fail for the wrong reason.
+    """
+    from shared.avatar import clear_image_model_client_cache
+
+    clear_image_model_client_cache()
+    yield
+    clear_image_model_client_cache()
+
+
 @pytest.fixture(scope='session')
 def cdn_signing_keypair():
     """A real 2048-bit RSA keypair, generated once per test session.

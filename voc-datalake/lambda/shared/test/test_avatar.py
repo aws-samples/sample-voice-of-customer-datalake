@@ -1,6 +1,7 @@
 """Tests for shared.avatar module - avatar generation utilities."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock
 import base64
 
@@ -283,6 +284,127 @@ class TestGetAvatarCdnUrl:
         from shared.avatar import get_avatar_cdn_url
         result = get_avatar_cdn_url('s3://bucket/avatars/test.png')
         assert result.startswith('https://env-cdn.example.com/test.png?')
+
+
+# Avatar prompt config used by the client-reuse tests below. Module-level so it
+# is a single shared definition rather than a mutable class attribute.
+IMAGE_MODEL_TEST_CONFIG = {
+    'system_prompt': 'S', 'user_prompt_template': '{name}', 'max_tokens': 200,
+    'fallback_prompt_template': 'H',
+    'image_model': {'model_id': 'test.image-model', 'region': 'us-west-2',
+                    'aspect_ratio': '1:1', 'output_format': 'jpeg'},
+}
+
+
+class TestImageModelClientIsReused:
+    """The region-pinned Bedrock client is built once per execution
+    environment, not once per persona.
+
+    Persona generation calls this function once per persona (concurrently), and
+    each call used to construct its own boto3 client: a botocore session plus
+    endpoint resolution, repeated for work that always targets the same region.
+    """
+
+    @staticmethod
+    def _image_response():
+        return {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps(
+                {'images': [base64.b64encode(b'bytes').decode()]}).encode()))
+        }
+
+    def _generate(self, persona_ids, config=None):
+        """Generate avatars for several personas through one patched boto3 and
+        report how many bedrock-runtime clients were constructed."""
+        from shared.avatar import generate_persona_avatar
+
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = self._image_response()
+
+        def client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+
+        results = []
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=config or IMAGE_MODEL_TEST_CONFIG), \
+             patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.avatar.boto3') as mock_boto3:
+            mock_boto3.client.side_effect = client_factory
+            for persona_id in persona_ids:
+                results.append(generate_persona_avatar(
+                    {'persona_id': persona_id, 'name': persona_id, 'identity': {}},
+                    MagicMock(), s3_bucket='b',
+                ))
+            bedrock_client_calls = [
+                c for c in mock_boto3.client.call_args_list
+                if c.args and c.args[0] == 'bedrock-runtime'
+            ]
+        return results, bedrock_client_calls
+
+    def test_three_personas_build_one_client(self):
+        results, client_calls = self._generate(['p1', 'p2', 'p3'])
+        # Positive control: all three avatars really were produced, so the
+        # single client is reuse and not three skipped generations.
+        assert [r['avatar_url'] for r in results] == [
+            's3://b/avatars/p1.jpeg', 's3://b/avatars/p2.jpeg', 's3://b/avatars/p3.jpeg',
+        ]
+        assert len(client_calls) == 1, (
+            f'built {len(client_calls)} bedrock-runtime clients for 3 personas'
+        )
+
+    def test_the_one_client_is_pinned_to_the_configured_region(self):
+        _, client_calls = self._generate(['p1', 'p2'])
+        assert client_calls[0].kwargs['region_name'] == 'us-west-2'
+
+    def test_a_different_configured_region_gets_its_own_client(self):
+        """Cached per region, not globally: the region comes from
+        avatar-generation.json, so a config change must not keep serving a
+        client pinned to the old region."""
+        from shared.avatar import clear_image_model_client_cache
+
+        _, first = self._generate(['p1'])
+        assert first[0].kwargs['region_name'] == 'us-west-2'
+
+        # Same process, no cache clear — only the configured region changes.
+        eu_config = {
+            **IMAGE_MODEL_TEST_CONFIG,
+            'image_model': {**IMAGE_MODEL_TEST_CONFIG['image_model'], 'region': 'eu-west-1'},
+        }
+        _, second = self._generate(['p2'], config=eu_config)
+        assert second[0].kwargs['region_name'] == 'eu-west-1'
+
+        clear_image_model_client_cache()
+
+    def test_concurrent_generations_still_build_one_client(self):
+        """The persona generator now runs these calls in parallel, so several
+        threads reach the cache at once. The lock must keep that to one client
+        while every avatar still comes back."""
+        from shared.avatar import generate_persona_avatar
+
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = self._image_response()
+
+        def client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+
+        persona_ids = [f'p{i}' for i in range(6)]
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=IMAGE_MODEL_TEST_CONFIG), \
+             patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.avatar.boto3') as mock_boto3:
+            mock_boto3.client.side_effect = client_factory
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                results = list(pool.map(
+                    lambda pid: generate_persona_avatar(
+                        {'persona_id': pid, 'name': pid, 'identity': {}},
+                        MagicMock(), s3_bucket='b',
+                    ),
+                    persona_ids,
+                ))
+            bedrock_client_calls = [
+                c for c in mock_boto3.client.call_args_list
+                if c.args and c.args[0] == 'bedrock-runtime'
+            ]
+
+        assert all(r['avatar_url'] for r in results)
+        assert len(bedrock_client_calls) == 1
 
 
 class TestNoCryptoDependencyForWriters:

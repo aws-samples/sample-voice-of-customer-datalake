@@ -232,9 +232,15 @@ def get_persona_generation_steps(
         'response_language': response_language,
     }
     
+    # persona_synthesis is LAST on purpose: its output is the JSON that gets
+    # saved, so nothing billed runs after the personas exist. A third
+    # 'validation' step used to follow it — it cost about half the job's wall
+    # clock (131s of 268s measured for 2 personas), its output was never read
+    # for persona data, and a failure in it threw away personas that
+    # persona_synthesis had already produced.
     return build_chain_steps(
         PERSONA_GENERATION_PROMPTS,
-        ['research_analysis', 'persona_synthesis', 'validation'],
+        ['research_analysis', 'persona_synthesis'],
         context
     )
 

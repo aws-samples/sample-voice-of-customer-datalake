@@ -7,6 +7,7 @@ in avatar-generation.json ("image_model") to create the images.
 import hashlib
 import json
 import os
+import threading
 import boto3
 
 from shared.logging import logger, tracer
@@ -53,6 +54,43 @@ _SUPPORTED_OUTPUT_FORMATS = frozenset({'png', 'jpeg'})
 # embeds the format, so changing output_format would otherwise leave the old
 # object orphaned forever.
 _HISTORICAL_EXTENSIONS = ('png', 'jpeg', 'jpg', 'webp')
+
+# Region-pinned image-model clients, cached for the life of the execution
+# environment (one per region, since the region is config-driven). Building a
+# boto3 client costs a botocore session + endpoint resolution, and the persona
+# generator used to pay that per persona — with the avatar loop now concurrent,
+# several threads would also build clients simultaneously. boto3 clients are
+# thread-safe to USE but creating them is not, hence the lock.
+_image_model_clients: dict[str, object] = {}
+_image_model_clients_lock = threading.Lock()
+
+
+def get_image_model_client(region: str):
+    """Bedrock runtime client pinned to the image model's region, cached.
+
+    Cached per region rather than globally because the region comes from
+    avatar-generation.json, so a config change must not keep handing back a
+    client for the old region.
+    """
+    client = _image_model_clients.get(region)
+    if client is None:
+        with _image_model_clients_lock:
+            client = _image_model_clients.get(region)
+            if client is None:
+                logger.info(f"[PERSONA_AVATAR] Creating Bedrock client for {region} (image model region)")
+                client = boto3.client('bedrock-runtime', region_name=region)
+                _image_model_clients[region] = client
+    return client
+
+
+def clear_image_model_client_cache() -> None:
+    """Drop the cached region-pinned clients.
+
+    Exists for tests: the cache lives for the whole process, so a test that
+    patches boto3 would otherwise be served a client built by an earlier test.
+    """
+    with _image_model_clients_lock:
+        _image_model_clients.clear()
 
 
 def get_image_model_config() -> dict:
@@ -222,10 +260,11 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
 
     try:
         # The image model is region-pinned; the IAM grant is built from the same
-        # values via imageModelArn() in lib/utils/model-allowlist.ts.
-        logger.info(f"[PERSONA_AVATAR] Creating Bedrock client for {model_region} (image model region)")
-        bedrock_runtime = boto3.client('bedrock-runtime', region_name=model_region)
-        
+        # values via imageModelArn() in lib/utils/model-allowlist.ts. The client
+        # is cached per region for the execution environment, so a batch of
+        # personas builds it once instead of once each.
+        bedrock_runtime = get_image_model_client(model_region)
+
         # Stability text-to-image request format (shared by stable-image-core,
         # stable-image-ultra and sd3-5-large). Note this is NOT interchangeable
         # with the Nova Canvas taskType/textToImageParams body it replaced — a

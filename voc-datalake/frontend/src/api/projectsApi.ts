@@ -47,8 +47,7 @@ export const projectsApi = {
       success: boolean;
       personas: ProjectPersona[];
       analysis?: {
-        research: string;
-        validation: string
+        research: string
       }
     }>(`/projects/${projectId}/personas/generate`, {
       method: 'POST',

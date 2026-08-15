@@ -197,6 +197,14 @@ def api_generate_personas(project_id: str):
         # the rest of the project. Without this, generated personas were always
         # English even when Settings → Language was set to 한국어.
         'response_language': body.get('response_language'),
+        # generate_personas already honoured this flag, but it never reached the
+        # filters dict, so every request paid for the image model. Only the JSON
+        # literal `false` turns avatars off; an absent field (or anything else)
+        # keeps producing them, which is what every existing caller expects.
+        # Identity against False rather than a truthiness test, so the value
+        # stored in the job record is always a real bool and the default stays
+        # "avatars on" for the omitted case.
+        'generate_avatars': body.get('generate_avatars') is not False,
     }
     job_id, _ = create_job(project_id, 'generate_personas', 'filters', filters, ttl_minutes=30*24*60)
     invoke_lambda_async(PERSONA_GENERATOR_FUNCTION, {

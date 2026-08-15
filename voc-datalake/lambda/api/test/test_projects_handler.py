@@ -283,6 +283,61 @@ class TestPersonaCRUDEndpoints:
         assert body['success'] is True
 
 
+class TestGeneratePersonasEndpoint:
+    """POST /projects/<id>/personas/generate assembles the filters dict.
+
+    generate_personas has always read `generate_avatars` out of that dict, but
+    this route never put it there, so the flag was unreachable from the API and
+    every request paid for an image-model call per persona.
+    """
+
+    @staticmethod
+    def _start(api_gateway_event, lambda_context, body):
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/personas/generate',
+            path_params={'project_id': 'proj-123'},
+            body=body,
+        )
+        with patch('projects_handler.create_job', return_value=('job-1', {})), \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+        assert json.loads(response['body'])['success'] is True
+        return mock_invoke.call_args.args[1]['filters']
+
+    def test_generate_avatars_false_is_forwarded(self, api_gateway_event, lambda_context):
+        filters = self._start(
+            api_gateway_event, lambda_context,
+            {'persona_count': 2, 'generate_avatars': False},
+        )
+        assert filters['generate_avatars'] is False
+
+    def test_omitting_generate_avatars_keeps_avatars_on(self, api_gateway_event, lambda_context):
+        """The pre-existing default: a request that says nothing about avatars
+        behaves exactly as before and gets them."""
+        filters = self._start(api_gateway_event, lambda_context, {'persona_count': 2})
+        assert filters['generate_avatars'] is True
+
+    def test_generate_avatars_true_is_forwarded(self, api_gateway_event, lambda_context):
+        filters = self._start(
+            api_gateway_event, lambda_context,
+            {'persona_count': 2, 'generate_avatars': True},
+        )
+        assert filters['generate_avatars'] is True
+
+    def test_the_string_false_does_not_disable_avatars(self, api_gateway_event, lambda_context):
+        """Only the JSON literal false turns them off. The string "false" is a
+        truthy value and must not be read as a refusal — a caller that means
+        "no avatars" sends the boolean, as the SPA's JSON body does."""
+        filters = self._start(
+            api_gateway_event, lambda_context,
+            {'persona_count': 2, 'generate_avatars': 'false'},
+        )
+        assert filters['generate_avatars'] is True
+
+
 class TestDocumentCRUDEndpoints:
     """Tests for document CRUD endpoints."""
 
