@@ -18,6 +18,19 @@ DEFAULT_STEP_MAX_TOKENS = 4096
 # (research: the sync chain builder AND the async step accessor; avatar: the
 # prompt config AND the image-model block) can't drift by typo.
 PERSONA_GENERATION_PROMPTS = 'persona-generation.json'
+
+# The persona chain's steps, in execution order, and the one whose output is persisted.
+# Named for the same reason the filenames above are: the caller that parses the personas
+# has to find the synthesis result, and it used to do that positionally ("the last
+# result"), which was correct only while this list happened to end on it. Reading by name
+# means appending a step here cannot silently redirect that parse.
+#
+# ⚠️ persona_synthesis stays LAST for a separate reason recorded in
+# get_persona_generation_steps: converse_chain keeps its results local and re-raises, so
+# any step after the one whose output is saved is a window where finished, already-billed
+# personas get thrown away.
+PERSONA_SYNTHESIS_STEP = 'persona_synthesis'
+PERSONA_CHAIN_STEPS = ('research_analysis', PERSONA_SYNTHESIS_STEP)
 PRD_GENERATION_PROMPTS = 'prd-generation.json'
 PRFAQ_GENERATION_PROMPTS = 'prfaq-generation.json'
 RESEARCH_ANALYSIS_PROMPTS = 'research-analysis.json'
@@ -240,7 +253,7 @@ def get_persona_generation_steps(
     # persona_synthesis had already produced.
     return build_chain_steps(
         PERSONA_GENERATION_PROMPTS,
-        ['research_analysis', 'persona_synthesis'],
+        list(PERSONA_CHAIN_STEPS),
         context
     )
 

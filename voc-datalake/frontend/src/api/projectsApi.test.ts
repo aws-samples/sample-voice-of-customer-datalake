@@ -147,7 +147,8 @@ describe('projectsApi', () => {
 
   describe('generatePersonas', () => {
     it('sends POST request to generate personas', async () => {
-      const mockResponse = { success: true, personas: [{ persona_id: 'per1', name: 'Power User' }] }
+      // The route is async: it answers with a job id, not with personas.
+      const mockResponse = { success: true, job_id: 'job1', status: 'running', message: 'Persona generation started.' }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
@@ -176,7 +177,7 @@ describe('projectsApi', () => {
       }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ success: true, personas: [] }),
+        json: () => Promise.resolve({ success: true, job_id: 'job1', status: 'running', message: '' }),
       })
 
       await projectsApi.generatePersonas('p1', filters)

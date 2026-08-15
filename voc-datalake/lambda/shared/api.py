@@ -46,6 +46,14 @@ def decimal_default(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
+# The most personas one generation may produce. Lives here rather than beside
+# validate_persona_count because two other places size themselves against it: the avatar
+# fan-out's max_workers and the image-model client's connection pool. Those were
+# independent literals whose only link was a comment, and a comment cannot fail CI — so
+# raising this ceiling used to silently halve the fan-out benefit while every test passed.
+MAX_PERSONAS_PER_GENERATION = 10
+
+
 def validate_days(
     value: str | int | None,
     default: int = 7,
@@ -78,6 +86,32 @@ def validate_int(
         return max(min_val, min(val, max_val))
     except (ValueError, TypeError):
         return default
+
+
+def validate_bool(value: object, default: bool, field: str = 'value') -> bool:
+    """Validate a boolean request field, refusing anything that is not a real bool.
+
+    The other validators here clamp or fall back, which is right for a number whose
+    worst case is a bounded value. A boolean has no such middle: coercing an unexpected
+    value picks one of the two behaviours silently, and for a flag that gates billed work
+    the wrong pick costs money in the direction the caller did not ask for. ``"false"``
+    from a form post or an over-eager serialiser is the realistic case.
+
+    Absent (``None``) yields ``default`` — an omitted field must keep behaving as it did
+    before the field existed. Note this treats an explicit JSON ``null`` as absent, since
+    ``dict.get`` cannot distinguish the two; that is deliberate and harmless, because both
+    mean "the caller expressed no preference".
+
+    Raises:
+        ValidationError: for any non-boolean value, which the API resolver maps to a 400.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise ValidationError(
+        f'{field} must be true or false, got {type(value).__name__} {value!r}'
+    )
 
 
 def get_caller_groups(event: dict) -> list[str]:
@@ -267,7 +301,9 @@ __all__ = [
     'validate_days',
     'validate_limit', 
     'validate_int',
+    'validate_bool',
     'validate_date_basis',
+    'MAX_PERSONAS_PER_GENERATION',
     'DATE_BASIS_IMPORTED',
     'DATE_BASIS_REVIEW',
     'create_cors_config',

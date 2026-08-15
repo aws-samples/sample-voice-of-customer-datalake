@@ -4,6 +4,8 @@ Tests for projects_handler.py - /projects/* endpoints.
 import json
 from unittest.mock import patch
 
+import pytest
+
 
 class TestValidatePersonaCount:
     """Tests for validate_persona_count helper function."""
@@ -283,6 +285,24 @@ class TestPersonaCRUDEndpoints:
         assert body['success'] is True
 
 
+class TestPersonaCeilingIsShared:
+    """The persona ceiling is read by three places: this route's validator, the avatar
+    fan-out's worker count and the image client's connection pool. They used to be
+    independent literals linked only by a comment, and a comment does not fail CI —
+    raising one silently halved the fan-out benefit with every test still passing.
+    """
+
+    def test_the_route_enforces_the_shared_ceiling(self):
+        from projects_handler import validate_persona_count
+        from shared.api import MAX_PERSONAS_PER_GENERATION
+
+        assert validate_persona_count(MAX_PERSONAS_PER_GENERATION) == MAX_PERSONAS_PER_GENERATION
+        assert (
+            validate_persona_count(MAX_PERSONAS_PER_GENERATION + 1)
+            == MAX_PERSONAS_PER_GENERATION
+        ), 'the route admits more personas than the fan-out and the client pool are sized for'
+
+
 class TestGeneratePersonasEndpoint:
     """POST /projects/<id>/personas/generate assembles the filters dict.
 
@@ -291,19 +311,10 @@ class TestGeneratePersonasEndpoint:
     every request paid for an image-model call per persona.
     """
 
-    @staticmethod
-    def _start(api_gateway_event, lambda_context, body):
-        from projects_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='POST',
-            path='/projects/proj-123/personas/generate',
-            path_params={'project_id': 'proj-123'},
-            body=body,
-        )
-        with patch('projects_handler.create_job', return_value=('job-1', {})), \
-                patch('projects_handler.invoke_lambda_async') as mock_invoke:
-            response = lambda_handler(event, lambda_context)
+    @classmethod
+    def _start(cls, api_gateway_event, lambda_context, body):
+        """Submit and return the filters dict, asserting the request succeeded."""
+        response, mock_invoke = cls._post_raw(api_gateway_event, lambda_context, body)
         assert json.loads(response['body'])['success'] is True
         return mock_invoke.call_args.args[1]['filters']
 
@@ -327,15 +338,54 @@ class TestGeneratePersonasEndpoint:
         )
         assert filters['generate_avatars'] is True
 
-    def test_the_string_false_does_not_disable_avatars(self, api_gateway_event, lambda_context):
-        """Only the JSON literal false turns them off. The string "false" is a
-        truthy value and must not be read as a refusal — a caller that means
-        "no avatars" sends the boolean, as the SPA's JSON body does."""
-        filters = self._start(
-            api_gateway_event, lambda_context,
-            {'persona_count': 2, 'generate_avatars': 'false'},
+    @staticmethod
+    def _post_raw(api_gateway_event, lambda_context, body):
+        """Submit without asserting success, for the cases that must be refused."""
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/personas/generate',
+            path_params={'project_id': 'proj-123'},
+            body=body,
         )
-        assert filters['generate_avatars'] is True
+        with patch('projects_handler.create_job', return_value=('job-1', {})), \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+        return response, mock_invoke
+
+    @pytest.mark.parametrize('bad', ['false', 'true', 0, 1, 'no', []])
+    def test_a_non_boolean_generate_avatars_is_refused(
+        self, api_gateway_event, lambda_context, bad
+    ):
+        """A non-boolean is a 400, not a coercion.
+
+        Coercing picks one of the two behaviours silently, and this flag gates billed
+        image-model calls: `"false"` from a form post or an over-eager serialiser means
+        "no avatars" to the caller, so reading it as True bills a generation per persona
+        that nobody asked for. Every other field on this route is defaulted or validated.
+
+        The job must not be created either — refusing after enqueuing would leave a job
+        row describing a request that was rejected.
+        """
+        response, mock_invoke = self._post_raw(
+            api_gateway_event, lambda_context,
+            {'persona_count': 2, 'generate_avatars': bad},
+        )
+        assert response['statusCode'] == 400
+        # The field must be NAMED in the error: a bare "validation failed" leaves the
+        # caller guessing which of eight fields it was.
+        assert 'generate_avatars' in json.loads(response['body'])['error']
+        mock_invoke.assert_not_called()
+
+    def test_a_real_boolean_still_reaches_the_job(self, api_gateway_event, lambda_context):
+        """The positive control for the refusal above: the guard rejects the wrong TYPE,
+        it does not reject the field. Without this, making validate_bool refuse
+        everything would still pass the test above."""
+        assert self._start(
+            api_gateway_event, lambda_context,
+            {'persona_count': 2, 'generate_avatars': False},
+        )['generate_avatars'] is False
 
 
 class TestDocumentCRUDEndpoints:

@@ -49,21 +49,12 @@ SIGNING_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-
 SIGNING_KEY_PAIR_ID = 'K2TESTKEYPAIRID'
 
 
-@pytest.fixture(autouse=True)
-def _reset_image_model_client_cache():
-    """Drop shared.avatar's cached region-pinned Bedrock clients between tests.
-
-    That client is built once per execution environment (so a batch of personas
-    doesn't rebuild it per avatar), which means the cache outlives a single
-    test: without this, a test that patches `shared.avatar.boto3` would be
-    handed a client another test built and its assertions on client creation
-    would pass or fail for the wrong reason.
-    """
-    from shared.avatar import clear_image_model_client_cache
-
-    clear_image_model_client_cache()
-    yield
-    clear_image_model_client_cache()
+# NOTE: shared.avatar's client-cache reset fixture deliberately lives in
+# lambda/shared/test/conftest.py, not here. At this level it was autouse for every Python
+# test in the repo, so ~1,400 tests imported shared.avatar for the benefit of about ten,
+# and any import-time problem in that module would have failed collection for the whole
+# suite — which matters because shared.avatar keeps a deliberately narrow import graph
+# (it has its own guard test that importing it must not pull in `cryptography`).
 
 
 @pytest.fixture(scope='session')

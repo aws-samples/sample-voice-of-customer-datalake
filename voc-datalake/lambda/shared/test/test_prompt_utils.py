@@ -455,6 +455,18 @@ class TestPersonaPromptContract:
         config = load_prompt_file('persona-generation.json')
         assert list(config['steps']) == ['research_analysis', 'persona_synthesis']
 
+    def test_the_stamped_prompt_version_matches_the_file(self):
+        """Every persona stores llm_metadata.prompt_version so it stays attributable to
+        the chain that produced it. That value is a literal in api/projects.py (house
+        style, cf. processor/handler.py's PROMPT_VERSION) rather than read back out of
+        the file, so nothing but this test stops the two from drifting — and a drifted
+        pair means stored personas name a prompt version that never generated them.
+        """
+        from api.projects import PERSONA_PROMPT_VERSION
+
+        from shared.prompts import load_prompt_file
+        assert load_prompt_file('persona-generation.json')['version'] == PERSONA_PROMPT_VERSION
+
     def test_builder_resolves_every_step_against_the_real_file(self):
         """End-to-end through the real loader: each name the builder asks for
         exists in the file (a missing one raises KeyError), the JSON-emitting

@@ -18,7 +18,6 @@ Two shapes are pinned here:
 """
 
 import threading
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -320,22 +319,47 @@ class TestAvatarConcurrency:
     ):
         """The first persona's avatar finishes last. Saved order, response
         order and the avatar attached to each persona must all still line up
-        with the order persona_synthesis produced."""
+        with the order persona_synthesis produced.
+
+        The completion order is FORCED with events rather than nudged with sleeps, and
+        then asserted. Sleeps made the inversion only likely: on a loaded runner the
+        scheduling could come out in parsed order and the test would pass without having
+        exercised the reordering hazard at all — and it would also flake the other way.
+        Each worker waits for the one after it to finish, so C→B→A is guaranteed.
+        """
         from api.projects import generate_personas
 
-        delays = {'A One': 0.30, 'B Two': 0.15, 'C Three': 0.0}
+        order = ['A One', 'B Two', 'C Three']
+        done = {name: threading.Event() for name in order}
+        completed: list[str] = []
+        completed_lock = threading.Lock()
 
         def make(persona_data):
-            time.sleep(delays[persona_data['name']])
+            name = persona_data['name']
+            position = order.index(name)
+            # Wait for the NEXT persona to finish first; the last one runs immediately.
+            if position + 1 < len(order):
+                assert done[order[position + 1]].wait(timeout=10), (
+                    f'{order[position + 1]} never finished — the fan-out is serialised, '
+                    'so this handshake cannot complete'
+                )
+            with completed_lock:
+                completed.append(name)
+            done[name].set()
             return {
                 'avatar_url': f"s3://bucket/avatars/{persona_data['persona_id']}.jpeg",
-                'avatar_prompt': persona_data['name'],
+                'avatar_prompt': name,
             }
 
         with patch('api.projects.converse_chain', self._three_persona_chain()), \
              patch('api.projects.generate_persona_avatar', MagicMock(side_effect=make)):
             result = generate_personas('proj-1', {'persona_count': 3})
 
+        # The hazard was actually exercised: completion order is the reverse of parsed
+        # order. Without this the test could pass having never inverted anything.
+        assert completed == list(reversed(order)), (
+            f'completion order was {completed}, so the reordering hazard was not exercised'
+        )
         assert [p['name'] for p in result['personas']] == ['A One', 'B Two', 'C Three']
         assert [i['name'] for i in _saved_items(projects_table)] == [
             'A One', 'B Two', 'C Three',
@@ -407,3 +431,196 @@ class TestGenerateAvatarsFlag:
 
         assert avatars.call_count == 2
         assert all(p['avatar_url'] for p in result['personas'])
+
+
+class TestSynthesisIsFoundByNameNotByPosition:
+    """The parse must locate persona_synthesis by NAME.
+
+    It used to read `results[-1]`, which was correct only while
+    get_persona_generation_steps happened to end on synthesis — an invariant living in
+    another file. Appending any trailing step there (a re-added validation pass, a
+    translation step) would have made this parse a prose output and fail the whole job
+    with the generic "failed to parse" error.
+    """
+
+    @staticmethod
+    def _steps_with_a_trailing_step():
+        """The real builder's steps plus one more AFTER synthesis."""
+        from shared.prompts import get_persona_generation_steps
+
+        steps = get_persona_generation_steps(2, 'stats', 'feedback')
+        return [*steps, {'step_name': 'a_later_step', 'system': '', 'user': '', 'max_tokens': 100}]
+
+    def test_a_trailing_step_does_not_redirect_the_parse(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """The discriminating fixture: synthesis is no longer last, and the `chain`
+        fixture answers the trailing step with prose. Positional indexing therefore
+        parses prose and raises; by-name still finds the JSON.
+        """
+        from api.projects import generate_personas
+
+        with patch(
+            'api.projects.get_persona_generation_steps',
+            return_value=self._steps_with_a_trailing_step(),
+        ):
+            result = generate_personas('proj-1', {'persona_count': 2})
+
+        assert [p['name'] for p in result['personas']] == ['Ada Lovelace', 'Grace Hopper']
+
+    def test_a_chain_without_the_synthesis_step_fails_naming_the_step(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """Positive control for the lookup: when the step genuinely is not there the
+        error names it, rather than surfacing as a generic parse failure. Without this,
+        an implementation that silently fell back to results[-1] would still pass the
+        test above."""
+        from api.projects import generate_personas
+        from shared.exceptions import ServiceError
+
+        renamed = [
+            {'step_name': 'research_analysis', 'system': '', 'user': '', 'max_tokens': 100},
+            {'step_name': 'synthesis_renamed', 'system': '', 'user': '', 'max_tokens': 100},
+        ]
+        with patch('api.projects.get_persona_generation_steps', return_value=renamed), \
+                pytest.raises(ServiceError):
+            generate_personas('proj-1', {'persona_count': 2})
+
+        assert projects_table.put_item.call_count == 0
+
+
+class TestAvatarFailuresAreObservable:
+    """A batch of throttled avatars must not look identical to a healthy job.
+
+    Every failure ends as a warning and the job still succeeds, so without a metric
+    "all ten personas saved with no avatar" and "all ten avatars fine" are the same
+    green run. The counter has to key off the EFFECTIVE outcome: generate_persona_avatar
+    catches throttling, AccessDenied, ValidationException and the empty-images case
+    itself and RETURNS avatar_url=None, so a counter placed only in the except branch
+    reads zero during exactly the outage it exists to catch.
+    """
+
+    @staticmethod
+    def _counts(mock_metrics):
+        counts = {}
+        for call in mock_metrics.add_metric.call_args_list:
+            counts[call.kwargs['name']] = counts.get(call.kwargs['name'], 0) + call.kwargs['value']
+        return counts
+
+    def test_a_returned_none_url_counts_as_a_failure_and_still_saves(
+        self, projects_table, feedback, chain
+    ):
+        """The realistic failure path: no exception, just no URL."""
+        from api.projects import generate_personas
+
+        with patch('api.projects.generate_persona_avatar',
+                   return_value={'avatar_url': None, 'avatar_prompt': 'p'}), \
+                patch('api.projects.metrics') as mock_metrics:
+            result = generate_personas('proj-1', {'persona_count': 2})
+
+        assert self._counts(mock_metrics).get('AvatarGenerationFailed') == 2
+        # The personas are still saved — only the avatar is missing.
+        assert len(result['personas']) == 2
+        assert [p['avatar_url'] for p in result['personas']] == [None, None]
+
+    def test_a_successful_avatar_counts_as_a_success(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """Positive control: the counter distinguishes outcomes rather than counting
+        every persona as a failure."""
+        from api.projects import generate_personas
+
+        with patch('api.projects.metrics') as mock_metrics:
+            generate_personas('proj-1', {'persona_count': 2})
+
+        counts = self._counts(mock_metrics)
+        assert counts.get('AvatarGenerationSucceeded') == 2
+        assert 'AvatarGenerationFailed' not in counts
+
+    def test_a_raising_avatar_call_also_counts(self, projects_table, feedback, chain):
+        from api.projects import generate_personas
+
+        with patch('api.projects.generate_persona_avatar',
+                   side_effect=RuntimeError('ThrottlingException')), \
+                patch('api.projects.metrics') as mock_metrics:
+            result = generate_personas('proj-1', {'persona_count': 2})
+
+        assert self._counts(mock_metrics).get('AvatarGenerationFailed') == 2
+        assert len(result['personas']) == 2
+
+
+class TestAWorkerThatCannotStartIsNotFatal:
+    """pool.submit() used to sit in a dict comprehension, i.e. outside the per-future
+    try, so a RuntimeError("can't start new thread") propagated and discarded EVERY
+    persona — the same "finished, billed work thrown away" shape this change set out to
+    remove, relocated from the chain to the executor.
+    """
+
+    def test_a_submit_failure_still_saves_every_persona(
+        self, projects_table, feedback, chain, avatars
+    ):
+        from api.projects import generate_personas
+
+        class _RefusingPool:
+            """Accepts the context-manager protocol, refuses to start work."""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def submit(self, *args, **kwargs):
+                raise RuntimeError("can't start new thread")
+
+        with patch('api.projects.ThreadPoolExecutor', return_value=_RefusingPool()), \
+                patch('api.projects.metrics') as mock_metrics:
+            result = generate_personas('proj-1', {'persona_count': 2})
+
+        # Both personas survive, without avatars.
+        assert len(result['personas']) == 2
+        assert [p['avatar_url'] for p in result['personas']] == [None, None]
+        assert projects_table.put_item.call_count == 2
+        failed = [
+            c for c in mock_metrics.add_metric.call_args_list
+            if c.kwargs['name'] == 'AvatarGenerationFailed'
+        ]
+        assert len(failed) == 2
+
+
+class TestPersonaIdAndTimestampShareOneClock:
+    def test_the_id_stamp_matches_created_at_even_in_a_non_utc_timezone(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """The id stamp used to come from a naive datetime.now() (container-local) while
+        created_at was UTC, so the two could disagree about the day — and the id names
+        the S3 avatar key and sorts.
+
+        The timezone is forced rather than trusted: on a UTC runner both clocks agree
+        whatever the implementation does, so without this the test could not fail.
+        """
+        import os
+        import time as time_mod
+        from datetime import datetime
+
+        from api.projects import generate_personas
+
+        original_tz = os.environ.get('TZ')
+        os.environ['TZ'] = 'Asia/Tokyo'      # UTC+9, no DST — a stable offset
+        time_mod.tzset()
+        try:
+            result = generate_personas('proj-1', {'persona_count': 2})
+        finally:
+            if original_tz is None:
+                del os.environ['TZ']
+            else:
+                os.environ['TZ'] = original_tz
+            time_mod.tzset()
+
+        for persona in result['personas']:
+            stamp = persona['persona_id'].split('_')[1]
+            expected = datetime.fromisoformat(persona['created_at']).strftime('%Y%m%d%H%M%S')
+            assert stamp == expected, (
+                f"id stamp {stamp} disagrees with created_at {persona['created_at']} "
+                '— they came from different clock readings'
+            )
