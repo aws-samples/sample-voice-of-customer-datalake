@@ -1058,6 +1058,61 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         assert 'stats' not in body
         assert 'total_submissions' not in response['body']
 
+    @patch.dict('os.environ', {}, clear=False)
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_read_failure_reaches_cloudwatch_and_not_just_the_caller(
+        self, mock_aggregates, mock_feedback, capsys, api_gateway_event,
+        lambda_context, feedback_form_handler
+    ):
+        """A metric is only worth adding if it is actually emitted.
+
+        `metrics.add_metric` BUFFERS: nothing leaves the function unless the
+        handler is wrapped in `metrics.log_metrics`, which `api_handler` does —
+        and a flush with no namespace raises SchemaValidationError, which on this
+        path would replace the read failure with a metrics bug. So this asserts
+        the whole way out: an EMF blob on stdout, naming this metric, under the
+        namespace shared/logging pins on the Metrics singleton ('VoC', a default
+        that does not depend on POWERTOOLS_METRICS_NAMESPACE being deployed).
+
+        Without it, "the failure is now visible to operations" — the answer given
+        to the review question about a silent DynamoDB fault — is unverified.
+        """
+        import os
+
+        os.environ.pop('POWERTOOLS_METRICS_NAMESPACE', None)
+        mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
+        mock_feedback.query.side_effect = Exception('ProvisionedThroughputExceeded')
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 500
+        emitted = [
+            json.loads(line)
+            for line in capsys.readouterr().out.splitlines()
+            if 'FeedbackFormStatsReadFailed' in line and '_aws' in line
+        ]
+        assert emitted, (
+            'the read failure emitted no CloudWatch metric — add_metric only '
+            'buffers, so this is invisible to operations unless api_handler '
+            'flushes it'
+        )
+        namespaces = {
+            directive['Namespace']
+            for blob in emitted
+            for directive in blob['_aws']['CloudWatchMetrics']
+        }
+        assert namespaces == {'VoC'}, (
+            f'metric emitted under {namespaces}, not the namespace '
+            'shared/logging sets on the Metrics singleton'
+        )
+
     @patch('feedback_form_handler.feedback_table', None)
     @patch('feedback_form_handler.aggregates_table')
     def test_an_unconfigured_feedback_table_is_a_configuration_error(
