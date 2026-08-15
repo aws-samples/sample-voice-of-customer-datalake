@@ -62,6 +62,10 @@
     "timeToMarketDescription": "能多快交付？",
     "title": "优先级排序评分"
   },
+  "scoresUnavailable": {
+    "description": "当前无法获取已保存的评分，因此下方显示的是默认值，而非任何人输入的数值。请在保存前重新加载页面。",
+    "title": "无法加载评分"
+  },
   "sort": {
     "date": "日期",
     "dateFull": "创建日期",

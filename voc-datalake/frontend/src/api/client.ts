@@ -481,13 +481,15 @@ export const api = {
   getPrioritizationScores: () => 
     fetchApi<{ scores: Record<string, PrioritizationScore> }>('/projects/prioritization'),
   
-  savePrioritizationScores: (scores: Record<string, PrioritizationScore>) =>
-    fetchApi<{ success: boolean }>('/projects/prioritization', {
-      method: 'PUT',
-      body: JSON.stringify({ scores })
-    }),
-
-  /** Save only the changed scores (incremental/diff update) */
+  /**
+   * Save only the changed scores (incremental/diff update).
+   *
+   * The only writer. A `savePrioritizationScores` sending PUT used to sit beside
+   * this; it PUT the caller's whole map as every reviewer's scores, which under
+   * per-reviewer ballots has no honest meaning. It had no caller in the product,
+   * and the endpoint now refuses that verb, so keeping the function would only
+   * offer a future caller a guaranteed 400.
+   */
   patchPrioritizationScores: (changedScores: Record<string, PrioritizationScore>) =>
     fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {
       method: 'PATCH',

@@ -347,4 +347,47 @@ describe('Prioritization', () => {
       expect(saveButton).toBeDisabled()
     })
   })
+
+  describe('a failed score read is not an unscored backlog', () => {
+    // The endpoint raises on a failed read rather than answering an empty map,
+    // precisely so "the read failed" and "nobody has scored anything" stop
+    // looking identical. Reading only `data` would undo that on screen: every row
+    // falls back to DEFAULT_SCORE and the page looks merely unscored.
+
+    it('shows an error rather than presenting defaults as saved scores', async () => {
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent('Scores could not be loaded')
+      })
+      // The documents still list — the failure is the SCORES read, not the page.
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+    })
+
+    it('does not offer to save over scores it could not read', async () => {
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+    })
+
+    it('shows no error when the backlog is genuinely unscored', async () => {
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
 })

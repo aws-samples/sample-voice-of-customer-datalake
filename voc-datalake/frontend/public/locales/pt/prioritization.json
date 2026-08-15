@@ -62,6 +62,10 @@
     "timeToMarketDescription": "Com que rapidez isso pode ser entregue?",
     "title": "Pontuações de Priorização"
   },
+  "scoresUnavailable": {
+    "description": "Suas pontuações salvas estão indisponíveis neste momento, portanto os números abaixo são valores padrão e não o que alguém inseriu. Recarregue a página antes de salvar.",
+    "title": "Não foi possível carregar as pontuações"
+  },
   "sort": {
     "date": "Data",
     "dateFull": "Data de Criação",

@@ -62,6 +62,10 @@
     "timeToMarketDescription": "どのくらい早く提供できますか？",
     "title": "優先順位付けスコア"
   },
+  "scoresUnavailable": {
+    "description": "保存されたスコアを現在取得できないため、以下の数値は入力された値ではなく既定値です。保存する前にページを再読み込みしてください。",
+    "title": "スコアを読み込めませんでした"
+  },
   "sort": {
     "date": "日付",
     "dateFull": "作成日",

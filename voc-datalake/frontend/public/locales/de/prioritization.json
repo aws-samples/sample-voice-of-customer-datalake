@@ -62,6 +62,10 @@
     "timeToMarketDescription": "Wie schnell kann dies geliefert werden?",
     "title": "Priorisierungsbewertungen"
   },
+  "scoresUnavailable": {
+    "description": "Ihre gespeicherten Bewertungen sind derzeit nicht verfügbar. Die unten angezeigten Zahlen sind daher Standardwerte und nicht die eingegebenen Werte. Laden Sie die Seite vor dem Speichern neu.",
+    "title": "Bewertungen konnten nicht geladen werden"
+  },
   "sort": {
     "date": "Datum",
     "dateFull": "Erstellungsdatum",

@@ -1150,22 +1150,11 @@ describe('API Client', () => {
   })
 
   describe('savePrioritizationScores', () => {
-    it('sends PUT request with scores', async () => {
-      const scores = { issue1: { impact: 5, effort: 3 } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.savePrioritizationScores(scores as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/prioritization',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({ scores }),
-        })
-      )
+    it('is gone, because a whole-map PUT overwrote every reviewer', () => {
+      // Scores are per-reviewer ballots now, so one caller's map is not
+      // everyone's scores. The endpoint refuses PUT, so a client function for it
+      // could only ever produce a 400.
+      expect('savePrioritizationScores' in api).toBe(false)
     })
   })
 

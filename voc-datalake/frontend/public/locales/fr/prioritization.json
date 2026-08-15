@@ -62,6 +62,10 @@
     "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
     "title": "Scores de priorisation"
   },
+  "scoresUnavailable": {
+    "description": "Vos scores enregistrés sont actuellement indisponibles : les valeurs ci-dessous sont donc des valeurs par défaut et non celles qui ont été saisies. Rechargez la page avant d'enregistrer.",
+    "title": "Impossible de charger les scores"
+  },
   "sort": {
     "date": "Par date",
     "dateFull": "Date de création",
