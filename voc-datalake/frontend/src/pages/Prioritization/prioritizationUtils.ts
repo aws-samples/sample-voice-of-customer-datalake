@@ -27,6 +27,16 @@ export const DEFAULT_SCORE: PrioritizationScore = {
   notes: '',
 }
 
+/**
+ * The composite score this page sorts by.
+ *
+ * These four weights are duplicated in `COMPOSITE_WEIGHTS` in the backend's
+ * `projects_handler.py`, which uses them to report the SPREAD of the composite
+ * score across reviewers. Re-weight here alone and that spread silently starts
+ * describing a different unit than this column — so the pair is pinned by
+ * `lambda/api/test/test_prioritization_weights_lockstep.py`, which fails rather
+ * than letting the two drift.
+ */
 export const calculatePriorityScore = (score: PrioritizationScore): number => {
   return (score.impact * 0.4) + (score.time_to_market * 0.3) + (score.strategic_fit * 0.2) + (score.confidence * 0.1)
 }
