@@ -5,7 +5,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from boto3.dynamodb.conditions import ConditionExpressionBuilder
+from boto3.dynamodb.conditions import ConditionBase, ConditionExpressionBuilder
 
 # Bedrock model ID used in production
 BEDROCK_MODEL_ID = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
@@ -56,7 +56,16 @@ def _pk_from_condition(expr) -> str:
 
     Uses the public ``ConditionExpressionBuilder`` API rather than the private
     ``_values`` attribute, so the assertion is stable across boto3 versions.
+
+    Raises:
+        TypeError: If ``expr`` is not a boto3 condition.  Failing here with a
+            clear message beats the opaque ``DynamoDBNeedsConditionError`` that
+            ``build_expression`` would raise on, say, a ``MagicMock``.
     """
+    if not isinstance(expr, ConditionBase):
+        raise TypeError(
+            f'expected a boto3 ConditionBase, got {type(expr).__name__}'
+        )
     built = ConditionExpressionBuilder().build_expression(expr)
     return next(iter(built.attribute_value_placeholders.values()))
 
@@ -700,20 +709,27 @@ class TestFailClosedWithNoIdentity:
         chat_handler.conversations_table = mock_table
 
         def _all_pk_calls():
+            # Each loop reads kwargs first and falls back to the first positional
+            # argument, so a call site that switches to positional args is still
+            # covered.  Values of an unexpected shape are skipped rather than
+            # raising, so this assertion helper reports on the partition keys it
+            # can see instead of failing as though the handler were broken.
             pks = []
-            for call in mock_table.get_item.call_args_list:
-                key = call.kwargs.get('Key') or (call.args[0] if call.args else {})
-                pks.append(key.get('pk', ''))
+            for call in (
+                *mock_table.get_item.call_args_list,
+                *mock_table.delete_item.call_args_list,
+            ):
+                key = call.kwargs.get('Key') or (call.args[0] if call.args else None)
+                if isinstance(key, dict):
+                    pks.append(key.get('pk', ''))
             for call in mock_table.query.call_args_list:
                 expr = call.kwargs.get('KeyConditionExpression') or (call.args[0] if call.args else None)
-                if expr is not None:
+                if isinstance(expr, ConditionBase):
                     pks.append(_pk_from_condition(expr))
             for call in mock_table.put_item.call_args_list:
-                item = call.kwargs.get('Item') or (call.args[0] if call.args else {})
-                pks.append(item.get('pk', ''))
-            for call in mock_table.delete_item.call_args_list:
-                key = call.kwargs.get('Key') or (call.args[0] if call.args else {})
-                pks.append(key.get('pk', ''))
+                item = call.kwargs.get('Item') or (call.args[0] if call.args else None)
+                if isinstance(item, dict):
+                    pks.append(item.get('pk', ''))
             return pks
 
         try:

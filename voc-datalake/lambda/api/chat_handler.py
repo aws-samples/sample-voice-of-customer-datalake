@@ -189,8 +189,17 @@ Top Categories: {', '.join([f"{cat}: {count}" for cat, count in sorted(category_
 @tracer.capture_method
 def get_conversations(proxy: str = ""):
     """List or get chat conversations."""
+    # Identity is resolved before the table check on purpose: whether the caller
+    # is allowed to ask must not depend on whether the resource happens to be
+    # configured. Reversing these two lines hands a 200 to a caller with no
+    # subject claim whenever the table is unset.
     caller_pk = f"USER#{get_caller_subject(app.current_event.raw_event)}"
     if not conversations_table:
+        # Deliberately softer than the write paths, which raise ConfigurationError:
+        # a deployment without the conversations table has no history to show, and
+        # "no conversations" is the truthful answer to that read. A write, by
+        # contrast, cannot be honoured at all, so it must fail loudly rather than
+        # report success for data it silently dropped.
         return {'conversations': []}
     conversation_id = proxy.strip() if proxy and proxy != '_list' else None
 
