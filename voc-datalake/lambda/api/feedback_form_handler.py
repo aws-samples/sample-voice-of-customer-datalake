@@ -524,6 +524,19 @@ def submit_form_feedback(form_id: str):
     # here would split a form's submissions across two partitions the day the
     # deployment is renamed. `or` rather than a get() default because a stored ''
     # must take the fallback too — that is how the read side treats it.
+    #
+    # The trade-off, stated because it is chosen rather than incidental: after a
+    # rename, a pre-rename form keeps writing under its OLD brand, so its
+    # submissions carry a brand the deployment no longer uses. That is deliberate
+    # — the alternative strands every submission the form already collected. It
+    # costs nothing in the read paths as they stand: the processor derives the
+    # pk from this value (source_display = brand_name or source_platform), and
+    # every other reader is scoped by source_platform, not by brand —
+    # metrics_handler queries the DATE# GSI filtering source_platform, and
+    # data_explorer_handler builds SOURCE#<source_platform>. No aggregate is
+    # scoped by BRAND_NAME, so there is nothing for a pre-rename form to fall out
+    # of. A future brand-scoped view would have to reckon with this and should
+    # read the form's brand rather than the environment's.
     effective_brand = form.get('brand_name') or BRAND_NAME
     if not form.get('brand_name') and effective_brand:
         # Store it, so this form stops depending on the environment variable —
