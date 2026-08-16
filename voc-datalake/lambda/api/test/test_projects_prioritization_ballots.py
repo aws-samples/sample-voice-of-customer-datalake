@@ -1945,7 +1945,7 @@ class TestASaveThatExpressesNothingDestroysNothing:
     # Every encoding of "this entry says nothing", including the two this PR made
     # legal on purpose and the one a client typo produces.
     NOTHING: ClassVar[list] = [{}, {'notes': None}, {'impact': None},
-                              {'impact': None, 'notes': None}, {'impactt': 5}]
+                               {'impact': None, 'notes': None}, {'impactt': 5}]
 
     @pytest.mark.parametrize('entry', NOTHING)
     def test_the_legacy_value_survives_a_save_that_scored_nothing(
