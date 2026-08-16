@@ -16,7 +16,7 @@ import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/Prototyp
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import LinkedFormEvidence from './LinkedFormEvidence'
 import {
-  calculatePriorityScore, getPriorityLabel, SCORABLE_TYPE_META,
+  calculatePriorityScore, getPriorityLabel, MAX_NOTE_LENGTH, SCORABLE_TYPE_META,
 } from './prioritizationUtils'
 import ScoreSlider from './ScoreSlider'
 import type { PRFAQWithProject } from './prioritizationUtils'
@@ -135,7 +135,13 @@ function PRFAQRowExpanded({
           <ScoreSlider label={t('scores.confidence')} value={score.confidence === 0 ? 3 : score.confidence} onChange={(v) => onUpdateScore('confidence', v)} description={t('scores.confidenceDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
           <div>
             <label className="text-sm font-medium text-gray-700">{t('notes.label')}</label>
-            <textarea value={score.notes} onChange={(e) => onUpdateScore('notes', e.target.value)} placeholder={t('notes.placeholder')} rows={2} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
+            {/* Bounded, because the API REFUSES a longer note rather than
+                truncating it — the tail of a justification is content, not a
+                number that can be clamped. Without this the page could compose a
+                body the save would reject, and `fetchApi` discards the reason. A
+                note already over the bound in pre-ballot data is not shortened by
+                `maxLength`; `overLongNoteDocuments` blocks the save for it. */}
+            <textarea value={score.notes} onChange={(e) => onUpdateScore('notes', e.target.value)} placeholder={t('notes.placeholder')} rows={2} maxLength={MAX_NOTE_LENGTH} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
           </div>
           {/* Ratings already collected about this document, beside the sliders
               that score it. Mounted here (expand-only) because the stats read is

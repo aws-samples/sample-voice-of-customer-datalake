@@ -30,6 +30,10 @@
     "title": "Framework de Priorização"
   },
   "loading": "Carregando documentos...",
+  "noteTooLong": {
+    "description": "As notas são limitadas a {{max}} caracteres, e uma nota mais longa é recusada em vez de encurtada. Reduza a nota da linha que você editou e salve novamente. Nada foi salvo ainda.",
+    "title": "Uma nota é longa demais para salvar"
+  },
   "notes": {
     "label": "Notas",
     "placeholder": "Adicione notas sobre esta decisão de priorização..."

@@ -504,6 +504,17 @@ export const api = {
    * per-reviewer ballots has no honest meaning. It had no caller in the product,
    * and the endpoint now refuses that verb, so keeping the function would only
    * offer a future caller a guaranteed 400.
+   *
+   * `updated_count` is BALLOTS WRITTEN, not documents sent: an entry that changed
+   * no axis and no note is a legal no-op and is not counted, so the number can be
+   * lower than the size of the map — and is 0 for a body that stored nothing.
+   * Every entry this page sends carries all four axes (`getScore` seeds them), so
+   * in practice the two agree here.
+   *
+   * A note longer than `MAX_NOTE_LENGTH` is REFUSED (400), not truncated. This
+   * function does not check it, because `fetchApi` discards the response body and
+   * could not report why — the page blocks that save before calling
+   * (`overLongNoteDocuments`).
    */
   patchPrioritizationScores: (changedScores: Record<string, PrioritizationScore>) =>
     fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {

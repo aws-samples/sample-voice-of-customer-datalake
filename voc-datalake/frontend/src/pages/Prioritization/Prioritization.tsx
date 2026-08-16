@@ -30,6 +30,7 @@ import {
 import PRFAQRow from './PRFAQRow'
 import {
   calculatePriorityScore, getScore, collectPRFAQs, comparePRFAQs, isScorable,
+  MAX_NOTE_LENGTH, overLongNoteDocuments,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection,
@@ -173,10 +174,18 @@ function PrioritizationHeader({
   readonly hasChanges: boolean
   readonly isPending: boolean
   /**
-   * True while the saved scores could not be read. Saving from that state would
-   * write the caller's edits against numbers nobody has seen — the rows on screen
-   * are defaults, not their ballot — so the button is disabled rather than left
-   * to look ordinary.
+   * True while a save cannot honestly be made, for either of two reasons, each
+   * with its own panel above the list saying which.
+   *
+   * The saved scores could not be READ: saving then writes the caller's edits
+   * against numbers nobody has seen, because the rows on screen are defaults
+   * rather than their ballot.
+   *
+   * Or a pending edit carries a note past `MAX_NOTE_LENGTH`: the API refuses it
+   * rather than truncating, and `fetchApi` discards the reason, so pressing Save
+   * would look like a button that does nothing.
+   *
+   * Disabled rather than left to look ordinary in both cases.
    */
   readonly saveBlocked: boolean
   readonly onReset: () => void
@@ -335,6 +344,14 @@ export default function Prioritization() {
     [formsData, allPRFAQs, allProjectDetails, projects],
   )
 
+  // Which pending edits carry a note the API will refuse. The API refuses rather
+  // than truncating — the tail of a justification is content — and `fetchApi`
+  // discards the response body, so an unanticipated 400 would reach the user as a
+  // Save button that does nothing. The textarea's `maxLength` covers what a reviewer
+  // TYPES; this covers a note that was already over the bound in the pre-ballot
+  // data, which is sent along the moment they touch a slider on that row.
+  const overLongNotes = useMemo(() => overLongNoteDocuments(localEdits), [localEdits])
+
   const saveMutation = useMutation({
     mutationFn: () => api.patchPrioritizationScores(localEdits),
     onSuccess: () => {
@@ -379,10 +396,28 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        saveBlocked={scoresFailed}
+        saveBlocked={scoresFailed || overLongNotes.length > 0}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />
+
+      {overLongNotes.length > 0 ? (
+        <div role="alert" className="bg-amber-50 border border-amber-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} />
+            <div>
+              <h3 className="font-medium text-amber-900 text-sm sm:text-base">{t('noteTooLong.title')}</h3>
+              <p className="text-xs sm:text-sm text-amber-700 mt-1">
+                {/* No `count` interpolation on purpose: a plural key needs
+                    `_one`/`_many`/`_other` forms that differ per locale, and a
+                    missing form renders the raw path. The bound is the actionable
+                    part; which row it is, is visible on the row. */}
+                {t('noteTooLong.description', { max: MAX_NOTE_LENGTH })}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {scoresFailed ? (
         <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">

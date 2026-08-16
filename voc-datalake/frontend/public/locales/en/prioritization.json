@@ -30,6 +30,10 @@
     "title": "Prioritization Framework"
   },
   "loading": "Loading documents...",
+  "noteTooLong": {
+    "description": "Notes are limited to {{max}} characters, and a longer note is refused rather than shortened. Trim the note on the row you edited, then save again. Nothing has been saved yet.",
+    "title": "A note is too long to save"
+  },
   "notes": {
     "label": "Notes",
     "placeholder": "Add notes about this prioritization decision..."

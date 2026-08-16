@@ -30,6 +30,10 @@
     "title": "Marco de priorización"
   },
   "loading": "Cargando documentos...",
+  "noteTooLong": {
+    "description": "Las notas están limitadas a {{max}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",
+    "title": "Una nota es demasiado larga para guardarla"
+  },
   "notes": {
     "label": "Notas",
     "placeholder": "Agregar notas sobre esta decisión de priorización..."

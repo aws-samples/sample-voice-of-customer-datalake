@@ -41,6 +41,51 @@ export const calculatePriorityScore = (score: PrioritizationScore): number => {
   return (score.impact * 0.4) + (score.time_to_market * 0.3) + (score.strategic_fit * 0.2) + (score.confidence * 0.1)
 }
 
+/**
+ * The longest note a ballot may carry.
+ *
+ * Duplicated from `MAX_BALLOT_NOTE_LEN` in the backend's `projects_handler.py`,
+ * which REFUSES a longer note rather than truncating it — the characters past the
+ * bound are content, not a number that can be clamped. So the page has to know the
+ * number too: `fetchApi` throws `API Error: 400` and discards the response body, so
+ * a refusal the page cannot anticipate arrives as a Save button that appears to do
+ * nothing.
+ *
+ * The pair is pinned by
+ * `lambda/api/test/test_prioritization_note_bound_lockstep.py`, because a comment
+ * saying the two agree cannot fail CI.
+ */
+export const MAX_NOTE_LENGTH = 2000
+
+/**
+ * The documents among the caller's pending edits whose note the API will refuse.
+ *
+ * Only pending edits are examined, because those are what a save sends: a
+ * pre-ballot note that ran long stays readable on an untouched row and blocks
+ * nothing.
+ *
+ * `maxLength` on the textarea stops a reviewer TYPING past the bound, but it does
+ * not shorten a value that was already over it when the page loaded — the
+ * pre-ballot map was written by a route with no bound at all — and touching any
+ * slider on such a row sends the note along with it. So the bound has to be checked
+ * before the request, not only prevented at the keyboard.
+ *
+ * Typed for the shape it READS — an optionally-absent note — rather than for
+ * `PrioritizationScore`, which declares `notes` as a required string. A stored
+ * ballot arrives from the network with no runtime guarantee it matches that
+ * declaration, and a save is the wrong moment to discover otherwise: ballots
+ * written before a partial save carried no note at all. `PrioritizationScore` is
+ * still assignable to this, so the call site is unaffected, and the tolerance is in
+ * the signature instead of behind a cast in a test.
+ */
+export function overLongNoteDocuments(
+  edits: Record<string, { readonly notes?: string | null }>,
+): string[] {
+  return Object.entries(edits)
+    .filter(([, score]) => (score.notes ?? '').length > MAX_NOTE_LENGTH)
+    .map(([documentId]) => documentId)
+}
+
 export const getScoreColor = (score: number, max: number = 5): string => {
   const ratio = score / max
   if (ratio >= 0.8) return 'text-green-600 bg-green-50'
