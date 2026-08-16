@@ -296,6 +296,39 @@ def _required_zod_properties(object_literal: str) -> set[str]:
     return required
 
 
+def _aggregator_counter_parameters(tree: ast.Module) -> dict[str, tuple[str, str]]:
+    """Each counter writer's own first two parameter names, from its `def`.
+
+    A keyword call has to be looked up under the name the WRITER declares, and
+    this file must not guess that name. Hardcoding `sk` would mean that renaming
+    the writer's parameter turns a correct keyword call into an unreadable one, so
+    a correct aggregator would fail — the residual form of the hazard this file
+    exists to avoid rather than to reproduce.
+
+    Read per function rather than as one shared pair, so the two writers are free
+    to name their parameters differently without either becoming unreadable.
+    """
+    parameters: dict[str, tuple[str, str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name not in AGGREGATOR_COUNTER_WRITERS:
+            continue
+        positional = [arg.arg for arg in node.args.args]
+        assert len(positional) >= 2, (
+            f'{AGGREGATOR_SOURCE}::{node.name} takes fewer than two positional '
+            f'parameters, so this helper cannot tell which one is the sort key. '
+            f'If the signature changed shape, update this file rather than '
+            f'loosening the assertion that depends on it.'
+        )
+        parameters[node.name] = (positional[0], positional[1])
+    assert set(parameters) == set(AGGREGATOR_COUNTER_WRITERS), (
+        f'Expected {AGGREGATOR_SOURCE} to define {sorted(AGGREGATOR_COUNTER_WRITERS)}; '
+        f'found {sorted(parameters)}. A writer that moved to another module cannot '
+        f'have its parameter names read here, so its keyword calls would look '
+        f'unreadable — follow it, or pin it where it now lives.'
+    )
+    return parameters
+
+
 def _aggregator_counter_writes() -> list[tuple[str, str]]:
     """Every counter write in the aggregator, as (pk source, sk source).
 
@@ -318,18 +351,28 @@ def _aggregator_counter_writes() -> list[tuple[str, str]]:
     where they belong, whatever their shape. It also excludes the two function
     DEFINITIONS for free, since a `def` is not a Call. No module is imported —
     ast.parse reads the same text every other helper here reads.
+
+    Keyword arguments are resolved through the writers' own signatures
+    (_aggregator_counter_parameters) rather than through the names this file
+    expects, so the last way a correct aggregator could fail here — a renamed
+    parameter — is closed too.
     """
+    tree = ast.parse(_read(AGGREGATOR_SOURCE))
+    parameters = _aggregator_counter_parameters(tree)
     writes: list[tuple[str, str]] = []
-    for node in ast.walk(ast.parse(_read(AGGREGATOR_SOURCE))):
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
         name = func.id if isinstance(func, ast.Name) else getattr(func, 'attr', '')
         if name not in AGGREGATOR_COUNTER_WRITERS:
             continue
+        # Keyword lookups use the writer's OWN parameter names, so a rename cannot
+        # turn a correct keyword call into an unreadable one.
+        pk_name, sk_name = parameters[name]
         keywords = {kw.arg: kw.value for kw in node.keywords}
-        pk = node.args[0] if node.args else keywords.get('pk')
-        sk = node.args[1] if len(node.args) > 1 else keywords.get('sk')
+        pk = node.args[0] if node.args else keywords.get(pk_name)
+        sk = node.args[1] if len(node.args) > 1 else keywords.get(sk_name)
         # '<missing>' rather than a skip: a call this helper cannot read the sort
         # key of must FAIL the assertion below, not quietly leave it unpinned.
         writes.append((
