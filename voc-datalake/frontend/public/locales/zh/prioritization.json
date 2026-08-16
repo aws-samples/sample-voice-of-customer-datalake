@@ -77,6 +77,7 @@
     "label": "排序方式：",
     "priority": "优先级",
     "priorityFull": "优先级评分",
+    "teamOrdered": "按每行显示的团队数值排序，而不是按你自己的评分。",
     "ttm": "上市时间",
     "ttmFull": "上市时间"
   },

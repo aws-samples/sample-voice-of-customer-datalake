@@ -77,6 +77,7 @@
     "label": "Sortieren nach:",
     "priority": "Priorität",
     "priorityFull": "Prioritätswert",
+    "teamOrdered": "Sortiert die Liste nach den Zahlen des Teams, die in jeder Zeile angezeigt werden – nicht nach Ihrer eigenen Bewertung.",
     "ttm": "MeZ",
     "ttmFull": "Markteinführungszeit"
   },

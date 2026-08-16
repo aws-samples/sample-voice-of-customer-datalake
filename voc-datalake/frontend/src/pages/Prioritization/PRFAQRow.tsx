@@ -16,7 +16,7 @@ import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/Prototyp
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import LinkedFormEvidence from './LinkedFormEvidence'
 import {
-  getPriorityLabel, MAX_NOTE_LENGTH, SCORABLE_TYPE_META,
+  getPriorityLabel, MAX_NOTE_LENGTH, reviewersDisagreed, SCORABLE_TYPE_META,
 } from './prioritizationUtils'
 import ScoreSlider from './ScoreSlider'
 import type {
@@ -39,10 +39,11 @@ import type { ReactElement } from 'react'
  * order agree by construction.
  *
  * `team === null` means NOBODY HAS SCORED THIS — the aggregate omits a document
- * with no votes — which is a different statement from "the team scored it low".
- * It renders as an explicit label rather than as dashes over a number, because the
- * old summary substituted 3 for an unset axis and an untouched proposal therefore
- * presented as mid-table.
+ * with no votes — which is a different statement from "the team scored it low". It
+ * renders as an em dash under the words "Not scored yet": a placeholder where the
+ * number would be, never a number. The old summary substituted 3 for an unset axis,
+ * so an untouched proposal presented as mid-table; a dash cannot be misread as a
+ * score, and the label beneath it says which of the two states this is.
  *
  * The reviewer count sits beside the mean, never behind a hover, because one
  * ballot produces a mean equal to that ballot and a spread of zero: without the
@@ -71,7 +72,10 @@ function TeamScoreSummary({ team }: { readonly team: TeamScore | null }): ReactE
         <div className="text-xs text-gray-400">{t('sort.ttm')}</div>
       </div>
       <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
-        <div className="text-lg sm:text-xl font-bold text-green-600">{team.composite.toFixed(1)}</div>
+        {/* The same rounded value the priority band beside the title classifies, so
+            the printed number and the label describing it are one value rather than
+            two roundings of it. */}
+        <div className="text-lg sm:text-xl font-bold text-green-600">{team.displayComposite.toFixed(1)}</div>
         {/* Labelled as the TEAM's score, not "Score": this number changed meaning
             from "my composite" to "the team's mean composite", and a row a reader
             cannot attribute is worse than either alone. */}
@@ -117,13 +121,17 @@ function DocumentTypeBadge({
  */
 function DisagreementBadge({ team }: { readonly team: TeamScore | null }): ReactElement | null {
   const { t } = useTranslation('prioritization')
-  const spread = team?.spread ?? 0
-  if (spread <= 0) return null
+  // One shared predicate with `TeamScorePanel`'s pointer to the notes, rather than
+  // each re-deriving "is there a disagreement" from `spread`: two spellings of one
+  // rule is where the badge and the text it points at start disagreeing. No `?? 0`
+  // fallback either — a change to what `spread: null` means then fails to compile
+  // here instead of silently keeping the old behaviour.
+  if (!reviewersDisagreed(team)) return null
   // Interpolated as a plain number rather than through a `count` plural: plural
   // forms differ per locale and a missing form renders the raw key path to users.
   return (
     <span className="text-xs px-2 py-0.5 rounded-full whitespace-nowrap bg-amber-100 text-amber-800">
-      {t('team.disagreement', { spread: spread.toFixed(1) })}
+      {t('team.disagreement', { spread: team.spread.toFixed(1) })}
     </span>
   )
 }
@@ -177,8 +185,12 @@ function PRFAQRowHeader({
 }
 
 /**
- * What the team said, one level in — the same numbers the resting row leads with,
- * spelled out per axis with the count and the spread that qualify them.
+ * What the team said, one level in — the composite the resting row leads with, the
+ * count of ballots behind it and the spread across them, in words.
+ *
+ * The per-axis means stay on the collapsed row's summary rather than being repeated
+ * here; this panel's job is to say whose numbers those are and whether the
+ * reviewers agreed.
  *
  * Above the caller's own sliders, and in its own tinted panel, because these two
  * blocks are the pair a reader must never confuse: the mean the list sorts by, and
@@ -200,13 +212,15 @@ function TeamScorePanel({ team }: { readonly team: TeamScore | null }): ReactEle
         <>
           <p className="text-sm text-indigo-900 mt-1">
             {t('team.summary', {
-              score: team.composite.toFixed(1),
+              score: team.displayComposite.toFixed(1),
               reviewers: team.reviewerCount,
             })}
           </p>
-          {team.spread !== null && team.spread > 0 ? (
+          {reviewersDisagreed(team) ? (
             /* The spread is what sends a reader to the notes, so the pointer to
-               them sits with it. Only the CALLER'S OWN note is on this page: the
+               them sits with it. The same predicate the badge on the collapsed row
+               uses, so the badge and the text it points at cannot answer
+               differently. Only the CALLER'S OWN note is on this page: the
                prioritization read returns each reviewer's ballot only to its own
                author, so other reviewers' note text is not available without a new
                route — deliberately out of scope here (see the PR description). */
@@ -397,9 +411,12 @@ export default function PRFAQRow({
 }) {
   const { t } = useTranslation('prioritization')
   // The priority band describes the TEAM's composite, matching the number beside
-  // it and the sort order. A document nobody scored gets 0, which
-  // `getPriorityLabel` names "Not Scored" — not "Low Priority".
-  const priority = getPriorityLabel(team?.composite ?? 0, t)
+  // it and the sort order. The team score is passed WHOLE rather than as
+  // `composite ?? 0`, so "nobody scored this" reaches the band as `null` instead of
+  // as a low number: a proposal the team unanimously rated 1 bands "Low Priority",
+  // and only an unvoted one bands "Not Scored". The band also reads the same
+  // rounded value the row prints, so the label and the number cannot disagree.
+  const priority = getPriorityLabel(team, t)
 
   return (
     <div className="bg-white rounded-lg border shadow-sm">

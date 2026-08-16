@@ -81,17 +81,31 @@ export const calculatePriorityScore = (score: CompositeAxes): number => {
  * `min(1)` for the same reason: `_aggregate_scores` omits a document with no
  * votes rather than emitting a zero-count row, so a zero count is not a row this
  * page can render honestly.
+ *
+ * The per-axis leniency has one floor, enforced by `parseAggregate` rather than by
+ * the schema: a row where NOT ONE axis is a readable number is dropped too. Left
+ * to `.catch(0)` alone, `{ reviewer_count: 2 }` would parse into an all-zeros
+ * aggregate and render "0.0, Reviewers 2" — the mirror of the case `min(1)`
+ * exists to prevent, inventing a score for a row that carries none and dressing it
+ * with a real count. A row with at least one readable axis is still shown with the
+ * rest degraded, because the backend itself reports 0.0 for an axis nobody scored,
+ * so a zeroed axis beside a scored one is real data rather than a parse failure.
  */
+const TEAM_AXIS = z.number().min(0).max(5)
+
 const TeamAggregateSchema = z.looseObject({
-  impact: z.number().min(0).max(5).catch(0),
-  time_to_market: z.number().min(0).max(5).catch(0),
-  confidence: z.number().min(0).max(5).catch(0),
-  strategic_fit: z.number().min(0).max(5).catch(0),
+  impact: TEAM_AXIS.catch(0),
+  time_to_market: TEAM_AXIS.catch(0),
+  confidence: TEAM_AXIS.catch(0),
+  strategic_fit: TEAM_AXIS.catch(0),
   reviewer_count: z.number().int().min(1),
   // In the same unit as `calculatePriorityScore`, so it is readable as "how far
   // apart two reviewers were, in slider notches". Bounded by that scale.
-  score_spread: z.number().min(0).max(5).catch(0),
+  score_spread: TEAM_AXIS.catch(0),
 })
+
+/** The four fields a row must be able to say SOMETHING about to be worth showing. */
+const AXIS_FIELDS = ['impact', 'time_to_market', 'confidence', 'strategic_fit'] as const
 
 /**
  * One row of the team view, or `null` when it cannot be read.
@@ -101,10 +115,21 @@ const TeamAggregateSchema = z.looseObject({
  * schema that stops producing what `PrioritizationAggregate` promises is a compile
  * error rather than a lenient parse of a shape nothing else in the app agrees
  * with.
+ *
+ * The axis check is made against the RAW input, after the lenient parse, because
+ * `.catch(0)` has by then erased the difference between "the team scored this 0"
+ * and "this field was unreadable". A row with no readable axis at all asserts a
+ * score nobody cast, so it is dropped — the same argument as `reviewer_count`,
+ * and it lands the row in the same "nobody scored this" state the page already
+ * renders honestly.
  */
 function parseAggregate(value: unknown): PrioritizationAggregate | null {
   const parsed = TeamAggregateSchema.safeParse(value)
-  return parsed.success ? parsed.data : null
+  if (!parsed.success) return null
+  const raw = z.record(z.string(), z.unknown()).safeParse(value)
+  if (!raw.success) return null
+  const hasReadableAxis = AXIS_FIELDS.some((axis) => TEAM_AXIS.safeParse(raw.data[axis]).success)
+  return hasReadableAxis ? parsed.data : null
 }
 
 /**
@@ -136,6 +161,16 @@ export function normalizeAggregates(raw: unknown): Record<string, Prioritization
  */
 export interface TeamScore {
   readonly composite: number
+  /**
+   * The composite AS THE ROW PRINTS IT, rounded to the one decimal the page shows.
+   *
+   * Every classification reads this rather than `composite`, because the raw
+   * weighted sum is an IEEE-754 value: four means of 4 sum to 3.9999999999999996,
+   * which the row prints as `4.0` while an unrounded `>= 4` test calls it Medium.
+   * Rounding once, here, is what makes the printed number and the band that
+   * describes it agree by construction rather than by two matching literals.
+   */
+  readonly displayComposite: number
   readonly impact: number
   readonly timeToMarket: number
   readonly reviewerCount: number
@@ -162,14 +197,41 @@ export function getTeamScore(
 ): TeamScore | null {
   if (!Object.hasOwn(aggregates, docId)) return null
   const aggregate = aggregates[docId]
+  const composite = calculatePriorityScore(aggregate)
   return {
-    composite: calculatePriorityScore(aggregate),
+    composite,
+    displayComposite: roundToDisplay(composite),
     impact: aggregate.impact,
     timeToMarket: aggregate.time_to_market,
     reviewerCount: aggregate.reviewer_count,
     spread: aggregate.reviewer_count > 1 ? aggregate.score_spread : null,
   }
 }
+
+/** The one decimal the page prints a composite to. */
+export const roundToDisplay = (composite: number): number => Math.round(composite * 10) / 10
+
+/**
+ * Did the reviewers actually disagree — the one rule two components both need.
+ *
+ * `null` team is "nobody voted", `spread === null` is "fewer than two comparable
+ * ballots, so there was nothing to disagree with", and `0` is "the comparable
+ * ballots agreed". None of the three is a disagreement worth pointing a reader at,
+ * and all three used to be re-derived separately in the badge and in the panel —
+ * two spellings of one rule, which is where drift starts. One function, so the two
+ * places that ask cannot answer differently.
+ *
+ * A type PREDICATE rather than a plain boolean, so a caller that has asked the
+ * question can then read `team.spread` as the number it is. Both call sites render
+ * the spread right after the guard, and without the narrowing each would need a
+ * `?? 0` fallback for a case the guard has already excluded — which is what made
+ * the rule re-derivable in the first place.
+ */
+export const reviewersDisagreed = (
+  team: TeamScore | null,
+): team is TeamScore & { readonly spread: number } => (
+  team !== null && team.spread !== null && team.spread > 0
+)
 
 /**
  * The longest note a ballot may carry.
@@ -244,25 +306,73 @@ export const getScoreColor = (score: number, max: number = 5): string => {
   return 'text-red-600 bg-red-50'
 }
 
-export const getPriorityLabel = (score: number, t: (key: string) => string): {
+/** Which band a document falls in — `'none'` ONLY when nobody has scored it. */
+export type PriorityBand = 'high' | 'medium' | 'low' | 'none'
+
+/**
+ * The band the row is labelled with and the stats cards count by.
+ *
+ * Takes the team score rather than a number, so that "nobody has scored this"
+ * arrives as `null` instead of being encoded as a low value. It used to be
+ * `getPriorityLabel(team?.composite ?? 0, t)`, which collapsed the two: a proposal
+ * three reviewers unanimously rated 1 across every axis showed `1.0`,
+ * `Reviewers 3` and the band "Not Scored" — the same label as a document nobody
+ * had opened. "Scored low" and "unscored" have to stay distinct in the row, not
+ * only in the sort, so `'none'` is now reachable only from `null` and every scored
+ * composite bands at least `'low'`.
+ *
+ * Classifies `displayComposite`, the value the row PRINTS, so the label and the
+ * number beside it cannot disagree. Against `composite` the thresholds are unsafe:
+ * team means of 4 on all four axes sum to 3.9999999999999996, printed `4.0` and
+ * banded Medium.
+ */
+export const priorityBand = (team: TeamScore | null): PriorityBand => {
+  if (team === null) return 'none'
+  if (team.displayComposite >= 4) return 'high'
+  if (team.displayComposite >= 3) return 'medium'
+  return 'low'
+}
+
+/**
+ * How each band is named and tinted. One table, so the row and the cards agree.
+ *
+ * `i18nKey` is namespace-QUALIFIED, for the reason documented on
+ * `SCORABLE_TYPE_META`: `scripts/i18n-check.mjs` only collects a data-held key when
+ * it carries a namespace, so a bare `'priority.high'` is invisible to it and these
+ * four become deletion candidates in a cleanup pass — leaving every row labelled
+ * with a raw key path. The prefix is in the TYPE as well as the values, so dropping
+ * it fails to compile rather than only failing a test.
+ */
+const BAND_STYLE: Record<PriorityBand, {
+  readonly i18nKey: `prioritization:${string}`;
+  readonly color: string
+}> = {
+  high: {
+    i18nKey: 'prioritization:priority.high',
+    color: 'bg-green-100 text-green-800',
+  },
+  medium: {
+    i18nKey: 'prioritization:priority.medium',
+    color: 'bg-blue-100 text-blue-800',
+  },
+  low: {
+    i18nKey: 'prioritization:priority.low',
+    color: 'bg-yellow-100 text-yellow-800',
+  },
+  none: {
+    i18nKey: 'prioritization:priority.none',
+    color: 'bg-gray-100 text-gray-600',
+  },
+}
+
+export const getPriorityLabel = (team: TeamScore | null, t: (key: string) => string): {
   label: string;
   color: string
 } => {
-  if (score >= 4) return {
-    label: t('priority.high'),
-    color: 'bg-green-100 text-green-800',
-  }
-  if (score >= 3) return {
-    label: t('priority.medium'),
-    color: 'bg-blue-100 text-blue-800',
-  }
-  if (score >= 2) return {
-    label: t('priority.low'),
-    color: 'bg-yellow-100 text-yellow-800',
-  }
+  const style = BAND_STYLE[priorityBand(team)]
   return {
-    label: t('priority.none'),
-    color: 'bg-gray-100 text-gray-600',
+    label: t(style.i18nKey),
+    color: style.color,
   }
 }
 
@@ -349,47 +459,95 @@ const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (t
 }
 
 /**
- * Order two rows by the team's numbers — the same ones the row displays.
+ * Order two SCORED rows by the team's numbers — the same ones the row displays.
  *
- * Unscored rows are GROUPED, not interleaved. Before this they sorted by whatever
- * `DEFAULT_SCORE` implied (a composite of 0.9, above anything scored genuinely
- * low), so an untouched proposal outranked one the team had looked at and rated
- * poorly. Absence from the aggregate means nobody voted, which is not a low score,
- * so they compare equal to each other and below every scored row.
- *
- * "Below", ascending — and the page reverses the ascending result for `desc`, so
- * the default view (highest team score first) ends with the unscored block and the
- * ascending view begins with it. Either way they stay together.
+ * Only reached once both rows are known to be scored; `sortPRFAQs` pins the
+ * unscored block itself, because whether a document has a number at all is not a
+ * question the sort direction can answer (see there).
  */
 function compareByTeamScore(
-  a: PRFAQWithProject,
-  b: PRFAQWithProject,
-  aggregates: Record<string, PrioritizationAggregate>,
+  teamA: TeamScore,
+  teamB: TeamScore,
   sortField: 'priority_score' | 'impact' | 'time_to_market',
 ): number {
-  const teamA = getTeamScore(aggregates, a.document_id)
-  const teamB = getTeamScore(aggregates, b.document_id)
-  if (!teamA || !teamB) {
-    // 0 when neither is scored: unscored rows tie rather than being ordered by a
-    // number neither of them has.
-    return (teamA ? 1 : 0) - (teamB ? 1 : 0)
-  }
   const value = TEAM_SORT_VALUE[sortField]
   return value(teamA) - value(teamB)
 }
 
 /**
- * The list order.
+ * The list order, ascending, for two rows that both carry the sort's data.
  *
  * Reads the TEAM aggregate, not the caller's own ballot, because that is what the
  * row now shows: a list that displays one number and sorts by another is worse
  * than either alone. `created_at` and `title` are document fields and are
  * unaffected.
+ *
+ * Unscored rows compare EQUAL here — to each other and to anything else — because
+ * ordering them is `sortPRFAQs`' job, not this function's. Before the team view
+ * they sorted by whatever `DEFAULT_SCORE` implied (a composite of 0.9, above
+ * anything scored genuinely low), so an untouched proposal outranked one the team
+ * had looked at and rated poorly.
  */
 export function comparePRFAQs(a: PRFAQWithProject, b: PRFAQWithProject, aggregates: Record<string, PrioritizationAggregate>, sortField: SortField): number {
   switch (sortField) {
     case 'created_at': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     case 'title': return a.title.localeCompare(b.title)
-    default: return compareByTeamScore(a, b, aggregates, sortField)
+    default: {
+      const teamA = getTeamScore(aggregates, a.document_id)
+      const teamB = getTeamScore(aggregates, b.document_id)
+      // A row with no team score has no value on this axis, so it cannot be
+      // ordered against one that has: `sortPRFAQs` groups those rows instead.
+      if (!teamA || !teamB) return 0
+      return compareByTeamScore(teamA, teamB, sortField)
+    }
   }
+}
+
+/** Does this sort field read a number only a scored document has? */
+const ORDERS_BY_TEAM_SCORE: Record<SortField, boolean> = {
+  priority_score: true,
+  impact: true,
+  time_to_market: true,
+  created_at: false,
+  title: false,
+}
+
+/**
+ * The rows in the order the page renders them.
+ *
+ * Direction is applied by NEGATING the comparator, not by reversing the sorted
+ * array. `Array.prototype.reverse` on a stable sort's output also reverses TIES,
+ * so two rows the sort considers equal swapped places purely because the reader
+ * flipped the direction — and the team view ties often, since `impact` and
+ * `time_to_market` order by a coarse 0–5 mean and every unscored row ties with
+ * every other. Negating leaves equal rows in their original relative order in both
+ * directions, which is what makes the list stable to look at.
+ *
+ * Unscored rows are pinned BELOW every scored row in BOTH directions, rather than
+ * rising to the top when the reader asks for ascending order. "Nobody has voted on
+ * this" is not a low score — that distinction is the whole point of reading the
+ * aggregate — so it is not a value the direction toggle can meaningfully invert. A
+ * reader flipping to ascending wants the worst-RATED proposals, and answering with
+ * a block of never-voted-on ones puts unranked rows where the reader is looking for
+ * ranked ones. They stay grouped at the bottom, where the row copy explains them.
+ */
+export function sortPRFAQs(
+  prfaqs: readonly PRFAQWithProject[],
+  aggregates: Record<string, PrioritizationAggregate>,
+  sortField: SortField,
+  sortDirection: SortDirection,
+): PRFAQWithProject[] {
+  const direction = sortDirection === 'desc' ? -1 : 1
+  const unscored = ORDERS_BY_TEAM_SCORE[sortField]
+    ? (prfaq: PRFAQWithProject) => getTeamScore(aggregates, prfaq.document_id) === null
+    : () => false
+  return [...prfaqs].sort((a, b) => {
+    const unscoredA = unscored(a)
+    const unscoredB = unscored(b)
+    // Ahead of the direction multiplier, so the block does not move when the
+    // reader flips the direction.
+    if (unscoredA !== unscoredB) return unscoredA ? 1 : -1
+    if (unscoredA) return 0
+    return direction * comparePRFAQs(a, b, aggregates, sortField)
+  })
 }

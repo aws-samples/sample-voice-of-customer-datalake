@@ -77,6 +77,7 @@
     "label": "Trier par :",
     "priority": "Priorité",
     "priorityFull": "Score de priorité",
+    "teamOrdered": "Trie la liste selon les chiffres de l'équipe, ceux affichés sur chaque ligne — pas selon votre propre note.",
     "ttm": "DmM",
     "ttmFull": "Délai de mise sur le marché"
   },

@@ -29,8 +29,8 @@ import {
 } from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
 import {
-  getScore, getTeamScore, collectPRFAQs, comparePRFAQs, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments,
+  getScore, getTeamScore, collectPRFAQs, isScorable,
+  MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments, priorityBand, sortPRFAQs,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection,
@@ -39,6 +39,30 @@ import type { LinkedForm } from './formLinkUtils'
 import type {
   Project, PrioritizationScore, PrioritizationAggregate,
 } from '../../api/types'
+
+/**
+ * The prioritization read, validated at the query boundary.
+ *
+ * Per project convention — the same place `normalizeLinkedForms` validates the form
+ * list. `aggregates` is optional on the wire (a deployment predating it sends none
+ * at all), and a partial or unreadable row must read as "nobody has scored this",
+ * never break a row. `scores` is passed through untouched: it is the caller's own
+ * ballot map, and `getScore` already carries its fallback.
+ *
+ * At MODULE level, not inline in the `useQuery` call. TanStack Query memoises a
+ * `select` result only while the function's identity is stable, so an inline arrow
+ * — a fresh closure on every render — re-parsed the whole aggregate map on each
+ * render. That was waste rather than a bug (structural sharing kept the result
+ * referentially stable downstream), but this page re-renders on every slider drag,
+ * so the waste scaled with both the backlog and the interaction.
+ */
+const selectPrioritization = (data: {
+  scores: Record<string, PrioritizationScore>
+  aggregates?: Record<string, PrioritizationAggregate>
+}) => ({
+  scores: data.scores,
+  aggregates: normalizeAggregates(data.aggregates),
+})
 
 /**
  * The backlog at a glance, counted the same way the rows below are labelled.
@@ -50,6 +74,13 @@ import type {
  * absence from the aggregate — nobody voted — rather than the caller's own
  * `impact === 0`, which counted a document the team had scored as unscored merely
  * because this reader had not.
+ *
+ * Counted through `priorityBand`, the same function that names the band on each
+ * row, rather than by re-testing the composite against 4 and 3 here. Two copies of
+ * one rule is how a card can say Medium about a row labelled High: the raw
+ * composite of four 4s is 3.9999999999999996, so an unrounded `>= 4` counted a row
+ * printing `4.0` as Medium. One function, one rounding, so a card and the row it
+ * summarises cannot classify the same document differently.
  */
 function StatsCards({
   allPRFAQs, aggregates,
@@ -58,10 +89,10 @@ function StatsCards({
   readonly aggregates: Record<string, PrioritizationAggregate>
 }) {
   const { t } = useTranslation('prioritization')
-  const composites = allPRFAQs.map((p) => getTeamScore(aggregates, p.document_id)?.composite ?? null)
-  const highPriority = composites.filter((composite) => composite !== null && composite >= 4).length
-  const mediumPriority = composites.filter((composite) => composite !== null && composite >= 3 && composite < 4).length
-  const notScored = composites.filter((composite) => composite === null).length
+  const bands = allPRFAQs.map((p) => priorityBand(getTeamScore(aggregates, p.document_id)))
+  const highPriority = bands.filter((band) => band === 'high').length
+  const mediumPriority = bands.filter((band) => band === 'medium').length
+  const notScored = bands.filter((band) => band === 'none').length
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
@@ -81,35 +112,45 @@ function SortControls({
   readonly onToggleSort: (f: SortField) => void
 }) {
   const { t } = useTranslation('prioritization')
+  // "Priority Score", "Impact" and "TTM" name the team's numbers now, not the
+  // reader's own ballot — the same three the rows display. The names are unchanged,
+  // so the hint says whose they are: a button labelled "Impact" beside a row whose
+  // own impact slider is one level in is otherwise ambiguous in exactly the way the
+  // old "Score" heading was.
+  const teamOrdered = t('sort.teamOrdered')
   const options = [
     {
       field: 'priority_score' as const,
       label: t('sort.priority'),
       fullLabel: t('sort.priorityFull'),
+      hint: teamOrdered,
     },
     {
       field: 'impact' as const,
       label: t('sort.impact'),
       fullLabel: t('sort.impact'),
+      hint: teamOrdered,
     },
     {
       field: 'time_to_market' as const,
       label: t('sort.ttm'),
       fullLabel: t('sort.ttmFull'),
+      hint: teamOrdered,
     },
     {
       field: 'created_at' as const,
       label: t('sort.date'),
       fullLabel: t('sort.dateFull'),
+      hint: undefined,
     },
   ]
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <span className="text-gray-500 w-full sm:w-auto">{t('sort.label')}</span>
       {options.map(({
-        field, label, fullLabel,
+        field, label, fullLabel, hint,
       }) => (
-        <button key={field} onClick={() => onToggleSort(field)} className={clsx('px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs sm:text-sm', sortField === field ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+        <button key={field} title={hint} onClick={() => onToggleSort(field)} className={clsx('px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs sm:text-sm', sortField === field ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
           <span className="sm:hidden">{label}</span>
           <span className="hidden sm:inline">{fullLabel}</span>
           {sortField === field && <ArrowUpDown size={14} className={sortDirection === 'desc' ? 'rotate-180' : ''} />}
@@ -306,16 +347,7 @@ export default function Prioritization() {
   } = useQuery({
     queryKey: ['prioritization-scores'],
     queryFn: () => api.getPrioritizationScores(),
-    // Validate the team view at the query boundary, per project convention (the
-    // same place `normalizeLinkedForms` validates the form list below). The field
-    // is optional on the wire — a deployment predating it sends no `aggregates` at
-    // all — and a partial or unreadable row must read as "nobody has scored this",
-    // never break a row. `scores` is passed through untouched: it is the caller's
-    // own ballot map, and `getScore` already carries its fallback.
-    select: (data) => ({
-      scores: data.scores,
-      aggregates: normalizeAggregates(data.aggregates),
-    }),
+    select: selectPrioritization,
     enabled: config.apiEndpoint.length > 0,
   })
 
@@ -364,11 +396,14 @@ export default function Prioritization() {
 
   // Ordered by the team's numbers — the same ones each row displays. Sorting by
   // the caller's own composite while showing the team's would leave the list
-  // ranked by one number and labelled with another.
-  const sortedPRFAQs = useMemo(() => {
-    const sorted = [...allPRFAQs].sort((a, b) => comparePRFAQs(a, b, aggregates, sortField))
-    return sortDirection === 'desc' ? sorted.reverse() : sorted
-  }, [allPRFAQs, aggregates, sortField, sortDirection])
+  // ranked by one number and labelled with another. Direction and the unscored
+  // block are `sortPRFAQs`' business: it negates the comparator rather than
+  // reversing the array, so flipping the direction does not also flip rows the
+  // sort considers equal, and it keeps unvoted rows at the bottom either way.
+  const sortedPRFAQs = useMemo(
+    () => sortPRFAQs(allPRFAQs, aggregates, sortField, sortDirection),
+    [allPRFAQs, aggregates, sortField, sortDirection],
+  )
 
   // Which forms validate which row. Pure bookkeeping over data already fetched;
   // no per-row request happens here.

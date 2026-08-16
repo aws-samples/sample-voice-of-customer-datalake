@@ -253,7 +253,13 @@ describe('Prioritization', () => {
       await waitFor(() => {
         expect(screen.getByText('Reviewers')).toBeInTheDocument()
       })
-      expect(screen.getByText('3')).toBeInTheDocument()
+      // Scoped to the label's own value, not `getByText('3')` over the whole page:
+      // that passed as "some element's text is exactly 3", which a stats card or an
+      // axis mean could satisfy, and it said nothing about the count rendering the
+      // number it was given. Reading the value beside the label instead fails if the
+      // count is rendered as anything other than 3.
+      const row = screen.getByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(within(row).getByText('Reviewers').previousElementSibling?.textContent).toBe('3')
     })
 
     it('leads a reader to the notes with the spread, on the resting row', async () => {
@@ -347,10 +353,15 @@ describe('Prioritization', () => {
       const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
       expect(row).toHaveTextContent('Not scored yet')
       // No mid-table number invented from the defaults: 0.9 is what
-      // calculatePriorityScore returns for DEFAULT_SCORE, and 3 is what the old
-      // summary rendered for an unset time-to-market axis.
-      expect(row).not.toHaveTextContent('0.9')
-      expect(row).not.toHaveTextContent('3')
+      // calculatePriorityScore returns for DEFAULT_SCORE, and 3.0 is what the old
+      // summary rendered for an unset time-to-market axis. Asserted as the VALUES
+      // the summary would render, not as the substring '3': a bare digit matched
+      // against the row's whole text also matches its date and project name, so that
+      // assertion held only while unrelated fixture data happened to avoid the digit.
+      expect(within(row).queryByText('0.9')).toBeNull()
+      expect(within(row).queryByText('3.0')).toBeNull()
+      // The em dash stands where the number would be — a placeholder, never a score.
+      expect(within(row).getByText('—')).toBeInTheDocument()
       // And the band beside the title says so too, rather than "Low Priority".
       expect(row).toHaveTextContent('Not Scored')
     })
@@ -461,6 +472,134 @@ describe('Prioritization', () => {
       expect(cardValue('High Priority')).toBe('1')
       expect(cardValue('Not Scored')).toBe('1')
       expect(cardValue('Medium Priority')).toBe('0')
+    })
+
+    it('bands a unanimously-lowest team score as low, not as unscored', async () => {
+      // Two rows the page must not describe with the same words: one the team all
+      // rated 1, one nobody has opened. The band used to read `composite ?? 0` and
+      // called both "Not Scored", beside a live 1.0 and a reviewer count — the
+      // issue's "distinguishable in the row" criterion failing in the row.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Team Rated Lowest', content: '', created_at: '2025-01-01' },
+          { document_id: 'd2', document_type: 'prfaq', title: 'Nobody Opened It', content: '', created_at: '2025-01-02' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: {
+          d1: {
+            impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1,
+            reviewer_count: 3, score_spread: 0,
+          },
+        },
+      })
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Team Rated Lowest')).toBeInTheDocument()
+      })
+
+      const scoredLow = screen.getByRole('button', { name: /Team Rated Lowest/ })
+      expect(scoredLow).toHaveTextContent('Low Priority')
+      // The number it is labelled beside, and the count that says it is a real
+      // verdict rather than an empty row. Read from the composite slot rather than
+      // by text: a unanimous 1 prints 1.0 on every axis too, so `getByText('1.0')`
+      // would be satisfied by an axis instead of the headline.
+      expect(within(scoredLow).getByText('Team Score').previousElementSibling?.textContent).toBe('1.0')
+      expect(within(scoredLow).getByText('Reviewers').previousElementSibling?.textContent).toBe('3')
+      // The words reserved for "nobody voted" are not on a row somebody voted on.
+      expect(scoredLow).not.toHaveTextContent('Not Scored')
+      expect(scoredLow).not.toHaveTextContent('Not scored yet')
+
+      const unscored = screen.getByRole('button', { name: /Nobody Opened It/ })
+      expect(unscored).toHaveTextContent('Not Scored')
+      expect(unscored).not.toHaveTextContent('Low Priority')
+    })
+
+    it('bands and counts a unanimous 4 as high, matching the 4.0 it prints', async () => {
+      // 4 on every axis weighs to 3.9999999999999996. The row prints `4.0`; an
+      // unrounded `>= 4` banded it Medium and counted it under Medium Priority, so
+      // the card, the band and the number all disagreed on one document.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Unanimous Four', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: {
+          d1: {
+            impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
+            reviewer_count: 2, score_spread: 0,
+          },
+        },
+      })
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Unanimous Four')).toBeInTheDocument()
+      })
+
+      const row = screen.getByRole('button', { name: /Unanimous Four/ })
+      // The composite slot specifically: every axis also prints 4.0 on this fixture.
+      expect(within(row).getByText('Team Score').previousElementSibling?.textContent).toBe('4.0')
+      expect(row).toHaveTextContent('High Priority')
+      expect(row).not.toHaveTextContent('Medium Priority')
+      // And the card above the row agrees with the label on it.
+      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const cardValue = (label: string) => within(grid ?? document.body)
+        .getByText(label).previousElementSibling?.textContent
+      expect(cardValue('High Priority')).toBe('1')
+      expect(cardValue('Medium Priority')).toBe('0')
+    })
+
+    it('keeps the unscored rows last when the reader sorts ascending', async () => {
+      // Flipping the direction asks for the worst-RATED proposals. A block of rows
+      // nobody has voted on is not an answer to that, so it stays at the bottom.
+      const user = userEvent.setup()
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Nobody Scored', content: '', created_at: '2025-01-01' },
+          { document_id: 'd2', document_type: 'prfaq', title: 'Team Rated Low', content: '', created_at: '2025-01-02' },
+          { document_id: 'd3', document_type: 'prfaq', title: 'Team Rated High', content: '', created_at: '2025-01-03' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: {
+          d2: {
+            impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1,
+            reviewer_count: 2, score_spread: 0,
+          },
+          d3: {
+            impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5,
+            reviewer_count: 2, score_spread: 0,
+          },
+        },
+      })
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Nobody Scored')).toBeInTheDocument()
+      })
+      const rowTitles = () => screen.getAllByRole('heading', { level: 3 })
+        .map((h) => h.textContent)
+        .filter((title) => title !== 'Prioritization Framework')
+      expect(rowTitles()).toEqual(['Team Rated High', 'Team Rated Low', 'Nobody Scored'])
+
+      // Toggle the active sort field to ascending.
+      await user.click(screen.getAllByRole('button', { name: /priority/i })[0])
+
+      await waitFor(() => {
+        expect(rowTitles()).toEqual(['Team Rated Low', 'Team Rated High', 'Nobody Scored'])
+      })
     })
 
     it('keeps the customer evidence out of the team score panel', async () => {

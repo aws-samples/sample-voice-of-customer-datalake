@@ -77,6 +77,7 @@
     "label": "Ordenar por:",
     "priority": "Prioridade",
     "priorityFull": "Pontuação de Prioridade",
+    "teamOrdered": "Ordena a lista pelos números da equipe, os que cada linha mostra — não pela sua própria pontuação.",
     "ttm": "TTM",
     "ttmFull": "Tempo para o Mercado"
   },

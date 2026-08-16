@@ -7,6 +7,7 @@ import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
   getScore, calculatePriorityScore, collectPRFAQs, comparePRFAQs, DEFAULT_SCORE, isScorable,
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
+  getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs,
 } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
 
@@ -215,17 +216,36 @@ describe('comparePRFAQs orders by the TEAM aggregate, not the caller own ballot'
     // at weight 0.3), so an untouched proposal outranked one the team had looked
     // at and rated 1 across the board — composite 1.0. Absent from the aggregate
     // means nobody voted, which is not a low score.
+    //
+    // Asserted through `sortPRFAQs`, which owns the unscored block: the comparator
+    // answers 0 for a row with no number on the axis (see below), and it is the sort
+    // that then pins those rows to the bottom — in both directions, so this holds
+    // ascending too rather than only in the default view.
     const aggregates: Record<string, PrioritizationAggregate> = {
       b: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 1 }),
     }
 
-    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'priority_score')).toBeLessThan(0)
+    for (const direction of ['asc', 'desc'] as const) {
+      const order = sortPRFAQs([prfaqA, prfaqB], aggregates, 'priority_score', direction)
+      expect(order.map((row) => row.document_id), direction).toEqual(['b', 'a'])
+    }
   })
 
   it('groups unscored documents rather than ordering them against each other', () => {
     expect(() => comparePRFAQs(prfaqA, prfaqB, {}, 'priority_score')).not.toThrow()
     expect(comparePRFAQs(prfaqA, prfaqB, {}, 'priority_score')).toBe(0)
     expect(comparePRFAQs(prfaqA, prfaqB, {}, 'impact')).toBe(0)
+  })
+
+  it('answers 0 for a row with no team number rather than ranking it against one', () => {
+    // The comparator declines the comparison instead of substituting a value: which
+    // of "scored" and "unscored" comes first is a grouping decision, and it belongs
+    // where it can be made once for both directions (`sortPRFAQs`).
+    const aggregates: Record<string, PrioritizationAggregate> = {
+      b: aggregate({ impact: 5, reviewer_count: 2 }),
+    }
+
+    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'priority_score')).toBe(0)
   })
 
   it('still orders created_at and title by the document, which no aggregate touches', () => {
@@ -277,6 +297,149 @@ describe('getTeamScore', () => {
     const team = getTeamScore({ d1: aggregate({ impact: 5, reviewer_count: 3, score_spread: 0 }) }, 'd1')
     expect(team?.spread).toBe(0)
   })
+
+  it('carries the composite rounded to the decimal the row prints', () => {
+    // Four means of 4 weigh to 3.9999999999999996 in IEEE-754. The row prints
+    // `4.0`, so anything classifying the row has to read the same 4 — otherwise the
+    // band and the number beside it describe different values.
+    const team = getTeamScore({
+      d1: aggregate({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2 }),
+    }, 'd1')
+
+    expect(team?.composite).toBeLessThan(4)
+    expect(team?.displayComposite).toBe(4)
+  })
+})
+
+describe('reviewersDisagreed', () => {
+  // One predicate, so the badge on the collapsed row and the pointer to the notes
+  // inside it cannot answer differently about the same document.
+  it('is false when nobody has scored the document', () => {
+    expect(reviewersDisagreed(null)).toBe(false)
+  })
+
+  it('is false for a single ballot, which has nothing to disagree with', () => {
+    expect(reviewersDisagreed(getTeamScore({ d1: aggregate({ impact: 5, reviewer_count: 1, score_spread: 3 }) }, 'd1'))).toBe(false)
+  })
+
+  it('is false when the comparable reviewers agreed', () => {
+    expect(reviewersDisagreed(getTeamScore({ d1: aggregate({ impact: 5, reviewer_count: 3, score_spread: 0 }) }, 'd1'))).toBe(false)
+  })
+
+  it('is true once the reviewers are genuinely apart', () => {
+    expect(reviewersDisagreed(getTeamScore({ d1: aggregate({ impact: 5, reviewer_count: 3, score_spread: 1.8 }) }, 'd1'))).toBe(true)
+  })
+})
+
+describe('priorityBand', () => {
+  const bandOf = (fields: Partial<PrioritizationAggregate> & { reviewer_count: number }) =>
+    priorityBand(getTeamScore({ d1: aggregate(fields) }, 'd1'))
+
+  const uniform = (value: number) => ({
+    impact: value, time_to_market: value, confidence: value, strategic_fit: value, reviewer_count: 3,
+  })
+
+  it('names an unscored document, and ONLY an unscored one, as unbanded', () => {
+    expect(priorityBand(null)).toBe('none')
+  })
+
+  it('bands a unanimously-lowest score as low rather than as unscored', () => {
+    // The defect this closes: the band used to read `team?.composite ?? 0`, so a
+    // proposal three reviewers all rated 1 showed `1.0`, `Reviewers 3` and the label
+    // "Not Scored" — the same words as a document nobody had opened. "Scored low"
+    // and "nobody looked" have to stay distinct in the row, not only in the sort.
+    expect(bandOf(uniform(1))).toBe('low')
+    expect(bandOf(uniform(1))).not.toBe(priorityBand(null))
+  })
+
+  it('bands a composite that only ROUNDS to the threshold with the threshold', () => {
+    // 4 on every axis weighs to 3.9999999999999996: printed `4.0`, and formerly
+    // banded Medium against an unrounded `>= 4`. The band reads the printed value.
+    expect(bandOf(uniform(4))).toBe('high')
+    expect(bandOf(uniform(3))).toBe('medium')
+    // And 3.94 still prints 3.9, so it is Medium — the rounding is to one decimal,
+    // not to the nearest integer.
+    expect(bandOf({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 3.7, reviewer_count: 3 })).toBe('medium')
+  })
+})
+
+describe('getPriorityLabel', () => {
+  const t = i18n.getFixedT(null, 'prioritization')
+
+  it('gives a scored-low document a different label from an unscored one', () => {
+    const scoredLow = getPriorityLabel(getTeamScore({
+      d1: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 3 }),
+    }, 'd1'), t)
+
+    expect(scoredLow.label).toBe('Low Priority')
+    expect(scoredLow.label).not.toBe(getPriorityLabel(null, t).label)
+    expect(getPriorityLabel(null, t).label).toBe('Not Scored')
+  })
+
+  it('labels a team that unanimously scored 4 as high, beside the 4.0 the row prints', () => {
+    const team = getTeamScore({
+      d1: aggregate({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2 }),
+    }, 'd1')
+
+    expect(team?.displayComposite.toFixed(1)).toBe('4.0')
+    expect(getPriorityLabel(team, t).label).toBe('High Priority')
+  })
+})
+
+describe('sortPRFAQs applies direction without disturbing what has no number', () => {
+  const prfaqC = { document_id: 'c', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Gamma', content: '', created_at: '2025-01-03' }
+  const titlesOf = (rows: readonly { title: string }[]) => rows.map((row) => row.title)
+
+  const aggregates: Record<string, PrioritizationAggregate> = {
+    a: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 2 }),
+    b: aggregate({ impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, reviewer_count: 2 }),
+  }
+
+  it('puts the highest team score first when descending', () => {
+    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], aggregates, 'priority_score', 'desc')))
+      .toEqual(['Beta', 'Alpha', 'Gamma'])
+  })
+
+  it('keeps the unscored block at the BOTTOM ascending too, not at the top', () => {
+    // A reader flipping to ascending is asking for the worst-RATED proposals.
+    // "Nobody voted on this" is not a rating, so it is not a value the direction
+    // toggle can invert — answering with a block of never-voted-on rows puts
+    // unranked ones where the reader is looking for ranked.
+    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], aggregates, 'priority_score', 'asc')))
+      .toEqual(['Alpha', 'Beta', 'Gamma'])
+  })
+
+  it('does not reorder tied rows when the direction flips', () => {
+    // `[...rows].sort(cmp).reverse()` reverses TIES as well as ranks, so two rows
+    // the sort considers equal swapped places purely because the reader flipped the
+    // direction. Negating the comparator instead leaves them where they were — and
+    // the team view ties often, since impact and TTM order by a coarse 0–5 mean.
+    const tied: Record<string, PrioritizationAggregate> = {
+      a: aggregate({ impact: 3, reviewer_count: 2 }),
+      b: aggregate({ impact: 3, reviewer_count: 2 }),
+      c: aggregate({ impact: 5, reviewer_count: 2 }),
+    }
+
+    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], tied, 'impact', 'desc')))
+      .toEqual(['Gamma', 'Alpha', 'Beta'])
+    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], tied, 'impact', 'asc')))
+      .toEqual(['Alpha', 'Beta', 'Gamma'])
+  })
+
+  it('leaves date and title sorts free of the unscored grouping', () => {
+    // Those two read document fields every row has, so there is no unscored block
+    // to pin and the direction reverses the whole list.
+    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], aggregates, 'created_at', 'asc')))
+      .toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], aggregates, 'title', 'desc')))
+      .toEqual(['Gamma', 'Beta', 'Alpha'])
+  })
+
+  it('does not mutate the array it was given', () => {
+    const rows = [prfaqA, prfaqB, prfaqC]
+    sortPRFAQs(rows, aggregates, 'priority_score', 'desc')
+    expect(titlesOf(rows)).toEqual(['Alpha', 'Beta', 'Gamma'])
+  })
 })
 
 describe('normalizeAggregates', () => {
@@ -315,6 +478,46 @@ describe('normalizeAggregates', () => {
     expect(normalizeAggregates({ d1: { ...complete, reviewer_count: 0 } })).toEqual({})
     expect(normalizeAggregates({ d1: { ...complete, reviewer_count: 'two' } })).toEqual({})
     expect(normalizeAggregates({ d1: { impact: 4 } })).toEqual({})
+  })
+
+  it('drops a row that carries a count but no readable axis at all', () => {
+    // The mirror of the reviewer-count rule, and the case the per-axis `.catch(0)`
+    // used to admit on its own: a bare count parsed into an all-zeros aggregate and
+    // rendered "0.0 · Reviewers 2" — a score nobody cast, dressed with a real count.
+    // A dropped row lands in the "nobody scored this" state the page renders
+    // honestly.
+    expect(normalizeAggregates({ d1: { reviewer_count: 2 } })).toEqual({})
+    expect(normalizeAggregates({
+      d1: {
+        reviewer_count: 2, impact: 'high', time_to_market: 'slow', confidence: null, strategic_fit: [],
+      },
+    })).toEqual({})
+  })
+
+  it('keeps a row with one readable axis, degrading the rest', () => {
+    // The positive control for the rule above, so "drop an axis-less row" cannot
+    // silently become "drop any row with a zero in it". The backend legitimately
+    // reports 0.0 for an axis nobody scored, so a partially-scored document really
+    // does arrive with zeroed axes and is still worth showing.
+    const parsed = normalizeAggregates({ d1: { reviewer_count: 2, impact: 4 } })
+
+    expect(parsed.d1).toEqual({
+      impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0,
+      reviewer_count: 2, score_spread: 0,
+    })
+  })
+
+  it('keeps a row the team genuinely scored zero on every axis', () => {
+    // Indistinguishable from an unreadable row by value, so it is distinguished by
+    // READABILITY: an explicit numeric 0 is data the backend sends, a string is not.
+    const parsed = normalizeAggregates({
+      d1: {
+        impact: 0, time_to_market: 0, confidence: 0, strategic_fit: 0,
+        reviewer_count: 3, score_spread: 0,
+      },
+    })
+
+    expect(parsed.d1.reviewer_count).toBe(3)
   })
 
   it('drops only the unreadable row, keeping its siblings', () => {

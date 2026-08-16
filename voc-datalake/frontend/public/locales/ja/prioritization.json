@@ -77,6 +77,7 @@
     "label": "並べ替え:",
     "priority": "優先度",
     "priorityFull": "優先度スコア",
+    "teamOrdered": "各行に表示されるチームの数値で並べ替えます。自分自身の評価ではありません。",
     "ttm": "TTM",
     "ttmFull": "市場投入時間"
   },
