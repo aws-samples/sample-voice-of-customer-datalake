@@ -350,6 +350,62 @@ describe('buildVocChatContext Top Categories', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('settings read failed'));
   });
 
+  it('tells the model the figures are incomplete when the taxonomy read fails', async () => {
+    // The operator log was only half of it. A failed settings read is the FOURTH
+    // way this turn hands the model something that was not measured, and the worst
+    // of the four: the other three make a number short, this one swaps the whole
+    // taxonomy, so a tenant who configured `delivery_ops`/`kyc`/`fees` gets counts
+    // for ten partitions that are not theirs — plausibly all zero — and the
+    // section still renders as authoritative.
+    const docClient = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        if (values[':pk'] === 'SETTINGS#categories') {
+          return Promise.reject(Object.assign(new Error('denied'), { name: 'AccessDeniedException' }));
+        }
+        return Promise.resolve({ Items: [] });
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 1 });
+
+    expect(ctx.userMessage).toContain('the figures below are incomplete');
+    // The name is operator detail and belongs in the log only: it tells whoever
+    // reads the answer that this Lambda's role is missing a grant, which is not
+    // theirs to act on, and this is the one sentence the model is told to relay.
+    expect(ctx.userMessage).not.toContain('AccessDeniedException');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('AccessDeniedException'));
+  });
+
+  it('still reports degraded on a turn served from the cached fallback', async () => {
+    // The failure is cached WITH the names for CATEGORY_ERROR_CACHE_TTL_MS. A turn
+    // inside that window is describing the tenant with a taxonomy it never
+    // configured exactly as much as the turn that did the failed read, so caching
+    // the names while dropping the reason would make that window read as healthy.
+    const docClient = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        if (values[':pk'] === 'SETTINGS#categories') return Promise.reject(new Error('throttled'));
+        return Promise.resolve({ Items: [] });
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    await buildVocChatContext(docClient, TABLE_NAME, { message: 'first', days: 1 });
+    warnSpy.mockClear();
+    const second = await buildVocChatContext(docClient, TABLE_NAME, { message: 'second', days: 1 });
+
+    // Served from the cache: no second settings read, and no second warning...
+    const settingsReads = vi.mocked(docClient.send).mock.calls.filter((call) => {
+      const values = (call[0] as unknown as { input: { ExpressionAttributeValues: Record<string, string> } })
+        .input.ExpressionAttributeValues;
+      return values[':pk'] === 'SETTINGS#categories';
+    });
+    expect(settingsReads).toHaveLength(1);
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('settings read failed'));
+    // ...but the prompt still says the figures are not to be trusted as complete.
+    expect(second.userMessage).toContain('the figures below are incomplete');
+  });
+
   it('falls back to the default taxonomy when the stored list is empty', async () => {
     // `item.get('categories')` is falsy for [] in Python, so an empty stored
     // list is one of the three shapes its reader treats as not configured —
@@ -673,13 +729,21 @@ describe('buildVocChatContext category read amplification', () => {
   // otherwise parse as a MEASURED zero — the one thing this module exists to stop.
   // 'n/a' is the contrast case and belongs here: it is caught by `.finite()`
   // rather than by the union, so the test covers both gates.
+  // `true` is the one of these that would not read as a zero but as a COUNT:
+  // Number(true) is 1, so under a bare coercion a boolean row would add one item
+  // of feedback nobody ever recorded. It is rejected by the union in front of the
+  // coercion, so it belongs here beside the shapes Number() flattens to 0.
+  // Infinity covers the far end, where `.finite()` rather than the union is the
+  // gate that stops `Infinity` rendering in the prompt.
   it.each([
     ['null', null],
     ['an empty string', ''],
     ['a whitespace string', '   '],
     ['false', false],
+    ['true', true],
+    ['a value too large to be finite', 1e999],
     ['a non-numeric string', 'n/a'],
-  ])('treats %s in a counter as unreadable rather than as a measured zero', async (_label, bad) => {
+  ])('treats %s in a counter as unreadable rather than as a measured count', async (_label, bad) => {
     const docClient = createKeyedDocClient({
       [`METRIC#daily_total|${TODAY_UTC}`]: [{ count: 7 }],
       [`METRIC#daily_total|${utcDaysAgo(1)}`]: [{ count: bad }],

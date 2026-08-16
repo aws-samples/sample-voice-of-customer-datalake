@@ -44,6 +44,18 @@ const categoryItemSchema = z.object({ name: z.string() }).passthrough();
 // makes the turn say the figures are incomplete instead of quietly reading zero.
 // (`.trim()` before `.min(1)` is what rejects ' ' as well as ''; a padded numeric
 // string like ' 5 ' still parses, since DynamoDB stores what it was given.)
+//
+// Booleans are rejected by the UNION, not by the coercion, and the distinction
+// matters to anyone tempted to simplify this to `z.coerce.number().finite()` on
+// the grounds that the coercion handles everything: a boolean is not a number in
+// JavaScript, so `z.number()` rejects it here — but `Number(false)` is 0 and
+// `Number(true)` is 1, so under a bare coercion a `count: true` row would be
+// counted as one item of feedback that nobody ever recorded. Simplifying this
+// away reinstates exactly the class of defect the whole schema exists for.
+//
+// `.finite()` is the last gate, and it covers the other end: a stored 1e999
+// parses as Infinity, which would render in the prompt as `Infinity` (and make
+// every sentiment percentage 0.0%). It lands in `skippedRows` instead.
 const counterValue = z.union([z.number(), z.string().trim().min(1)])
   .pipe(z.coerce.number().finite());
 
@@ -85,7 +97,15 @@ const CATEGORY_QUERY_BATCH_SIZE = 10;
 // types says it cannot vary, and keying the entry makes a mismatch impossible
 // rather than merely unlikely. It also stops clearCategoryCache() from being the
 // thing that keeps the invariant true.
-const categoryCache = new Map<string, { names: string[]; expires: number }>();
+// `errorName` is cached WITH the entry, not recomputed per turn. A turn served
+// from the short error entry is describing the tenant with a taxonomy it never
+// configured just as much as the turn that did the failed read, so it has to
+// report the same thing — caching the names while dropping the reason would make
+// the CATEGORY_ERROR_CACHE_TTL_MS window read as healthy.
+const categoryCache = new Map<
+  string,
+  { names: string[]; expires: number; errorName?: string }
+>();
 
 /** Reset the container-level taxonomy cache (tests). */
 export function clearCategoryCache(): void {
@@ -382,11 +402,20 @@ function namesFromStoredList(cats: unknown[]): string[] {
  * already streaming — and it is the same trade the catch below makes. It is not
  * a shape either side should be relied on to normalise: the fix for a malformed
  * item is to fix the item.
+ *
+ * A read that FAILED is reported on the returned value (`errorName`) rather than
+ * only logged, because it is the fourth way this turn can hand the model
+ * something that was not measured — and the most consequential one. The other
+ * three make a number short; this one substitutes the whole taxonomy, so a
+ * tenant who configured `delivery_ops`, `kyc`, `fees` gets counts for ten
+ * partitions that are not theirs, plausibly all zero, and the section still
+ * renders as authoritative. It therefore feeds the same degraded note the metric
+ * shortfalls do.
  */
 async function readConfiguredCategories(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
-): Promise<{ names: string[]; ttl: number }> {
+): Promise<{ names: string[]; ttl: number; errorName?: string }> {
   try {
     const resp = await docClient.send(
       new QueryCommand({
@@ -408,33 +437,36 @@ async function readConfiguredCategories(
     // Python's reader makes the same trade (it logs and falls through to the
     // fallback), so the two surfaces still agree; the short error TTL keeps the
     // window small rather than caching a wrong answer for five minutes.
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
     console.warn(
-      `readConfiguredCategories: settings read failed (${error instanceof Error ? error.name : 'UnknownError'}); using the default taxonomy`,
+      `readConfiguredCategories: settings read failed (${errorName}); using the default taxonomy`,
     );
-    return { names: [...DEFAULT_CATEGORIES], ttl: CATEGORY_ERROR_CACHE_TTL_MS };
+    return { names: [...DEFAULT_CATEGORIES], ttl: CATEGORY_ERROR_CACHE_TTL_MS, errorName };
   }
 }
 
 async function getConfiguredCategories(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
-): Promise<string[]> {
+): Promise<{ names: string[]; errorName?: string }> {
   const now = Date.now();
   const cached = categoryCache.get(aggregatesTable);
   if (cached && now < cached.expires) {
-    return cached.names;
+    return { names: cached.names, errorName: cached.errorName };
   }
-  const { names, ttl } = await readConfiguredCategories(docClient, aggregatesTable);
-  categoryCache.set(aggregatesTable, { names, expires: now + ttl });
-  return names;
+  const { names, ttl, errorName } = await readConfiguredCategories(docClient, aggregatesTable);
+  categoryCache.set(aggregatesTable, { names, expires: now + ttl, errorName });
+  return { names, errorName };
 }
 
 async function fetchCategoryCounts(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
   days: number,
-): Promise<{ top: [string, number][]; reads: MetricRead[] }> {
-  const categories = await getConfiguredCategories(docClient, aggregatesTable);
+): Promise<{ top: [string, number][]; reads: MetricRead[]; taxonomyErrorName?: string }> {
+  const { names: categories, errorName: taxonomyErrorName } = await getConfiguredCategories(
+    docClient, aggregatesTable,
+  );
   // Concurrent but bounded, the same trade src/context/recent-feedback.ts makes
   // for its day queries (DAY_QUERY_BATCH_SIZE): awaiting each sum in turn put
   // one round trip per category in front of the first streamed token, and an
@@ -463,7 +495,7 @@ async function fetchCategoryCounts(
     .filter(([, count]) => count > 0)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
-  return { top, reads: counted.map(([, read]) => read) };
+  return { top, reads: counted.map(([, read]) => read), taxonomyErrorName };
 }
 
 function buildSystemPrompt(responseLanguage?: SupportedLanguage): string {
@@ -586,9 +618,14 @@ export async function buildVocChatContext(
 
   const totalFeedback = totalRead.total;
   const urgentCount = urgentRead.total;
+  // A failed TAXONOMY read degrades the turn too, and it is not a MetricRead: it
+  // substitutes the default names for the tenant's own, so the counts under Top
+  // Categories are for partitions that may not be theirs. reportMetricFailures
+  // has already logged its own warning (with the error name, which stays out of
+  // the prompt), so only the flag is ORed in here.
   const degraded = reportMetricFailures([
     totalRead, urgentRead, ...sentimentReads, ...categories.reads,
-  ]);
+  ]) || categories.taxonomyErrorName !== undefined;
 
   const systemPrompt = buildSystemPrompt(body.response_language);
   const dataContext = buildDataContext(
