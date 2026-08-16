@@ -1545,7 +1545,8 @@ class TestSubmissionsStayInThePartitionTheStatsReadQueries:
 
         The write side keeps a pre-rename form writing under its old brand, which
         is safe precisely because no other reader is scoped by brand: every other
-        SOURCE# partition under lambda/ is built from source_platform. That is a
+        SOURCE# partition under lambda/ and plugins/ is built from
+        source_platform. That is a
         claim about other modules, and the write site used to assert it in a
         comment nothing could falsify — so it is asserted here instead, and a
         future brand-scoped read fails this test rather than quietly inheriting a
@@ -1556,20 +1557,52 @@ class TestSubmissionsStayInThePartitionTheStatsReadQueries:
         visible in the text. A reader landing here from a failure should decide
         whether the new read wants the form's brand (see _form_source_pk) or the
         environment's, not silence the test.
+
+        The guarantee is therefore precise and worth stating so nobody reads it as
+        broader: a new SAME-LINE construction under lambda/ or plugins/. A
+        deliberately split one — `brand = BRAND_NAME` then f"SOURCE#{brand}" on the
+        next line — is NOT caught, and neither is a partition assembled at
+        runtime. Catching those needs dataflow analysis; the value here is
+        catching the copy-paste of _form_source_pk, which is how a second
+        brand-scoped read would realistically arrive.
+
+        lambda/layers/ is excluded for the same reason pytest.ini
+        (--ignore=lambda/layers, norecursedirs) and ruff.toml (extend-exclude)
+        exclude it: it is vendored third-party build output from
+        scripts/build-layers.sh, absent from git but expected to exist locally, so
+        a match there is someone else's prose and not a finding about this repo.
         """
-        lambda_root = Path(__file__).resolve().parents[2]
-        this_module = lambda_root / 'api' / 'feedback_form_handler.py'
+        repo_root = Path(__file__).resolve().parents[3]
+        this_module = repo_root / 'lambda' / 'api' / 'feedback_form_handler.py'
+
+        def is_first_party_source(path: Path) -> bool:
+            return not (
+                path == this_module
+                # Vendored: see the docstring. Matches pytest.ini and ruff.toml.
+                or 'layers' in path.parts
+                # Exact-segment, so it skips a test/ package but not a stray
+                # tests/; the name check below covers plugins', which sit beside
+                # the code they exercise rather than in a test/ directory.
+                or 'test' in path.parts
+                or path.name.startswith('test_')
+                or path.name == 'conftest.py'
+            )
 
         offenders = []
-        for path in sorted(lambda_root.rglob('*.py')):
-            if path == this_module or 'test' in path.parts:
-                continue
-            for lineno, line in enumerate(
-                path.read_text(encoding='utf-8').splitlines(), start=1
-            ):
-                if 'SOURCE#' in line and 'BRAND_NAME' in line:
-                    rel = path.relative_to(lambda_root)
-                    offenders.append(f'{rel}:{lineno}: {line.strip()}')
+        for tree in ('lambda', 'plugins'):
+            for path in sorted((repo_root / tree).rglob('*.py')):
+                if not is_first_party_source(path):
+                    continue
+                # errors='replace' so one non-UTF-8 vendored fixture cannot abort
+                # the run with a UnicodeDecodeError that names neither the file
+                # nor this invariant. A mojibake byte cannot spell either token.
+                for lineno, line in enumerate(
+                    path.read_text(encoding='utf-8', errors='replace').splitlines(),
+                    start=1,
+                ):
+                    if 'SOURCE#' in line and 'BRAND_NAME' in line:
+                        rel = path.relative_to(repo_root)
+                        offenders.append(f'{rel}:{lineno}: {line.strip()}')
 
         assert not offenders, (
             'a SOURCE# partition is now derived from BRAND_NAME outside '
