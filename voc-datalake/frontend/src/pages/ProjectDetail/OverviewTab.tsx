@@ -19,10 +19,11 @@ import clsx from 'clsx'
 import { format } from 'date-fns'
 import {
   Users, FileText, Search, Sparkles, Shuffle, Package, Wand2, AlertCircle, Loader2,
+  AlertTriangle,
 } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import ConfirmModal from '../../components/ConfirmModal'
+import ModalShell from '../../components/ModalShell'
 import {
   deriveOverviewState, type OverviewStep, type OverviewStepState,
 } from './overviewState'
@@ -197,9 +198,16 @@ export default function OverviewTab({
           buttonLabel={prototypeBuild.busy
             ? t('documents.prototype.building')
             : t('documents.prototype.button')}
-          // No `configureLabel`: the other cards open a wizard to configure first,
-          // this one starts the build (or a confirm) directly, so "Configure and"
-          // would promise a step that does not exist.
+          // The prefix the other five wizard-opening cards carry. It was absent
+          // while this card started work directly — "Configure and" would have
+          // promised a step that did not exist — and it is correct now for the same
+          // reason it is correct on them: the button opens a panel and spends
+          // nothing. It is also what frees the plain verb for the panel's own submit
+          // button, which had been left reading "Build anyway" on projects with
+          // nothing to build anyway despite.
+          //
+          // Absent while busy, and that is not cosmetic — see `configurePrefix`.
+          configureLabel={configurePrefix(prototypeBuild, t)}
           onClick={prototypeBuild.onClick}
           // Like remix, `missingUpstream` is a hard block here rather than a hint.
           // This is the *user-facing* authority — one derived condition, shared
@@ -219,12 +227,6 @@ export default function OverviewTab({
           // START (everything after that belongs to the jobs panel) and a brief
           // acknowledgement covering the gap before that panel refetches.
           statusLine={prototypeStatusLine(prototypeBuild, t)}
-          // On the card, NOT in the confirm dialog: `confirmKeyFor` deliberately
-          // opens no dialog for a project with one PRD, one PR-FAQ and no
-          // prototype, so a control placed there would be unreachable for exactly
-          // the simplest project — and moving that project behind a fourth confirm
-          // reason would cost the deliberate one-click path.
-          controls={<PrototypeExtraSources extras={prototypeBuild.extras} t={t} />}
         />
         <ActionCard
           state={steps.remix}
@@ -245,23 +247,12 @@ export default function OverviewTab({
         />
       </div>
 
-      {/* Only reachable from the prototype card, and only when the build needs
-          something said first: one of PRD/PR-FAQ missing, a prototype already
-          present, or several documents of a type to choose between. The build is
-          billable, so which documents it will read is stated before it runs
-          rather than after. */}
-      <ConfirmModal
-        isOpen={prototypeBuild.confirm.isOpen}
-        title={t('documents.prototype.button')}
-        message={prototypeBuild.confirm.message}
-        confirmLabel={t('documents.prototype.confirmBuild')}
-        cancelLabel={t('documents.prototype.cancel')}
-        variant="warning"
-        onConfirm={prototypeBuild.confirm.onConfirm}
-        onCancel={prototypeBuild.confirm.onCancel}
-      >
-        <PrototypeSourcePicker sources={prototypeBuild.sources} t={t} />
-      </ConfirmModal>
+      {/* Reachable from the prototype card for EVERY project, which is the whole
+          point of it being a wizard rather than the confirm dialog it replaces:
+          the build is configured here, so a project that needs no warning still
+          needs a way in. The build is billable, so nothing here starts one until
+          its own button is pressed. */}
+      <PrototypeBuildWizard build={prototypeBuild} t={t} />
     </div>
   )
 }
@@ -327,6 +318,26 @@ function productContextStateLabel(state: OverviewStepState, t: TFunction): strin
   })
 }
 
+/**
+ * The "Configure & " prefix for the prototype card, or nothing while a build is
+ * starting.
+ *
+ * `ActionCard` CONCATENATES this with `buttonLabel`, and the prototype card is the
+ * only one whose label changes: idle it is a verb ("Build Prototype"), in flight it
+ * is a whole sentence ("Building…"). Passing the prefix unconditionally therefore
+ * reads "Configure & Building…" for the duration of every start request. The five
+ * sibling cards never hit this because none of them has a busy label.
+ *
+ * A module-level function rather than a ternary at the call site, so `OverviewTab`
+ * stays under the complexity ceiling — the inline form put it at 13 of 12. It takes
+ * the build control rather than a boolean, matching `prototypeStatusLine` below: a
+ * bare boolean parameter is a behaviour selector, which the lint rules reject and
+ * which reads worse at the call site anyway.
+ */
+function configurePrefix(build: PrototypeBuildControl, t: TFunction): string | undefined {
+  return build.busy ? undefined : t('overview.configureAnd')
+}
+
 interface ActionCardProps {
   readonly state: OverviewStepState
   readonly icon: ReactNode
@@ -344,12 +355,6 @@ interface ActionCardProps {
    * others leave this unset.
    */
   readonly statusLine?: ReactNode
-  /**
-   * Choices this card's own action reads, rendered above its button. Only the
-   * prototype card has any: the other five open a wizard that asks for its
-   * configuration, so a control here would duplicate the first wizard step.
-   */
-  readonly controls?: ReactNode
   readonly buttonColor: string
   readonly buttonIcon: ReactNode
   readonly buttonLabel: string
@@ -373,7 +378,6 @@ function ActionCard({
   stateLabel,
   hint,
   statusLine,
-  controls,
   buttonColor,
   buttonIcon,
   buttonLabel,
@@ -420,19 +424,6 @@ function ActionCard({
         // "None yet" is information, not decoration, so it has to be readable.
         <p className={`text-xs mb-3 ${state.hasOutput ? 'text-green-700' : 'text-gray-500'}`}>{stateLabel}</p>
       )}
-      {/* Above the button, because they change what the button does. Rendered raw
-          like `statusLine`: only the caller knows what the choices are, and a
-          wrapper here would put an empty box on the five cards that have none.
-
-          Not rendered at all on a disabled card: choices for an action that cannot
-          be taken read as an offer, and a project with no PRD and no PR/FAQ showed
-          tick-boxes stacked above a dead button and the "create a document first"
-          message. That also hides them while `busy` — the prototype card's second
-          disabled reason — which is correct rather than merely tolerable: nothing
-          ticked during the start request can affect the build already in flight,
-          and the window closes when the request returns, not when the build
-          finishes. */}
-      {disabled === true ? null : controls}
       <button
         onClick={onClick}
         disabled={disabled}
@@ -454,6 +445,95 @@ function ActionCard({
           hard to read. */}
       {disabled === true && disabledMessage != null && disabledMessage !== '' ? <p className="text-xs text-gray-500 mt-2 text-center">{disabledMessage}</p> : null}
     </div>
+  )
+}
+
+/**
+ * Where a prototype build is configured and started.
+ *
+ * One panel for the whole "what should this build read?" question: which PRD and
+ * PR/FAQ, plus the optional product context, research reports and uploaded
+ * visuals. It replaces a confirm dialog that opened for only some projects, and
+ * that is the behaviour change — the card now always opens this, so the
+ * configuration is reachable for every project rather than for the awkward ones.
+ *
+ * `ModalShell` rather than a hand-rolled overlay, and rather than `ConfirmModal`:
+ * the shell owns `role="dialog"`, the accessible name, the focus trap and Escape
+ * (issue #283 found 23 overlays of which 2 declared a role), while `ConfirmModal`
+ * requires a `message` — correct for something whose whole content is a question,
+ * wrong here, where the question is optional and the content is a form.
+ *
+ * The warning, when there is one, is stated FIRST and styled as a caution: it is
+ * the only thing on this panel that can save money, since the build endpoint has
+ * no existing-prototype check of its own.
+ */
+function PrototypeBuildWizard({
+  build, t,
+}: {
+  readonly build: PrototypeBuildControl
+  readonly t: TFunction<'projectDetail'>
+}) {
+  // `aria-labelledby` rather than `ariaLabel`, pointing at the heading this panel
+  // already renders: one string on screen and in the accessible name, so the two
+  // cannot drift apart, and no second translated value to keep in step.
+  const headingId = useId()
+
+  return (
+    <ModalShell
+      isOpen={build.wizard.isOpen}
+      onClose={build.wizard.onCancel}
+      ariaLabelledBy={headingId}
+      panelClassName="max-w-lg"
+    >
+      <div data-testid="prototype-build-wizard" className="p-4 sm:p-6">
+        <h3 id={headingId} className="text-base sm:text-lg font-semibold text-gray-900">
+          {t('documents.prototype.button')}
+        </h3>
+        {/* A LIVE REGION, and that is the point rather than decoration: `warning` is
+            derived from documents that refetch whenever a job completes, so it can
+            APPEAR or ESCALATE while this panel is open — a prototype arriving turns
+            the submit from "build from the PRD alone" into "build a second and keep
+            the first". A sighted user sees the amber block change; without a live
+            region a screen-reader user who opened with no warning is told nothing,
+            and the submit quietly costs more than when they opened it.
+
+            The region wraps the CONDITION, not just the text: an element that only
+            exists once there is something to say cannot announce its own arrival, so
+            the container is always mounted and only its contents change. */}
+        <div role="status" aria-live="polite">
+          {build.wizard.warning === '' ? null : (
+            <p className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 p-2.5 text-sm text-amber-800">
+              <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+              <span>{build.wizard.warning}</span>
+            </p>
+          )}
+        </div>
+        <PrototypeSourcePicker sources={build.sources} t={t} />
+        <PrototypeExtraSources extras={build.extras} t={t} />
+        <div className="mt-5 sm:mt-6 flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={build.wizard.onCancel}
+            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+          >
+            {t('documents.prototype.cancel')}
+          </button>
+          {/* No busy state here, deliberately: `onConfirm` closes the panel before
+              starting the request, so this button cannot be on screen while a start
+              is in flight. The busy label and any failure to start belong to the
+              card's own status line, which is where the user is looking once this
+              closes — and which already has tests for both. A spinner here would be
+              protection that never runs. */}
+          <button
+            type="button"
+            onClick={build.wizard.onConfirm}
+            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm font-medium rounded-lg bg-orange-500 hover:bg-orange-600 text-white"
+          >
+            {t('documents.prototype.button')}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
   )
 }
 
@@ -481,9 +561,10 @@ function PrototypeSourcePicker({
   if (sources.prdOptions.length === 0 && sources.prfaqOptions.length === 0) return null
 
   return (
-    // `mt-3` lives here rather than on a wrapper in ConfirmModal: this component
+    // `mt-3` lives here rather than on a wrapper in the wizard: this component
     // returns null when there is nothing to choose, and a wrapper's margin would
-    // leave a gap the modal cannot detect.
+    // leave a gap the panel cannot detect (a React element that renders nothing is
+    // still a non-null child).
     <div data-testid="prototype-source-picker" className="mt-3 space-y-2 rounded-lg bg-gray-50 p-3">
       <SourceRow
         label={t('documents.prototype.sourcePrd')}
@@ -560,11 +641,16 @@ function SourceRow({
  * product context, specific research reports, and uploaded visuals to take the
  * palette and layout from.
  *
- * On the card rather than inside `ConfirmModal`, and that placement is the whole
- * design decision: `confirmKeyFor` returns null — no dialog at all — for a project
- * with one PRD, one PR-FAQ and no prototype, deliberately, so that the build starts
- * on the first click. A control living in the dialog would be unreachable for
- * exactly that project.
+ * Rendered inside `PrototypeBuildWizard`, beside the PRD/PR-FAQ pickers, so one
+ * panel answers the whole "what should this build read?" question.
+ *
+ * These sat on the card face until the wizard existed, and the reason is worth
+ * keeping because it constrains any future move: the confirm dialog they would
+ * otherwise have lived in opened for only SOME projects — `warningKeyFor` returned
+ * null for one PRD, one PR-FAQ and no prototype — so a control inside it was
+ * unreachable for the simplest project. The wizard opens for every project, which
+ * is what makes this placement safe and what
+ * `OverviewTab.prototypeWizard.test.tsx` pins.
  *
  * Checkboxes rather than the `select` the source picker uses, because these are
  * independent on/off choices rather than one-of-many, and because the research list

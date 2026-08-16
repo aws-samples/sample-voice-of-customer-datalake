@@ -2,18 +2,21 @@
  * The prototype card's optional inputs: the project's product description, its
  * research reports, and the uploaded visuals a build takes its palette from.
  *
- * Where the controls live is the property under test, not a detail.
- * `confirmKeyFor` in `usePrototypeBuild` deliberately opens NO dialog for a
- * project with one PRD, one PR-FAQ and no prototype — the build starts on the
- * first click — and the source picker lives inside that dialog. So the fixture
- * that matters here is precisely that project: a control placed in the dialog is
- * unreachable for it, and no other fixture shows that.
+ * What these controls DO is the property under test. WHERE they live is pinned
+ * separately, in `OverviewTab.prototypeWizard.test.tsx` — they sit in the build
+ * wizard now, so every test here opens it first via `renderWizard`.
+ *
+ * The one-PRD/one-PR-FAQ/no-prototype fixture is still the one worth naming, and
+ * still for the same reason: `warningKeyFor` returns null for it, so under the old
+ * placement it was the project that opened no dialog at all and would have been
+ * stranded by a control living in one. It is now the project a placement regression
+ * would strand first.
  *
  * `t()` resolves against the real en catalogue (src/test/setup.ts), so a key that
  * is missing or has moved renders its raw path and these matchers fail.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import OverviewTab from './OverviewTab'
@@ -88,12 +91,42 @@ function tab(
   )
 }
 
-function renderTab(
+/** The card only — for the two assertions that are about the card, not the panel. */
+function renderCard(
   documents: ProjectDocument[],
   productContext?: ProductContext,
   productDocs?: ProductDoc[],
 ) {
   return render(tab(documents, productContext, productDocs))
+}
+
+/**
+ * The card, with the build wizard opened — where these controls now live.
+ *
+ * `fireEvent` rather than `userEvent` for this one click, deliberately: it is
+ * synchronous, so every test below keeps the signature it had when the controls
+ * were on the card face. `userEvent.click` returns a promise, and a test that
+ * forgot to await it would assert against a panel that had not opened yet — a
+ * failure mode that looks like the feature being broken.
+ */
+function renderWizard(
+  documents: ProjectDocument[],
+  productContext?: ProductContext,
+  productDocs?: ProductDoc[],
+) {
+  const result = render(tab(documents, productContext, productDocs))
+  // Resolved through i18n rather than hardcoded English: one test in this file
+  // switches the catalogue to German, and a hardcoded name would fail there with
+  // "cannot find the button" — a message that points at the card rather than at the
+  // query.
+  // A FUNCTION matcher, not a regex built from a translated string: the card carries
+  // the "Configure & " prefix its five siblings have, so the name must be matched as
+  // a substring rather than equal — but a catalogue label containing a regex
+  // metacharacter would silently change what a constructed pattern means. `includes`
+  // has no such failure mode and needs no escaping.
+  const verb = i18n.t('documents.prototype.button', { ns: 'projectDetail' })
+  fireEvent.click(screen.getByRole('button', { name: (name) => name.includes(verb) }))
+  return result
 }
 
 /**
@@ -148,7 +181,16 @@ const noteStem = (key: 'visualsNotReady' | 'visualsFailed') =>
 /** Everything the visual group says, as one string. */
 const visualNotes = () => screen.getByTestId('prototype-visual-sources').textContent ?? ''
 
-const buildButton = () => screen.getByRole('button', { name: /build prototype/i })
+/** The card's button. It opens the wizard; it no longer starts anything. */
+const buildButton = () => screen.getByRole('button', { name: /configure & build prototype/i })
+/**
+ * The wizard's own submit — the only control that spends money.
+ *
+ * Scoped to the dialog rather than matched by label alone, so this cannot silently
+ * start resolving to the card's button if either label changes.
+ */
+const startBuild = () => within(screen.getByRole('dialog'))
+  .getByRole('button', { name: en.documents.prototype.button })
 const productContextBox = () => screen.getByRole('checkbox', { name: /product \/ service description/i })
 const researchBox = () => screen.getByRole('checkbox', { name: /research reports/i })
 const sentBody = () => mockBuildPrototype.mock.calls[0][1]
@@ -158,26 +200,32 @@ beforeEach(() => {
   mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
 })
 
-describe('the controls are reachable without a dialog', () => {
+/**
+ * This block used to be called "the controls are reachable without a dialog", and
+ * that property is deliberately gone — the configuration moved into the wizard, and
+ * its replacement ("reachable for EVERY project, including the one that previously
+ * opened nothing") lives in `OverviewTab.prototypeWizard.test.tsx`, which is where
+ * the placement is now pinned. What stays here is what the controls DO.
+ */
+describe('what the optional inputs send', () => {
   it('offers both tick-boxes on a project with one PRD, one PR-FAQ and no prototype', async () => {
-    // The one project that opens no confirm dialog at all. A control placed inside
-    // ConfirmModal is invisible here, and every other fixture in this suite would
-    // still pass.
-    renderTab([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
+    // Still the fixture worth naming: this is the project that used to open no
+    // dialog at all, so it is the one a placement regression would strand.
+    renderWizard([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
 
     expect(screen.getByTestId('prototype-extra-sources')).toBeInTheDocument()
     expect(productContextBox()).toBeInTheDocument()
     expect(researchBox()).toBeInTheDocument()
-    // No dialog was needed to get here.
-    expect(screen.queryByTestId('prototype-source-picker')).not.toBeInTheDocument()
+    // And the pickers are its neighbours now, not a separate dialog's content.
+    expect(screen.getByTestId('prototype-source-picker')).toBeInTheDocument()
   })
 
-  it('sends what was ticked on that same one-click project', async () => {
+  it('sends what was ticked on that same project', async () => {
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
 
     await user.click(productContextBox())
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().use_product_context).toBe(true)
@@ -187,9 +235,9 @@ describe('the controls are reachable without a dialog', () => {
     // The request every existing caller makes. Off must stay off, or the feature
     // changes builds nobody asked it to.
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
 
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().use_product_context).toBe(false)
@@ -201,7 +249,7 @@ describe('the controls are reachable without a dialog', () => {
     // A box whose only possible contribution is an empty section is an invitation
     // to a no-op — the same reason `SourceRow` renders nothing for a type the
     // project has none of.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT)
 
     expect(screen.queryByRole('checkbox', { name: /research reports/i })).not.toBeInTheDocument()
     expect(productContextBox()).toBeInTheDocument()
@@ -211,10 +259,10 @@ describe('the controls are reachable without a dialog', () => {
 describe('which research reports the build reads', () => {
   it('ticking research selects every report on offer', async () => {
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
 
     await user.click(researchBox())
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().use_research).toBe(true)
@@ -227,11 +275,11 @@ describe('which research reports the build reads', () => {
     // The feature: choose the research, rather than take all of it. Nothing else
     // here fails if the per-report boxes are ignored.
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
 
     await user.click(researchBox())
     await user.click(screen.getByRole('checkbox', { name: 'Pricing survey' }))
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_research_ids).toEqual(['research_a'])
@@ -243,11 +291,11 @@ describe('which research reports the build reads', () => {
     // deletion becoming this build's failure. Found by mutation: without a
     // re-render in the fixture, the filter that prevents it has no test at all.
     const user = userEvent.setup()
-    const { rerender } = renderTab([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
+    const { rerender } = renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
 
     await user.click(researchBox())
     rerender(tab([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT))
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_research_ids).toEqual(['research_a'])
@@ -255,11 +303,11 @@ describe('which research reports the build reads', () => {
 
   it('unticking research sends no ids at all', async () => {
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
 
     await user.click(researchBox())
     await user.click(researchBox())
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().use_research).toBe(false)
@@ -281,7 +329,7 @@ describe('which uploaded visuals the build reads', () => {
     // nothing to send it to — and a collapsed group would hide ticked ids that are
     // still being sent. The list is therefore open from the start, which is what
     // this asserts: no click, and the rows are already there.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
 
     expect(screen.getByText(label('visuals', 2))).toBeInTheDocument()
     expect(screen.getByTestId('prototype-visual-list')).toBeInTheDocument()
@@ -293,11 +341,11 @@ describe('which uploaded visuals the build reads', () => {
     // Order is precedence: the generator's prompt prefers the first visual where
     // two disagree, so B-then-A must arrive as B, A and not in option order.
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
 
     await user.click(screen.getByRole('checkbox', { name: 'settings-screen.png' }))
     await user.click(screen.getByRole('checkbox', { name: 'home-screen.png' }))
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toEqual(['pd_b', 'pd_a'])
@@ -308,9 +356,9 @@ describe('which uploaded visuals the build reads', () => {
     // indistinguishable from "always sends every visual", and the request every
     // existing caller makes would be free to change.
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
 
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toEqual([])
@@ -322,7 +370,7 @@ describe('which uploaded visuals the build reads', () => {
     // product-context box — so it is absent without comment. An image that is
     // still extracting has no description yet, so it cannot be ticked, but it
     // WAS uploaded: silence there reads as a lost file.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [
       VISUAL_A,
       productDoc({ doc_id: 'pd_text', filename: 'notes.md', content_type: 'text/markdown' }),
       VISUAL_EXTRACTING,
@@ -340,7 +388,7 @@ describe('which uploaded visuals the build reads', () => {
     // A text-only upload must not produce an empty visuals section: a group whose
     // only possible contribution is nothing is an invitation to a no-op, the same
     // rule the research box follows.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [
       productDoc({ doc_id: 'pd_text', filename: 'notes.md', content_type: 'text/markdown' }),
     ])
 
@@ -356,7 +404,7 @@ describe('which uploaded visuals the build reads', () => {
       { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
       (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
     )
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, many)
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, many)
 
     for (const option of many.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)) {
       await user.click(screen.getByRole('checkbox', { name: option.filename }))
@@ -365,7 +413,7 @@ describe('which uploaded visuals the build reads', () => {
     expect(overBound).toBeDisabled()
     expect(screen.getByText(label('visualsLimit', MAX_SELECTED_PRODUCT_DOC_IDS))).toBeInTheDocument()
 
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
@@ -385,7 +433,7 @@ describe('which uploaded visuals the build reads', () => {
       { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
       (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
     )
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, many)
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, many)
 
     for (const option of many.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)) {
       await user.click(screen.getByRole('checkbox', { name: option.filename }))
@@ -395,7 +443,7 @@ describe('which uploaded visuals the build reads', () => {
       screen.getByRole('checkbox', { name: `screen-${MAX_SELECTED_PRODUCT_DOC_IDS}.png` }),
       { target: { checked: true } },
     )
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
@@ -418,7 +466,7 @@ describe('which uploaded visuals the build reads', () => {
     )
     const atBound = all.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)
     const spare = all[MAX_SELECTED_PRODUCT_DOC_IDS]
-    const { rerender } = renderTab([PRD, PRFAQ], FILLED_CONTEXT, all)
+    const { rerender } = renderWizard([PRD, PRFAQ], FILLED_CONTEXT, all)
 
     for (const option of atBound) {
       await user.click(screen.getByRole('checkbox', { name: option.filename }))
@@ -429,7 +477,7 @@ describe('which uploaded visuals the build reads', () => {
     const spareBox = screen.getByRole('checkbox', { name: spare.filename })
     expect(spareBox).toBeEnabled()
     await user.click(spareBox)
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     const sent = sentBody().selected_product_doc_ids
@@ -454,7 +502,7 @@ describe('which uploaded visuals the build reads', () => {
     )
     const atBound = all.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)
     const spare = all[MAX_SELECTED_PRODUCT_DOC_IDS]
-    const { rerender } = renderTab([PRD, PRFAQ], FILLED_CONTEXT, all)
+    const { rerender } = renderWizard([PRD, PRFAQ], FILLED_CONTEXT, all)
 
     for (const option of atBound) {
       await user.click(screen.getByRole('checkbox', { name: option.filename }))
@@ -466,7 +514,7 @@ describe('which uploaded visuals the build reads', () => {
     await user.click(screen.getByRole('checkbox', { name: spare.filename }))
     // ...and then extraction finishes, so it is offered again.
     rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, all))
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     const sent = sentBody().selected_product_doc_ids
@@ -484,12 +532,12 @@ describe('which uploaded visuals the build reads', () => {
     // assertion alone would pass without the filter, so the surviving id is
     // asserted too.
     const user = userEvent.setup()
-    const { rerender } = renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+    const { rerender } = renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
 
     await user.click(screen.getByRole('checkbox', { name: 'settings-screen.png' }))
     await user.click(screen.getByRole('checkbox', { name: 'home-screen.png' }))
     rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A]))
-    await user.click(buildButton())
+    await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toEqual(['pd_a'])
@@ -507,7 +555,7 @@ describe('which uploaded visuals the build reads', () => {
  */
 describe('an image that cannot be offered says which kind of wait it is', () => {
   it('reports an extracting image as in flight, not as failed', () => {
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING])
 
     expect(screen.getByText(label('visualsNotReady', 1))).toBeInTheDocument()
     expect(visualNotes()).not.toContain(noteStem('visualsFailed'))
@@ -517,7 +565,7 @@ describe('an image that cannot be offered says which kind of wait it is', () => 
     // THE discriminating case. Under the old single count this line read "1 still
     // being processed" — advice to wait for an extraction that has already given
     // up, with no mention that uploading the file again is the way out.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_FAILED])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_FAILED])
 
     expect(screen.getByText(label('visualsFailed', 1))).toBeInTheDocument()
     expect(visualNotes()).not.toContain(noteStem('visualsNotReady'))
@@ -526,7 +574,7 @@ describe('an image that cannot be offered says which kind of wait it is', () => 
   it('reports both counts when one image is extracting and another failed', () => {
     // Independent lines, not a winner: the user has one file to wait for and a
     // different one to re-upload, and either note alone hides half of that.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING, VISUAL_FAILED])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING, VISUAL_FAILED])
 
     expect(screen.getByText(label('visualsNotReady', 1))).toBeInTheDocument()
     expect(screen.getByText(label('visualsFailed', 1))).toBeInTheDocument()
@@ -535,7 +583,7 @@ describe('an image that cannot be offered says which kind of wait it is', () => 
   it('reports neither line when every uploaded image is ready', () => {
     // The positive control: without it, "reports the failed ones" is
     // indistinguishable from "always shows both lines".
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
 
     expect(visualNotes()).not.toContain(noteStem('visualsNotReady'))
     expect(visualNotes()).not.toContain(noteStem('visualsFailed'))
@@ -545,7 +593,7 @@ describe('an image that cannot be offered says which kind of wait it is', () => 
     // Counting them must not have made them tickable: neither has an extracted
     // description, so `build_visual_brief_block` would ignore either one — a box
     // that contributes nothing to the build it appears to configure.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING, VISUAL_FAILED])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_EXTRACTING, VISUAL_FAILED])
 
     expect(screen.getByRole('checkbox', { name: 'home-screen.png' })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'wip.png' })).not.toBeInTheDocument()
@@ -562,7 +610,7 @@ describe('the visual tick-boxes are a named group', () => {
     // from its master checkbox and this list has no master by design, so without
     // an explicit group the rows announce as loose checkboxes carrying filenames
     // and nothing says what ticking one does.
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_B])
 
     const group = screen.getByRole('group', { name: label('visuals', 2) })
     expect(group).toContainElement(screen.getByRole('checkbox', { name: 'home-screen.png' }))
@@ -571,28 +619,36 @@ describe('the visual tick-boxes are a named group', () => {
 })
 
 describe('a card that cannot act offers no choices', () => {
-  it('renders no tick-boxes on a project with no PRD and no PR-FAQ', () => {
-    // The fixture the rest of this suite never had: research and a filled product
-    // context, so there IS something to offer, and no PRD or PR-FAQ, so the card is
-    // disabled and nothing can be built. Choices above a dead button read as an
-    // offer — the user ticks them, then reads that they must create a document
-    // first. Every other fixture here passes whether or not the gate exists.
-    renderTab([RESEARCH_A], FILLED_CONTEXT)
+  // The property is unchanged — choices for an action that cannot be taken read as
+  // an offer — but the controls moved into the wizard, so it is now enforced one
+  // step earlier: the card's button is what refuses, and the panel is never
+  // reachable. Asserting the absence of tick-boxes alone would be WEAKER than the
+  // old test, because they are absent on every unopened card, so the assertion that
+  // carries the property is that the button does not open anything.
+  it('cannot open the wizard on a project with no PRD and no PR-FAQ', () => {
+    // Research and a filled product context, so there IS something to offer, and no
+    // PRD or PR-FAQ, so nothing can be built.
+    renderCard([RESEARCH_A], FILLED_CONTEXT)
 
     expect(buildButton()).toBeDisabled()
     expect(screen.getByText(en.documents.prototype.needsDocs)).toBeInTheDocument()
-    expect(screen.queryByTestId('prototype-extra-sources')).not.toBeInTheDocument()
-    // Asserted on the roles too, not just the container: a gate that kept the
-    // wrapper and hid its contents would leave the box focusable.
+
+    // A disabled button swallows the click, so the panel never opens and no control
+    // inside it is reachable or focusable.
+    fireEvent.click(buildButton())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
   })
 
-  it('offers them again as soon as one document exists', () => {
-    // The other half, from the same fixture one document later: the gate must be
-    // the disabled state and not something that hides the controls outright.
-    renderTab([PRD, RESEARCH_A], FILLED_CONTEXT)
-
+  it('opens with the choices as soon as one document exists', () => {
+    // The other half, from the same fixture one document later: the gate must be the
+    // button's disabled state and nothing else.
+    renderCard([PRD, RESEARCH_A], FILLED_CONTEXT)
     expect(buildButton()).toBeEnabled()
+
+    fireEvent.click(buildButton())
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByTestId('prototype-extra-sources')).toBeInTheDocument()
   })
 })
@@ -603,7 +659,7 @@ describe('two similarly-named reports are distinguishable', () => {
     // "Churn interviews Q1"/"Q2" render as the same visible string. A screen
     // reader gets the full label either way; a sighted mouse user has only this.
     const user = userEvent.setup()
-    renderTab([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
 
     await user.click(researchBox())
 
@@ -619,7 +675,7 @@ describe('the card no longer presents PRD/PR-FAQ as the whole input list', () =>
     // nothing to omit" — and a DISABLED card renders
     // `documents.prototype.needsDocs` instead of this description, so the
     // assertion would pass for the wrong reason.
-    renderTab([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
+    renderWizard([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
 
     expect(buildButton()).toBeEnabled()
     expect(screen.getByText(en.overview.prototypeDesc)).toBeInTheDocument()
@@ -693,7 +749,7 @@ describe('the failed note renders from a non-English catalogue', () => {
   })
 
   it('renders the German wording, not the key path or the English string', () => {
-    renderTab([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_FAILED])
+    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_FAILED])
 
     expect(screen.getByText(
       de.documents.prototype.visualsFailed.replace('{{total}}', '1'),
