@@ -326,13 +326,61 @@ describe('Prioritization', () => {
       })
       await user.click(screen.getByRole('button', { name: /save/i }))
 
-      // The caller's own axes, and nothing about the aggregate.
+      // The one axis the reader moved, and nothing about the aggregate. The other
+      // three are OMITTED even though this row has a stored ballot for them: the verb
+      // is PATCH, so an absent axis means "leave it alone", and re-sending a value the
+      // reader did not touch is how the save path was able to write scores nobody
+      // chose (see the partial-first-ballot case below).
       expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
-        d1: {
-          document_id: 'd1', impact: 1, time_to_market: 5, confidence: 5,
-          strategic_fit: 5, notes: 'mine',
-        },
+        d1: { document_id: 'd1', impact: 1 },
       })
+    })
+
+    it('never writes an axis the reader did not set, on a first partial ballot', async () => {
+      // The defect: an edit seeded from DEFAULT_SCORE sent
+      // `{impact: 5, time_to_market: 3, confidence: 0, strategic_fit: 0}` when the
+      // reader moved impact alone on a row with no stored ballot — two axes as a `0`
+      // the slider (min=1) cannot express, while all four sliders on screen read 3.
+      // The backend counts an explicit value as a vote (`_carries_axis` is distinct
+      // from `_axis_value(...) == 0`) and averages each axis over the reviewers who
+      // cast one, so a reviewer who cared only about impact dragged the TEAM's
+      // confidence and strategic-fit means toward zero for everybody — into the
+      // number this row displays, bands, counts and sorts by.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      // Nobody has scored it: no ballot of the caller's own, and no team row.
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      // Exactly one slider moves. The other three display 3 — the seeding that makes
+      // the control usable — and that display value must not become a vote.
+      fireEvent.change(sliders[0], { target: { value: '5' } })
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      await user.click(screen.getByRole('button', { name: /save/i }))
+
+      expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
+        d1: { document_id: 'd1', impact: 5 },
+      })
+      // Asserted key by key as well: the equality above passes for an axis present as
+      // `undefined`, and a regression that sends `0` — the value the backend counts as
+      // a vote — is exactly what this test exists to catch.
+      const body = mockPatchPrioritizationScores.mock.calls[0][0]
+      for (const axis of ['time_to_market', 'confidence', 'strategic_fit', 'notes']) {
+        expect(Object.hasOwn(body.d1, axis), axis).toBe(false)
+      }
     })
 
     it('says nobody has scored a document absent from the aggregate', async () => {
@@ -877,6 +925,84 @@ describe('Prioritization', () => {
       })
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
+
+    it('does not tell a reader nobody has scored a row it could not read', async () => {
+      // The row copy is the strongest claim on the page — "No reviewer has scored this
+      // yet… The sliders below cast the first ballot" — and it was made about every row
+      // whenever the read failed, because `aggregates` fell back to `{}` and absence
+      // from that map is how this page says "nobody voted". Inviting a reviewer to cast
+      // the first ballot on a document the team may already have scored is how a real
+      // ballot gets overwritten by a reader who trusted the row.
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+
+      renderPrioritization()
+
+      const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(row).not.toHaveTextContent('Not scored yet')
+      expect(row).not.toHaveTextContent('Not Scored')
+      // What it says instead names the READ, not the document.
+      expect(row).toHaveTextContent('Team score unavailable')
+    })
+
+    it('does not count a failed read as an unscored backlog in the stats cards', async () => {
+      // "1 Not Scored" over a one-document backlog is a claim about the document, and a
+      // read that never arrived cannot support it. A dash says the count is unknown;
+      // "Total Documents" is still a number because the PROJECT read succeeded.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+
+      // Scoped to the stats grid: these labels are also the rows' own band labels.
+      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const cardValue = (label: string) => within(grid ?? document.body)
+        .getByText(label).previousElementSibling?.textContent
+
+      expect(cardValue('Total Documents')).toBe('1')
+      expect(cardValue('Not Scored')).toBe('—')
+      expect(cardValue('High Priority')).toBe('—')
+      expect(cardValue('Medium Priority')).toBe('—')
+    })
+
+    it('says the team view could not be read inside the expanded row too', async () => {
+      // The panel is where the wording invites the first ballot, so it needs the same
+      // three-way distinction the collapsed row now makes.
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+
+      const panel = (await screen.findByText('What the Team Said')).parentElement
+      expect(panel).toBeTruthy()
+      expect(panel).not.toHaveTextContent('No reviewer has scored this yet')
+      expect(panel).toHaveTextContent('could not be read')
+    })
+
+    it('still says nobody voted when the read SUCCEEDED and nobody had', async () => {
+      // The discriminating positive control for all three above: "distinguish a failed
+      // read" must not become "never say nobody has scored this", which is the honest
+      // reading of an empty map that actually arrived.
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+
+      renderPrioritization()
+
+      const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(row).toHaveTextContent('Not scored yet')
+      expect(row).not.toHaveTextContent('Team score unavailable')
+    })
   })
 
   describe('a note the API will refuse never leaves the page', () => {
@@ -888,13 +1014,23 @@ describe('Prioritization', () => {
     // pre-ballot data, which is sent along the moment a slider on that row moves.
     const overLong = 'x'.repeat(MAX_NOTE_LENGTH + 1)
 
-    /** Load a score whose note is already over the bound, then move a slider. */
+    /**
+     * Put an over-long note into a pending edit, the only way one can get there.
+     *
+     * `maxLength` caps typing, so this arrives as a value the page did not type —
+     * which is how the pre-ballot data reaches it in production. Set on the NOTE
+     * rather than by moving a slider on a row whose stored note ran long: an edit now
+     * carries only the fields the reader set, so a slider-only edit sends no note at
+     * all and the API has nothing to refuse. That is the point of the partial body —
+     * an untouched note is left alone rather than rewritten — and it narrows this
+     * guard to the case that can still reach the API: a reader editing the note.
+     */
     async function editARowWhoseNoteIsTooLong() {
       mockGetPrioritizationScores.mockResolvedValue({
         scores: {
           d1: {
             document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
-            strategic_fit: 3, notes: overLong,
+            strategic_fit: 3, notes: 'within the bound',
           },
         },
       })
@@ -904,8 +1040,8 @@ describe('Prioritization', () => {
         expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
       })
       await user.click(screen.getByText('Feature A PR/FAQ'))
-      const sliders = await screen.findAllByRole('slider')
-      fireEvent.change(sliders[0], { target: { value: '5' } })
+      const notes = await screen.findByPlaceholderText(/add notes/i)
+      fireEvent.change(notes, { target: { value: overLong } })
       return user
     }
 
@@ -955,6 +1091,40 @@ describe('Prioritization', () => {
       await user.click(screen.getByRole('button', { name: /save/i }))
 
       expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
+    })
+
+    it('lets a slider move on a row whose STORED note ran long, sending no note', async () => {
+      // Previously this was blocked, because moving a slider re-sent the whole stored
+      // ballot including a note the reviewer had not touched and the API would refuse.
+      // A partial edit carries only the axis that moved, so the save is both legal and
+      // honest: the over-long note stays exactly as stored, untouched by this write.
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {
+          d1: {
+            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+            strategic_fit: 3, notes: overLong,
+          },
+        },
+      })
+      const user = userEvent.setup()
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      fireEvent.change(sliders[0], { target: { value: '5' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      expect(screen.queryByRole('alert', { name: 'A note is too long to save' }))
+        .not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: /save/i }))
+
+      expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
+        d1: { document_id: 'd1', impact: 5 },
+      })
     })
 
     it('leaves an untouched row with a long note alone', async () => {

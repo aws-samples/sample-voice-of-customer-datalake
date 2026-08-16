@@ -96,7 +96,9 @@
     "reviewers": "Évaluateurs",
     "score": "Note de l'équipe",
     "summary": "Moyenne de l'équipe {{score}} sur 5 · Votes d'évaluateurs : {{reviewers}}",
-    "title": "Ce que l'équipe a dit"
+    "title": "Ce que l'équipe a dit",
+    "unavailable": "Note de l'équipe indisponible",
+    "unavailableDescription": "Les notes de l'équipe n'ont pas pu être lues pour le moment : cette ligne n'affiche donc rien à leur sujet — cela ne signifie pas que personne n'a voté. Rechargez la page pour voir ce que l'équipe a dit."
   },
   "title": "Priorisation",
   "unsavedChanges": {

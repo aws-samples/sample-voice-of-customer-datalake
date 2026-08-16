@@ -96,7 +96,9 @@
     "reviewers": "レビュー担当者",
     "score": "チームスコア",
     "summary": "チーム平均 {{score}} / 5 · 評価した人数: {{reviewers}}",
-    "title": "チームの評価"
+    "title": "チームの評価",
+    "unavailable": "チームスコアを取得できません",
+    "unavailableDescription": "チームのスコアを読み込めなかったため、この行にはその情報を表示していません。誰も評価していないという意味ではありません。ページを再読み込みするとチームの評価を確認できます。"
   },
   "title": "優先順位付け",
   "unsavedChanges": {

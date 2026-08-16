@@ -434,6 +434,38 @@ export interface PrioritizationScore {
 }
 
 /**
+ * One reviewer's change to their own ballot — only the fields they actually set.
+ *
+ * The body shape `PATCH /projects/prioritization` is built for: the verb means
+ * "change what I sent", and `_ballot_update_kwargs` assigns only the axes an entry
+ * CARRIES, treating an absent or null one as "leave it alone". So an omitted axis is
+ * not a gap to be filled in before sending; it is the request saying nothing about
+ * that axis.
+ *
+ * Distinct from `PrioritizationScore`, which is a COMPLETE ballot as read back, and
+ * the distinction is load-bearing rather than cosmetic. Sending a full score for a
+ * partial edit meant a reviewer who moved one slider on a fresh row also wrote the
+ * other three axes — from `DEFAULT_SCORE`, so two of them as a `0` the slider
+ * (`min={1}`) cannot express and none of them chosen by that reviewer. The backend
+ * counts an explicit `0` as a real vote (`_carries_axis` is deliberately distinct
+ * from `_axis_value(...) == 0`) and averages each axis over the reviewers who scored
+ * it, so those fabricated zeros dragged the TEAM's means down for everybody — and
+ * the team's means are what the prioritization list now displays, bands, counts and
+ * sorts by.
+ *
+ * `PrioritizationScore` remains structurally assignable to this, so sending a
+ * complete ballot is still valid where one genuinely exists.
+ */
+export interface PrioritizationBallotEdit {
+  document_id: string
+  impact?: number
+  time_to_market?: number
+  confidence?: number
+  strategic_fit?: number
+  notes?: string
+}
+
+/**
  * What every reviewer together said about one document.
  *
  * A sibling of `scores` on `GET /projects/prioritization`. Where `scores` holds

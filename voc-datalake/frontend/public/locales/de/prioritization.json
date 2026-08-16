@@ -96,7 +96,9 @@
     "reviewers": "Bewertende",
     "score": "Teamwert",
     "summary": "Teamdurchschnitt {{score}} von 5 · Abgegebene Bewertungen: {{reviewers}}",
-    "title": "Was das Team gesagt hat"
+    "title": "Was das Team gesagt hat",
+    "unavailable": "Teamwert nicht verfügbar",
+    "unavailableDescription": "Die Bewertungen des Teams konnten gerade nicht gelesen werden. Diese Zeile zeigt daher nichts darüber an — nicht, dass niemand abgestimmt hat. Laden Sie die Seite neu, um zu sehen, was das Team gesagt hat."
   },
   "title": "Priorisierung",
   "unsavedChanges": {

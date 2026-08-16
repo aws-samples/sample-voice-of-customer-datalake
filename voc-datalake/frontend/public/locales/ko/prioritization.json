@@ -96,7 +96,9 @@
     "reviewers": "검토자",
     "score": "팀 점수",
     "summary": "팀 평균 {{score}} / 5 · 검토자 투표 수: {{reviewers}}",
-    "title": "팀의 평가"
+    "title": "팀의 평가",
+    "unavailable": "팀 점수를 가져올 수 없음",
+    "unavailableDescription": "팀의 점수를 지금 읽을 수 없어 이 행에는 관련 정보를 표시하지 않습니다. 아무도 투표하지 않았다는 뜻은 아닙니다. 페이지를 다시 불러오면 팀의 평가를 확인할 수 있습니다."
   },
   "title": "우선순위 지정",
   "unsavedChanges": {

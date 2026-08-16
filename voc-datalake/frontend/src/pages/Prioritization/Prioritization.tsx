@@ -29,15 +29,16 @@ import {
 } from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
 import {
-  getScore, getTeamScore, collectPRFAQs, isScorable,
+  applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
   MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments, priorityBand, sortPRFAQs,
+  withEditedField,
 } from './prioritizationUtils'
 import type {
-  PRFAQWithProject, SortField, SortDirection,
+  PRFAQWithProject, SortField, SortDirection, TeamAggregates,
 } from './prioritizationUtils'
 import type { LinkedForm } from './formLinkUtils'
 import type {
-  Project, PrioritizationScore, PrioritizationAggregate,
+  Project, PrioritizationScore, PrioritizationAggregate, PrioritizationBallotEdit,
 } from '../../api/types'
 
 /**
@@ -81,25 +82,32 @@ const selectPrioritization = (data: {
  * composite of four 4s is 3.9999999999999996, so an unrounded `>= 4` counted a row
  * printing `4.0` as Medium. One function, one rounding, so a card and the row it
  * summarises cannot classify the same document differently.
+ *
+ * When the team read FAILED, the three team-derived cards show a dash rather than a
+ * count. A zero is a claim ("none of these is high priority") and "1 Not Scored"
+ * for every document in the backlog is a false one — the read said nothing about
+ * any of them. Only "Total Documents" survives, because that is counted off the
+ * project read, which succeeded.
  */
 function StatsCards({
   allPRFAQs, aggregates,
 }: {
   readonly allPRFAQs: PRFAQWithProject[];
-  readonly aggregates: Record<string, PrioritizationAggregate>
+  readonly aggregates: TeamAggregates
 }) {
   const { t } = useTranslation('prioritization')
-  const bands = allPRFAQs.map((p) => priorityBand(getTeamScore(aggregates, p.document_id)))
-  const highPriority = bands.filter((band) => band === 'high').length
-  const mediumPriority = bands.filter((band) => band === 'medium').length
-  const notScored = bands.filter((band) => band === 'none').length
+  const bands = allPRFAQs.map((p) => priorityBand(getTeamView(aggregates, p.document_id)))
+  /** How many rows fall in one band, or a dash when the team read failed. */
+  const countOf = (band: 'high' | 'medium' | 'none') => (
+    aggregates === null ? '—' : bands.filter((b) => b === band).length
+  )
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
       <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalDocuments')}</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{highPriority}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{mediumPriority}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-400">{notScored}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{countOf('high')}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{countOf('medium')}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-400">{countOf('none')}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
     </div>
   )
 }
@@ -180,8 +188,13 @@ function PRFAQList({
   readonly prfaqs: PRFAQWithProject[]
   /** The caller's own ballots, which stay behind each row's own sliders. */
   readonly scores: Record<string, PrioritizationScore>
-  /** What every reviewer together said — the resting row, and the sort order. */
-  readonly aggregates: Record<string, PrioritizationAggregate>
+  /**
+   * What every reviewer together said — the resting row, and the sort order.
+   *
+   * `null` when the read carrying it failed, which each row states as such rather
+   * than as an absence of votes.
+   */
+  readonly aggregates: TeamAggregates
   readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
   /** Passed through to each row's linked-form panel — see PRFAQRow. */
   readonly apiEndpoint: string
@@ -209,7 +222,7 @@ function PRFAQList({
           prfaq={prfaq}
           index={index}
           score={getScore(scores, prfaq.document_id)}
-          team={getTeamScore(aggregates, prfaq.document_id)}
+          team={getTeamView(aggregates, prfaq.document_id)}
           linkedForms={linkedFormsByDocument.get(prfaq.document_id) ?? NO_LINKED_FORMS}
           apiEndpoint={apiEndpoint}
           isExpanded={expandedId === prfaq.document_id}
@@ -277,7 +290,17 @@ export default function Prioritization() {
   // cache. Displayed scores are derived (saved ⊕ edits), so a refetch after
   // saving — or landing here with a stale cache — always shows the server's
   // latest values instead of a one-time snapshot (issue #95).
-  const [localEdits, setLocalEdits] = useState<Record<string, PrioritizationScore>>({})
+  //
+  // A `PrioritizationBallotEdit`, not a whole score: an edit holds ONLY the fields
+  // this reviewer actually set. Seeding it from `getScore` — and so from
+  // `DEFAULT_SCORE` for a row with no stored ballot — meant moving one slider saved
+  // all four axes, two of them as a `0` the slider cannot express and none of the
+  // other three chosen by the reviewer. The backend counts those as votes and
+  // averages each axis over the reviewers who cast one, so a reviewer who cared only
+  // about impact dragged the TEAM's confidence and strategic-fit means toward zero
+  // for everybody — into the number this page now displays, bands, counts and sorts
+  // by. The verb is PATCH, so an omitted axis means "leave it alone".
+  const [localEdits, setLocalEdits] = useState<Record<string, PrioritizationBallotEdit>>({})
 
   const hasChanges = Object.keys(localEdits).length > 0
 
@@ -364,13 +387,30 @@ export default function Prioritization() {
     enabled: config.apiEndpoint.length > 0,
   })
 
+  // Merged per FIELD, not by spreading one object over the other: a pending edit
+  // carries only what the reader set, so an object spread would let an axis it says
+  // nothing about overwrite a saved one with `undefined` and blank a slider showing a
+  // score the reviewer had stored.
   const scores = useMemo(
-    () => ({ ...savedScores?.scores, ...localEdits }),
+    () => applyBallotEdits(savedScores?.scores ?? {}, localEdits),
     [savedScores, localEdits],
   )
 
   /**
    * The team view, as the rows show it and the list is ordered by.
+   *
+   * `null` — not `{}` — when the read FAILED, which is the same `isError` the panel
+   * below is keyed on. An empty map means "the read arrived and nobody has scored
+   * anything", and absence from it is how this page says "nobody voted on this
+   * document"; falling back to one on a failure therefore made every row assert that
+   * about data that exists on the server, and the stats cards count the whole
+   * backlog as unscored. The row copy is the strongest statement on the page — it
+   * invites the reader to "cast the first ballot" — so it is exactly where an
+   * invented emptiness does the most damage.
+   *
+   * `savedScores` alone cannot tell the two apart: it is undefined while a read is
+   * in flight, when it has failed, and before it is enabled. Hence `scoresFailed`
+   * rather than `?? {}`.
    *
    * Deliberately NOT merged with `localEdits` the way `scores` is. A pending edit
    * is one reviewer's unsaved ballot; folding it into the team's mean would make
@@ -379,7 +419,10 @@ export default function Prioritization() {
    * remove. The mean updates when the save is refetched, from the arithmetic the
    * backend owns.
    */
-  const aggregates = useMemo(() => savedScores?.aggregates ?? {}, [savedScores])
+  const aggregates: TeamAggregates = useMemo(
+    () => scoresFailed ? null : savedScores?.aggregates ?? {},
+    [savedScores, scoresFailed],
+  )
 
   const allPRFAQs = useMemo(() => collectPRFAQs(allProjectDetails, projects), [allProjectDetails, projects])
 
@@ -443,14 +486,15 @@ export default function Prioritization() {
 
   const blocker = useBlocker(hasChanges)
 
+  // Records only the field that moved. The edit accumulates across interactions on
+  // the same row — a reviewer who sets impact and then confidence sends both — but it
+  // never gains a field they did not touch, so an untouched axis stays absent from the
+  // body and the route leaves the stored value (or the absence of one) alone.
   const updateScore = (docId: string, field: keyof PrioritizationScore, value: number | string) => {
-    setLocalEdits((prev) => {
-      const base = prev[docId] ?? getScore(savedScores?.scores ?? {}, docId)
-      return {
-        ...prev,
-        [docId]: { ...base, [field]: value },
-      }
-    })
+    setLocalEdits((prev) => ({
+      ...prev,
+      [docId]: withEditedField(prev[docId] ?? { document_id: docId }, field, value),
+    }))
   }
 
   const toggleSort = (field: SortField) => {

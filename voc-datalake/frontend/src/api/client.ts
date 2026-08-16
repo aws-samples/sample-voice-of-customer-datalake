@@ -18,6 +18,7 @@ import type {
   Project,
   PrioritizationScore,
   PrioritizationAggregate,
+  PrioritizationBallotEdit,
   S3ImportSource,
   S3ImportFile,
   FeedbackForm,
@@ -48,6 +49,7 @@ export type {
   Project,
   PrioritizationScore,
   PrioritizationAggregate,
+  PrioritizationBallotEdit,
   S3ImportSource,
   S3ImportFile,
   FeedbackFormConfig,
@@ -508,15 +510,21 @@ export const api = {
    * `updated_count` is BALLOTS WRITTEN, not documents sent: an entry that changed
    * no axis and no note is a legal no-op and is not counted, so the number can be
    * lower than the size of the map — and is 0 for a body that stored nothing.
-   * Every entry this page sends carries all four axes (`getScore` seeds them), so
-   * in practice the two agree here.
+   *
+   * Entries are `PrioritizationBallotEdit`, i.e. PARTIAL: an axis the reviewer did
+   * not set is omitted, and the route reads an omitted axis as "leave it alone"
+   * (`_ballot_update_kwargs` assigns only the axes an entry carries). Sending a
+   * complete score instead wrote three axes the reviewer never chose whenever they
+   * moved one slider on a row with no stored ballot, and the backend counts an
+   * explicit value as a real vote — which then moves the TEAM means the
+   * prioritization page displays, bands, counts and sorts by.
    *
    * A note longer than `MAX_NOTE_LENGTH` is REFUSED (400), not truncated. This
    * function does not check it, because `fetchApi` discards the response body and
    * could not report why — the page blocks that save before calling
    * (`overLongNoteDocuments`).
    */
-  patchPrioritizationScores: (changedScores: Record<string, PrioritizationScore>) =>
+  patchPrioritizationScores: (changedScores: Record<string, PrioritizationBallotEdit>) =>
     fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {
       method: 'PATCH',
       body: JSON.stringify({ scores: changedScores })

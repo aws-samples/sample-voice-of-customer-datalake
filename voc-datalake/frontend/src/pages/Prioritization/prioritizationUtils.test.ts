@@ -7,7 +7,8 @@ import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
   getScore, calculatePriorityScore, collectPRFAQs, comparePRFAQs, DEFAULT_SCORE, isScorable,
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
-  getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs,
+  getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
+  applyBallotEdits, withEditedField,
 } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
 
@@ -333,14 +334,22 @@ describe('reviewersDisagreed', () => {
 
 describe('priorityBand', () => {
   const bandOf = (fields: Partial<PrioritizationAggregate> & { reviewer_count: number }) =>
-    priorityBand(getTeamScore({ d1: aggregate(fields) }, 'd1'))
+    priorityBand(getTeamView({ d1: aggregate(fields) }, 'd1'))
 
   const uniform = (value: number) => ({
     impact: value, time_to_market: value, confidence: value, strategic_fit: value, reviewer_count: 3,
   })
 
   it('names an unscored document, and ONLY an unscored one, as unbanded', () => {
-    expect(priorityBand(null)).toBe('none')
+    expect(priorityBand(getTeamView({}, 'd1'))).toBe('none')
+  })
+
+  it('names a document whose team view could not be READ as neither', () => {
+    // A failed read is not a fact about the document. Banding it 'none' put the
+    // words "Not Scored" on a row whose votes simply could not be fetched, and made
+    // the stats cards count the whole backlog as unscored.
+    expect(priorityBand(getTeamView(null, 'd1'))).toBe('unavailable')
+    expect(priorityBand(getTeamView(null, 'd1'))).not.toBe(priorityBand(getTeamView({}, 'd1')))
   })
 
   it('bands a unanimously-lowest score as low rather than as unscored', () => {
@@ -349,7 +358,7 @@ describe('priorityBand', () => {
     // "Not Scored" — the same words as a document nobody had opened. "Scored low"
     // and "nobody looked" have to stay distinct in the row, not only in the sort.
     expect(bandOf(uniform(1))).toBe('low')
-    expect(bandOf(uniform(1))).not.toBe(priorityBand(null))
+    expect(bandOf(uniform(1))).not.toBe(priorityBand(getTeamView({}, 'd1')))
   })
 
   it('bands a composite that only ROUNDS to the threshold with the threshold', () => {
@@ -367,22 +376,57 @@ describe('getPriorityLabel', () => {
   const t = i18n.getFixedT(null, 'prioritization')
 
   it('gives a scored-low document a different label from an unscored one', () => {
-    const scoredLow = getPriorityLabel(getTeamScore({
+    const scoredLow = getPriorityLabel(getTeamView({
       d1: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 3 }),
     }, 'd1'), t)
 
     expect(scoredLow.label).toBe('Low Priority')
-    expect(scoredLow.label).not.toBe(getPriorityLabel(null, t).label)
-    expect(getPriorityLabel(null, t).label).toBe('Not Scored')
+    expect(scoredLow.label).not.toBe(getPriorityLabel(getTeamView({}, 'd1'), t).label)
+    expect(getPriorityLabel(getTeamView({}, 'd1'), t).label).toBe('Not Scored')
+  })
+
+  it('does not tell a reader nobody voted when the read simply failed', () => {
+    // Three labels for three states. "Not Scored" is a claim about the document and
+    // must not be made on its behalf by a request that never arrived.
+    const unavailable = getPriorityLabel(getTeamView(null, 'd1'), t)
+
+    expect(unavailable.label).toBe('Team score unavailable')
+    expect(unavailable.label).not.toBe(getPriorityLabel(getTeamView({}, 'd1'), t).label)
   })
 
   it('labels a team that unanimously scored 4 as high, beside the 4.0 the row prints', () => {
-    const team = getTeamScore({
+    const aggregates = {
       d1: aggregate({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2 }),
-    }, 'd1')
+    }
 
-    expect(team?.displayComposite.toFixed(1)).toBe('4.0')
-    expect(getPriorityLabel(team, t).label).toBe('High Priority')
+    expect(getTeamScore(aggregates, 'd1')?.displayComposite.toFixed(1)).toBe('4.0')
+    expect(getPriorityLabel(getTeamView(aggregates, 'd1'), t).label).toBe('High Priority')
+  })
+})
+
+describe('getTeamView tells three states apart', () => {
+  // The distinction the page turns on: "the team rated this low", "nobody has voted"
+  // and "we could not find out" are three different statements, and only the first
+  // two are about the document.
+  it('reads a document in the map as scored', () => {
+    const view = getTeamView({ d1: aggregate({ impact: 5, reviewer_count: 2 }) }, 'd1')
+
+    expect(view.kind).toBe('scored')
+    expect(teamScoreOf(view)?.impact).toBe(5)
+  })
+
+  it('reads a document absent from an arrived map as unscored', () => {
+    expect(getTeamView({}, 'd1').kind).toBe('unscored')
+    expect(teamScoreOf(getTeamView({}, 'd1'))).toBeNull()
+  })
+
+  it('reads a FAILED read as unavailable, for every document', () => {
+    // Not per document: a missing key in a map that never arrived says nothing about
+    // the key. So the failure has to be answered before the lookup, or a row would
+    // report "nobody voted" on the strength of a response that does not exist.
+    expect(getTeamView(null, 'd1').kind).toBe('unavailable')
+    expect(getTeamView(null, 'anything-at-all').kind).toBe('unavailable')
+    expect(teamScoreOf(getTeamView(null, 'd1'))).toBeNull()
   })
 })
 
@@ -440,6 +484,96 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     sortPRFAQs(rows, aggregates, 'priority_score', 'desc')
     expect(titlesOf(rows)).toEqual(['Alpha', 'Beta', 'Gamma'])
   })
+
+  it('leaves the order alone when the team read FAILED, rather than grouping everything', () => {
+    // No number to rank by, and no honest grouping either: pinning every row as
+    // "unscored" would order the backlog by a property no row has been shown to have.
+    for (const direction of ['asc', 'desc'] as const) {
+      expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], null, 'priority_score', direction)), direction)
+        .toEqual(['Beta', 'Alpha', 'Gamma'])
+    }
+  })
+
+  it('still sorts by date and title when the team read failed', () => {
+    // Those read document fields, which the failed read does not touch — so the sort
+    // a reader can still trust keeps working.
+    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], null, 'created_at', 'asc')))
+      .toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], null, 'title', 'desc')))
+      .toEqual(['Gamma', 'Beta', 'Alpha'])
+  })
+})
+
+describe('a pending edit carries only the fields the reader set', () => {
+  // The defect: an edit seeded from `getScore` — and so from `DEFAULT_SCORE` on a row
+  // with no stored ballot — sent all four axes when the reader moved one slider, two
+  // of them as a `0` the slider (min=1) cannot express. The backend counts an
+  // explicit value as a vote and averages each axis over the reviewers who cast one,
+  // so those fabricated zeros moved the TEAM means this page displays and sorts by.
+  it('records one axis without inventing the other three', () => {
+    const edit = withEditedField({ document_id: 'd1' }, 'impact', 5)
+
+    expect(edit).toEqual({ document_id: 'd1', impact: 5 })
+    // Named explicitly, because "absent" is what the route reads as "leave it alone"
+    // and a 0 here is what it reads as a vote.
+    expect('time_to_market' in edit).toBe(false)
+    expect('confidence' in edit).toBe(false)
+    expect('strategic_fit' in edit).toBe(false)
+    expect('notes' in edit).toBe(false)
+  })
+
+  it('accumulates the fields a reader sets across several interactions', () => {
+    // The positive control: omitting untouched axes must not become omitting touched
+    // ones, or a reviewer's second slider would silently not save.
+    const edit = withEditedField(
+      withEditedField({ document_id: 'd1' }, 'impact', 5), 'confidence', 2,
+    )
+
+    expect(edit).toEqual({ document_id: 'd1', impact: 5, confidence: 2 })
+  })
+
+  it('keeps an axis a number and a note a string', () => {
+    // The slider hands over a string from the DOM event; a note stored as a number,
+    // or an axis as a string, is refused by the API rather than caught here.
+    expect(withEditedField({ document_id: 'd1' }, 'impact', '4').impact).toBe(4)
+    expect(withEditedField({ document_id: 'd1' }, 'notes', 'why').notes).toBe('why')
+  })
+
+  it('shows a partial edit over the stored ballot without blanking what it omits', () => {
+    // The sliders read this. A `{...saved, ...edit}` spread would let an axis the edit
+    // says nothing about overwrite a saved one with `undefined`, blanking a slider
+    // showing a score the reviewer had stored.
+    const merged = applyBallotEdits({
+      d1: {
+        document_id: 'd1', impact: 2, time_to_market: 3, confidence: 4, strategic_fit: 5, notes: 'kept',
+      },
+    }, { d1: { document_id: 'd1', impact: 5 } })
+
+    expect(merged.d1).toEqual({
+      document_id: 'd1', impact: 5, time_to_market: 3, confidence: 4, strategic_fit: 5, notes: 'kept',
+    })
+  })
+
+  it('falls back to the display defaults for a row with no stored ballot', () => {
+    // The sliders still need four numbers to render. That seeding is a DISPLAY
+    // concern and stays here, on the way to the screen — not in the edit, which is
+    // what gets sent.
+    const merged = applyBallotEdits({}, { d1: { document_id: 'd1', impact: 5 } })
+
+    expect(merged.d1).toEqual({
+      ...DEFAULT_SCORE, document_id: 'd1', impact: 5,
+    })
+  })
+
+  it('leaves rows nobody edited exactly as they were saved', () => {
+    const saved = {
+      d1: {
+        document_id: 'd1', impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '',
+      },
+    }
+
+    expect(applyBallotEdits(saved, {}).d1).toEqual(saved.d1)
+  })
 })
 
 describe('normalizeAggregates', () => {
@@ -492,6 +626,55 @@ describe('normalizeAggregates', () => {
         reviewer_count: 2, impact: 'high', time_to_market: 'slow', confidence: null, strategic_fit: [],
       },
     })).toEqual({})
+  })
+
+  it('keeps a row whose every axis is out of RANGE, since each is still a number', () => {
+    // The floor is about readability, never about range. Testing it against the
+    // bounded schema conflated the two: four means of 6 with a real reviewer count
+    // were dropped and the row read "Not scored yet", presenting a document four
+    // reviewers had voted on as one nobody had opened. Out of range is a number, so
+    // it degrades through `.catch(0)` like any other unusable value and the row stays.
+    const parsed = normalizeAggregates({
+      d1: {
+        impact: 6, time_to_market: 6, confidence: 6, strategic_fit: 6,
+        reviewer_count: 3, score_spread: 0,
+      },
+    })
+
+    expect(parsed.d1).toEqual({
+      impact: 0, time_to_market: 0, confidence: 0, strategic_fit: 0,
+      reviewer_count: 3, score_spread: 0,
+    })
+  })
+
+  it('does not decide an out-of-range row by whether ONE axis happened to be in range', () => {
+    // The inconsistency that gave the rule away: `{impact: 4, rest 6}` was kept with
+    // the siblings degraded while `{all 6}` vanished — same data quality, opposite
+    // outcome. Both are kept now, and the reviewer count survives either way.
+    const mixed = normalizeAggregates({
+      d1: {
+        impact: 4, time_to_market: 6, confidence: 6, strategic_fit: 6, reviewer_count: 3,
+      },
+    })
+    const allOut = normalizeAggregates({
+      d1: {
+        impact: 6, time_to_market: 6, confidence: 6, strategic_fit: 6, reviewer_count: 3,
+      },
+    })
+
+    expect(Object.keys(mixed)).toEqual(['d1'])
+    expect(Object.keys(allOut)).toEqual(['d1'])
+    expect(allOut.d1.reviewer_count).toBe(3)
+  })
+
+  it('still drops a row whose axes are unreadable rather than merely out of range', () => {
+    // The discriminating negative for the two cases above: relaxing the floor to
+    // `z.number()` must not relax it to "anything at all". `NaN` and `Infinity` are
+    // rejected too — `z.number()` refuses both — since neither is a slider position.
+    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: '6' } })).toEqual({})
+    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: true } })).toEqual({})
+    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: NaN } })).toEqual({})
+    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: Infinity } })).toEqual({})
   })
 
   it('keeps a row with one readable axis, degrading the rest', () => {

@@ -96,7 +96,9 @@
     "reviewers": "Revisores",
     "score": "Pontuação da equipe",
     "summary": "Média da equipe {{score}} de 5 · Votos de revisores: {{reviewers}}",
-    "title": "O que a equipe disse"
+    "title": "O que a equipe disse",
+    "unavailable": "Pontuação da equipe indisponível",
+    "unavailableDescription": "As pontuações da equipe não puderam ser lidas agora, portanto esta linha não mostra nada sobre elas — não que ninguém tenha votado. Recarregue a página para ver o que a equipe disse."
   },
   "title": "Priorização",
   "unsavedChanges": {
