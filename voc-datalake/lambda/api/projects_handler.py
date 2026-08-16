@@ -1366,9 +1366,9 @@ def api_put_prioritization_scores():
     Answers 405 rather than 400, with the `Allow` header a 405 is required to carry.
     The distinction is not pedantry here: 400 says "your request was malformed",
     which sends a client looking at its body, while the body was fine and the VERB is
-    what no longer exists. 405 plus `Allow` says exactly that, and names the two
-    verbs that do work — which is the whole of what a caller stranded on the retired
-    route needs, OPTIONS included, since preflight is answered on this path too. Returned as a `Response` rather than raised, because the shared
+    what no longer exists. 405 plus `Allow` says exactly that, and names the verbs
+    that do work — which is the whole of what a caller stranded on the retired route
+    needs. Returned as a `Response` rather than raised, because the shared
     error classes map to fixed statuses and inventing a shared `MethodNotAllowedError`
     for one stub would put a class in `shared/api.py` with a single caller. The body
     keeps the `{'success': False, 'error': ...}` shape every other error answers with.
