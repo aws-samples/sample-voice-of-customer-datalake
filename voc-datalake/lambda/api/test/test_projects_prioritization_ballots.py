@@ -496,11 +496,16 @@ class TestAPartialEntryLeavesTheOtherAxesAlone:
 
 class TestBoundedAxisAndNoteValues:
     """The two decisions the change made where the task left room: an out-of-range
-    axis is CLAMPED rather than refused (the value is bounded either way, and a
+    NUMBER is CLAMPED rather than refused (the value is bounded either way, and a
     clamp keeps one odd axis from failing a whole multi-document save), and a note
     is truncated because it is stored verbatim and re-read on every page load.
     Both are silent behaviours, so a test is the only thing that keeps a later
-    refactor from changing them unnoticed."""
+    refactor from changing them unnoticed.
+
+    CLAMP A NUMBER, REFUSE A NON-NUMBER. The clamp argument is that the value is
+    bounded either way, which is true of `99`, `-4`, `'3'` and `2.7` and false of
+    `'high'` — there is no value to bound, so the 0 a fallback produces is invented.
+    The refusals are in `TestANonNumberIsRefusedRatherThanFlooredAtZero` below."""
 
     @staticmethod
     def _saved(api_gateway_event, lambda_context, entry):
@@ -534,12 +539,6 @@ class TestBoundedAxisAndNoteValues:
         assert self._saved(api_gateway_event, lambda_context,
                            {'strategic_fit': '3'})['strategic_fit'] == 3
 
-    def test_an_unparseable_axis_falls_back_to_the_floor(
-        self, api_gateway_event, lambda_context
-    ):
-        assert self._saved(api_gateway_event, lambda_context,
-                           {'impact': 'high'})['impact'] == 0
-
     def test_an_over_long_note_is_truncated_to_the_bound(
         self, api_gateway_event, lambda_context
     ):
@@ -547,8 +546,208 @@ class TestBoundedAxisAndNoteValues:
 
         assert len(ballot['notes']) == 2000
 
-    def test_a_non_string_note_is_stored_as_empty(self, api_gateway_event, lambda_context):
-        assert self._saved(api_gateway_event, lambda_context, {'notes': 42})['notes'] == ''
+
+class TestANonNumberIsRefusedRatherThanFlooredAtZero:
+    """An axis value no number can be read out of used to be STORED AS A REAL 0.
+
+    `validate_int` returns its `default` — here the floor — for anything it cannot
+    read, so `{'impact': 'high'}` did not fall through and was not refused: it
+    became a deliberate lowest score. `_carries_axis` then reported it as a vote, so
+    four such axes reproduced exactly the aggregate this file's other classes exist
+    to prevent — a team mean of 2.5 and the maximum 5.0 spread beside a reviewer who
+    scored 5 across the board — while also destroying whatever the sender had
+    stored. Numbers still clamp (see the class above); a non-number is a 400.
+
+    Three encodings, each of which defeats a numeric check written the obvious way:
+    a bool (`isinstance(True, int)` is true and `int(True)` is 1), a non-finite
+    float (`int(float('inf'))` raises `OverflowError`, which `validate_int` did not
+    catch, so it escaped the validation pass entirely and half-persisted a save),
+    and a `NaN` (`ValueError`, swallowed into the invented 0)."""
+
+    @staticmethod
+    def _refused(api_gateway_event, lambda_context, entry, *, existing=None):
+        table = FakeAggregatesTable()
+        if existing:
+            _patch_scores(table, api_gateway_event, lambda_context,
+                          {'doc-1': existing}, subject='alice')
+        writes_before = len(table.update_item_calls)
+        status, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                     {'doc-1': entry}, subject='alice')
+        return status, body, table, len(table.update_item_calls) - writes_before
+
+    @pytest.mark.parametrize('value', ['high', [1, 2], {'a': 1}, True, False,
+                                       float('inf'), float('-inf'), float('nan')])
+    def test_an_axis_that_is_not_a_number_is_refused(
+        self, api_gateway_event, lambda_context, value
+    ):
+        status, body, _, writes = self._refused(
+            api_gateway_event, lambda_context, {'impact': value})
+
+        assert status == 400
+        assert 'impact' in body['error']
+        assert writes == 0
+
+    @pytest.mark.parametrize('value', ['high', True, False, float('inf'), float('nan')])
+    def test_a_refused_axis_leaves_the_stored_score_alone(
+        self, api_gateway_event, lambda_context, value
+    ):
+        """The destructive half, which a first-save assertion cannot see: the
+        refusal has to preserve what the reviewer already scored, not merely avoid
+        storing the invented value."""
+        status, _, table, writes = self._refused(
+            api_gateway_event, lambda_context, {'impact': value},
+            existing={'impact': 4})
+
+        assert status == 400
+        assert writes == 0
+        assert table.ballot('doc-1', 'alice')['impact'] == 4
+
+    def test_a_non_number_cannot_manufacture_a_disagreement(
+        self, api_gateway_event, lambda_context
+    ):
+        """The aggregate consequence, stated in the unit the reviewer sees.
+
+        Four unparseable axes stored as zeros are FULLY scored, so they set the
+        spread as well as the means: alice scoring 5 across the board beside them
+        reported a mean of 2.5 and a spread of 5.0, the maximum possible
+        disagreement, out of a reviewer who expressed no numbers."""
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': dict.fromkeys(AXES, 5)}, subject='alice')
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': {'impact': 'high', 'time_to_market': 'fast',
+                       'confidence': 'n/a', 'strategic_fit': 'yes'}},
+            subject='bob')
+
+        assert status == 400
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+        assert body['aggregates']['doc-1'] == {
+            'impact': 5.0, 'time_to_market': 5.0, 'confidence': 5.0,
+            'strategic_fit': 5.0, 'reviewer_count': 1, 'score_spread': 0.0,
+        }
+
+    def test_a_false_axis_is_refused_rather_than_stored_as_a_zero(
+        self, api_gateway_event, lambda_context
+    ):
+        """`false` is the bool that reaches the aggregate: it lands on the same
+        invented 0 as `'high'` and is fully-scored-eligible, without ever being an
+        unparseable value. `true` is no better — `impact: 1` is a slider position
+        nobody chose."""
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': dict.fromkeys(AXES, False)}, subject='alice')
+
+        assert status == 400
+        assert table.ballot('doc-1', 'alice') is None
+
+    def test_a_non_finite_axis_cannot_half_persist_a_multi_document_save(
+        self, api_gateway_event, lambda_context
+    ):
+        """The one encoding that was a PARTIAL WRITE rather than a wrong value.
+
+        `int(float('inf'))` raises `OverflowError`, which `validate_int` did not
+        catch, so it was not floored and not refused: it propagated out of the write
+        loop mid-save, after earlier documents had been durably written, and
+        surfaced as a bare 500. That contradicted the promise the up-front pass
+        exists to make, so the assertion is on the WRITES, not just the status."""
+        table = FakeAggregatesTable()
+        scores = {f'doc-{i}': dict.fromkeys(AXES, 3) for i in range(1, 6)}
+        scores['doc-3'] = {'impact': float('inf')}
+
+        status, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                     scores, subject='alice')
+
+        assert status == 400
+        assert 'impact' in body['error']
+        assert table.ballot_keys == []
+        assert table.update_item_calls == []
+
+    @pytest.mark.parametrize('value', [99, -4, 2.7, '3', 0, 5])
+    def test_a_number_still_clamps_rather_than_being_refused(
+        self, api_gateway_event, lambda_context, value
+    ):
+        """The other half of the rule: everything `int()` can plainly read is still
+        bounded rather than rejected, so one odd slider cannot fail a whole
+        multi-document save."""
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': {'impact': value}}, subject='alice')
+
+        assert status == 200
+        assert 0 <= table.ballot('doc-1', 'alice')['impact'] <= 5
+
+    def test_the_refusal_never_echoes_the_rejected_value(
+        self, api_gateway_event, lambda_context
+    ):
+        """Caller input is unbounded and a response body gains nothing by repeating
+        it — the reasoning `_validated_ballot_document_id` records for keys."""
+        _, body, _, _ = self._refused(
+            api_gateway_event, lambda_context,
+            {'impact': 'sensitive-looking-garbage'})
+
+        assert 'sensitive-looking-garbage' not in json.dumps(body)
+
+
+class TestANonStringNoteCannotDestroyTheStoredNote:
+    """A `notes` of the wrong type was COERCED TO `''`, so a request that expressed
+    no note at all erased the note that was there — and answered 200.
+
+    Round 3 established the rule for `null` (absent, leave it alone) and this is the
+    same rule for the other encoding of "not a note". A stored note is a durable
+    decision record, so overwriting it while reporting success is the worst of the
+    available behaviours; refusing it up front also keeps it from half-persisting a
+    multi-document save.
+
+    Deliberately asserted across TWO saves against ONE table. The test this replaces
+    asserted `stored == ''` after a FIRST save, where there was nothing to lose — so
+    it was satisfied by both "coerced to empty" and "erased what was there", and
+    passed identically whichever the code did."""
+
+    @pytest.mark.parametrize('value', [42, [1, 2], {'a': 1}, True])
+    def test_a_non_string_note_is_refused_and_the_stored_note_survives(
+        self, api_gateway_event, lambda_context, value
+    ):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'ship this in Q3'}}, subject='alice')
+        writes_before = len(table.update_item_calls)
+
+        status, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                     {'doc-1': {'notes': value}}, subject='alice')
+
+        assert status == 400
+        assert 'notes' in body['error']
+        assert table.ballot('doc-1', 'alice')['notes'] == 'ship this in Q3'
+        assert len(table.update_item_calls) == writes_before
+
+    def test_the_caller_still_reads_back_the_note_they_saved(
+        self, api_gateway_event, lambda_context
+    ):
+        """Through the route rather than the table, since the page is what a lost
+        note would be lost from."""
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'ship this in Q3'}}, subject='alice')
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 42}}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+        assert body['scores']['doc-1']['notes'] == 'ship this in Q3'
+
+    def test_a_string_note_is_still_written(self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': {'notes': 'still fine'}}, subject='alice')
+
+        assert status == 200
+        assert table.ballot('doc-1', 'alice')['notes'] == 'still fine'
 
 
 class TestReviewerIdentityFailsClosed:
@@ -778,6 +977,110 @@ class TestLegacyScoresReadThroughAndMigrateOnWrite:
         status, _ = _patch_scores(table, api_gateway_event, lambda_context, {'doc-1': AXES})
 
         assert status == 200
+
+
+class TestTheReadThroughAndTheAggregateAgree:
+    """A legacy value the write path would REFUSE is not read back as if a reviewer
+    had entered it.
+
+    `_aggregate_scores` already ignored these — `_carries_axis` asks whether an axis
+    is a readable number — so the two halves of the same response disagreed about
+    the same stored value: `aggregates` omitted the document (which
+    `PrioritizationAggregate` tells consumers means nobody scored it) while `scores`
+    showed the caller a deliberate lowest score on all four axes. An invented number
+    in a field named for what a reviewer entered.
+
+    The legacy map has no type discipline — it was written by the pre-ballot handler
+    and predates this route's validation — and nothing migrates an entry away until
+    the first save against that document, so the disagreement was not merely
+    theoretical. Both halves now ask the same predicate, so a shape neither
+    anticipated is closed at both ends at once."""
+
+    @staticmethod
+    def _with_legacy(scores):
+        return FakeAggregatesTable(
+            items=[{'pk': PARTITION, 'sk': LEGACY_SK, 'scores': scores}]
+        )
+
+    @pytest.mark.parametrize('entry', [
+        'garbage',
+        42,
+        [1, 2],
+        {'impact': 'high'},
+        {'impact': 'high', 'time_to_market': 'fast',
+         'confidence': 'n/a', 'strategic_fit': 'yes'},
+        {'impact': True},
+        {},
+    ])
+    def test_an_unreadable_legacy_entry_appears_in_neither_half(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        table = self._with_legacy({'doc-1': entry})
+
+        status, body = _get_scores(table, api_gateway_event, lambda_context,
+                                   subject='alice')
+
+        assert status == 200
+        assert body['scores'] == {}, 'a refused value must not read back as a score'
+        assert body['aggregates'] == {}
+
+    def test_a_readable_legacy_score_still_reads_through(
+        self, api_gateway_event, lambda_context
+    ):
+        """The filter must not cost the pre-ballot values this route exists to
+        preserve, including a partial one, whose axes are absent rather than
+        unreadable."""
+        table = self._with_legacy({
+            'doc-1': {'impact': 4, 'time_to_market': 2,
+                      'confidence': 3, 'strategic_fit': 1},
+            'doc-2': {'impact': 2},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['scores']['doc-1']['impact'] == 4
+        assert body['scores']['doc-2']['impact'] == 2
+        assert set(body['aggregates']) == {'doc-1', 'doc-2'}
+
+    def test_a_legacy_entry_carrying_only_a_note_still_reads_through(
+        self, api_gateway_event, lambda_context
+    ):
+        """The read-through's question is WIDER than the aggregate's. A note is
+        something a reviewer wrote, so dropping it would lose it from the page — but
+        it is not a score, so it must still not count as a reviewer. This is the one
+        case where the two halves legitimately differ, and the reason the filter is
+        `_expresses_something` rather than `_is_a_vote`."""
+        table = self._with_legacy({'doc-1': {'notes': 'from before the sliders'}})
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['scores']['doc-1']['notes'] == 'from before the sliders'
+        assert body['scores']['doc-1']['impact'] == 0.0
+        assert body['aggregates'] == {}
+
+    def test_an_unreadable_legacy_entry_still_migrates_on_write(
+        self, api_gateway_event, lambda_context
+    ):
+        """Not reading it through must not strand it: the first save against the
+        document still removes it, so it cannot resurface later."""
+        table = self._with_legacy({'doc-1': 'garbage'})
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': AXES}, subject='alice')
+
+        assert status == 200
+        assert 'doc-1' not in table.items[(PARTITION, LEGACY_SK)]['scores']
+
+    def test_the_callers_own_ballot_is_unaffected_by_a_sibling_unreadable_entry(
+        self, api_gateway_event, lambda_context
+    ):
+        table = self._with_legacy({'doc-1': 'garbage', 'doc-2': {'impact': 3}})
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-3': AXES}, subject='alice')
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert set(body['scores']) == {'doc-2', 'doc-3'}
 
 
 class TestAggregateArithmetic:

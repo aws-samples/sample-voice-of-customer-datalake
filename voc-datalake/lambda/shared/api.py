@@ -80,11 +80,38 @@ def validate_int(
     min_val: int = 1,
     max_val: int = 100
 ) -> int:
-    """Generic integer validation with bounds."""
+    """Generic integer validation with bounds.
+
+    Returns ``default`` for ``None`` and for anything ``int()`` cannot read, and
+    otherwise clamps into ``[min_val, max_val]``. So the contract is "always a
+    bounded int, never a raise", which is what every caller relies on.
+
+    ``OverflowError`` is caught alongside ``ValueError``/``TypeError`` because
+    ``int(float('inf'))`` raises it, and a non-finite float is reachable wherever a
+    request body is parsed: ``json.loads`` is non-strict by default and accepts the
+    ``Infinity``/``-Infinity``/``NaN`` literals. Without it the fallback simply did
+    not happen for that one input — the exception propagated out of a validator
+    documented never to raise, which in a multi-write handler surfaced as a 500
+    part way through the work.
+
+    Two things a caller must know, because this cannot decide them here:
+
+    * A ``bool`` is COERCED, not refused: ``isinstance(True, int)`` is true and
+      ``int(True)`` is ``1``. Harmless where the result is a page size, wrong where
+      it is a value a human is said to have chosen — a flag is not a slider
+      position. A caller in the second case must refuse ``bool`` itself, before
+      calling this (``validate_bool`` makes the mirror argument, and
+      ``projects_handler``'s ``_is_clampable_number`` is such a check).
+    * ``default`` is returned for input this could not read, so it is not merely a
+      value for "absent" — it is also the value for "unreadable". Where the two
+      must be distinguishable, or where the default would read as a deliberate
+      choice, check the value before calling rather than reading meaning into what
+      comes back.
+    """
     try:
         val = int(value) if value is not None else default
         return max(min_val, min(val, max_val))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
 
 

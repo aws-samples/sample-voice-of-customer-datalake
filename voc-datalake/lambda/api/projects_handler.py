@@ -4,6 +4,7 @@ Separate Lambda to handle projects endpoints and avoid policy size limits.
 """
 
 import json
+import math
 import os
 import secrets
 from datetime import datetime, timezone
@@ -599,31 +600,135 @@ def _validated_ballot_document_id(raw: Any) -> str:
     return document_id
 
 
+def _is_clampable_number(value: Any) -> bool:
+    """Whether an axis value is a number this route may clamp into 0-5.
+
+    CLAMP A NUMBER, REFUSE A NON-NUMBER. The clamp is justified because the value
+    is bounded either way — `99`, `-4`, `'3'` and `2.7` all plainly mean a number
+    the slider range can hold. `'high'` does not: there is no value to bound, so
+    the 0 that `validate_int`'s fallback produces is INVENTED, and once stored it
+    is indistinguishable from a deliberate lowest score. That is the same "an
+    all-zero ballot inflates `reviewer_count` and drags every mean down" defect
+    `_validated_ballot_entry` refuses a non-dict entry to prevent, one level
+    further in — and worse, because four unparseable axes also satisfy
+    `_is_fully_scored` and so corrupt `score_spread` too.
+
+    Three traps, each of which lets a non-number through a numeric check written
+    the obvious way:
+
+    * `bool` is a subclass of `int`, so `isinstance(True, int)` is true and
+      `int(True)` is `1`. A flag is not a slider position: `true` would store a 1
+      nobody chose, and `false` an invented 0 that reaches the aggregate as a
+      deliberate lowest vote. Refused explicitly, ahead of any coercion — the
+      mirror of the argument `validate_bool` in shared/api.py makes.
+    * `int(float('inf'))` raises `OverflowError`, which is in NEITHER of the
+      exception types `validate_int` catches. Left to `validate_int` it therefore
+      does not fall back at all: it propagates out of the write loop and
+      half-persists a multi-document save behind a bare 500, defeating the whole
+      point of validating before the first write. `Infinity` is reachable over
+      the wire because Powertools parses the body with non-strict `json.loads`.
+    * `int(float('nan'))` raises `ValueError`, which IS swallowed, so a `NaN`
+      would silently store the invented 0.
+
+    So the coercion attempt catches `OverflowError` beside `ValueError` and
+    `TypeError`, and a non-finite float is refused outright.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, float) and not math.isfinite(value):
+        return False
+    try:
+        int(value)
+    except (ValueError, TypeError, OverflowError):
+        return False
+    return True
+
+
 def _validated_ballot_entry(entry: Any) -> dict:
     """Check that a client-supplied score value can be a ballot.
 
-    REFUSED rather than coerced. `_axis_value` and `validate_int` between them
-    would turn `'nonsense'`, `null` or `[1, 2]` into a perfectly well-formed
-    all-zero ballot, indistinguishable from a deliberate all-zero vote — which
-    then inflates `reviewer_count` and drags every axis mean down in the
-    aggregate this change introduces. Clamping a number is safe because the value
-    is bounded either way; a value of the wrong TYPE means the caller expressed
-    something other than what would be inferred, so the honest answer is a 400
-    (the distinction `validate_bool` in shared/api.py documents).
+    REFUSED rather than coerced, at every level the entry has. `_axis_value` and
+    `validate_int` between them would turn `'nonsense'`, `null` or `[1, 2]` into a
+    perfectly well-formed all-zero ballot, indistinguishable from a deliberate
+    all-zero vote — which then inflates `reviewer_count` and drags every axis mean
+    down in the aggregate this change introduces. Clamping a number is safe
+    because the value is bounded either way; a value of the wrong TYPE means the
+    caller expressed something other than what would be inferred, so the honest
+    answer is a 400 (the distinction `validate_bool` in shared/api.py documents).
+
+    The same argument applies to the FIELDS of an accepted entry, and refusing
+    them here rather than at the write is what makes the up-front pass's promise
+    ("nothing malformed can leave a multi-document save half-persisted") true:
+
+    * An axis must be null (absent, left alone) or a number `_is_clampable_number`
+      will accept. An unparseable axis stored as a real 0 both invents a vote and
+      DESTROYS the sender's own stored score, while answering 200.
+    * `notes` must be null (absent, left alone) or a string. Coercing a non-string
+      to `''` overwrote a note the reviewer had already saved — silent loss of a
+      durable decision record on a success response.
+
+    Neither message echoes the value: it is unbounded caller input a response body
+    gains nothing by repeating (the reasoning `_validated_ballot_document_id` and
+    `validate_bool` both record).
     """
     if not isinstance(entry, dict):
         raise ValidationError(
             f'scores values must be objects, got {type(entry).__name__}'
         )
+    for axis in SCORE_AXES:
+        value = entry.get(axis)
+        if value is None:
+            continue
+        if not _is_clampable_number(value):
+            raise ValidationError(
+                f'{axis} must be a number between {MIN_AXIS_VALUE} and '
+                f'{MAX_AXIS_VALUE}, or null to leave it unchanged'
+            )
+    notes = entry.get('notes')
+    if notes is not None and not isinstance(notes, str):
+        raise ValidationError('notes must be a string, or null to leave it unchanged')
     return entry
+
+
+def _readable_axis(entry: Any, axis: str) -> float | None:
+    """The number an entry expressed for one axis, or None if it expressed none.
+
+    THE one place that decides whether a stored value is a score, so that
+    "what is this axis worth?" and "did anybody score this axis?" cannot answer
+    from different rules. `_axis_value` and `_carries_axis` are both built on it,
+    which is what keeps the read (`scores`) and the aggregate agreeing about the
+    same stored value rather than agreeing by coincidence.
+
+    None means NOTHING WAS EXPRESSED, which covers four cases: a non-dict entry, an
+    absent or null axis, a value no number can be read out of (`'high'`, `[1, 2]`,
+    `NaN`, `Infinity`), and a bool — `float(True)` is `1.0`, but a flag is not a
+    slider position, the same reading `_is_clampable_number` enforces on the way
+    in. Everything the write path stores is an int, and DynamoDB hands numbers back
+    as Decimal, both of which read cleanly.
+
+    Unreadable is silence rather than zero on purpose. The write path refuses these
+    values now, but the legacy map predates that check and was written by a handler
+    with no type discipline; reading one as a 0 would put an invented lowest score
+    in a field named for what a reviewer entered, and make it indistinguishable
+    from the deliberate 0 that `_carries_axis` exists to keep distinguishable.
+    """
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get(axis)
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _axis_value(entry: Any, axis: str) -> float:
     """Read one axis out of a stored ballot or a legacy score map entry.
 
-    Values come back from DynamoDB as Decimal and may be absent (a legacy entry
-    written before an axis existed), so this normalises to float and treats
-    anything unreadable as 0.0.
+    Values come back from DynamoDB as Decimal and may be absent, so this
+    normalises to float and reads anything the entry did not express as 0.0.
 
     0.0 here means ABSENT, and it matches the frontend's `DEFAULT_SCORE` for
     `impact`, `confidence` and `strategic_fit` — but NOT for `time_to_market`,
@@ -631,37 +736,39 @@ def _axis_value(entry: Any, axis: str) -> float:
     (`time_to_market !== 3`). So a stored ballot missing `time_to_market` reads
     back as a deliberate lowest-possible score rather than "not set".
 
-    An axis is absent whenever the caller has never sent it, which happens two
-    ways: a legacy entry predating the axis, AND — because the save only writes
-    the axes it was given — any ballot whose first-ever save was partial. A
-    reviewer who saves only `notes`, or only `impact`, therefore reads back
-    `time_to_market: 0.0`, which the page renders as the lowest possible
-    time-to-market and `PRFAQRow` treats as touched. Pinned by
+    An axis is absent whenever the caller has never sent it (see `_readable_axis`
+    for the exhaustive list), which happens three ways: a legacy entry predating
+    the axis; any ballot whose first-ever save was partial, because the save only
+    writes the axes it was given; and a legacy value no number can be read out of,
+    which predates the validation that now refuses one. A reviewer who saves only
+    `notes`, or only `impact`, therefore reads back `time_to_market: 0.0`, which
+    the page renders as the lowest possible time-to-market and `PRFAQRow` treats as
+    touched. Pinned by
     `test_a_notes_only_first_save_reads_back_a_zero_time_to_market`.
 
     Not corrected on the read: seeding an absent axis from the frontend's default
     would put a number nobody entered into a field named for what a reviewer
     scored, and the aggregate would then have no way to tell it from a vote. The
     aggregate instead asks `_carries_axis` and skips what was never scored, which
-    is the same distinction made where it can be made honestly.
+    is the same distinction made where it can be made honestly. For the same
+    reason a legacy entry that expressed no score at all is not read through into
+    `scores` (see `api_get_prioritization_scores`) rather than shown as four zeros.
     """
-    if not isinstance(entry, dict):
-        return 0.0
-    try:
-        return float(entry.get(axis) or 0)
-    except (TypeError, ValueError):
-        return 0.0
+    value = _readable_axis(entry, axis)
+    return value if value is not None else 0.0
 
 
 def _carries_axis(entry: Any, axis: str) -> bool:
-    """Whether an entry expressed a value for one axis at all.
+    """Whether an entry expressed a score for one axis at all.
 
     Distinct from `_axis_value(entry, axis) == 0`, which cannot tell a deliberate
-    zero from silence — the distinction the aggregate depends on. `None` counts as
+    zero from silence — the distinction the aggregate depends on. Null counts as
     absent, matching the save path (which skips a null axis rather than clamping
-    it) and the legacy map (whose entries predate axes that did not exist yet).
+    it) and the legacy map (whose entries predate axes that did not exist yet); so
+    does a value that is not a readable number, because 0 is then invented rather
+    than expressed (see `_readable_axis`).
     """
-    return isinstance(entry, dict) and entry.get(axis) is not None
+    return _readable_axis(entry, axis) is not None
 
 
 def _is_a_vote(entry: Any) -> bool:
@@ -689,6 +796,26 @@ def _is_fully_scored(entry: Any) -> bool:
     spread of 2.4 out of 5.0 before this existed.
     """
     return all(_carries_axis(entry, axis) for axis in SCORE_AXES)
+
+
+def _expresses_something(entry: Any) -> bool:
+    """Whether an entry expressed anything a reader should show back.
+
+    The read-through's question, and deliberately WIDER than `_is_a_vote`: a
+    pre-ballot entry carrying only a note expressed no score, so it is not a vote
+    and must not enter the aggregate, but the note is still something a reviewer
+    wrote and dropping it would lose it from the page. So this is "any axis, or a
+    note", where `_is_a_vote` is "any axis".
+
+    Both are defined in terms of `_carries_axis`, which is what stops the two
+    questions drifting: the same value that is silence to the aggregate is silence
+    here, and an unreadable entry — non-dict, or a dict whose axes read as nothing
+    — expresses nothing under either.
+    """
+    if _is_a_vote(entry):
+        return True
+    notes = entry.get('notes') if isinstance(entry, dict) else None
+    return isinstance(notes, str) and bool(notes.strip())
 
 
 def _composite(entry: Any) -> float:
@@ -944,8 +1071,25 @@ def api_get_prioritization_scores():
     }
     # Read-through: a document the caller has not scored, but which carries a
     # pre-ballot value, still shows that value rather than looking unscored.
+    #
+    # Only entries that EXPRESSED SOMETHING are read through. A value the write
+    # path would refuse is not read through as if a reviewer had entered it: every
+    # axis of an unreadable entry reads 0.0 out of `_axis_value`, so passing one to
+    # `_score_payload` showed the caller an invented lowest score on all four axes
+    # for a document `_aggregate_scores` correctly omits — the two halves
+    # disagreeing about the same value.
+    #
+    # `_expresses_something` rather than `isinstance(entry, dict)`, because a type
+    # filter closes only the non-dict shape: `{'impact': 'high'}` IS a dict and
+    # would still read through as a full zero row. Built from the same
+    # `_carries_axis` predicate the aggregate asks, so the two cannot drift and any
+    # later unreadable shape is closed at both ends at once.
+    #
+    # The legacy map predates this route's validation and was written by a handler
+    # with no type discipline, so neither shape is ruled out by construction, and
+    # nothing migrates one away until the first save against that document.
     for document_id, entry in legacy_scores.items():
-        if document_id not in scores:
+        if document_id not in scores and _expresses_something(entry):
             scores[document_id] = _score_payload(document_id, entry)
 
     return {
@@ -978,6 +1122,12 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
 
     Present axes still go through `validate_int`, so an out-of-range slider is
     clamped to 0-5 rather than failing a whole multi-document save over one axis.
+    Nothing here has to fall back, though: `_validated_ballot_entry` has already
+    refused any axis that is not a clampable number and any `notes` that is not a
+    string, so `validate_int`'s `default` is unreachable and a note is written
+    verbatim (truncated) rather than coerced. That ordering is deliberate — a
+    value refused up front cannot half-persist a multi-document save, and neither
+    an invented 0 nor an empty note can overwrite what a reviewer stored.
     """
     assignments = ['#document_id = :document_id', '#reviewer = :reviewer',
                    '#updated_at = :updated_at']
@@ -1004,11 +1154,14 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
             max_val=MAX_AXIS_VALUE,
         )
 
-    if entry.get('notes') is not None:
-        notes = entry.get('notes')
+    notes = entry.get('notes')
+    if notes is not None:
+        # A non-string was refused up front, so this is a string. Truncated, never
+        # coerced: writing `''` for a value that expressed no note destroyed text
+        # the reviewer had saved, and reported success for the loss.
         assignments.append('#notes = :notes')
         names['#notes'] = 'notes'
-        values[':notes'] = notes[:MAX_BALLOT_NOTE_LEN] if isinstance(notes, str) else ''
+        values[':notes'] = notes[:MAX_BALLOT_NOTE_LEN]
 
     return {
         'Key': {'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(document_id, subject)},
@@ -1055,6 +1208,25 @@ def api_patch_prioritization_scores():
     leaves the reviewer's other axes untouched. No `ttl` attribute is ever
     written: the aggregates table expires anything carrying one, and a ballot is a
     durable decision record.
+
+    PARTIAL FAILURE, and why RETRYING IS SAFE. This is NOT all-or-nothing. Nothing
+    malformed can half-apply — every key and every value is refused before the
+    first write — but the documents are written sequentially, so a throttle or a
+    timeout on document 3 of 10 leaves the first two durably persisted and answers
+    a bare 500 that does not say so. Retrying the identical body is nonetheless
+    safe: every write is an idempotent `update_item` on a deterministic key derived
+    from the document id and the caller's own subject, so replaying converges on
+    the same ballots rather than duplicating or compounding anything. A client that
+    sees a 500 should re-send the whole body, not try to work out what landed.
+
+    `updated_count` is returned only on success, where it is the number of ballots
+    written and equals the number of documents in the body. On failure the same
+    count goes to the log and NOT to the response — deliberately, because a partial
+    count invites exactly the reasoning the idempotence makes unnecessary (working
+    out which documents to re-send) while being unreliable for it: the failing
+    write may or may not have landed server-side, and the legacy migration for an
+    already-counted document may still be outstanding. One number the client can
+    act on ("retry the body") is better than a number it would have to interpret.
     """
     subject = _caller_reviewer_subject()
     body = app.current_event.json_body or {}
