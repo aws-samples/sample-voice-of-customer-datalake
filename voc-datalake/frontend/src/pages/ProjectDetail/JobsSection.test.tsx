@@ -198,4 +198,78 @@ describe('JobsSection resting state', () => {
     render(<JobsSection jobs={[createJob({ status: 'running', updated_at: oldTime })]} onDismiss={vi.fn()} />)
     expect(screen.getByText(/No updates for 10\+ minutes/)).toBeInTheDocument()
   })
+
+  /**
+   * Truncation reporting (issue #231).
+   *
+   * The backend caps how much feedback fits in one generation. It used to say so
+   * only in a CloudWatch log line, so a user reading personas built from a
+   * fraction of their filtered corpus had no way to know. These pin the notice
+   * to the metadata, so a backend field landing without its consumer — the way
+   * this one first did — fails here.
+   */
+  describe('truncated-context notice', () => {
+    const truncatedPersonaJob = (metadata: Record<string, unknown>) => createJob({
+      job_type: 'generate_personas',
+      status: 'completed',
+      result: { metadata },
+    })
+
+    it('reports how many feedback items the result was actually based on', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[truncatedPersonaJob({
+            context_truncated: true, feedback_items_used: 145, feedback_count: 300,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      expect(screen.getByText(/Based on 145 of 300 feedback items/)).toBeInTheDocument()
+    })
+
+    it('stays silent when the whole corpus reached the model', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[truncatedPersonaJob({
+            context_truncated: false, feedback_items_used: 60, feedback_count: 60,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // A notice on every job would train the user to ignore it.
+      expect(screen.queryByText(/did not fit in one generation/)).not.toBeInTheDocument()
+    })
+
+    it('stays silent for a job whose result carries no metadata', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[createJob({ status: 'completed', result: { document_id: 'doc-1' } })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      expect(screen.queryByText(/did not fit in one generation/)).not.toBeInTheDocument()
+    })
+
+    it('still warns when the counts are missing but truncation is flagged', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[truncatedPersonaJob({ context_truncated: true })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // Losing the counts must not lose the warning: "some feedback was
+      // dropped" is still the thing the user needs to know.
+      expect(
+        screen.getByText(/Some feedback did not fit in one generation/),
+      ).toBeInTheDocument()
+    })
+  })
 })

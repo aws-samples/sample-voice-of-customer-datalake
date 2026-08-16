@@ -167,6 +167,10 @@
       "pending": "대기 중",
       "running": "실행 중"
     },
+    "truncated": {
+      "counted": "피드백 {{total}}건 중 {{used}}건을 기반으로 합니다. 나머지는 한 번의 생성에 포함되지 않았습니다.",
+      "generic": "일부 피드백이 한 번의 생성에 포함되지 못해 사용되지 않았습니다."
+    },
     "types": {
       "buildPrototype": "프로토타입 빌드",
       "default": "Job",

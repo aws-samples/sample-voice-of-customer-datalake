@@ -167,6 +167,10 @@
       "pending": "等待中",
       "running": "运行中"
     },
+    "truncated": {
+      "counted": "基于 {{total}} 条反馈中的 {{used}} 条，其余内容无法在单次生成中容纳。",
+      "generic": "部分反馈无法在单次生成中容纳，未被使用。"
+    },
     "types": {
       "buildPrototype": "原型构建",
       "default": "任务",

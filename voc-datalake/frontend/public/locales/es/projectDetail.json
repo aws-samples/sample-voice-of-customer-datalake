@@ -169,6 +169,10 @@
       "pending": "pendiente",
       "running": "en ejecución"
     },
+    "truncated": {
+      "counted": "Basado en {{used}} de {{total}} comentarios: el resto no cupo en una sola generación.",
+      "generic": "Algunos comentarios no cupieron en una sola generación y no se utilizaron."
+    },
     "types": {
       "buildPrototype": "Creación de prototipo",
       "default": "Job",

@@ -77,6 +77,34 @@ function getCompletedLabel(job: ProjectJob): string {
   return job.result?.title ?? job.result?.document_id ?? job.result?.persona_id ?? ''
 }
 
+/**
+ * Notice for a result the model could not see all the evidence for (issue #231).
+ *
+ * The backend caps how much feedback fits in one generation. When it does, the
+ * artifact is still produced but is grounded in fewer records than the filters
+ * matched — which used to be visible only in a CloudWatch log line, so nobody
+ * reading the personas knew. Shown next to the completed job because that is
+ * where the user learns the result exists.
+ */
+function TruncationNotice({ job }: { readonly job: ProjectJob }) {
+  const { t } = useTranslation('projectDetail')
+  const meta = job.result?.metadata
+  if (meta?.context_truncated !== true) return null
+
+  const used = meta.feedback_items_used
+  const total = meta.feedback_count
+  if (used == null || total == null) {
+    return (
+      <p className="text-xs text-amber-600 mt-1">{t('jobs.truncated.generic')}</p>
+    )
+  }
+  return (
+    <p className="text-xs text-amber-600 mt-1">
+      {t('jobs.truncated.counted', { used, total })}
+    </p>
+  )
+}
+
 function JobStatusMessage({
   job, isStale, showProgress,
 }: {
@@ -95,17 +123,23 @@ function JobStatusMessage({
   if (showProgress) {
     return <JobProgressBar job={job} />
   }
-  if (hasCompletedResult(job)) {
-    return (
-      <p className="text-xs text-gray-500 mt-1">
-        {t('jobs.created')} {getCompletedLabel(job)}
-      </p>
-    )
-  }
   if (job.status === 'failed' && job.error != null && job.error !== '') {
     return <p className="text-xs text-red-600 mt-1 truncate">{job.error}</p>
   }
-  return null
+  // The truncation notice is rendered for any completed job that reports it,
+  // not only those with a named artifact: persona generation returns its
+  // personas as a list rather than a single persona_id, so gating on
+  // hasCompletedResult would hide the notice on the very surface it is for.
+  return (
+    <>
+      {hasCompletedResult(job) && (
+        <p className="text-xs text-gray-500 mt-1">
+          {t('jobs.created')} {getCompletedLabel(job)}
+        </p>
+      )}
+      <TruncationNotice job={job} />
+    </>
+  )
 }
 
 function JobItemContent({

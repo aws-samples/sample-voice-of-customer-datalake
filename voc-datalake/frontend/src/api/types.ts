@@ -225,6 +225,20 @@ export interface ProjectJob {
     persona_id?: string
     title?: string
     personas?: ProjectPersona[]
+    /**
+     * How the generation was grounded (issue #231).
+     *
+     * `feedback_items_used` is the number of feedback records that actually
+     * reached the model, which is smaller than `feedback_count` (the number
+     * read from the data lake) whenever `context_truncated` is true. Reporting
+     * only the count read would overstate the evidence behind the result
+     * exactly when the corpus was too large to fit.
+     */
+    metadata?: {
+      feedback_count?: number
+      feedback_items_used?: number
+      context_truncated?: boolean
+    }
   }
 }
 

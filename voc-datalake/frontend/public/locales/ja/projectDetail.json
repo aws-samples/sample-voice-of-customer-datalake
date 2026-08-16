@@ -167,6 +167,10 @@
       "pending": "保留中",
       "running": "実行中"
     },
+    "truncated": {
+      "counted": "{{total}} 件中 {{used}} 件のフィードバックに基づいています。残りは 1 回の生成に収まりませんでした。",
+      "generic": "一部のフィードバックは 1 回の生成に収まらず、使用されませんでした。"
+    },
     "types": {
       "buildPrototype": "プロトタイプ作成",
       "default": "Job",

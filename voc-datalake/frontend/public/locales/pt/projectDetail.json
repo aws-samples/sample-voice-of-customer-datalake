@@ -169,6 +169,10 @@
       "pending": "pendente",
       "running": "em execução"
     },
+    "truncated": {
+      "counted": "Baseado em {{used}} de {{total}} itens de feedback — o restante não caberia em uma geração.",
+      "generic": "Parte do feedback não caberia em uma geração e não foi utilizada."
+    },
     "types": {
       "buildPrototype": "Criação de protótipo",
       "default": "Job",
