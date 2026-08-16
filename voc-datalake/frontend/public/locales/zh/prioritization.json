@@ -30,6 +30,10 @@
     "title": "优先级排序框架"
   },
   "loading": "加载文档中...",
+  "noteTooLong": {
+    "description": "备注最多 {{max}} 个字符，超出长度的备注会被拒绝，而不会被截断。请缩短所编辑行的备注，然后重新保存。目前尚未保存任何内容。",
+    "title": "备注过长，无法保存"
+  },
   "notes": {
     "label": "备注",
     "placeholder": "添加关于此优先级排序决策的备注..."
@@ -61,6 +65,10 @@
     "timeToMarket": "上市时间",
     "timeToMarketDescription": "能多快交付？",
     "title": "优先级排序评分"
+  },
+  "scoresUnavailable": {
+    "description": "当前无法获取已保存的评分，因此下方显示的是默认值，而非任何人输入的数值。请在保存前重新加载页面。",
+    "title": "无法加载评分"
   },
   "sort": {
     "date": "日期",

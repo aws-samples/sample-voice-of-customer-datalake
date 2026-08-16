@@ -24,7 +24,7 @@
  * assistive tech because both the code and its test agreed on a missing key.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import OverviewTab from './OverviewTab'
 import type { Project, ProjectDocument } from '../../api/types'
@@ -95,16 +95,28 @@ function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: 
 
 /** The build trigger, not the modal's confirm button. */
 function buildButton() {
-  return screen.getByRole('button', { name: /build prototype/i })
+  return screen.getByRole('button', { name: /configure & build prototype/i })
 }
 
 /**
- * The modal's confirm action, queried rather than got: the tests below assert on
- * its ABSENCE, which is the load-bearing half of a dialog that must not be
- * clickable once its question no longer applies.
+ * The wizard's submit, queried rather than got, so its ABSENCE can be asserted
+ * before the panel is opened.
  */
 function confirmButton() {
-  return screen.queryByRole('button', { name: /build anyway/i })
+  return screen.queryByRole('button', { name: /^build prototype$/i })
+}
+
+/**
+ * Open the wizard and start the build — two clicks, because the card's button no
+ * longer spends money.
+ *
+ * Every test that wants a build to actually run goes through here, so the two-step
+ * shape is stated once. A test that only wants the panel open uses `buildButton()`
+ * alone, and one that asserts nothing was spent asserts it after that first click.
+ */
+async function startBuildVia(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(buildButton())
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^build prototype$/i }))
 }
 
 describe('prototype card confirm gate (U12)', () => {
@@ -139,7 +151,7 @@ describe('prototype card confirm gate (U12)', () => {
     renderCard({ hasPrd: true, hasPrfaq: false })
     await user.click(buildButton())
 
-    await user.click(screen.getByRole('button', { name: /build anyway/i }))
+    await user.click(screen.getByRole('button', { name: /^build prototype$/i }))
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(mockBuildPrototype).toHaveBeenCalledWith('proj_1', expect.anything())
@@ -156,15 +168,28 @@ describe('prototype card confirm gate (U12)', () => {
     expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
   })
 
-  it('builds immediately without a confirmation when both documents exist', async () => {
+  // This replaces "builds immediately without a confirmation when both documents
+  // exist". That one-click path was traded away deliberately when the build moved
+  // into a wizard: it is what made the card unpredictable, since a project with two
+  // PRDs opened a dialog and this one did not. The successor property is that the
+  // panel opens with NO warning and still spends nothing until its own button.
+  it('opens the wizard with no warning, and spends nothing, when both documents exist', async () => {
     const user = userEvent.setup()
     renderCard({ hasPrd: true, hasPrfaq: true })
 
     await user.click(buildButton())
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
+    // Nothing to caution about on this project, so no caution is shown — an
+    // always-rendered warning block would be an empty amber panel here.
     expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/No PRD yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/already has a prototype/i)).not.toBeInTheDocument()
+
+    // ...and it builds once asked.
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^build prototype$/i }))
+    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
   })
 
   it('does not build when neither document exists', async () => {
@@ -198,7 +223,7 @@ describe('prototype card confirm gate (U12)', () => {
     }))
     renderCard({ hasPrd: true, hasPrfaq: true })
 
-    await user.click(buildButton())
+    await startBuildVia(user)
 
     // The label becomes "Building…" while in flight, so the trigger has to be found
     // by that name — the disabled state is real, and the point is what it *says*.
@@ -239,7 +264,7 @@ describe('prototype card rebuild guard', () => {
     renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
     await user.click(buildButton())
 
-    await user.click(screen.getByRole('button', { name: /build anyway/i }))
+    await user.click(screen.getByRole('button', { name: /^build prototype$/i }))
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
   })
@@ -273,34 +298,59 @@ describe('prototype card rebuild guard', () => {
     expect(screen.getByText('Prototypes built: 1')).toBeInTheDocument()
   })
 
-  it('closes the confirm rather than emptying it when the reason to ask disappears', async () => {
-    // The confirm reason is derived from live data, and this page refetches
-    // documents whenever a job completes. So a PR-FAQ generation finishing while
-    // the single-document dialog is open removes the thing being confirmed — and
-    // gating the dialog on its own open flag alone left it up with no message.
+  // The three tests that used to live here pinned the #294/#296 behaviour: a confirm
+  // dialog CLOSED itself when the reason it was raised for went stale. That is
+  // deliberately inverted now — the panel holds the user's selections, and closing on
+  // a data change would discard them in response to something the user did not do.
+  //
+  // The danger those tests guarded against has not gone away, it changed shape, so
+  // the replacements below assert the new form rather than delete the concern:
+  // the panel stays open, the caution FOLLOWS the documents, and nothing is spent
+  // until the user presses the wizard's own button.
+  it('keeps the panel open and clears the caution when the reason for it disappears', async () => {
     const user = userEvent.setup()
     const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
 
     await user.click(buildButton())
     expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
 
+    // A PR-FAQ generation completes and the page refetches documents.
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1')]))
 
-    // The role, the question and the action, so this cannot go vacuous if the
-    // shell's ARIA role ever changes: the bug being pinned was a dialog that was
-    // still THERE and still clickable, just with nothing written in it.
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
-    expect(confirmButton()).not.toBeInTheDocument()
     expect(mockBuildPrototype).not.toHaveBeenCalled()
   })
 
-  it('closes the confirm rather than swapping its question for a costlier one', async () => {
-    // Same refetch, a different outcome: a prototype arriving while the
-    // single-document confirm is open changes what "Build anyway" MEANS — from
-    // "build from the PRD alone" to "build a second prototype and keep the first".
-    // Rewriting the message under an open dialog would have the button answer a
-    // question the user never read, so the dialog closes and the next click asks.
+  it('announces the escalated caution, not only renders it', async () => {
+    // The caution can appear or change while the panel is open, so a sighted user
+    // sees the amber block move and a screen-reader user must be told. Asserted on
+    // the live region CONTAINING the new text, because a region that is only mounted
+    // once there is something to say cannot announce its own arrival.
+    const user = userEvent.setup()
+    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+    const region = within(screen.getByRole('dialog')).getByRole('status')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).toBeEmptyDOMElement()
+
+    rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1'), doc('prototype', 'proto_1')]))
+
+    expect(within(screen.getByRole('dialog')).getByRole('status'))
+      .toHaveTextContent(/already has a prototype/i)
+  })
+
+  it('escalates the caution to the rebuild warning when a prototype arrives mid-interaction', async () => {
+    // The residual risk of a live-derived caution, asserted rather than assumed. A
+    // prototype arriving while the panel is open changes what pressing Build COSTS:
+    // from "build from the PRD alone" to "build a second one and keep the first".
+    //
+    // Materially weaker than the #296 defect it replaces — there the dialog was
+    // already open with a stale message and one click from spending, whereas here
+    // the caution is rendered into the panel the user is looking at and they must
+    // still press Build. What must not happen is the panel showing the OLD caution,
+    // or none, while the cost has changed.
     const user = userEvent.setup()
     const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
 
@@ -309,32 +359,26 @@ describe('prototype card rebuild guard', () => {
 
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prototype', 'proto_1')]))
 
-    expect(screen.queryByText(/already has a prototype/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/already has a prototype/i)).toBeInTheDocument()
     expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
     expect(mockBuildPrototype).not.toHaveBeenCalled()
   })
 
-  it('does not re-open the confirm when a later reason to ask arrives', async () => {
-    // An open flag outlives the question it was raised for: once the reason
-    // disappeared the flag stayed set, so the NEXT reason to ask put a modal back
-    // on screen that the user never asked for — one reflexive click from a
-    // multi-minute billable build. Tracking which question was asked is what makes
-    // this unreachable.
-    const user = userEvent.setup()
+  it('never opens the panel on its own, whatever the documents do', async () => {
+    // The half of the old open-flag bug that still applies: a panel appearing
+    // unasked is one reflexive click from a multi-minute billable build. With
+    // visibility owned rather than derived, no document change can produce it.
     const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
 
-    await user.click(buildButton())
-    expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    // The reason to ask disappears: the PR-FAQ generation completes.
+    // A PR-FAQ appears, then a prototype — each of which used to be "a reason to ask".
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1')]))
-    expect(confirmButton()).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    // A later job produces a prototype, which is a new reason to ask.
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1'), doc('prototype', 'proto_1')]))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.queryByText(/already has a prototype/i)).not.toBeInTheDocument()
     expect(confirmButton()).not.toBeInTheDocument()
     expect(mockBuildPrototype).not.toHaveBeenCalled()
   })
@@ -350,7 +394,7 @@ describe('prototype card handover to the jobs panel (U9)', () => {
     const user = userEvent.setup()
     renderCard({ hasPrd: true, hasPrfaq: true })
 
-    await user.click(buildButton())
+    await startBuildVia(user)
 
     await waitFor(() => expect(mockJobStarted).toHaveBeenCalledTimes(1))
   })
@@ -360,7 +404,7 @@ describe('prototype card handover to the jobs panel (U9)', () => {
     mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))
     renderCard({ hasPrd: true, hasPrfaq: true })
 
-    await user.click(buildButton())
+    await startBuildVia(user)
 
     await waitFor(() => expect(screen.getByText(/Bedrock unavailable/)).toBeInTheDocument())
     expect(mockJobStarted).not.toHaveBeenCalled()
@@ -371,7 +415,7 @@ describe('prototype card handover to the jobs panel (U9)', () => {
     mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))
     renderCard({ hasPrd: true, hasPrfaq: true })
 
-    await user.click(buildButton())
+    await startBuildVia(user)
 
     // A build that failed to start has not started. The card has one status line,
     // so an error that lost to the acknowledgement would be invisible.
@@ -389,8 +433,16 @@ describe('prototype card handover to the jobs panel (U9)', () => {
     }))
     renderCard({ hasPrd: true, hasPrfaq: true })
 
-    await user.click(buildButton())
+    await startBuildVia(user)
     expect(await screen.findByText(/building…/i)).toBeInTheDocument()
+    // On the FULL accessible name, not a substring: `ActionCard` concatenates the
+    // "Configure & " prefix with this label, and the busy label is a sentence rather
+    // than a verb, so an unconditional prefix reads "Configure & Building…". A
+    // substring match on /building…/i passes either way, which is exactly why the
+    // regression needs the whole name.
+    // Anchored, so a surviving prefix ("Configure & Building…") fails this. Verified
+    // by mutation: restoring the unconditional prefix fails exactly this assertion.
+    expect(screen.getByRole('button', { name: /^building…$/i })).toBeInTheDocument()
 
     releaseRequest()
 
@@ -402,7 +454,7 @@ describe('prototype card handover to the jobs panel (U9)', () => {
     const user = userEvent.setup()
     renderCard({ hasPrd: true, hasPrfaq: true })
 
-    await user.click(buildButton())
+    await startBuildVia(user)
 
     expect(await screen.findByText(/track it in background jobs/i)).toBeInTheDocument()
   })

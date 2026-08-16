@@ -30,6 +30,10 @@
     "title": "Priorisierungsrahmen"
   },
   "loading": "Dokumente werden geladen...",
+  "noteTooLong": {
+    "description": "Notizen sind auf {{max}} Zeichen begrenzt, und eine längere Notiz wird nicht gekürzt, sondern abgelehnt. Kürzen Sie die Notiz in der bearbeiteten Zeile und speichern Sie dann erneut. Es wurde noch nichts gespeichert.",
+    "title": "Notiz ist zu lang zum Speichern"
+  },
   "notes": {
     "label": "Notizen",
     "placeholder": "Notizen zu dieser Priorisierungsentscheidung hinzufügen..."
@@ -61,6 +65,10 @@
     "timeToMarket": "Markteinführungszeit",
     "timeToMarketDescription": "Wie schnell kann dies geliefert werden?",
     "title": "Priorisierungsbewertungen"
+  },
+  "scoresUnavailable": {
+    "description": "Ihre gespeicherten Bewertungen sind derzeit nicht verfügbar. Die unten angezeigten Zahlen sind daher Standardwerte und nicht die eingegebenen Werte. Laden Sie die Seite vor dem Speichern neu.",
+    "title": "Bewertungen konnten nicht geladen werden"
   },
   "sort": {
     "date": "Datum",

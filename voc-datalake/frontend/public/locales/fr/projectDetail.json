@@ -29,6 +29,7 @@
     "mentionHint": "Tapez <at> pour les personas, <atAll> pour la table ronde, ou <hash> pour les documents",
     "projectAiChat": "Chat IA du projet",
     "roundtable": "🎙️ Table ronde : {{count}} personas",
+    "send": "Envoyer le message",
     "startConversation": "Démarrer une conversation",
     "stop": "Arrêter",
     "tryExample": "Essayez : « @all Que pensez-vous de notre flux d'intégration ? »",
@@ -71,7 +72,9 @@
         "reference": "Référence"
       },
       "selectedUsed": "{{used}} document(s) utilisé(s) sur {{selected}} sélectionné(s)",
-      "unavailable": "Plus disponible"
+      "unavailable": "Plus disponible",
+      "visualsUsed_one": "{{count}} maquette utilisée",
+      "visualsUsed_other": "{{count}} maquettes utilisées"
     },
     "editDocument": "Modifier le document",
     "newDocument": "Nouveau document",
@@ -106,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "Lancé — suivez la progression dans Tâches en arrière-plan.",
       "useProductContext": "Description du produit ou service",
-      "useResearch": "Rapports de recherche ({{total}})"
+      "useResearch": "Rapports de recherche ({{total}})",
+      "visuals": "Maquettes visuelles ({{total}})",
+      "visualsFailed": "{{total}} en échec — importez-les à nouveau pour les utiliser",
+      "visualsLimit": "Au maximum {{max}} maquettes par génération",
+      "visualsNotReady": "{{total}} en cours de traitement"
     },
     "revision": {
       "feedback": "Retour : {{feedback}}",
@@ -123,12 +130,21 @@
     "selectAtLeastOne": "Sélectionnez au moins un élément dans chaque section, sinon l’export inclurait tout.",
     "title": "Exporter"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
+    "unreadable": "Impossible de lire cette image : {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude extraira les informations de persona de votre {{type}} et créera un persona structuré avec un avatar généré par IA.",
     "aiPoweredImport": "Import alimenté par IA :",
     "cancel": "Annuler",
     "clickToChange": "Cliquez pour changer le fichier",
     "clickToUpload": "Cliquez pour télécharger ou glissez-déposez",
+    "errors": {
+      "onlyFirstImage": "Seule la première image a été utilisée.",
+      "unknownType": "type inconnu",
+      "unsupportedType": "Ce fichier n’est pas une image lisible ({{type}}). Formats acceptés : {{accepted}}"
+    },
     "image": "Illustration",
     "imageDesc": "Capture d'écran ou carte",
     "imageFormats": "Formats : PNG, JPG, GIF, WebP",
@@ -140,6 +156,7 @@
     "importTypeText": "texte",
     "pasteContent": "Coller le contenu de la persona",
     "pastePlaceholder": "Collez la description de votre persona, vos notes de recherche utilisateur, ou tout texte décrivant la persona...",
+    "pasteScreenshotHint": "Ou collez une capture d’écran depuis le presse-papiers",
     "pdf": "PDF",
     "pdfDesc": "Télécharger un document",
     "pdfOnly": "Fichiers PDF uniquement",
@@ -202,8 +219,8 @@
   },
   "mcp": {
     "activeTokens": "Tokens actifs ({{count}})",
-    "activeTokens_one": "Tokens actifs ({{count}})",
     "activeTokens_many": "Tokens actifs ({{count}})",
+    "activeTokens_one": "Tokens actifs ({{count}})",
     "activeTokens_other": "Tokens actifs ({{count}})",
     "cancel": "Annuler",
     "collapseLabel": "Réduire",
@@ -334,8 +351,8 @@
     "noNotesYet": "Aucune note pour le moment",
     "noPersonasYet": "Aucun persona pour le moment",
     "notePlaceholder": "Tapez votre observation ou insight de recherche...",
-    "notesCount_one": "{{count}} remarque",
     "notesCount_many": "{{count}} notes",
+    "notesCount_one": "{{count}} remarque",
     "notesCount_other": "{{count}} remarques",
     "notesTip": "💡 Conseil : Ajoutez des observations provenant d'entretiens utilisateurs, tests d'utilisabilité ou analyses de données qui se rapportent à ce persona.",
     "pressEnter": "Appuyez sur Entrée ↵",
@@ -413,20 +430,22 @@
     "subtitle": "Les informations saisies ici sont automatiquement injectées dans la génération de PRD et de PR/FAQ comme contexte produit actuel.",
     "title": "Description du produit/service",
     "upload": {
+      "accepted": "PNG, JPEG, GIF, WebP jusqu’à 3,5 Mo · MD, TXT jusqu’à 10 Mo",
       "delete": "Supprimer le document",
-      "dropZone": "Déposez des fichiers ici ou cliquez pour envoyer",
+      "dropZone": "Déposez des fichiers ici, collez une capture ou cliquez pour envoyer",
       "empty": "Aucun document pour le moment.",
       "errors": {
         "tooLarge": "Trop volumineux (>10 Mo) : {{name}}",
-        "unsupportedType": "Type non pris en charge : {{name}} ({{type}})",
+        "unsupportedType": "Type non pris en charge : {{name}} ({{type}}). Formats acceptés : {{accepted}}",
         "uploadFailed": "{{name}} : échec de l’envoi — {{message}}"
       },
-      "extractedChars_one": "{{count}} caractère extrait",
       "extractedChars_many": "{{count}} caractères extraits",
+      "extractedChars_one": "{{count}} caractère extrait",
       "extractedChars_other": "{{count}} caractères extraits",
       "heading": "Documents internes",
-      "hint": "PDF, DOCX, MD, TXT — jusqu’à 10 Mo chacun, 20 max",
+      "hint": "Images et texte — 20 max",
       "loading": "Chargement…",
+      "notYet": "Les fichiers PDF et Word (.docx) ne sont pas encore pris en charge.",
       "statusExtracting": "Extraction…",
       "statusFailed": "Échec",
       "statusReady": "Prêt",

@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  ArrowUpDown, FileText, Sparkles, Save, RotateCcw,
+  AlertTriangle, ArrowUpDown, FileText, Sparkles, Save, RotateCcw,
 } from 'lucide-react'
 import {
   useState, useMemo,
@@ -30,6 +30,7 @@ import {
 import PRFAQRow from './PRFAQRow'
 import {
   calculatePriorityScore, getScore, collectPRFAQs, comparePRFAQs, isScorable,
+  MAX_NOTE_LENGTH, overLongNoteDocuments,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection,
@@ -168,14 +169,30 @@ function PRFAQList({
 }
 
 function PrioritizationHeader({
-  hasChanges, isPending, onReset, onSave,
+  hasChanges, isPending, saveBlocked, onReset, onSave,
 }: {
   readonly hasChanges: boolean
   readonly isPending: boolean
+  /**
+   * True while a save cannot honestly be made, for either of two reasons, each
+   * with its own panel above the list saying which.
+   *
+   * The saved scores could not be READ: saving then writes the caller's edits
+   * against numbers nobody has seen, because the rows on screen are defaults
+   * rather than their ballot.
+   *
+   * Or a pending edit carries a note past `MAX_NOTE_LENGTH`: the API refuses it
+   * rather than truncating, and `fetchApi` discards the reason, so pressing Save
+   * would look like a button that does nothing.
+   *
+   * Disabled rather than left to look ordinary in both cases.
+   */
+  readonly saveBlocked: boolean
   readonly onReset: () => void
   readonly onSave: () => void
 }) {
   const { t } = useTranslation('prioritization')
+  const canSave = hasChanges && !saveBlocked && !isPending
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
@@ -186,7 +203,7 @@ function PrioritizationHeader({
         {hasChanges ? <button onClick={onReset} className="flex items-center gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">
           <RotateCcw size={16} /><span className="hidden sm:inline">{t('actions.reset')}</span>
         </button> : null}
-        <button onClick={onSave} disabled={!hasChanges || isPending} className={clsx('flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-sm', hasChanges ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed')}>
+        <button onClick={onSave} disabled={!canSave} className={clsx('flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-sm', canSave ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed')}>
           <Save size={16} />
           <span className="hidden sm:inline">{isPending ? t('actions.saving') : t('actions.save')}</span>
           <span className="sm:hidden">{isPending ? t('actions.savingMobile') : t('actions.saveMobile')}</span>
@@ -266,7 +283,15 @@ export default function Prioritization() {
     ALL_PROJECT_DETAILS_KEY,
   )
 
-  const { data: savedScores } = useQuery({
+  // `isError` is read, not just `data`. The endpoint now RAISES on a failed read
+  // instead of answering an empty map, precisely so that "the read failed" and
+  // "nobody has scored anything" stop looking identical — but consuming only
+  // `data` would undo that on screen: `savedScores` stays undefined, every row
+  // falls back to DEFAULT_SCORE, and the user sees an unscored backlog with no
+  // error. The server half of that invariant is worth nothing without this half.
+  const {
+    data: savedScores, isError: scoresFailed,
+  } = useQuery({
     queryKey: ['prioritization-scores'],
     queryFn: () => api.getPrioritizationScores(),
     enabled: config.apiEndpoint.length > 0,
@@ -319,6 +344,23 @@ export default function Prioritization() {
     [formsData, allPRFAQs, allProjectDetails, projects],
   )
 
+  // Which pending edits carry a note the API will refuse. The API refuses rather
+  // than truncating — the tail of a justification is content — and `fetchApi`
+  // discards the response body, so an unanticipated 400 would reach the user as a
+  // Save button that does nothing. The textarea's `maxLength` covers what a reviewer
+  // TYPES; this covers a note that was already over the bound in the pre-ballot
+  // data, which is sent along the moment they touch a slider on that row.
+  const overLongNotes = useMemo(() => overLongNoteDocuments(localEdits), [localEdits])
+
+  // Document titles, so the panel above can name the rows a reviewer has to fix
+  // rather than the ids, which mean nothing to them. Derived from the list already
+  // on screen, so a row that has since disappeared falls back to its id instead of
+  // rendering blank.
+  const titlesByDocument = useMemo(
+    () => Object.fromEntries(allPRFAQs.map((doc) => [doc.document_id, doc.title])),
+    [allPRFAQs],
+  )
+
   const saveMutation = useMutation({
     mutationFn: () => api.patchPrioritizationScores(localEdits),
     onSuccess: () => {
@@ -360,7 +402,56 @@ export default function Prioritization() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <PrioritizationHeader hasChanges={hasChanges} isPending={saveMutation.isPending} onReset={handleReset} onSave={() => saveMutation.mutate()} />
+      <PrioritizationHeader
+        hasChanges={hasChanges}
+        isPending={saveMutation.isPending}
+        saveBlocked={scoresFailed || overLongNotes.length > 0}
+        onReset={handleReset}
+        onSave={() => saveMutation.mutate()}
+      />
+
+      {/* Both panels can be on screen at once — a failed read does not stop a
+          pending edit from carrying a long note — so each carries its own
+          `aria-labelledby`. Two same-role regions with no accessible name are
+          indistinguishable to a screen reader AND to a test: `getByRole('alert')`
+          throws on the second one rather than reporting which state was missing. */}
+      {overLongNotes.length > 0 ? (
+        <div role="alert" aria-labelledby="note-too-long-title" className="bg-amber-50 border border-amber-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} />
+            <div>
+              <h3 id="note-too-long-title" className="font-medium text-amber-900 text-sm sm:text-base">{t('noteTooLong.title')}</h3>
+              <p className="text-xs sm:text-sm text-amber-700 mt-1">
+                {/* No `count` interpolation on purpose: a plural key needs
+                    `_one`/`_many`/`_other` forms that differ per locale, and a
+                    missing form renders the raw path. */}
+                {t('noteTooLong.description', { max: MAX_NOTE_LENGTH })}
+              </p>
+              {/* WHICH rows, by title. The ids the check returns are meaningless to
+                  a reviewer, and rows are collapsed by default, so without this the
+                  actionable half of the message is "expand every pending row and
+                  look". Titles are data, not UI copy, so this needs no new key. */}
+              <ul className="text-xs sm:text-sm text-amber-800 mt-2 list-disc list-inside">
+                {overLongNotes.map((documentId) => (
+                  <li key={documentId}>{titlesByDocument[documentId] ?? documentId}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {scoresFailed ? (
+        <div role="alert" aria-labelledby="scores-unavailable-title" className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
+            <div>
+              <h3 id="scores-unavailable-title" className="font-medium text-red-900 text-sm sm:text-base">{t('scoresUnavailable.title')}</h3>
+              <p className="text-xs sm:text-sm text-red-700 mt-1">{t('scoresUnavailable.description')}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 sm:p-4 border border-blue-100">
         <div className="flex items-start gap-3">

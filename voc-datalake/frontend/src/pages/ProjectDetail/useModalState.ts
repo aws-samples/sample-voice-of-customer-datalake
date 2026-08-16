@@ -76,12 +76,14 @@ export function useDocModalState() {
 
 export function useImportModalState() {
   const [showImportModal, setShowImportModal] = useState(false)
-  const [importType, setImportType] = useState<'pdf' | 'image' | 'text'>('text')
+  // 'text' remains the default and is still a valid type, so the modal always
+  // opens on a rendered section rather than a blank one.
+  const [importType, setImportType] = useState<'image' | 'text'>('text')
   const [importContent, setImportContent] = useState('')
   const [importMediaType, setImportMediaType] = useState('')
   const [importFileName, setImportFileName] = useState('')
 
-  const handleTypeChange = useCallback((type: 'pdf' | 'image' | 'text') => {
+  const handleTypeChange = useCallback((type: 'image' | 'text') => {
     setImportType(type)
     setImportContent('')
     setImportFileName('')

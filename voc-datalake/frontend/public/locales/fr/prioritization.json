@@ -30,6 +30,10 @@
     "title": "Cadre de priorisation"
   },
   "loading": "Chargement des documents...",
+  "noteTooLong": {
+    "description": "Les notes sont limitées à {{max}} caractères, et une note plus longue est refusée plutôt que tronquée. Raccourcissez la note de la ligne modifiée, puis enregistrez de nouveau. Rien n'a encore été enregistré.",
+    "title": "Une note est trop longue pour être enregistrée"
+  },
   "notes": {
     "label": "Remarques",
     "placeholder": "Ajouter des notes sur cette décision de priorisation..."
@@ -61,6 +65,10 @@
     "timeToMarket": "Délai de mise sur le marché",
     "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
     "title": "Scores de priorisation"
+  },
+  "scoresUnavailable": {
+    "description": "Vos scores enregistrés sont actuellement indisponibles : les valeurs ci-dessous sont donc des valeurs par défaut et non celles qui ont été saisies. Rechargez la page avant d'enregistrer.",
+    "title": "Impossible de charger les scores"
   },
   "sort": {
     "date": "Par date",

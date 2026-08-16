@@ -5,14 +5,15 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 # Shared module imports
-from shared.logging import logger, tracer
+from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
-from shared.api import validate_days
+from shared.api import validate_days, MAX_PERSONAS_PER_GENERATION
 from shared.converse import converse_chain
 from shared.exceptions import (
     ConfigurationError,
@@ -21,6 +22,7 @@ from shared.exceptions import (
     ServiceError,
 )
 from shared.prompts import (
+    PERSONA_SYNTHESIS_STEP,
     count_persona_sample_records,
     get_persona_generation_steps,
     get_prd_generation_steps,
@@ -141,6 +143,21 @@ FEEDBACK_LIMIT_RESEARCH_SUGGEST: int = 40  # bounded by API Gateway 29 s timeout
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
+
+# Ceiling on parallel avatar generations inside one persona generation. Derived from the
+# shared persona ceiling rather than repeating the number, so today every persona in a
+# batch gets its own worker and raising that ceiling cannot silently halve the fan-out
+# benefit while every test still passes — which is what a matching comment allowed.
+AVATAR_MAX_CONCURRENCY = MAX_PERSONAS_PER_GENERATION
+# Stamped into every persona's llm_metadata so a stored persona stays attributable to the
+# prompt chain that produced it. Bumped 2.0.0 -> 2.1.0 with the removal of the third
+# ('validation') chain step: 2.0.0 personas came from a three-step chain, and leaving the
+# version alone would make two different chains claim one version. Minor, not major — the
+# persona object's own shape is unchanged, only the chain that fills it.
+# Must equal persona-generation.json's "version"; a lockstep test pins the pair, since this
+# is a literal in the house style of processor/handler.py's PROMPT_VERSION rather than a
+# value read back out of the file.
+PERSONA_PROMPT_VERSION = '2.1.0'
 
 
 def generate_persona_avatar(persona_data: dict, s3_bucket: str | None = None) -> dict:
@@ -574,24 +591,48 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         logger.info(f"[PERSONA] LLM chain completed in {llm_time}ms")
         
         logger.info("[PERSONA] Step 5/6: Parsing personas from LLM output...")
-        # Parse personas from output
+        # Locate the synthesis output BY STEP NAME, from the chain that was actually
+        # built. Indexing positionally (results[-1]) was correct only while
+        # get_persona_generation_steps happens to end on persona_synthesis: that
+        # invariant lives in another file, and appending any trailing step there — a
+        # re-added validation pass, a translation step — would silently make this parse
+        # the wrong text and surface as the generic "failed to parse" error.
+        #
+        # Chain ordering still matters for a different reason, recorded in
+        # get_persona_generation_steps: converse_chain keeps its results list local and
+        # re-raises, so any step AFTER the one whose output is saved is a window where
+        # finished, already-billed personas get discarded. Reading by name does not
+        # weaken that — it just stops this line depending on it silently.
         personas_data = []
-        for idx, result_text in enumerate([results[1], results[2]]):
-            logger.info(f"[PERSONA] Trying to parse result {idx}, length: {len(result_text)} chars")
-            json_match = re.search(r'\[\s*\{[\s\S]*\}\s*\]', result_text)
-            if json_match:
-                try:
-                    parsed = json.loads(json_match.group())
-                    if isinstance(parsed, list) and len(parsed) > 0:
-                        personas_data = parsed
-                        logger.info(f"[PERSONA] Successfully parsed {len(personas_data)} personas from result {idx}")
-                        break
-                except json.JSONDecodeError as e:
-                    logger.warning(f"[PERSONA] JSON parse failed for result {idx}: {e}")
-                    continue
-            else:
-                logger.warning(f"[PERSONA] No JSON array found in result {idx}")
-        
+        step_names = [step.get('step_name') for step in chain_steps]
+        if PERSONA_SYNTHESIS_STEP not in step_names:
+            raise ServiceError(
+                f"persona chain has no '{PERSONA_SYNTHESIS_STEP}' step "
+                f"(built: {step_names}) — cannot locate the persona JSON"
+            )
+        synthesis_index = step_names.index(PERSONA_SYNTHESIS_STEP)
+        if synthesis_index >= len(results):
+            raise ServiceError(
+                f"persona chain returned {len(results)} result(s) but "
+                f"'{PERSONA_SYNTHESIS_STEP}' is step {synthesis_index + 1}"
+            )
+        synthesis_text = results[synthesis_index]
+        logger.info(
+            f"[PERSONA] Parsing '{PERSONA_SYNTHESIS_STEP}' output "
+            f"(step {synthesis_index + 1}/{len(step_names)}), length: {len(synthesis_text)} chars"
+        )
+        json_match = re.search(r'\[\s*\{[\s\S]*\}\s*\]', synthesis_text)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group())
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    personas_data = parsed
+                    logger.info(f"[PERSONA] Successfully parsed {len(personas_data)} personas")
+            except json.JSONDecodeError as e:
+                logger.warning(f"[PERSONA] JSON parse failed for persona_synthesis output: {e}")
+        else:
+            logger.warning("[PERSONA] No JSON array found in persona_synthesis output")
+
         if not personas_data:
             logger.error("[PERSONA] Failed to parse personas from any LLM output")
             raise ServiceError('Failed to parse persona data from LLM response')
@@ -625,14 +666,27 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             src = item.get('source_platform', 'unknown')
             source_breakdown[src] = source_breakdown.get(src, 0) + 1
         
-        # Save personas to project
-        now = datetime.now(timezone.utc).isoformat()
+        # Save personas to project. One tz-aware reading drives BOTH the stored
+        # timestamps and the id stamp, so a persona id can never disagree with its own
+        # created_at about which day it is. The id stamp previously came from a naive
+        # datetime.now() (container-local) while created_at was UTC — and the id names
+        # the S3 avatar key and sorts, so the skew was user-visible.
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
         saved_personas = []
-        
+
+        # One id stamp for the whole batch: the per-persona index already makes
+        # each id unique, and the avatar seed is derived from the id, so a stable
+        # id keeps the same persona reproducing the same image.
+        id_stamp = now_dt.strftime('%Y%m%d%H%M%S')
+
+        # Build every persona item first, in parsed order. Avatars are attached
+        # afterwards (concurrently) and the writes then follow this same order,
+        # so which avatar call finishes first cannot reorder the personas.
+        persona_items = []
         for i, persona in enumerate(personas_data):
-            persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}"
-            logger.info(f"[PERSONA] Saving persona {i+1}/{len(personas_data)}: {persona.get('name', 'unnamed')}")
-            
+            persona_id = f"persona_{id_stamp}_{i}"
+
             # Build the full persona item with all 8 sections
             item = {
                 'pk': f'PROJECT#{project_id}',
@@ -661,27 +715,108 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 'updated_at': now,
                 'llm_metadata': {
                     'model': BEDROCK_MODEL_ID,
-                    'prompt_version': '2.0.0',
+                    'prompt_version': PERSONA_PROMPT_VERSION,
                     'generation_time_ms': llm_time
                 },
             }
             
-            # Generate avatar if enabled
-            if generate_avatars:
-                logger.info(f"[PERSONA] Generating avatar for persona {i+1}...")
-                update_progress(85 + i * 3, f'generating_avatar_{i+1}')
-                try:
-                    avatar_result = generate_persona_avatar({'persona_id': persona_id, **persona})
-                    item['avatar_url'] = avatar_result.get('avatar_url')
-                    item['avatar_prompt'] = avatar_result.get('avatar_prompt')
-                    logger.info(f"[PERSONA] Avatar generated: {item['avatar_url']}")
-                except Exception as e:
-                    logger.warning(f"[PERSONA] Avatar generation failed for persona {i+1}: {e}")
-            
+            persona_items.append((persona_id, persona, item))
+
+        # Avatars: one unit of work per persona, run concurrently. Each call is
+        # ~5s of waiting on Bedrock (prompt writer + image model) and they don't
+        # touch each other, so a sequential loop just added 5s per persona — up
+        # to 50s at the 10-persona ceiling validate_persona_count allows.
+        # Failure stays isolated per persona: a persona whose avatar call raises
+        # is still saved, with avatar_url/avatar_prompt left at None.
+        if generate_avatars and persona_items:
+            logger.info(f"[PERSONA] Generating {len(persona_items)} avatar(s) concurrently...")
+            # One step for the whole batch, replacing the per-persona
+            # 'generating_avatar_{i}' steps — they were sequential progress and the work
+            # no longer is. No locale keys to add: the jobs panel renders the raw step
+            # with `current_step.replaceAll('_', ' ')` (JobsSection.tsx) rather than
+            # keying translations off it, so step names are not part of the i18n surface.
+            update_progress(85, 'generating_avatars')
+
+            # On tracing across the fan-out: `generate_persona_avatar` and its Bedrock legs
+            # are @tracer-decorated, and under a Lambda context aws-xray-sdk's
+            # put_subsegment re-resolves the segment per thread from _X_AMZN_TRACE_ID, so
+            # worker subsegments should attach to the invocation with the right trace and
+            # parent ids. A reviewer confirmed that empirically across three threads; it is
+            # not pinned by a test here, because a test would be asserting aws-xray-sdk's
+            # own context behaviour rather than anything this repo controls. If the avatar
+            # leg ever goes missing from X-Ray after an sdk upgrade, this is the reason to
+            # check first. Recorded because "subsegments on non-main threads are dropped"
+            # is true of some X-Ray setups and has been raised against this block
+            # repeatedly.
+            def _avatar_for(persona_id: str, persona: dict) -> dict:
+                return generate_persona_avatar({'persona_id': persona_id, **persona})
+
+            def _count_avatar_failure(persona_id: str, reason: str) -> None:
+                """Record one persona ending up without an avatar.
+
+                One place so the metric can't be emitted from some paths and not others —
+                a partially-instrumented counter is worse than none, because it reads as
+                a healthy number during a real outage. The persona is still saved; only
+                its avatar is missing, which is why this warns rather than raising.
+
+                These counters do reach CloudWatch: `generate_personas` has exactly one
+                production caller, jobs/persona_generator/handler.py, whose lambda_handler
+                carries @metrics.log_metrics and imports this same shared `metrics`
+                singleton, so the store is flushed when that handler returns. The namespace
+                comes from Metrics(namespace="VoC") in shared/logging.py, not from a
+                per-function POWERTOOLS_METRICS_NAMESPACE. Called on the main thread only
+                (the result loop), so no cross-thread store access.
+                """
+                metrics.add_metric(name='AvatarGenerationFailed', unit='Count', value=1)
+                logger.warning(
+                    f"[PERSONA] No avatar for {persona_id} "
+                    f"(saving persona without one): {reason}"
+                )
+
+            with ThreadPoolExecutor(max_workers=min(len(persona_items), AVATAR_MAX_CONCURRENCY)) as pool:
+                # Submitted in a guarded loop rather than a dict comprehension: a
+                # comprehension puts pool.submit outside the per-future try, so a
+                # RuntimeError("can't start new thread") would propagate and discard
+                # EVERY persona — the same "billed work thrown away" shape this change
+                # set out to remove, just relocated from the chain to the executor.
+                futures = {}
+                for persona_id, persona, item in persona_items:
+                    try:
+                        futures[pool.submit(_avatar_for, persona_id, persona)] = item
+                    except RuntimeError as e:
+                        _count_avatar_failure(item['persona_id'], f'could not start a worker: {e}')
+
+                for future, item in futures.items():
+                    try:
+                        avatar_result = future.result()
+                        item['avatar_url'] = avatar_result.get('avatar_url')
+                        item['avatar_prompt'] = avatar_result.get('avatar_prompt')
+                        # Count the EFFECTIVE outcome, not just the exception. Most
+                        # failures never raise here: shared.avatar.generate_persona_avatar
+                        # catches throttling, AccessDenied, ValidationException and the
+                        # empty-images case itself and RETURNS avatar_url=None. A counter
+                        # placed only in the except branch would therefore read zero
+                        # during exactly the outage it exists to catch.
+                        if item['avatar_url']:
+                            metrics.add_metric(name='AvatarGenerationSucceeded', unit='Count', value=1)
+                            logger.info(
+                                f"[PERSONA] Avatar generated for {item['persona_id']}: {item['avatar_url']}"
+                            )
+                        else:
+                            _count_avatar_failure(
+                                item['persona_id'], 'the generator returned no avatar URL'
+                            )
+                    except Exception as e:
+                        _count_avatar_failure(item['persona_id'], str(e))
+
+        # Write in parsed order so the stored order and the response order match
+        # the LLM's order regardless of avatar completion order.
+        for i, (persona_id, persona, item) in enumerate(persona_items):
+            logger.info(f"[PERSONA] Saving persona {i+1}/{len(persona_items)}: {persona.get('name', 'unnamed')}")
             projects_table.put_item(Item=item)
             saved_personas.append(item)
             logger.info(f"[PERSONA] Saved persona: {persona.get('name')}")
-        
+
         # Set persona count to the new total (we cleared the old set above, so
         # this is a replace, not an increment — keeps the count accurate).
         projects_table.update_item(
@@ -697,9 +832,12 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         return {
             'success': True,
             'personas': saved_personas,
+            # No 'validation' key: the chain's third step is gone (it was the
+            # single largest cost in the job and nothing read its output — this
+            # response shape's only consumer, the jobs panel, reads persona_id,
+            # document_id and title).
             'analysis': {
                 'research': results[0],
-                'validation': results[2]
             },
             'metadata': {
                 # Items FETCHED from DynamoDB. Kept because the frontend and

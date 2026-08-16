@@ -30,6 +30,10 @@
     "title": "Framework de Priorização"
   },
   "loading": "Carregando documentos...",
+  "noteTooLong": {
+    "description": "As notas são limitadas a {{max}} caracteres, e uma nota mais longa é recusada em vez de encurtada. Reduza a nota da linha que você editou e salve novamente. Nada foi salvo ainda.",
+    "title": "Uma nota é longa demais para salvar"
+  },
   "notes": {
     "label": "Notas",
     "placeholder": "Adicione notas sobre esta decisão de priorização..."
@@ -61,6 +65,10 @@
     "timeToMarket": "Tempo para o Mercado",
     "timeToMarketDescription": "Com que rapidez isso pode ser entregue?",
     "title": "Pontuações de Priorização"
+  },
+  "scoresUnavailable": {
+    "description": "Suas pontuações salvas estão indisponíveis neste momento, portanto os números abaixo são valores padrão e não o que alguém inseriu. Recarregue a página antes de salvar.",
+    "title": "Não foi possível carregar as pontuações"
   },
   "sort": {
     "date": "Data",

@@ -5,6 +5,11 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
+# Repo location of the prompt files. Imported from the module under test rather than
+# recomputed here: get_prompts_dir()'s local-dev branch IS this constant, so these tests
+# can no longer pin the loader at a directory the production code does not look in.
+from shared.prompts import REPO_PROMPTS_DIR
+
 
 class TestGetPromptsDir:
     @patch('shared.prompts.Path')
@@ -28,18 +33,21 @@ class TestGetPromptsDir:
         # Non-empty is the invariant; don't bake in the file format.
         assert any(prompts_dir.iterdir())
 
-    def test_raises_not_found(self, tmp_path):
+    def test_raises_not_found(self):
         """get_prompts_dir raises FileNotFoundError when no dir exists."""
         from shared.prompts import get_prompts_dir
-        # Patch __file__ to point to a location with no prompts dir nearby
-        str(tmp_path / "shared" / "prompts.py")
-        with patch('shared.prompts.Path') as mp:
-            mock_false = MagicMock()
-            mock_false.exists.return_value = False
+        mock_false = MagicMock()
+        mock_false.exists.return_value = False
+        mock_false.__truediv__ = lambda self, x: mock_false
+        mock_false.parent = mock_false
+        # REPO_PROMPTS_DIR is computed once at import, so patching Path alone no longer
+        # reaches the local-dev branch — it would find the real directory and return it.
+        # All three candidates have to be made absent for "nothing exists" to be the case
+        # under test.
+        with patch('shared.prompts.Path') as mp, \
+                patch('shared.prompts.REPO_PROMPTS_DIR', mock_false):
             mp.return_value = mock_false
             mp.cwd.return_value = mock_false
-            mock_false.__truediv__ = lambda self, x: mock_false
-            mock_false.parent = mock_false
             with pytest.raises(FileNotFoundError):
                 get_prompts_dir()
 
@@ -236,6 +244,19 @@ class TestConvenienceFunctions:
         assert mb.call_args[0][2]['custom_section'] == ''
 
     @patch('shared.prompts.build_chain_steps')
+    def test_persona_chain_ends_with_the_step_whose_output_is_saved(self, mb):
+        """persona_synthesis emits the JSON that generate_personas saves, so it
+        must be the LAST step: anything after it is billed time that can only
+        fail AFTER the personas exist (converse_chain re-raises and its results
+        list is local, so such a failure discarded finished personas). The
+        third 'validation' step this replaces cost ~49% of the job's wall clock
+        and its output was never read for persona data."""
+        from shared.prompts import get_persona_generation_steps
+        mb.return_value = []
+        get_persona_generation_steps(3, 's', 'fb')
+        assert mb.call_args[0][1] == ['research_analysis', 'persona_synthesis']
+
+    @patch('shared.prompts.build_chain_steps')
     def test_prd(self, mb):
         from shared.prompts import get_prd_generation_steps
         mb.return_value = []
@@ -262,12 +283,6 @@ class TestConvenienceFunctions:
         ml.return_value = {}
         get_avatar_prompt_config()
         ml.assert_called_with('avatar-generation.json')
-
-
-# Repo location of the prompt files (the production loader's local fallback
-# doesn't resolve from the test cwd). Single definition so the contract
-# fixture and the encoding test can't drift independently.
-REPO_PROMPTS_DIR = Path(__file__).resolve().parents[2] / 'api' / 'prompts'
 
 
 def _extract_slots(text: str) -> set:
@@ -474,6 +489,52 @@ class TestPrfaqPromptContract:
             'launch_date slot did not render the builder-generated date '
             f'({expected_before} / {expected_after})'
         )
+
+
+class TestPersonaPromptContract:
+    """The persona prompt file and the chain builder's step list must agree.
+
+    build_chain_steps is driven by the names it is GIVEN and raises only for a
+    name absent from the file, so a stale extra entry in the file would be
+    inert — silently paid for by nobody, and easy to wire back in by accident.
+    The removed 'validation' step was measured at ~49% of the job's wall clock
+    with its output never read, so its absence is the point, not an accident.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _route_loader_at_repo_prompts(self, monkeypatch):
+        import shared.prompts as prompts_module
+        assert REPO_PROMPTS_DIR.exists(), (
+            f'prompts directory moved? expected it at {REPO_PROMPTS_DIR}'
+        )
+        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: REPO_PROMPTS_DIR)
+        prompts_module.load_prompt_file.cache_clear()
+        yield
+        prompts_module.load_prompt_file.cache_clear()
+
+    def test_file_declares_exactly_the_two_chain_steps(self):
+        from shared.prompts import load_prompt_file
+        config = load_prompt_file('persona-generation.json')
+        assert list(config['steps']) == ['research_analysis', 'persona_synthesis']
+
+    # NOTE: the file's "version" is also pinned against the literal stamped into every
+    # persona's llm_metadata, but that assertion needs `api.projects` and so lives in
+    # lambda/api/test/test_projects_handler.py (TestPersonaPromptVersionIsStamped). The
+    # shared test tree stays free of api-tree imports.
+
+    def test_builder_resolves_every_step_against_the_real_file(self):
+        """End-to-end through the real loader: each name the builder asks for
+        exists in the file (a missing one raises KeyError), the JSON-emitting
+        synthesis step is last, and the file's token budgets are untouched."""
+        from shared.prompts import get_persona_generation_steps
+        steps = get_persona_generation_steps(
+            persona_count=3, feedback_stats='S', feedback_context='F',
+        )
+        assert [s['step_name'] for s in steps] == [
+            'research_analysis', 'persona_synthesis',
+        ]
+        assert [s['max_tokens'] for s in steps] == [4000, 9000]
+        assert 'ONLY valid JSON' in steps[-1]['system']
 
 
 class TestLoadPromptFileEncoding:
