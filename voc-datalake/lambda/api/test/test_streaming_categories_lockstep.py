@@ -45,8 +45,12 @@ Both sides are read as SOURCE TEXT with a regular expression rather than
 imported, so the assertions need neither a bundler for the TypeScript nor the
 AWS-shaped import graph for the Python.
 
-Pattern follows test_visual_selection_bound_lockstep.py (same directory).
+Pattern follows test_visual_selection_bound_lockstep.py (same directory). The one
+place a parser is used instead of a pattern is the aggregator's counter calls,
+following test_product_context_placeholder_lockstep.py — see
+_aggregator_counter_writes for why a regular expression is the wrong tool there.
 """
+import ast
 import re
 from pathlib import Path
 
@@ -73,12 +77,8 @@ PYTHON_READER_KEY_PATTERN = (
 PYTHON_WRITER_PK_PATTERN = rf'^CATEGORIES_PK = {_Q}([^\'"]+){_Q}'
 PYTHON_WRITER_SK_PATTERN = rf'^CATEGORIES_SK = {_Q}([^\'"]+){_Q}'
 
-# Every counter write in the aggregator, as (pk expression, sk expression). The
-# `def ` lookbehind keeps the two function DEFINITIONS out of the call list; no
-# call site's pk or sk expression contains a comma, so stopping each group at one
-# is safe, and the call count is asserted so a pattern that stopped matching
-# cannot pass by finding nothing.
-AGGREGATOR_COUNTER_CALL_PATTERN = r'(?<!def )update_(?:counter|average)\(\s*([^,]+),\s*([^,]+),'
+# The counter writers whose sort key the streaming window predicate depends on.
+AGGREGATOR_COUNTER_WRITERS = ('update_counter', 'update_average')
 
 # The never-written key streaming chat used to ask for, assembled rather than
 # written out so that a repository-wide search for it keeps returning nothing
@@ -296,6 +296,49 @@ def _required_zod_properties(object_literal: str) -> set[str]:
     return required
 
 
+def _aggregator_counter_writes() -> list[tuple[str, str]]:
+    """Every counter write in the aggregator, as (pk source, sk source).
+
+    Parsed with `ast`, not matched with a regular expression, following
+    test_product_context_placeholder_lockstep.py. The rest of this file reads
+    source text because one side is TypeScript, where a parser is not available
+    without a bundler — but this side is Python, and here a pattern is simply the
+    wrong tool. It removes two opposite failure modes at once:
+
+      * A pattern cannot tell a call from a MENTION of one, so an occurrence in a
+        comment, a docstring or an f-string would be counted as a call site — a
+        doc comment reading `update_counter(pk, sk, ...)` would fail a correct
+        aggregator, which is the one thing a lockstep must never do.
+      * A pattern reads only the call shapes it anticipated, so a keyword-argument
+        call, a multi-line call or a pk expression containing a comma would go
+        UNREAD while the others still matched — leaving that call site's sort key
+        unpinned with every assertion still green.
+
+    `ast` has neither problem: it sees exactly the calls, with their arguments
+    where they belong, whatever their shape. It also excludes the two function
+    DEFINITIONS for free, since a `def` is not a Call. No module is imported —
+    ast.parse reads the same text every other helper here reads.
+    """
+    writes: list[tuple[str, str]] = []
+    for node in ast.walk(ast.parse(_read(AGGREGATOR_SOURCE))):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, 'attr', '')
+        if name not in AGGREGATOR_COUNTER_WRITERS:
+            continue
+        keywords = {kw.arg: kw.value for kw in node.keywords}
+        pk = node.args[0] if node.args else keywords.get('pk')
+        sk = node.args[1] if len(node.args) > 1 else keywords.get('sk')
+        # '<missing>' rather than a skip: a call this helper cannot read the sort
+        # key of must FAIL the assertion below, not quietly leave it unpinned.
+        writes.append((
+            ast.unparse(pk) if pk is not None else '<missing>',
+            ast.unparse(sk) if sk is not None else '<missing>',
+        ))
+    return writes
+
+
 def _processor_default_categories() -> list[str]:
     """The default taxonomy as the ENRICHMENT PROMPT spells it: one pipe-delimited
     string, not a list.
@@ -500,34 +543,18 @@ class TestCounterSortKeyShapeLockstep:
     """
 
     def test_every_aggregate_counter_is_written_under_a_bare_date_sort_key(self):
-        source = _read(AGGREGATOR_SOURCE)
-        calls = re.findall(AGGREGATOR_COUNTER_CALL_PATTERN, source)
-        # Two denominators, because they fail for different reasons and only the
-        # second one notices a call site the pattern cannot see.
-        #
-        # The floor catches the pattern breaking entirely — a rename, a
-        # restructure — which would otherwise satisfy the real assertion below by
-        # finding nothing at all.
-        assert len(calls) >= 8, (
-            f'Found only {len(calls)} counter writes in {AGGREGATOR_SOURCE}; this '
-            f'module writes at least eight. The pattern in this test file has '
-            f'stopped matching the call sites, so the assertion below proves '
-            f'nothing — fix the pattern rather than the count.'
+        writes = _aggregator_counter_writes()
+        # The denominator first: a helper that found nothing would satisfy the real
+        # assertion below for the wrong reason. This is the only guard the parsed
+        # form needs — unlike a pattern, it cannot read SOME of the call sites, so
+        # there is no partial-blindness case left to count against.
+        assert len(writes) >= 8, (
+            f'Found only {len(writes)} counter writes in {AGGREGATOR_SOURCE}; this '
+            f'module writes at least eight. If the writers were renamed, update '
+            f'AGGREGATOR_COUNTER_WRITERS in this file — do not lower the floor, '
+            f'because the assertion below proves nothing without it.'
         )
-        # The equality catches the subtler half: ONE newly added call site the
-        # pattern cannot match — a multi-line form, a keyword-argument call — while
-        # the other eight still match, so the floor holds and the new site's sort
-        # key goes unpinned. Every textual invocation must therefore be accounted
-        # for by a matched call site.
-        invocations = len(re.findall(r'(?<!def )update_(?:counter|average)\(', source))
-        assert invocations == len(calls), (
-            f'{AGGREGATOR_SOURCE} invokes a counter writer {invocations} times but '
-            f'this test can only read the arguments of {len(calls)} of them. The '
-            f'unmatched call site is UNPINNED: its sort key could be composite and '
-            f'the assertion below would still pass. Widen the pattern in this file '
-            f'to cover the new call shape.'
-        )
-        composite = sorted({sk.strip() for _, sk in calls if sk.strip() != 'date'})
+        composite = sorted({sk for _, sk in writes if sk != 'date'})
         assert not composite, (
             f'{AGGREGATOR_SOURCE} keys a counter by {composite} rather than by '
             f'the bare `date`. {STREAM_SOURCE} sums these partitions with '

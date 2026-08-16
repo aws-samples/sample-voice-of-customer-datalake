@@ -668,21 +668,44 @@ describe('buildVocChatContext category read amplification', () => {
     expect(ctx.userMessage).toContain('the figures below are incomplete');
   });
 
-  it('treats a null counter as unreadable rather than as a measured zero', async () => {
-    // `z.coerce.number()` runs Number() first, and Number(null) is 0, so a row
-    // storing a literal null would pass the parse and be counted as a measured
-    // zero. Nobody knows what that row held, so it belongs in the skipped count:
-    // the total is short by an unknown amount, and the turn has to say so.
+  // Every value Number() turns into a plausible-looking 0 while holding no count
+  // at all. `z.coerce` runs Number() before validating, so each of these would
+  // otherwise parse as a MEASURED zero — the one thing this module exists to stop.
+  // 'n/a' is the contrast case and belongs here: it is caught by `.finite()`
+  // rather than by the union, so the test covers both gates.
+  it.each([
+    ['null', null],
+    ['an empty string', ''],
+    ['a whitespace string', '   '],
+    ['false', false],
+    ['a non-numeric string', 'n/a'],
+  ])('treats %s in a counter as unreadable rather than as a measured zero', async (_label, bad) => {
     const docClient = createKeyedDocClient({
       [`METRIC#daily_total|${TODAY_UTC}`]: [{ count: 7 }],
-      [`METRIC#daily_total|${utcDaysAgo(1)}`]: [{ count: null }],
+      [`METRIC#daily_total|${utcDaysAgo(1)}`]: [{ count: bad }],
     });
 
     const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 3 });
 
+    // 7, not 7 + 0: the readable row is kept and the unreadable one is reported,
+    // so the number is short by an unknown amount and the prompt says so.
     expect(ctx.metadata.total_feedback).toBe(7);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('unreadable counter row'));
     expect(ctx.userMessage).toContain('the figures below are incomplete');
+  });
+
+  it('still reads a counter stored as a padded numeric string', async () => {
+    // The other side of the union: DynamoDB stores what it was given, and a
+    // number can arrive as a string depending on path. Rejecting the empty string
+    // must not become rejecting strings.
+    const docClient = createKeyedDocClient({
+      [`METRIC#daily_total|${TODAY_UTC}`]: [{ count: ' 5 ' }],
+    });
+
+    const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 1 });
+
+    expect(ctx.metadata.total_feedback).toBe(5);
+    expect(ctx.userMessage).not.toContain('the figures below are incomplete');
   });
 
   it('keeps the window well formed for a days value below the floor', async () => {

@@ -34,14 +34,18 @@ const categoryItemSchema = z.object({ name: z.string() }).passthrough();
 // literal `Total Feedback Items: NaN`. A row that fails this parse contributes
 // nothing and is reported, rather than poisoning its siblings.
 //
-// The union in front of the coercion is the decision about `null`, and it is a
-// decision rather than an accident: `z.coerce` runs Number() first, and
-// Number(null) is 0, so a row storing a literal null would be counted as a
-// MEASURED zero. It is not one — nobody knows what that row's count was — so the
-// union rejects anything that is not already a number or a numeric string, which
-// puts such a row in `skippedRows` and makes the turn say the figures are
-// incomplete. Same for `count: true`, which used to count as 1.
-const counterValue = z.union([z.number(), z.string()]).pipe(z.coerce.number().finite());
+// The union in front of the coercion is a decision about what is NOT a count,
+// and it is a decision rather than an accident. `z.coerce` runs Number() first,
+// and Number() answers 0 for several things that hold no count at all: null, an
+// empty string, a whitespace string, false. Each would then be counted as a
+// MEASURED zero, and none of them is one — nobody knows what that row held. So
+// the value must already be a number, or a string with something in it, and the
+// coercion only ever sees those; everything else lands in `skippedRows`, where it
+// makes the turn say the figures are incomplete instead of quietly reading zero.
+// (`.trim()` before `.min(1)` is what rejects ' ' as well as ''; a padded numeric
+// string like ' 5 ' still parses, since DynamoDB stores what it was given.)
+const counterValue = z.union([z.number(), z.string().trim().min(1)])
+  .pipe(z.coerce.number().finite());
 
 const metricItemSchema = z.object({
   count: counterValue.optional(),
