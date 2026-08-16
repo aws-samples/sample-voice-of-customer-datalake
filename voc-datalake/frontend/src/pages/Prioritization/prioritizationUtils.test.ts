@@ -323,8 +323,15 @@ describe('overLongNoteDocuments', () => {
 
 describe('overLongNoteDocuments counts in the API"s unit', () => {
   // JS `.length` is UTF-16 code units; the API's `len()` is code points. Pinning
-  // the unit, not just the number: the lockstep test can only compare the two
-  // constants, and would pass while the page measured a different thing with it.
+  // the unit, not just the number: a lockstep on the two constants would pass while
+  // the page measured a different thing with them.
+  //
+  // Astral characters are the ONLY inputs that discriminate — they are the only ones
+  // whose two counts differ — so these two cases are the whole of the unit coverage
+  // and both are needed: the first fails under a code-unit count, the second fails if
+  // counting code points ever became "emoji are free". A combining sequence measures
+  // the same either way and would pass whichever count was used, which is why there
+  // is no third case here.
   const score = (notes: string): { readonly notes: string } => ({ notes })
 
   it('accepts a note of astral characters the API would accept', () => {
@@ -341,13 +348,5 @@ describe('overLongNoteDocuments counts in the API"s unit', () => {
     const emoji = '😀'.repeat(MAX_NOTE_LENGTH + 1)
 
     expect(overLongNoteDocuments({ d1: score(emoji) })).toEqual(['d1'])
-  })
-
-  it('counts a combining sequence by code point, as the API does', () => {
-    // Not a decision this makes — it is what `len()` does on the other side, and
-    // the point is that both sides answer the same number for the same string.
-    const combining = 'é\u0301'.repeat(MAX_NOTE_LENGTH)
-
-    expect(overLongNoteDocuments({ d1: score(combining) })).toEqual(['d1'])
   })
 })

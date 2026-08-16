@@ -1745,7 +1745,9 @@ class TestWholeMapOverwriteRouteIsGone:
     ):
         """A 405 is required to carry `Allow`, and it is the actionable half: the
         caller is on a route that exists, with a verb that does not, and needs to be
-        told which verbs remain rather than left to guess."""
+        told which verbs remain rather than left to guess. OPTIONS is included
+        because preflight really is answered on this path, by API Gateway and by the
+        resolver both."""
         from projects_handler import lambda_handler
 
         with patch('projects_handler.get_aggregates_table', return_value=FakeAggregatesTable()):
@@ -1760,7 +1762,7 @@ class TestWholeMapOverwriteRouteIsGone:
         raw = {**(response.get('headers') or {}),
                **{k: v[0] for k, v in (response.get('multiValueHeaders') or {}).items()}}
         headers = {k.lower(): v for k, v in raw.items()}
-        assert headers.get('allow') == 'GET, PATCH', headers
+        assert headers.get('allow') == 'GET, PATCH, OPTIONS', headers
 
     def test_the_refusal_writes_nothing(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable()

@@ -12,8 +12,6 @@ from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
-from aws_lambda_powertools.event_handler import Response, content_types
-
 from shared.api import (
     create_api_resolver,
     get_caller_subject,
@@ -37,6 +35,7 @@ from shared.exceptions import (
 from shared.persona_import import validate_import_config
 from shared.tokens import hash_token
 
+from aws_lambda_powertools.event_handler import Response, content_types
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 import boto3
@@ -1377,7 +1376,11 @@ def api_put_prioritization_scores():
     return Response(
         status_code=405,
         content_type=content_types.APPLICATION_JSON,
-        headers={'Allow': 'GET, PATCH'},
+        # OPTIONS is listed because it really is served on this path — twice over:
+        # API Gateway answers preflight from `defaultCorsPreflightOptions`, and the
+        # resolver answers it too when CORS is configured. A header that claims to
+        # enumerate what works has to include it.
+        headers={'Allow': 'GET, PATCH, OPTIONS'},
         body=json.dumps({
             'success': False,
             'error': 'PUT /projects/prioritization is no longer supported; '
