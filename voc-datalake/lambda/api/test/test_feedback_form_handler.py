@@ -1540,6 +1540,47 @@ class TestSubmissionsStayInThePartitionTheStatsReadQueries:
             == feedback_form_handler._form_source_pk(form)
         )
 
+    def test_no_other_module_derives_a_feedback_partition_from_the_brand(self):
+        """_form_source_pk must stay the ONLY brand-scoped read of SOURCE#.
+
+        The write side keeps a pre-rename form writing under its old brand, which
+        is safe precisely because no other reader is scoped by brand: every other
+        SOURCE# partition under lambda/ is built from source_platform. That is a
+        claim about other modules, and the write site used to assert it in a
+        comment nothing could falsify — so it is asserted here instead, and a
+        future brand-scoped read fails this test rather than quietly inheriting a
+        trade-off that was reasoned about without it.
+
+        Deliberately syntactic: it reads the source rather than importing, because
+        the point is to catch a NEW construction site, and an f-string's inputs are
+        visible in the text. A reader landing here from a failure should decide
+        whether the new read wants the form's brand (see _form_source_pk) or the
+        environment's, not silence the test.
+        """
+        lambda_root = Path(__file__).resolve().parents[2]
+        this_module = lambda_root / 'api' / 'feedback_form_handler.py'
+
+        offenders = []
+        for path in sorted(lambda_root.rglob('*.py')):
+            if path == this_module or 'test' in path.parts:
+                continue
+            for lineno, line in enumerate(
+                path.read_text(encoding='utf-8').splitlines(), start=1
+            ):
+                if 'SOURCE#' in line and 'BRAND_NAME' in line:
+                    rel = path.relative_to(lambda_root)
+                    offenders.append(f'{rel}:{lineno}: {line.strip()}')
+
+        assert not offenders, (
+            'a SOURCE# partition is now derived from BRAND_NAME outside '
+            'feedback_form_handler._form_source_pk:\n  '
+            + '\n  '.join(offenders)
+            + '\nThe write site in submit_form_feedback reasons that a pre-rename '
+            'form is safe to leave on its old brand BECAUSE no other reader is '
+            'brand-scoped. That reasoning now needs revisiting rather than this '
+            'assertion relaxing.'
+        )
+
 
 class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
     """A form with no stored brand must not be left depending on the env var.
@@ -1990,3 +2031,83 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
         assert item['name'] == 'Product Form'
         assert item['enabled'] is True
         datetime.fromisoformat(item['updated_at'])
+
+    @mock_aws
+    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
+    @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
+    @patch('feedback_form_handler.sqs')
+    def test_a_form_whose_history_predates_its_anchor_reports_only_the_anchored_half(
+        self, mock_sqs, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The accepted limit of the fix, pinned so it is a decision and not a
+        surprise.
+
+        A form that was already collecting before its brand was resolved onto the
+        record can have submissions in TWO SOURCE# partitions: the pre-fix write
+        stamped the live BRAND_NAME, so a deployment renamed (or given a brand for
+        the first time) mid-collection split them. The anchor pins the form to the
+        brand live when it next receives a submission, and the stats read reports
+        that partition only — the other half needs a migration that rewrites those
+        records' pk, which is why UPDATABLE_FIELDS says so.
+
+        This is NOT a regression: the same form reported the same half before this
+        change. What the anchor adds is permanence, and permanence is the reason to
+        assert the number rather than leave it incidental — if someone later
+        teaches the read to cover the pre-anchor partition, this test is where the
+        expected count changes, deliberately.
+        """
+        table = self._table_with_a_brandless_form()
+
+        submit_event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/form-123/submit',
+            path_params={'form_id': 'form-123'},
+            body={'text': 'The submission that anchors the form', 'rating': 5},
+        )
+        with patch('feedback_form_handler.aggregates_table', table):
+            submit_response = feedback_form_handler.lambda_handler(
+                submit_event, lambda_context
+            )
+        assert submit_response['statusCode'] == 200
+
+        anchored_brand = table.get_item(
+            Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123'}
+        )['Item']['brand_name']
+        assert anchored_brand == 'Acme Rebranded'
+
+        # The history: 7 submissions collected under the old brand, 2 under the
+        # new one, all stamped by the pre-fix write from whatever BRAND_NAME held
+        # at the time. Nine are stored; the form can only reach the anchored half.
+        channel = 'form_form-123'
+        history = {
+            'SOURCE#Acme Classic': [
+                {'feedback_id': f'old-{n}', 'rating': 4, 'source_channel': channel}
+                for n in range(7)
+            ],
+            f'SOURCE#{anchored_brand}': [
+                {'feedback_id': f'new-{n}', 'rating': 5, 'source_channel': channel}
+                for n in range(2)
+            ],
+        }
+
+        stats_event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/form-123/stats',
+            path_params={'form_id': 'form-123'},
+        )
+        with patch('feedback_form_handler.aggregates_table', table), patch(
+            'feedback_form_handler.feedback_table', _fake_feedback_table(history)
+        ):
+            stats_response = feedback_form_handler.lambda_handler(
+                stats_event, lambda_context
+            )
+
+        body = json.loads(stats_response['body'])
+        assert stats_response['statusCode'] == 200
+        assert body['stats']['total_submissions'] == 2, (
+            'the stats read reports the anchored partition only — 2 of the 9 '
+            'stored. Accepted deliberately (see the UPDATABLE_FIELDS comment): '
+            'covering the pre-anchor partition means recording the prior brand '
+            'and doubling the reads on a route that already pages a whole '
+            'partition. If that changed, this expectation changes with it.'
+        )

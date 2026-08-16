@@ -90,6 +90,20 @@ DEFAULT_FORM_CONFIG = {
 # a record created without one) and then fixed for the life of the form. If a
 # brand ever genuinely needs correcting, it needs a migration that rewrites the
 # feedback records' partition too, not a PUT.
+#
+# The case that migration is the ONLY remedy for, spelled out because it exists
+# in deployed data rather than in theory: a form whose submissions predate its
+# anchor can have them spread over two SOURCE# partitions already — before the
+# brand was resolved onto the record, a submission was stamped from the live
+# BRAND_NAME, so any deployment renamed (or given a brand for the first time)
+# while a brandless form was collecting has some submissions under the old value
+# and some under the new. The anchor pins the form to one of them, and the stats
+# read reports only that half. This is not a regression — that form reported the
+# same half before — but the anchor makes it durable where a further rename used
+# to flip it, and no PUT can move it. Accepted deliberately: the alternative is
+# recording the pre-anchor brand and querying both partitions, which doubles the
+# reads on a route that already reads a whole partition (see get_form_stats).
+# Recovering the other half means rewriting those feedback records' pk.
 UPDATABLE_FIELDS = [
     'name', 'enabled', 'title', 'description', 'question', 'placeholder',
     'rating_enabled', 'rating_type', 'rating_max', 'submit_button_text',
@@ -527,22 +541,17 @@ def submit_form_feedback(form_id: str):
     
     # The FORM's brand, not the deployment's: the stats read builds its partition
     # from the form's stored brand_name (_form_source_pk), so stamping BRAND_NAME
-    # here would split a form's submissions across two partitions the day the
+    # here splits a form's submissions across two partitions the day the
     # deployment is renamed. `or` rather than a get() default because a stored ''
-    # must take the fallback too — that is how the read side treats it.
+    # must take the fallback too — that is how the read side treats it. The
+    # consequence, chosen rather than incidental, is that a pre-rename form keeps
+    # writing under its OLD brand; _anchor_form_brand's docstring is the canonical
+    # explanation of why that beats the alternative.
     #
-    # The trade-off, stated because it is chosen rather than incidental: after a
-    # rename, a pre-rename form keeps writing under its OLD brand, so its
-    # submissions carry a brand the deployment no longer uses. That is deliberate
-    # — the alternative strands every submission the form already collected. It
-    # costs nothing in the read paths as they stand: the processor derives the
-    # pk from this value (source_display = brand_name or source_platform), and
-    # every other reader is scoped by source_platform, not by brand —
-    # metrics_handler queries the DATE# GSI filtering source_platform, and
-    # data_explorer_handler builds SOURCE#<source_platform>. No aggregate is
-    # scoped by BRAND_NAME, so there is nothing for a pre-rename form to fall out
-    # of. A future brand-scoped view would have to reckon with this and should
-    # read the form's brand rather than the environment's.
+    # _form_source_pk, in this module, is the one brand-scoped read of the
+    # feedback partition; every other reader scopes by source_platform. That is a
+    # claim about other modules, so it is asserted by a test rather than trusted
+    # here — see test_no_other_module_derives_a_feedback_partition_from_the_brand.
     effective_brand = form.get('brand_name') or BRAND_NAME
     if not form.get('brand_name') and effective_brand:
         # Store it, so this form stops depending on the environment variable —
@@ -785,6 +794,17 @@ def get_form_stats(form_id: str):
     That applies to EVERY read this route makes, not just the feedback query: an
     unconfigured table, a failed form lookup, a form that no longer exists and a
     failed feedback query all used to arrive as total_submissions: 0.
+
+    Cost, noted next to the loudness because the two interact: the query below
+    pages a whole SOURCE# partition with no Limit and filters source_channel
+    server-side but AFTER the partition is read. That partition is the BRAND's,
+    not the form's — plugin ingestion stamps brand_name from the same BRAND_NAME —
+    so the work scales with total brand feedback volume rather than with this
+    form's own submissions, against a 30s Lambda timeout. Failing loudly turns
+    exceeding that from a silent zero into a user-visible error, and because the
+    partition is shared it would surface for every form in the deployment at once.
+    Reading it honestly is still right; bounding it needs an index on the
+    submission-to-form link, which is deliberately not done here.
     """
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
