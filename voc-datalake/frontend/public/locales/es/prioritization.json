@@ -30,6 +30,10 @@
     "title": "Marco de priorización"
   },
   "loading": "Cargando documentos...",
+  "noteTooLong": {
+    "description": "Las notas están limitadas a {{max}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",
+    "title": "Una nota es demasiado larga para guardarla"
+  },
   "notes": {
     "label": "Notas",
     "placeholder": "Agregar notas sobre esta decisión de priorización..."
@@ -61,6 +65,10 @@
     "timeToMarket": "Tiempo de comercialización",
     "timeToMarketDescription": "¿Qué tan rápido se puede entregar?",
     "title": "Puntuaciones de priorización"
+  },
+  "scoresUnavailable": {
+    "description": "Sus puntuaciones guardadas no están disponibles en este momento, por lo que los números que se muestran a continuación son valores predeterminados y no los que alguien introdujo. Vuelva a cargar la página antes de guardar.",
+    "title": "No se pudieron cargar las puntuaciones"
   },
   "sort": {
     "date": "Fecha",

@@ -17,6 +17,7 @@ import type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
   S3ImportSource,
   S3ImportFile,
   FeedbackForm,
@@ -46,6 +47,7 @@ export type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
   S3ImportSource,
   S3ImportFile,
   FeedbackFormConfig,
@@ -478,16 +480,42 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.deleteDocument(projectId, documentId)),
 
   // Prioritization
-  getPrioritizationScores: () => 
-    fetchApi<{ scores: Record<string, PrioritizationScore> }>('/projects/prioritization'),
+  /**
+   * The caller's own ballots, plus what every reviewer together said.
+   *
+   * `aggregates` is optional in the TYPE but not on the wire: the field is
+   * additive, and declaring it required would make a response from a deployment
+   * running the older handler fail to type-check against a client that only reads
+   * `scores`. See `PrioritizationAggregate` for what a row means — notably that a
+   * document nobody scored is absent, and that a row can outlive its document, so
+   * a consumer should intersect these keys with the live document list.
+   */
+  getPrioritizationScores: () =>
+    fetchApi<{
+      scores: Record<string, PrioritizationScore>
+      aggregates?: Record<string, PrioritizationAggregate>
+    }>('/projects/prioritization'),
   
-  savePrioritizationScores: (scores: Record<string, PrioritizationScore>) =>
-    fetchApi<{ success: boolean }>('/projects/prioritization', {
-      method: 'PUT',
-      body: JSON.stringify({ scores })
-    }),
-
-  /** Save only the changed scores (incremental/diff update) */
+  /**
+   * Save only the changed scores (incremental/diff update).
+   *
+   * The only writer. A `savePrioritizationScores` sending PUT used to sit beside
+   * this; it PUT the caller's whole map as every reviewer's scores, which under
+   * per-reviewer ballots has no honest meaning. It had no caller in the product,
+   * and the endpoint now refuses that verb, so keeping the function would only
+   * offer a future caller a guaranteed 400.
+   *
+   * `updated_count` is BALLOTS WRITTEN, not documents sent: an entry that changed
+   * no axis and no note is a legal no-op and is not counted, so the number can be
+   * lower than the size of the map — and is 0 for a body that stored nothing.
+   * Every entry this page sends carries all four axes (`getScore` seeds them), so
+   * in practice the two agree here.
+   *
+   * A note longer than `MAX_NOTE_LENGTH` is REFUSED (400), not truncated. This
+   * function does not check it, because `fetchApi` discards the response body and
+   * could not report why — the page blocks that save before calling
+   * (`overLongNoteDocuments`).
+   */
   patchPrioritizationScores: (changedScores: Record<string, PrioritizationScore>) =>
     fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {
       method: 'PATCH',

@@ -190,8 +190,36 @@ class TestValidateInt:
     def test_returns_default_for_invalid_input(self):
         """Returns default for invalid input."""
         from shared.api import validate_int
-        
+
         assert validate_int('not_a_number', default=15) == 15
+
+    def test_returns_default_for_a_non_finite_float_instead_of_raising(self):
+        """A non-finite float falls back like any other unreadable value.
+
+        `int(float('inf'))` raises OverflowError, which is neither of the errors
+        the fallback originally caught — so this validator, documented never to
+        raise, raised. A body carrying `Infinity` is reachable because `json.loads`
+        is non-strict by default, and in a handler that writes as it validates the
+        escape surfaced as a 500 part way through the work.
+        """
+        from shared.api import validate_int
+
+        assert validate_int(float('inf'), default=15) == 15
+        assert validate_int(float('-inf'), default=15) == 15
+        assert validate_int(float('nan'), default=15) == 15
+
+    def test_a_bool_is_coerced_rather_than_refused(self):
+        """Pins the documented surprise: `isinstance(True, int)` is true.
+
+        Not a behaviour this test endorses — it exists so the contract is checked
+        rather than implied, because a caller whose value is a score a human chose
+        (rather than a page size) has to refuse `bool` itself, and cannot know to
+        do that unless the coercion is written down.
+        """
+        from shared.api import validate_int
+
+        assert validate_int(True, default=15) == 1
+        assert validate_int(False, default=15, min_val=0) == 0
 
 
 class TestCreateCorsConfig:
