@@ -46,22 +46,22 @@ function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
  * duplicate is the more consequential surprise of the two.
  */
 /** One of the three confirm keys — not `string`, so a typo cannot compile. */
-type ConfirmKey = (typeof CONFIRM_MESSAGE)[keyof typeof CONFIRM_MESSAGE]
+type WarningKey = (typeof WARNING_MESSAGE)[keyof typeof WARNING_MESSAGE]
 
-function confirmKeyFor(
+function warningKeyFor(
   hasPrd: boolean,
   hasPrfaq: boolean,
   hasExistingPrototype: boolean,
   hasChoice: boolean,
-): ConfirmKey | null {
-  if (hasExistingPrototype) return CONFIRM_MESSAGE.rebuild
-  if (hasOnlyOneDoc(hasPrd, hasPrfaq)) return CONFIRM_MESSAGE[hasPrd ? 'prd' : 'prfaq']
+): WarningKey | null {
+  if (hasExistingPrototype) return WARNING_MESSAGE.rebuild
+  if (hasOnlyOneDoc(hasPrd, hasPrfaq)) return WARNING_MESSAGE[hasPrd ? 'prd' : 'prfaq']
   // More than one document of a type exists, so "the latest" is a decision rather
   // than the only option — stop and name what will be read. Deliberately NOT
   // raised when there is exactly one of each: the dialog would present a choice
   // that has one possible answer, and the build has always started on the first
   // click in that case.
-  if (hasChoice) return CONFIRM_MESSAGE.choose
+  if (hasChoice) return WARNING_MESSAGE.choose
   return null
 }
 
@@ -73,7 +73,7 @@ function confirmKeyFor(
 // real `en` catalogue, so a key that is missing or has moved renders its raw path
 // and fails a test. A `defaultValue` hides exactly that, which is how buttons once
 // shipped announcing `editForm` to assistive tech.
-const CONFIRM_MESSAGE = {
+const WARNING_MESSAGE = {
   prd: 'documents.prototype.confirmPrdOnly',
   prfaq: 'documents.prototype.confirmPrfaqOnly',
   // A prototype already exists. This is the one that costs money to get wrong: the
@@ -372,7 +372,7 @@ export function usePrototypeBuild({
   // that raised no warning used to get no way in. Keeping the two jobs separate is
   // the point: the warning may follow live data, the wizard's visibility may not.
   const hasChoice = prdOptions.length > 1 || prfaqOptions.length > 1
-  const warningKey = confirmKeyFor(hasPrd, hasPrfaq, hasExistingPrototype, hasChoice)
+  const warningKey = warningKeyFor(hasPrd, hasPrfaq, hasExistingPrototype, hasChoice)
 
   // Only the *start* call is reported here.
   const runBuild = useCallback(async () => {

@@ -100,13 +100,13 @@ describe('ProjectDetail job handover (U9)', () => {
     const user = userEvent.setup()
     renderProjectDetail()
 
-    const buildButton = await screen.findByRole('button', { name: /build prototype/i })
+    const buildButton = await screen.findByRole('button', { name: /configure & build prototype/i })
     await waitFor(() => expect(mockGetJobs).toHaveBeenCalled())
     const callsBeforeBuild = mockGetJobs.mock.calls.length
 
     await user.click(buildButton)
     await user.click(within(screen.getByRole('dialog'))
-      .getByRole('button', { name: /build anyway/i }))
+      .getByRole('button', { name: /^build prototype$/i }))
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     // Without the handover this stays at 1 forever: refetchInterval is 0 while
@@ -142,13 +142,13 @@ describe('ProjectDetail job handover (U9)', () => {
     mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))
     renderProjectDetail()
 
-    const buildButton = await screen.findByRole('button', { name: /build prototype/i })
+    const buildButton = await screen.findByRole('button', { name: /configure & build prototype/i })
     await waitFor(() => expect(mockGetJobs).toHaveBeenCalled())
     const callsBeforeBuild = mockGetJobs.mock.calls.length
 
     await user.click(buildButton)
     await user.click(within(screen.getByRole('dialog'))
-      .getByRole('button', { name: /build anyway/i }))
+      .getByRole('button', { name: /^build prototype$/i }))
 
     // The start failed, so there is no job to show; the error belongs inline.
     await waitFor(() => expect(screen.getByText(/Bedrock unavailable/)).toBeInTheDocument())

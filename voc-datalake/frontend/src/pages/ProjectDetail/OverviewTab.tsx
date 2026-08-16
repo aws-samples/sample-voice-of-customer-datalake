@@ -198,9 +198,14 @@ export default function OverviewTab({
           buttonLabel={prototypeBuild.busy
             ? t('documents.prototype.building')
             : t('documents.prototype.button')}
-          // No `configureLabel`: the other cards open a wizard to configure first,
-          // this one starts the build (or a confirm) directly, so "Configure and"
-          // would promise a step that does not exist.
+          // The prefix the other five wizard-opening cards carry. It was absent
+          // while this card started work directly — "Configure and" would have
+          // promised a step that did not exist — and it is correct now for the same
+          // reason it is correct on them: the button opens a panel and spends
+          // nothing. It is also what frees the plain verb for the panel's own submit
+          // button, which had been left reading "Build anyway" on projects with
+          // nothing to build anyway despite.
+          configureLabel={t('overview.configureAnd')}
           onClick={prototypeBuild.onClick}
           // Like remix, `missingUpstream` is a hard block here rather than a hint.
           // This is the *user-facing* authority — one derived condition, shared
@@ -446,42 +451,63 @@ function PrototypeBuildWizard({
   readonly build: PrototypeBuildControl
   readonly t: TFunction<'projectDetail'>
 }) {
+  // `aria-labelledby` rather than `ariaLabel`, pointing at the heading this panel
+  // already renders: one string on screen and in the accessible name, so the two
+  // cannot drift apart, and no second translated value to keep in step.
+  const headingId = useId()
+
   return (
     <ModalShell
       isOpen={build.wizard.isOpen}
       onClose={build.wizard.onCancel}
-      ariaLabel={t('documents.prototype.button')}
+      ariaLabelledBy={headingId}
       panelClassName="max-w-lg"
     >
       <div data-testid="prototype-build-wizard" className="p-4 sm:p-6">
-        <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+        <h3 id={headingId} className="text-base sm:text-lg font-semibold text-gray-900">
           {t('documents.prototype.button')}
         </h3>
-        {/* Empty exactly when this build needs no caution, so it is asked about
-            rather than assumed — an always-rendered block would leave an amber
-            panel with nothing in it on the common path. */}
-        {build.wizard.warning === '' ? null : (
-          <p className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 p-2.5 text-sm text-amber-800">
-            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-            <span>{build.wizard.warning}</span>
-          </p>
-        )}
+        {/* A LIVE REGION, and that is the point rather than decoration: `warning` is
+            derived from documents that refetch whenever a job completes, so it can
+            APPEAR or ESCALATE while this panel is open — a prototype arriving turns
+            the submit from "build from the PRD alone" into "build a second and keep
+            the first". A sighted user sees the amber block change; without a live
+            region a screen-reader user who opened with no warning is told nothing,
+            and the submit quietly costs more than when they opened it.
+
+            The region wraps the CONDITION, not just the text: an element that only
+            exists once there is something to say cannot announce its own arrival, so
+            the container is always mounted and only its contents change. */}
+        <div role="status" aria-live="polite">
+          {build.wizard.warning === '' ? null : (
+            <p className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 p-2.5 text-sm text-amber-800">
+              <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+              <span>{build.wizard.warning}</span>
+            </p>
+          )}
+        </div>
         <PrototypeSourcePicker sources={build.sources} t={t} />
         <PrototypeExtraSources extras={build.extras} t={t} />
         <div className="mt-5 sm:mt-6 flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
           <button
+            type="button"
             onClick={build.wizard.onCancel}
             className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
           >
             {t('documents.prototype.cancel')}
           </button>
+          {/* No busy state here, deliberately: `onConfirm` closes the panel before
+              starting the request, so this button cannot be on screen while a start
+              is in flight. The busy label and any failure to start belong to the
+              card's own status line, which is where the user is looking once this
+              closes — and which already has tests for both. A spinner here would be
+              protection that never runs. */}
           <button
+            type="button"
             onClick={build.wizard.onConfirm}
-            disabled={build.busy}
-            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm font-medium rounded-lg bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm font-medium rounded-lg bg-orange-500 hover:bg-orange-600 text-white"
           >
-            {build.busy ? <Loader2 size={16} className="animate-spin" /> : null}
-            {t('documents.prototype.confirmBuild')}
+            {t('documents.prototype.button')}
           </button>
         </div>
       </div>
@@ -598,7 +624,7 @@ function SourceRow({
  *
  * These sat on the card face until the wizard existed, and the reason is worth
  * keeping because it constrains any future move: the confirm dialog they would
- * otherwise have lived in opened for only SOME projects — `confirmKeyFor` returned
+ * otherwise have lived in opened for only SOME projects — `warningKeyFor` returned
  * null for one PRD, one PR-FAQ and no prototype — so a control inside it was
  * unreachable for the simplest project. The wizard opens for every project, which
  * is what makes this placement safe and what

@@ -3,7 +3,7 @@
  * research reports, and the uploaded visuals a build takes its palette from.
  *
  * Where the controls live is the property under test, not a detail.
- * `confirmKeyFor` in `usePrototypeBuild` deliberately opens NO dialog for a
+ * `warningKeyFor` in `usePrototypeBuild` deliberately opens NO dialog for a
  * project with one PRD, one PR-FAQ and no prototype — the build starts on the
  * first click — and the source picker lives inside that dialog. So the fixture
  * that matters here is precisely that project: a control placed in the dialog is
@@ -116,8 +116,13 @@ function renderWizard(
   // switches the catalogue to German, and a hardcoded name would fail there with
   // "cannot find the button" — a message that points at the card rather than at the
   // query.
+  // Matched as a SUBSTRING of the accessible name, not equal to it: the card carries
+  // the "Configure & " prefix its five siblings have, and the panel's own submit is
+  // the bare verb. Anchoring here would break on the prefix; using the bare verb
+  // keeps this locale-independent, and the card is the only match while the panel is
+  // still closed.
   fireEvent.click(screen.getByRole('button', {
-    name: i18n.t('documents.prototype.button', { ns: 'projectDetail' }),
+    name: new RegExp(i18n.t('documents.prototype.button', { ns: 'projectDetail' }), 'i'),
   }))
   return result
 }
@@ -175,7 +180,7 @@ const noteStem = (key: 'visualsNotReady' | 'visualsFailed') =>
 const visualNotes = () => screen.getByTestId('prototype-visual-sources').textContent ?? ''
 
 /** The card's button. It opens the wizard; it no longer starts anything. */
-const buildButton = () => screen.getByRole('button', { name: /build prototype/i })
+const buildButton = () => screen.getByRole('button', { name: /configure & build prototype/i })
 /**
  * The wizard's own submit — the only control that spends money.
  *
@@ -183,7 +188,7 @@ const buildButton = () => screen.getByRole('button', { name: /build prototype/i 
  * start resolving to the card's button if either label changes.
  */
 const startBuild = () => within(screen.getByRole('dialog'))
-  .getByRole('button', { name: en.documents.prototype.confirmBuild })
+  .getByRole('button', { name: en.documents.prototype.button })
 const productContextBox = () => screen.getByRole('checkbox', { name: /product \/ service description/i })
 const researchBox = () => screen.getByRole('checkbox', { name: /research reports/i })
 const sentBody = () => mockBuildPrototype.mock.calls[0][1]

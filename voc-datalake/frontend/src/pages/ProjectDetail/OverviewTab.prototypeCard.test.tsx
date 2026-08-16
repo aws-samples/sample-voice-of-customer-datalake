@@ -95,7 +95,7 @@ function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: 
 
 /** The build trigger, not the modal's confirm button. */
 function buildButton() {
-  return screen.getByRole('button', { name: /build prototype/i })
+  return screen.getByRole('button', { name: /configure & build prototype/i })
 }
 
 /**
@@ -103,7 +103,7 @@ function buildButton() {
  * before the panel is opened.
  */
 function confirmButton() {
-  return screen.queryByRole('button', { name: /build anyway/i })
+  return screen.queryByRole('button', { name: /^build prototype$/i })
 }
 
 /**
@@ -116,7 +116,7 @@ function confirmButton() {
  */
 async function startBuildVia(user: ReturnType<typeof userEvent.setup>) {
   await user.click(buildButton())
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /build anyway/i }))
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^build prototype$/i }))
 }
 
 describe('prototype card confirm gate (U12)', () => {
@@ -151,7 +151,7 @@ describe('prototype card confirm gate (U12)', () => {
     renderCard({ hasPrd: true, hasPrfaq: false })
     await user.click(buildButton())
 
-    await user.click(screen.getByRole('button', { name: /build anyway/i }))
+    await user.click(screen.getByRole('button', { name: /^build prototype$/i }))
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(mockBuildPrototype).toHaveBeenCalledWith('proj_1', expect.anything())
@@ -188,7 +188,7 @@ describe('prototype card confirm gate (U12)', () => {
     expect(screen.queryByText(/already has a prototype/i)).not.toBeInTheDocument()
 
     // ...and it builds once asked.
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /build anyway/i }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^build prototype$/i }))
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
   })
 
@@ -264,7 +264,7 @@ describe('prototype card rebuild guard', () => {
     renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
     await user.click(buildButton())
 
-    await user.click(screen.getByRole('button', { name: /build anyway/i }))
+    await user.click(screen.getByRole('button', { name: /^build prototype$/i }))
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
   })
@@ -320,6 +320,25 @@ describe('prototype card rebuild guard', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
     expect(mockBuildPrototype).not.toHaveBeenCalled()
+  })
+
+  it('announces the escalated caution, not only renders it', async () => {
+    // The caution can appear or change while the panel is open, so a sighted user
+    // sees the amber block move and a screen-reader user must be told. Asserted on
+    // the live region CONTAINING the new text, because a region that is only mounted
+    // once there is something to say cannot announce its own arrival.
+    const user = userEvent.setup()
+    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: true })
+
+    await user.click(buildButton())
+    const region = within(screen.getByRole('dialog')).getByRole('status')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).toBeEmptyDOMElement()
+
+    rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1'), doc('prototype', 'proto_1')]))
+
+    expect(within(screen.getByRole('dialog')).getByRole('status'))
+      .toHaveTextContent(/already has a prototype/i)
   })
 
   it('escalates the caution to the rebuild warning when a prototype arrives mid-interaction', async () => {

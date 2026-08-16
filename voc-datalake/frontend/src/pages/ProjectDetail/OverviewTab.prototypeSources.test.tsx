@@ -67,8 +67,8 @@ function renderTab(documents: ProjectDocument[]) {
   )
 }
 
-const buildButton = () => screen.getByRole('button', { name: /build prototype/i })
-const confirmButton = () => screen.getByRole('button', { name: /build anyway/i })
+const buildButton = () => screen.getByRole('button', { name: /configure & build prototype/i })
+const confirmButton = () => screen.getByRole('button', { name: /^build prototype$/i })
 const sentBody = () => mockBuildPrototype.mock.calls[0][1]
 
 beforeEach(() => {
@@ -160,7 +160,7 @@ describe('the build reads the documents the dialog named', () => {
   })
 
   it('names the documents even when there is nothing to choose', async () => {
-    // With one of each there is no dialog, but the ids are still sent. Without
+    // With one of each there is nothing to choose, but the ids are still sent. Without
     // them the backend re-resolves "the newest" at build time, so a document
     // saved between render and click would be used instead of the one shown.
     const user = userEvent.setup()
@@ -168,7 +168,7 @@ describe('the build reads the documents the dialog named', () => {
 
     await user.click(buildButton())
     await user.click(within(screen.getByRole('dialog'))
-      .getByRole('button', { name: /build anyway/i }))
+      .getByRole('button', { name: /^build prototype$/i }))
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().source_prd_id).toBe('aa_prd_new')

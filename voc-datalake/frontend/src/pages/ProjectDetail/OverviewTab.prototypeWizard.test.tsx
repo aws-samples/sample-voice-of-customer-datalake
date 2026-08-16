@@ -96,7 +96,7 @@ function tab(documents: ProjectDocument[], productDocs?: ProductDoc[]) {
   )
 }
 
-const buildButton = () => screen.getByRole('button', { name: /build prototype/i })
+const buildButton = () => screen.getByRole('button', { name: /configure & build prototype/i })
 /**
  * The panel, found the way assistive tech finds it. `ModalShell` owns
  * `role="dialog"`, the accessible name and the focus trap, so asserting those
@@ -109,7 +109,7 @@ const maybeWizard = () => screen.queryByRole('dialog')
 
 /**
  * The five project shapes that used to behave differently. Only the first opened no
- * dialog; the other four raised one of the three `confirmKeyFor` reasons. After the
+ * dialog; the other four raised one of the three `warningKeyFor` reasons. After the
  * move they must all do the same thing, which is what makes the card predictable.
  */
 const SHAPES: ReadonlyArray<{ name: string; documents: ProjectDocument[] }> = [
@@ -127,9 +127,10 @@ beforeEach(() => {
 
 describe('the build configuration is reachable for every project', () => {
   it.each(SHAPES)('opens the wizard on $name', async ({ documents }) => {
+    const user = userEvent.setup()
     render(tab(documents, [VISUAL_A]))
 
-    await userEvent.click(buildButton())
+    await user.click(buildButton())
 
     // Identified by what it CONTAINS, not merely by being a dialog: four of these
     // shapes already open a ConfirmModal, so a role-only assertion would pass on
@@ -153,9 +154,10 @@ describe('the build configuration is reachable for every project', () => {
 
 describe('opening the wizard is not itself a build', () => {
   it('starts no build when the card button only opens the wizard', async () => {
+    const user = userEvent.setup()
     render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
 
-    await userEvent.click(buildButton())
+    await user.click(buildButton())
 
     expect(wizard()).toBeInTheDocument()
     // The endpoint is billable and has no existing-prototype check of its own, so
@@ -166,14 +168,15 @@ describe('opening the wizard is not itself a build', () => {
 
 describe('the wizard owns its own open state', () => {
   it('keeps the panel open and the selection intact when the documents change underneath', async () => {
+    const user = userEvent.setup()
     // §5b: the confirm dialog it replaces derived its visibility from live document
     // data, and the page refetches documents whenever a job completes. Hosting user
     // input in something with that property discards the input mid-interaction.
     const { rerender } = render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
-    await userEvent.click(buildButton())
+    await user.click(buildButton())
 
     const researchBox = within(wizard()).getByRole('checkbox', { name: /research reports/i })
-    await userEvent.click(researchBox)
+    await user.click(researchBox)
     expect(researchBox).toBeChecked()
 
     // An unrelated job finishing: the same project, one more document.
@@ -185,12 +188,33 @@ describe('the wizard owns its own open state', () => {
     expect(within(wizard()).getByRole('checkbox', { name: /research reports/i })).toBeChecked()
   })
 
-  it('closes on an explicit cancel', async () => {
-    render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
-    await userEvent.click(buildButton())
+  it('refuses to build once the documents that enabled the card are gone', async () => {
+    // Owned visibility has a consequence the old gate did not: an open panel can
+    // OUTLIVE the state that enabled the card button. The card's `disabled` cannot
+    // help here — it is behind the modal and the panel is already up — so the hook's
+    // own guard is the last thing between the user and a billable call with nothing
+    // to build from. Nothing else in this suite exercises that guard from the wizard
+    // path, which is what makes this the regression test for it.
+    const user = userEvent.setup()
+    const { rerender } = render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
+    await user.click(buildButton())
     expect(wizard()).toBeInTheDocument()
 
-    await userEvent.click(within(wizard()).getByRole('button', { name: /^cancel$/i }))
+    // Both source documents deleted from another surface while the panel is open.
+    rerender(tab([RESEARCH_A], [VISUAL_A]))
+
+    await user.click(within(wizard()).getByRole('button', { name: /^build prototype$/i }))
+
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
+  })
+
+  it('closes on an explicit cancel', async () => {
+    const user = userEvent.setup()
+    render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
+    await user.click(buildButton())
+    expect(wizard()).toBeInTheDocument()
+
+    await user.click(within(wizard()).getByRole('button', { name: /^cancel$/i }))
 
     expect(maybeWizard()).not.toBeInTheDocument()
     expect(mockBuildPrototype).not.toHaveBeenCalled()
