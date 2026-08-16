@@ -607,6 +607,10 @@ describe('buildVocChatContext category read amplification', () => {
 
     expect(ctx.userMessage).toContain('- delivery: 2');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('paging hit its bound'));
+    // An unread remainder is a partial window, so it takes the same path as a
+    // failed read: the model is told the figures are short rather than being
+    // handed a number that looks measured.
+    expect(ctx.userMessage).toContain('the figures below are incomplete');
     // The log has to be actionable: which window, and what it came to, or it
     // cannot be correlated with the number the model was handed — the same
     // payload lambda/api/metrics_handler.py::_query_metric_window carries.
@@ -658,6 +662,10 @@ describe('buildVocChatContext category read amplification', () => {
     expect(ctx.userMessage).not.toContain('NaN');
     // Dropping a row must not be silent: the window under-reports by that much.
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('unreadable counter row'));
+    // Silent in the LOG was only half of it. The number handed to the model is
+    // short by the dropped row, so the prompt has to say so — a dropped row used
+    // to render `- delivery: 5` with nothing to suggest 5 was not the whole count.
+    expect(ctx.userMessage).toContain('the figures below are incomplete');
   });
 
   it('never hands the model NaN for the headline numbers', async () => {
@@ -702,13 +710,24 @@ describe('buildVocChatContext category read amplification', () => {
       days: 3,
     });
 
+    // Each of these is an EXACT total over a window with rows on both sides of
+    // both bounds, which pins the bound in both directions: a bound too wide
+    // admits the out-of-window row (6 would read 56, 2 would read 11), and one
+    // too narrow drops an in-window row (6 would read 2 or 4).
+    //
+    // What was here before was a scan of the whole prompt for the out-of-window
+    // VALUES ('50', '9', '70', '80'). It caught nothing these exact assertions do
+    // not — a leaked row changes the totals, and 6+50 does not contain '50'
+    // anyway — while '9' is a single digit against a message that legitimately
+    // contains any digit through `pct()`'s toFixed(1) (an in-window total of 7
+    // with 3 positive renders `- Positive: 3 (42.9%)`). It could therefore fail
+    // on correct code, which is the failure mode this file argues against.
     expect(ctx.metadata.total_feedback).toBe(6);
     expect(ctx.metadata.urgent_count).toBe(2);
+    expect(ctx.userMessage).toContain('**Total Feedback Items:** 6');
+    expect(ctx.userMessage).toContain('**Urgent Issues:** 2');
     expect(ctx.userMessage).toContain('- Positive: 5');
     expect(ctx.userMessage).toContain('- Negative: 1');
-    for (const outOfWindow of ['50', '9', '70', '80']) {
-      expect(ctx.userMessage).not.toContain(outOfWindow);
-    }
   });
 
   it('reports a table-wide read failure once for the turn, not once per partition', async () => {
@@ -737,6 +756,56 @@ describe('buildVocChatContext category read amplification', () => {
     // And the zeros left behind are not presented as measured facts: the whole
     // point of the section is that the model must not answer confidently from
     // data nobody could read.
+    expect(ctx.userMessage).toContain('the figures below are incomplete');
+    // The CAUSE stays in the log. An AWS exception name is infrastructure detail
+    // — this one says the Lambda's IAM role is missing a grant — and the note is
+    // the one sentence in the section the model is told to relay, so a name
+    // interpolated into it is a name offered to an end user who can do nothing
+    // with it. The operator keeps it, with the window bounds attached.
+    expect(ctx.userMessage).not.toContain('AccessDeniedException');
+    expect(failureWarnings[0][0]).toContain('AccessDeniedException');
+  });
+
+  it('reports unreadable counter rows once for the turn, not once per partition', async () => {
+    // A cause that makes rows unparseable — a migration that wrote strings into
+    // `count`, a hand-edit — hits every partition of the table identically, so
+    // the ninth warning says nothing the first did. That is the same fan-out the
+    // read-failure report above exists to prevent, reached through a different
+    // cause, and it is why the count is aggregated by the caller rather than
+    // warned about inside the per-page read.
+    //
+    // Three configured names rather than the default ten, so this fixture does
+    // not restate DEFAULT_CATEGORIES: 3 categories + total + urgent + 4
+    // sentiments = 9 windows, every one of them holding a bad row.
+    const configured = ['delivery', 'billing', 'app'];
+    const table: Record<string, Record<string, unknown>[]> = {
+      [CATEGORY_SETTINGS_KEY]: [{ categories: configured.map((name) => ({ name })) }],
+    };
+    const partitions = [
+      'METRIC#daily_total',
+      'METRIC#urgent',
+      ...['positive', 'negative', 'neutral', 'mixed'].map((s) => `METRIC#daily_sentiment#${s}`),
+      ...configured.map((cat) => `METRIC#daily_category#${cat}`),
+    ];
+    for (const pk of partitions) {
+      table[`${pk}|${TODAY_UTC}`] = [{ count: 4 }, { count: 'n/a' }];
+    }
+
+    const ctx = await buildVocChatContext(createKeyedDocClient(table), TABLE_NAME, {
+      message: 'hi',
+      days: 1,
+    });
+
+    const skipWarnings = warnSpy.mock.calls.filter(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0].includes('unreadable counter row'),
+    );
+    expect(skipWarnings).toHaveLength(1);
+    // One line is only as useful as sixteen if it carries the scale and the
+    // windows, so it is those the assertion pins, not just the phrasing.
+    expect(String(skipWarnings[0][0])).toContain(`${partitions.length} metric window(s)`);
+    expect(String(skipWarnings[0][0])).toContain('METRIC#daily_total');
+    // The readable rows still count, and the prompt says the total is short.
+    expect(ctx.userMessage).toContain('**Total Feedback Items:** 4');
     expect(ctx.userMessage).toContain('the figures below are incomplete');
   });
 

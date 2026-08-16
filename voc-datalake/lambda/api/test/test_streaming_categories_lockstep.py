@@ -53,6 +53,7 @@ from pathlib import Path
 PYTHON_READER_SOURCE = 'lambda/shared/api.py'
 PYTHON_WRITER_SOURCE = 'lambda/api/settings_handler.py'
 PROCESSOR_SOURCE = 'lambda/processor/handler.py'
+AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
 STREAM_SOURCE = 'lambda/stream/src/context/voc-context.ts'
 
 # Quoting is not part of the contract, so no pattern here insists on it: these
@@ -71,6 +72,13 @@ PYTHON_READER_KEY_PATTERN = (
 # The key as the writer declares it, as two module constants.
 PYTHON_WRITER_PK_PATTERN = rf'^CATEGORIES_PK = {_Q}([^\'"]+){_Q}'
 PYTHON_WRITER_SK_PATTERN = rf'^CATEGORIES_SK = {_Q}([^\'"]+){_Q}'
+
+# Every counter write in the aggregator, as (pk expression, sk expression). The
+# `def ` lookbehind keeps the two function DEFINITIONS out of the call list; no
+# call site's pk or sk expression contains a comma, so stopping each group at one
+# is safe, and the call count is asserted so a pattern that stopped matching
+# cannot pass by finding nothing.
+AGGREGATOR_COUNTER_CALL_PATTERN = r'(?<!def )update_(?:counter|average)\(\s*([^,]+),\s*([^,]+),'
 
 # The never-written key streaming chat used to ask for, assembled rather than
 # written out so that a repository-wide search for it keeps returning nothing
@@ -226,19 +234,65 @@ def _stream_default_categories() -> list[str]:
     return re.findall(r"'([^']+)'", match.group(1))
 
 
+def _split_object_properties(object_literal: str) -> list[str]:
+    """One fragment per property of an object literal, split on TOP-LEVEL commas.
+
+    Bracket depth is tracked, and characters inside quotes are skipped, so
+    neither a nested `z.object({ ... })` nor a validator message containing a
+    comma or a bracket can split one property into two.
+    """
+    fragments: list[str] = []
+    depth = 0
+    quote = ''
+    start = 0
+    for index, char in enumerate(object_literal):
+        if quote:
+            if char == quote:
+                quote = ''
+        elif char in '\'"`':
+            quote = char
+        elif char in '([{':
+            depth += 1
+        elif char in ')]}':
+            depth -= 1
+        elif char == ',' and depth == 1:
+            fragments.append(object_literal[start:index])
+            start = index + 1
+    fragments.append(object_literal[start:])
+    return fragments
+
+
 def _required_zod_properties(object_literal: str) -> set[str]:
     """The property names a Zod object literal REQUIRES.
 
-    Every declared property is required unless its chain ends in `.optional()` or
+    Every declared property is required unless its chain carries `.optional()` or
     `.nullish()`. Reading only the first key was how a second required property
     could hide: `z.object({ name: z.string(), id: z.string() })` looks right to a
     pattern anchored on the leading key while dropping every stored category the
     writer never gave an `id`.
+
+    Properties are split on top-level commas rather than on every comma because a
+    validator may take a message: `id: z.string().min(1, 'x').optional()` is ONE
+    property whose chain ends in `.optional()`, and reading it only as far as the
+    first comma reports it as REQUIRED — failing a correct schema with a message
+    telling the author to make the property optional, which is what they did.
+    TestTheZodPropertyHelperItself pins that case directly.
+
+    Two limits, both of which fail loudly rather than passing silently: an
+    object-level `.partial()` after `z.object({...})` makes every property
+    optional and is invisible here, so a schema restructured that way must update
+    this test; and a validator message containing an escaped copy of its own
+    quote character would mis-split, which surfaces as a missing property name
+    (a failed assertion), never as a pass.
     """
     required = set()
-    for name, chain in re.findall(r'(\w+)\s*:\s*(z\.[^,}]+)', object_literal):
+    for fragment in _split_object_properties(object_literal):
+        text = fragment.strip().lstrip('{').rstrip('}').strip()
+        name, separator, chain = text.partition(':')
+        if not separator:
+            continue
         if '.optional()' not in chain and '.nullish()' not in chain:
-            required.add(name)
+            required.add(name.strip())
     return required
 
 
@@ -252,7 +306,7 @@ def _processor_default_categories() -> list[str]:
     """
     source = _read(PROCESSOR_SOURCE)
     literal = _single(
-        source, r'^DEFAULT_CATEGORIES = "([^"]+)"', PROCESSOR_SOURCE,
+        source, rf'^DEFAULT_CATEGORIES = {_Q}([^\'"]+){_Q}', PROCESSOR_SOURCE,
         'DEFAULT_CATEGORIES string literal',
     )[0]
     return literal.split('|')
@@ -372,6 +426,101 @@ class TestCategoryNameFieldLockstep:
         )
 
 
+class TestTheZodPropertyHelperItself:
+    """The helper decides whether the schema pin above passes, so its own failure
+    modes matter as much as the pin's.
+
+    A lockstep whose failures are sometimes WRONG is worse than none: the pin's
+    message offers an escape hatch — make the extra property `.optional()` — and
+    a helper that reads a chain only as far as its first comma does not honour it
+    for any property whose validator also carries a message. The author would be
+    told to do the thing they had already done.
+    """
+
+    def test_a_bare_property_is_required(self):
+        assert _required_zod_properties('{ name: z.string() }') == {'name'}
+
+    def test_every_declared_property_is_read_not_just_the_first(self):
+        literal = '{ name: z.string(), id: z.string() }'
+        assert _required_zod_properties(literal) == {'name', 'id'}, (
+            'A second required property must be visible — reading only the '
+            'leading key is how a required `id` hid from this pin.'
+        )
+
+    def test_an_optional_property_is_not_required(self):
+        assert _required_zod_properties('{ name: z.string(), id: z.string().optional() }') == {
+            'name',
+        }
+
+    def test_a_nullish_property_is_not_required(self):
+        assert _required_zod_properties('{ name: z.string(), id: z.string().nullish() }') == {
+            'name',
+        }
+
+    def test_a_validator_message_does_not_hide_the_optional_marker(self):
+        # The regression this class exists for. `.min(1, 'x')` puts a comma inside
+        # the chain, which used to truncate it before `.optional()` was seen — so
+        # a correct schema failed the pin, with a message telling its author to
+        # make the property optional.
+        literal = "{ name: z.string(), id: z.string().min(1, 'x').optional() }"
+        assert _required_zod_properties(literal) == {'name'}, (
+            'A property is optional if its chain says so, wherever the commas '
+            'fall inside its validators.'
+        )
+
+    def test_a_message_containing_a_comma_is_not_a_second_property(self):
+        literal = "{ name: z.string().min(1, 'set a name, please') }"
+        assert _required_zod_properties(literal) == {'name'}
+
+    def test_a_nested_object_does_not_contribute_its_own_properties(self):
+        # The inner comma sits at bracket depth 3, so it must not split the outer
+        # literal — otherwise `a` and `b` would be reported as top-level
+        # properties of a schema that does not declare them.
+        literal = '{ name: z.string(), meta: z.object({ a: z.string(), b: z.string() }) }'
+        assert _required_zod_properties(literal) == {'name', 'meta'}
+
+
+class TestCounterSortKeyShapeLockstep:
+    """The streaming reader sums a window with `sk BETWEEN :oldest AND :newest`,
+    which is only equivalent to "these dates" while every sort key under those
+    partitions is a bare `YYYY-MM-DD`.
+
+    A composite sort key sorts INSIDE the window it looks unrelated to:
+    '2026-03-03#proj_1' is greater than '2026-03-02' and less than '2026-03-04',
+    so it would be summed and the section would silently OVER-report. Nothing on
+    the reading side can detect that — which is why this is pinned against the
+    writer rather than with a reader fixture asserting such a row is skipped. Such
+    a fixture would be asserting a falsehood: the range predicate does match it.
+
+    The guarantee is therefore the aggregator's, and it is one line per call site:
+    every counter is keyed by the item's date, with nothing appended. What remains
+    assumed, and is not pinnable here, is the shape of that `date` FIELD itself —
+    an ingestion path that wrote a composite value into `date` would defeat this
+    from the other end.
+    """
+
+    def test_every_aggregate_counter_is_written_under_a_bare_date_sort_key(self):
+        source = _read(AGGREGATOR_SOURCE)
+        calls = re.findall(AGGREGATOR_COUNTER_CALL_PATTERN, source)
+        # The denominator first: a pattern that matched nothing would satisfy the
+        # real assertion below for the wrong reason.
+        assert len(calls) >= 8, (
+            f'Found only {len(calls)} counter writes in {AGGREGATOR_SOURCE}; this '
+            f'module writes at least eight. The pattern in this test file has '
+            f'stopped matching the call sites, so the assertion below proves '
+            f'nothing — fix the pattern rather than the count.'
+        )
+        composite = sorted({sk.strip() for _, sk in calls if sk.strip() != 'date'})
+        assert not composite, (
+            f'{AGGREGATOR_SOURCE} keys a counter by {composite} rather than by '
+            f'the bare `date`. {STREAM_SOURCE} sums these partitions with '
+            f'`sk BETWEEN :oldest AND :newest`, and a composite sort key sorts '
+            f'inside a date window — so streaming chat would silently count rows '
+            f'that are not days. If a composite sort key is really wanted here, '
+            f'the streaming reader needs a different predicate, not a wider one.'
+        )
+
+
 class TestNotConfiguredFallbackLockstep:
     """Both surfaces answer the same way when nothing is configured.
 
@@ -427,19 +576,28 @@ class TestNotConfiguredFallbackLockstep:
         written under names neither reader ever asks for — so the Top Categories
         section is empty again while both readers agree with each other, and
         every other assertion in this file stays green."""
-        processor_defaults = _processor_default_categories()
-        assert processor_defaults == _python_default_categories(), (
+        # Compared as MEMBERSHIP, not as sequence. What has to hold is that the
+        # names match: the counters are written under whichever name the model
+        # emits, and a reader asks for all of its names regardless of their order.
+        # Order IS pinned between the two readers' list literals above, where they
+        # are hand-maintained mirrors of each other and a divergence is worth
+        # seeing — but this copy is a pipe-delimited prompt string, where insisting
+        # on the same sequence would fail a harmless reordering and say the
+        # counters are wrong. Sorted rather than set-compared so a duplicated name
+        # still shows up.
+        processor_defaults = sorted(_processor_default_categories())
+        assert processor_defaults == sorted(_python_default_categories()), (
             f'{PROCESSOR_SOURCE} lets the enrichment model emit '
             f'{processor_defaults} but {PYTHON_READER_SOURCE} falls back to '
-            f'{_python_default_categories()}. The counters are written under the '
-            f'names the model emits, so the readers would ask for partitions that '
-            f'are never written.'
+            f'{sorted(_python_default_categories())}. The counters are written '
+            f'under the names the model emits, so the readers would ask for '
+            f'partitions that are never written.'
         )
-        assert processor_defaults == _stream_default_categories(), (
+        assert processor_defaults == sorted(_stream_default_categories()), (
             f'{PROCESSOR_SOURCE} lets the enrichment model emit '
             f'{processor_defaults} but {STREAM_SOURCE} falls back to '
-            f'{_stream_default_categories()}. Streaming chat would ask for '
-            f'counter partitions the enrichment output never names.'
+            f'{sorted(_stream_default_categories())}. Streaming chat would ask '
+            f'for counter partitions the enrichment output never names.'
         )
 
     def test_the_default_list_is_not_empty(self):

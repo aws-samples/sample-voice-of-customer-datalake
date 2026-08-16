@@ -6,7 +6,7 @@ import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
-import { PERSISTENT_QUERY_ERRORS } from './recent-feedback.js';
+import { PERSISTENT_QUERY_ERRORS } from './query-errors.js';
 
 const SENTIMENT_LABELS = ['positive', 'negative', 'neutral', 'mixed'] as const;
 
@@ -116,41 +116,51 @@ function utcDateString(now: Date, daysAgo: number): string {
 }
 
 /**
- * What one metric partition's window came to, and whether reading it failed.
+ * What one metric partition's window came to, and every way it may be short.
  *
- * The error name travels with the total rather than being logged where it
- * happens, for two reasons: a persistent failure hits every partition of the
- * table identically, so the turn must report it ONCE instead of sixteen times;
- * and a zero that came from a failed read is not a measured zero, so the prompt
- * has to be able to say the summary is incomplete rather than presenting it as
- * fact.
+ * There are exactly three ways: the read failed, some rows would not parse, or
+ * paging hit its bound. All three travel with the total rather than being logged
+ * where they happen, for two reasons. A systemic cause — a denied table, a
+ * migration that wrote strings, a fan-out wider than the bound — hits every
+ * partition identically, so the turn must report it ONCE instead of sixteen
+ * times; and a number that is short is not a measured number, so the prompt has
+ * to be able to say the summary is incomplete rather than presenting it as fact.
+ * Only the caller sees the whole turn, so only the caller can do either.
  */
 interface MetricRead {
+  /** What the readable rows of the pages that were read came to. */
   total: number;
+  /** Which window this is, so one warning per cause can name the reads it covers. */
+  window: string;
+  /** Set when a page read failed; `total` is then only what earlier pages held. */
   errorName?: string;
-  /** Which window came back short, for the one warning the caller logs. */
-  partial?: string;
+  /** How many rows would not parse, so `total` is short by their counts. */
+  skippedRows: number;
+  /** Set when paging hit its bound, so an unread remainder is missing. */
+  boundExhausted?: boolean;
 }
 
-/** The readable counter rows of one page, summed. */
+/**
+ * The readable counter rows of one page, summed, and how many were not readable.
+ *
+ * The count is returned rather than warned about here: this runs once per page
+ * per partition, and a systemic cause makes every one of those pages fail the
+ * same way. Reporting is the caller's job for that reason.
+ */
 function sumMetricItems(
   items: Record<string, unknown>[] | undefined,
-  metricKey: string,
-): number {
+): { total: number; skipped: number } {
   // Per-row, so one unreadable row costs one row. Coercing the page as a whole
   // would make the window NaN, which drops a category that has real feedback
   // (`NaN > 0` is false) and reaches the prompt as `Total Feedback Items: NaN`.
   const rows = (items ?? []).map((item) => metricItemSchema.safeParse(item));
-  const skipped = rows.filter((row) => !row.success).length;
-  if (skipped > 0) {
-    console.warn(
-      `sumMetricWindow: skipped ${skipped} unreadable counter row(s) in ${metricKey}; the window under-reports by that much`,
-    );
-  }
-  return rows.reduce(
-    (sum, row) => sum + (row.success ? row.data.count ?? row.data.value ?? 0 : 0),
-    0,
-  );
+  return {
+    total: rows.reduce(
+      (sum, row) => sum + (row.success ? row.data.count ?? row.data.value ?? 0 : 0),
+      0,
+    ),
+    skipped: rows.filter((row) => !row.success).length,
+  };
 }
 
 /**
@@ -170,7 +180,12 @@ async function readMetricPage(
   metricKey: string,
   bounds: { oldest: string; newest: string },
   startKey?: Record<string, unknown>,
-): Promise<{ total: number; lastKey?: Record<string, unknown>; errorName?: string }> {
+): Promise<{
+  total: number;
+  skipped: number;
+  lastKey?: Record<string, unknown>;
+  errorName?: string;
+}> {
   try {
     const resp = await docClient.send(
       new QueryCommand({
@@ -184,9 +199,13 @@ async function readMetricPage(
         ExclusiveStartKey: startKey,
       }),
     );
-    return { total: sumMetricItems(resp.Items, metricKey), lastKey: resp.LastEvaluatedKey };
+    return { ...sumMetricItems(resp.Items), lastKey: resp.LastEvaluatedKey };
   } catch (error) {
-    return { total: 0, errorName: error instanceof Error ? error.name : 'UnknownError' };
+    return {
+      total: 0,
+      skipped: 0,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    };
   }
 }
 
@@ -203,10 +222,14 @@ async function readMetricPage(
  * Paging is bounded rather than `while (true)`: one date yields at most one item
  * and an unfiltered page yields at least one, so a window of `days` dates cannot
  * span more than `days` pages. Exhausting the bound means that invariant no
- * longer holds, so the window really is partial — log it instead of returning a
- * quietly short answer. A page that FAILS is the same situation and takes the
- * same path: readMetricPage returns rather than throws, so the pages already
- * summed survive and only the unread remainder is missing.
+ * longer holds, so the window really is partial — say so on the returned value
+ * instead of returning a quietly short answer. A page that FAILS is the same
+ * situation and takes the same path: readMetricPage returns rather than throws,
+ * so the pages already summed survive and only the unread remainder is missing.
+ *
+ * Every shortfall is reported by the CALLER, once per cause for the whole turn.
+ * Warning here instead was the mistake this shape replaces: this function runs
+ * once per partition, and a systemic cause makes all sixteen say the same thing.
  */
 async function sumMetricWindow(
   docClient: DynamoDBDocumentClient,
@@ -216,30 +239,34 @@ async function sumMetricWindow(
   pagesLeft: number,
   startKey?: Record<string, unknown>,
 ): Promise<MetricRead> {
+  // Named on every return, not just the short ones, so the caller's one warning
+  // per cause can say WHICH reads came back short — the payload
+  // metrics_handler.py::_query_metric_window carries, for the same reason:
+  // nothing in the returned number can express that it is partial.
+  const window = `${metricKey} over ${bounds.oldest}..${bounds.newest}`;
   const page = await readMetricPage(docClient, aggregatesTable, metricKey, bounds, startKey);
   if (page.errorName) {
     // Whatever earlier pages counted is already in the caller's accumulator, and
-    // this page's own rows are lost rather than the whole partition. The window
-    // is named so the caller's single warning can say WHICH read came back short
-    // — the payload metrics_handler.py::_query_metric_window carries, for the
-    // same reason: nothing in the returned number can express that it is partial.
+    // this page's own rows are lost rather than the whole partition.
     return {
-      total: page.total,
-      errorName: page.errorName,
-      partial: `${metricKey} over ${bounds.oldest}..${bounds.newest}`,
+      total: page.total, window, skippedRows: page.skipped, errorName: page.errorName,
     };
   }
-  if (!page.lastKey) return { total: page.total };
+  if (!page.lastKey) return { total: page.total, window, skippedRows: page.skipped };
   if (pagesLeft <= 1) {
-    console.warn(
-      `sumMetricWindow: paging hit its bound for ${metricKey} over ${bounds.oldest}..${bounds.newest}; window is partial at ${page.total}`,
-    );
-    return { total: page.total };
+    return {
+      total: page.total, window, skippedRows: page.skipped, boundExhausted: true,
+    };
   }
   const rest = await sumMetricWindow(
     docClient, aggregatesTable, metricKey, bounds, pagesLeft - 1, page.lastKey,
   );
-  return { ...rest, total: page.total + rest.total };
+  return {
+    ...rest,
+    window,
+    total: page.total + rest.total,
+    skippedRows: page.skipped + rest.skippedRows,
+  };
 }
 
 async function sumDailyMetric(
@@ -254,19 +281,28 @@ async function sumDailyMetric(
 }
 
 /**
- * Report each distinct read failure once for the turn, not once per partition,
- * and say whether the summary is degraded.
+ * Report each way this turn's windows came back short ONCE, and answer whether
+ * the summary is degraded.
  *
- * A systemic failure — the names in PERSISTENT_QUERY_ERRORS, shared with
- * src/context/recent-feedback.ts — fails identically for every partition of the
- * same table, so sixteen warnings say nothing the first one did not.
+ * Three causes, one report each. A read that failed, rows that would not parse
+ * and paging that hit its bound all leave a total lower than the truth, and each
+ * has a systemic form that hits every partition of the table identically — the
+ * names in PERSISTENT_QUERY_ERRORS (src/context/query-errors.ts, shared with
+ * recent-feedback.ts, which reached the same conclusion for its own fan-out), a
+ * migration that wrote strings into `count`, a taxonomy wider than the page
+ * bound. Sixteen warnings say nothing the first one did, so the aggregation
+ * happens here, where the whole turn is visible, and not in the per-page read.
+ *
+ * The returned flag is the other half, and the more important one: a total that
+ * is short must not be rendered as a measured fact. All three causes feed it, so
+ * "the figures are incomplete" means one thing.
  */
-function reportMetricFailures(reads: MetricRead[]): string[] {
+function reportMetricFailures(reads: MetricRead[]): boolean {
   const failures = new Map<string, string[]>();
   for (const read of reads) {
     if (!read.errorName) continue;
     const windows = failures.get(read.errorName) ?? [];
-    windows.push(read.partial ?? 'unknown window');
+    windows.push(read.window);
     failures.set(read.errorName, windows);
   }
   for (const [errorName, windows] of failures) {
@@ -277,7 +313,23 @@ function reportMetricFailures(reads: MetricRead[]): string[] {
       `buildVocChatContext: ${windows.length} metric window read(s) failed with ${errorName}${systemic}; the data summary is incomplete. Partial: ${windows.join('; ')}`,
     );
   }
-  return [...failures.keys()];
+
+  const withSkips = reads.filter((read) => read.skippedRows > 0);
+  if (withSkips.length > 0) {
+    const rows = withSkips.reduce((sum, read) => sum + read.skippedRows, 0);
+    console.warn(
+      `buildVocChatContext: skipped ${rows} unreadable counter row(s) across ${withSkips.length} metric window(s); those windows under-report by that much. Partial: ${withSkips.map((read) => read.window).join('; ')}`,
+    );
+  }
+
+  const exhausted = reads.filter((read) => read.boundExhausted);
+  if (exhausted.length > 0) {
+    console.warn(
+      `buildVocChatContext: paging hit its bound for ${exhausted.length} metric window(s), so an unread remainder is missing. Partial: ${exhausted.map((read) => read.window).join('; ')}`,
+    );
+  }
+
+  return failures.size > 0 || withSkips.length > 0 || exhausted.length > 0;
 }
 
 /**
@@ -427,24 +479,38 @@ Format your responses clearly with bullet points or numbered lists when appropri
 
 function buildDataContext(
   days: number,
-  totals: { totalFeedback: number; urgentCount: number; failedReads: string[] },
+  totals: { totalFeedback: number; urgentCount: number; degraded: boolean },
   sentimentMap: Record<string, number>,
   topCategories: [string, number][],
   filters: { source?: string; category?: string; sentiment?: string },
 ): string {
-  const { totalFeedback, urgentCount, failedReads } = totals;
+  const { totalFeedback, urgentCount, degraded } = totals;
   const pct = (n: number) => ((n / Math.max(totalFeedback, 1)) * 100).toFixed(1);
   const topCatLines = topCategories.map(([cat, count]) => `- ${cat}: ${count}`).join('\n');
-  // A zero that came from a failed read is not a measured zero. Saying so is the
+  // A number that came back short is not a measured number. Saying so is the
   // difference between the model reporting "no urgent issues" and reporting that
   // it could not tell — the same silent-confidence failure this module's history
   // is made of.
-  const degraded = failedReads.length > 0
-    ? `\n**NOTE:** Some metric reads failed (${failedReads.join(', ')}), so the figures below are incomplete and may under-report. Say so rather than presenting them as complete.\n`
+  //
+  // What this sentence must NOT carry is the CAUSE. `error.name` is
+  // infrastructure detail: AccessDeniedException tells whoever reads the answer
+  // that this Lambda's IAM role is missing a grant, ResourceNotFoundException
+  // that a table is absent or misnamed. Neither is actionable for them, and this
+  // is the one sentence in the section the model is explicitly told to relay, so
+  // interpolating the name is inviting it out to an end user. The operator
+  // channel for it already exists and is strictly better: reportMetricFailures
+  // logs the name together with the window bounds it applies to.
+  //
+  // English is deliberate, as it is for the field labels below: this is prompt
+  // text, not UI copy. buildSystemPrompt instructs the model to answer in
+  // response_language, so the model relays this fact in the user's language —
+  // translating the prompt would change nothing the user reads.
+  const degradedNote = degraded
+    ? '\n**NOTE:** Some metric reads did not complete, so the figures below are incomplete and may under-report. Say so rather than presenting them as complete.\n'
     : '';
 
   const context = `## Current Data Summary (Last ${days} days)
-${degraded}
+${degradedNote}
 **Total Feedback Items:** ${totalFeedback}
 **Urgent Issues:** ${urgentCount}
 
@@ -506,14 +572,14 @@ export async function buildVocChatContext(
 
   const totalFeedback = totalRead.total;
   const urgentCount = urgentRead.total;
-  const failedReads = reportMetricFailures([
+  const degraded = reportMetricFailures([
     totalRead, urgentRead, ...sentimentReads, ...categories.reads,
   ]);
 
   const systemPrompt = buildSystemPrompt(body.response_language);
   const dataContext = buildDataContext(
     days,
-    { totalFeedback, urgentCount, failedReads },
+    { totalFeedback, urgentCount, degraded },
     sentimentMap,
     categories.top,
     { source: sourceFilter, category: categoryFilter, sentiment: sentimentFilter },
