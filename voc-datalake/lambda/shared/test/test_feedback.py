@@ -985,3 +985,107 @@ class TestFeedbackBudgetDerivation:
 
         assert feedback_item_limit(0) == 1
         assert feedback_item_limit(10) == 1
+
+
+class TestPerFieldClippingIsReported:
+    """A cap that fires without saying so is the defect #231 is about.
+
+    ``format_feedback_for_llm`` clips the LLM-generated enrichment fields so
+    ``FEEDBACK_CHARS_PER_ITEM_MAX`` is a real bound and the item limit can be
+    derived from the character budget. But this formatter is shared — the
+    research step handler and every helper in projects.py call it — and those
+    callers get no ``context_truncated`` equivalent. The warning is their signal,
+    so it is asserted here rather than assumed.
+    """
+
+    @staticmethod
+    def _clip_warnings(caplog):
+        return [
+            r for r in caplog.records
+            if 'clipped text out of the LLM context' in r.getMessage()
+        ]
+
+    def test_a_clipped_enrichment_field_is_reported_with_its_name_and_count(self, caplog):
+        import logging
+
+        from shared.feedback import MAX_ENRICHMENT_FIELD_CHARS, format_feedback_for_llm
+
+        items = [
+            {**_item(i), 'problem_summary': 's' * (MAX_ENRICHMENT_FIELD_CHARS + 1)}
+            for i in range(3)
+        ]
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm(items)
+
+        warnings = self._clip_warnings(caplog)
+        assert warnings, 'clipping happened and nothing reported it'
+        assert warnings[0].clipped_fields == {'problem_summary': 3}, (
+            'the report must name the field and how many records it clipped, so '
+            'a caller can tell one verbose record from a systematic cap'
+        )
+
+    def test_nothing_is_reported_when_nothing_was_clipped(self, caplog):
+        """The control. Without it the assertion above could pass on a warning
+        this formatter always emits, rather than on the cap under test."""
+        import logging
+
+        from shared.feedback import format_feedback_for_llm
+
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm([{**_item(i), 'problem_summary': 'short'}
+                                     for i in range(3)])
+
+        assert self._clip_warnings(caplog) == []
+
+    def test_a_field_exactly_at_the_cap_is_not_reported(self, caplog):
+        """Off-by-one: at the cap nothing is lost, so nothing should be claimed."""
+        import logging
+
+        from shared.feedback import MAX_ENRICHMENT_FIELD_CHARS, format_feedback_for_llm
+
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm(
+                [{**_item(0), 'problem_summary': 's' * MAX_ENRICHMENT_FIELD_CHARS}]
+            )
+
+        assert self._clip_warnings(caplog) == []
+
+    def test_the_original_text_cap_is_reported_too(self, caplog):
+        """It predates this change and is the largest per-record loss.
+
+        Counted but deliberately not altered: adding an ellipsis there would
+        change what the model receives, while counting only makes the existing
+        loss visible.
+        """
+        import logging
+
+        from shared.feedback import MAX_ORIGINAL_TEXT_CHARS, format_feedback_for_llm
+
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm([_item(0, text_len=MAX_ORIGINAL_TEXT_CHARS + 50)])
+
+        warnings = self._clip_warnings(caplog)
+        assert warnings, 'the original_text cap fired and nothing reported it'
+        assert warnings[0].clipped_fields == {'original_text': 1}
+
+    def test_every_clipped_field_appears_in_one_report(self, caplog):
+        import logging
+
+        from shared.feedback import MAX_ENRICHMENT_FIELD_CHARS, format_feedback_for_llm
+
+        long = 'x' * (MAX_ENRICHMENT_FIELD_CHARS + 1)
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm([{
+                **_item(0),
+                'problem_summary': long,
+                'direct_customer_quote': long,
+                'problem_root_cause_hypothesis': long,
+            }])
+
+        warnings = self._clip_warnings(caplog)
+        assert len(warnings) == 1, 'one report per call, not one per field'
+        assert warnings[0].clipped_fields == {
+            'direct_customer_quote': 1,
+            'problem_summary': 1,
+            'problem_root_cause_hypothesis': 1,
+        }

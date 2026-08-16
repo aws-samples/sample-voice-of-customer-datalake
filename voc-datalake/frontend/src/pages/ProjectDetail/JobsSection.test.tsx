@@ -397,14 +397,38 @@ describe('JobsSection resting state', () => {
       render(
         <JobsSection
           jobs={[jobWithMetadata({
-            context_truncated: true, feedback_items_used: '145', feedback_count: '300',
+            context_truncated: true, feedback_items_used: '9', feedback_count: '100',
           })]}
           onDismiss={vi.fn()}
         />,
       )
       await expandCompleted(user)
+      // 9 and 100 on purpose. Left as strings, the coherence check compares them
+      // lexicographically — '9' <= '100' is FALSE — so an unparsed read falls back
+      // to the count-free wording and loses both numbers. A pair like '145'/'300'
+      // would compare the same either way and the test would pass without the
+      // parser doing anything.
       expect(
-        screen.getByText(/Based on 145 of the 300 feedback items read/),
+        screen.getByText(/Based on 9 of the 100 feedback items read/),
+      ).toBeInTheDocument()
+    })
+
+    it('does not render a fractional count as if it were a record count', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[jobWithMetadata({
+            context_truncated: true, feedback_items_used: 1.5, feedback_count: 100,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // "Based on 1.5 of the 100 feedback items read" is not a thing that can be
+      // true of a count of records.
+      expect(screen.queryByText(/1\.5/)).not.toBeInTheDocument()
+      expect(
+        screen.getByText(/Some feedback did not fit in one generation/),
       ).toBeInTheDocument()
     })
 
