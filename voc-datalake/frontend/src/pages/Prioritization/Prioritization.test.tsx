@@ -642,8 +642,12 @@ describe('Prioritization', () => {
         .filter((title) => title !== 'Prioritization Framework')
       expect(rowTitles()).toEqual(['Team Rated High', 'Team Rated Low', 'Nobody Scored'])
 
-      // Toggle the active sort field to ascending.
-      await user.click(screen.getAllByRole('button', { name: /priority/i })[0])
+      // Toggle the active sort field to ascending. Matched on the sort control's own
+      // accessible name, which carries both the mobile and desktop labels: a bare
+      // `/priority/i` also matches every row button whose band label reads "Low
+      // Priority" or "High Priority", and picked the sort button only because
+      // `SortControls` happens to precede `PRFAQList` in the DOM.
+      await user.click(screen.getByRole('button', { name: /Priority Score$/ }))
 
       await waitFor(() => {
         expect(rowTitles()).toEqual(['Team Rated Low', 'Team Rated High', 'Nobody Scored'])
@@ -692,6 +696,24 @@ describe('Prioritization', () => {
       renderPrioritization()
 
       expect(screen.getByText('Sort by:')).toBeInTheDocument()
+    })
+
+    it('says whose numbers the score sorts order by, reachably', async () => {
+      // The three score sort buttons still read "Priority Score" / "Impact" / "TTM"
+      // while now ordering by the TEAM's means, which is ambiguous in the same way the
+      // old "Score" heading was. Delivered as visible text the buttons point at with
+      // `aria-describedby`, not only as a `title`: a tooltip never appears on a touch
+      // device and screen-reader support for `title` is inconsistent.
+      renderPrioritization()
+
+      const sortButton = screen.getByRole('button', { name: /Priority Score$/ })
+      const hintId = sortButton.getAttribute('aria-describedby')
+      expect(hintId).toBeTruthy()
+      const hint = document.getElementById(hintId ?? '')
+      expect(hint).toHaveTextContent("Orders the list by the team's numbers")
+      // The date sort is not team-ordered, so it must NOT claim to be.
+      expect(screen.getByRole('button', { name: /Date Created$/ }))
+        .not.toHaveAttribute('aria-describedby')
     })
   })
 

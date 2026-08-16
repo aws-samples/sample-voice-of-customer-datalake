@@ -11,7 +11,7 @@ import {
   AlertTriangle, ArrowUpDown, FileText, Sparkles, Save, RotateCcw,
 } from 'lucide-react'
 import {
-  useState, useMemo,
+  useState, useMemo, useId,
 } from 'react'
 import {
   useTranslation, Trans,
@@ -126,6 +126,12 @@ function SortControls({
   // own impact slider is one level in is otherwise ambiguous in exactly the way the
   // old "Score" heading was.
   const teamOrdered = t('sort.teamOrdered')
+  // Also announced, not only hovered. A `title` tooltip never appears on a touch
+  // device and screen-reader support for it is inconsistent, so the readers who most
+  // need "whose numbers are these" were the ones who could not reach the answer. The
+  // three team-ordered buttons point at one visible line below the row; `title` stays
+  // as the pointer affordance.
+  const hintId = useId()
   const options = [
     {
       field: 'priority_score' as const,
@@ -153,17 +159,20 @@ function SortControls({
     },
   ]
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <span className="text-gray-500 w-full sm:w-auto">{t('sort.label')}</span>
-      {options.map(({
-        field, label, fullLabel, hint,
-      }) => (
-        <button key={field} title={hint} onClick={() => onToggleSort(field)} className={clsx('px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs sm:text-sm', sortField === field ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
-          <span className="sm:hidden">{label}</span>
-          <span className="hidden sm:inline">{fullLabel}</span>
-          {sortField === field && <ArrowUpDown size={14} className={sortDirection === 'desc' ? 'rotate-180' : ''} />}
-        </button>
-      ))}
+    <div>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-gray-500 w-full sm:w-auto">{t('sort.label')}</span>
+        {options.map(({
+          field, label, fullLabel, hint,
+        }) => (
+          <button key={field} title={hint} aria-describedby={hint === undefined ? undefined : hintId} onClick={() => onToggleSort(field)} className={clsx('px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs sm:text-sm', sortField === field ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+            <span className="sm:hidden">{label}</span>
+            <span className="hidden sm:inline">{fullLabel}</span>
+            {sortField === field && <ArrowUpDown size={14} className={sortDirection === 'desc' ? 'rotate-180' : ''} />}
+          </button>
+        ))}
+      </div>
+      <p id={hintId} className="text-xs text-gray-500 mt-1.5">{teamOrdered}</p>
     </div>
   )
 }
