@@ -321,7 +321,7 @@ describe('overLongNoteDocuments', () => {
   })
 })
 
-describe('overLongNoteDocuments counts in the API"s unit', () => {
+describe('overLongNoteDocuments counts in the unit the API uses', () => {
   // JS `.length` is UTF-16 code units; the API's `len()` is code points. Pinning
   // the unit, not just the number: a lockstep on the two constants would pass while
   // the page measured a different thing with them.

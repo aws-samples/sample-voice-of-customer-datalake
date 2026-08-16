@@ -17,7 +17,7 @@ anything outside the basic plane — one emoji is one code point and two code un
 plain `.length` on the page would therefore refuse a note of 1500 emoji that this
 route accepts, quoting a limit the reviewer had not reached. The page spreads the
 string to iterate by code point, and the behavioural assertion for that lives in
-`prioritizationUtils.test.ts` (`overLongNoteDocuments counts in the API's unit`) —
+`prioritizationUtils.test.ts` (`overLongNoteDocuments counts in the unit the API uses`) —
 comparing the two constants here cannot see it, and asserting the page's source text
 from Python would break on a rename or a reformat without a defect.
 

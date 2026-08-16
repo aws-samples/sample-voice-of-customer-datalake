@@ -1368,7 +1368,7 @@ def api_put_prioritization_scores():
     which sends a client looking at its body, while the body was fine and the VERB is
     what no longer exists. 405 plus `Allow` says exactly that, and names the two
     verbs that do work — which is the whole of what a caller stranded on the retired
-    route needs. Returned as a `Response` rather than raised, because the shared
+    route needs, OPTIONS included, since preflight is answered on this path too. Returned as a `Response` rather than raised, because the shared
     error classes map to fixed statuses and inventing a shared `MethodNotAllowedError`
     for one stub would put a class in `shared/api.py` with a single caller. The body
     keeps the `{'success': False, 'error': ...}` shape every other error answers with.
