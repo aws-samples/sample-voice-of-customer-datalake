@@ -3,10 +3,12 @@ Projects API endpoints for VoC Analytics.
 Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 """
 import json
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
@@ -21,6 +23,7 @@ from shared.exceptions import (
 )
 from shared.prompts import (
     PERSONA_SYNTHESIS_STEP,
+    count_persona_sample_records,
     get_persona_generation_steps,
     get_prd_generation_steps,
     get_prfaq_generation_steps,
@@ -28,9 +31,13 @@ from shared.prompts import (
 )
 from shared.feedback import (
     get_feedback_context as _get_feedback_context,
+    feedback_char_budget,
+    feedback_item_limit,
     format_feedback_for_llm,
     get_feedback_statistics,
+    truncate_feedback_context,
 )
+from shared.model_config import surface_context_window_tokens
 from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
     get_avatar_cdn_url,
@@ -63,6 +70,143 @@ Build against the project material provided here rather than from assumptions.
 - If a requirement is missing, ask rather than inventing one. If two documents disagree, surface the conflict instead of picking one.\
 """
 
+# ---------------------------------------------------------------------------
+# Persona-generation input budget (issue #231)
+#
+# Scope note: this block governs the PERSONA path only — the one live surface
+# reached from here (lambda/jobs/persona_generator/handler.py imports
+# generate_personas). The PRD, PR/FAQ, and research surfaces named in #231 run
+# through their own Lambdas with their own independent fetches and caps
+# (lambda/jobs/document_generator/handler.py,
+# lambda/research/research_step_handler.py) and are NOT fixed here; see the
+# LEGACY note on generate_prd below.
+#
+# Both numbers below are DERIVED from one measurement rather than chosen
+# independently, because independently chosen caps drift: the previous pairing
+# of a 500-item limit with a 200 000-char cap meant any corpus over ~245 items
+# truncated on the default path, discarding more than half of what DynamoDB had
+# just been paid to read, while reporting nothing. shared/feedback.py owns the
+# derivation (feedback_char_budget / feedback_item_limit) so the persona,
+# prompt-builder, and any future path cannot disagree about the numbers.
+#
+# What bounds them:
+#   - Bedrock input token budget. Derived from the context window of the model
+#     actually resolved for the 'documents' surface at runtime, not a literal:
+#     shared/model_config.py lets an admin repoint a surface at a
+#     smaller-window model, and a literal tuned for 200 K tokens would overflow
+#     it as a hard ValidationException — strictly worse than the soft
+#     truncation it replaced. feedback_char_budget() reserves overhead for
+#     prompts, chaining, and output, then fills half of what remains.
+#   - DynamoDB read cost, which is AMPLIFIED well past the item limit:
+#     shared/feedback.py derives fetch_ceiling = limit * 3 and applies it as a
+#     PER-PARTITION page cap. With post-filters active (sources/sentiments set,
+#     or date_basis='review') the early break is disabled and every date
+#     partition pages to that cap, so a 30-day window can read up to
+#     limit * 3 * 30 items. Budget from that number, not from the item limit.
+#   - Latency: prefill scales roughly linearly in input tokens. The persona job
+#     runs on a 15-minute Lambda, so it has room — but the read amplification
+#     above lands in the same wall clock.
+#
+# Both are env-overridable so an operator hitting cost or latency trouble can
+# tune a deployment without a code change and a redeploy. Neither variable is
+# declared in api-stack.ts: unset, the Lambda gets the derived default, and a
+# CDK entry restating that default would be one more place for the number to
+# drift. Tuning one therefore means setting it on the deployed function (or
+# adding it to the stack at that point) — it is not a knob that already exists
+# in the template.
+ENV_MAX_PERSONA_CONTEXT_CHARS = 'MAX_PERSONA_CONTEXT_CHARS'
+ENV_FEEDBACK_LIMIT_PERSONA = 'FEEDBACK_LIMIT_PERSONA'
+
+
+def _env_positive_int(name: str) -> int | None:
+    """A positive int from the environment, or ``None`` when unusable.
+
+    Parsed defensively, and never at import time, because both failure modes are
+    severe. A non-numeric value passed to a bare ``int()`` at module scope raises
+    during import and takes down every route in the projects Lambda, not just
+    persona generation. And a non-positive value would be worse than ignored:
+    ``truncate_feedback_context`` reads ``<= 0`` as "no limit", so an operator
+    setting ``0`` to *lower* the budget would get an unbounded prompt — the
+    opposite of the request, and an immediate Bedrock ValidationException.
+
+    Both cases log and fall back to the derived default.
+    """
+    raw = os.environ.get(name)
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            f"Ignoring non-numeric {name}={raw!r}; using the derived default"
+        )
+        return None
+    if value <= 0:
+        logger.warning(
+            f"Ignoring non-positive {name}={value}; using the derived default "
+            f"(a non-positive character budget would mean 'no limit')"
+        )
+        return None
+    return value
+
+
+def persona_context_budget() -> tuple[int, int]:
+    """``(char_budget, item_limit)`` for one persona generation.
+
+    Resolved together, at call time, from the SAME context window. Deriving the
+    fetch limit at import from the 200 K default while trimming at runtime to
+    whatever model the 'documents' surface resolves to is exactly how the two
+    drift: repoint that surface at a narrower model and the fetch stays sized
+    for 200 K while the budget shrinks, so truncation is once again the default
+    path — the blindness #231 is about, reintroduced by the fix for it.
+
+    Env overrides are honoured independently, so an operator can pin either the
+    budget or the fetch limit and leave the other derived.
+    """
+    budget = _env_positive_int(ENV_MAX_PERSONA_CONTEXT_CHARS) or feedback_char_budget(
+        window_tokens=surface_context_window_tokens('documents')
+    )
+    limit = _env_positive_int(ENV_FEEDBACK_LIMIT_PERSONA) or feedback_item_limit(budget)
+    return budget, limit
+
+
+# Import-time snapshot of the pair above, resolved against the DEFAULT context
+# window rather than the live model. These are the documented defaults and what
+# the budget-consistency tests pin; the persona path itself calls
+# persona_context_budget() so it follows the resolved model instead of these.
+MAX_PERSONA_CONTEXT_CHARS: int = (
+    _env_positive_int(ENV_MAX_PERSONA_CONTEXT_CHARS) or feedback_char_budget()
+)
+
+# Item-fetch limit for persona generation. "Item" = one DynamoDB feedback
+# record. Derived from MAX_PERSONA_CONTEXT_CHARS and the measured worst-case
+# per-item formatted size, so a FULL corpus fits and the character cap is a
+# genuine backstop for unusually long records rather than the operative limit.
+# TestBudgetConstantsAreConsistent pins that relationship.
+FEEDBACK_LIMIT_PERSONA: int = (
+    _env_positive_int(ENV_FEEDBACK_LIMIT_PERSONA)
+    or feedback_item_limit(MAX_PERSONA_CONTEXT_CHARS)
+)
+
+# Item-fetch limits for the remaining surfaces in this module. Left at their
+# historical values ON PURPOSE — see the LEGACY note on generate_prd: nothing
+# in a real deployment reaches these functions, so raising them would be a
+# change with no user-visible effect that reads in the diff as if #231's
+# PRD/PR-FAQ/research half had been addressed. They are named rather than bare
+# so the values are at least visible to a reader.
+FEEDBACK_LIMIT_PRD: int = 50        # LEGACY path — see generate_prd
+FEEDBACK_LIMIT_PRFAQ: int = 30      # LEGACY path — see generate_prfaq
+FEEDBACK_LIMIT_RESEARCH: int = 100  # fallback path only — see run_research
+# Quick single-call helpers. These ARE live (imported by projects_handler.py)
+# but run synchronously behind API Gateway, whose 29 s timeout — not the token
+# budget — is what bounds them. Unchanged: #231 is about corpus loss in
+# generated artifacts, and trading interactive latency for a bigger sample in a
+# suggestion box is a different tradeoff that deserves its own measurement.
+FEEDBACK_LIMIT_AUTOFILL: int = 20   # bounded by API Gateway 29 s timeout
+FEEDBACK_LIMIT_BRIEF: int = 40      # bounded by API Gateway 29 s timeout
+FEEDBACK_LIMIT_RESEARCH_SUGGEST: int = 40  # bounded by API Gateway 29 s timeout
+# ---------------------------------------------------------------------------
+
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
 
@@ -82,7 +226,7 @@ AVATAR_MAX_CONCURRENCY = MAX_PERSONAS_PER_GENERATION
 PERSONA_PROMPT_VERSION = '2.1.0'
 
 
-def generate_persona_avatar(persona_data: dict, s3_bucket: str = None) -> dict:
+def generate_persona_avatar(persona_data: dict, s3_bucket: str | None = None) -> dict:
     """Wrapper for shared avatar generation that provides the bedrock client.
     
     Args:
@@ -339,6 +483,27 @@ def delete_project(project_id: str) -> dict:
 
 
 
+def _is_oversized_input_error(exc: Exception) -> bool:
+    """True when a Bedrock failure looks like "the prompt was too long".
+
+    Bedrock signals this as a ValidationException whose message mentions the
+    input length or the token limit. Matched on the message because there is no
+    distinct error code for it, and kept deliberately narrow so an unrelated
+    ValidationException still gets the generic message.
+    """
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get('Error', {})
+    if error.get('Code') != 'ValidationException':
+        return False
+    message = str(error.get('Message', '')).lower()
+    return any(
+        phrase in message
+        for phrase in ('too long', 'too many tokens', 'input is too', 'context window',
+                       'maximum context', 'exceeds the maximum')
+    )
+
+
 @tracer.capture_method
 def generate_personas(project_id: str, filters: dict, progress_callback: callable = None) -> dict:
     """Generate full UX research personas from feedback data using multi-step LLM chain.
@@ -382,10 +547,19 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     
     logger.info("[PERSONA] Step 1/6: Fetching feedback data...")
     update_progress(5, 'fetching_feedback')
-    
+
+    # Resolve the character budget and the fetch limit TOGETHER, before the
+    # fetch, so both follow the model actually resolved for this surface. Sizing
+    # the fetch from the import-time default and then trimming to a narrower
+    # runtime budget is how the two drift back apart.
+    context_budget, fetch_limit = persona_context_budget()
+    logger.info(
+        f"[PERSONA] Context budget: {context_budget} chars, fetch limit: {fetch_limit} items"
+    )
+
     # Get feedback data
     try:
-        feedback_items = get_feedback_context(filters, limit=50)
+        feedback_items = get_feedback_context(filters, limit=fetch_limit)
         logger.info(f"[PERSONA] Fetched {len(feedback_items) if feedback_items else 0} feedback items")
     except Exception as e:
         logger.error(f"[PERSONA] Failed to fetch feedback: {e}")
@@ -406,18 +580,43 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     except Exception as e:
         logger.error(f"[PERSONA] Failed to format feedback: {e}")
         raise
-    
-    # Truncate context if too large
-    if len(feedback_context) > 30000:
-        feedback_context = feedback_context[:30000] + "\n\n[... additional feedback truncated ...]"
-        logger.info("[PERSONA] Context truncated to 30000 chars")
-    
+
+    # The fetch limit is a cap in its own right, and the one that bounds a large
+    # project: filters matching thousands of records yield exactly fetch_limit of
+    # them, with the rest never read. That loss is invisible to the truncation
+    # signal below (which compares what reached the model against what was
+    # FETCHED), so report it separately rather than letting "N of N items" imply
+    # N was the whole corpus.
+    fetch_limit_reached = len(feedback_items) >= fetch_limit
+    if fetch_limit_reached:
+        logger.warning(
+            "[PERSONA] Fetch limit reached — more feedback may match the filters "
+            "than one generation reads",
+            extra={'fetch_limit': fetch_limit, 'items_fetched': len(feedback_items)},
+        )
+
+    # Trim on a record boundary so the model never receives half a review, and
+    # so the survivors can be counted rather than estimated.
+    corpus_chars = len(feedback_context)
+    feedback_context, _, char_cap_applied = truncate_feedback_context(
+        feedback_context, context_budget
+    )
+    if char_cap_applied:
+        logger.warning(
+            "[PERSONA] Corpus exceeded the input budget and was trimmed",
+            extra={
+                'max_chars': context_budget,
+                'actual_chars': corpus_chars,
+                'items_fetched': len(feedback_items),
+            },
+        )
+
     try:
         llm_start_time = time.time()
-        
+
         logger.info("[PERSONA] Step 3/6: Building LLM chain steps from prompts...")
         update_progress(15, 'building_prompts')
-        
+
         # Build chain steps from external prompt files
         try:
             chain_steps = get_persona_generation_steps(
@@ -426,11 +625,32 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 feedback_context=feedback_context,
                 custom_instructions=custom_instructions,
                 response_language=filters.get('response_language'),
+                sample_chars=context_budget,
             )
             logger.info(f"[PERSONA] Built {len(chain_steps)} chain steps")
         except Exception as e:
             logger.error(f"[PERSONA] Failed to build chain steps: {e}")
             raise
+
+        # Count what reached the step that WRITES the personas, off the built
+        # prompt. Every cap between DynamoDB and the model is baked into this
+        # number — the fetch limit, the budget above, and the {feedback_sample}
+        # slot the synthesis step reads. Reporting the fetched count instead
+        # would claim a full corpus while a narrower downstream cap had quietly
+        # discarded most of it, which is the exact blindness #231 is about.
+        feedback_items_used = count_persona_sample_records(chain_steps)
+        context_truncated = feedback_items_used < len(feedback_items)
+        if context_truncated:
+            logger.warning(
+                "[PERSONA] Personas synthesised from fewer items than were fetched",
+                extra={
+                    'items_fetched': len(feedback_items),
+                    'items_used': feedback_items_used,
+                    'corpus_chars': corpus_chars,
+                    'budget_chars': context_budget,
+                    'char_cap_applied': char_cap_applied,
+                },
+            )
         
         logger.info("[PERSONA] Step 4/6: Executing LLM chain (this may take several minutes)...")
         update_progress(20, 'executing_llm_chain')
@@ -695,21 +915,79 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 'research': results[0],
             },
             'metadata': {
+                # Items FETCHED from DynamoDB. Kept because the frontend and
+                # older job records already read it; prefer feedback_items_used
+                # for "what the personas are actually based on".
                 'feedback_count': len(feedback_items),
+                # Items that reached the persona-writing step. Equals
+                # feedback_count unless a cap dropped records, in which case
+                # context_truncated is True and this is the smaller, true number.
+                'feedback_items_used': feedback_items_used,
+                'context_truncated': context_truncated,
+                # The fetch itself hit its ceiling, so feedback_count is a floor
+                # on the matched corpus rather than its size. Reported separately
+                # because context_truncated cannot see this loss: it compares
+                # what the model saw against what was READ, and everything the
+                # limit excluded was never read.
+                'fetch_limit_reached': fetch_limit_reached,
+                'fetch_limit': fetch_limit,
                 'source_breakdown': source_breakdown,
                 'generation_time_ms': llm_time
             }
         }
-        
+
     except Exception as e:
         overall_elapsed = time.time() - overall_start
         logger.exception(f"[PERSONA] FAILED after {overall_elapsed:.2f}s: {type(e).__name__}: {e}")
+        # Bedrock reports an oversized prompt as a ValidationException. Name the
+        # knob in that case instead of the generic "try again", which sends an
+        # operator into an identical retry: a context that does not fit will not
+        # fit on the second attempt either.
+        if _is_oversized_input_error(e):
+            # The operator-facing half — which internal knob to turn — goes to
+            # the log, where an operator is. The message returned to the API
+            # reaches an end user in the browser, who can act on filters and the
+            # model picker but cannot set a Lambda environment variable, and for
+            # whom an env-var name is an internal detail leaking into the UI.
+            logger.error(
+                "[PERSONA] Corpus exceeded the resolved model's context window",
+                extra={
+                    'budget_chars': context_budget,
+                    'fetch_limit': fetch_limit,
+                    'items_fetched': len(feedback_items),
+                    'tuning_env_vars': [
+                        ENV_MAX_PERSONA_CONTEXT_CHARS,
+                        ENV_FEEDBACK_LIMIT_PERSONA,
+                    ],
+                },
+            )
+            raise ServiceError(
+                'The selected feedback was too large for the configured model. '
+                'Narrow the filters — a shorter date range, or fewer sources — '
+                'or choose a model with a larger context window in Settings.'
+            )
         raise ServiceError('Failed to generate personas. Please try again.')
 
 
 @tracer.capture_method
 def generate_prd(project_id: str, body: dict) -> dict:
-    """Generate a Product Requirements Document using multi-step LLM chain."""
+    """Generate a Product Requirements Document using multi-step LLM chain.
+
+    LEGACY — NOT REACHED IN A DEPLOYED SYSTEM. ``projects_handler.py`` does not
+    import this function, and ``POST /projects/{id}/document`` routes document
+    generation to ``lambda/jobs/document_generator/handler.py``, which performs
+    its own independent fetch and applies its own caps (``limit=100``, then
+    ``feedback_items[:30]`` and ``original_text[:300]``).
+
+    Consequently the issue-#231 fix deliberately does NOT touch the limit here:
+    changing it would have no user-visible effect while reading in the diff as
+    if the PRD surface had been fixed. Fixing the live document path — and the
+    research path in ``lambda/research/research_step_handler.py``, which still
+    caps at ``limit=50`` and a bare 50 000-char slice — is left to a follow-up
+    that can carry the shared constants into those Lambdas. Do not delete this
+    function as part of that work without checking the MCP handler and any
+    plugin entry points first.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
@@ -720,9 +998,9 @@ def generate_prd(project_id: str, body: dict) -> dict:
     filters = project_data.get('project', {}).get('filters', {})
     
     # Get feedback context
-    feedback_items = get_feedback_context(filters, limit=50)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PRD)
     feedback_context = format_feedback_for_llm(feedback_items)
-    
+
     # Format personas for context
     personas_context = ""
     for p in personas:
@@ -732,7 +1010,7 @@ def generate_prd(project_id: str, body: dict) -> dict:
 - Goals: {', '.join(p.get('goals', [])[:3])}
 - Frustrations: {', '.join(p.get('frustrations', [])[:3])}
 """
-    
+
     feature_idea = body.get('feature_idea', 'Improve customer experience based on feedback')
 
     # Inject the per-project product/service context (structured fields + uploaded internal docs).
@@ -810,7 +1088,7 @@ def autofill_prfaq_questions(project_id: str, body: dict) -> dict:
     personas = project_data.get('personas', [])
     filters = project_data.get('project', {}).get('filters', {})
 
-    feedback_items = get_feedback_context(filters, limit=20)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_AUTOFILL)
     feedback_context = format_feedback_for_llm(feedback_items)
 
     personas_context = ""
@@ -911,7 +1189,7 @@ def suggest_document_brief(project_id: str, body: dict) -> dict:
     project_data = get_project(project_id)
     filters = (body or {}).get('filters') or project_data.get('project', {}).get('filters', {})
 
-    feedback_items = get_feedback_context(filters, limit=40)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_BRIEF)
     feedback_context = format_feedback_for_llm(feedback_items)
     feedback_stats = get_feedback_statistics(feedback_items) if feedback_items else "(no feedback yet)"
 
@@ -992,7 +1270,7 @@ def suggest_research_questions(project_id: str, body: dict) -> dict:
     filters = (body or {}).get('filters') or project.get('filters', {})
 
     # Sample real feedback so suggestions are grounded in what was actually said.
-    feedback_items = get_feedback_context(filters, limit=40)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_RESEARCH_SUGGEST)
     feedback_context = format_feedback_for_llm(feedback_items)
     feedback_stats = get_feedback_statistics(feedback_items) if feedback_items else "(no feedback yet)"
 
@@ -1063,7 +1341,11 @@ def suggest_research_questions(project_id: str, body: dict) -> dict:
 
 @tracer.capture_method
 def generate_prfaq(project_id: str, body: dict) -> dict:
-    """Generate an Amazon-style PR/FAQ document using multi-step LLM chain."""
+    """Generate an Amazon-style PR/FAQ document using multi-step LLM chain.
+
+    LEGACY — NOT REACHED IN A DEPLOYED SYSTEM; see :func:`generate_prd` for why
+    ``FEEDBACK_LIMIT_PRFAQ`` is left at its historical value.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
@@ -1074,9 +1356,9 @@ def generate_prfaq(project_id: str, body: dict) -> dict:
     filters = project_data.get('project', {}).get('filters', {})
     
     # Get feedback context
-    feedback_items = get_feedback_context(filters, limit=30)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PRFAQ)
     feedback_context = format_feedback_for_llm(feedback_items)
-    
+
     # Format personas
     personas_context = ""
     for p in personas:
@@ -1583,7 +1865,16 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
 
 @tracer.capture_method
 def run_research(project_id: str, body: dict) -> dict:
-    """Run deep research analysis on feedback data."""
+    """Run deep research analysis on feedback data.
+
+    FALLBACK PATH ONLY. ``projects_handler.py`` prefers the Step Functions
+    research workflow whenever ``RESEARCH_STATE_MACHINE_ARN`` is set, and
+    ``lib/stacks/api-stack.ts`` sets it unconditionally — so in a real
+    deployment the live path is ``lambda/research/research_step_handler.py``,
+    which has its own ``limit=50`` and its own 50 000-char truncation. That is
+    why ``FEEDBACK_LIMIT_RESEARCH`` is left at its historical value here; see
+    :func:`generate_prd`.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
@@ -1605,7 +1896,7 @@ def run_research(project_id: str, body: dict) -> dict:
     
     # Get feedback for research - this is the PRIMARY data source
     logger.info(f"Fetching feedback with filters: {filters}")
-    feedback_items = get_feedback_context(filters, limit=100)
+    feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_RESEARCH)
     logger.info(f"Found {len(feedback_items)} feedback items for research")
     
     if not feedback_items:

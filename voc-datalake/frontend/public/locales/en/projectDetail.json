@@ -184,6 +184,12 @@
       "pending": "pending",
       "running": "running"
     },
+    "truncated": {
+      "counted": "Based on {{used}} of the {{total}} feedback items read — the rest did not fit in one generation.",
+      "fetchCapped": "This generation reads at most {{limit}} feedback items. More may match your filters — narrow them to change which ones are used.",
+      "fetchCappedGeneric": "This generation read as much feedback as it can take at once. More may match your filters.",
+      "generic": "Some feedback did not fit in one generation and was not used."
+    },
     "types": {
       "buildPrototype": "Prototype Build",
       "default": "Job",

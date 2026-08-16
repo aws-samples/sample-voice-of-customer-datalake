@@ -1,9 +1,9 @@
 """Tests for shared.prompts module."""
 import re
+from pathlib import Path
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
-from unittest.mock import patch, mock_open, MagicMock
-from pathlib import Path
 
 # Repo location of the prompt files. Imported from the module under test rather than
 # recomputed here: get_prompts_dir()'s local-dev branch IS this constant, so these tests
@@ -172,11 +172,69 @@ class TestConvenienceFunctions:
         assert mb.call_args[0][0] == 'persona-generation.json'
 
     @patch('shared.prompts.build_chain_steps')
-    def test_persona_truncates(self, mb):
+    def test_persona_sample_is_not_capped_below_the_context_budget(self, mb):
+        """A corpus inside the budget reaches the synthesis step whole.
+
+        This is the regression that matters for issue #231: the old bare
+        `feedback_context[:15000]` capped the step that WRITES the personas at
+        ~18 reviews regardless of how much the caller fetched, so raising any
+        limit upstream bought nothing. 20 000 chars is above that old cap and
+        below MAX_PERSONA_SAMPLE_CHARS, so restoring the old slice fails here.
+        """
+        from shared.prompts import (
+            MAX_PERSONA_SAMPLE_CHARS,
+            get_persona_generation_steps,
+        )
+        mb.return_value = []
+        corpus = 'x' * 20_000
+        assert 20_000 < MAX_PERSONA_SAMPLE_CHARS, 'fixture must fit the budget to be meaningful'
+        get_persona_generation_steps(3, 's', corpus)
+        assert mb.call_args[0][2]['feedback_sample'] == corpus
+
+    @patch('shared.prompts.build_chain_steps')
+    def test_persona_sample_honours_an_explicit_budget(self, mb):
+        """sample_chars lets the caller pass the resolved model's real budget."""
         from shared.prompts import get_persona_generation_steps
         mb.return_value = []
-        get_persona_generation_steps(3, 's', 'x' * 20000)
-        assert len(mb.call_args[0][2]['feedback_sample']) == 15000
+        get_persona_generation_steps(3, 's', 'x' * 20_000, sample_chars=5_000)
+        sample = mb.call_args[0][2]['feedback_sample']
+        assert len(sample) <= 5_000 + len('\n\n[... additional feedback truncated ...]')
+        assert sample.endswith('[... additional feedback truncated ...]')
+
+    def test_persona_sample_never_cuts_a_record_in_half(self):
+        """Truncation lands on a record boundary, not mid-review.
+
+        A partial record — an unterminated `- Full Text: "…`, or a label with no
+        value — is data the model may reason from as if it were real.
+        """
+        from shared.feedback import format_feedback_for_llm
+        from shared.prompts import (
+            count_persona_sample_records,
+            get_persona_generation_steps,
+        )
+
+        items = [
+            {
+                'feedback_id': f'fb-{i}',
+                'source_platform': 'test',
+                'original_text': f'Review {i} body ' + 'x' * 500,
+                'sentiment_label': 'positive',
+                'sentiment_score': 0.5,
+                'source_created_at': '2025-01-01T00:00:00',
+            }
+            for i in range(40)
+        ]
+        corpus = format_feedback_for_llm(items)
+        # A budget that lands mid-record: half the corpus is not a boundary.
+        steps = get_persona_generation_steps(2, 's', corpus, sample_chars=len(corpus) // 2)
+        synthesis = next(s for s in steps if s['step_name'] == 'persona_synthesis')
+
+        # Every record that survived is complete, so its Full Text line is
+        # closed by the trailing quote the formatter emits.
+        body = synthesis['user'].split('[... additional feedback truncated ...]')[0]
+        assert body.count('- Full Text: "') == body.count('"\n')
+        used = count_persona_sample_records(steps)
+        assert 0 < used < len(items)
 
     @patch('shared.prompts.build_chain_steps')
     def test_persona_no_custom(self, mb):
@@ -275,6 +333,7 @@ class TestPrfaqPromptContract:
         """Fail loudly when get_prfaq_generation_steps gains a parameter this
         test doesn't know about, instead of silently assuming it is a slot."""
         import inspect
+
         from shared.prompts import get_prfaq_generation_steps
         params = set(inspect.signature(get_prfaq_generation_steps).parameters)
         unclassified = params - self.KNOWN_SLOT_PARAMS - self.KNOWN_NON_SLOT_PARAMS
@@ -384,6 +443,7 @@ class TestPrfaqPromptContract:
         """End-to-end through build_chain_steps: no unresolved placeholders
         except the {previous} handled later by the chain executor."""
         from datetime import datetime, timedelta, timezone
+
         from shared.prompts import get_prfaq_generation_steps
 
         def launch_date_now() -> str:

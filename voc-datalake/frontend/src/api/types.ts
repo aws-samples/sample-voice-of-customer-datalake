@@ -225,6 +225,28 @@ export interface ProjectJob {
     persona_id?: string
     title?: string
     personas?: ProjectPersona[]
+    /**
+     * How the generation was grounded (issue #231).
+     *
+     * `feedback_items_used` is the number of feedback records that actually
+     * reached the model, which is smaller than `feedback_count` (the number
+     * read from the data lake) whenever `context_truncated` is true. Reporting
+     * only the count read would overstate the evidence behind the result
+     * exactly when the corpus was too large to fit. `fetch_limit_reached` is a
+     * separate loss: `feedback_count` is itself bounded by `fetch_limit`, so
+     * records the filters matched beyond it were never read at all.
+     *
+     * Read through `parseJobGrounding` (api/jobGroundingSchema.ts), never
+     * directly: these arrive from a DynamoDB job record, so the declared types
+     * are what the API intends, not what the wire guarantees.
+     */
+    metadata?: {
+      feedback_count?: number
+      feedback_items_used?: number
+      context_truncated?: boolean
+      fetch_limit_reached?: boolean
+      fetch_limit?: number
+    }
   }
 }
 

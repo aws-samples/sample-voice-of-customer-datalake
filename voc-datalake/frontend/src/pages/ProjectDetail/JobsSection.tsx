@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import JobStatusBadge from './JobStatusBadge'
 import { safeFormatDate } from '../../utils/dateUtils'
 import type { ProjectJob } from '../../api/types'
+import { parseJobGrounding, hasUsableCounts } from '../../api/jobGroundingSchema'
 
 type JobStatus = 'running' | 'pending' | 'completed' | 'failed'
 
@@ -77,6 +78,58 @@ function getCompletedLabel(job: ProjectJob): string {
   return job.result?.title ?? job.result?.document_id ?? job.result?.persona_id ?? ''
 }
 
+/**
+ * Notice for a result the model could not see all the evidence for (issue #231).
+ *
+ * Two independent caps can bind, and they lose different things, so they are
+ * reported separately rather than merged into one sentence:
+ *
+ * - **The context budget.** More was read than fits in one generation, so some
+ *   records were trimmed before the model saw them. `feedback_items_used` and
+ *   `feedback_count` describe this exactly.
+ * - **The fetch limit.** More records matched the filters than the job reads at
+ *   all. This one is invisible to the first: `context_truncated` compares what
+ *   the model saw against what was READ, and everything the limit excluded was
+ *   never read. Without saying so, "Based on 145 of 145 items" would present a
+ *   ceiling as if it were the size of the corpus.
+ *
+ * Both wordings say "read" rather than implying the count is the whole corpus,
+ * because neither number is the number of records the filters matched.
+ *
+ * Shown next to the completed job because that is where the user learns the
+ * result exists.
+ */
+function TruncationNotice({ job }: { readonly job: ProjectJob }) {
+  const { t } = useTranslation('projectDetail')
+  const grounding = parseJobGrounding(job.result?.metadata)
+
+  const trimmed = grounding.context_truncated === true
+  const capped = grounding.fetch_limit_reached === true
+  if (!trimmed && !capped) return null
+
+  return (
+    <>
+      {trimmed && (
+        <p className="text-xs text-amber-600 mt-1">
+          {hasUsableCounts(grounding)
+            ? t('jobs.truncated.counted', {
+              used: grounding.feedback_items_used,
+              total: grounding.feedback_count,
+            })
+            : t('jobs.truncated.generic')}
+        </p>
+      )}
+      {capped && (
+        <p className="text-xs text-amber-600 mt-1">
+          {grounding.fetch_limit === undefined
+            ? t('jobs.truncated.fetchCappedGeneric')
+            : t('jobs.truncated.fetchCapped', { limit: grounding.fetch_limit })}
+        </p>
+      )}
+    </>
+  )
+}
+
 function JobStatusMessage({
   job, isStale, showProgress,
 }: {
@@ -95,17 +148,28 @@ function JobStatusMessage({
   if (showProgress) {
     return <JobProgressBar job={job} />
   }
-  if (hasCompletedResult(job)) {
-    return (
-      <p className="text-xs text-gray-500 mt-1">
-        {t('jobs.created')} {getCompletedLabel(job)}
-      </p>
-    )
-  }
+  // Moved above the completed-result branch, which used to come first. The two
+  // are mutually exclusive by construction — hasCompletedResult requires
+  // status === 'completed' and this requires status === 'failed' — so the order
+  // between them cannot change what renders. Pinned by
+  // 'a failed job with an artifact id shows the error, in either branch order'.
   if (job.status === 'failed' && job.error != null && job.error !== '') {
     return <p className="text-xs text-red-600 mt-1 truncate">{job.error}</p>
   }
-  return null
+  // The truncation notice is rendered for any completed job that reports it,
+  // not only those with a named artifact: persona generation returns its
+  // personas as a list rather than a single persona_id, so gating on
+  // hasCompletedResult would hide the notice on the very surface it is for.
+  return (
+    <>
+      {hasCompletedResult(job) && (
+        <p className="text-xs text-gray-500 mt-1">
+          {t('jobs.created')} {getCompletedLabel(job)}
+        </p>
+      )}
+      <TruncationNotice job={job} />
+    </>
+  )
 }
 
 function JobItemContent({

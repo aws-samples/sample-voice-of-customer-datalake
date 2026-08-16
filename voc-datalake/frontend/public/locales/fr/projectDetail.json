@@ -186,6 +186,12 @@
       "pending": "en attente",
       "running": "en cours"
     },
+    "truncated": {
+      "counted": "Basé sur {{used}} des {{total}} retours lus : le reste n'a pas pu tenir dans une seule génération.",
+      "fetchCapped": "Une génération lit au maximum {{limit}} retours. D'autres peuvent correspondre à vos filtres — affinez-les pour changer lesquels sont utilisés.",
+      "fetchCappedGeneric": "Cette génération a lu autant de retours qu'elle peut en traiter en une fois. D'autres peuvent correspondre à vos filtres.",
+      "generic": "Certains retours n'ont pas pu tenir dans une seule génération et n'ont pas été utilisés."
+    },
     "types": {
       "buildPrototype": "Création de prototype",
       "default": "Job",
