@@ -234,10 +234,17 @@ export interface ProjectJob {
      * only the count read would overstate the evidence behind the result
      * exactly when the corpus was too large to fit.
      */
+    /**
+     * Read through `parseJobGrounding` (api/jobGroundingSchema.ts), never
+     * directly: these arrive from a DynamoDB job record, so the declared types
+     * are what the API intends, not what the wire guarantees.
+     */
     metadata?: {
       feedback_count?: number
       feedback_items_used?: number
       context_truncated?: boolean
+      fetch_limit_reached?: boolean
+      fetch_limit?: number
     }
   }
 }

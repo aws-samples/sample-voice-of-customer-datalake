@@ -187,7 +187,9 @@
       "running": "en ejecución"
     },
     "truncated": {
-      "counted": "Basado en {{used}} de {{total}} comentarios: el resto no cupo en una sola generación.",
+      "counted": "Basado en {{used}} de los {{total}} comentarios leídos: el resto no cupo en una sola generación.",
+      "fetchCapped": "Cada generación lee como máximo {{limit}} comentarios. Puede que más coincidan con tus filtros: ajústalos para cambiar cuáles se usan.",
+      "fetchCappedGeneric": "Esta generación leyó todos los comentarios que puede procesar de una vez. Puede que más coincidan con tus filtros.",
       "generic": "Algunos comentarios no cupieron en una sola generación y no se utilizaron."
     },
     "types": {

@@ -226,7 +226,27 @@ describe('JobsSection resting state', () => {
         />,
       )
       await expandCompleted(user)
-      expect(screen.getByText(/Based on 145 of 300 feedback items/)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Based on 145 of the 300 feedback items read/),
+      ).toBeInTheDocument()
+    })
+
+    it('names the total as what was READ, not as the size of the corpus', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[truncatedPersonaJob({
+            context_truncated: true, feedback_items_used: 145, feedback_count: 300,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // feedback_count is the number of records the job FETCHED, which its own
+      // fetch limit bounds. Presenting it as the whole corpus would be
+      // confidently wrong about the denominator on exactly the projects where
+      // the loss is largest — the class of defect this issue is about.
+      expect(screen.getByText(/of the 300 feedback items read/)).toBeInTheDocument()
     })
 
     it('stays silent when the whole corpus reached the model', async () => {
@@ -270,6 +290,233 @@ describe('JobsSection resting state', () => {
       expect(
         screen.getByText(/Some feedback did not fit in one generation/),
       ).toBeInTheDocument()
+    })
+
+    it('shows the artifact label and the notice together', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[createJob({
+            status: 'completed',
+            result: {
+              document_id: 'doc-1',
+              title: 'Q3 Persona Set',
+              metadata: {
+                context_truncated: true, feedback_items_used: 90, feedback_count: 145,
+              },
+            },
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // The common case for document generation: a named artifact that is also
+      // partially grounded. Both paragraphs render, and neither suppresses the
+      // other.
+      expect(screen.getByText(/Q3 Persona Set/)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Based on 90 of the 145 feedback items read/),
+      ).toBeInTheDocument()
+    })
+
+    it('reports the fetch limit separately from trimming', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[truncatedPersonaJob({
+            context_truncated: false,
+            feedback_items_used: 145,
+            feedback_count: 145,
+            fetch_limit_reached: true,
+            fetch_limit: 145,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // Nothing was trimmed, so the trimming notice must stay away — but the
+      // corpus is a ceiling rather than a total, and context_truncated cannot
+      // express that: it compares what the model saw against what was READ.
+      expect(
+        screen.getByText(/reads at most 145 feedback items/),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText(/did not fit in one generation/),
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows both notices when the fetch was capped and the read was trimmed', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[truncatedPersonaJob({
+            context_truncated: true,
+            feedback_items_used: 120,
+            feedback_count: 145,
+            fetch_limit_reached: true,
+            fetch_limit: 145,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      expect(
+        screen.getByText(/Based on 120 of the 145 feedback items read/),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(/reads at most 145 feedback items/),
+      ).toBeInTheDocument()
+    })
+  })
+
+  /**
+   * Wire-shape tolerance for the metadata block.
+   *
+   * The values come from a DynamoDB job record, so the declared types are the
+   * API's intent rather than the wire's guarantee — `api/feedbackSchema.ts`
+   * exists because numeric fields on the feedback endpoints really do arrive as
+   * strings. `parseJobGrounding` normalizes this block for the same reason.
+   */
+  describe('truncation notice with untrustworthy metadata', () => {
+    /**
+     * A job whose metadata is whatever the wire supplied.
+     *
+     * The declared type is the shape the API intends, and the point of these
+     * cases is what happens when the wire disagrees with it — so the fixture has
+     * to widen past the declared type to express its own input. Confined to this
+     * helper, and routed through `unknown` rather than `any` so nothing else here
+     * loses type checking.
+     */
+    const jobWithMetadata = (metadata: unknown) => createJob({
+      result: { metadata } as unknown as ProjectJob['result'],
+      status: 'completed',
+    })
+
+    it('renders numeric counts that arrive as strings', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[jobWithMetadata({
+            context_truncated: true, feedback_items_used: '145', feedback_count: '300',
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      expect(
+        screen.getByText(/Based on 145 of the 300 feedback items read/),
+      ).toBeInTheDocument()
+    })
+
+    it('does not announce a loss for a string "false" flag', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[jobWithMetadata({
+            context_truncated: 'false', feedback_items_used: 60, feedback_count: 60,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // A non-empty string is truthy in JavaScript, so a coercing read would
+      // warn about a loss that never happened on every completed job.
+      expect(
+        screen.queryByText(/did not fit in one generation/),
+      ).not.toBeInTheDocument()
+    })
+
+    it('falls back to the count-free wording for unusable numbers', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[jobWithMetadata({
+            context_truncated: true, feedback_items_used: 'many', feedback_count: 300,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      // The warning is the load-bearing part; the numbers are the detail.
+      expect(
+        screen.getByText(/Some feedback did not fit in one generation/),
+      ).toBeInTheDocument()
+    })
+
+    it('falls back rather than claiming more was used than was read', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection
+          jobs={[jobWithMetadata({
+            context_truncated: true, feedback_items_used: 300, feedback_count: 145,
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      await expandCompleted(user)
+      expect(
+        screen.getByText(/Some feedback did not fit in one generation/),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/Based on 300/)).not.toBeInTheDocument()
+    })
+
+    it('survives a metadata block that is not an object', async () => {
+      const user = userEvent.setup()
+      render(
+        <JobsSection jobs={[jobWithMetadata('truncated')]} onDismiss={vi.fn()} />,
+      )
+      await expandCompleted(user)
+      expect(screen.getByText('completed')).toBeInTheDocument()
+      expect(
+        screen.queryByText(/did not fit in one generation/),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  /**
+   * The failed-job branch was moved above the completed-result branch. These pin
+   * that the move is inert, which is why it needed no behavioural change: the
+   * two conditions are mutually exclusive by construction, since
+   * hasCompletedResult requires status 'completed' and the error branch requires
+   * status 'failed'.
+   */
+  describe('failed jobs that also carry a result', () => {
+    it('shows the error, not the artifact label', () => {
+      render(
+        <JobsSection
+          jobs={[createJob({
+            status: 'failed',
+            error: 'Bedrock timed out',
+            result: { document_id: 'doc-1', title: 'Half-written PRD' },
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(screen.getByText('Bedrock timed out')).toBeInTheDocument()
+      expect(screen.queryByText(/Half-written PRD/)).not.toBeInTheDocument()
+    })
+
+    it('does not show a truncation notice for a failed job', () => {
+      render(
+        <JobsSection
+          jobs={[createJob({
+            status: 'failed',
+            error: 'Bedrock timed out',
+            result: {
+              metadata: {
+                context_truncated: true, feedback_items_used: 10, feedback_count: 145,
+              },
+            },
+          })]}
+          onDismiss={vi.fn()}
+        />,
+      )
+      // Nothing was generated, so how much evidence it would have used is not
+      // the useful thing to say.
+      expect(screen.getByText('Bedrock timed out')).toBeInTheDocument()
+      expect(
+        screen.queryByText(/did not fit in one generation/),
+      ).not.toBeInTheDocument()
     })
   })
 })

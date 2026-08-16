@@ -185,7 +185,9 @@
       "running": "Läuft"
     },
     "truncated": {
-      "counted": "Basiert auf {{used}} von {{total}} Feedback-Einträgen — der Rest passte nicht in einen Durchlauf.",
+      "counted": "Basiert auf {{used}} der {{total}} gelesenen Feedback-Einträge — der Rest passte nicht in einen Durchlauf.",
+      "fetchCapped": "Ein Durchlauf liest höchstens {{limit}} Feedback-Einträge. Möglicherweise entsprechen mehr Ihren Filtern — grenzen Sie sie ein, um die Auswahl zu ändern.",
+      "fetchCappedGeneric": "Dieser Durchlauf hat so viel Feedback gelesen, wie auf einmal möglich ist. Möglicherweise entsprechen mehr Einträge Ihren Filtern.",
       "generic": "Ein Teil des Feedbacks passte nicht in einen Durchlauf und wurde nicht verwendet."
     },
     "types": {

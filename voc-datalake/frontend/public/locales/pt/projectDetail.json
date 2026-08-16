@@ -187,7 +187,9 @@
       "running": "em execução"
     },
     "truncated": {
-      "counted": "Baseado em {{used}} de {{total}} itens de feedback — o restante não caberia em uma geração.",
+      "counted": "Baseado em {{used}} dos {{total}} itens de feedback lidos — o restante não caberia em uma geração.",
+      "fetchCapped": "Cada geração lê no máximo {{limit}} itens de feedback. Mais podem corresponder aos seus filtros — restrinja-os para mudar quais são usados.",
+      "fetchCappedGeneric": "Esta geração leu todo o feedback que consegue processar de uma vez. Mais itens podem corresponder aos seus filtros.",
       "generic": "Parte do feedback não caberia em uma geração e não foi utilizada."
     },
     "types": {
