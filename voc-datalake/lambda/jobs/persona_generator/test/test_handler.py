@@ -1,5 +1,7 @@
 """Tests for persona generator job handler."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 
@@ -193,3 +195,134 @@ class TestAvatarMetricsActuallyReachCloudWatch:
         assert 'AvatarGenerationFailed' not in self._flushed_metric_names(
             capsys.readouterr().out
         )
+
+
+class TestGroundingMetadataReachesTheStoredJob:
+    """The truncation notice is only real if the metadata survives persistence.
+
+    ``generate_personas`` returns ``metadata.context_truncated`` /
+    ``feedback_items_used``; ``JobsSection.tsx`` renders from
+    ``job.result.metadata``. Between the two sits ``@job_handler``, which decides
+    whether the returned dict is stored whole or field-picked — and the frontend
+    tests construct ``result: { metadata }`` by hand, so they pass whether or not
+    the backend ever puts it there. Without this test, the handler dropping the
+    block would turn the notice into dead code with a green suite.
+
+    Asserted on the DynamoDB write with the real ``generate_personas`` running
+    (only its I/O stubbed), so the whole path is covered at once.
+    """
+
+    @staticmethod
+    def _feedback_item(idx: int, text_len: int = 600) -> dict:
+        prefix = f"Review {idx}: "
+        return {
+            'feedback_id': f'fb-{idx}',
+            'source_platform': 'test_source',
+            'original_text': prefix + ('x' * (text_len - len(prefix))),
+            'sentiment_label': 'positive',
+            'sentiment_score': 0.9,
+            'category': 'product_quality',
+            'urgency': 'low',
+            'rating': 5,
+            'source_created_at': '2025-01-01T00:00:00',
+            'date': '2025-01-01',
+        }
+
+    @staticmethod
+    def _stored_result(mock_jobs_table) -> dict:
+        """The ``result`` dict written to DynamoDB by the completing update."""
+        for call in mock_jobs_table.update_item.call_args_list:
+            values = call.kwargs.get('ExpressionAttributeValues', {})
+            if ':result' in values:
+                return values[':result']
+        raise AssertionError(
+            'no update_item call carried a :result — the job never stored one'
+        )
+
+    def _run_real_generation(self, corpus, persona_generation_event, lambda_context):
+        import json as _json
+
+        from jobs.persona_generator.handler import lambda_handler
+
+        persona_json = _json.dumps([{
+            'name': 'TestUser', 'tagline': 'a tester', 'confidence': 'high',
+            'feedback_count': len(corpus), 'identity': {}, 'goals_motivations': {},
+            'pain_points': {}, 'behaviors': {}, 'context_environment': {},
+            'quotes': [], 'scenario': {}, 'supporting_evidence': [],
+        }])
+
+        projects_table = MagicMock()
+        projects_table.query.return_value = {'Items': []}
+        batch_writer = MagicMock()
+        batch_writer.__enter__ = MagicMock(return_value=MagicMock())
+        batch_writer.__exit__ = MagicMock(return_value=False)
+        projects_table.batch_writer.return_value = batch_writer
+
+        with patch('api.projects.projects_table', projects_table), \
+             patch('api.projects.get_feedback_context', return_value=corpus), \
+             patch('api.projects.converse_chain',
+                   return_value=['Research analysis text.', persona_json]), \
+             patch('api.projects.generate_persona_avatar',
+                   return_value={'avatar_url': None, 'avatar_prompt': None}):
+            return lambda_handler(persona_generation_event, lambda_context)
+
+    def test_the_handler_binding_is_not_a_leaked_mock(self):
+        """Guard the fixture-ordering trap described in this package's conftest.
+
+        Without it, a recurrence surfaces as "context_truncated did not survive
+        into the stored job record" — which reads as a backend regression when
+        the cause is that ``generate_personas`` is still stubbed from an earlier
+        test. Named here so the diagnosis is the failure message.
+        """
+        from jobs.persona_generator import handler
+
+        assert not isinstance(handler.generate_personas, MagicMock), (
+            'generate_personas is still a mock — a fixture restored a patched '
+            'value as the original (see conftest.mock_generate_personas)'
+        )
+
+    def test_the_stored_result_carries_the_grounding_metadata(
+        self, mock_jobs_table, persona_generation_event, lambda_context,
+    ):
+        corpus = [self._feedback_item(i) for i in range(10)]
+        self._run_real_generation(corpus, persona_generation_event, lambda_context)
+
+        stored = self._stored_result(mock_jobs_table)
+        assert 'metadata' in stored, (
+            'the job record stored no metadata block — JobsSection.tsx reads '
+            'job.result.metadata, so the truncation notice can never render'
+        )
+        metadata = stored['metadata']
+        for field in ('context_truncated', 'feedback_items_used', 'feedback_count',
+                      'fetch_limit_reached'):
+            assert field in metadata, (
+                f'{field} did not survive into the stored job record'
+            )
+        assert metadata['feedback_items_used'] == len(corpus)
+        assert metadata['context_truncated'] is False
+
+    def test_a_truncated_generation_stores_the_flag_and_the_smaller_count(
+        self, mock_jobs_table, persona_generation_event, lambda_context,
+    ):
+        """The values the notice depends on must be the truncated ones.
+
+        Presence alone would pass on a hardcoded ``False``; this drives the
+        branch the notice exists for, so the stored numbers have to disagree with
+        each other in the way the UI reports.
+        """
+        from api import projects
+        from shared.feedback import format_feedback_for_llm
+
+        budget = projects.persona_context_budget()[0]
+        per_item = len(format_feedback_for_llm([self._feedback_item(0)]))
+        corpus = [self._feedback_item(i) for i in range(budget // per_item + 10)]
+        assert len(format_feedback_for_llm(corpus)) > budget, (
+            'fixture must exceed the char budget for truncation to happen'
+        )
+
+        self._run_real_generation(corpus, persona_generation_event, lambda_context)
+
+        metadata = self._stored_result(mock_jobs_table)['metadata']
+        assert metadata['context_truncated'] is True
+        assert metadata['feedback_items_used'] < metadata['feedback_count'] == len(corpus)
+        assert metadata['feedback_items_used'] > 0

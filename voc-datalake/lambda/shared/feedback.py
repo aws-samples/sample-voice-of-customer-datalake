@@ -144,6 +144,18 @@ def feedback_item_limit(char_budget: int) -> int:
     return max(char_budget // FEEDBACK_CHARS_PER_ITEM_MAX, 1)
 
 
+def _as_text(value) -> str:
+    """Coerce a DynamoDB field to a string; ``None`` becomes ``''``.
+
+    Separate from :func:`_clip` so the pre-clip length can be measured without
+    repeating the coercion — that measurement is what makes the clipping
+    reportable rather than silent.
+    """
+    if value is None:
+        return ''
+    return value if isinstance(value, str) else str(value)
+
+
 def _clip(value, max_chars: int = MAX_ENRICHMENT_FIELD_CHARS) -> str:
     """Coerce to str and clip to ``max_chars``, marking a clip with an ellipsis.
 
@@ -151,9 +163,7 @@ def _clip(value, max_chars: int = MAX_ENRICHMENT_FIELD_CHARS) -> str:
     None and non-string values because these fields come from DynamoDB items
     whose enrichment may be absent or, after a partial write, the wrong type.
     """
-    if value is None:
-        return ''
-    text = value if isinstance(value, str) else str(value)
+    text = _as_text(value)
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + '…'
@@ -437,6 +447,19 @@ def format_feedback_for_llm(items: list[dict]) -> str:
         Formatted string for LLM context
     """
     lines = []
+    # Per-field clipping is not free of information loss, and this formatter is
+    # shared by the persona path, the research step handler, and every helper in
+    # projects.py. A cap that fires without saying so is the defect issue #231 is
+    # about, so count the clips and report them once per call — the caller then
+    # has the same signal for the research path that context_truncated gives the
+    # persona path, instead of the loss being visible only by diffing prompts.
+    clipped: dict[str, int] = {}
+
+    def clip(field: str, value, max_chars: int = MAX_ENRICHMENT_FIELD_CHARS) -> str:
+        if len(_as_text(value)) > max_chars:
+            clipped[field] = clipped.get(field, 0) + 1
+        return _clip(value, max_chars)
+
     for i, item in enumerate(items, 1):
         # Build optional fields. These are LLM-generated (see the enrichment
         # prompt in lambda/processor/handler.py), so their length is not bounded
@@ -444,11 +467,16 @@ def format_feedback_for_llm(items: list[dict]) -> str:
         # budget of several. Capped here so FEEDBACK_CHARS_PER_ITEM_MAX is a
         # real bound rather than an average, which is what lets the item limit
         # be derived from the character budget instead of guessed alongside it.
-        quote = _clip(item.get('direct_customer_quote', ''))
-        root_cause = _clip(item.get('problem_root_cause_hypothesis', ''))
-        problem_summary = _clip(item.get('problem_summary', ''))
-        persona_type = _clip(item.get('persona_type', ''), MAX_LABEL_CHARS)
-        journey_stage = _clip(item.get('journey_stage', ''), MAX_LABEL_CHARS)
+        quote = clip('direct_customer_quote', item.get('direct_customer_quote', ''))
+        root_cause = clip('problem_root_cause_hypothesis', item.get('problem_root_cause_hypothesis', ''))
+        problem_summary = clip('problem_summary', item.get('problem_summary', ''))
+        persona_type = clip('persona_type', item.get('persona_type', ''), MAX_LABEL_CHARS)
+        journey_stage = clip('journey_stage', item.get('journey_stage', ''), MAX_LABEL_CHARS)
+        # Counted but NOT clipped here: the [:MAX_ORIGINAL_TEXT_CHARS] slice
+        # below predates this change. Counting it keeps the report honest about
+        # the largest per-record loss without altering what the model receives.
+        if len(_as_text(item.get('original_text', ''))) > MAX_ORIGINAL_TEXT_CHARS:
+            clipped['original_text'] = clipped.get('original_text', 0) + 1
 
         lines.append(f"""
 ### Review {i}
@@ -465,6 +493,17 @@ def format_feedback_for_llm(items: list[dict]) -> str:
 {f'- Problem Summary: {problem_summary}' if problem_summary else ''}
 {f'- Root Cause Hypothesis: {root_cause}' if root_cause else ''}
 """)
+    if clipped:
+        logger.warning(
+            "[FEEDBACK] Per-field caps clipped text out of the LLM context",
+            extra={
+                'items': len(items),
+                'clipped_fields': clipped,
+                'enrichment_cap': MAX_ENRICHMENT_FIELD_CHARS,
+                'original_text_cap': MAX_ORIGINAL_TEXT_CHARS,
+                'label_cap': MAX_LABEL_CHARS,
+            },
+        )
     return '\n'.join(lines)
 def get_feedback_statistics(items: list[dict]) -> str:
     """Generate summary statistics from feedback items.

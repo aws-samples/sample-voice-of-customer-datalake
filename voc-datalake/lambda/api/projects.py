@@ -108,9 +108,74 @@ Build against the project material provided here rather than from assumptions.
 #     above lands in the same wall clock.
 #
 # Both are env-overridable so an operator hitting cost or latency trouble can
-# tune a deployment without a code change and a redeploy.
-MAX_PERSONA_CONTEXT_CHARS: int = int(
-    os.environ.get('MAX_PERSONA_CONTEXT_CHARS') or feedback_char_budget()
+# tune a deployment without a code change and a redeploy. Neither variable is
+# declared in api-stack.ts: unset, the Lambda gets the derived default, and a
+# CDK entry restating that default would be one more place for the number to
+# drift. Tuning one therefore means setting it on the deployed function (or
+# adding it to the stack at that point) — it is not a knob that already exists
+# in the template.
+ENV_MAX_PERSONA_CONTEXT_CHARS = 'MAX_PERSONA_CONTEXT_CHARS'
+ENV_FEEDBACK_LIMIT_PERSONA = 'FEEDBACK_LIMIT_PERSONA'
+
+
+def _env_positive_int(name: str) -> int | None:
+    """A positive int from the environment, or ``None`` when unusable.
+
+    Parsed defensively, and never at import time, because both failure modes are
+    severe. A non-numeric value passed to a bare ``int()`` at module scope raises
+    during import and takes down every route in the projects Lambda, not just
+    persona generation. And a non-positive value would be worse than ignored:
+    ``truncate_feedback_context`` reads ``<= 0`` as "no limit", so an operator
+    setting ``0`` to *lower* the budget would get an unbounded prompt — the
+    opposite of the request, and an immediate Bedrock ValidationException.
+
+    Both cases log and fall back to the derived default.
+    """
+    raw = os.environ.get(name)
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            f"Ignoring non-numeric {name}={raw!r}; using the derived default"
+        )
+        return None
+    if value <= 0:
+        logger.warning(
+            f"Ignoring non-positive {name}={value}; using the derived default "
+            f"(a non-positive character budget would mean 'no limit')"
+        )
+        return None
+    return value
+
+
+def persona_context_budget() -> tuple[int, int]:
+    """``(char_budget, item_limit)`` for one persona generation.
+
+    Resolved together, at call time, from the SAME context window. Deriving the
+    fetch limit at import from the 200 K default while trimming at runtime to
+    whatever model the 'documents' surface resolves to is exactly how the two
+    drift: repoint that surface at a narrower model and the fetch stays sized
+    for 200 K while the budget shrinks, so truncation is once again the default
+    path — the blindness #231 is about, reintroduced by the fix for it.
+
+    Env overrides are honoured independently, so an operator can pin either the
+    budget or the fetch limit and leave the other derived.
+    """
+    budget = _env_positive_int(ENV_MAX_PERSONA_CONTEXT_CHARS) or feedback_char_budget(
+        window_tokens=surface_context_window_tokens('documents')
+    )
+    limit = _env_positive_int(ENV_FEEDBACK_LIMIT_PERSONA) or feedback_item_limit(budget)
+    return budget, limit
+
+
+# Import-time snapshot of the pair above, resolved against the DEFAULT context
+# window rather than the live model. These are the documented defaults and what
+# the budget-consistency tests pin; the persona path itself calls
+# persona_context_budget() so it follows the resolved model instead of these.
+MAX_PERSONA_CONTEXT_CHARS: int = (
+    _env_positive_int(ENV_MAX_PERSONA_CONTEXT_CHARS) or feedback_char_budget()
 )
 
 # Item-fetch limit for persona generation. "Item" = one DynamoDB feedback
@@ -118,8 +183,9 @@ MAX_PERSONA_CONTEXT_CHARS: int = int(
 # per-item formatted size, so a FULL corpus fits and the character cap is a
 # genuine backstop for unusually long records rather than the operative limit.
 # TestBudgetConstantsAreConsistent pins that relationship.
-FEEDBACK_LIMIT_PERSONA: int = int(
-    os.environ.get('FEEDBACK_LIMIT_PERSONA') or feedback_item_limit(MAX_PERSONA_CONTEXT_CHARS)
+FEEDBACK_LIMIT_PERSONA: int = (
+    _env_positive_int(ENV_FEEDBACK_LIMIT_PERSONA)
+    or feedback_item_limit(MAX_PERSONA_CONTEXT_CHARS)
 )
 
 # Item-fetch limits for the remaining surfaces in this module. Left at their
@@ -481,10 +547,19 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     
     logger.info("[PERSONA] Step 1/6: Fetching feedback data...")
     update_progress(5, 'fetching_feedback')
-    
+
+    # Resolve the character budget and the fetch limit TOGETHER, before the
+    # fetch, so both follow the model actually resolved for this surface. Sizing
+    # the fetch from the import-time default and then trimming to a narrower
+    # runtime budget is how the two drift back apart.
+    context_budget, fetch_limit = persona_context_budget()
+    logger.info(
+        f"[PERSONA] Context budget: {context_budget} chars, fetch limit: {fetch_limit} items"
+    )
+
     # Get feedback data
     try:
-        feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PERSONA)
+        feedback_items = get_feedback_context(filters, limit=fetch_limit)
         logger.info(f"[PERSONA] Fetched {len(feedback_items) if feedback_items else 0} feedback items")
     except Exception as e:
         logger.error(f"[PERSONA] Failed to fetch feedback: {e}")
@@ -506,18 +581,18 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         logger.error(f"[PERSONA] Failed to format feedback: {e}")
         raise
 
-    # Size the budget from the model actually resolved for this surface rather
-    # than a literal: an admin can repoint 'documents' at a smaller-window model
-    # (shared/model_config.py), and overflowing that window is a hard Bedrock
-    # ValidationException — worse than the truncation it would replace, because
-    # the broad `except` below collapses it into a generic retry message after a
-    # multi-minute job has already burned. Honour an explicit env override when
-    # one is set so an operator can still pin the budget by hand.
-    if os.environ.get('MAX_PERSONA_CONTEXT_CHARS'):
-        context_budget = MAX_PERSONA_CONTEXT_CHARS
-    else:
-        context_budget = feedback_char_budget(
-            window_tokens=surface_context_window_tokens('documents')
+    # The fetch limit is a cap in its own right, and the one that bounds a large
+    # project: filters matching thousands of records yield exactly fetch_limit of
+    # them, with the rest never read. That loss is invisible to the truncation
+    # signal below (which compares what reached the model against what was
+    # FETCHED), so report it separately rather than letting "N of N items" imply
+    # N was the whole corpus.
+    fetch_limit_reached = len(feedback_items) >= fetch_limit
+    if fetch_limit_reached:
+        logger.warning(
+            "[PERSONA] Fetch limit reached — more feedback may match the filters "
+            "than one generation reads",
+            extra={'fetch_limit': fetch_limit, 'items_fetched': len(feedback_items)},
         )
 
     # Trim on a record boundary so the model never receives half a review, and
@@ -849,6 +924,13 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 # context_truncated is True and this is the smaller, true number.
                 'feedback_items_used': feedback_items_used,
                 'context_truncated': context_truncated,
+                # The fetch itself hit its ceiling, so feedback_count is a floor
+                # on the matched corpus rather than its size. Reported separately
+                # because context_truncated cannot see this loss: it compares
+                # what the model saw against what was READ, and everything the
+                # limit excluded was never read.
+                'fetch_limit_reached': fetch_limit_reached,
+                'fetch_limit': fetch_limit,
                 'source_breakdown': source_breakdown,
                 'generation_time_ms': llm_time
             }
@@ -862,11 +944,27 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         # operator into an identical retry: a context that does not fit will not
         # fit on the second attempt either.
         if _is_oversized_input_error(e):
+            # The operator-facing half — which internal knob to turn — goes to
+            # the log, where an operator is. The message returned to the API
+            # reaches an end user in the browser, who can act on filters and the
+            # model picker but cannot set a Lambda environment variable, and for
+            # whom an env-var name is an internal detail leaking into the UI.
+            logger.error(
+                "[PERSONA] Corpus exceeded the resolved model's context window",
+                extra={
+                    'budget_chars': context_budget,
+                    'fetch_limit': fetch_limit,
+                    'items_fetched': len(feedback_items),
+                    'tuning_env_vars': [
+                        ENV_MAX_PERSONA_CONTEXT_CHARS,
+                        ENV_FEEDBACK_LIMIT_PERSONA,
+                    ],
+                },
+            )
             raise ServiceError(
-                'The feedback corpus was too large for the configured model. '
-                'Lower MAX_PERSONA_CONTEXT_CHARS / FEEDBACK_LIMIT_PERSONA, '
-                'narrow the project filters, or select a model with a larger '
-                'context window.'
+                'The selected feedback was too large for the configured model. '
+                'Narrow the filters — a shorter date range, or fewer sources — '
+                'or choose a model with a larger context window in Settings.'
             )
         raise ServiceError('Failed to generate personas. Please try again.')
 
