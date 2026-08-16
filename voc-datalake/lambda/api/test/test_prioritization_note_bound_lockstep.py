@@ -11,6 +11,19 @@ block a save that would be refused. Raise one side alone and nothing breaks loud
 — either the page bounds input the API would have accepted, or it composes a body
 the API refuses with no explanation on screen.
 
+THE NUMBER IS NOT THE WHOLE CONTRACT: the UNIT has to match too. `len()` here counts
+CODE POINTS; JavaScript's `.length` counts UTF-16 CODE UNITS, and the two differ for
+anything outside the basic plane — one emoji is one code point and two code units. A
+plain `.length` on the page would therefore refuse a note of 1500 emoji that this
+route accepts, quoting a limit the reviewer had not reached. The page spreads the
+string to iterate by code point, and `test_the_page_measures_the_note_in_code_points`
+pins that, because comparing the two constants cannot see it.
+
+The one place the units are deliberately allowed to differ is `maxLength` on the
+textarea, which the DOM defines in code units and which no amount of care can change.
+It is left as the stricter of the two on purpose: it bounds TYPING only, so it can
+never produce a body this route refuses.
+
 Separate from `test_prioritization_weights_lockstep.py` on purpose: that file pins
 the composite weights, and a file named for one constant pair should not quietly
 grow a second. Same approach as `test_feedback_page_limit_lockstep.py`.
@@ -77,6 +90,31 @@ class TestPrioritizationNoteBoundLockstep:
         source = row.read_text(encoding='utf-8')
         assert 'maxLength={MAX_NOTE_LENGTH}' in source, (
             'the notes textarea must be bounded by MAX_NOTE_LENGTH'
+        )
+
+    def test_the_page_measures_the_note_in_code_points(self):
+        """Equal numbers in different units is still a mismatch.
+
+        `len()` here counts code points. `.length` on the page counts UTF-16 code
+        units, so a note of 1500 emoji measures 1500 on this side and 3000 on that
+        one — the page would refuse a save this route accepts, naming a bound the
+        reviewer had not reached. Spreading the string iterates by code point.
+
+        Asserted structurally rather than by re-implementing the count, because the
+        behaviour lives in JavaScript and this is the cheapest thing that fails if
+        someone "simplifies" the spread back to `.length`. The behavioural half is
+        `overLongNoteDocuments counts in the API's unit` in
+        `prioritizationUtils.test.ts`.
+        """
+        path = _repo_root() / FRONTEND_SOURCE
+        if not path.is_file():
+            pytest.skip(f'{FRONTEND_SOURCE} not present in this tree')
+
+        source = path.read_text(encoding='utf-8')
+        assert '[...(notes ?? \'\')].length' in source, (
+            'the page must count the note in code points, as len() does here; '
+            "a bare `.length` measures UTF-16 code units and refuses notes this "
+            'route accepts'
         )
 
     def test_the_page_blocks_a_save_the_api_would_refuse(self):

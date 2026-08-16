@@ -320,3 +320,34 @@ describe('overLongNoteDocuments', () => {
     expect(overLongNoteDocuments({})).toEqual([])
   })
 })
+
+describe('overLongNoteDocuments counts in the API"s unit', () => {
+  // JS `.length` is UTF-16 code units; the API's `len()` is code points. Pinning
+  // the unit, not just the number: the lockstep test can only compare the two
+  // constants, and would pass while the page measured a different thing with it.
+  const score = (notes: string): { readonly notes: string } => ({ notes })
+
+  it('accepts a note of astral characters the API would accept', () => {
+    // 1500 emoji: 3000 code units, 1500 code points. A code-unit count blocks this
+    // and quotes a limit the reviewer never reached.
+    const emoji = '😀'.repeat(MAX_NOTE_LENGTH - 500)
+
+    expect(overLongNoteDocuments({ d1: score(emoji) })).toEqual([])
+  })
+
+  it('still refuses astral characters past the bound', () => {
+    // The positive control for the test above: counting code points must not become
+    // "emoji are free".
+    const emoji = '😀'.repeat(MAX_NOTE_LENGTH + 1)
+
+    expect(overLongNoteDocuments({ d1: score(emoji) })).toEqual(['d1'])
+  })
+
+  it('counts a combining sequence by code point, as the API does', () => {
+    // Not a decision this makes — it is what `len()` does on the other side, and
+    // the point is that both sides answer the same number for the same string.
+    const combining = 'é\u0301'.repeat(MAX_NOTE_LENGTH)
+
+    expect(overLongNoteDocuments({ d1: score(combining) })).toEqual(['d1'])
+  })
+})

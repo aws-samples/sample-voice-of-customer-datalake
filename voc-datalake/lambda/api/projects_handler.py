@@ -12,6 +12,8 @@ from typing import Any
 
 from shared.logging import logger, tracer
 from shared.aws import invoke_lambda_async
+from aws_lambda_powertools.event_handler import Response, content_types
+
 from shared.api import (
     create_api_resolver,
     get_caller_subject,
@@ -538,23 +540,13 @@ def _caller_reviewer_subject() -> str:
     subject into one bucket — precisely the defect per-reviewer ballots exist to
     remove — and would do so silently, writing a ballot that claims to be someone.
 
-    Also CHECKS the no-'#' assumption the module comment above declares, rather
-    than trusting it the way it was trusted before. '#' is the sort-key delimiter
-    and `_parse_ballot_sk` splits on it, so a subject carrying one mis-splits the
-    key three silent ways at once: the save answers 200, the reviewer's own ballot
-    is unreadable in `scores` so the page shows it as unscored and they re-enter
-    it, and `aggregates` gains a row under a document id that does not exist —
-    which `PrioritizationAggregate` tells consumers means "somebody scored this".
-    The write also lands on a key no read can address, so it is unreclaimable
-    without a scan.
-
-    A Cognito `sub` is a v4 UUID, so this is not reachable through the Cognito
-    authorizer today. Checked anyway because the module comment presents the
-    assumption as load-bearing, document ids are already held to it, and it stops
-    being free the moment the 'anon:' kind the key is namespaced for arrives —
-    an anonymous identifier is whatever its implementer chooses, not something
-    Cognito minted. Failing closed here is one line; the corruption it prevents
-    is silent and unrecoverable.
+    Also CHECKS the no-'#' assumption rather than trusting it. The three silent
+    corruptions a '#' in the subject causes are enumerated in the module comment
+    above, beside the key format they are about, and not repeated here. Unreachable
+    through the Cognito authorizer today (a `sub` is a v4 UUID); checked anyway
+    because the assumption is load-bearing, document ids are already held to it, and
+    it stops being free the moment the 'anon:' kind the key is namespaced for
+    arrives — an anonymous identifier is whatever its implementer chooses.
 
     The message names the rule and never echoes the subject, which identifies a
     person and must not be logged (`get_caller_subject`'s own contract).
@@ -763,8 +755,8 @@ def _readable_axis(entry: Any, axis: str) -> float | None:
     same stored value rather than agreeing by coincidence.
 
     None means NOTHING WAS EXPRESSED, which covers four cases: a non-dict entry, an
-    absent or null axis, a value no number can be read out of (`'high'`, `[1, 2]`,
-    `NaN`, `Infinity`), and a bool — `float(True)` is `1.0`, but a flag is not a
+    absent or null axis, a value no number can be read out of (`'high'`, `''`,
+    `[1, 2]`, `NaN`, `Infinity`), and a bool — `float(True)` is `1.0`, but a flag is not a
     slider position, the same reading `_is_clampable_number` enforces on the way
     in. Everything the write path stores is an int, and DynamoDB hands numbers back
     as Decimal, both of which read cleanly.
@@ -774,6 +766,14 @@ def _readable_axis(entry: Any, axis: str) -> float | None:
     with no type discipline; reading one as a 0 would put an invented lowest score
     in a field named for what a reviewer entered, and make it indistinguishable
     from the deliberate 0 that `_carries_axis` exists to keep distinguishable.
+
+    So this and `_is_clampable_number` answer the same question with different
+    verdicts for the same input — `''` is refused on the way IN (400) and read as
+    silence on the way OUT — and that asymmetry is the design, not a gap. Refusing is
+    available on a write because there is a caller to tell; on a read the value is
+    already stored, nobody is present to correct it, and the only choices are to
+    invent a number or to say nothing. Making the read refuse instead would take a
+    page down over one bad legacy entry.
     """
     if not isinstance(entry, dict):
         return None
@@ -874,6 +874,17 @@ def _expresses_something(entry: Any) -> bool:
     questions drifting: the same value that is silence to the aggregate is silence
     here, and an unreadable entry — non-dict, or a dict whose axes read as nothing
     — expresses nothing under either.
+
+    The consequence of being wider, stated because it looks like the two halves
+    disagreeing: `{'notes': 'x', 'impact': 'high'}` is read through for the note, so
+    the caller sees `impact: 0.0` while `aggregates` omits the document. That 0.0 is
+    `_axis_value` reporting an axis nobody expressed, which is the same thing the
+    page already shows for a reviewer whose first save carried only a note — and
+    seeding the frontend's default instead was rejected there for the reason that
+    applies here too: it would write a number nobody entered into a field named for
+    what a reviewer scored, and the aggregate would lose the distinction it depends
+    on. Pinned by `test_a_legacy_entry_carrying_only_a_note_still_reads_through` and
+    its unreadable-axis sibling.
     """
     if _is_a_vote(entry):
         return True
@@ -1352,10 +1363,26 @@ def api_put_prioritization_scores():
     an upsert. That answers 200 while discarding the scores and leaving a phantom
     `PROJECT#prioritization` item behind, which is strictly worse than a refusal:
     it reports success for data it silently dropped.
+
+    Answers 405 rather than 400, with the `Allow` header a 405 is required to carry.
+    The distinction is not pedantry here: 400 says "your request was malformed",
+    which sends a client looking at its body, while the body was fine and the VERB is
+    what no longer exists. 405 plus `Allow` says exactly that, and names the two
+    verbs that do work — which is the whole of what a caller stranded on the retired
+    route needs. Returned as a `Response` rather than raised, because the shared
+    error classes map to fixed statuses and inventing a shared `MethodNotAllowedError`
+    for one stub would put a class in `shared/api.py` with a single caller. The body
+    keeps the `{'success': False, 'error': ...}` shape every other error answers with.
     """
-    raise ValidationError(
-        'PUT /projects/prioritization is no longer supported; '
-        'PATCH the caller\'s own scores instead'
+    return Response(
+        status_code=405,
+        content_type=content_types.APPLICATION_JSON,
+        headers={'Allow': 'GET, PATCH'},
+        body=json.dumps({
+            'success': False,
+            'error': 'PUT /projects/prioritization is no longer supported; '
+                     "PATCH the caller's own scores instead",
+        }),
     )
 
 

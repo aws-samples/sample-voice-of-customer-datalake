@@ -361,7 +361,7 @@ describe('Prioritization', () => {
       renderPrioritization()
 
       await waitFor(() => {
-        expect(screen.getByRole('alert')).toHaveTextContent('Scores could not be loaded')
+        expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
       })
       // The documents still list — the failure is the SCORES read, not the page.
       await waitFor(() => {
@@ -450,12 +450,16 @@ describe('Prioritization', () => {
       await editARowWhoseNoteIsTooLong()
 
       await waitFor(() => {
-        expect(screen.getByRole('alert')).toHaveTextContent('A note is too long to save')
+        expect(screen.getByRole('alert', { name: 'A note is too long to save' })).toBeInTheDocument()
       })
       // The bound is the actionable part, so it has to reach the screen — an
       // unresolved interpolation would render the placeholder instead.
-      expect(screen.getByRole('alert')).toHaveTextContent(String(MAX_NOTE_LENGTH))
-      expect(screen.getByRole('alert')).not.toHaveTextContent('{{max}}')
+      const panel = screen.getByRole('alert', { name: 'A note is too long to save' })
+      expect(panel).toHaveTextContent(String(MAX_NOTE_LENGTH))
+      expect(panel).not.toHaveTextContent('{{max}}')
+      // And WHICH row, by title: the ids the check returns mean nothing to a
+      // reviewer, and rows are collapsed by default.
+      expect(panel).toHaveTextContent('Feature A PR/FAQ')
     })
 
     it('never sends the body the API would refuse', async () => {
@@ -485,6 +489,58 @@ describe('Prioritization', () => {
         expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
       })
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('keeps both panels separately addressable when a read also failed', async () => {
+      // Nothing stops a failed read and a long pending note from coexisting, and
+      // two same-role regions with no accessible name are indistinguishable — to a
+      // screen reader, and to a `getByRole('alert')` that throws on the second
+      // rather than saying which state was missing.
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+      const user = userEvent.setup()
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const notes = await screen.findByPlaceholderText(/add notes/i)
+      // Past the bound in one go: `maxLength` caps typing, so the case has to
+      // arrive the way it does in production — as a value the page did not type.
+      fireEvent.change(notes, { target: { value: overLong } })
+
+      await waitFor(() => {
+        expect(screen.getAllByRole('alert')).toHaveLength(2)
+      })
+      expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
+      expect(screen.getByRole('alert', { name: 'A note is too long to save' })).toBeInTheDocument()
+    })
+
+    it('measures the note in the unit the API measures it in', async () => {
+      // `.length` is UTF-16 code units, Python's `len()` is code points. A note of
+      // 1500 emoji is 3000 units and 1500 code points, so a code-unit count would
+      // block a save the API accepts, quoting a limit the reviewer never reached.
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {
+          d1: {
+            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+            strategic_fit: 3, notes: '😀'.repeat(MAX_NOTE_LENGTH - 500),
+          },
+        },
+      })
+      const user = userEvent.setup()
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      fireEvent.change(sliders[0], { target: { value: '5' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      expect(screen.queryByRole('alert', { name: 'A note is too long to save' }))
+        .not.toBeInTheDocument()
     })
 
     it('still saves a row whose note is within the bound', async () => {

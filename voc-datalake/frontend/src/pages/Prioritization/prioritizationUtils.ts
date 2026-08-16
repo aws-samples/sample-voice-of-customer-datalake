@@ -82,8 +82,28 @@ export function overLongNoteDocuments(
   edits: Record<string, { readonly notes?: string | null }>,
 ): string[] {
   return Object.entries(edits)
-    .filter(([, score]) => (score.notes ?? '').length > MAX_NOTE_LENGTH)
+    .filter(([, score]) => noteLength(score.notes) > MAX_NOTE_LENGTH)
     .map(([documentId]) => documentId)
+}
+
+/**
+ * The note's length in the unit the API measures it in.
+ *
+ * `.length` is UTF-16 CODE UNITS; Python's `len()` on the other side of the wire is
+ * CODE POINTS. They differ for anything outside the basic plane — an emoji is two
+ * units and one code point — so a plain `.length` blocks a note of 1500 emoji that
+ * the API would have accepted, with a message quoting a limit the reviewer had not
+ * reached. Spreading the string iterates by code point, which is what makes the two
+ * sides bound the same thing rather than the same number.
+ *
+ * `maxLength` on the textarea cannot be corrected this way: the DOM attribute counts
+ * code units, full stop. It is left as the tighter of the two on purpose — it only
+ * limits TYPING and can therefore never produce a body the API refuses, which is the
+ * invariant that matters. A reviewer pasting emoji past it is bounded early rather
+ * than told a save failed.
+ */
+function noteLength(notes: string | null | undefined): number {
+  return [...(notes ?? '')].length
 }
 
 export const getScoreColor = (score: number, max: number = 5): string => {

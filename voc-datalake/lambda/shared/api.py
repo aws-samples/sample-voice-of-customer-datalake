@@ -100,8 +100,10 @@ def validate_int(
       ``int(True)`` is ``1``. Harmless where the result is a page size, wrong where
       it is a value a human is said to have chosen — a flag is not a slider
       position. A caller in the second case must refuse ``bool`` itself, before
-      calling this (``validate_bool`` makes the mirror argument, and
-      ``projects_handler``'s ``_is_clampable_number`` is such a check).
+      calling this (``validate_bool`` makes the mirror argument). Named as a
+      requirement on callers rather than by pointing at one: a shared helper citing
+      a particular handler's PRIVATE predicate reads as a dependency it does not
+      have, and goes stale the moment that handler renames it.
     * ``default`` is returned for input this could not read, so it is not merely a
       value for "absent" — it is also the value for "unreadable". Where the two
       must be distinguishable, or where the default would read as a deliberate

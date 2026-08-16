@@ -1069,6 +1069,31 @@ class TestTheReadThroughAndTheAggregateAgree:
         assert body['scores']['doc-1']['impact'] == 0.0
         assert body['aggregates'] == {}
 
+    def test_a_note_beside_an_unreadable_axis_reads_the_note_and_no_score(
+        self, api_gateway_event, lambda_context
+    ):
+        """The shape where the two halves look like they disagree, and do not.
+
+        `{'notes': 'x', 'impact': 'high'}` is read through for the NOTE, because a
+        reviewer wrote it, so the caller sees `impact: 0.0` while `aggregates` omits
+        the document. The 0.0 is `_axis_value` reporting an axis nobody expressed —
+        the same value the page already shows a reviewer whose first save carried
+        only a note — not the read claiming somebody scored zero.
+
+        Pinned rather than described because the alternative is tempting: seeding the
+        frontend's default would put a number nobody entered into a field named for
+        what a reviewer scored, and would destroy the silence-versus-vote distinction
+        the aggregate depends on.
+        """
+        table = self._with_legacy({'doc-1': {'notes': 'no numbers, just a view',
+                                             'impact': 'high'}})
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['scores']['doc-1']['notes'] == 'no numbers, just a view'
+        assert body['scores']['doc-1']['impact'] == 0
+        assert body['aggregates'] == {}, 'an unreadable axis is not a vote'
+
     def test_an_unreadable_legacy_entry_still_migrates_on_write(
         self, api_gateway_event, lambda_context
     ):
@@ -1707,11 +1732,35 @@ class TestWholeMapOverwriteRouteIsGone:
                 lambda_context,
             )
 
-        assert status == 400
+        # 405, not 400: the body was well-formed and the VERB is what is gone. A 400
+        # sends a client looking at its payload for a fault that is not there.
+        assert status == 405
         assert body['success'] is False
         assert 'no longer supported' in body['error']
         assert update_project.call_count == 0, \
             'the path must not fall through to the generic project route'
+
+    def test_the_refusal_names_the_verbs_that_do_work(
+        self, api_gateway_event, lambda_context
+    ):
+        """A 405 is required to carry `Allow`, and it is the actionable half: the
+        caller is on a route that exists, with a verb that does not, and needs to be
+        told which verbs remain rather than left to guess."""
+        from projects_handler import lambda_handler
+
+        with patch('projects_handler.get_aggregates_table', return_value=FakeAggregatesTable()):
+            response = lambda_handler(
+                _event(api_gateway_event, method='PUT', body={'scores': {}}),
+                lambda_context,
+            )
+
+        # Powertools emits REST responses with `multiValueHeaders`, so a test that
+        # reads only `headers` finds nothing and reports a missing header that is
+        # actually present. Both shapes are flattened rather than assuming one.
+        raw = {**(response.get('headers') or {}),
+               **{k: v[0] for k, v in (response.get('multiValueHeaders') or {}).items()}}
+        headers = {k.lower(): v for k, v in raw.items()}
+        assert headers.get('allow') == 'GET, PATCH', headers
 
     def test_the_refusal_writes_nothing(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable()

@@ -352,6 +352,15 @@ export default function Prioritization() {
   // data, which is sent along the moment they touch a slider on that row.
   const overLongNotes = useMemo(() => overLongNoteDocuments(localEdits), [localEdits])
 
+  // Document titles, so the panel above can name the rows a reviewer has to fix
+  // rather than the ids, which mean nothing to them. Derived from the list already
+  // on screen, so a row that has since disappeared falls back to its id instead of
+  // rendering blank.
+  const titlesByDocument = useMemo(
+    () => Object.fromEntries(allPRFAQs.map((doc) => [doc.document_id, doc.title])),
+    [allPRFAQs],
+  )
+
   const saveMutation = useMutation({
     mutationFn: () => api.patchPrioritizationScores(localEdits),
     onSuccess: () => {
@@ -401,30 +410,43 @@ export default function Prioritization() {
         onSave={() => saveMutation.mutate()}
       />
 
+      {/* Both panels can be on screen at once — a failed read does not stop a
+          pending edit from carrying a long note — so each carries its own
+          `aria-labelledby`. Two same-role regions with no accessible name are
+          indistinguishable to a screen reader AND to a test: `getByRole('alert')`
+          throws on the second one rather than reporting which state was missing. */}
       {overLongNotes.length > 0 ? (
-        <div role="alert" className="bg-amber-50 border border-amber-200 rounded-lg p-3 sm:p-4">
+        <div role="alert" aria-labelledby="note-too-long-title" className="bg-amber-50 border border-amber-200 rounded-lg p-3 sm:p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} />
             <div>
-              <h3 className="font-medium text-amber-900 text-sm sm:text-base">{t('noteTooLong.title')}</h3>
+              <h3 id="note-too-long-title" className="font-medium text-amber-900 text-sm sm:text-base">{t('noteTooLong.title')}</h3>
               <p className="text-xs sm:text-sm text-amber-700 mt-1">
                 {/* No `count` interpolation on purpose: a plural key needs
                     `_one`/`_many`/`_other` forms that differ per locale, and a
-                    missing form renders the raw path. The bound is the actionable
-                    part; which row it is, is visible on the row. */}
+                    missing form renders the raw path. */}
                 {t('noteTooLong.description', { max: MAX_NOTE_LENGTH })}
               </p>
+              {/* WHICH rows, by title. The ids the check returns are meaningless to
+                  a reviewer, and rows are collapsed by default, so without this the
+                  actionable half of the message is "expand every pending row and
+                  look". Titles are data, not UI copy, so this needs no new key. */}
+              <ul className="text-xs sm:text-sm text-amber-800 mt-2 list-disc list-inside">
+                {overLongNotes.map((documentId) => (
+                  <li key={documentId}>{titlesByDocument[documentId] ?? documentId}</li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>
       ) : null}
 
       {scoresFailed ? (
-        <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+        <div role="alert" aria-labelledby="scores-unavailable-title" className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
             <div>
-              <h3 className="font-medium text-red-900 text-sm sm:text-base">{t('scoresUnavailable.title')}</h3>
+              <h3 id="scores-unavailable-title" className="font-medium text-red-900 text-sm sm:text-base">{t('scoresUnavailable.title')}</h3>
               <p className="text-xs sm:text-sm text-red-700 mt-1">{t('scoresUnavailable.description')}</p>
             </div>
           </div>
