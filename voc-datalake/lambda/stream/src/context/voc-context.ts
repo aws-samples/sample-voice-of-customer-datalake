@@ -33,9 +33,19 @@ const categoryItemSchema = z.object({ name: z.string() }).passthrough();
 // a category that has real feedback (`NaN > 0` is false) and handing the model a
 // literal `Total Feedback Items: NaN`. A row that fails this parse contributes
 // nothing and is reported, rather than poisoning its siblings.
+//
+// The union in front of the coercion is the decision about `null`, and it is a
+// decision rather than an accident: `z.coerce` runs Number() first, and
+// Number(null) is 0, so a row storing a literal null would be counted as a
+// MEASURED zero. It is not one — nobody knows what that row's count was — so the
+// union rejects anything that is not already a number or a numeric string, which
+// puts such a row in `skippedRows` and makes the turn say the figures are
+// incomplete. Same for `count: true`, which used to count as 1.
+const counterValue = z.union([z.number(), z.string()]).pipe(z.coerce.number().finite());
+
 const metricItemSchema = z.object({
-  count: z.coerce.number().finite().optional(),
-  value: z.coerce.number().finite().optional(),
+  count: counterValue.optional(),
+  value: counterValue.optional(),
 }).passthrough();
 
 // Mirrors lambda/shared/api.py::DEFAULT_CATEGORIES. When nothing is configured,

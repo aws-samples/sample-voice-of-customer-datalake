@@ -668,6 +668,53 @@ describe('buildVocChatContext category read amplification', () => {
     expect(ctx.userMessage).toContain('the figures below are incomplete');
   });
 
+  it('treats a null counter as unreadable rather than as a measured zero', async () => {
+    // `z.coerce.number()` runs Number() first, and Number(null) is 0, so a row
+    // storing a literal null would pass the parse and be counted as a measured
+    // zero. Nobody knows what that row held, so it belongs in the skipped count:
+    // the total is short by an unknown amount, and the turn has to say so.
+    const docClient = createKeyedDocClient({
+      [`METRIC#daily_total|${TODAY_UTC}`]: [{ count: 7 }],
+      [`METRIC#daily_total|${utcDaysAgo(1)}`]: [{ count: null }],
+    });
+
+    const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 3 });
+
+    expect(ctx.metadata.total_feedback).toBe(7);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('unreadable counter row'));
+    expect(ctx.userMessage).toContain('the figures below are incomplete');
+  });
+
+  it('keeps the window well formed for a days value below the floor', async () => {
+    // `days` reaches this module already bounded — schema.ts declares
+    // `z.number().int().min(1).max(365)` — and buildVocChatContext clamps again on
+    // top of that. The clamp is what stops `days - 1` from running backwards and
+    // asking DynamoDB for `oldest > newest`, which is a ValidationException for
+    // every partition of the turn: sixteen failed reads and a prompt that says its
+    // own figures are incomplete. Pinned as an INVARIANT on what is sent, so
+    // removing the clamp fails here rather than in production.
+    const docClient = createKeyedDocClient({
+      [`METRIC#daily_total|${TODAY_UTC}`]: [{ count: 3 }],
+    });
+
+    for (const days of [0, -5]) {
+      const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days });
+
+      expect(ctx.metadata.days_analyzed).toBe(1);
+      expect(ctx.userMessage).not.toContain('the figures below are incomplete');
+      expect(ctx.metadata.total_feedback).toBe(3);
+    }
+
+    const ranges = (docClient.send as unknown as { mock: { calls: { input: Record<string, unknown> }[][] } })
+      .mock.calls
+      .map(([command]) => (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>)
+      .filter((values) => values[':oldest'] !== undefined);
+    expect(ranges.length).toBeGreaterThan(0);
+    for (const values of ranges) {
+      expect(values[':oldest'] <= values[':newest']).toBe(true);
+    }
+  });
+
   it('never hands the model NaN for the headline numbers', async () => {
     // A malformed METRIC#daily_total row used to render, verbatim,
     // `**Total Feedback Items:** NaN` and `- Positive: 0 (NaN%)` for all four

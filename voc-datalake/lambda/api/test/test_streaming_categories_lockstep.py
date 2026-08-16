@@ -502,13 +502,30 @@ class TestCounterSortKeyShapeLockstep:
     def test_every_aggregate_counter_is_written_under_a_bare_date_sort_key(self):
         source = _read(AGGREGATOR_SOURCE)
         calls = re.findall(AGGREGATOR_COUNTER_CALL_PATTERN, source)
-        # The denominator first: a pattern that matched nothing would satisfy the
-        # real assertion below for the wrong reason.
+        # Two denominators, because they fail for different reasons and only the
+        # second one notices a call site the pattern cannot see.
+        #
+        # The floor catches the pattern breaking entirely — a rename, a
+        # restructure — which would otherwise satisfy the real assertion below by
+        # finding nothing at all.
         assert len(calls) >= 8, (
             f'Found only {len(calls)} counter writes in {AGGREGATOR_SOURCE}; this '
             f'module writes at least eight. The pattern in this test file has '
             f'stopped matching the call sites, so the assertion below proves '
             f'nothing — fix the pattern rather than the count.'
+        )
+        # The equality catches the subtler half: ONE newly added call site the
+        # pattern cannot match — a multi-line form, a keyword-argument call — while
+        # the other eight still match, so the floor holds and the new site's sort
+        # key goes unpinned. Every textual invocation must therefore be accounted
+        # for by a matched call site.
+        invocations = len(re.findall(r'(?<!def )update_(?:counter|average)\(', source))
+        assert invocations == len(calls), (
+            f'{AGGREGATOR_SOURCE} invokes a counter writer {invocations} times but '
+            f'this test can only read the arguments of {len(calls)} of them. The '
+            f'unmatched call site is UNPINNED: its sort key could be composite and '
+            f'the assertion below would still pass. Widen the pattern in this file '
+            f'to cover the new call shape.'
         )
         composite = sorted({sk.strip() for _, sk in calls if sk.strip() != 'date'})
         assert not composite, (
