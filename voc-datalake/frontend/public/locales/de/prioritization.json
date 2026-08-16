@@ -58,13 +58,13 @@
     "impact": "Auswirkung",
     "impactDescription": "Geschäftswert und Kundennutzen",
     "low": "Niedrig",
-    "score": "Wert",
     "slow": "Langsam",
     "strategicFit": "Strategische Passung",
     "strategicFitDescription": "Übereinstimmung mit Unternehmenszielen",
     "timeToMarket": "Markteinführungszeit",
     "timeToMarketDescription": "Wie schnell kann dies geliefert werden?",
-    "title": "Priorisierungsbewertungen"
+    "title": "Priorisierungsbewertungen",
+    "yoursOnly": "Ihre eigene Bewertung. Beim Speichern werden nur Ihre Werte geschrieben."
   },
   "scoresUnavailable": {
     "description": "Ihre gespeicherten Bewertungen sind derzeit nicht verfügbar. Die unten angezeigten Zahlen sind daher Standardwerte und nicht die eingegebenen Werte. Laden Sie die Seite vor dem Speichern neu.",
@@ -87,6 +87,16 @@
     "totalDocuments": "Dokumente gesamt"
   },
   "subtitle": "PRDs und PR/FAQs über alle Projekte hinweg bewerten und priorisieren",
+  "team": {
+    "disagreement": "Abweichung {{spread}}",
+    "disagreementDescription": "Die Bewertenden liegen bei diesem Wert {{spread}} auseinander. Ihre Notizen erklären, warum — diese Seite zeigt nur Ihre eigene Notiz.",
+    "noScores": "Noch nicht bewertet",
+    "noScoresDescription": "Noch niemand hat dies bewertet, es ist also nicht niedrig eingestuft, sondern unbewertet. Mit den Schiebereglern unten geben Sie die erste Stimme ab.",
+    "reviewers": "Bewertende",
+    "score": "Teamwert",
+    "summary": "Teamdurchschnitt {{score}} von 5 · Abgegebene Bewertungen: {{reviewers}}",
+    "title": "Was das Team gesagt hat"
+  },
   "title": "Priorisierung",
   "unsavedChanges": {
     "cancel": "Auf Seite bleiben",

@@ -58,13 +58,13 @@
     "impact": "Impacto",
     "impactDescription": "Valor comercial e benefício ao cliente",
     "low": "Baixo",
-    "score": "Pontuação",
     "slow": "Lento",
     "strategicFit": "Alinhamento Estratégico",
     "strategicFitDescription": "Alinhamento com objetivos da empresa",
     "timeToMarket": "Tempo para o Mercado",
     "timeToMarketDescription": "Com que rapidez isso pode ser entregue?",
-    "title": "Pontuações de Priorização"
+    "title": "Pontuações de Priorização",
+    "yoursOnly": "Sua própria pontuação. Ao salvar, apenas os seus valores são gravados."
   },
   "scoresUnavailable": {
     "description": "Suas pontuações salvas estão indisponíveis neste momento, portanto os números abaixo são valores padrão e não o que alguém inseriu. Recarregue a página antes de salvar.",
@@ -87,6 +87,16 @@
     "totalDocuments": "Total de Documentos"
   },
   "subtitle": "Pontue e priorize PRDs e PR/FAQs em todos os projetos",
+  "team": {
+    "disagreement": "Dispersão {{spread}}",
+    "disagreementDescription": "Os revisores divergem em {{spread}} nesta pontuação. As notas deles explicam por quê — esta página mostra apenas a sua própria nota.",
+    "noScores": "Ainda não pontuado",
+    "noScoresDescription": "Nenhum revisor pontuou isto ainda, portanto não está mal avaliado, e sim sem avaliação. Os controles abaixo registram o primeiro voto.",
+    "reviewers": "Revisores",
+    "score": "Pontuação da equipe",
+    "summary": "Média da equipe {{score}} de 5 · Votos de revisores: {{reviewers}}",
+    "title": "O que a equipe disse"
+  },
   "title": "Priorização",
   "unsavedChanges": {
     "cancel": "Permanecer na Página",

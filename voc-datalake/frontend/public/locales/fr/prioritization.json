@@ -58,13 +58,13 @@
     "impact": "Portée",
     "impactDescription": "Valeur commerciale et bénéfice client",
     "low": "Faible",
-    "score": "Note",
     "slow": "Lent",
     "strategicFit": "Adéquation stratégique",
     "strategicFitDescription": "Alignement avec les objectifs de l'entreprise",
     "timeToMarket": "Délai de mise sur le marché",
     "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
-    "title": "Scores de priorisation"
+    "title": "Scores de priorisation",
+    "yoursOnly": "Votre propre note. L'enregistrement n'écrit que vos valeurs."
   },
   "scoresUnavailable": {
     "description": "Vos scores enregistrés sont actuellement indisponibles : les valeurs ci-dessous sont donc des valeurs par défaut et non celles qui ont été saisies. Rechargez la page avant d'enregistrer.",
@@ -87,6 +87,16 @@
     "totalDocuments": "Total documents"
   },
   "subtitle": "Évaluer et prioriser les PRD et PR/FAQ de tous les projets",
+  "team": {
+    "disagreement": "Écart {{spread}}",
+    "disagreementDescription": "Les évaluateurs diffèrent de {{spread}} sur cette note. Leurs commentaires expliquent pourquoi — cette page n'affiche que votre propre commentaire.",
+    "noScores": "Pas encore évalué",
+    "noScoresDescription": "Aucun évaluateur ne l'a encore noté : il n'est donc pas mal classé, mais non classé. Les curseurs ci-dessous enregistrent le premier vote.",
+    "reviewers": "Évaluateurs",
+    "score": "Note de l'équipe",
+    "summary": "Moyenne de l'équipe {{score}} sur 5 · Votes d'évaluateurs : {{reviewers}}",
+    "title": "Ce que l'équipe a dit"
+  },
   "title": "Priorisation",
   "unsavedChanges": {
     "cancel": "Rester sur la page",

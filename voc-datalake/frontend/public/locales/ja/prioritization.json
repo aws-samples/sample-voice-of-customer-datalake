@@ -58,13 +58,13 @@
     "impact": "インパクト",
     "impactDescription": "ビジネス価値と顧客メリット",
     "low": "低",
-    "score": "スコア",
     "slow": "遅い",
     "strategicFit": "戦略的適合性",
     "strategicFitDescription": "会社の目標との整合性",
     "timeToMarket": "市場投入時間",
     "timeToMarketDescription": "どのくらい早く提供できますか？",
-    "title": "優先順位付けスコア"
+    "title": "優先順位付けスコア",
+    "yoursOnly": "自分自身の評価です。保存すると自分のスコアだけが書き込まれます。"
   },
   "scoresUnavailable": {
     "description": "保存されたスコアを現在取得できないため、以下の数値は入力された値ではなく既定値です。保存する前にページを再読み込みしてください。",
@@ -87,6 +87,16 @@
     "totalDocuments": "ドキュメント合計"
   },
   "subtitle": "すべてのプロジェクトのPRDおよびPR/FAQをスコアリングして優先順位付け",
+  "team": {
+    "disagreement": "ばらつき {{spread}}",
+    "disagreementDescription": "このスコアについてレビュー担当者の評価は{{spread}}離れています。理由は各自のメモにありますが、このページに表示されるのは自分のメモのみです。",
+    "noScores": "まだ未評価",
+    "noScoresDescription": "まだ誰も評価していないため、低評価ではなく未評価です。下のスライダーで最初の評価を登録できます。",
+    "reviewers": "レビュー担当者",
+    "score": "チームスコア",
+    "summary": "チーム平均 {{score}} / 5 · 評価した人数: {{reviewers}}",
+    "title": "チームの評価"
+  },
   "title": "優先順位付け",
   "unsavedChanges": {
     "cancel": "ページに留まる",

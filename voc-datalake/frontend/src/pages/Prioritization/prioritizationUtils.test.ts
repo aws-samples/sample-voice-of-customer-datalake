@@ -6,9 +6,9 @@ import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
   getScore, calculatePriorityScore, collectPRFAQs, comparePRFAQs, DEFAULT_SCORE, isScorable,
-  SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments,
+  SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
 } from './prioritizationUtils'
-import type { PrioritizationScore, ProjectDocument } from '../../api/types'
+import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
 
 describe('getScore', () => {
   it('returns stored score when document_id exists', () => {
@@ -177,23 +177,159 @@ describe('collectPRFAQs', () => {
   })
 })
 
-describe('comparePRFAQs', () => {
-  const prfaqA = { document_id: 'a', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Alpha', content: '', created_at: '2025-01-01' }
-  const prfaqB = { document_id: 'b', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Beta', content: '', created_at: '2025-01-02' }
+const prfaqA = { document_id: 'a', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Alpha', content: '', created_at: '2025-01-01' }
+const prfaqB = { document_id: 'b', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Beta', content: '', created_at: '2025-01-02' }
 
-  it('sorts by impact when field is impact', () => {
-    const scores: Record<string, PrioritizationScore> = {
-      'a': { document_id: 'a', impact: 2, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
-      'b': { document_id: 'b', impact: 5, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
+/** One document's team view, all four axes at the same value unless told otherwise. */
+const aggregate = (
+  fields: Partial<PrioritizationAggregate> & { reviewer_count: number },
+): PrioritizationAggregate => ({
+  impact: 0, time_to_market: 0, confidence: 0, strategic_fit: 0, score_spread: 0, ...fields,
+})
+
+describe('comparePRFAQs orders by the TEAM aggregate, not the caller own ballot', () => {
+  it('sorts by the team mean impact when the field is impact', () => {
+    const aggregates: Record<string, PrioritizationAggregate> = {
+      a: aggregate({ impact: 2, reviewer_count: 2 }),
+      b: aggregate({ impact: 5, reviewer_count: 2 }),
     }
 
-    expect(comparePRFAQs(prfaqA, prfaqB, scores, 'impact')).toBeLessThan(0)
+    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'impact')).toBeLessThan(0)
   })
 
-  it('handles missing scores gracefully via getScore fallback', () => {
-    // Both missing from scores — should not crash, both get DEFAULT_SCORE
-    expect(() => comparePRFAQs(prfaqA, prfaqB, {}, 'impact')).not.toThrow()
+  it('sorts by the team composite, not by the caller composite', () => {
+    // The discriminating case: a's TEAM impact is the higher one, b's is lower.
+    // A sort still reading the caller's own map has no entry for either document
+    // and would answer 0 — the assertion below fails whichever way the tie broke,
+    // because a tie is not "a above b".
+    const aggregates: Record<string, PrioritizationAggregate> = {
+      a: aggregate({ impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, reviewer_count: 2 }),
+      b: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 2 }),
+    }
+
+    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'priority_score')).toBeGreaterThan(0)
+  })
+
+  it('ranks an unscored document BELOW one the team scored low, rather than above it', () => {
+    // The defect this replaces: DEFAULT_SCORE composites to 0.9 (time_to_market 3
+    // at weight 0.3), so an untouched proposal outranked one the team had looked
+    // at and rated 1 across the board — composite 1.0. Absent from the aggregate
+    // means nobody voted, which is not a low score.
+    const aggregates: Record<string, PrioritizationAggregate> = {
+      b: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 1 }),
+    }
+
+    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'priority_score')).toBeLessThan(0)
+  })
+
+  it('groups unscored documents rather than ordering them against each other', () => {
+    expect(() => comparePRFAQs(prfaqA, prfaqB, {}, 'priority_score')).not.toThrow()
+    expect(comparePRFAQs(prfaqA, prfaqB, {}, 'priority_score')).toBe(0)
     expect(comparePRFAQs(prfaqA, prfaqB, {}, 'impact')).toBe(0)
+  })
+
+  it('still orders created_at and title by the document, which no aggregate touches', () => {
+    expect(comparePRFAQs(prfaqA, prfaqB, {}, 'created_at')).toBeLessThan(0)
+    expect(comparePRFAQs(prfaqA, prfaqB, {}, 'title')).toBeLessThan(0)
+  })
+})
+
+describe('getTeamScore', () => {
+  it('composites the team means through the same weights the page sorts by', () => {
+    // 5*0.4 + 4*0.3 + 2*0.2 + 3*0.1 = 3.9 — the calculatePriorityScore case above,
+    // reached through the aggregate. The displayed number and the sort order are
+    // then the same arithmetic by construction.
+    const team = getTeamScore({
+      d1: aggregate({ impact: 5, time_to_market: 4, strategic_fit: 2, confidence: 3, reviewer_count: 4 }),
+    }, 'd1')
+
+    expect(team?.composite).toBeCloseTo(3.9)
+    expect(team?.reviewerCount).toBe(4)
+  })
+
+  it('answers null for a document nobody has scored, not a zero row', () => {
+    // Absence from the map IS the unscored signal: the backend omits a document
+    // with no votes rather than emitting a zero mean. A zeroed record here would
+    // make "nobody looked" indistinguishable from "the team rated it lowest".
+    expect(getTeamScore({}, 'd1')).toBeNull()
+  })
+
+  it('does not let an inherited property name answer for a document', () => {
+    expect(getTeamScore({}, 'toString')).toBeNull()
+  })
+
+  it('withholds the spread for a single ballot instead of reporting agreement', () => {
+    // One reviewer yields a mean equal to that ballot and a spread of 0.0, which
+    // reads as consensus. Null so the row can say "one person looked" instead.
+    const alone = getTeamScore({ d1: aggregate({ impact: 5, reviewer_count: 1 }) }, 'd1')
+    expect(alone?.spread).toBeNull()
+    expect(alone?.reviewerCount).toBe(1)
+  })
+
+  it('reports a real spread once more than one reviewer has voted', () => {
+    // The positive control for the case above: withholding must be about the
+    // reviewer count, not about the spread never surfacing at all.
+    const team = getTeamScore({ d1: aggregate({ impact: 5, reviewer_count: 3, score_spread: 1.6 }) }, 'd1')
+    expect(team?.spread).toBeCloseTo(1.6)
+  })
+
+  it('reports zero spread as agreement when several reviewers voted', () => {
+    const team = getTeamScore({ d1: aggregate({ impact: 5, reviewer_count: 3, score_spread: 0 }) }, 'd1')
+    expect(team?.spread).toBe(0)
+  })
+})
+
+describe('normalizeAggregates', () => {
+  const complete = {
+    impact: 4, time_to_market: 3, confidence: 2, strategic_fit: 1,
+    reviewer_count: 2, score_spread: 1.5,
+  }
+
+  it('keeps a complete row as sent', () => {
+    expect(normalizeAggregates({ d1: complete })).toEqual({ d1: complete })
+  })
+
+  it('treats an absent aggregates field as no team data, not an error', () => {
+    // The field is optional on the wire: a deployment predating it sends no
+    // `aggregates` at all, and every row then has to read as unscored.
+    expect(normalizeAggregates(undefined)).toEqual({})
+    expect(normalizeAggregates(null)).toEqual({})
+  })
+
+  it('keeps a row whose axis is unusable, with that axis at zero', () => {
+    // A partial aggregate is still worth showing — the reviewer count and the
+    // other axes are real — so a bad axis degrades rather than dropping the row.
+    const parsed = normalizeAggregates({
+      d1: { ...complete, impact: 'high', score_spread: -2 },
+    })
+
+    expect(parsed.d1.impact).toBe(0)
+    expect(parsed.d1.score_spread).toBe(0)
+    expect(parsed.d1.reviewer_count).toBe(2)
+  })
+
+  it('drops a row with no usable reviewer count rather than inventing one', () => {
+    // The count is the field that says somebody voted. An invented 1 would
+    // present a row nobody scored as a scored one, and the backend never emits a
+    // zero-count row — it omits the document instead.
+    expect(normalizeAggregates({ d1: { ...complete, reviewer_count: 0 } })).toEqual({})
+    expect(normalizeAggregates({ d1: { ...complete, reviewer_count: 'two' } })).toEqual({})
+    expect(normalizeAggregates({ d1: { impact: 4 } })).toEqual({})
+  })
+
+  it('drops only the unreadable row, keeping its siblings', () => {
+    const parsed = normalizeAggregates({ d1: complete, d2: null, d3: 'nonsense' })
+
+    expect(Object.keys(parsed)).toEqual(['d1'])
+  })
+
+  it('never throws, whatever the wire sent', () => {
+    // This feeds a react-query `select`: a throw would turn a readable response
+    // into a failed query and fire the page's "scores could not be loaded" panel
+    // over data that arrived fine.
+    for (const raw of [[], 'text', 42, true, { d1: [] }]) {
+      expect(() => normalizeAggregates(raw)).not.toThrow()
+    }
   })
 })
 

@@ -58,13 +58,13 @@
     "impact": "영향도",
     "impactDescription": "비즈니스 가치 및 고객 이점",
     "low": "낮음",
-    "score": "점수",
     "slow": "느림",
     "strategicFit": "전략적 부합도",
     "strategicFitDescription": "회사 목표와의 부합도",
     "timeToMarket": "출시 시간",
     "timeToMarketDescription": "얼마나 빨리 출시할 수 있나요?",
-    "title": "우선순위 지정 점수"
+    "title": "우선순위 지정 점수",
+    "yoursOnly": "본인의 평가입니다. 저장하면 본인 점수만 기록됩니다."
   },
   "scoresUnavailable": {
     "description": "저장된 점수를 현재 가져올 수 없으므로 아래 숫자는 입력된 값이 아닌 기본값입니다. 저장하기 전에 페이지를 다시 불러오세요.",
@@ -87,6 +87,16 @@
     "totalDocuments": "전체 문서"
   },
   "subtitle": "모든 프로젝트에서 PRD 및 PR/FAQ를 평가하고 우선순위를 지정하세요",
+  "team": {
+    "disagreement": "편차 {{spread}}",
+    "disagreementDescription": "이 점수에 대한 검토자 간 차이는 {{spread}}입니다. 이유는 각자의 메모에 있으며, 이 페이지에는 자신의 메모만 표시됩니다.",
+    "noScores": "아직 미평가",
+    "noScoresDescription": "아직 아무도 평가하지 않았으므로 낮은 점수가 아니라 미평가 상태입니다. 아래 슬라이더로 첫 평가를 등록할 수 있습니다.",
+    "reviewers": "검토자",
+    "score": "팀 점수",
+    "summary": "팀 평균 {{score}} / 5 · 검토자 투표 수: {{reviewers}}",
+    "title": "팀의 평가"
+  },
   "title": "우선순위 지정",
   "unsavedChanges": {
     "cancel": "페이지에 머물기",

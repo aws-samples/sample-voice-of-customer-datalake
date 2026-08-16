@@ -29,31 +29,39 @@ import {
 } from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
 import {
-  calculatePriorityScore, getScore, collectPRFAQs, comparePRFAQs, isScorable,
-  MAX_NOTE_LENGTH, overLongNoteDocuments,
+  getScore, getTeamScore, collectPRFAQs, comparePRFAQs, isScorable,
+  MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection,
 } from './prioritizationUtils'
 import type { LinkedForm } from './formLinkUtils'
 import type {
-  Project, PrioritizationScore,
+  Project, PrioritizationScore, PrioritizationAggregate,
 } from '../../api/types'
 
+/**
+ * The backlog at a glance, counted the same way the rows below are labelled.
+ *
+ * Reads the TEAM aggregate, not the caller's own map, because these cards sit
+ * directly above rows that now lead with the team's composite: counting the
+ * reader's own opinion under the heading the rows use for the group's would make
+ * the totals disagree with the list they summarise. "Not Scored" is likewise
+ * absence from the aggregate — nobody voted — rather than the caller's own
+ * `impact === 0`, which counted a document the team had scored as unscored merely
+ * because this reader had not.
+ */
 function StatsCards({
-  allPRFAQs, scores,
+  allPRFAQs, aggregates,
 }: {
   readonly allPRFAQs: PRFAQWithProject[];
-  readonly scores: Record<string, PrioritizationScore>
+  readonly aggregates: Record<string, PrioritizationAggregate>
 }) {
   const { t } = useTranslation('prioritization')
-  const highPriority = allPRFAQs.filter((p) => {
-    const s = getScore(scores, p.document_id); return calculatePriorityScore(s) >= 4
-  }).length
-  const mediumPriority = allPRFAQs.filter((p) => {
-    const s = getScore(scores, p.document_id); return calculatePriorityScore(s) >= 3 && calculatePriorityScore(s) < 4
-  }).length
-  const notScored = allPRFAQs.filter((p) => getScore(scores, p.document_id).impact === 0).length
+  const composites = allPRFAQs.map((p) => getTeamScore(aggregates, p.document_id)?.composite ?? null)
+  const highPriority = composites.filter((composite) => composite !== null && composite >= 4).length
+  const mediumPriority = composites.filter((composite) => composite !== null && composite >= 3 && composite < 4).length
+  const notScored = composites.filter((composite) => composite === null).length
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
@@ -125,11 +133,14 @@ const NO_LINKED_FORMS: readonly LinkedForm[] = []
 const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
 
 function PRFAQList({
-  isLoading, prfaqs, scores, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
+  isLoading, prfaqs, scores, aggregates, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
   readonly prfaqs: PRFAQWithProject[]
+  /** The caller's own ballots, which stay behind each row's own sliders. */
   readonly scores: Record<string, PrioritizationScore>
+  /** What every reviewer together said — the resting row, and the sort order. */
+  readonly aggregates: Record<string, PrioritizationAggregate>
   readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
   /** Passed through to each row's linked-form panel — see PRFAQRow. */
   readonly apiEndpoint: string
@@ -157,6 +168,7 @@ function PRFAQList({
           prfaq={prfaq}
           index={index}
           score={getScore(scores, prfaq.document_id)}
+          team={getTeamScore(aggregates, prfaq.document_id)}
           linkedForms={linkedFormsByDocument.get(prfaq.document_id) ?? NO_LINKED_FORMS}
           apiEndpoint={apiEndpoint}
           isExpanded={expandedId === prfaq.document_id}
@@ -294,6 +306,16 @@ export default function Prioritization() {
   } = useQuery({
     queryKey: ['prioritization-scores'],
     queryFn: () => api.getPrioritizationScores(),
+    // Validate the team view at the query boundary, per project convention (the
+    // same place `normalizeLinkedForms` validates the form list below). The field
+    // is optional on the wire — a deployment predating it sends no `aggregates` at
+    // all — and a partial or unreadable row must read as "nobody has scored this",
+    // never break a row. `scores` is passed through untouched: it is the caller's
+    // own ballot map, and `getScore` already carries its fallback.
+    select: (data) => ({
+      scores: data.scores,
+      aggregates: normalizeAggregates(data.aggregates),
+    }),
     enabled: config.apiEndpoint.length > 0,
   })
 
@@ -315,6 +337,18 @@ export default function Prioritization() {
     [savedScores, localEdits],
   )
 
+  /**
+   * The team view, as the rows show it and the list is ordered by.
+   *
+   * Deliberately NOT merged with `localEdits` the way `scores` is. A pending edit
+   * is one reviewer's unsaved ballot; folding it into the team's mean would make
+   * the headline number move as this reader drags a slider, which is precisely the
+   * "my score presented as the group's" confusion this page is being changed to
+   * remove. The mean updates when the save is refetched, from the arithmetic the
+   * backend owns.
+   */
+  const aggregates = useMemo(() => savedScores?.aggregates ?? {}, [savedScores])
+
   const allPRFAQs = useMemo(() => collectPRFAQs(allProjectDetails, projects), [allProjectDetails, projects])
 
   // True when data is loaded, nothing is scorable, but non-scorable documents exist.
@@ -328,10 +362,13 @@ export default function Prioritization() {
     return allPRFAQs.length === 0 && hasNonScorableDoc
   }, [allProjectDetails, allPRFAQs])
 
+  // Ordered by the team's numbers — the same ones each row displays. Sorting by
+  // the caller's own composite while showing the team's would leave the list
+  // ranked by one number and labelled with another.
   const sortedPRFAQs = useMemo(() => {
-    const sorted = [...allPRFAQs].sort((a, b) => comparePRFAQs(a, b, scores, sortField))
+    const sorted = [...allPRFAQs].sort((a, b) => comparePRFAQs(a, b, aggregates, sortField))
     return sortDirection === 'desc' ? sorted.reverse() : sorted
-  }, [allPRFAQs, scores, sortField, sortDirection])
+  }, [allPRFAQs, aggregates, sortField, sortDirection])
 
   // Which forms validate which row. Pure bookkeeping over data already fetched;
   // no per-row request happens here.
@@ -467,13 +504,14 @@ export default function Prioritization() {
         </div>
       </div>
 
-      <StatsCards allPRFAQs={allPRFAQs} scores={scores} />
+      <StatsCards allPRFAQs={allPRFAQs} aggregates={aggregates} />
       <SortControls sortField={sortField} sortDirection={sortDirection} onToggleSort={toggleSort} />
 
       <PRFAQList
         isLoading={isLoading}
         prfaqs={sortedPRFAQs}
         scores={scores}
+        aggregates={aggregates}
         linkedFormsByDocument={linkedFormsByDocument}
         apiEndpoint={config.apiEndpoint}
         expandedId={expandedId}

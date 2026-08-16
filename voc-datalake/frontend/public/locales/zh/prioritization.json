@@ -58,13 +58,13 @@
     "impact": "影响力",
     "impactDescription": "业务价值和客户收益",
     "low": "低",
-    "score": "评分",
     "slow": "缓慢",
     "strategicFit": "战略契合度",
     "strategicFitDescription": "与公司目标的一致性",
     "timeToMarket": "上市时间",
     "timeToMarketDescription": "能多快交付？",
-    "title": "优先级排序评分"
+    "title": "优先级排序评分",
+    "yoursOnly": "这是你自己的评分。保存时只会写入你的分数。"
   },
   "scoresUnavailable": {
     "description": "当前无法获取已保存的评分，因此下方显示的是默认值，而非任何人输入的数值。请在保存前重新加载页面。",
@@ -87,6 +87,16 @@
     "totalDocuments": "文档总数"
   },
   "subtitle": "对所有项目中的 PRD 和 PR/FAQ 进行评分和优先级排序",
+  "team": {
+    "disagreement": "分歧 {{spread}}",
+    "disagreementDescription": "评审人对该评分的差距为 {{spread}}。原因写在各自的备注中——本页仅显示你自己的备注。",
+    "noScores": "尚未评分",
+    "noScoresDescription": "还没有人评分，因此它是未排序而不是评分偏低。使用下面的滑块可投出第一票。",
+    "reviewers": "评审人",
+    "score": "团队评分",
+    "summary": "团队平均分 {{score}} / 5 · 评审票数：{{reviewers}}",
+    "title": "团队的评分"
+  },
   "title": "优先级排序",
   "unsavedChanges": {
     "cancel": "留在此页面",

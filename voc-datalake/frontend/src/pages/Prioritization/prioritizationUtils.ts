@@ -3,8 +3,9 @@
  * @module pages/Prioritization/prioritizationUtils
  */
 
+import { z } from 'zod'
 import type {
-  Project, ProjectDocument, PrioritizationScore,
+  Project, ProjectDocument, PrioritizationScore, PrioritizationAggregate,
 } from '../../api/types'
 
 export interface PRFAQWithProject extends ProjectDocument {
@@ -28,6 +29,25 @@ export const DEFAULT_SCORE: PrioritizationScore = {
 }
 
 /**
+ * The four axes the composite weighs — the shape `calculatePriorityScore` reads.
+ *
+ * Declared for what the function USES rather than as `PrioritizationScore`,
+ * because two different things are now composited through it: one reviewer's
+ * ballot (`PrioritizationScore`, which also carries `document_id` and `notes`)
+ * and the team's per-axis means (`PrioritizationAggregate`, which carries
+ * `reviewer_count` and `score_spread` instead). Both are structurally assignable
+ * to this, so neither call site needs a cast — which ESLint forbids here anyway —
+ * and the row's headline number and the sort order are computed by the same
+ * function, which is what keeps them in agreement.
+ */
+export interface CompositeAxes {
+  readonly impact: number
+  readonly time_to_market: number
+  readonly strategic_fit: number
+  readonly confidence: number
+}
+
+/**
  * The composite score this page sorts by.
  *
  * These four weights are duplicated in `COMPOSITE_WEIGHTS` in the backend's
@@ -37,8 +57,118 @@ export const DEFAULT_SCORE: PrioritizationScore = {
  * `lambda/api/test/test_prioritization_weights_lockstep.py`, which fails rather
  * than letting the two drift.
  */
-export const calculatePriorityScore = (score: PrioritizationScore): number => {
+export const calculatePriorityScore = (score: CompositeAxes): number => {
   return (score.impact * 0.4) + (score.time_to_market * 0.3) + (score.strategic_fit * 0.2) + (score.confidence * 0.1)
+}
+
+/**
+ * The team view of one document, validated at the query boundary.
+ *
+ * `GET /projects/prioritization` returns these beside the caller's own `scores`,
+ * and this page now leads with them: the resting row shows what the group thinks,
+ * the caller's own sliders sit one level in. The field is optional on the wire
+ * (a deployment predating it sends no `aggregates` at all), so absence has to
+ * read as "no team data yet", never as an error.
+ *
+ * Lenient in the same spirit as `formLinkUtils.LinkedFormSchema`: an axis or a
+ * spread that is missing, out of range or not a number degrades to 0 rather than
+ * taking the row off the page, because a partial aggregate is still worth showing.
+ *
+ * `reviewer_count` is the exception and carries NO fallback: it is the field that
+ * says somebody voted, and an invented 1 would present a row nobody scored as a
+ * scored one. A row without a usable count is dropped, which lands it in exactly
+ * the state the backend uses for "nobody scored this" — absent. The bound is
+ * `min(1)` for the same reason: `_aggregate_scores` omits a document with no
+ * votes rather than emitting a zero-count row, so a zero count is not a row this
+ * page can render honestly.
+ */
+const TeamAggregateSchema = z.looseObject({
+  impact: z.number().min(0).max(5).catch(0),
+  time_to_market: z.number().min(0).max(5).catch(0),
+  confidence: z.number().min(0).max(5).catch(0),
+  strategic_fit: z.number().min(0).max(5).catch(0),
+  reviewer_count: z.number().int().min(1),
+  // In the same unit as `calculatePriorityScore`, so it is readable as "how far
+  // apart two reviewers were, in slider notches". Bounded by that scale.
+  score_spread: z.number().min(0).max(5).catch(0),
+})
+
+/**
+ * One row of the team view, or `null` when it cannot be read.
+ *
+ * The return type is the DECLARED wire type, not `z.infer` of the schema above:
+ * the two are then checked against each other by `tsc` at this one line, so a
+ * schema that stops producing what `PrioritizationAggregate` promises is a compile
+ * error rather than a lenient parse of a shape nothing else in the app agrees
+ * with.
+ */
+function parseAggregate(value: unknown): PrioritizationAggregate | null {
+  const parsed = TeamAggregateSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
+}
+
+/**
+ * The team view per document, from whatever the wire actually sent.
+ *
+ * Never throws and never rejects the whole map over one bad row: this feeds a
+ * `select`, so a throw here would turn a readable response into a failed query
+ * and take the page's error panel with it. A row that cannot be read is dropped,
+ * and a dropped row renders as unscored — the same state as a document nobody
+ * has voted on, which is the honest reading when the team data is unusable.
+ */
+export function normalizeAggregates(raw: unknown): Record<string, PrioritizationAggregate> {
+  const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
+  if (!asMap.success) return {}
+  return Object.fromEntries(
+    Object.entries(asMap.data).flatMap(([documentId, value]): [string, PrioritizationAggregate][] => {
+      const aggregate = parseAggregate(value)
+      return aggregate ? [[documentId, aggregate]] : []
+    }),
+  )
+}
+
+/**
+ * What the resting row shows: the team's composite, who voted, how far apart.
+ *
+ * `null` means NOBODY HAS SCORED THIS, which is a different statement from "the
+ * team scored it low" and has to stay different in the row and in the sort —
+ * hence a null rather than a zeroed record.
+ */
+export interface TeamScore {
+  readonly composite: number
+  readonly impact: number
+  readonly timeToMarket: number
+  readonly reviewerCount: number
+  /**
+   * The range of the composite across reviewers who scored every axis, or `null`
+   * below two of them. The API reports 0.0 in that case, which would read as
+   * agreement on a row where there is nothing to agree with.
+   */
+  readonly spread: number | null
+}
+
+/**
+ * The team's view of one document, or `null` when nobody has scored it.
+ *
+ * Absence from the map IS the unscored signal — the backend omits a document
+ * with no votes rather than emitting a zero row — so this deliberately has no
+ * `DEFAULT_SCORE`-style fallback. `Object.hasOwn` rather than a truthiness check
+ * on the lookup, so an inherited property name (`'toString'`) cannot answer for a
+ * document.
+ */
+export function getTeamScore(
+  aggregates: Record<string, PrioritizationAggregate>,
+  docId: string,
+): TeamScore | null {
+  if (!Object.hasOwn(aggregates, docId)) return null
+  const aggregate = aggregates[docId]
+  return {
+    composite: calculatePriorityScore(aggregate),
+    impact: aggregate.impact,
+    timeToMarket: aggregate.time_to_market,
+    reviewerCount: aggregate.reviewer_count,
+    spread: aggregate.reviewer_count > 1 ? aggregate.score_spread : null,
+  }
 }
 
 /**
@@ -211,15 +341,55 @@ export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocu
   return result
 }
 
-export function comparePRFAQs(a: PRFAQWithProject, b: PRFAQWithProject, scores: Record<string, PrioritizationScore>, sortField: SortField): number {
-  const scoreA = getScore(scores, a.document_id)
-  const scoreB = getScore(scores, b.document_id)
+/** Which number on the team view each score sort field orders by. */
+const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (team: TeamScore) => number> = {
+  priority_score: (team) => team.composite,
+  impact: (team) => team.impact,
+  time_to_market: (team) => team.timeToMarket,
+}
 
+/**
+ * Order two rows by the team's numbers — the same ones the row displays.
+ *
+ * Unscored rows are GROUPED, not interleaved. Before this they sorted by whatever
+ * `DEFAULT_SCORE` implied (a composite of 0.9, above anything scored genuinely
+ * low), so an untouched proposal outranked one the team had looked at and rated
+ * poorly. Absence from the aggregate means nobody voted, which is not a low score,
+ * so they compare equal to each other and below every scored row.
+ *
+ * "Below", ascending — and the page reverses the ascending result for `desc`, so
+ * the default view (highest team score first) ends with the unscored block and the
+ * ascending view begins with it. Either way they stay together.
+ */
+function compareByTeamScore(
+  a: PRFAQWithProject,
+  b: PRFAQWithProject,
+  aggregates: Record<string, PrioritizationAggregate>,
+  sortField: 'priority_score' | 'impact' | 'time_to_market',
+): number {
+  const teamA = getTeamScore(aggregates, a.document_id)
+  const teamB = getTeamScore(aggregates, b.document_id)
+  if (!teamA || !teamB) {
+    // 0 when neither is scored: unscored rows tie rather than being ordered by a
+    // number neither of them has.
+    return (teamA ? 1 : 0) - (teamB ? 1 : 0)
+  }
+  const value = TEAM_SORT_VALUE[sortField]
+  return value(teamA) - value(teamB)
+}
+
+/**
+ * The list order.
+ *
+ * Reads the TEAM aggregate, not the caller's own ballot, because that is what the
+ * row now shows: a list that displays one number and sorts by another is worse
+ * than either alone. `created_at` and `title` are document fields and are
+ * unaffected.
+ */
+export function comparePRFAQs(a: PRFAQWithProject, b: PRFAQWithProject, aggregates: Record<string, PrioritizationAggregate>, sortField: SortField): number {
   switch (sortField) {
-    case 'priority_score': return calculatePriorityScore(scoreA) - calculatePriorityScore(scoreB)
-    case 'impact': return scoreA.impact - scoreB.impact
-    case 'time_to_market': return scoreA.time_to_market - scoreB.time_to_market
     case 'created_at': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     case 'title': return a.title.localeCompare(b.title)
+    default: return compareByTeamScore(a, b, aggregates, sortField)
   }
 }

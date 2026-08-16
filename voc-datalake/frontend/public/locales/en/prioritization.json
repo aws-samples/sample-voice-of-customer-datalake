@@ -58,13 +58,13 @@
     "impact": "Impact",
     "impactDescription": "Business value and customer benefit",
     "low": "Low",
-    "score": "Score",
     "slow": "Slow",
     "strategicFit": "Strategic Fit",
     "strategicFitDescription": "Alignment with company goals",
     "timeToMarket": "Time to Market",
     "timeToMarketDescription": "How quickly can this be delivered?",
-    "title": "Prioritization Scores"
+    "title": "Prioritization Scores",
+    "yoursOnly": "Your own ballot. Saving writes only your scores."
   },
   "scoresUnavailable": {
     "description": "Your saved scores are unavailable right now, so the numbers below are defaults rather than what anyone entered. Reload the page before saving.",
@@ -87,6 +87,16 @@
     "totalDocuments": "Total Documents"
   },
   "subtitle": "Score and prioritize PRDs and PR/FAQs across all projects",
+  "team": {
+    "disagreement": "Spread {{spread}}",
+    "disagreementDescription": "Reviewers are {{spread}} apart on this score. Their notes explain why — this page shows only your own note.",
+    "noScores": "Not scored yet",
+    "noScoresDescription": "No reviewer has scored this yet, so it is unranked rather than ranked low. The sliders below cast the first ballot.",
+    "reviewers": "Reviewers",
+    "score": "Team Score",
+    "summary": "Team average {{score}} of 5 · Reviewer ballots: {{reviewers}}",
+    "title": "What the Team Said"
+  },
   "title": "Prioritization",
   "unsavedChanges": {
     "cancel": "Stay on Page",
