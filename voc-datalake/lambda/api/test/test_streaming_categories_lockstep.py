@@ -310,9 +310,17 @@ def _aggregator_counter_parameters(tree: ast.Module) -> dict[str, tuple[str, str
     """
     parameters: dict[str, tuple[str, str]] = {}
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef) or node.name not in AGGREGATOR_COUNTER_WRITERS:
+        # `async def` is an AsyncFunctionDef, not a FunctionDef, and matching only
+        # the latter would report a converted writer as ABSENT — a correct
+        # aggregator failing with a message about a module that did not move.
+        # test_product_context_placeholder_lockstep.py takes both for the same
+        # reason. Positional-only parameters come first in a `/` signature, so they
+        # are read first or the first two names would be the wrong two.
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        positional = [arg.arg for arg in node.args.args]
+        if node.name not in AGGREGATOR_COUNTER_WRITERS:
+            continue
+        positional = [arg.arg for arg in [*node.args.posonlyargs, *node.args.args]]
         assert len(positional) >= 2, (
             f'{AGGREGATOR_SOURCE}::{node.name} takes fewer than two positional '
             f'parameters, so this helper cannot tell which one is the sort key. '
