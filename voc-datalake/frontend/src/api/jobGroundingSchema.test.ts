@@ -44,8 +44,23 @@ describe('parseJobGrounding', () => {
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['an object', { n: 1 }],
+    ['an array', []],
   ])('drops %s rather than rendering it as a count', (_label, value) => {
     expect(parseJobGrounding({ feedback_items_used: value }).feedback_items_used)
+      .toBeUndefined()
+  })
+
+  it.each([
+    ['true', true],
+    ['false', false],
+    ['a blank string', ' '],
+    ['a tab', '\t'],
+    ['an empty array', []],
+  ])('drops %s, which Number() would silently accept', (_label, value) => {
+    // Number(true) is 1, Number(' ') is 0, Number([]) is 0. Each would pass an
+    // is-it-a-non-negative-integer check and render as a plausible count, so the
+    // input type has to be narrowed before any coercion happens.
+    expect(parseJobGrounding({ feedback_count: value }).feedback_count)
       .toBeUndefined()
   })
 

@@ -21,9 +21,19 @@
  */
 import { z } from 'zod'
 
-/** A non-negative integer from a number or its string representation. */
+/**
+ * A non-negative integer from a number, or from a string holding one.
+ *
+ * The accepted input types are narrowed before any coercion, because `Number`
+ * is far more permissive than it looks: `Number(true)` is `1` and
+ * `Number(' ')` is `0`, so a boolean or a blank string would otherwise pass as a
+ * perfectly plausible count and render as one.
+ */
 const wireCount = z.preprocess((value) => {
-  if (value === null || value === undefined || value === '') return undefined
+  if (typeof value !== 'number' && typeof value !== 'string') return undefined
+  // Whitespace-only needs rejecting explicitly, not just the empty string:
+  // Number(' ') and Number('\t') are both 0.
+  if (typeof value === 'string' && value.trim() === '') return undefined
   const n = typeof value === 'number' ? value : Number(value)
   // Reject NaN, Infinity, negatives, and fractions: every one of these would
   // render as a count, and a count is what the user reads it as.
@@ -35,6 +45,14 @@ const wireCount = z.preprocess((value) => {
  *
  * A string `"false"` is truthy in JavaScript, and coercing it would announce a
  * loss that did not happen on every completed job.
+ *
+ * Note the deliberate asymmetry: this collapses `false` and absent into the same
+ * `undefined`, so a consumer cannot tell "the backend reported no truncation"
+ * from "an older job record predating this field". That is right for a warning,
+ * which should stay silent in both cases. Anything that later wants to show
+ * positive confirmation — "grounded in all N items" — needs a three-state read
+ * (`true` / `false` / absent) rather than this one, because on an old record it
+ * would otherwise confirm something nothing ever measured.
  */
 const wireFlag = z.preprocess(
   (value) => (value === true ? true : undefined),
