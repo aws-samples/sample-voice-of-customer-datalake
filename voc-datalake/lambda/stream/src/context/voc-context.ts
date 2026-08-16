@@ -552,7 +552,10 @@ function buildDataContext(
   // response_language, so the model relays this fact in the user's language —
   // translating the prompt would change nothing the user reads.
   const degradedNote = degraded
-    ? '\n**NOTE:** Some metric reads did not complete, so the figures below are incomplete and may under-report. Say so rather than presenting them as complete.\n'
+    // "reads", not "metric reads": four causes feed this note and one of them is
+    // the SETTINGS read, where every metric window succeeded and the taxonomy
+    // they were counted under is not the tenant's.
+    ? '\n**NOTE:** Some reads did not complete, so the figures below are incomplete and may under-report. Say so rather than presenting them as complete.\n'
     : '';
 
   const context = `## Current Data Summary (Last ${days} days)
@@ -620,9 +623,11 @@ export async function buildVocChatContext(
   const urgentCount = urgentRead.total;
   // A failed TAXONOMY read degrades the turn too, and it is not a MetricRead: it
   // substitutes the default names for the tenant's own, so the counts under Top
-  // Categories are for partitions that may not be theirs. reportMetricFailures
-  // has already logged its own warning (with the error name, which stays out of
-  // the prompt), so only the flag is ORed in here.
+  // Categories are for partitions that may not be theirs. Only the flag is ORed
+  // in here because the error name has its own operator channel:
+  // readConfiguredCategories logs it — NOT reportMetricFailures, which never sees
+  // this failure — and on a turn served from the error cache entry nothing is
+  // logged at all, since no read happened. The flag is what carries that turn.
   const degraded = reportMetricFailures([
     totalRead, urgentRead, ...sentimentReads, ...categories.reads,
   ]) || categories.taxonomyErrorName !== undefined;
