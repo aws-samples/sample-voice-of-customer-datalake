@@ -7,6 +7,11 @@ import json
 from pathlib import Path
 from functools import lru_cache
 
+from shared.feedback import (
+    count_feedback_records,
+    feedback_char_budget,
+    truncate_feedback_context,
+)
 from shared.logging import logger
 
 # Fallback token budget for a chain step whose config omits max_tokens. Kept as a
@@ -209,19 +214,60 @@ def get_response_language_instruction(language_code: str | None) -> str:
 
 # Convenience functions for specific prompt types
 
+# Character budget for the {feedback_sample} slot (issue #231).
+#
+# persona-generation.json interpolates {feedback_context} into the
+# research_analysis step but {feedback_sample} into persona_synthesis and
+# validation — and synthesis is the step that emits the persona JSON: the
+# names, quotes, pain points, and supporting_evidence that become the artifact.
+# A bare `[:15000]` here therefore capped the personas at ~18 reviews no matter
+# what the caller fetched, and raising the fetch limit or the caller's own char
+# cap bought nothing but prefill cost: the extra corpus reached step 1, whose
+# prose output step 2 receives as {previous} — a lossy summary, not evidence.
+#
+# So the sample gets the same budget as the full context rather than a tighter
+# one. That is affordable because feedback_char_budget already reserves
+# CONTEXT_OVERHEAD_TOKENS for exactly what makes this step heavier than step 1:
+# the templated instructions, the chained {previous} analysis, and each step's
+# max_tokens output allowance. Sizing the whole chain off the widest single
+# step is what keeps one number honest instead of three drifting.
+MAX_PERSONA_SAMPLE_CHARS = feedback_char_budget()
+
+
 def get_persona_generation_steps(
     persona_count: int,
     feedback_stats: str,
     feedback_context: str,
     custom_instructions: str = '',
     response_language: str | None = None,
+    sample_chars: int | None = None,
 ) -> list[dict]:
-    """Build persona generation chain steps."""
+    """Build persona generation chain steps.
+
+    Args:
+        persona_count: How many personas the chain should emit.
+        feedback_stats: Formatted corpus statistics.
+        feedback_context: Formatted feedback, from format_feedback_for_llm.
+        custom_instructions: Optional extra user instructions.
+        response_language: Optional ISO code for the response language.
+        sample_chars: Character budget for the {feedback_sample} slot the
+            synthesis and validation steps read. Defaults to
+            MAX_PERSONA_SAMPLE_CHARS; pass the budget of the model actually
+            resolved for the surface to keep the cap model-aware.
+
+    Returns:
+        Chain steps ready for converse_chain. Use
+        :func:`count_persona_sample_records` on the result to learn how many
+        complete feedback records reached the persona-writing step — that, not
+        the number fetched, is what the personas are grounded in.
+    """
     custom_section = f"\n\n## ADDITIONAL INSTRUCTIONS:\n{custom_instructions}\n" if custom_instructions else ""
-    
-    # Truncate feedback for synthesis step
-    feedback_sample = feedback_context[:15000] if len(feedback_context) > 15000 else feedback_context
-    
+
+    # Trim on a record boundary so the synthesis step never has to quote from
+    # half a review, and so the survivors can be counted rather than estimated.
+    budget = MAX_PERSONA_SAMPLE_CHARS if sample_chars is None else sample_chars
+    feedback_sample, _, _ = truncate_feedback_context(feedback_context, budget)
+
     context = {
         'persona_count': persona_count,
         'feedback_stats': feedback_stats,
@@ -231,12 +277,32 @@ def get_persona_generation_steps(
         'previous': '{previous}',  # Placeholder for chain
         'response_language': response_language,
     }
-    
+
     return build_chain_steps(
         PERSONA_GENERATION_PROMPTS,
         ['research_analysis', 'persona_synthesis', 'validation'],
         context
     )
+
+
+# Step that writes the personas. Named so the counter below and any future
+# reader agree on which step's grounding actually matters.
+PERSONA_SYNTHESIS_STEP = 'persona_synthesis'
+
+
+def count_persona_sample_records(steps: list[dict]) -> int:
+    """Complete feedback records reaching the persona-writing step.
+
+    Read off the built prompt rather than recomputed, so it reports what the
+    model will actually receive even if a template or a cap changes. This is
+    the number a caller should surface as "items used": every cap between
+    DynamoDB and the prompt is already baked into it, so it cannot claim a full
+    corpus while a narrower cap downstream quietly discarded most of it.
+    """
+    for step in steps:
+        if step.get('step_name') == PERSONA_SYNTHESIS_STEP:
+            return count_feedback_records(step.get('user', ''))
+    return 0
 
 
 def get_prd_generation_steps(

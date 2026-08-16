@@ -52,6 +52,151 @@ MAX_ITEMS_PER_PARTITION = 10000
 # YYYY-MM-DD cutoff.
 _ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
+# --- LLM context budgeting (issue #231) --------------------------------------
+# Lives here, next to format_feedback_for_llm, because the producer of the
+# context string and every consumer that has to bound it must agree on one set
+# of numbers. Before this, the persona path applied three independent caps
+# (fetch limit, a 30 000-char slice in projects.py, and a 15 000-char slice in
+# prompts.py) and reported none of them, so the narrowest one silently decided
+# how much of the corpus the model actually saw.
+
+# Each formatted record starts with this marker (see format_feedback_for_llm).
+# Truncation cuts on it so the model never receives half a review, and the
+# surviving records can be counted rather than estimated.
+REVIEW_BLOCK_MARKER = '### Review '
+
+# Rough Bedrock/Claude tokenisation for English prose. Only used to convert a
+# model's advertised context window (quoted in tokens) into a character budget.
+CHARS_PER_TOKEN = 4
+
+# Tokens a persona/document generation chain spends on things that are NOT
+# feedback content: the system prompts, the templated instructions wrapped
+# around the feedback block, the {previous} text chained between steps, and
+# each step's max_tokens output allowance. persona-generation.json needs ~3 K
+# for templates and 16 K of combined output budget, so 40 K is better than 2x
+# headroom.
+CONTEXT_OVERHEAD_TOKENS = 40_000
+
+# Fraction of the remaining window we are willing to fill with feedback. Kept
+# well below 1.0 deliberately: prefill latency and input-token cost both scale
+# linearly with the context, and CHARS_PER_TOKEN is an estimate that
+# under-counts non-English text (where one character can exceed one token).
+CONTEXT_UTILISATION = 0.5
+
+# Per-field caps inside one formatted record. Every free-text field is clipped
+# so FEEDBACK_CHARS_PER_ITEM_MAX below is a real upper bound and not an average:
+# the enrichment fields are LLM-generated and unbounded upstream, so without
+# these one verbose record could consume the budget of several and the item
+# limit derived from the character budget would not hold.
+MAX_ORIGINAL_TEXT_CHARS = 600
+MAX_ENRICHMENT_FIELD_CHARS = 400
+MAX_LABEL_CHARS = 60
+
+# Upper bound on the characters format_feedback_for_llm emits per item, given
+# the per-field caps above. Measured:
+#   plain item (600-char original_text):                   ~820 chars
+#   every optional field present and at its cap:         ~2 100 chars
+# Pinned by TestFeedbackBudgetDerivation in shared/test/test_feedback.py — if
+# the formatter grows a field, that test fails rather than letting the derived
+# item limits quietly stop fitting the budget.
+FEEDBACK_CHARS_PER_ITEM_MAX = 2_200
+
+# Context window of every model in the allowlist (shared/model_config.py).
+# Used as the fallback when the resolved model is unknown; callers that can
+# resolve a surface should pass that model's real window instead.
+DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000
+
+
+def feedback_char_budget(
+    window_tokens: int = DEFAULT_CONTEXT_WINDOW_TOKENS,
+    overhead_tokens: int = CONTEXT_OVERHEAD_TOKENS,
+    utilisation: float = CONTEXT_UTILISATION,
+) -> int:
+    """Characters of formatted feedback that fit in a model's context window.
+
+    Derived rather than hardcoded so the budget follows the model instead of
+    assuming one: ``shared.model_config`` resolves the model per surface at
+    runtime, so a literal tuned for a 200 K-token window would silently
+    overflow a smaller one (a hard Bedrock ValidationException, which is worse
+    than the truncation it replaced).
+
+    Args:
+        window_tokens: The resolved model's context window, in tokens.
+        overhead_tokens: Tokens reserved for prompts, chaining, and output.
+        utilisation: Fraction of the remainder to fill with feedback.
+
+    Returns:
+        A character budget, never negative.
+    """
+    usable_tokens = max(window_tokens - overhead_tokens, 0)
+    return int(usable_tokens * utilisation) * CHARS_PER_TOKEN
+
+
+def feedback_item_limit(char_budget: int) -> int:
+    """How many items to fetch so a full corpus fits inside ``char_budget``.
+
+    Derived from the measured worst case per item so the character budget acts
+    as a backstop for unusually long records, not as the operative limit. When
+    the two are set independently they drift: a 500-item limit against a
+    200 000-char budget truncated away more than half of every full corpus, on
+    the default path, while reporting nothing.
+    """
+    return max(char_budget // FEEDBACK_CHARS_PER_ITEM_MAX, 1)
+
+
+def _clip(value, max_chars: int = MAX_ENRICHMENT_FIELD_CHARS) -> str:
+    """Coerce to str and clip to ``max_chars``, marking a clip with an ellipsis.
+
+    Guards the per-item size bound the derived item limits rest on. Tolerates
+    None and non-string values because these fields come from DynamoDB items
+    whose enrichment may be absent or, after a partial write, the wrong type.
+    """
+    if value is None:
+        return ''
+    text = value if isinstance(value, str) else str(value)
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + '…'
+
+
+def count_feedback_records(context: str) -> int:
+    """Number of complete formatted feedback records in ``context``."""
+    return context.count(REVIEW_BLOCK_MARKER)
+
+
+def truncate_feedback_context(context: str, max_chars: int) -> tuple[str, int, bool]:
+    """Trim a formatted feedback block to ``max_chars`` on a record boundary.
+
+    Cutting at an arbitrary character offset hands the model a partial
+    record — an unterminated ``- Full Text: "…``, or a ``- Sentiment:`` label
+    with no value — which it may reason from as if it were real data. So walk
+    back to the last complete record instead, and report how many survived so
+    callers can say what the model actually saw rather than what was fetched.
+
+    Args:
+        context: Output of :func:`format_feedback_for_llm`.
+        max_chars: Character budget. Non-positive means "no limit".
+
+    Returns:
+        ``(context, records_used, truncated)``.
+    """
+    if max_chars <= 0 or len(context) <= max_chars:
+        return context, count_feedback_records(context), False
+
+    head = context[:max_chars]
+    # Drop the trailing partial record. rfind on the newline-prefixed marker so
+    # a marker at offset 0 (the whole budget is one record) is not mistaken for
+    # a boundary and truncated to nothing.
+    cut = head.rfind('\n' + REVIEW_BLOCK_MARKER)
+    if cut > 0:
+        head = head[:cut]
+    records_used = count_feedback_records(head)
+    return (
+        head + '\n\n[... additional feedback truncated ...]',
+        records_used,
+        True,
+    )
+
 
 def basis_date(item: dict, date_basis: str) -> str:
     """Return the YYYY-MM-DD date used to filter/bucket an item.
@@ -293,25 +438,31 @@ def format_feedback_for_llm(items: list[dict]) -> str:
     """
     lines = []
     for i, item in enumerate(items, 1):
-        # Build optional fields
-        quote = item.get('direct_customer_quote', '')
-        root_cause = item.get('problem_root_cause_hypothesis', '')
-        persona_type = item.get('persona_type', '')
-        journey_stage = item.get('journey_stage', '')
-        
+        # Build optional fields. These are LLM-generated (see the enrichment
+        # prompt in lambda/processor/handler.py), so their length is not bounded
+        # by anything upstream — one verbose record could otherwise consume the
+        # budget of several. Capped here so FEEDBACK_CHARS_PER_ITEM_MAX is a
+        # real bound rather than an average, which is what lets the item limit
+        # be derived from the character budget instead of guessed alongside it.
+        quote = _clip(item.get('direct_customer_quote', ''))
+        root_cause = _clip(item.get('problem_root_cause_hypothesis', ''))
+        problem_summary = _clip(item.get('problem_summary', ''))
+        persona_type = _clip(item.get('persona_type', ''), MAX_LABEL_CHARS)
+        journey_stage = _clip(item.get('journey_stage', ''), MAX_LABEL_CHARS)
+
         lines.append(f"""
 ### Review {i}
-- Source: {item.get('source_platform', 'unknown')}
+- Source: {_clip(item.get('source_platform', 'unknown'), MAX_LABEL_CHARS)}
 - Date: {item.get('source_created_at', '')[:10] if item.get('source_created_at') else 'N/A'}
-- Sentiment: {item.get('sentiment_label', 'unknown')} (score: {float(item.get('sentiment_score', 0)):.2f})
-- Category: {item.get('category', 'other')}
+- Sentiment: {_clip(item.get('sentiment_label', 'unknown'), MAX_LABEL_CHARS)} (score: {float(item.get('sentiment_score', 0)):.2f})
+- Category: {_clip(item.get('category', 'other'), MAX_LABEL_CHARS)}
 - Rating: {item.get('rating', 'N/A')}/5
-- Urgency: {item.get('urgency', 'low')}
+- Urgency: {_clip(item.get('urgency', 'low'), MAX_LABEL_CHARS)}
 - Customer Type: {persona_type if persona_type else 'unknown'}
 - Journey Stage: {journey_stage if journey_stage else 'unknown'}
-- Full Text: "{item.get('original_text', '')[:600]}"
+- Full Text: "{item.get('original_text', '')[:MAX_ORIGINAL_TEXT_CHARS]}"
 {f'- Key Quote: "{quote}"' if quote else ''}
-{f'- Problem Summary: {item.get("problem_summary", "")}' if item.get('problem_summary') else ''}
+{f'- Problem Summary: {problem_summary}' if problem_summary else ''}
 {f'- Root Cause Hypothesis: {root_cause}' if root_cause else ''}
 """)
     return '\n'.join(lines)
