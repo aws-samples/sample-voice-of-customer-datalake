@@ -495,12 +495,17 @@ class TestAPartialEntryLeavesTheOtherAxesAlone:
 
 
 class TestBoundedAxisAndNoteValues:
-    """The two decisions the change made where the task left room: an out-of-range
-    NUMBER is CLAMPED rather than refused (the value is bounded either way, and a
-    clamp keeps one odd axis from failing a whole multi-document save), and a note
-    is truncated because it is stored verbatim and re-read on every page load.
-    Both are silent behaviours, so a test is the only thing that keeps a later
-    refactor from changing them unnoticed.
+    """The decision the change made where the task left room: an out-of-range
+    NUMBER is CLAMPED rather than refused, because the value is bounded either way
+    and a clamp keeps one odd axis from failing a whole multi-document save. It is
+    a silent behaviour, so a test is the only thing that keeps a later refactor
+    from changing it unnoticed.
+
+    The note bound does NOT work that way and no longer sits in this class: the
+    characters past it are content rather than a number pushed to the nearest legal
+    value, so an over-long note is refused (see
+    `TestAnOverLongNoteIsRefusedRatherThanTruncated`). What is pinned here is only
+    that a note WITHIN the bound is stored exactly as sent.
 
     CLAMP A NUMBER, REFUSE A NON-NUMBER. The clamp argument is that the value is
     bounded either way, which is true of `99`, `-4`, `'3'` and `2.7` and false of
@@ -539,12 +544,18 @@ class TestBoundedAxisAndNoteValues:
         assert self._saved(api_gateway_event, lambda_context,
                            {'strategic_fit': '3'})['strategic_fit'] == 3
 
-    def test_an_over_long_note_is_truncated_to_the_bound(
+    def test_a_note_at_the_bound_is_stored_verbatim(
         self, api_gateway_event, lambda_context
     ):
-        ballot = self._saved(api_gateway_event, lambda_context, {'notes': 'x' * 2500})
+        """The bound is inclusive, and nothing on the write path shortens a note
+        that fits. Over-long notes are REFUSED, not truncated — see
+        `TestAnOverLongNoteIsRefusedRatherThanTruncated`."""
+        from projects_handler import MAX_BALLOT_NOTE_LEN
 
-        assert len(ballot['notes']) == 2000
+        note = 'x' * MAX_BALLOT_NOTE_LEN
+        ballot = self._saved(api_gateway_event, lambda_context, {'notes': note})
+
+        assert ballot['notes'] == note
 
 
 class TestANonNumberIsRefusedRatherThanFlooredAtZero:
@@ -1846,3 +1857,573 @@ class TestTheLegacyMigrationNeverFailsALandedBallot:
         assert status == 200
         assert body['updated_count'] == 1
         assert table.ballot('doc-1', 'alice')['impact'] == AXES['impact']
+
+
+class TestASaveThatExpressesNothingDestroysNothing:
+    """The last place the defect this change exists to remove survived: one
+    reviewer's write deleting a score another reviewer can see.
+
+    The legacy removal fired for every validated key, before anything asked whether
+    the ballot said anything. So `{}` (a legal no-op by design),
+    `{'notes': null}` and `{'impact': null}` (silence, by round 3's reading), and an
+    entry whose only key is a typo'd axis each permanently deleted the pre-ballot
+    score for that document, for every reviewer, on a 200 — worse than the
+    shared-map race it replaced, because the winning write expressed no opinion at
+    all.
+
+    `_drop_legacy_score`'s own justification is "the reviewer who saved has just
+    expressed the newer opinion". These tests pin that the code only acts when that
+    clause is TRUE."""
+
+    LEGACY = {'impact': 4, 'time_to_market': 3, 'confidence': 5, 'strategic_fit': 4}
+
+    @classmethod
+    def _with_legacy(cls):
+        return FakeAggregatesTable(
+            items=[{'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'doc-1': dict(cls.LEGACY)}}],
+        )
+
+    @staticmethod
+    def _legacy_map(table):
+        return table.items[(PARTITION, LEGACY_SK)]['scores']
+
+    # Every encoding of "this entry says nothing", including the two this PR made
+    # legal on purpose and the one a client typo produces.
+    NOTHING = [{}, {'notes': None}, {'impact': None},
+               {'impact': None, 'notes': None}, {'impactt': 5}]
+
+    @pytest.mark.parametrize('entry', NOTHING)
+    def test_the_legacy_value_survives_a_save_that_scored_nothing(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        table = self._with_legacy()
+
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'doc-1': entry}, subject='alice')
+
+        assert status == 200
+        assert self._legacy_map(table)['doc-1'] == self.LEGACY
+
+    @pytest.mark.parametrize('entry', NOTHING)
+    def test_another_reviewer_still_reads_the_value_through(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        """Asserted through the route, because the page is where the loss showed:
+        bob's rows went from scored to unscored because alice sent an empty
+        object."""
+        table = self._with_legacy()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': entry}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='bob')
+
+        assert body['scores']['doc-1']['impact'] == self.LEGACY['impact']
+
+    @pytest.mark.parametrize('entry', NOTHING)
+    def test_the_document_is_still_scored_in_the_aggregate(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        """Absence from `aggregates` is what `PrioritizationAggregate` documents as
+        "nobody scored this", so losing the row is a second, separate lie."""
+        table = self._with_legacy()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': entry}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='bob')
+
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+        assert body['aggregates']['doc-1']['impact'] == self.LEGACY['impact']
+
+    @pytest.mark.parametrize('entry', NOTHING)
+    def test_no_removal_is_even_attempted(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        """The state assertions above would also pass if the removal were attempted
+        and merely failed its condition. The write must not be issued at all — it is
+        a round trip per document, and one that could succeed."""
+        table = self._with_legacy()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': entry}, subject='alice')
+
+        removals = [c for c in table.update_item_calls
+                    if c['Key']['sk'] == LEGACY_SK]
+        assert removals == []
+
+    def test_a_notes_only_save_does_not_supersede_a_score(
+        self, api_gateway_event, lambda_context
+    ):
+        """A note is not a newer opinion about the SCORE.
+
+        This is where the fix diverges from `_expresses_something`, which is the
+        read-through's wider question ("any axis, OR a note"). Gating the migration
+        on that predicate would leave the same defect open for the one encoding the
+        shipped page can produce from its own textarea: a reviewer typing a comment
+        would delete a pre-ballot score they never touched."""
+        table = self._with_legacy()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'needs discussion'}}, subject='alice')
+
+        assert self._legacy_map(table)['doc-1'] == self.LEGACY
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='bob')
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+
+    @pytest.mark.parametrize('entry', [
+        {'impact': 5},
+        {'impact': 0},
+        {'impact': 5, 'time_to_market': 4, 'confidence': 3, 'strategic_fit': 2},
+        {'impact': 2, 'notes': 'and a note'},
+    ])
+    def test_a_save_that_scored_something_still_migrates(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        """The other half of the gate, and the one that makes the tests above
+        meaningful: migrate-on-write still happens for a real vote, including a
+        partial one and a deliberate zero.
+
+        Without this, "the legacy entry survives" would be satisfied by a fix that
+        simply never migrates."""
+        table = self._with_legacy()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': entry}, subject='alice')
+
+        assert 'doc-1' not in self._legacy_map(table)
+
+
+class TestAFailedMigrationCannotDoubleCountAReviewer:
+    """`_drop_legacy_score` is best-effort by design, so the no-double-count
+    guarantee cannot rest on it.
+
+    Fail only the REMOVE and the legacy value stayed beside the ballot that
+    replaced it: one human reported `reviewer_count: 2` and a non-zero
+    `score_spread` — her own superseded pre-ballot value read as a second reviewer
+    disagreeing with her, in the two fields whose contracts are "reviewers who
+    scored something" and "zero means agreement". Sticky, too: nothing retries the
+    removal, so every later GET repeated it.
+
+    The read is what prevents the double count now. These tests therefore run with
+    the removal BROKEN, which is the state the best-effort decision accepts."""
+
+    LEGACY = {'impact': 4, 'time_to_market': 3, 'confidence': 5, 'strategic_fit': 4}
+
+    @classmethod
+    def _with_failing_removal(cls):
+        table = FakeAggregatesTable(
+            items=[{'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'doc-1': dict(cls.LEGACY)}}],
+        )
+        real_update = table.update_item
+
+        def update(**kwargs):
+            if kwargs['Key']['sk'] == LEGACY_SK:
+                raise ClientError(
+                    {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
+                    'UpdateItem',
+                )
+            return real_update(**kwargs)
+
+        table.update_item = update
+        return table
+
+    def test_one_reviewer_is_counted_once(self, api_gateway_event, lambda_context):
+        table = self._with_failing_removal()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                 'confidence': 5, 'strategic_fit': 5}}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+
+    def test_one_reviewer_does_not_disagree_with_herself(
+        self, api_gateway_event, lambda_context
+    ):
+        table = self._with_failing_removal()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                 'confidence': 5, 'strategic_fit': 5}}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['score_spread'] == 0.0
+
+    def test_the_means_are_the_reviewers_own_numbers(
+        self, api_gateway_event, lambda_context
+    ):
+        """`reviewer_count: 1` alone would also be satisfied by counting the legacy
+        entry INSTEAD of the ballot. The numbers have to be hers."""
+        table = self._with_failing_removal()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                 'confidence': 5, 'strategic_fit': 5}}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['impact'] == 5
+        assert body['aggregates']['doc-1']['time_to_market'] == 5
+
+    def test_the_stale_value_is_not_read_through_to_anyone_else(
+        self, api_gateway_event, lambda_context
+    ):
+        """The read-through is the other half of the same response, and it had the
+        same seam: a reviewer with no ballot of their own would be handed a value
+        the aggregate had already stopped counting — so `scores` and `aggregates`
+        would disagree about the same document, and only when a write nobody was
+        told about had failed."""
+        table = self._with_failing_removal()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'impact': 5, 'time_to_market': 5,
+                                 'confidence': 5, 'strategic_fit': 5}}, subject='alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='bob')
+
+        assert 'doc-1' not in body['scores']
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+
+    def test_a_second_real_reviewer_is_still_two(
+        self, api_gateway_event, lambda_context
+    ):
+        """Positive control: suppressing the legacy entry must not suppress a real
+        second ballot, or `reviewer_count: 1` would be right for the wrong reason."""
+        table = self._with_failing_removal()
+        full = {'impact': 5, 'time_to_market': 5, 'confidence': 5, 'strategic_fit': 5}
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': full}, subject='alice')
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {**full, 'impact': 1}}, subject='bob')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['doc-1']['reviewer_count'] == 2
+        assert body['aggregates']['doc-1']['score_spread'] > 0
+
+    def test_a_notes_only_ballot_does_not_suppress_the_legacy_value(
+        self, api_gateway_event, lambda_context
+    ):
+        """Superseded means SOMEBODY VOTED, not "a ballot exists".
+
+        Suppressing on the mere existence of a ballot — the narrower fix — would let
+        a reviewer's comment silently remove a pre-ballot score from the aggregate,
+        which is the same loss as the migration finding with the delete replaced by a
+        filter."""
+        table = self._with_failing_removal()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'needs discussion'}}, subject='alice')
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='bob')
+
+        assert body['aggregates']['doc-1']['reviewer_count'] == 1
+        assert body['aggregates']['doc-1']['impact'] == self.LEGACY['impact']
+
+    def test_the_reviewer_is_still_told_the_save_succeeded(
+        self, api_gateway_event, lambda_context
+    ):
+        """The ballot is durable before the removal runs, so a failure there must
+        not surface — the round-2 decision this fix is built on top of, re-asserted
+        here so a change to one is not mistaken for permission to change the
+        other."""
+        table = self._with_failing_removal()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': {'impact': 5}}, subject='alice',
+        )
+
+        assert status == 200
+        assert body['updated_count'] == 1
+
+
+class TestAnOverLongNoteIsRefusedRatherThanTruncated:
+    """Truncating to MAX_BALLOT_NOTE_LEN discarded the tail of a durable decision
+    record and answered 200.
+
+    It is the same silent loss the non-string refusal was introduced to prevent, on
+    the same field — and unlike an out-of-range axis there is no "bounded either
+    way" defence, because the discarded characters are content rather than a number
+    pushed to the nearest legal value. A justification runs long exactly when it is
+    doing the most work, and the conclusion sits at the end.
+
+    Asserted across TWO saves against ONE table for the same reason the non-string
+    tests are: after a first save there is nothing to lose, so a single-save
+    assertion passes whether the code refuses or truncates."""
+
+    @staticmethod
+    def _over_long():
+        from projects_handler import MAX_BALLOT_NOTE_LEN
+
+        return 'A' * MAX_BALLOT_NOTE_LEN + ' CONCLUSION: do not ship'
+
+    def test_an_over_long_note_is_refused(self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                     {'doc-1': {'notes': self._over_long()}},
+                                     subject='alice')
+
+        assert status == 400
+        assert 'notes' in body['error']
+
+    def test_the_previously_stored_note_is_unchanged(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'ship this in Q3'}}, subject='alice')
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': self._over_long()}}, subject='alice')
+
+        assert table.ballot('doc-1', 'alice')['notes'] == 'ship this in Q3'
+
+    def test_nothing_is_written_at_all(self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'ship this in Q3'}}, subject='alice')
+        writes_before = len(table.update_item_calls)
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': self._over_long()}}, subject='alice')
+
+        assert len(table.update_item_calls) == writes_before
+
+    def test_an_over_long_note_cannot_half_persist_a_multi_document_save(
+        self, api_gateway_event, lambda_context
+    ):
+        """Refused in the up-front pass, so the sibling document in the same body is
+        not written either. That is the property the up-front pass exists for, and
+        the reason the check does not live at the write."""
+        table = FakeAggregatesTable()
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': AXES, 'doc-2': {'notes': self._over_long()}}, subject='alice',
+        )
+
+        assert status == 400
+        assert table.ballot_keys == []
+
+    def test_the_refusal_names_the_bound_without_echoing_the_note(
+        self, api_gateway_event, lambda_context
+    ):
+        """The bound is the part a caller can act on; the note is unbounded caller
+        input a response body gains nothing by repeating — and a reviewer's
+        justification is the last thing that should be echoed into a log or an error
+        surface."""
+        from projects_handler import MAX_BALLOT_NOTE_LEN
+
+        table = FakeAggregatesTable()
+
+        _, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': {'notes': 'B' * (MAX_BALLOT_NOTE_LEN + 1) + 'SECRET-TAIL'}},
+            subject='alice',
+        )
+
+        assert str(MAX_BALLOT_NOTE_LEN) in body['error']
+        assert 'SECRET-TAIL' not in json.dumps(body)
+
+    def test_the_note_bound_is_the_one_the_page_enforces(self):
+        """A server bound the page does not know about becomes a save that appears
+        to do nothing: `fetchApi` discards the response body, so the page cannot
+        report a refusal it can now receive. The textarea's `maxLength` is what keeps
+        the shipped page from composing a body this route refuses, and
+        `test_prioritization_note_bound_lockstep.py` is what keeps the two numbers
+        equal."""
+        from pathlib import Path
+
+        lockstep = Path(__file__).with_name('test_prioritization_note_bound_lockstep.py')
+        assert lockstep.is_file(), (
+            'the note bound is duplicated in the frontend; the lockstep test that '
+            'pins the pair must exist'
+        )
+
+
+class TestUpdatedCountCountsBallotsNotKeys:
+    """`updated_count` incremented once per key written, including entries that
+    stored nothing a reviewer entered.
+
+    That is the unit the duplicate-key refusal in the same function is justified on
+    — its comment says refusing keeps the counter "counted in the unit they claim —
+    ballots written, not keys received" — so two keys collapsing onto one ballot was
+    closed while one key writing no value was not.
+
+    MAX_BALLOTS_PER_SAVE deliberately stays in the OTHER unit: it bounds round
+    trips, and an entry that expresses nothing still costs its `update_item`."""
+
+    def test_a_body_of_empty_entries_reports_no_ballots(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': {}, 'doc-2': {}, 'doc-3': {}}, subject='alice',
+        )
+
+        assert status == 200
+        assert body['updated_count'] == 0
+
+    def test_those_ballots_are_still_stamped(self, api_gateway_event, lambda_context):
+        """The count changes; the write does not. An empty entry is still a legal
+        PATCH that records who looked at the document and when."""
+        table = FakeAggregatesTable()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {}, 'doc-2': {}}, subject='alice')
+
+        assert len(table.ballot_keys) == 2
+        assert table.ballot('doc-1', 'alice')['reviewer'] == 'user:alice'
+
+    @pytest.mark.parametrize('entry', [{'notes': None}, {'impact': None}, {'typo': 5}])
+    def test_every_encoding_of_nothing_counts_as_nothing(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        table = FakeAggregatesTable()
+
+        _, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                {'doc-1': entry}, subject='alice')
+
+        assert body['updated_count'] == 0
+
+    def test_clearing_a_note_is_a_ballot_written(
+        self, api_gateway_event, lambda_context
+    ):
+        """The counter's question is "did this store something the reviewer
+        entered?", NOT `_is_a_vote`'s "did they score?". Deliberately clearing a
+        note is a real change to a real ballot, so counting 0 for it would be the
+        same dishonesty pointing the other way."""
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {'notes': 'ship this in Q3'}}, subject='alice')
+
+        _, body = _patch_scores(table, api_gateway_event, lambda_context,
+                               {'doc-1': {'notes': ''}}, subject='alice')
+
+        assert body['updated_count'] == 1
+        assert table.ballot('doc-1', 'alice')['notes'] == ''
+
+    def test_a_mixed_body_counts_only_the_entries_that_stored_something(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+
+        _, body = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'doc-1': AXES, 'doc-2': {}, 'doc-3': {'notes': 'thinking'}},
+            subject='alice',
+        )
+
+        assert body['updated_count'] == 2
+
+    def test_an_ordinary_save_still_counts_every_document(
+        self, api_gateway_event, lambda_context
+    ):
+        """What the shipped page sends: `getScore` seeds every entry with all four
+        axes, so no browser body is affected by this change."""
+        table = FakeAggregatesTable()
+
+        _, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                {'doc-1': AXES, 'doc-2': AXES}, subject='alice')
+
+        assert body['updated_count'] == 2
+
+    def test_an_empty_entry_writes_only_the_stamp_fields(
+        self, api_gateway_event, lambda_context
+    ):
+        """The counter subtracts BALLOT_STAMP_FIELDS from the fields the update
+        assigns, so a new always-written field that is not listed there would make
+        every entry look like a ballot. This is the assertion that fails if the two
+        drift."""
+        from projects_handler import BALLOT_STAMP_FIELDS
+
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {}}, subject='alice')
+
+        assigned = set(table.update_item_calls[0]['ExpressionAttributeNames'].values())
+        assert assigned == set(BALLOT_STAMP_FIELDS)
+
+    def test_the_save_bound_still_counts_keys(self, api_gateway_event, lambda_context):
+        """The bound and the counter are in different units ON PURPOSE, because they
+        describe different work: the bound protects the Lambda from round trips an
+        empty entry still costs, the counter describes what the caller achieved."""
+        from projects_handler import MAX_BALLOTS_PER_SAVE
+
+        table = FakeAggregatesTable()
+        at_the_bound = {f'doc-{i}': {} for i in range(MAX_BALLOTS_PER_SAVE)}
+        over_the_bound = {f'doc-{i}': {} for i in range(MAX_BALLOTS_PER_SAVE + 1)}
+
+        ok, body = _patch_scores(table, api_gateway_event, lambda_context, at_the_bound)
+        refused, _ = _patch_scores(
+            FakeAggregatesTable(), api_gateway_event, lambda_context, over_the_bound,
+        )
+
+        assert (ok, body['updated_count']) == (200, 0)
+        assert refused == 400
+
+
+class TestAColonInTheSubjectIsNotTheDelimiter:
+    """'#' is refused because it is PARSED; ':' is not, because it is only composed.
+
+    `_parse_ballot_sk` splits the sort key on '#', so a '#' inside a subject moves
+    where the document id is taken to end — the silent corruption round 4 closed.
+    Nothing splits on ':': `_reviewer_segment` writes it and the whole segment is
+    compared as one string, so a subject containing one round-trips intact.
+
+    Refusing it anyway would not be free. Identity providers do mint namespaced
+    subjects, and a guard would lock out a whole deployment to protect an invariant
+    that already holds."""
+
+    def test_a_subject_containing_a_colon_is_accepted(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                     {'doc-1': AXES}, subject='tenant:alice')
+
+        assert status == 200
+        assert body['updated_count'] == 1
+
+    def test_that_reviewer_reads_back_their_own_ballot(
+        self, api_gateway_event, lambda_context
+    ):
+        """The property a '#' breaks and a ':' does not: the ballot the write landed
+        on is the ballot the read addresses."""
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': AXES}, subject='tenant:alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context,
+                             subject='tenant:alice')
+
+        assert body['scores']['doc-1']['impact'] == AXES['impact']
+
+    def test_no_phantom_document_row_appears(self, api_gateway_event, lambda_context):
+        """A mis-split key produced an `aggregates` row under a document id that
+        never existed, which `PrioritizationAggregate` tells consumers means
+        somebody scored it."""
+        table = FakeAggregatesTable()
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': AXES}, subject='tenant:alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context,
+                             subject='tenant:alice')
+
+        assert list(body['aggregates']) == ['doc-1']
+
+    def test_two_tenants_with_the_same_local_name_stay_distinct(
+        self, api_gateway_event, lambda_context
+    ):
+        table = FakeAggregatesTable()
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {**AXES, 'impact': 5}}, subject='tenant-a:alice')
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'doc-1': {**AXES, 'impact': 1}}, subject='tenant-b:alice')
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context,
+                             subject='tenant-a:alice')
+        assert body['scores']['doc-1']['impact'] == 5
+        assert body['aggregates']['doc-1']['reviewer_count'] == 2

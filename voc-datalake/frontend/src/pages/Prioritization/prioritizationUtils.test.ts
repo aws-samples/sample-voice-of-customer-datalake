@@ -6,7 +6,7 @@ import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
   getScore, calculatePriorityScore, collectPRFAQs, comparePRFAQs, DEFAULT_SCORE, isScorable,
-  SCORABLE_TYPE_META,
+  SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments,
 } from './prioritizationUtils'
 import type { PrioritizationScore, ProjectDocument } from '../../api/types'
 
@@ -273,5 +273,50 @@ describe('SCORABLE_TYPE_META display labels', () => {
 
     expect(t(prd.i18nKey)).toBe('PRD')
     expect(t(prfaq.i18nKey)).toBe('PR/FAQ')
+  })
+})
+
+describe('overLongNoteDocuments', () => {
+  // The API refuses a note past MAX_NOTE_LENGTH rather than truncating it, and
+  // `fetchApi` discards the response body, so the page has to spot the refusal
+  // before sending or Save appears to do nothing.
+  // No cast: the helper is typed for the shape it reads, so a record whose note
+  // is absent — which stored ballots really are — is expressible here.
+  const score = (notes?: string | null): { readonly notes?: string | null } => ({ notes })
+
+  it('names the document whose note is over the bound', () => {
+    const edits = { d1: score('x'.repeat(MAX_NOTE_LENGTH + 1)) }
+
+    expect(overLongNoteDocuments(edits)).toEqual(['d1'])
+  })
+
+  it('accepts a note exactly at the bound', () => {
+    // The backend's check is `> MAX`, so the boundary value is legal. An
+    // off-by-one here would block a save the API would have accepted.
+    const edits = { d1: score('x'.repeat(MAX_NOTE_LENGTH)) }
+
+    expect(overLongNoteDocuments(edits)).toEqual([])
+  })
+
+  it('names every offending document, not just the first', () => {
+    const edits = {
+      d1: score('x'.repeat(MAX_NOTE_LENGTH + 1)),
+      d2: score('short'),
+      d3: score('y'.repeat(MAX_NOTE_LENGTH + 500)),
+    }
+
+    expect(overLongNoteDocuments(edits).sort()).toEqual(['d1', 'd3'])
+  })
+
+  it('treats a missing note as no note rather than crashing', () => {
+    // Stored ballots predate `notes` being written on every save, and this record
+    // arrives from the network with no runtime guarantee it matches the type. A
+    // throw here would take down the page on a save the API would have accepted.
+    expect(overLongNoteDocuments({ d1: score(undefined) })).toEqual([])
+    expect(overLongNoteDocuments({ d1: score(null) })).toEqual([])
+  })
+
+  it('is empty when nothing is pending', () => {
+    expect(overLongNoteDocuments({})).toEqual([])
   })
 })

@@ -2,8 +2,9 @@
  * @fileoverview Tests for Prioritization page
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MAX_NOTE_LENGTH } from './prioritizationUtils'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 
@@ -388,6 +389,129 @@ describe('Prioritization', () => {
         expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
       })
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('a note the API will refuse never leaves the page', () => {
+    // The API refuses a note past MAX_NOTE_LENGTH rather than truncating it, and
+    // `fetchApi` throws `API Error: 400` while discarding the body — so a refusal
+    // the page cannot anticipate arrives as a Save button that does nothing. Two
+    // halves keep that from happening: `maxLength` bounds what a reviewer types,
+    // and this panel catches a note that was already over the bound in the
+    // pre-ballot data, which is sent along the moment a slider on that row moves.
+    const overLong = 'x'.repeat(MAX_NOTE_LENGTH + 1)
+
+    /** Load a score whose note is already over the bound, then move a slider. */
+    async function editARowWhoseNoteIsTooLong() {
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {
+          d1: {
+            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+            strategic_fit: 3, notes: overLong,
+          },
+        },
+      })
+      const user = userEvent.setup()
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      fireEvent.change(sliders[0], { target: { value: '5' } })
+      return user
+    }
+
+    it('bounds the notes textarea at the length the API accepts', async () => {
+      const user = userEvent.setup()
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+
+      const notes = await screen.findByPlaceholderText(/add notes/i)
+      // Asserted as a NUMBER against the shared constant, not as the string '2000':
+      // a hardcoded literal in the JSX would pass a text comparison while drifting
+      // from the bound the API enforces.
+      expect(notes).toHaveAttribute('maxlength', String(MAX_NOTE_LENGTH))
+    })
+
+    it('blocks the save when an edited row carries an over-long note', async () => {
+      await editARowWhoseNoteIsTooLong()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      })
+    })
+
+    it('says why, rather than leaving a dead button', async () => {
+      await editARowWhoseNoteIsTooLong()
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent('A note is too long to save')
+      })
+      // The bound is the actionable part, so it has to reach the screen — an
+      // unresolved interpolation would render the placeholder instead.
+      expect(screen.getByRole('alert')).toHaveTextContent(String(MAX_NOTE_LENGTH))
+      expect(screen.getByRole('alert')).not.toHaveTextContent('{{max}}')
+    })
+
+    it('never sends the body the API would refuse', async () => {
+      const user = await editARowWhoseNoteIsTooLong()
+
+      await user.click(screen.getByRole('button', { name: /save/i }))
+
+      expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
+    })
+
+    it('leaves an untouched row with a long note alone', async () => {
+      // Only pending edits are sent, so a pre-ballot note that ran long on a row
+      // nobody edited blocks nothing. Without this the panel would fire on load
+      // and disable a page that has nothing wrong with it.
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {
+          d1: {
+            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+            strategic_fit: 3, notes: overLong,
+          },
+        },
+      })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('still saves a row whose note is within the bound', async () => {
+      // The positive control: the block must be the note's length and nothing
+      // else, or "save is disabled" would be satisfied by a page that never saves.
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {
+          d1: {
+            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+            strategic_fit: 3, notes: 'x'.repeat(MAX_NOTE_LENGTH),
+          },
+        },
+      })
+      const user = userEvent.setup()
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      fireEvent.change(sliders[0], { target: { value: '5' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      await user.click(screen.getByRole('button', { name: /save/i }))
+      expect(mockPatchPrioritizationScores).toHaveBeenCalled()
     })
   })
 })
