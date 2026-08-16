@@ -468,6 +468,13 @@ LEGACY_SCORES_SK = 'SCORES'
 BALLOT_SK_PREFIX = 'BALLOT#'
 REVIEWER_KIND_USER = 'user'
 
+# The fields every ballot save stamps whatever the reviewer expressed: which
+# document it is for, whose it is, and when it was written. Everything else on a
+# ballot is a value the reviewer entered, which is what makes "did this save store
+# anything a reviewer expressed?" answerable from the write itself — see
+# `_writes_a_reviewer_value`, which subtracts these.
+BALLOT_STAMP_FIELDS = ('document_id', 'reviewer', 'updated_at')
+
 # The four axes a reviewer scores, and the weights the composite score uses.
 # The weights mirror `calculatePriorityScore` in the frontend's
 # prioritizationUtils.ts — the aggregate's spread has to be in the same unit the
@@ -489,10 +496,25 @@ MAX_AXIS_VALUE = 5
 
 # A note is free text a reviewer types beside the sliders. Bounded because it is
 # stored verbatim and read back on every page load.
+#
+# REFUSED rather than truncated when a save exceeds it (see
+# `_validated_ballot_entry`). Truncating discarded the tail of a durable decision
+# record while answering 200 — and a justification runs long exactly when it is
+# doing the most work, with the conclusion at the end. Unlike an out-of-range axis
+# there is no "bounded either way" defence: the discarded characters are content,
+# not a number pushed to the nearest legal value. It is the same argument that
+# refuses a non-string `notes` rather than coercing it to '', on the same field.
+#
+# Mirrored in the frontend as `MAX_NOTE_LENGTH`, which bounds the textarea, so the
+# shipped page cannot compose a body this route refuses. The pair is pinned by
+# `test_prioritization_note_bound_lockstep.py` — a bound enforced on one side only
+# turns a refusal the page can no longer explain into a save that appears to do
+# nothing.
 MAX_BALLOT_NOTE_LEN = 2000
 
-# How many documents one save may carry. Each one costs TWO writes (the ballot,
-# plus the conditional legacy removal), so an unbounded body turns a single
+# How many documents one save may carry. Each one costs up to TWO writes (the
+# ballot, plus the conditional legacy removal when the entry actually scored
+# something), so an unbounded body turns a single
 # invocation into hundreds of sequential round trips — and a Lambda timeout part
 # way through leaves the save half-persisted behind a bare 500. The page scores a
 # team-sized backlog, so a body larger than this is a client defect, and a 400
@@ -536,6 +558,32 @@ def _caller_reviewer_subject() -> str:
 
     The message names the rule and never echoes the subject, which identifies a
     person and must not be logged (`get_caller_subject`'s own contract).
+
+    BOTH ROUTES REFUSE, THE READ DELIBERATELY INCLUDED. Sharing this funnel means
+    GET answers 403 too, which is a decision and not a side effect. The read
+    writes nothing, so it is not refused to prevent corruption; it is refused
+    because there is no honest answer. `scores` is a specific caller's own ballots
+    and this caller has none that any read can address, so serving `{}` alongside a
+    populated `aggregates` would show them an unscored backlog — the exact "the
+    read failed and nobody has scored" ambiguity `api_get_prioritization_scores`
+    now raises to remove — and the page would then look ordinary and usable while
+    every save from it answers 403. A reviewer would re-enter scores into a form
+    that cannot keep them. Degrading the read would turn one clear failure at the
+    top of the page into a working-looking page that silently cannot record
+    anything, and the realistic trigger (a deployment whose identity source is not
+    Cognito) is exactly when an operator needs the loud version.
+
+    Only '#' is checked, and ':' deliberately is NOT. The two characters are not
+    alike: '#' is PARSED — `_parse_ballot_sk` splits on it, so a '#' inside the
+    subject moves where the document id is taken to end — while ':' is only ever
+    COMPOSED here, by `_reviewer_segment`, and nothing splits on it. `user:a:b`
+    compares whole against the caller's segment and round-trips intact. Should a
+    future 'anon:' kind ever need to read the kind back, it must split on the FIRST
+    colon (`partition(':')`, which the writer controls), never the last: that keeps
+    the kind unambiguous whatever the subject contains, so no guard is owed. Adding
+    one would not be free — identity providers do mint subjects containing colons,
+    and refusing them would lock out a whole deployment to protect an invariant
+    that holds without the refusal.
     """
     subject = get_caller_subject(app.current_event.raw_event)
     if '#' in subject:
@@ -666,10 +714,20 @@ def _validated_ballot_entry(entry: Any) -> dict:
     * `notes` must be null (absent, left alone) or a string. Coercing a non-string
       to `''` overwrote a note the reviewer had already saved — silent loss of a
       durable decision record on a success response.
+    * `notes` must also be within MAX_BALLOT_NOTE_LEN. Truncating to the bound was
+      the SAME silent loss on the SAME field: the reviewer was told their note
+      saved and the tail was discarded, on a 200. The clamp/refuse line is drawn
+      where it is because an out-of-range axis is bounded either way — 99 plainly
+      means "as high as it goes" — while the characters past a note's bound are
+      content, not a number pushed to the nearest legal value, and a justification
+      runs long exactly when it is doing the most work. Refusing HERE rather than
+      at the write is also what lets the note inherit the up-front pass's promise:
+      an over-long note cannot leave a multi-document save half-persisted.
 
-    Neither message echoes the value: it is unbounded caller input a response body
-    gains nothing by repeating (the reasoning `_validated_ballot_document_id` and
-    `validate_bool` both record).
+    None of the messages echoes the value: it is unbounded caller input a response
+    body gains nothing by repeating (the reasoning `_validated_ballot_document_id`
+    and `validate_bool` both record). The note's message names the bound instead,
+    which is the part a caller can act on.
     """
     if not isinstance(entry, dict):
         raise ValidationError(
@@ -685,8 +743,13 @@ def _validated_ballot_entry(entry: Any) -> dict:
                 f'{MAX_AXIS_VALUE}, or null to leave it unchanged'
             )
     notes = entry.get('notes')
-    if notes is not None and not isinstance(notes, str):
-        raise ValidationError('notes must be a string, or null to leave it unchanged')
+    if notes is not None:
+        if not isinstance(notes, str):
+            raise ValidationError('notes must be a string, or null to leave it unchanged')
+        if len(notes) > MAX_BALLOT_NOTE_LEN:
+            raise ValidationError(
+                f'notes must be at most {MAX_BALLOT_NOTE_LEN} characters'
+            )
     return entry
 
 
@@ -896,16 +959,56 @@ def _read_prioritization_partition() -> list[dict]:
     raise ServiceError('Too many prioritization ballots to read in one request')
 
 
+def _superseded_documents(ballots_by_document: dict[str, list[dict]]) -> set[str]:
+    """Documents whose pre-ballot value a real ballot has replaced.
+
+    THE one definition of "superseded", asked by both halves of the GET response —
+    the read-through in `api_get_prioritization_scores` and the aggregate in
+    `_aggregate_scores` — so that `scores` can never show a legacy value the same
+    response's `aggregates` says nobody scored. Two inline tests that happened to
+    line up would be the shape the round-6 read-through finding was about.
+
+    Superseded means SOMEBODY VOTED, not merely that a ballot exists: the legacy
+    value is a score, so only a score replaces it. A reviewer who saved a note
+    without touching a slider has a ballot and has replaced nothing.
+
+    It is also what makes the guarantee independent of `_drop_legacy_score`, which
+    is best-effort by design: whether or not that removal landed, the read behaves
+    the same way, so a failed migration is invisible instead of resurfacing a
+    superseded value as a second reviewer (`_aggregate_scores`) or as the caller's
+    own starting numbers (the read-through).
+    """
+    return {
+        document_id for document_id, ballots in ballots_by_document.items()
+        if any(_is_a_vote(ballot) for ballot in ballots)
+    }
+
+
 def _aggregate_scores(
     ballots_by_document: dict[str, list[dict]], legacy_scores: dict
 ) -> dict:
     """Per document: the mean of each axis, how many reviewers scored it, and the
     spread of the composite score.
 
-    A surviving legacy entry counts as exactly ONE unattributed ballot. It cannot
-    be double-counted with a real ballot for the same document, because the first
-    save against a document removes its legacy entry in the same request (see
-    `_drop_legacy_score`).
+    A surviving legacy entry counts as exactly ONE unattributed ballot, and only
+    while NOTHING HAS SUPERSEDED IT: it is skipped as soon as any ballot for that
+    document is a vote. THE READ is what prevents the double count, not the write.
+    Resting it on the write was wrong, because `_drop_legacy_score` is deliberately
+    best-effort — a throttle or a permissions gap leaves the legacy entry in place
+    while the ballot is durably written and the reviewer is told 200 — so failing
+    only the REMOVE made a single reviewer report `reviewer_count: 2` with a
+    non-zero `score_spread`: her own superseded pre-ballot value read as a second
+    reviewer disagreeing with her, in the two fields whose documented contracts are
+    "reviewers who scored something" and "zero means agreement". And it was STICKY,
+    since nothing retries the removal on a later read.
+
+    Skipping is also strictly more accurate than counting, independently of any
+    failure: ballots carry a `reviewer` and the legacy entry carries nobody, so the
+    aggregate cannot tell "alice plus an unattributed value that is probably also
+    alice" from "alice plus a second reviewer" — and once anyone has voted, the
+    unattributed value is superseded by definition. `_is_a_vote` is the same
+    predicate `_drop_legacy_score` is now gated on, so the write's trigger and the
+    read's suppression cannot answer differently.
 
     Only entries that scored at least one axis count. A ballot carrying just
     `notes` is a legal save but not a vote, and counting it as one let a reviewer
@@ -940,10 +1043,13 @@ def _aggregate_scores(
     map as a document index.
     """
     aggregates: dict[str, dict] = {}
-    for document_id in set(ballots_by_document) | set(legacy_scores or {}):
+    legacy = legacy_scores or {}
+    superseded = _superseded_documents(ballots_by_document)
+    for document_id in set(ballots_by_document) | set(legacy):
         entries: list[Any] = list(ballots_by_document.get(document_id, []))
-        if document_id in (legacy_scores or {}):
-            entries.append(legacy_scores[document_id])
+        # The legacy value counts only until a real ballot supersedes it.
+        if document_id in legacy and document_id not in superseded:
+            entries.append(legacy[document_id])
         votes = [entry for entry in entries if _is_a_vote(entry)]
         if not votes:
             continue
@@ -984,12 +1090,32 @@ def _drop_legacy_score(table, document_id: str) -> None:
     exists to remove. The steady-state cost is one refused conditional write per
     saved document, which is bounded by the documents in one save.
 
-    Note what removal costs: once ANY reviewer saves a document, its pre-ballot
+    ONLY CALLED FOR A SAVE THAT ACTUALLY SCORED SOMETHING (`_is_a_vote`). The
+    justification below is "the reviewer who saved has just expressed the newer
+    opinion", and that clause is what makes deleting a value nobody's name is on
+    acceptable — so it has to be TRUE before this runs. Called for every validated
+    key instead, it fired for entries that expressed nothing: `{}` (a legal no-op
+    by design), `{'impact': null}` (silence, by round 3's reading), and an entry
+    whose only key is a typo'd axis each permanently deleted the pre-ballot score
+    for that document, for every reviewer, on a 200. That is this change's own
+    defect class — one reviewer's write destroying a score another can see — and
+    worse than the shared-map race it replaced, because the winning write expressed
+    no opinion at all. A note is not enough either: `_expresses_something` is the
+    read-through's wider question, and a reviewer who typed a comment without
+    touching a slider has expressed no newer SCORE.
+
+    Note what removal costs: once any reviewer VOTES on a document, its pre-ballot
     value is gone, so a reviewer who has not saved stops seeing it read through
     and it stops counting in the aggregate. That is the deliberate trade — a
     value nobody's name is on is worth less than the guarantee that it can never
     be double-counted against the ballot that replaced it, and the reviewer who
-    saved has just expressed the newer opinion.
+    voted has just expressed the newer opinion.
+
+    The aggregate asks the SAME predicate on the read side (`_aggregate_scores`
+    counts the legacy value only while no ballot for that document is a vote), so
+    the write's trigger and the read's suppression cannot disagree — and the read
+    is what makes the no-double-count guarantee hold even when this best-effort
+    write does not land.
 
     BEST EFFORT: no failure here is allowed to surface. The caller's ballot is
     already durably written by the time this runs, so raising would tell a
@@ -1088,8 +1214,19 @@ def api_get_prioritization_scores():
     # The legacy map predates this route's validation and was written by a handler
     # with no type discipline, so neither shape is ruled out by construction, and
     # nothing migrates one away until the first save against that document.
+    #
+    # A SUPERSEDED value is not read through either, even to a caller who has no
+    # ballot of their own: once somebody has voted, the unattributed value has been
+    # replaced, and `_aggregate_scores` already stops counting it. Showing it here
+    # would put a number in `scores` that the same response's `aggregates` says
+    # nobody scored — and it would do so only when the best-effort
+    # `_drop_legacy_score` happened to fail, so the page's starting numbers would
+    # depend on whether a write nobody was told about landed.
+    superseded = _superseded_documents(ballots_by_document)
     for document_id, entry in legacy_scores.items():
-        if document_id not in scores and _expresses_something(entry):
+        if document_id in scores or document_id in superseded:
+            continue
+        if _expresses_something(entry):
             scores[document_id] = _score_payload(document_id, entry)
 
     return {
@@ -1123,19 +1260,22 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
     Present axes still go through `validate_int`, so an out-of-range slider is
     clamped to 0-5 rather than failing a whole multi-document save over one axis.
     Nothing here has to fall back, though: `_validated_ballot_entry` has already
-    refused any axis that is not a clampable number and any `notes` that is not a
-    string, so `validate_int`'s `default` is unreachable and a note is written
-    verbatim (truncated) rather than coerced. That ordering is deliberate — a
-    value refused up front cannot half-persist a multi-document save, and neither
-    an invented 0 nor an empty note can overwrite what a reviewer stored.
+    refused any axis that is not a clampable number, and any `notes` that is not a
+    string or that exceeds MAX_BALLOT_NOTE_LEN — so `validate_int`'s `default` is
+    unreachable and the note is written VERBATIM. It is not truncated here: a
+    silently shortened note is a durable decision record losing its tail on a 200,
+    which is the same loss refusing a non-string prevents. That ordering is
+    deliberate — a value refused up front cannot half-persist a multi-document
+    save, and neither an invented 0 nor a shortened note can overwrite what a
+    reviewer stored.
+
+    The three BALLOT_STAMP_FIELDS are always assigned; everything else is
+    conditional. `_writes_a_reviewer_value` reads that distinction back off the
+    kwargs this returns, which is what keeps `updated_count` counting ballots that
+    stored something rather than keys received.
     """
-    assignments = ['#document_id = :document_id', '#reviewer = :reviewer',
-                   '#updated_at = :updated_at']
-    names = {
-        '#document_id': 'document_id',
-        '#reviewer': 'reviewer',
-        '#updated_at': 'updated_at',
-    }
+    assignments = [f'#{field} = :{field}' for field in BALLOT_STAMP_FIELDS]
+    names = {f'#{field}': field for field in BALLOT_STAMP_FIELDS}
     values: dict[str, Any] = {
         ':document_id': document_id,
         ':reviewer': _reviewer_segment(subject),
@@ -1156,12 +1296,14 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
 
     notes = entry.get('notes')
     if notes is not None:
-        # A non-string was refused up front, so this is a string. Truncated, never
-        # coerced: writing `''` for a value that expressed no note destroyed text
-        # the reviewer had saved, and reported success for the loss.
+        # A non-string, and anything past MAX_BALLOT_NOTE_LEN, was refused up
+        # front — so this is a string within the bound and is written as sent.
+        # Never coerced and never shortened: writing `''` for a value that
+        # expressed no note, or dropping the tail of one that ran long, both
+        # destroyed text the reviewer had saved and reported success for the loss.
         assignments.append('#notes = :notes')
         names['#notes'] = 'notes'
-        values[':notes'] = notes[:MAX_BALLOT_NOTE_LEN]
+        values[':notes'] = notes
 
     return {
         'Key': {'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(document_id, subject)},
@@ -1169,6 +1311,29 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
         'ExpressionAttributeNames': names,
         'ExpressionAttributeValues': values,
     }
+
+
+def _writes_a_reviewer_value(update_kwargs: dict) -> bool:
+    """Whether one ballot save stores anything the reviewer actually entered.
+
+    Read off the WRITE rather than re-derived from the entry, deliberately.
+    `updated_count` is a claim about what was written, so asking the update itself
+    what it assigns cannot drift from what `_ballot_update_kwargs` decided to
+    assign — where a second predicate over the entry would have to keep two
+    readings of "carries a value" in step by hand, which is the drift
+    `_readable_axis` was introduced to end elsewhere in this module.
+
+    Everything past BALLOT_STAMP_FIELDS is a reviewer's own value: the four axes
+    and the note. So an entry that changed nothing — `{}`, an all-null entry, or
+    one whose only keys are unrecognised — stamps the ballot and answers 200, but
+    does not count as a ballot written. Note this reads CHANGED, not SCORED: a
+    reviewer deliberately clearing their note (`{'notes': ''}`) wrote a real
+    change, and is counted, while `_is_a_vote` would call it silence. The two
+    questions are different and each is asked where it belongs — this one of the
+    counter, `_is_a_vote` of the legacy migration and the aggregate.
+    """
+    assigned = set(update_kwargs['ExpressionAttributeNames'].values())
+    return bool(assigned - set(BALLOT_STAMP_FIELDS))
 
 
 @app.put("/projects/prioritization")
@@ -1219,9 +1384,25 @@ def api_patch_prioritization_scores():
     the same ballots rather than duplicating or compounding anything. A client that
     sees a 500 should re-send the whole body, not try to work out what landed.
 
-    `updated_count` is returned only on success, where it is the number of ballots
-    written and equals the number of documents in the body. On failure the same
-    count goes to the log and NOT to the response — deliberately, because a partial
+    `updated_count` is returned only on success, where it is the number of BALLOTS
+    WRITTEN — saves that stored a value the reviewer entered — which is at most the
+    number of documents in the body and is fewer when an entry changed nothing.
+    Counting keys received instead reported `updated_count: 3` for a body of three
+    empty objects that stored no score, contradicting the very unit the
+    duplicate-key refusal above is justified on ("ballots written, not keys
+    received"). The count is read off the write itself (`_writes_a_reviewer_value`)
+    rather than re-derived from the request, so it cannot drift from what was
+    assigned.
+
+    MAX_BALLOTS_PER_SAVE stays in the OTHER unit deliberately: it bounds keys
+    received, because the cost it exists to bound is round trips, and an entry that
+    expresses nothing still costs its `update_item`. So 100 empty entries do consume
+    the whole budget — that is the budget doing its job, not the counter's unit
+    leaking. One number describes work done for the caller, the other describes work
+    done by the Lambda.
+
+    On failure the count of documents written goes to the log and NOT to the
+    response — deliberately, because a partial
     count invites exactly the reasoning the idempotence makes unnecessary (working
     out which documents to re-send) while being unreliable for it: the failing
     write may or may not have landed server-side, and the legacy migration for an
@@ -1272,20 +1453,32 @@ def api_patch_prioritization_scores():
     # Counted so a failure part way through a multi-document save is diagnosable.
     # Validation cannot half-persist a save, but a throttle or a timeout on
     # document 3 of 10 can, and a bare 500 says nothing about how far it got.
-    persisted = 0
+    # TWO counters, because the two questions are asked in different units and
+    # only one of them is the caller's. `documents_written` is round trips issued,
+    # which is what a partial-failure log has to report — how far the loop got.
+    # `ballots` is saves that stored something the reviewer entered, which is what
+    # `updated_count` claims to be.
+    documents_written = 0
+    ballots = 0
     try:
         for document_id, entry in validated:
-            table.update_item(**_ballot_update_kwargs(document_id, subject, entry, now))
-            persisted += 1
-            # Same save: the pre-ballot value for this document goes away, so it
-            # is never counted alongside the ballot that replaced it.
-            _drop_legacy_score(table, document_id)
-        return {'success': True, 'updated_count': persisted}
+            update_kwargs = _ballot_update_kwargs(document_id, subject, entry, now)
+            table.update_item(**update_kwargs)
+            documents_written += 1
+            if _writes_a_reviewer_value(update_kwargs):
+                ballots += 1
+            # Same save: the pre-ballot value for this document goes away — but
+            # ONLY when this ballot actually scored something, because that value
+            # is a score and nothing else supersedes it. An entry that expressed
+            # no axis would otherwise delete a value it did not replace.
+            if _is_a_vote(entry):
+                _drop_legacy_score(table, document_id)
+        return {'success': True, 'updated_count': ballots}
     except ApiError:
         raise
     except Exception as e:
         logger.exception(
-            f"Failed to save prioritization ballot after {persisted} of "
+            f"Failed to save prioritization ballot after {documents_written} of "
             f"{len(validated)} documents: {e}"
         )
         raise ServiceError('Failed to save prioritization scores') from e
