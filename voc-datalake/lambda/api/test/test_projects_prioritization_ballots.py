@@ -14,6 +14,7 @@ not a general DynamoDB — it implements exactly the two expressions this route
 writes, so that a change to those expressions has to be reflected here.
 """
 import json
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1863,12 +1864,14 @@ class TestReviewerIdentityComesFromTheSharedHelper:
         import projects_handler
 
         table = FakeAggregatesTable()
-        with patch('projects_handler.get_caller_subject', return_value='alice') as helper:
-            with patch('projects_handler.get_aggregates_table', return_value=table):
-                projects_handler.lambda_handler(
-                    _event(api_gateway_event, method='PATCH', body={'scores': {'doc-1': AXES}}),
-                    lambda_context,
-                )
+        with (
+            patch('projects_handler.get_caller_subject', return_value='alice') as helper,
+            patch('projects_handler.get_aggregates_table', return_value=table),
+        ):
+            projects_handler.lambda_handler(
+                _event(api_gateway_event, method='PATCH', body={'scores': {'doc-1': AXES}}),
+                lambda_context,
+            )
 
         assert helper.call_count == 1
         assert table.ballot('doc-1', 'alice') is not None
@@ -1926,7 +1929,8 @@ class TestASaveThatExpressesNothingDestroysNothing:
     expressed the newer opinion". These tests pin that the code only acts when that
     clause is TRUE."""
 
-    LEGACY = {'impact': 4, 'time_to_market': 3, 'confidence': 5, 'strategic_fit': 4}
+    LEGACY: ClassVar[dict] = {'impact': 4, 'time_to_market': 3, 'confidence': 5,
+                              'strategic_fit': 4}
 
     @classmethod
     def _with_legacy(cls):
@@ -1940,8 +1944,8 @@ class TestASaveThatExpressesNothingDestroysNothing:
 
     # Every encoding of "this entry says nothing", including the two this PR made
     # legal on purpose and the one a client typo produces.
-    NOTHING = [{}, {'notes': None}, {'impact': None},
-               {'impact': None, 'notes': None}, {'impactt': 5}]
+    NOTHING: ClassVar[list] = [{}, {'notes': None}, {'impact': None},
+                              {'impact': None, 'notes': None}, {'impactt': 5}]
 
     @pytest.mark.parametrize('entry', NOTHING)
     def test_the_legacy_value_survives_a_save_that_scored_nothing(
@@ -2057,7 +2061,8 @@ class TestAFailedMigrationCannotDoubleCountAReviewer:
     The read is what prevents the double count now. These tests therefore run with
     the removal BROKEN, which is the state the best-effort decision accepts."""
 
-    LEGACY = {'impact': 4, 'time_to_market': 3, 'confidence': 5, 'strategic_fit': 4}
+    LEGACY: ClassVar[dict] = {'impact': 4, 'time_to_market': 3, 'confidence': 5,
+                              'strategic_fit': 4}
 
     @classmethod
     def _with_failing_removal(cls):
