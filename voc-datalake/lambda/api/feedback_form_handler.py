@@ -176,8 +176,14 @@ def _anchor_form_brand(form_id: str, effective_brand: str) -> None:
             # very route this change made honest. Existence-first turns that into
             # a ConditionalCheckFailedException, i.e. nothing.
             #
-            # The parentheses are load-bearing: `A AND B OR C` would let
-            # brand_name = '' satisfy the condition on its own and reopen it.
+            # The parentheses are for readability only, NOT for correctness:
+            # DynamoDB binds AND tighter than OR, and a comparison against an
+            # absent attribute evaluates false rather than erroring, so the
+            # unparenthesised spelling rejects a missing item identically
+            # (verified against a real table). attribute_exists(sk) is the whole
+            # of the guard — said explicitly so nobody re-derives a precedence
+            # rule that does not exist and then "protects" the brackets instead
+            # of the conjunct that matters.
             ConditionExpression=(
                 'attribute_exists(sk) AND '
                 '(attribute_not_exists(brand_name) OR brand_name = :empty)'

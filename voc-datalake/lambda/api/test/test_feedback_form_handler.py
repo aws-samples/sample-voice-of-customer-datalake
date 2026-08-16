@@ -143,6 +143,35 @@ def _form_with_legacy_brand(brand_name: str = 'Acme Classic') -> dict:
     }
 
 
+def _emitted_metrics(capsys, metric_name: str) -> list[dict]:
+    """The EMF blobs naming `metric_name` that this request actually flushed.
+
+    `metrics.add_metric` only BUFFERS; nothing reaches CloudWatch unless the
+    handler is wrapped in `metrics.log_metrics`, which `api_handler` does. So a
+    metric is only worth trusting if it is asserted all the way out, and this
+    reads the flushed blobs rather than a mock's call list.
+
+    Note this depends on powertools writing EMF to stdout with `print()`, which
+    is what makes it visible to capsys — if a powertools upgrade changes that,
+    every caller fails together and the cause is this helper, not a metric that
+    stopped being emitted.
+    """
+    return [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if metric_name in line and '_aws' in line
+    ]
+
+
+def _namespaces_of(emitted: list[dict]) -> set[str]:
+    """The CloudWatch namespaces a set of EMF blobs was published under."""
+    return {
+        directive['Namespace']
+        for blob in emitted
+        for directive in blob['_aws']['CloudWatchMetrics']
+    }
+
+
 def _queried_partition(query_kwargs: dict) -> str:
     """The pk a stats/submissions query was aimed at.
 
@@ -1058,7 +1087,6 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         assert 'stats' not in body
         assert 'total_submissions' not in response['body']
 
-    @patch.dict('os.environ', {}, clear=False)
     @patch('feedback_form_handler.feedback_table')
     @patch('feedback_form_handler.aggregates_table')
     def test_a_read_failure_reaches_cloudwatch_and_not_just_the_caller(
@@ -1068,19 +1096,20 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         """A metric is only worth adding if it is actually emitted.
 
         `metrics.add_metric` BUFFERS: nothing leaves the function unless the
-        handler is wrapped in `metrics.log_metrics`, which `api_handler` does —
-        and a flush with no namespace raises SchemaValidationError, which on this
-        path would replace the read failure with a metrics bug. So this asserts
-        the whole way out: an EMF blob on stdout, naming this metric, under the
-        namespace shared/logging pins on the Metrics singleton ('VoC', a default
-        that does not depend on POWERTOOLS_METRICS_NAMESPACE being deployed).
+        handler is wrapped in `metrics.log_metrics`, which `api_handler` does. So
+        this asserts the whole way out — an EMF blob flushed to stdout naming this
+        metric — rather than that add_metric was called.
 
-        Without it, "the failure is now visible to operations" — the answer given
-        to the review question about a silent DynamoDB fault — is unverified.
+        The namespace is compared against the Metrics singleton rather than a
+        literal, so it cannot drift from shared/logging.py; the test does not
+        control it and does not claim to. (POWERTOOLS_METRICS_NAMESPACE plays no
+        part: powertools resolves the namespace when Metrics(namespace="VoC") is
+        constructed at import time, so the env var never participates.)
+
+        Without this, "the failure is now visible to operations" — the answer
+        given to the review question about a silent DynamoDB fault — is
+        unverified.
         """
-        import os
-
-        os.environ.pop('POWERTOOLS_METRICS_NAMESPACE', None)
         mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
         mock_feedback.query.side_effect = Exception('ProvisionedThroughputExceeded')
 
@@ -1093,23 +1122,14 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 500
-        emitted = [
-            json.loads(line)
-            for line in capsys.readouterr().out.splitlines()
-            if 'FeedbackFormStatsReadFailed' in line and '_aws' in line
-        ]
+        emitted = _emitted_metrics(capsys, 'FeedbackFormStatsReadFailed')
         assert emitted, (
             'the read failure emitted no CloudWatch metric — add_metric only '
             'buffers, so this is invisible to operations unless api_handler '
             'flushes it'
         )
-        namespaces = {
-            directive['Namespace']
-            for blob in emitted
-            for directive in blob['_aws']['CloudWatchMetrics']
-        }
-        assert namespaces == {'VoC'}, (
-            f'metric emitted under {namespaces}, not the namespace '
+        assert _namespaces_of(emitted) == {feedback_form_handler.metrics.namespace}, (
+            f'metric emitted under {_namespaces_of(emitted)}, not the namespace '
             'shared/logging sets on the Metrics singleton'
         )
 
@@ -1202,15 +1222,20 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
     @patch('feedback_form_handler.feedback_table')
     @patch('feedback_form_handler.aggregates_table')
     def test_a_failed_form_lookup_is_an_error_not_a_zero_count(
-        self, mock_aggregates, mock_feedback, api_gateway_event, lambda_context,
-        feedback_form_handler
+        self, mock_aggregates, mock_feedback, capsys, api_gateway_event,
+        lambda_context, feedback_form_handler
     ):
         """The other read on this route. The FORM lookup used to be swallowed and
         degraded to BRAND_NAME, which after a rename is a partition this form's
         submissions were never written to: the feedback query then succeeds
         against the wrong partition, finds nothing, and the route answers 200 with
         total_submissions 0 — issue #312's false zero arriving through the door
-        the earlier fix left open."""
+        the earlier fix left open.
+
+        Asserts the metric too, to the same standard as the stats one: this is the
+        BROADER of the two, since _load_form_for_query is shared by the stats and
+        submissions routes, so it is the one whose absence would leave the most
+        failures invisible to operations."""
         mock_aggregates.get_item.side_effect = Exception(
             'ProvisionedThroughputExceededException'
         )
@@ -1231,6 +1256,17 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         assert body['success'] is False
         assert 'stats' not in body
         assert 'total_submissions' not in body
+
+        emitted = _emitted_metrics(capsys, 'FeedbackFormReadFailed')
+        assert emitted, (
+            'the form read failed and emitted no CloudWatch metric — the caller '
+            'sees a 500 but operations sees nothing, which is half of the defect '
+            'this route was fixed for'
+        )
+        assert _namespaces_of(emitted) == {feedback_form_handler.metrics.namespace}, (
+            f'metric emitted under {_namespaces_of(emitted)}, not the namespace '
+            'shared/logging sets on the Metrics singleton'
+        )
 
     @patch('feedback_form_handler.feedback_table')
     @patch('feedback_form_handler.aggregates_table')
@@ -1623,13 +1659,13 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
         # satisfied by a MISSING item, so existence has to be required
         # separately or this write recreates a form someone just deleted.
         assert 'attribute_exists(sk)' in kwargs['ConditionExpression']
-        # And the parentheses are part of the guard, not formatting: without them
-        # `attribute_exists(sk) AND attribute_not_exists(brand_name) OR
-        # brand_name = :empty` is satisfied by brand_name = '' alone, on a
-        # non-existent item, which is exactly the case being excluded.
-        assert '(attribute_not_exists(brand_name) OR brand_name = :empty)' in (
-            kwargs['ConditionExpression']
-        )
+        # Nothing is asserted about the parentheses around the OR: DynamoDB binds
+        # AND tighter than OR and an absent attribute compares false, so both
+        # spellings behave identically and an assertion on the brackets could
+        # only ever fail for reformatting. attribute_exists(sk) is the conjunct
+        # that excludes a missing item, and that exclusion is proved against a
+        # real table in TestTheAnchorCanOnlyEverUpdateAFormThatExists rather than
+        # by matching a string here.
 
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
@@ -1664,7 +1700,7 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
         # assertion above.
         datetime.fromisoformat(kwargs['ExpressionAttributeValues'][':now'])
 
-    def test_the_brand_is_not_editable_through_the_public_form_api(
+    def test_the_brand_is_not_in_the_put_allowlist(
         self, feedback_form_handler
     ):
         """A deliberate decision, recorded as a test because the anchor makes the
@@ -1673,7 +1709,13 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
         moves where this form's stats read looks WITHOUT moving the submissions
         already written under the old value — the stranding this module's
         write/read agreement exists to prevent, triggered by hand. Correcting a
-        brand needs a migration that rewrites the feedback partition too."""
+        brand needs a migration that rewrites the feedback partition too.
+
+        UPDATABLE_FIELDS gates `PUT /feedback-forms/<id>`, which is Cognito
+        AUTHENTICATED (lib/stacks/api-stack.ts passes authMethodOptions); the
+        unauthenticated routes are config, submit and iframe. So this is not a
+        leak test against the widget surface — brand_name IS published by
+        item_to_widget_config and nothing here guards that."""
         assert 'brand_name' not in feedback_form_handler.UPDATABLE_FIELDS
 
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
