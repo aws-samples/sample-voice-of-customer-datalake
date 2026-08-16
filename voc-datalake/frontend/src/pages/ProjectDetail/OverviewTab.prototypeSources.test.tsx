@@ -13,7 +13,7 @@
  * moved echoes its raw path and these matchers fail.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import OverviewTab from './OverviewTab'
 import type { Project, ProjectDocument } from '../../api/types'
@@ -89,16 +89,21 @@ describe('the source picker appears only when there is a choice', () => {
     expect(screen.getByTestId('prototype-source-picker')).toBeInTheDocument()
   })
 
-  it('does not ask when there is exactly one of each', async () => {
-    // Preserved deliberately: a dialog offering a choice with one possible answer
-    // is friction, and this build has started on the first click since it shipped.
+  // This replaces "does not ask when there is exactly one of each". That test
+  // asserted the build started on the first click and no picker was rendered — the
+  // one-click path, traded away when the build moved into a wizard. What survives
+  // is the reason it existed: a choice with one possible answer must not be
+  // presented AS a choice. So the picker is there, and it offers no select.
+  it('presents the sources without a select when there is exactly one of each', async () => {
     const user = userEvent.setup()
     renderTab([PRD_NEW, PRFAQ])
 
     await user.click(buildButton())
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    expect(screen.queryByTestId('prototype-source-picker')).not.toBeInTheDocument()
+    expect(screen.getByTestId('prototype-source-picker')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    // And opening it is still not a build.
+    expect(mockBuildPrototype).not.toHaveBeenCalled()
   })
 
   it('offers a select for the type with several and a plain line for the type with one', async () => {
@@ -154,7 +159,7 @@ describe('the build reads the documents the dialog named', () => {
     expect(sentBody().source_prd_id).toBe('zz_prd_old')
   })
 
-  it('names the documents even when it does not stop to ask', async () => {
+  it('names the documents even when there is nothing to choose', async () => {
     // With one of each there is no dialog, but the ids are still sent. Without
     // them the backend re-resolves "the newest" at build time, so a document
     // saved between render and click would be used instead of the one shown.
@@ -162,6 +167,8 @@ describe('the build reads the documents the dialog named', () => {
     renderTab([PRD_NEW, PRFAQ])
 
     await user.click(buildButton())
+    await user.click(within(screen.getByRole('dialog'))
+      .getByRole('button', { name: /build anyway/i }))
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().source_prd_id).toBe('aa_prd_new')
