@@ -97,13 +97,17 @@ export interface PrototypeBuildControl {
   /** True briefly after a successful start, covering the gap before the panel refetches. */
   readonly started: boolean
   /**
-   * State for the confirm dialog. Open only while the reason it was opened for is
-   * still the reason that applies, so `message` is empty exactly when `isOpen` is
-   * false rather than needing its own check at the call site.
+   * State for the build wizard — where this build is configured and started.
+   *
+   * `isOpen` is owned by the hook and changes only on an explicit user action, so
+   * the selections inside survive a document refetch. `warning` is independent of
+   * it: live-derived, and empty when nothing needs saying, which is why a caller
+   * renders it conditionally rather than assuming an open panel has a warning.
    */
-  readonly confirm: {
+  readonly wizard: {
     readonly isOpen: boolean
-    readonly message: string
+    /** '' when this build needs no caution. Never gates the panel. */
+    readonly warning: string
     readonly onConfirm: () => void
     readonly onCancel: () => void
   }
@@ -127,10 +131,14 @@ export interface PrototypeBuildControl {
    * flag-and-list pair, and the visual list (which has no flag — see
    * `selectedVisualIds`).
    *
-   * These live on the card rather than in the confirm dialog, and that is a
-   * requirement rather than a preference: `confirmKeyFor` deliberately returns
-   * null for a project with one PRD, one PR-FAQ and no prototype, so a control
-   * placed in the dialog is unreachable for exactly the simplest project.
+   * These live in the build wizard, beside the PRD/PR-FAQ pickers, so one panel
+   * answers the whole "what should this build read?" question and the card keeps
+   * the single button its five siblings have.
+   *
+   * They used to sit on the card face, because the dialog that existed then opened
+   * for only some projects and a control inside it was unreachable for the rest.
+   * That constraint is gone: the wizard opens for every project, which is the
+   * property `OverviewTab.prototypeWizard.test.tsx` exists to hold.
    */
   readonly extras: {
     readonly useProductContext: boolean
@@ -275,8 +283,9 @@ export function usePrototypeBuild({
   // Lowers itself: the panel takes over, so the line must not outlive the gap.
   const started = useTransientFlag()
   const [error, setError] = useState<string | null>(null)
-  // The question that was asked, not a bare "a dialog is open" flag — see `openKey`.
-  const [askedKey, setAskedKey] = useState<ConfirmKey | null>(null)
+  // Whether the build wizard is on screen. A bare boolean is correct here, unlike
+  // in the dialog this replaces — the reasoning is at the `wizard` return value.
+  const [isOpen, setIsOpen] = useState(false)
 
   // The effective choice: what the user picked if that document is still offered,
   // otherwise the newest of the type. A selection whose document has been deleted
@@ -354,18 +363,16 @@ export function usePrototypeBuild({
     ))
   }, [visualOptions])
 
-  // THREE reasons to stop and ask, through the ConfirmModal pattern every other
-  // guarded action uses (this began as a window.confirm, which cannot be styled):
-  // only one of PRD/PR-FAQ exists, a prototype already does, or a type has several
-  // documents so "the latest" is a decision. Null means none applies and the build
-  // starts on the first click, as it always has for one-of-each.
+  // THREE things worth saying before a build runs: only one of PRD/PR-FAQ exists, a
+  // prototype already does (so this one costs money for a duplicate), or a type has
+  // several documents so "the latest" is a decision. Null means none applies.
   //
-  // Derived from the option COUNTS, never from the selection: a key derived from
-  // what the user picked would change the moment they picked it, and `openKey`
-  // below closes a dialog whose reason no longer applies — so choosing a document
-  // would dismiss the dialog you chose it in.
+  // This SELECTS A WARNING. It no longer decides whether anything opens — the
+  // wizard always opens, because it is where the build is configured and a project
+  // that raised no warning used to get no way in. Keeping the two jobs separate is
+  // the point: the warning may follow live data, the wizard's visibility may not.
   const hasChoice = prdOptions.length > 1 || prfaqOptions.length > 1
-  const confirmKey = confirmKeyFor(hasPrd, hasPrfaq, hasExistingPrototype, hasChoice)
+  const warningKey = confirmKeyFor(hasPrd, hasPrfaq, hasExistingPrototype, hasChoice)
 
   // Only the *start* call is reported here.
   const runBuild = useCallback(async () => {
@@ -416,35 +423,38 @@ export function usePrototypeBuild({
   }, [projectId, hasPrd, hasPrfaq, prdId, prfaqId, useProductContext, useResearch,
       selectedResearchIds, selectedVisualIds, i18n.language, onJobStarted, started])
 
-  const onClick = useCallback(() => {
-    if (confirmKey != null) {
-      setAskedKey(confirmKey)
-      return
-    }
-    void runBuild()
-  }, [confirmKey, runBuild])
+  // Opening is now the card's whole job: no build starts from the card, so this
+  // never spends money.
+  const onClick = useCallback(() => setIsOpen(true), [])
 
   const onConfirm = useCallback(() => {
-    setAskedKey(null)
+    setIsOpen(false)
     void runBuild()
   }, [runBuild])
 
-  const onCancel = useCallback(() => setAskedKey(null), [])
-
-  // The question on screen: the one the click raised, and only while it still
-  // applies. `confirmKey` is derived from live data that changes under an open dialog
-  // (documents refetch when a job completes), so a boolean open-flag beside it could
-  // disagree with the message — leaving it blank, rewritten, or re-raised unasked.
-  const openKey = askedKey != null && askedKey === confirmKey ? askedKey : null
+  const onCancel = useCallback(() => setIsOpen(false), [])
 
   return {
     onClick,
     busy,
     error,
     started: started.isSet,
-    confirm: {
-      isOpen: openKey != null,
-      message: openKey == null ? '' : t(openKey),
+    wizard: {
+      // 🔑 A PLAIN BOOLEAN, deliberately, and this is the one place where copying
+      // the old `openKey` comparison would be a bug rather than a safeguard.
+      //
+      // That comparison existed to close a dialog whose *reason* had gone stale —
+      // correct for something that only asked a question, because the question was
+      // the whole content. This panel holds the user's SELECTIONS, and `warningKey`
+      // is derived from documents that refetch whenever a job completes. Closing on
+      // a reason change would therefore discard ticked research and visuals
+      // mid-interaction, in response to something the user did not do.
+      //
+      // So visibility is owned here and changes only on an explicit onClick,
+      // onConfirm or onCancel. The WARNING still follows live data, which is what
+      // #294/#296 actually required: the text may never contradict the documents.
+      isOpen,
+      warning: warningKey == null ? '' : t(warningKey),
       onConfirm,
       onCancel,
     },
