@@ -205,7 +205,9 @@ export default function OverviewTab({
           // nothing. It is also what frees the plain verb for the panel's own submit
           // button, which had been left reading "Build anyway" on projects with
           // nothing to build anyway despite.
-          configureLabel={t('overview.configureAnd')}
+          //
+          // Absent while busy, and that is not cosmetic — see `configurePrefix`.
+          configureLabel={configurePrefix(prototypeBuild, t)}
           onClick={prototypeBuild.onClick}
           // Like remix, `missingUpstream` is a hard block here rather than a hint.
           // This is the *user-facing* authority — one derived condition, shared
@@ -314,6 +316,26 @@ function productContextStateLabel(state: OverviewStepState, t: TFunction): strin
     filled: state.filled,
     total: state.total,
   })
+}
+
+/**
+ * The "Configure & " prefix for the prototype card, or nothing while a build is
+ * starting.
+ *
+ * `ActionCard` CONCATENATES this with `buttonLabel`, and the prototype card is the
+ * only one whose label changes: idle it is a verb ("Build Prototype"), in flight it
+ * is a whole sentence ("Building…"). Passing the prefix unconditionally therefore
+ * reads "Configure & Building…" for the duration of every start request. The five
+ * sibling cards never hit this because none of them has a busy label.
+ *
+ * A module-level function rather than a ternary at the call site, so `OverviewTab`
+ * stays under the complexity ceiling — the inline form put it at 13 of 12. It takes
+ * the build control rather than a boolean, matching `prototypeStatusLine` below: a
+ * bare boolean parameter is a behaviour selector, which the lint rules reject and
+ * which reads worse at the call site anyway.
+ */
+function configurePrefix(build: PrototypeBuildControl, t: TFunction): string | undefined {
+  return build.busy ? undefined : t('overview.configureAnd')
 }
 
 interface ActionCardProps {

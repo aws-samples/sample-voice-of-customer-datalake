@@ -2,12 +2,15 @@
  * The prototype card's optional inputs: the project's product description, its
  * research reports, and the uploaded visuals a build takes its palette from.
  *
- * Where the controls live is the property under test, not a detail.
- * `warningKeyFor` in `usePrototypeBuild` deliberately opens NO dialog for a
- * project with one PRD, one PR-FAQ and no prototype — the build starts on the
- * first click — and the source picker lives inside that dialog. So the fixture
- * that matters here is precisely that project: a control placed in the dialog is
- * unreachable for it, and no other fixture shows that.
+ * What these controls DO is the property under test. WHERE they live is pinned
+ * separately, in `OverviewTab.prototypeWizard.test.tsx` — they sit in the build
+ * wizard now, so every test here opens it first via `renderWizard`.
+ *
+ * The one-PRD/one-PR-FAQ/no-prototype fixture is still the one worth naming, and
+ * still for the same reason: `warningKeyFor` returns null for it, so under the old
+ * placement it was the project that opened no dialog at all and would have been
+ * stranded by a control living in one. It is now the project a placement regression
+ * would strand first.
  *
  * `t()` resolves against the real en catalogue (src/test/setup.ts), so a key that
  * is missing or has moved renders its raw path and these matchers fail.
@@ -116,14 +119,13 @@ function renderWizard(
   // switches the catalogue to German, and a hardcoded name would fail there with
   // "cannot find the button" — a message that points at the card rather than at the
   // query.
-  // Matched as a SUBSTRING of the accessible name, not equal to it: the card carries
-  // the "Configure & " prefix its five siblings have, and the panel's own submit is
-  // the bare verb. Anchoring here would break on the prefix; using the bare verb
-  // keeps this locale-independent, and the card is the only match while the panel is
-  // still closed.
-  fireEvent.click(screen.getByRole('button', {
-    name: new RegExp(i18n.t('documents.prototype.button', { ns: 'projectDetail' }), 'i'),
-  }))
+  // A FUNCTION matcher, not a regex built from a translated string: the card carries
+  // the "Configure & " prefix its five siblings have, so the name must be matched as
+  // a substring rather than equal — but a catalogue label containing a regex
+  // metacharacter would silently change what a constructed pattern means. `includes`
+  // has no such failure mode and needs no escaping.
+  const verb = i18n.t('documents.prototype.button', { ns: 'projectDetail' })
+  fireEvent.click(screen.getByRole('button', { name: (name) => name.includes(verb) }))
   return result
 }
 

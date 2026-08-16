@@ -29,6 +29,9 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import OverviewTab from './OverviewTab'
 import { emptyProductContext } from './productContextFields'
+// The real en catalogue, so the dialog's expected accessible name is the shipped
+// string rather than a copy of it that can drift.
+import en from '../../../public/locales/en/projectDetail.json'
 import type { Project, ProductContext, ProductDoc, ProjectDocument } from '../../api/types'
 
 const mockBuildPrototype = vi.fn()
@@ -140,6 +143,10 @@ describe('the build configuration is reachable for every project', () => {
     expect(within(panel).getByTestId('prototype-source-picker')).toBeInTheDocument()
     // The body is the wizard's own, not a confirm dialog that happens to be open.
     expect(within(panel).getByTestId('prototype-build-wizard')).toBeInTheDocument()
+    // Named, and named by the heading it renders. Querying by role alone cannot see
+    // an unnamed dialog, so without this the switch from `ariaLabel` to
+    // `ariaLabelledBy` could silently produce one and every test here would pass.
+    expect(panel).toHaveAccessibleName(en.documents.prototype.button)
   })
 
   it('does not put the configuration on the card face any more', () => {

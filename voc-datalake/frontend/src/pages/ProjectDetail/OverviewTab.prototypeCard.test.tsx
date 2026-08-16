@@ -435,6 +435,14 @@ describe('prototype card handover to the jobs panel (U9)', () => {
 
     await startBuildVia(user)
     expect(await screen.findByText(/building…/i)).toBeInTheDocument()
+    // On the FULL accessible name, not a substring: `ActionCard` concatenates the
+    // "Configure & " prefix with this label, and the busy label is a sentence rather
+    // than a verb, so an unconditional prefix reads "Configure & Building…". A
+    // substring match on /building…/i passes either way, which is exactly why the
+    // regression needs the whole name.
+    // Anchored, so a surviving prefix ("Configure & Building…") fails this. Verified
+    // by mutation: restoring the unconditional prefix fails exactly this assertion.
+    expect(screen.getByRole('button', { name: /^building…$/i })).toBeInTheDocument()
 
     releaseRequest()
 
