@@ -494,6 +494,36 @@ describe('buildVocChatContext category read amplification', () => {
     expect(settingsReads).toHaveLength(1);
   });
 
+  it('caches the taxonomy per table rather than once for the container', async () => {
+    // `aggregatesTable` is a parameter of every read here, so nothing in the
+    // types says it cannot vary. A single global entry would answer a second
+    // table with the first one's taxonomy — describing one deployment with
+    // another's categories is the same class of silent disagreement as the bug
+    // this module was fixed for.
+    const docClient = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        if (values[':pk'] !== 'SETTINGS#categories') return Promise.resolve({ Items: [] });
+        const name = command.input.TableName === TABLE_NAME ? 'delivery' : 'billing';
+        return Promise.resolve({ Items: [{ categories: [{ name }] }] });
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    await buildVocChatContext(docClient, TABLE_NAME, { message: 'first', days: 1 });
+    await buildVocChatContext(docClient, 'other-table', { message: 'second', days: 1 });
+
+    const categoryPartitions = vi.mocked(docClient.send).mock.calls
+      .map((call) => {
+        const values = (call[0] as unknown as { input: { ExpressionAttributeValues: Record<string, string> } })
+          .input.ExpressionAttributeValues;
+        return values[':pk'];
+      })
+      .filter((pk) => pk.startsWith('METRIC#daily_category#'));
+
+    expect(categoryPartitions).toContain('METRIC#daily_category#delivery');
+    expect(categoryPartitions).toContain('METRIC#daily_category#billing');
+  });
+
   it('re-reads the taxonomy once its cache entry has expired', async () => {
     // Cached, not frozen: an admin who edits the taxonomy must see chat follow
     // within the same TTL Python uses, or the two surfaces disagree again.
@@ -577,5 +607,167 @@ describe('buildVocChatContext category read amplification', () => {
 
     expect(ctx.userMessage).toContain('- delivery: 2');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('paging hit its bound'));
+    // The log has to be actionable: which window, and what it came to, or it
+    // cannot be correlated with the number the model was handed — the same
+    // payload lambda/api/metrics_handler.py::_query_metric_window carries.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(`${utcDaysAgo(1)}..${TODAY_UTC}`),
+    );
+  });
+
+  it('keeps the pages it already read when a later page fails', async () => {
+    // The paging follow must not be all-or-nothing. Discarding the pages already
+    // read turns a partial window into a confident zero — and a zero category is
+    // filtered out entirely, so the section renders with nothing under it: the
+    // exact symptom this module exists to remove, reached through its own
+    // pagination. The per-day shape this replaced degraded gracefully (one
+    // failing day cost one day), so losing that would be a regression.
+    const docClient = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        if (values[':pk'] === 'SETTINGS#categories') {
+          return Promise.resolve({ Items: [{ categories: [{ name: 'delivery' }] }] });
+        }
+        if (values[':pk'] !== 'METRIC#daily_category#delivery') return Promise.resolve({ Items: [] });
+        return command.input.ExclusiveStartKey === undefined
+          ? Promise.resolve({ Items: [{ count: 400 }], LastEvaluatedKey: { pk: 'x', sk: 'y' } })
+          : Promise.reject(new Error('page two is gone'));
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 3 });
+
+    expect(ctx.userMessage).toContain('- delivery: 400');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('the data summary is incomplete'));
+  });
+
+  it('keeps a category whose window holds one unreadable counter row', async () => {
+    // Nothing between the admin UI and this read enforces a counter's shape, and
+    // `Number('n/a')` is NaN — which is contagious under `+`, so coercing the
+    // page as a whole would make the whole window NaN. `NaN > 0` is false, so the
+    // category would vanish from the prompt despite having real feedback.
+    const docClient = createKeyedDocClient({
+      [CATEGORY_SETTINGS_KEY]: [{ categories: [{ name: 'delivery' }] }],
+      [`METRIC#daily_category#delivery|${TODAY_UTC}`]: [{ count: 5 }],
+      [`METRIC#daily_category#delivery|${utcDaysAgo(1)}`]: [{ count: 'n/a' }],
+    });
+
+    const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 3 });
+
+    expect(ctx.userMessage).toContain('- delivery: 5');
+    expect(ctx.userMessage).not.toContain('NaN');
+    // Dropping a row must not be silent: the window under-reports by that much.
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('unreadable counter row'));
+  });
+
+  it('never hands the model NaN for the headline numbers', async () => {
+    // A malformed METRIC#daily_total row used to render, verbatim,
+    // `**Total Feedback Items:** NaN` and `- Positive: 0 (NaN%)` for all four
+    // sentiments, and the model was then asked to reason about "NaN" items.
+    const docClient = createKeyedDocClient({
+      [`METRIC#daily_total|${TODAY_UTC}`]: [{ count: 'not-a-number' }],
+      [`METRIC#daily_total|${utcDaysAgo(1)}`]: [{ count: 3 }],
+    });
+
+    const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 3 });
+
+    expect(ctx.userMessage).not.toContain('NaN');
+    expect(ctx.userMessage).toContain('**Total Feedback Items:** 3');
+    expect(ctx.metadata.total_feedback).toBe(3);
+  });
+
+  it('sums the headline metrics over the whole requested window', async () => {
+    // These went through the same per-day-to-BETWEEN rewrite as the category
+    // sums, but every other keyed test drives category partitions only — so a
+    // wrong window bound for the totals, urgency and sentiment passed the whole
+    // suite while chat reported one day of data under a "Last 3 days" heading.
+    const outside = utcDaysAgo(3);
+    const table: Record<string, Record<string, unknown>[]> = {};
+    for (const offset of [0, 1, 2]) {
+      table[`METRIC#daily_total|${utcDaysAgo(offset)}`] = [{ count: 2 }];
+    }
+    table[`METRIC#daily_total|${outside}`] = [{ count: 50 }];
+    for (const offset of [0, 1]) {
+      table[`METRIC#urgent|${utcDaysAgo(offset)}`] = [{ count: 1 }];
+    }
+    table[`METRIC#urgent|${outside}`] = [{ count: 9 }];
+    table[`METRIC#daily_sentiment#positive|${TODAY_UTC}`] = [{ count: 4 }];
+    table[`METRIC#daily_sentiment#positive|${utcDaysAgo(2)}`] = [{ count: 1 }];
+    table[`METRIC#daily_sentiment#positive|${outside}`] = [{ count: 70 }];
+    table[`METRIC#daily_sentiment#negative|${utcDaysAgo(1)}`] = [{ count: 1 }];
+    table[`METRIC#daily_sentiment#negative|${outside}`] = [{ count: 80 }];
+
+    const ctx = await buildVocChatContext(createKeyedDocClient(table), TABLE_NAME, {
+      message: 'hi',
+      days: 3,
+    });
+
+    expect(ctx.metadata.total_feedback).toBe(6);
+    expect(ctx.metadata.urgent_count).toBe(2);
+    expect(ctx.userMessage).toContain('- Positive: 5');
+    expect(ctx.userMessage).toContain('- Negative: 1');
+    for (const outOfWindow of ['50', '9', '70', '80']) {
+      expect(ctx.userMessage).not.toContain(outOfWindow);
+    }
+  });
+
+  it('reports a table-wide read failure once for the turn, not once per partition', async () => {
+    // An AccessDeniedException fails identically for every partition of the same
+    // table, so sixteen warnings say nothing the first one did. The names are
+    // shared with src/context/recent-feedback.ts, which reached the same
+    // conclusion for its own fan-out.
+    const denied = new Error('no');
+    denied.name = 'AccessDeniedException';
+    const docClient = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        if (values[':pk'] === 'SETTINGS#categories') {
+          return Promise.resolve({ Items: [{ categories: [{ name: 'delivery' }] }] });
+        }
+        return Promise.reject(denied);
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const ctx = await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 7 });
+
+    const failureWarnings = warnSpy.mock.calls.filter(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0].includes('AccessDeniedException'),
+    );
+    expect(failureWarnings).toHaveLength(1);
+    // And the zeros left behind are not presented as measured facts: the whole
+    // point of the section is that the model must not answer confidently from
+    // data nobody could read.
+    expect(ctx.userMessage).toContain('the figures below are incomplete');
+  });
+
+  it('keeps at most one batch of category reads in flight at once', async () => {
+    // The taxonomy is operator-supplied and uncapped — save_categories_config
+    // validates neither length nor shape — so an unbounded fan-out means one
+    // query per configured name, simultaneously, in front of the first streamed
+    // token. src/context/recent-feedback.ts made the same call for its day
+    // queries: concurrent, but batched.
+    const names = Array.from({ length: 25 }, (_, index) => `cat-${index}`);
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const docClient = {
+      send: vi.fn().mockImplementation(async (command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        const pk = values[':pk'];
+        if (pk === 'SETTINGS#categories') {
+          return { Items: [{ categories: names.map((name) => ({ name })) }] };
+        }
+        if (!pk.startsWith('METRIC#daily_category#')) return { Items: [] };
+        inFlight += 1;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+        await Promise.resolve();
+        inFlight -= 1;
+        return { Items: [{ count: 1 }] };
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    await buildVocChatContext(docClient, TABLE_NAME, { message: 'hi', days: 1 });
+
+    expect(peakInFlight).toBeGreaterThan(1);
+    expect(peakInFlight).toBeLessThanOrEqual(10);
   });
 });

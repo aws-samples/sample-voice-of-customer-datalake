@@ -43,7 +43,11 @@ const DAY_QUERY_BATCH_SIZE = 7;
 // Error names that will fail identically for every partition of the same
 // index — retrying the remaining days would just repeat the failure 30x
 // and silently reproduce the empty-section symptom this fix removes.
-const PERSISTENT_QUERY_ERRORS = new Set([
+// Exported because voc-context.ts fans out over metric partitions and needs the
+// same judgement: one of these names means every sibling read is failing for the
+// same reason, so it must be reported once for the turn rather than once per
+// partition, and the numbers it leaves behind are not measured facts.
+export const PERSISTENT_QUERY_ERRORS = new Set([
   'AccessDeniedException',
   'ResourceNotFoundException',
   'ValidationException',

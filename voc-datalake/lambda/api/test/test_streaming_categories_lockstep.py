@@ -226,6 +226,22 @@ def _stream_default_categories() -> list[str]:
     return re.findall(r"'([^']+)'", match.group(1))
 
 
+def _required_zod_properties(object_literal: str) -> set[str]:
+    """The property names a Zod object literal REQUIRES.
+
+    Every declared property is required unless its chain ends in `.optional()` or
+    `.nullish()`. Reading only the first key was how a second required property
+    could hide: `z.object({ name: z.string(), id: z.string() })` looks right to a
+    pattern anchored on the leading key while dropping every stored category the
+    writer never gave an `id`.
+    """
+    required = set()
+    for name, chain in re.findall(r'(\w+)\s*:\s*(z\.[^,}]+)', object_literal):
+        if '.optional()' not in chain and '.nullish()' not in chain:
+            required.add(name)
+    return required
+
+
 def _processor_default_categories() -> list[str]:
     """The default taxonomy as the ENRICHMENT PROMPT spells it: one pipe-delimited
     string, not a list.
@@ -318,10 +334,19 @@ class TestCategoryNameFieldLockstep:
         """The Zod object at the top of the module decides which configured
         categories survive the parse. Requiring `id` while reading `name` drops
         every category that carries no `id` — silently, because safeParse
-        failures are filtered out."""
+        failures are filtered out.
+
+        EVERY property is inspected, not just the first. Capturing only the
+        leading key let `z.object({ name: z.string(), id: z.string() })` satisfy
+        this pin while reinstating the exact defect the test is named for: the
+        frontend's own normalizer has to DERIVE ids from names
+        (frontend/src/components/CategoriesManager/categoriesSchema.ts), so
+        id-less rows are what real and legacy data looks like, and a schema
+        requiring one drops them."""
         source = _read(STREAM_SOURCE)
         match = re.search(
-            r'^const categoryItemSchema = z\.object\(\{\s*(\w+):', source, re.MULTILINE,
+            r'^const categoryItemSchema = z\.object\((\{.*?\})\)', source,
+            re.MULTILINE | re.DOTALL,
         )
         assert match, (
             f'categoryItemSchema not found in {STREAM_SOURCE}, or its shape '
@@ -329,11 +354,21 @@ class TestCategoryNameFieldLockstep:
             f'does not permit a type assertion here — so update this pattern '
             f'rather than removing the schema.'
         )
-        assert match.group(1) == 'name', (
-            f'categoryItemSchema requires `{match.group(1)}` but the read takes '
+        literal = match.group(1)
+        required = _required_zod_properties(literal)
+        assert 'name' in required, (
+            f'categoryItemSchema requires {sorted(required)} but the read takes '
             f'`name`. The key, the field, and the schema must describe one '
-            f'contract, or a configured category without an internal identifier '
-            f'is dropped before it can be counted.'
+            f'contract, or the parse rejects the very categories it is meant to '
+            f'admit.'
+        )
+        assert required == {'name'}, (
+            f'categoryItemSchema requires {sorted(required)}; only `name` may be '
+            f'required. Any other required property — `id` above all — drops '
+            f'every configured category the writer stored without one, silently, '
+            f'because safeParse failures become an empty string and are removed '
+            f'by filter(Boolean) rather than reported. Make the extra property '
+            f'.optional() if the reader really needs to see it.'
         )
 
 

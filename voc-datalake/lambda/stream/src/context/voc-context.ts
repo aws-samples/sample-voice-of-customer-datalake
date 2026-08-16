@@ -6,6 +6,7 @@ import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
+import { PERSISTENT_QUERY_ERRORS } from './recent-feedback.js';
 
 const SENTIMENT_LABELS = ['positive', 'negative', 'neutral', 'mixed'] as const;
 
@@ -24,6 +25,18 @@ const CATEGORY_SETTINGS_SK = 'config';
 // category that carries no `id` must survive the parse, because the writer does
 // not guarantee one.
 const categoryItemSchema = z.object({ name: z.string() }).passthrough();
+
+// The counters are validated at this boundary for the same reason the categories
+// are: nothing between the admin UI and this read enforces a shape. `Number()`
+// on a hand-edited or migrated `count: 'n/a'` yields NaN, and NaN is contagious
+// under `+`, so one malformed row would take the whole window with it — dropping
+// a category that has real feedback (`NaN > 0` is false) and handing the model a
+// literal `Total Feedback Items: NaN`. A row that fails this parse contributes
+// nothing and is reported, rather than poisoning its siblings.
+const metricItemSchema = z.object({
+  count: z.coerce.number().finite().optional(),
+  value: z.coerce.number().finite().optional(),
+}).passthrough();
 
 // Mirrors lambda/shared/api.py::DEFAULT_CATEGORIES. When nothing is configured,
 // get_configured_categories() falls back to this list, and the enrichment
@@ -47,12 +60,22 @@ const DEFAULT_CATEGORIES = [
 const CATEGORY_CACHE_TTL_MS = 300_000;
 const CATEGORY_ERROR_CACHE_TTL_MS = 10_000;
 
-const categoryCache: { names: string[] | null; expires: number } = { names: null, expires: 0 };
+// How many category partitions may be in flight at once. See fetchCategoryCounts
+// for why this is neither serial nor unbounded; the ten-name default taxonomy is
+// exactly one round either way.
+const CATEGORY_QUERY_BATCH_SIZE = 10;
+
+// Keyed by table, not one global entry. A container reads a single
+// AGGREGATES_TABLE today (handler.ts), so the distinction is theoretical — but
+// `aggregatesTable` is a parameter of every function here, so nothing in the
+// types says it cannot vary, and keying the entry makes a mismatch impossible
+// rather than merely unlikely. It also stops clearCategoryCache() from being the
+// thing that keeps the invariant true.
+const categoryCache = new Map<string, { names: string[]; expires: number }>();
 
 /** Reset the container-level taxonomy cache (tests). */
 export function clearCategoryCache(): void {
-  categoryCache.names = null;
-  categoryCache.expires = 0;
+  categoryCache.clear();
 }
 
 interface VocChatContext {
@@ -93,6 +116,81 @@ function utcDateString(now: Date, daysAgo: number): string {
 }
 
 /**
+ * What one metric partition's window came to, and whether reading it failed.
+ *
+ * The error name travels with the total rather than being logged where it
+ * happens, for two reasons: a persistent failure hits every partition of the
+ * table identically, so the turn must report it ONCE instead of sixteen times;
+ * and a zero that came from a failed read is not a measured zero, so the prompt
+ * has to be able to say the summary is incomplete rather than presenting it as
+ * fact.
+ */
+interface MetricRead {
+  total: number;
+  errorName?: string;
+  /** Which window came back short, for the one warning the caller logs. */
+  partial?: string;
+}
+
+/** The readable counter rows of one page, summed. */
+function sumMetricItems(
+  items: Record<string, unknown>[] | undefined,
+  metricKey: string,
+): number {
+  // Per-row, so one unreadable row costs one row. Coercing the page as a whole
+  // would make the window NaN, which drops a category that has real feedback
+  // (`NaN > 0` is false) and reaches the prompt as `Total Feedback Items: NaN`.
+  const rows = (items ?? []).map((item) => metricItemSchema.safeParse(item));
+  const skipped = rows.filter((row) => !row.success).length;
+  if (skipped > 0) {
+    console.warn(
+      `sumMetricWindow: skipped ${skipped} unreadable counter row(s) in ${metricKey}; the window under-reports by that much`,
+    );
+  }
+  return rows.reduce(
+    (sum, row) => sum + (row.success ? row.data.count ?? row.data.value ?? 0 : 0),
+    0,
+  );
+}
+
+/**
+ * One page of a metric window.
+ *
+ * The failure is returned rather than thrown so that the pages already read are
+ * kept: a partition whose second page fails must report what its first page
+ * measured. Throwing from inside the follow discarded all of it, which turned a
+ * partial window into a confident zero — and a zero category is filtered out
+ * entirely, so the Top Categories section rendered with nothing under it. The
+ * per-day shape this replaced degraded gracefully (one failing day cost one
+ * day), and losing that would be a regression.
+ */
+async function readMetricPage(
+  docClient: DynamoDBDocumentClient,
+  aggregatesTable: string,
+  metricKey: string,
+  bounds: { oldest: string; newest: string },
+  startKey?: Record<string, unknown>,
+): Promise<{ total: number; lastKey?: Record<string, unknown>; errorName?: string }> {
+  try {
+    const resp = await docClient.send(
+      new QueryCommand({
+        TableName: aggregatesTable,
+        KeyConditionExpression: 'pk = :pk AND sk BETWEEN :oldest AND :newest',
+        ExpressionAttributeValues: {
+          ':pk': metricKey,
+          ':oldest': bounds.oldest,
+          ':newest': bounds.newest,
+        },
+        ExclusiveStartKey: startKey,
+      }),
+    );
+    return { total: sumMetricItems(resp.Items, metricKey), lastKey: resp.LastEvaluatedKey };
+  } catch (error) {
+    return { total: 0, errorName: error instanceof Error ? error.name : 'UnknownError' };
+  }
+}
+
+/**
  * One metric partition's trailing window, summed, newest date inclusive.
  *
  * `sk` is 'YYYY-MM-DD' and ISO dates sort lexicographically, so a window is a
@@ -106,7 +204,9 @@ function utcDateString(now: Date, daysAgo: number): string {
  * and an unfiltered page yields at least one, so a window of `days` dates cannot
  * span more than `days` pages. Exhausting the bound means that invariant no
  * longer holds, so the window really is partial — log it instead of returning a
- * quietly short answer.
+ * quietly short answer. A page that FAILS is the same situation and takes the
+ * same path: readMetricPage returns rather than throws, so the pages already
+ * summed survive and only the unread remainder is missing.
  */
 async function sumMetricWindow(
   docClient: DynamoDBDocumentClient,
@@ -115,32 +215,31 @@ async function sumMetricWindow(
   bounds: { oldest: string; newest: string },
   pagesLeft: number,
   startKey?: Record<string, unknown>,
-): Promise<number> {
-  const resp = await docClient.send(
-    new QueryCommand({
-      TableName: aggregatesTable,
-      KeyConditionExpression: 'pk = :pk AND sk BETWEEN :oldest AND :newest',
-      ExpressionAttributeValues: {
-        ':pk': metricKey,
-        ':oldest': bounds.oldest,
-        ':newest': bounds.newest,
-      },
-      ExclusiveStartKey: startKey,
-    }),
-  );
-  const total = (resp.Items ?? []).reduce(
-    (sum: number, item) => sum + Number(item.count ?? item.value ?? 0),
-    0,
-  );
-  const lastKey = resp.LastEvaluatedKey;
-  if (!lastKey) return total;
-  if (pagesLeft <= 1) {
-    console.warn(`sumMetricWindow: paging hit its bound for ${metricKey}; window is partial`);
-    return total;
+): Promise<MetricRead> {
+  const page = await readMetricPage(docClient, aggregatesTable, metricKey, bounds, startKey);
+  if (page.errorName) {
+    // Whatever earlier pages counted is already in the caller's accumulator, and
+    // this page's own rows are lost rather than the whole partition. The window
+    // is named so the caller's single warning can say WHICH read came back short
+    // — the payload metrics_handler.py::_query_metric_window carries, for the
+    // same reason: nothing in the returned number can express that it is partial.
+    return {
+      total: page.total,
+      errorName: page.errorName,
+      partial: `${metricKey} over ${bounds.oldest}..${bounds.newest}`,
+    };
   }
-  return total + (await sumMetricWindow(
-    docClient, aggregatesTable, metricKey, bounds, pagesLeft - 1, lastKey,
-  ));
+  if (!page.lastKey) return { total: page.total };
+  if (pagesLeft <= 1) {
+    console.warn(
+      `sumMetricWindow: paging hit its bound for ${metricKey} over ${bounds.oldest}..${bounds.newest}; window is partial at ${page.total}`,
+    );
+    return { total: page.total };
+  }
+  const rest = await sumMetricWindow(
+    docClient, aggregatesTable, metricKey, bounds, pagesLeft - 1, page.lastKey,
+  );
+  return { ...rest, total: page.total + rest.total };
 }
 
 async function sumDailyMetric(
@@ -148,17 +247,37 @@ async function sumDailyMetric(
   aggregatesTable: string,
   metricKey: string,
   days: number,
-): Promise<number> {
+): Promise<MetricRead> {
   const now = new Date();
   const bounds = { oldest: utcDateString(now, days - 1), newest: utcDateString(now, 0) };
-  try {
-    return await sumMetricWindow(docClient, aggregatesTable, metricKey, bounds, days);
-  } catch (error) {
-    console.warn(
-      `sumMetricWindow: read failed for ${metricKey}: ${error instanceof Error ? error.name : 'UnknownError'}`,
-    );
-    return 0;
+  return sumMetricWindow(docClient, aggregatesTable, metricKey, bounds, days);
+}
+
+/**
+ * Report each distinct read failure once for the turn, not once per partition,
+ * and say whether the summary is degraded.
+ *
+ * A systemic failure — the names in PERSISTENT_QUERY_ERRORS, shared with
+ * src/context/recent-feedback.ts — fails identically for every partition of the
+ * same table, so sixteen warnings say nothing the first one did not.
+ */
+function reportMetricFailures(reads: MetricRead[]): string[] {
+  const failures = new Map<string, string[]>();
+  for (const read of reads) {
+    if (!read.errorName) continue;
+    const windows = failures.get(read.errorName) ?? [];
+    windows.push(read.partial ?? 'unknown window');
+    failures.set(read.errorName, windows);
   }
+  for (const [errorName, windows] of failures) {
+    const systemic = PERSISTENT_QUERY_ERRORS.has(errorName)
+      ? ' — this name fails identically for every partition of the table'
+      : '';
+    console.warn(
+      `buildVocChatContext: ${windows.length} metric window read(s) failed with ${errorName}${systemic}; the data summary is incomplete. Partial: ${windows.join('; ')}`,
+    );
+  }
+  return [...failures.keys()];
 }
 
 /**
@@ -187,6 +306,16 @@ function namesFromStoredList(cats: unknown[]): string[] {
  * The three stored shapes Python treats as "not configured" — item absent,
  * `categories` missing, `categories: []` — all fall through to the defaults
  * here too, because `item.get('categories')` is falsy for an empty list.
+ *
+ * There is a FOURTH shape where the two sides deliberately differ: a stored
+ * `categories` that is not a list at all (a dict, say, from a hand-edit or a
+ * future writer). Python's `get_configured_categories` raises AttributeError on
+ * it, so the metrics endpoint 500s; the Array.isArray guard below treats it as
+ * not-configured instead. That is the deliberate choice for this surface — a
+ * wrong-typed settings item must not be able to break a chat turn that is
+ * already streaming — and it is the same trade the catch below makes. It is not
+ * a shape either side should be relied on to normalise: the fix for a malformed
+ * item is to fix the item.
  */
 async function readConfiguredCategories(
   docClient: DynamoDBDocumentClient,
@@ -214,7 +343,7 @@ async function readConfiguredCategories(
     // fallback), so the two surfaces still agree; the short error TTL keeps the
     // window small rather than caching a wrong answer for five minutes.
     console.warn(
-      `getConfiguredCategories: settings read failed (${error instanceof Error ? error.name : 'UnknownError'}); using the default taxonomy`,
+      `readConfiguredCategories: settings read failed (${error instanceof Error ? error.name : 'UnknownError'}); using the default taxonomy`,
     );
     return { names: [...DEFAULT_CATEGORIES], ttl: CATEGORY_ERROR_CACHE_TTL_MS };
   }
@@ -225,12 +354,12 @@ async function getConfiguredCategories(
   aggregatesTable: string,
 ): Promise<string[]> {
   const now = Date.now();
-  if (categoryCache.names !== null && now < categoryCache.expires) {
-    return categoryCache.names;
+  const cached = categoryCache.get(aggregatesTable);
+  if (cached && now < cached.expires) {
+    return cached.names;
   }
   const { names, ttl } = await readConfiguredCategories(docClient, aggregatesTable);
-  categoryCache.names = names;
-  categoryCache.expires = now + ttl;
+  categoryCache.set(aggregatesTable, { names, expires: now + ttl });
   return names;
 }
 
@@ -238,21 +367,37 @@ async function fetchCategoryCounts(
   docClient: DynamoDBDocumentClient,
   aggregatesTable: string,
   days: number,
-): Promise<[string, number][]> {
+): Promise<{ top: [string, number][]; reads: MetricRead[] }> {
   const categories = await getConfiguredCategories(docClient, aggregatesTable);
-  // Concurrent, not serial: the taxonomy has ten names by default, and awaiting
-  // each sum in turn put ten sequential round trips in front of the first
-  // streamed token.
-  const counts = await Promise.all(
-    categories.map(async (cat): Promise<[string, number]> => [
-      cat,
-      await sumDailyMetric(docClient, aggregatesTable, `METRIC#daily_category#${cat}`, days),
-    ]),
+  // Concurrent but bounded, the same trade src/context/recent-feedback.ts makes
+  // for its day queries (DAY_QUERY_BATCH_SIZE): awaiting each sum in turn put
+  // one round trip per category in front of the first streamed token, and an
+  // unbounded fan-out is no better — the taxonomy is operator-supplied and
+  // uncapped (lambda/api/settings_handler.py::save_categories_config validates
+  // neither its length nor its shape), so 200 configured names would mean 200
+  // simultaneous queries from one invocation. A batch width of 10 keeps the
+  // ten-name default at exactly one round while bounding the worst case.
+  const batchStarts = Array.from(
+    { length: Math.ceil(categories.length / CATEGORY_QUERY_BATCH_SIZE) },
+    (_, index) => index * CATEGORY_QUERY_BATCH_SIZE,
   );
-  return counts
+  const counted: [string, MetricRead][] = [];
+  for (const start of batchStarts) {
+    const batch = categories.slice(start, start + CATEGORY_QUERY_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (cat): Promise<[string, MetricRead]> => [
+        cat,
+        await sumDailyMetric(docClient, aggregatesTable, `METRIC#daily_category#${cat}`, days),
+      ]),
+    );
+    counted.push(...results);
+  }
+  const top = counted
+    .map(([cat, read]): [string, number] => [cat, read.total])
     .filter(([, count]) => count > 0)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
+  return { top, reads: counted.map(([, read]) => read) };
 }
 
 function buildSystemPrompt(responseLanguage?: SupportedLanguage): string {
@@ -282,19 +427,24 @@ Format your responses clearly with bullet points or numbered lists when appropri
 
 function buildDataContext(
   days: number,
-  totalFeedback: number,
-  urgentCount: number,
+  totals: { totalFeedback: number; urgentCount: number; failedReads: string[] },
   sentimentMap: Record<string, number>,
   topCategories: [string, number][],
-  sourceFilter?: string,
-  categoryFilter?: string,
-  sentimentFilter?: string,
+  filters: { source?: string; category?: string; sentiment?: string },
 ): string {
+  const { totalFeedback, urgentCount, failedReads } = totals;
   const pct = (n: number) => ((n / Math.max(totalFeedback, 1)) * 100).toFixed(1);
   const topCatLines = topCategories.map(([cat, count]) => `- ${cat}: ${count}`).join('\n');
+  // A zero that came from a failed read is not a measured zero. Saying so is the
+  // difference between the model reporting "no urgent issues" and reporting that
+  // it could not tell — the same silent-confidence failure this module's history
+  // is made of.
+  const degraded = failedReads.length > 0
+    ? `\n**NOTE:** Some metric reads failed (${failedReads.join(', ')}), so the figures below are incomplete and may under-report. Say so rather than presenting them as complete.\n`
+    : '';
 
   const context = `## Current Data Summary (Last ${days} days)
-
+${degraded}
 **Total Feedback Items:** ${totalFeedback}
 **Urgent Issues:** ${urgentCount}
 
@@ -309,9 +459,9 @@ ${topCatLines}
 `;
 
   const activeFilters: string[] = [];
-  if (sourceFilter) activeFilters.push(`Source: ${sourceFilter}`);
-  if (categoryFilter) activeFilters.push(`Category: ${categoryFilter}`);
-  if (sentimentFilter) activeFilters.push(`Sentiment: ${sentimentFilter}`);
+  if (filters.source) activeFilters.push(`Source: ${filters.source}`);
+  if (filters.category) activeFilters.push(`Category: ${filters.category}`);
+  if (filters.sentiment) activeFilters.push(`Sentiment: ${filters.sentiment}`);
   if (activeFilters.length > 0) {
     return `${context}\n## Active Filters: ${activeFilters.join(', ')}\nWhen using the search_feedback tool, apply these filters.\n`;
   }
@@ -339,7 +489,7 @@ export async function buildVocChatContext(
   const sentimentFilter = parsed.sentiment;
 
   // Fetch metrics in parallel
-  const [totalFeedback, urgentCount, ...sentimentCounts] = await Promise.all([
+  const [totalRead, urgentRead, ...sentimentReads] = await Promise.all([
     sumDailyMetric(docClient, aggregatesTable, 'METRIC#daily_total', days),
     sumDailyMetric(docClient, aggregatesTable, 'METRIC#urgent', days),
     ...SENTIMENT_LABELS.map((s) =>
@@ -349,15 +499,24 @@ export async function buildVocChatContext(
 
   const sentimentMap: Record<string, number> = {};
   for (const [i, label] of SENTIMENT_LABELS.entries()) {
-    sentimentMap[label] = sentimentCounts[i];
+    sentimentMap[label] = sentimentReads[i].total;
   }
 
-  const topCategories = await fetchCategoryCounts(docClient, aggregatesTable, days);
+  const categories = await fetchCategoryCounts(docClient, aggregatesTable, days);
+
+  const totalFeedback = totalRead.total;
+  const urgentCount = urgentRead.total;
+  const failedReads = reportMetricFailures([
+    totalRead, urgentRead, ...sentimentReads, ...categories.reads,
+  ]);
 
   const systemPrompt = buildSystemPrompt(body.response_language);
   const dataContext = buildDataContext(
-    days, totalFeedback, urgentCount, sentimentMap, topCategories,
-    sourceFilter, categoryFilter, sentimentFilter,
+    days,
+    { totalFeedback, urgentCount, failedReads },
+    sentimentMap,
+    categories.top,
+    { source: sourceFilter, category: categoryFilter, sentiment: sentimentFilter },
   );
   const userMessage = `${dataContext}\n\n---\n\nUser Question: ${message}`;
 
