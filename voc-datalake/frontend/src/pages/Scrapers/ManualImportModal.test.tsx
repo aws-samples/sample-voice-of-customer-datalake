@@ -342,7 +342,17 @@ describe('ManualImportModal', () => {
     // then undefined. It cost the room-vote QR tests an afternoon: they passed
     // alone and failed in the full run, because the component reads the live
     // origin to build the address a phone opens.
-    const originalLocation = window.location
+    //
+    // Captured in `beforeEach` rather than at collection time, and for the same
+    // reason the restore exists at all: at collection this file has not run yet,
+    // but earlier FILES have, so a snapshot taken then could preserve a value one
+    // of them leaked. Taken per test, it is whatever was in place immediately
+    // before this test replaced it.
+    let originalLocation: Location
+
+    beforeEach(() => {
+      originalLocation = window.location
+    })
 
     afterEach(() => {
       Object.defineProperty(window, 'location', { value: originalLocation, writable: true })

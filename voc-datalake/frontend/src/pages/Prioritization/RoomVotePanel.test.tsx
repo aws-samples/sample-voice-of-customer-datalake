@@ -240,8 +240,18 @@ describe('a room vote that has ended', () => {
     // The trap in the reset: `closeMutation.data` deliberately overrides the poll,
     // and `openMutation.data` seeds it as `initialData`, so leaving either behind
     // would make a freshly opened session render as the previous ended one.
-    mockCreateVotingSession.mockResolvedValue(session())
-    mockGetVotingSession.mockResolvedValue(session())
+    //
+    // The second open returns a DIFFERENT session id, because a real one does. With
+    // the same id the second render is served partly from the first session's query
+    // cache — the safer path, and therefore the weaker test: it would pass for a
+    // reset that left `closeMutation.data` in place on a genuinely fresh key.
+    const second = session({ session_id: 'vs_' + '2b'.repeat(16) })
+    mockCreateVotingSession
+      .mockResolvedValueOnce(session())
+      .mockResolvedValueOnce(second)
+    mockGetVotingSession.mockImplementation((id: string) => Promise.resolve(
+      id === second.session_id ? second : session(),
+    ))
     mockCloseVotingSession.mockResolvedValue(session({ status: 'closed', state: 'closed' }))
     const user = await openVote()
     await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.close') }))
@@ -254,6 +264,8 @@ describe('a room vote that has ended', () => {
       expect(qr()).toBeInTheDocument()
     })
     expect(screen.queryByText(t('prioritization:roomVote.closed'))).not.toBeInTheDocument()
+    // ...and it is the SECOND session on screen, not a cached view of the first.
+    expect(mockGetVotingSession).toHaveBeenCalledWith(second.session_id)
   })
 
   it('says it expired rather than blaming the facilitator', async () => {
