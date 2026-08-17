@@ -58,16 +58,17 @@
     "impact": "Impact",
     "impactDescription": "Business value and customer benefit",
     "low": "Low",
-    "score": "Score",
     "slow": "Slow",
     "strategicFit": "Strategic Fit",
     "strategicFitDescription": "Alignment with company goals",
     "timeToMarket": "Time to Market",
     "timeToMarketDescription": "How quickly can this be delivered?",
-    "title": "Prioritization Scores"
+    "title": "Prioritization Scores",
+    "yoursOnly": "Your own ballot. Saving writes only your scores."
   },
   "scoresUnavailable": {
     "description": "Your saved scores are unavailable right now, so the numbers below are defaults rather than what anyone entered. Reload the page before saving.",
+    "staleDescription": "The latest refresh of the saved scores failed, so the figures shown are the last ones read successfully. Your own ballot is unaffected — there is no need to reload before saving.",
     "title": "Scores could not be loaded"
   },
   "sort": {
@@ -77,6 +78,7 @@
     "label": "Sort by:",
     "priority": "Priority",
     "priorityFull": "Priority Score",
+    "teamOrdered": "{{fields}} order by the team's numbers, the ones each row shows — not by your own ballot.",
     "ttm": "TTM",
     "ttmFull": "Time to Market"
   },
@@ -84,9 +86,25 @@
     "highPriority": "High Priority",
     "mediumPriority": "Medium Priority",
     "notScored": "Not Scored",
-    "totalDocuments": "Total Documents"
+    "totalDocuments": "Total Documents",
+    "unreadable_one": "The team score for {{count}} document could not be read, so it is counted in the total but in none of the other counts. Reload the page to see it.",
+    "unreadable_other": "The team scores for {{count}} documents could not be read, so they are counted in the total but in none of the other counts. Reload the page to see them."
   },
   "subtitle": "Score and prioritize PRDs and PR/FAQs across all projects",
+  "team": {
+    "disagreement": "Spread {{spread}}",
+    "disagreementDescription": "Reviewers are {{spread}} apart on this score. Their notes explain why — this page shows only your own note.",
+    "loading": "Loading team score",
+    "loadingDescription": "The team's scores are still loading, so this row does not yet show whether anyone has voted. It will fill in on its own.",
+    "noScores": "Not scored yet",
+    "noScoresDescription": "No reviewer has scored this yet, so it is unranked rather than ranked low. The sliders below cast the first ballot.",
+    "reviewers": "Reviewers",
+    "score": "Team Score",
+    "summary": "Team average {{score}} of 5 · Reviewer ballots: {{reviewers}}",
+    "title": "What the Team Said",
+    "unavailable": "Team score unavailable",
+    "unavailableDescription": "The team's scores could not be read just now, so this row shows nothing about them — not that nobody has voted. Reload the page to see what the team said."
+  },
   "title": "Prioritization",
   "unsavedChanges": {
     "cancel": "Stay on Page",

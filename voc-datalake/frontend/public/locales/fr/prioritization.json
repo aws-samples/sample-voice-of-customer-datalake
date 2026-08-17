@@ -58,16 +58,17 @@
     "impact": "Portée",
     "impactDescription": "Valeur commerciale et bénéfice client",
     "low": "Faible",
-    "score": "Note",
     "slow": "Lent",
     "strategicFit": "Adéquation stratégique",
     "strategicFitDescription": "Alignement avec les objectifs de l'entreprise",
     "timeToMarket": "Délai de mise sur le marché",
     "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
-    "title": "Scores de priorisation"
+    "title": "Scores de priorisation",
+    "yoursOnly": "Votre propre note. L'enregistrement n'écrit que vos valeurs."
   },
   "scoresUnavailable": {
     "description": "Vos scores enregistrés sont actuellement indisponibles : les valeurs ci-dessous sont donc des valeurs par défaut et non celles qui ont été saisies. Rechargez la page avant d'enregistrer.",
+    "staleDescription": "La dernière actualisation des scores enregistrés a échoué : les valeurs affichées sont les dernières lues correctement. Votre propre notation n'est pas affectée — inutile de recharger avant d'enregistrer.",
     "title": "Impossible de charger les scores"
   },
   "sort": {
@@ -77,6 +78,7 @@
     "label": "Trier par :",
     "priority": "Priorité",
     "priorityFull": "Score de priorité",
+    "teamOrdered": "{{fields}} trient selon les chiffres de l'équipe, ceux affichés sur chaque ligne — pas selon votre propre note.",
     "ttm": "DmM",
     "ttmFull": "Délai de mise sur le marché"
   },
@@ -84,9 +86,25 @@
     "highPriority": "Haute priorité",
     "mediumPriority": "Priorité moyenne",
     "notScored": "Non évalué",
-    "totalDocuments": "Total documents"
+    "totalDocuments": "Total documents",
+    "unreadable_one": "La note de l'équipe pour {{count}} document n'a pas pu être lue : il compte dans le total mais dans aucun des autres décomptes. Rechargez la page pour la voir.",
+    "unreadable_other": "Les notes de l'équipe pour {{count}} documents n'ont pas pu être lues : ils comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir."
   },
   "subtitle": "Évaluer et prioriser les PRD et PR/FAQ de tous les projets",
+  "team": {
+    "disagreement": "Écart {{spread}}",
+    "disagreementDescription": "Les évaluateurs diffèrent de {{spread}} sur cette note. Leurs commentaires expliquent pourquoi — cette page n'affiche que votre propre commentaire.",
+    "loading": "Chargement de la note de l'équipe",
+    "loadingDescription": "Les notes de l'équipe sont encore en cours de chargement : cette ligne n'indique donc pas encore si quelqu'un a voté. Elle se complétera d'elle-même.",
+    "noScores": "Pas encore évalué",
+    "noScoresDescription": "Aucun évaluateur ne l'a encore noté : il n'est donc pas mal classé, mais non classé. Les curseurs ci-dessous enregistrent le premier vote.",
+    "reviewers": "Évaluateurs",
+    "score": "Note de l'équipe",
+    "summary": "Moyenne de l'équipe {{score}} sur 5 · Votes d'évaluateurs : {{reviewers}}",
+    "title": "Ce que l'équipe a dit",
+    "unavailable": "Note de l'équipe indisponible",
+    "unavailableDescription": "Les notes de l'équipe n'ont pas pu être lues pour le moment : cette ligne n'affiche donc rien à leur sujet — cela ne signifie pas que personne n'a voté. Rechargez la page pour voir ce que l'équipe a dit."
+  },
   "title": "Priorisation",
   "unsavedChanges": {
     "cancel": "Rester sur la page",

@@ -58,16 +58,17 @@
     "impact": "Impacto",
     "impactDescription": "Valor comercial y beneficio para el cliente",
     "low": "Bajo",
-    "score": "Puntuación",
     "slow": "Lento",
     "strategicFit": "Ajuste estratégico",
     "strategicFitDescription": "Alineación con los objetivos de la empresa",
     "timeToMarket": "Tiempo de comercialización",
     "timeToMarketDescription": "¿Qué tan rápido se puede entregar?",
-    "title": "Puntuaciones de priorización"
+    "title": "Puntuaciones de priorización",
+    "yoursOnly": "Tu propia puntuación. Al guardar solo se escriben tus valores."
   },
   "scoresUnavailable": {
     "description": "Sus puntuaciones guardadas no están disponibles en este momento, por lo que los números que se muestran a continuación son valores predeterminados y no los que alguien introdujo. Vuelva a cargar la página antes de guardar.",
+    "staleDescription": "La última actualización de las puntuaciones guardadas falló, por lo que las cifras que se muestran son las últimas que se leyeron correctamente. Su propia valoración no se ha visto afectada: no hace falta recargar antes de guardar.",
     "title": "No se pudieron cargar las puntuaciones"
   },
   "sort": {
@@ -77,6 +78,7 @@
     "label": "Ordenar por:",
     "priority": "Prioridad",
     "priorityFull": "Puntuación de prioridad",
+    "teamOrdered": "{{fields}} ordenan según los números del equipo, los que muestra cada fila, no según tu propia puntuación.",
     "ttm": "TdC",
     "ttmFull": "Tiempo de comercialización"
   },
@@ -84,9 +86,25 @@
     "highPriority": "Alta prioridad",
     "mediumPriority": "Prioridad media",
     "notScored": "Sin puntuar",
-    "totalDocuments": "Total de documentos"
+    "totalDocuments": "Total de documentos",
+    "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count}} documento, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
+    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count}} documentos, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
   },
   "subtitle": "Puntuar y priorizar PRD y PR/FAQs en todos los proyectos",
+  "team": {
+    "disagreement": "Dispersión {{spread}}",
+    "disagreementDescription": "Los revisores difieren en {{spread}} sobre esta puntuación. Sus notas explican por qué; esta página solo muestra tu propia nota.",
+    "loading": "Cargando puntuación del equipo",
+    "loadingDescription": "Las puntuaciones del equipo aún se están cargando, así que esta fila todavía no indica si alguien ha votado. Se completará por sí sola.",
+    "noScores": "Aún sin puntuar",
+    "noScoresDescription": "Ningún revisor lo ha puntuado todavía, así que no está mal valorado sino sin valorar. Con los controles de abajo emites el primer voto.",
+    "reviewers": "Revisores",
+    "score": "Puntuación del equipo",
+    "summary": "Media del equipo {{score}} de 5 · Votos de revisores: {{reviewers}}",
+    "title": "Lo que dijo el equipo",
+    "unavailable": "Puntuación del equipo no disponible",
+    "unavailableDescription": "Las puntuaciones del equipo no se han podido leer ahora mismo, así que esta fila no muestra nada sobre ellas; no significa que nadie haya votado. Vuelve a cargar la página para ver lo que dijo el equipo."
+  },
   "title": "Priorización",
   "unsavedChanges": {
     "cancel": "Permanecer en la página",

@@ -81,12 +81,6 @@
     "settings": "Configurações"
   },
   "partialWindowHint": "refine os filtros para ver tudo",
-  "priority": {
-    "high": "Alta",
-    "low": "Baixa",
-    "medium": "Média",
-    "none": "Nenhuma"
-  },
   "problemAnalysisPage": {
     "emptyHint": "Tente ampliar o intervalo de tempo ou ajustar os filtros",
     "emptyTitle": "Nenhum dado de análise de problemas encontrado para o período selecionado"

@@ -6,7 +6,7 @@
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import {
-  ChevronDown, ChevronUp, ExternalLink, Wand2,
+  ChevronDown, ChevronUp, ExternalLink, Users, Wand2,
 } from 'lucide-react'
 import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -16,10 +16,12 @@ import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/Prototyp
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import LinkedFormEvidence from './LinkedFormEvidence'
 import {
-  calculatePriorityScore, getPriorityLabel, MAX_NOTE_LENGTH, SCORABLE_TYPE_META,
+  getPriorityLabel, MAX_NOTE_LENGTH, reviewersDisagreed, SCORABLE_TYPE_META, teamScoreOf,
 } from './prioritizationUtils'
 import ScoreSlider from './ScoreSlider'
-import type { PRFAQWithProject } from './prioritizationUtils'
+import type {
+  PRFAQWithProject, TeamView,
+} from './prioritizationUtils'
 import type { LinkedForm } from './formLinkUtils'
 import type {
   PrioritizationScore, ProjectDocument,
@@ -28,23 +30,110 @@ import type { PrototypeSpec } from '../../components/prototypeSpec'
 import type { TFunction } from 'i18next'
 import type { ReactElement } from 'react'
 
-function QuickScores({ score }: { readonly score: PrioritizationScore }): ReactElement {
+/**
+ * Which words go under the dash, for each reason there is no number.
+ *
+ * Every key is spelled as a LITERAL here rather than assembled at the call site,
+ * because `scripts/i18n-check.mjs` cannot see a key it did not read verbatim: one
+ * built in a ternary — or held in a lookup without a namespace — is reported unused
+ * and becomes a deletion candidate in a cleanup pass, leaving the row rendering a raw
+ * key path. Same trap documented on `SCORABLE_TYPE_META`, and it fired here once
+ * already on a `t(kind === 'unavailable' ? … : …)`.
+ *
+ * `'scored'` is unreachable — the caller has a number in that case and renders it —
+ * but it is in the switch rather than a `default`, so adding a fifth state to
+ * `TeamView` fails to compile here instead of silently reading as "not scored yet".
+ */
+function unscoredLabel(kind: TeamView['kind'], t: TFunction): string {
+  switch (kind) {
+    case 'unavailable': return t('team.unavailable')
+    case 'loading': return t('team.loading')
+    case 'unscored': return t('team.noScores')
+    case 'scored': return t('team.score')
+  }
+}
+
+/**
+ * The resting row's numbers: what the TEAM said about this document.
+ *
+ * Not the caller's own ballot, which used to be here and now lives behind the
+ * expansion. A reader ranking a backlog is asking what the group thinks, and the
+ * list sorts by exactly these numbers (`sortPRFAQs`), so the headline and the
+ * order agree by construction.
+ *
+ * `'unscored'` means NOBODY HAS SCORED THIS — the aggregate omits a document
+ * with no votes — which is a different statement from "the team scored it low". It
+ * renders as an em dash under the words "Not scored yet": a placeholder where the
+ * number would be, never a number. The old summary substituted 3 for an unset axis,
+ * so an untouched proposal presented as mid-table; a dash cannot be misread as a
+ * score, and the label beneath it says WHICH of the non-scored states this is —
+ * `unscoredLabel` names each one, so the dash is never the only thing distinguishing
+ * them.
+ *
+ * `'unavailable'` and `'loading'` are the other two and get their OWN words: the read
+ * that carries the team view failed, or has not finished, so this row knows nothing
+ * about how anyone scored the document. Rendering either as "Not scored yet" claimed
+ * nobody had voted on data that exists on the server — the very ambiguity the error
+ * panel above the list exists to close, restated by the row in stronger terms than
+ * the panel can retract, and in the loading case with no panel on screen at all
+ * because nothing has gone wrong.
+ *
+ * The reviewer count sits beside the mean, never behind a hover, because one
+ * ballot produces a mean equal to that ballot and a spread of zero: without the
+ * count, "one person looked" is indistinguishable from "we agree".
+ */
+function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
   const { t } = useTranslation('prioritization')
-  const priorityScore = score.impact > 0 ? calculatePriorityScore(score) : 0
-  const showTTM = score.time_to_market !== 3 || score.impact > 0
+  if (team.kind !== 'scored') {
+    return (
+      <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
+        <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
+          {/* Decorative, and hidden as such: announced alone an em dash reads like a
+              value, and the label below is what carries the state. Same treatment as the
+              stats cards' dash. */}
+          <div aria-hidden="true" className="text-lg sm:text-xl font-bold text-gray-300">—</div>
+          {/* `text-gray-600`, not `text-gray-400`: #99a1af on this `bg-gray-50` is 2.49:1,
+              well under the 4.5:1 WCAG AA wants at `text-xs`, and this is the one string
+              that tells "nobody voted" from "we could not find out" from "still reading" —
+              the distinction the row exists to make. Matches the band label beside the
+              title, raised to `text-gray-600` for the same reason. */}
+          <div className="text-xs text-gray-600">{unscoredLabel(team.kind, t)}</div>
+        </div>
+      </div>
+    )
+  }
+  const scored = team.team
   return (
     <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
+      {/* The axis values the SORT reads, not the raw means: the backend rounds to two
+          decimals and this prints one, so printing the raw value here would let the list
+          order two rows that show the same number. One rounding, shared — the rule
+          `displayComposite` already follows. Captions are `text-gray-500` (4.63:1 on this
+          white row) rather than `text-gray-400` (2.49:1), which is under AA at this size. */}
       <div className="text-center">
-        <div className={clsx('text-base sm:text-lg font-bold', score.impact > 0 ? 'text-blue-600' : 'text-gray-300')}>{score.impact === 0 ? '-' : score.impact}</div>
-        <div className="text-xs text-gray-400">{t('scores.impact')}</div>
+        <div className="text-base sm:text-lg font-bold text-blue-600">{scored.displayImpact.toFixed(1)}</div>
+        <div className="text-xs text-gray-500">{t('scores.impact')}</div>
       </div>
       <div className="text-center">
-        <div className={clsx('text-base sm:text-lg font-bold', showTTM ? 'text-purple-600' : 'text-gray-300')}>{score.impact > 0 ? score.time_to_market : '-'}</div>
-        <div className="text-xs text-gray-400">{t('sort.ttm')}</div>
+        <div className="text-base sm:text-lg font-bold text-purple-600">{scored.displayTimeToMarket.toFixed(1)}</div>
+        <div className="text-xs text-gray-500">{t('sort.ttm')}</div>
       </div>
       <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
-        <div className={clsx('text-lg sm:text-xl font-bold', priorityScore > 0 ? 'text-green-600' : 'text-gray-300')}>{priorityScore > 0 ? priorityScore.toFixed(1) : '-'}</div>
-        <div className="text-xs text-gray-400">{t('scores.score')}</div>
+        {/* The same rounded value the priority band beside the title classifies, so
+            the printed number and the label describing it are one value rather than
+            two roundings of it. */}
+        <div className="text-lg sm:text-xl font-bold text-green-600">{scored.displayComposite.toFixed(1)}</div>
+        {/* Labelled as the TEAM's score, not "Score": this number changed meaning
+            from "my composite" to "the team's mean composite", and a row a reader
+            cannot attribute is worse than either alone. */}
+        <div className="text-xs text-gray-500">{t('team.score')}</div>
+      </div>
+      <div className="text-center">
+        <div className="flex items-center justify-center gap-1 text-sm sm:text-base font-bold text-gray-700">
+          <Users size={14} className="text-gray-400" />
+          {scored.reviewerCount}
+        </div>
+        <div className="text-xs text-gray-500">{t('team.reviewers')}</div>
       </div>
     </div>
   )
@@ -67,11 +156,42 @@ function DocumentTypeBadge({
   )
 }
 
+/**
+ * The badge that tells a reader the reviewers did not agree.
+ *
+ * On the resting row, because the spread is what makes a reader open the row: the
+ * notes behind a disagreement are the content worth reading, and nothing else on
+ * the collapsed row says they exist. Rendered only for a genuine disagreement —
+ * `spread` is null below two comparable ballots and 0 when they agreed, and a
+ * badge reading "spread 0.0" would say "look here" about a row with nothing to
+ * look at.
+ */
+function DisagreementBadge({ team }: { readonly team: TeamView }): ReactElement | null {
+  const { t } = useTranslation('prioritization')
+  // One shared predicate with `TeamScorePanel`'s pointer to the notes, rather than
+  // each re-deriving "is there a disagreement" from `spread`: two spellings of one
+  // rule is where the badge and the text it points at start disagreeing. No `?? 0`
+  // fallback either — a change to what `spread: null` means then fails to compile
+  // here instead of silently keeping the old behaviour. Both non-scored states
+  // resolve to `null` through `teamScoreOf` and so show no badge: neither a document
+  // nobody voted on nor one whose votes could not be read has a disagreement to
+  // point at.
+  const score = teamScoreOf(team)
+  if (!reviewersDisagreed(score)) return null
+  // Interpolated as a plain number rather than through a `count` plural: plural
+  // forms differ per locale and a missing form renders the raw key path to users.
+  return (
+    <span className="text-xs px-2 py-0.5 rounded-full whitespace-nowrap bg-amber-100 text-amber-800">
+      {t('team.disagreement', { spread: score.spread.toFixed(1) })}
+    </span>
+  )
+}
+
 function PRFAQRowHeader({
   prfaq,
   index,
   priority,
-  score,
+  team,
   isExpanded,
   onToggle,
 }: {
@@ -81,7 +201,7 @@ function PRFAQRowHeader({
     label: string;
     color: string
   }
-  readonly score: PrioritizationScore
+  readonly team: TeamView
   readonly isExpanded: boolean
   readonly onToggle: () => void
 }) {
@@ -100,6 +220,7 @@ function PRFAQRowHeader({
             <h3 className="font-medium text-gray-900 truncate text-sm sm:text-base">{prfaq.title}</h3>
             <DocumentTypeBadge label={badgeLabel} color={badgeColor} />
             <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', priority.color)}>{priority.label}</span>
+            <DisagreementBadge team={team} />
           </div>
           <div className="flex items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-gray-500">
             <span className="truncate">{prfaq.project_name}</span>
@@ -108,17 +229,86 @@ function PRFAQRowHeader({
           </div>
         </div>
       </div>
-      <QuickScores score={score} />
+      <TeamScoreSummary team={team} />
       <div className="sm:ml-2">{isExpanded ? <ChevronUp size={20} className="text-gray-400" /> : <ChevronDown size={20} className="text-gray-400" />}</div>
     </button>
   )
 }
 
+/**
+ * What the team said, one level in — the composite the resting row leads with, the
+ * count of ballots behind it and the spread across them, in words.
+ *
+ * The per-axis means stay on the collapsed row's summary rather than being repeated
+ * here; this panel's job is to say whose numbers those are and whether the
+ * reviewers agreed.
+ *
+ * Above the caller's own sliders, and in its own tinted panel, because these two
+ * blocks are the pair a reader must never confuse: the mean the list sorts by, and
+ * the ballot this reader can change. Visually distinct from `LinkedFormEvidence`
+ * further down, which carries customer star ratings that deliberately do not feed
+ * any score.
+ *
+ * Four states, not two. A read that failed says so ("could not be read"), and one
+ * still running says that, rather than either inviting the reader to cast the first
+ * ballot on a document the team may already have scored — the sliders are the one
+ * thing on this panel that can act, and `team.noScoresDescription` points them at
+ * exactly that.
+ */
+function TeamScorePanel({ team }: { readonly team: TeamView }): ReactElement {
+  const { t } = useTranslation('prioritization')
+  const score = teamScoreOf(team)
+  return (
+    <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3">
+      <h4 className="font-medium text-indigo-900 flex items-center gap-1.5">
+        <Users size={14} className="text-indigo-500" />
+        {t('team.title')}
+      </h4>
+      {team.kind === 'unavailable' ? (
+        <p className="text-sm text-indigo-800 mt-1">{t('team.unavailableDescription')}</p>
+      ) : null}
+      {/* Reads the team view, not a spinner: this panel's job is to say what is known
+          about the group's opinion, and "we are still asking" is the honest answer
+          while the read runs. Anything else here invites a ballot the reader may be
+          about to see already cast. */}
+      {team.kind === 'loading' ? (
+        <p className="text-sm text-indigo-800 mt-1">{t('team.loadingDescription')}</p>
+      ) : null}
+      {team.kind === 'unscored' ? (
+        <p className="text-sm text-indigo-800 mt-1">{t('team.noScoresDescription')}</p>
+      ) : null}
+      {score ? (
+        <>
+          <p className="text-sm text-indigo-900 mt-1">
+            {t('team.summary', {
+              score: score.displayComposite.toFixed(1),
+              reviewers: score.reviewerCount,
+            })}
+          </p>
+          {reviewersDisagreed(score) ? (
+            /* The spread is what sends a reader to the notes, so the pointer to
+               them sits with it. The same predicate the badge on the collapsed row
+               uses, so the badge and the text it points at cannot answer
+               differently. Only the CALLER'S OWN note is on this page: the
+               prioritization read returns each reviewer's ballot only to its own
+               author, so other reviewers' note text is not available without a new
+               route — deliberately out of scope here (see the PR description). */
+            <p className="text-sm text-indigo-800 mt-1">
+              {t('team.disagreementDescription', { spread: score.spread.toFixed(1) })}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 function PRFAQRowExpanded({
-  prfaq, score, linkedForms, apiEndpoint, onUpdateScore,
+  prfaq, score, team, linkedForms, apiEndpoint, onUpdateScore,
 }: {
   readonly prfaq: PRFAQWithProject
   readonly score: PrioritizationScore
+  readonly team: TeamView
   readonly linkedForms: readonly LinkedForm[]
   readonly apiEndpoint: string
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
@@ -128,7 +318,14 @@ function PRFAQRowExpanded({
     <div className="border-t px-3 sm:px-4 py-4 bg-gray-50">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <div className="space-y-4">
-          <h4 className="font-medium text-gray-900">{t('scores.title')}</h4>
+          <TeamScorePanel team={team} />
+          <div>
+            <h4 className="font-medium text-gray-900">{t('scores.title')}</h4>
+            {/* Says whose numbers these are. The row's headline is the team's mean
+                now, so the sliders need to name themselves as the reader's own
+                ballot — and to say that saving writes only that. */}
+            <p className="text-xs text-gray-500 mt-1">{t('scores.yoursOnly')}</p>
+          </div>
           <ScoreSlider label={t('scores.impact')} value={score.impact === 0 ? 3 : score.impact} onChange={(v) => onUpdateScore('impact', v)} description={t('scores.impactDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
           <ScoreSlider label={t('scores.timeToMarket')} value={score.time_to_market === 0 ? 3 : score.time_to_market} onChange={(v) => onUpdateScore('time_to_market', v)} description={t('scores.timeToMarketDescription')} lowLabel={t('scores.slow')} highLabel={t('scores.fast')} />
           <ScoreSlider label={t('scores.strategicFit')} value={score.strategic_fit === 0 ? 3 : score.strategic_fit} onChange={(v) => onUpdateScore('strategic_fit', v)} description={t('scores.strategicFitDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
@@ -253,11 +450,24 @@ function PrototypePanel({
 }
 
 export default function PRFAQRow({
-  prfaq, index, score, linkedForms, apiEndpoint, isExpanded, onToggle, onUpdateScore,
+  prfaq, index, score, team, linkedForms, apiEndpoint, isExpanded, onToggle, onUpdateScore,
 }: {
   readonly prfaq: PRFAQWithProject
   readonly index: number
+  /**
+   * The CALLER'S OWN ballot, behind the caller's own sliders in the expansion.
+   * Not what the resting row shows — see `team`.
+   */
   readonly score: PrioritizationScore
+  /**
+   * What every reviewer together said — the row's resting state, and the same numbers
+   * the list is ordered by.
+   *
+   * See `TeamView` for the states and what each one licenses the row to say, rather than
+   * a count restated here: the count was wrong for four commits after `'loading'` joined
+   * the union, and a pointer cannot drift from the type the way a number can.
+   */
+  readonly team: TeamView
   /** Forms that validate this document — see formLinkUtils.selectLinkedForms. */
   readonly linkedForms: readonly LinkedForm[]
   /**
@@ -271,13 +481,18 @@ export default function PRFAQRow({
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
 }) {
   const { t } = useTranslation('prioritization')
-  const priorityScore = score.impact > 0 ? calculatePriorityScore(score) : 0
-  const priority = getPriorityLabel(priorityScore, t)
+  // The priority band describes the TEAM's composite, matching the number beside
+  // it and the sort order. The team VIEW is passed whole rather than as
+  // `composite ?? 0`, so neither non-scored state reaches the band as a low number:
+  // a proposal the team unanimously rated 1 bands "Low Priority", only an unvoted
+  // one bands "Not Scored", and a failed read bands as neither. The band also reads
+  // the same rounded value the row prints, so label and number cannot disagree.
+  const priority = getPriorityLabel(team, t)
 
   return (
     <div className="bg-white rounded-lg border shadow-sm">
-      <PRFAQRowHeader prfaq={prfaq} index={index} priority={priority} score={score} isExpanded={isExpanded} onToggle={onToggle} />
-      {isExpanded ? <PRFAQRowExpanded prfaq={prfaq} score={score} linkedForms={linkedForms} apiEndpoint={apiEndpoint} onUpdateScore={onUpdateScore} /> : null}
+      <PRFAQRowHeader prfaq={prfaq} index={index} priority={priority} team={team} isExpanded={isExpanded} onToggle={onToggle} />
+      {isExpanded ? <PRFAQRowExpanded prfaq={prfaq} score={score} team={team} linkedForms={linkedForms} apiEndpoint={apiEndpoint} onUpdateScore={onUpdateScore} /> : null}
     </div>
   )
 }

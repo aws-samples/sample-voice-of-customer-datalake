@@ -58,16 +58,17 @@
     "impact": "영향도",
     "impactDescription": "비즈니스 가치 및 고객 이점",
     "low": "낮음",
-    "score": "점수",
     "slow": "느림",
     "strategicFit": "전략적 부합도",
     "strategicFitDescription": "회사 목표와의 부합도",
     "timeToMarket": "출시 시간",
     "timeToMarketDescription": "얼마나 빨리 출시할 수 있나요?",
-    "title": "우선순위 지정 점수"
+    "title": "우선순위 지정 점수",
+    "yoursOnly": "본인의 평가입니다. 저장하면 본인 점수만 기록됩니다."
   },
   "scoresUnavailable": {
     "description": "저장된 점수를 현재 가져올 수 없으므로 아래 숫자는 입력된 값이 아닌 기본값입니다. 저장하기 전에 페이지를 다시 불러오세요.",
+    "staleDescription": "저장된 점수를 다시 가져오지 못했으므로 표시된 수치는 마지막으로 정상적으로 읽은 값입니다. 본인의 평가는 영향을 받지 않으므로 저장하기 전에 다시 불러올 필요가 없습니다.",
     "title": "점수를 불러올 수 없습니다"
   },
   "sort": {
@@ -77,6 +78,7 @@
     "label": "정렬 기준:",
     "priority": "우선순위",
     "priorityFull": "우선순위 점수",
+    "teamOrdered": "{{fields}}은(는) 각 행에 표시되는 팀의 숫자를 기준으로 정렬합니다. 본인의 평가 기준이 아닙니다.",
     "ttm": "출시 시간",
     "ttmFull": "출시 시간"
   },
@@ -84,9 +86,25 @@
     "highPriority": "높은 우선순위",
     "mediumPriority": "중간 우선순위",
     "notScored": "평가되지 않음",
-    "totalDocuments": "전체 문서"
+    "totalDocuments": "전체 문서",
+    "unreadable_one": "{{count}}개 문서의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다.",
+    "unreadable_other": "{{count}}개 문서의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다."
   },
   "subtitle": "모든 프로젝트에서 PRD 및 PR/FAQ를 평가하고 우선순위를 지정하세요",
+  "team": {
+    "disagreement": "편차 {{spread}}",
+    "disagreementDescription": "이 점수에 대한 검토자 간 차이는 {{spread}}입니다. 이유는 각자의 메모에 있으며, 이 페이지에는 자신의 메모만 표시됩니다.",
+    "loading": "팀 점수 로드 중",
+    "loadingDescription": "팀의 점수를 아직 불러오는 중이라 이 행에는 누군가 투표했는지가 표시되지 않습니다. 로드가 끝나면 자동으로 채워집니다.",
+    "noScores": "아직 미평가",
+    "noScoresDescription": "아직 아무도 평가하지 않았으므로 낮은 점수가 아니라 미평가 상태입니다. 아래 슬라이더로 첫 평가를 등록할 수 있습니다.",
+    "reviewers": "검토자",
+    "score": "팀 점수",
+    "summary": "팀 평균 {{score}} / 5 · 검토자 투표 수: {{reviewers}}",
+    "title": "팀의 평가",
+    "unavailable": "팀 점수를 가져올 수 없음",
+    "unavailableDescription": "팀의 점수를 지금 읽을 수 없어 이 행에는 관련 정보를 표시하지 않습니다. 아무도 투표하지 않았다는 뜻은 아닙니다. 페이지를 다시 불러오면 팀의 평가를 확인할 수 있습니다."
+  },
   "title": "우선순위 지정",
   "unsavedChanges": {
     "cancel": "페이지에 머물기",

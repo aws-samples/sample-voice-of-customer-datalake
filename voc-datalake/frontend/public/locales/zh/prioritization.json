@@ -58,16 +58,17 @@
     "impact": "影响力",
     "impactDescription": "业务价值和客户收益",
     "low": "低",
-    "score": "评分",
     "slow": "缓慢",
     "strategicFit": "战略契合度",
     "strategicFitDescription": "与公司目标的一致性",
     "timeToMarket": "上市时间",
     "timeToMarketDescription": "能多快交付？",
-    "title": "优先级排序评分"
+    "title": "优先级排序评分",
+    "yoursOnly": "这是你自己的评分。保存时只会写入你的分数。"
   },
   "scoresUnavailable": {
     "description": "当前无法获取已保存的评分，因此下方显示的是默认值，而非任何人输入的数值。请在保存前重新加载页面。",
+    "staleDescription": "最近一次重新获取已保存的评分失败，因此显示的是上次成功读取的数值。您自己的评分未受影响，保存前无需重新加载页面。",
     "title": "无法加载评分"
   },
   "sort": {
@@ -77,6 +78,7 @@
     "label": "排序方式：",
     "priority": "优先级",
     "priorityFull": "优先级评分",
+    "teamOrdered": "{{fields}} 按每行显示的团队数值排序，而不是按你自己的评分。",
     "ttm": "上市时间",
     "ttmFull": "上市时间"
   },
@@ -84,9 +86,25 @@
     "highPriority": "高优先级",
     "mediumPriority": "中优先级",
     "notScored": "未评分",
-    "totalDocuments": "文档总数"
+    "totalDocuments": "文档总数",
+    "unreadable_one": "无法读取 {{count}} 个文档的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
+    "unreadable_other": "无法读取 {{count}} 个文档的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
   },
   "subtitle": "对所有项目中的 PRD 和 PR/FAQ 进行评分和优先级排序",
+  "team": {
+    "disagreement": "分歧 {{spread}}",
+    "disagreementDescription": "评审人对该评分的差距为 {{spread}}。原因写在各自的备注中——本页仅显示你自己的备注。",
+    "loading": "正在加载团队评分",
+    "loadingDescription": "团队评分仍在加载中，因此本行尚未显示是否有人投票。加载完成后会自动填充。",
+    "noScores": "尚未评分",
+    "noScoresDescription": "还没有人评分，因此它是未排序而不是评分偏低。使用下面的滑块可投出第一票。",
+    "reviewers": "评审人",
+    "score": "团队评分",
+    "summary": "团队平均分 {{score}} / 5 · 评审票数：{{reviewers}}",
+    "title": "团队的评分",
+    "unavailable": "无法获取团队评分",
+    "unavailableDescription": "目前无法读取团队的评分，因此本行不显示相关信息——这并不表示没有人投票。请重新加载页面以查看团队的评分。"
+  },
   "title": "优先级排序",
   "unsavedChanges": {
     "cancel": "留在此页面",
