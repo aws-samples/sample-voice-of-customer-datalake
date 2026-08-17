@@ -77,7 +77,7 @@
     "label": "정렬 기준:",
     "priority": "우선순위",
     "priorityFull": "우선순위 점수",
-    "teamOrdered": "각 행에 표시되는 팀의 숫자를 기준으로 정렬합니다. 본인의 평가 기준이 아닙니다.",
+    "teamOrdered": "{{fields}}은(는) 각 행에 표시되는 팀의 숫자를 기준으로 정렬합니다. 본인의 평가 기준이 아닙니다.",
     "ttm": "출시 시간",
     "ttmFull": "출시 시간"
   },
@@ -91,6 +91,8 @@
   "team": {
     "disagreement": "편차 {{spread}}",
     "disagreementDescription": "이 점수에 대한 검토자 간 차이는 {{spread}}입니다. 이유는 각자의 메모에 있으며, 이 페이지에는 자신의 메모만 표시됩니다.",
+    "loading": "팀 점수 로드 중",
+    "loadingDescription": "팀의 점수를 아직 불러오는 중이라 이 행에는 누군가 투표했는지가 표시되지 않습니다. 로드가 끝나면 자동으로 채워집니다.",
     "noScores": "아직 미평가",
     "noScoresDescription": "아직 아무도 평가하지 않았으므로 낮은 점수가 아니라 미평가 상태입니다. 아래 슬라이더로 첫 평가를 등록할 수 있습니다.",
     "reviewers": "검토자",

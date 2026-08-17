@@ -77,7 +77,7 @@
     "label": "Trier par :",
     "priority": "Priorité",
     "priorityFull": "Score de priorité",
-    "teamOrdered": "Trie la liste selon les chiffres de l'équipe, ceux affichés sur chaque ligne — pas selon votre propre note.",
+    "teamOrdered": "{{fields}} trient selon les chiffres de l'équipe, ceux affichés sur chaque ligne — pas selon votre propre note.",
     "ttm": "DmM",
     "ttmFull": "Délai de mise sur le marché"
   },
@@ -91,6 +91,8 @@
   "team": {
     "disagreement": "Écart {{spread}}",
     "disagreementDescription": "Les évaluateurs diffèrent de {{spread}} sur cette note. Leurs commentaires expliquent pourquoi — cette page n'affiche que votre propre commentaire.",
+    "loading": "Chargement de la note de l'équipe",
+    "loadingDescription": "Les notes de l'équipe sont encore en cours de chargement : cette ligne n'indique donc pas encore si quelqu'un a voté. Elle se complétera d'elle-même.",
     "noScores": "Pas encore évalué",
     "noScoresDescription": "Aucun évaluateur ne l'a encore noté : il n'est donc pas mal classé, mais non classé. Les curseurs ci-dessous enregistrent le premier vote.",
     "reviewers": "Évaluateurs",

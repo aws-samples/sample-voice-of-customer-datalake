@@ -5,10 +5,10 @@ import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
-  getScore, calculatePriorityScore, collectPRFAQs, comparePRFAQs, DEFAULT_SCORE, isScorable,
+  getScore, calculatePriorityScore, collectPRFAQs, DEFAULT_SCORE, isScorable,
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
-  applyBallotEdits, withEditedField,
+  applyBallotEdits, withEditedField, teamAggregatesOf,
 } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
 
@@ -189,27 +189,34 @@ const aggregate = (
   impact: 0, time_to_market: 0, confidence: 0, strategic_fit: 0, score_spread: 0, ...fields,
 })
 
-describe('comparePRFAQs orders by the TEAM aggregate, not the caller own ballot', () => {
+describe('the sort orders by the TEAM aggregate, not the caller own ballot', () => {
+  // Asserted through `sortPRFAQs`, which is the ONLY way the page reaches the
+  // ordering. These cases used to call an exported `comparePRFAQs` wrapper that no
+  // production code called, so the comparator the page actually uses could have
+  // regressed with every one of them still green.
+  const idsOf = (rows: readonly { document_id: string }[]) => rows.map((row) => row.document_id)
+
   it('sorts by the team mean impact when the field is impact', () => {
     const aggregates: Record<string, PrioritizationAggregate> = {
       a: aggregate({ impact: 2, reviewer_count: 2 }),
       b: aggregate({ impact: 5, reviewer_count: 2 }),
     }
 
-    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'impact')).toBeLessThan(0)
+    expect(idsOf(sortPRFAQs([prfaqA, prfaqB], aggregates, 'impact', 'asc'))).toEqual(['a', 'b'])
+    expect(idsOf(sortPRFAQs([prfaqA, prfaqB], aggregates, 'impact', 'desc'))).toEqual(['b', 'a'])
   })
 
   it('sorts by the team composite, not by the caller composite', () => {
-    // The discriminating case: a's TEAM impact is the higher one, b's is lower.
-    // A sort still reading the caller's own map has no entry for either document
-    // and would answer 0 — the assertion below fails whichever way the tie broke,
-    // because a tie is not "a above b".
+    // The discriminating case: a's TEAM composite is the higher one, b's is lower,
+    // and the documents are supplied in the order a no-op sort would leave them. A
+    // sort still reading the caller's own map has no entry for either document, ties
+    // them, and leaves them as given — which is not "b above a".
     const aggregates: Record<string, PrioritizationAggregate> = {
       a: aggregate({ impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, reviewer_count: 2 }),
       b: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 2 }),
     }
 
-    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'priority_score')).toBeGreaterThan(0)
+    expect(idsOf(sortPRFAQs([prfaqB, prfaqA], aggregates, 'priority_score', 'desc'))).toEqual(['a', 'b'])
   })
 
   it('ranks an unscored document BELOW one the team scored low, rather than above it', () => {
@@ -233,25 +240,33 @@ describe('comparePRFAQs orders by the TEAM aggregate, not the caller own ballot'
   })
 
   it('groups unscored documents rather than ordering them against each other', () => {
-    expect(() => comparePRFAQs(prfaqA, prfaqB, {}, 'priority_score')).not.toThrow()
-    expect(comparePRFAQs(prfaqA, prfaqB, {}, 'priority_score')).toBe(0)
-    expect(comparePRFAQs(prfaqA, prfaqB, {}, 'impact')).toBe(0)
+    // Two rows nobody has scored tie, in both directions, so they stay in the order
+    // they arrived rather than being ranked by a number neither has.
+    for (const direction of ['asc', 'desc'] as const) {
+      expect(() => sortPRFAQs([prfaqA, prfaqB], {}, 'priority_score', direction)).not.toThrow()
+      expect(idsOf(sortPRFAQs([prfaqA, prfaqB], {}, 'priority_score', direction)), direction).toEqual(['a', 'b'])
+      expect(idsOf(sortPRFAQs([prfaqB, prfaqA], {}, 'impact', direction)), direction).toEqual(['b', 'a'])
+    }
   })
 
-  it('answers 0 for a row with no team number rather than ranking it against one', () => {
+  it('does not rank a row with no team number against one that has', () => {
     // The comparator declines the comparison instead of substituting a value: which
-    // of "scored" and "unscored" comes first is a grouping decision, and it belongs
-    // where it can be made once for both directions (`sortPRFAQs`).
+    // of "scored" and "unscored" comes first is a grouping decision, and it is made
+    // once for both directions. So the scored row leads either way, and it is the
+    // grouping — not a comparison — that puts it there.
     const aggregates: Record<string, PrioritizationAggregate> = {
       b: aggregate({ impact: 5, reviewer_count: 2 }),
     }
 
-    expect(comparePRFAQs(prfaqA, prfaqB, aggregates, 'priority_score')).toBe(0)
+    for (const direction of ['asc', 'desc'] as const) {
+      expect(idsOf(sortPRFAQs([prfaqA, prfaqB], aggregates, 'priority_score', direction)), direction)
+        .toEqual(['b', 'a'])
+    }
   })
 
   it('still orders created_at and title by the document, which no aggregate touches', () => {
-    expect(comparePRFAQs(prfaqA, prfaqB, {}, 'created_at')).toBeLessThan(0)
-    expect(comparePRFAQs(prfaqA, prfaqB, {}, 'title')).toBeLessThan(0)
+    expect(idsOf(sortPRFAQs([prfaqB, prfaqA], {}, 'created_at', 'asc'))).toEqual(['a', 'b'])
+    expect(idsOf(sortPRFAQs([prfaqB, prfaqA], {}, 'title', 'asc'))).toEqual(['a', 'b'])
   })
 })
 
@@ -348,8 +363,16 @@ describe('priorityBand', () => {
     // A failed read is not a fact about the document. Banding it 'none' put the
     // words "Not Scored" on a row whose votes simply could not be fetched, and made
     // the stats cards count the whole backlog as unscored.
-    expect(priorityBand(getTeamView(null, 'd1'))).toBe('unavailable')
-    expect(priorityBand(getTeamView(null, 'd1'))).not.toBe(priorityBand(getTeamView({}, 'd1')))
+    expect(priorityBand(getTeamView('unavailable', 'd1'))).toBe('unavailable')
+    expect(priorityBand(getTeamView('unavailable', 'd1'))).not.toBe(priorityBand(getTeamView({}, 'd1')))
+  })
+
+  it('bands a read still in flight as neither too, distinctly from a failed one', () => {
+    // Also not a fact about the document, and not the same fact about the read: one
+    // clears itself, the other asks the reader to reload.
+    expect(priorityBand(getTeamView('loading', 'd1'))).toBe('loading')
+    expect(priorityBand(getTeamView('loading', 'd1'))).not.toBe(priorityBand(getTeamView({}, 'd1')))
+    expect(priorityBand(getTeamView('loading', 'd1'))).not.toBe(priorityBand(getTeamView('unavailable', 'd1')))
   })
 
   it('bands a unanimously-lowest score as low rather than as unscored', () => {
@@ -386,12 +409,22 @@ describe('getPriorityLabel', () => {
   })
 
   it('does not tell a reader nobody voted when the read simply failed', () => {
-    // Three labels for three states. "Not Scored" is a claim about the document and
+    // Four labels for four states. "Not Scored" is a claim about the document and
     // must not be made on its behalf by a request that never arrived.
-    const unavailable = getPriorityLabel(getTeamView(null, 'd1'), t)
+    const unavailable = getPriorityLabel(getTeamView('unavailable', 'd1'), t)
 
     expect(unavailable.label).toBe('Team score unavailable')
     expect(unavailable.label).not.toBe(getPriorityLabel(getTeamView({}, 'd1'), t).label)
+  })
+
+  it('does not tell a reader nobody voted while the read is still running', () => {
+    const loading = getPriorityLabel(getTeamView('loading', 'd1'), t)
+
+    expect(loading.label).toBe('Loading team score')
+    expect(loading.label).not.toBe(getPriorityLabel(getTeamView({}, 'd1'), t).label)
+    // Resolves to real text rather than the raw key path, which is what the
+    // namespace-qualified `i18nKey` in `BAND_STYLE` exists to guarantee.
+    expect(loading.label).not.toContain('team.loading')
   })
 
   it('labels a team that unanimously scored 4 as high, beside the 4.0 the row prints', () => {
@@ -401,6 +434,39 @@ describe('getPriorityLabel', () => {
 
     expect(getTeamScore(aggregates, 'd1')?.displayComposite.toFixed(1)).toBe('4.0')
     expect(getPriorityLabel(getTeamView(aggregates, 'd1'), t).label).toBe('High Priority')
+  })
+})
+
+describe('teamAggregatesOf reads the query three ways, not one', () => {
+  // `data` is undefined while the read is in flight, when it has failed, and when it
+  // arrived carrying no `aggregates` at all — so it cannot decide this on its own, and
+  // `?? {}` answered "nobody has scored anything" for all three.
+  it('answers the map when the read arrived', () => {
+    const aggregates = { d1: aggregate({ impact: 5, reviewer_count: 2 }) }
+
+    expect(teamAggregatesOf({ failed: false, pending: false, aggregates })).toBe(aggregates)
+  })
+
+  it('answers an EMPTY map for a read that arrived carrying no aggregates', () => {
+    // A deployment predating the field. That genuinely is "no team data yet", and every
+    // row may honestly say so — which is why this case must stay distinct from the two
+    // below rather than being folded in with them.
+    expect(teamAggregatesOf({ failed: false, pending: false })).toEqual({})
+  })
+
+  it('answers unavailable for a failed read rather than an empty map', () => {
+    expect(teamAggregatesOf({ failed: true, pending: false })).toBe('unavailable')
+  })
+
+  it('answers loading while the read is still in flight', () => {
+    expect(teamAggregatesOf({ failed: false, pending: true })).toBe('loading')
+  })
+
+  it('prefers unavailable over loading for a failed read that is retrying', () => {
+    // A query that failed and is retrying is pending again. "Reload the page" is the
+    // more useful of the two things to say, and the panel above the list is already
+    // saying it.
+    expect(teamAggregatesOf({ failed: true, pending: true })).toBe('unavailable')
   })
 })
 
@@ -424,9 +490,26 @@ describe('getTeamView tells three states apart', () => {
     // Not per document: a missing key in a map that never arrived says nothing about
     // the key. So the failure has to be answered before the lookup, or a row would
     // report "nobody voted" on the strength of a response that does not exist.
-    expect(getTeamView(null, 'd1').kind).toBe('unavailable')
-    expect(getTeamView(null, 'anything-at-all').kind).toBe('unavailable')
-    expect(teamScoreOf(getTeamView(null, 'd1'))).toBeNull()
+    expect(getTeamView('unavailable', 'd1').kind).toBe('unavailable')
+    expect(getTeamView('unavailable', 'anything-at-all').kind).toBe('unavailable')
+    expect(teamScoreOf(getTeamView('unavailable', 'd1'))).toBeNull()
+  })
+
+  it('reads a read still IN FLIGHT as loading, not as an unscored backlog', () => {
+    // The same argument one state along, and the state the page was missing: the read
+    // scans a whole partition while the project reads are a parallel fan-out, so the
+    // rows render before it lands. `{}` there made every row say "Not scored yet" and
+    // invite a first ballot, with no error panel on screen because nothing had failed.
+    expect(getTeamView('loading', 'd1').kind).toBe('loading')
+    expect(teamScoreOf(getTeamView('loading', 'd1'))).toBeNull()
+  })
+
+  it('tells loading, failed and genuinely-empty apart rather than collapsing them', () => {
+    // Three distinct kinds, because they license three different sentences: "it will
+    // fill in", "reload the page", "cast the first ballot".
+    const kinds = ['loading', 'unavailable'] as const
+    expect(new Set([...kinds.map((s) => getTeamView(s, 'd1').kind), getTeamView({}, 'd1').kind]).size)
+      .toBe(3)
   })
 })
 
@@ -485,22 +568,28 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     expect(titlesOf(rows)).toEqual(['Alpha', 'Beta', 'Gamma'])
   })
 
-  it('leaves the order alone when the team read FAILED, rather than grouping everything', () => {
+  it('leaves the order alone when no team view arrived, rather than grouping everything', () => {
     // No number to rank by, and no honest grouping either: pinning every row as
     // "unscored" would order the backlog by a property no row has been shown to have.
-    for (const direction of ['asc', 'desc'] as const) {
-      expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], null, 'priority_score', direction)), direction)
-        .toEqual(['Beta', 'Alpha', 'Gamma'])
+    // True of a read that failed and of one still running — neither has said anything
+    // about any document.
+    for (const state of ['unavailable', 'loading'] as const) {
+      for (const direction of ['asc', 'desc'] as const) {
+        expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], state, 'priority_score', direction)), `${state} ${direction}`)
+          .toEqual(['Beta', 'Alpha', 'Gamma'])
+      }
     }
   })
 
-  it('still sorts by date and title when the team read failed', () => {
-    // Those read document fields, which the failed read does not touch — so the sort
-    // a reader can still trust keeps working.
-    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], null, 'created_at', 'asc')))
-      .toEqual(['Alpha', 'Beta', 'Gamma'])
-    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], null, 'title', 'desc')))
-      .toEqual(['Gamma', 'Beta', 'Alpha'])
+  it('still sorts by date and title when no team view arrived', () => {
+    // Those read document fields, which neither state touches — so the sort a reader
+    // can still trust keeps working.
+    for (const state of ['unavailable', 'loading'] as const) {
+      expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], state, 'created_at', 'asc')), state)
+        .toEqual(['Alpha', 'Beta', 'Gamma'])
+      expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], state, 'title', 'desc')), state)
+        .toEqual(['Gamma', 'Beta', 'Alpha'])
+    }
   })
 })
 
@@ -593,11 +682,13 @@ describe('normalizeAggregates', () => {
     expect(normalizeAggregates(null)).toEqual({})
   })
 
-  it('keeps a row whose axis is unusable, with that axis at zero', () => {
+  it('keeps a row whose axis is unreadable, with that axis at zero', () => {
     // A partial aggregate is still worth showing — the reviewer count and the
-    // other axes are real — so a bad axis degrades rather than dropping the row.
+    // other axes are real — so an unreadable axis degrades rather than dropping the
+    // row. `'high'` is not a number and expresses no position on the scale, so there
+    // is nothing to clamp it to.
     const parsed = normalizeAggregates({
-      d1: { ...complete, impact: 'high', score_spread: -2 },
+      d1: { ...complete, impact: 'high', score_spread: 'wide' },
     })
 
     expect(parsed.d1.impact).toBe(0)
@@ -628,29 +719,54 @@ describe('normalizeAggregates', () => {
     })).toEqual({})
   })
 
-  it('keeps a row whose every axis is out of RANGE, since each is still a number', () => {
-    // The floor is about readability, never about range. Testing it against the
-    // bounded schema conflated the two: four means of 6 with a real reviewer count
-    // were dropped and the row read "Not scored yet", presenting a document four
-    // reviewers had voted on as one nobody had opened. Out of range is a number, so
-    // it degrades through `.catch(0)` like any other unusable value and the row stays.
+  it('CLAMPS an out-of-range axis onto the scale rather than zeroing it', () => {
+    // Two rules, and only clamping makes them compose. The floor is about readability,
+    // so an all-out-of-range row clears it — each axis IS a number. Zeroing them then
+    // rendered the row the docstring forbids: `0.0 / 0.0 / 0.0`, "Reviewers 3", banded
+    // "Low Priority", with a "Spread 2.0" badge over numbers the parse threw away —
+    // and it sorted BELOW a row the team genuinely rated 1 across the board. Clamping
+    // keeps the row derived from data somebody actually cast, the same reading the
+    // backend's `validate_int` takes on the way in.
     const parsed = normalizeAggregates({
       d1: {
         impact: 6, time_to_market: 6, confidence: 6, strategic_fit: 6,
-        reviewer_count: 3, score_spread: 0,
+        reviewer_count: 3, score_spread: 9,
       },
     })
 
     expect(parsed.d1).toEqual({
-      impact: 0, time_to_market: 0, confidence: 0, strategic_fit: 0,
-      reviewer_count: 3, score_spread: 0,
+      impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5,
+      reviewer_count: 3, score_spread: 5,
     })
+    // Named explicitly: the defect was a real reviewer count dressing an all-zeros
+    // score, so "not zero" is the assertion, not merely "some number".
+    expect(parsed.d1.impact).not.toBe(0)
+  })
+
+  it('clamps a negative axis up to the bottom of the scale, not through it', () => {
+    expect(normalizeAggregates({ d1: { impact: -3, reviewer_count: 2 } }).d1.impact).toBe(0)
+    expect(normalizeAggregates({ d1: { ...complete, score_spread: -2 } }).d1.score_spread).toBe(0)
+  })
+
+  it('clamps each axis on its own, leaving the readable ones as sent', () => {
+    // The positive control for clamping: it must not become "rewrite every axis".
+    const parsed = normalizeAggregates({
+      d1: {
+        impact: 4, time_to_market: 100, confidence: 2, strategic_fit: 1, reviewer_count: 3,
+      },
+    })
+
+    expect(parsed.d1.impact).toBe(4)
+    expect(parsed.d1.time_to_market).toBe(5)
+    expect(parsed.d1.confidence).toBe(2)
+    expect(parsed.d1.strategic_fit).toBe(1)
   })
 
   it('does not decide an out-of-range row by whether ONE axis happened to be in range', () => {
     // The inconsistency that gave the rule away: `{impact: 4, rest 6}` was kept with
     // the siblings degraded while `{all 6}` vanished — same data quality, opposite
-    // outcome. Both are kept now, and the reviewer count survives either way.
+    // outcome. Both are kept now, both clamped, and the reviewer count survives either
+    // way.
     const mixed = normalizeAggregates({
       d1: {
         impact: 4, time_to_market: 6, confidence: 6, strategic_fit: 6, reviewer_count: 3,
@@ -665,6 +781,8 @@ describe('normalizeAggregates', () => {
     expect(Object.keys(mixed)).toEqual(['d1'])
     expect(Object.keys(allOut)).toEqual(['d1'])
     expect(allOut.d1.reviewer_count).toBe(3)
+    expect(mixed.d1.time_to_market).toBe(5)
+    expect(allOut.d1.time_to_market).toBe(5)
   })
 
   it('still drops a row whose axes are unreadable rather than merely out of range', () => {

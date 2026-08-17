@@ -77,7 +77,7 @@
     "label": "Ordenar por:",
     "priority": "Prioridad",
     "priorityFull": "Puntuación de prioridad",
-    "teamOrdered": "Ordena la lista según los números del equipo, los que muestra cada fila, no según tu propia puntuación.",
+    "teamOrdered": "{{fields}} ordenan según los números del equipo, los que muestra cada fila, no según tu propia puntuación.",
     "ttm": "TdC",
     "ttmFull": "Tiempo de comercialización"
   },
@@ -91,6 +91,8 @@
   "team": {
     "disagreement": "Dispersión {{spread}}",
     "disagreementDescription": "Los revisores difieren en {{spread}} sobre esta puntuación. Sus notas explican por qué; esta página solo muestra tu propia nota.",
+    "loading": "Cargando puntuación del equipo",
+    "loadingDescription": "Las puntuaciones del equipo aún se están cargando, así que esta fila todavía no indica si alguien ha votado. Se completará por sí sola.",
     "noScores": "Aún sin puntuar",
     "noScoresDescription": "Ningún revisor lo ha puntuado todavía, así que no está mal valorado sino sin valorar. Con los controles de abajo emites el primer voto.",
     "reviewers": "Revisores",

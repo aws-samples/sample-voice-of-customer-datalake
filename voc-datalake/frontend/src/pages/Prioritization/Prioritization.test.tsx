@@ -606,6 +606,52 @@ describe('Prioritization', () => {
       expect(cardValue('Medium Priority')).toBe('0')
     })
 
+    it('shows an out-of-range team mean at the top of the scale, not at the bottom', async () => {
+      // Verified defect: an all-out-of-range row cleared the readability floor (each
+      // axis IS a number) and every axis was then caught to 0, so a document three
+      // reviewers had scored rendered `0.0 / 0.0 / 0.0`, "Reviewers 3", banded "Low
+      // Priority", with a "Spread 2.0" badge over numbers the parse had thrown away —
+      // and it sorted BELOW a row the team genuinely rated 1 across the board.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Out Of Range', content: '', created_at: '2025-01-01' },
+          { document_id: 'd2', document_type: 'prfaq', title: 'Genuinely Lowest', content: '', created_at: '2025-01-02' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: {
+          d1: {
+            impact: 6, time_to_market: 6, confidence: 6, strategic_fit: 6,
+            reviewer_count: 3, score_spread: 2,
+          },
+          d2: {
+            impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1,
+            reviewer_count: 3, score_spread: 0,
+          },
+        },
+      })
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Out Of Range')).toBeInTheDocument()
+      })
+
+      const row = screen.getByRole('button', { name: /Out Of Range/ })
+      // Clamped onto the scale, so the row still describes data somebody cast.
+      expect(within(row).getByText('Team Score').previousElementSibling?.textContent).toBe('5.0')
+      expect(row).toHaveTextContent('High Priority')
+      expect(row).not.toHaveTextContent('Low Priority')
+      // And it outranks the row the team actually rated lowest, rather than sorting
+      // beneath it on a score the parse invented.
+      const rowTitles = screen.getAllByRole('heading', { level: 3 })
+        .map((h) => h.textContent)
+        .filter((title) => title !== 'Prioritization Framework')
+      expect(rowTitles).toEqual(['Out Of Range', 'Genuinely Lowest'])
+    })
+
     it('keeps the unscored rows last when the reader sorts ascending', async () => {
       // Flipping the direction asks for the worst-RATED proposals. A block of rows
       // nobody has voted on is not an answer to that, so it stays at the bottom.
@@ -710,10 +756,35 @@ describe('Prioritization', () => {
       const hintId = sortButton.getAttribute('aria-describedby')
       expect(hintId).toBeTruthy()
       const hint = document.getElementById(hintId ?? '')
-      expect(hint).toHaveTextContent("Orders the list by the team's numbers")
+      expect(hint).toHaveTextContent("order by the team's numbers")
+      // And it names WHICH options do, from the same labels the buttons render, so a
+      // sighted reader who has only adjacency to go on can still tell which three.
+      expect(hint).toHaveTextContent('Priority Score, Impact, Time to Market')
       // The date sort is not team-ordered, so it must NOT claim to be.
       expect(screen.getByRole('button', { name: /Date Created$/ }))
         .not.toHaveAttribute('aria-describedby')
+    })
+
+    it('does not claim the list is team-ordered while the reader sorts by date', async () => {
+      // The hint is permanently visible — that is the point of moving it out of a
+      // `title` — so a sentence about "the list" was false for as long as Date Created
+      // was active: an ascending date order sat directly beneath the words "orders the
+      // list by the team's numbers". It describes the BUTTONS instead, which is true in
+      // every state, including before the reader has clicked anything.
+      const user = userEvent.setup()
+      renderPrioritization()
+
+      await user.click(screen.getByRole('button', { name: /Date Created$/ }))
+
+      const hint = document.getElementById(
+        screen.getByRole('button', { name: /Priority Score$/ }).getAttribute('aria-describedby') ?? '',
+      )
+      expect(hint).toBeTruthy()
+      expect(hint).not.toHaveTextContent(/Orders the list/i)
+      expect(hint).toHaveTextContent("order by the team's numbers")
+      // Naming the three team-ordered options is what keeps it true here: the sentence
+      // must not name the one that is active and is NOT team-ordered.
+      expect(hint).not.toHaveTextContent('Date Created')
     })
   })
 
@@ -1024,6 +1095,110 @@ describe('Prioritization', () => {
       const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
       expect(row).toHaveTextContent('Not scored yet')
       expect(row).not.toHaveTextContent('Team score unavailable')
+    })
+  })
+
+  describe('a score read still in flight is not an unscored backlog either', () => {
+    // The same false claim as a failed read, one state along — and the worse of the two
+    // to make, because no error panel is on screen to retract it. `PRFAQList`'s
+    // `isLoading` covers only the PROJECT reads, and the scores read scans a whole
+    // partition over up to MAX_PRIORITIZATION_PAGES round trips while those are a
+    // parallel fan-out, so which settles first is a race rather than an ordering.
+
+    /** Documents resolved, scores still reading — the window under test. */
+    function loadDocumentsWithScoresStillReading() {
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockReturnValue(new Promise(() => {}))
+    }
+
+    it('does not tell a reader nobody has scored a row it has not read yet', async () => {
+      loadDocumentsWithScoresStillReading()
+
+      renderPrioritization()
+
+      const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(row).not.toHaveTextContent('Not scored yet')
+      expect(row).not.toHaveTextContent('Not Scored')
+      // Its own words, distinct from the failed read's: this one clears itself, so
+      // "reload the page" would be the wrong thing to say.
+      expect(row).toHaveTextContent('Loading team score')
+      expect(row).not.toHaveTextContent('Team score unavailable')
+    })
+
+    it('does not invite a first ballot on a document it has not read the votes for', async () => {
+      // The panel carries the claim that can actually cost something: a reader who
+      // trusts "the sliders below cast the first ballot" overwrites a real ballot.
+      loadDocumentsWithScoresStillReading()
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+
+      const panel = (await screen.findByText('What the Team Said')).parentElement
+      expect(panel).toBeTruthy()
+      expect(panel).not.toHaveTextContent('No reviewer has scored this yet')
+      expect(panel).not.toHaveTextContent('cast the first ballot')
+      expect(panel).toHaveTextContent('still loading')
+    })
+
+    it('does not count a read in flight as an unscored backlog in the stats cards', async () => {
+      loadDocumentsWithScoresStillReading()
+
+      renderPrioritization()
+      await screen.findByText('Feature A PR/FAQ')
+
+      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const cardValue = (label: string) => within(grid ?? document.body)
+        .getByText(label).previousElementSibling?.textContent
+
+      // The project read succeeded, so the total is a number; nothing else is known.
+      expect(cardValue('Total Documents')).toBe('1')
+      expect(cardValue('Not Scored')).toBe('—')
+      expect(cardValue('High Priority')).toBe('—')
+      expect(cardValue('Medium Priority')).toBe('—')
+    })
+
+    it('does not offer to save against a ballot it has not read', async () => {
+      // The sliders show display defaults in this window, not this reviewer's stored
+      // ballot — the same reason the save is blocked when the read has failed.
+      loadDocumentsWithScoresStillReading()
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      fireEvent.change(sliders[0], { target: { value: '5' } })
+
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
+    })
+
+    it('says nobody voted once the read LANDS on an empty map', async () => {
+      // The discriminating positive control: "do not claim it is unscored while
+      // loading" must not become "never claim it is unscored". The same fixture, with
+      // the promise allowed to resolve.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+
+      renderPrioritization()
+
+      const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
+      await waitFor(() => {
+        expect(row).toHaveTextContent('Not scored yet')
+      })
+      expect(row).not.toHaveTextContent('Loading team score')
     })
   })
 

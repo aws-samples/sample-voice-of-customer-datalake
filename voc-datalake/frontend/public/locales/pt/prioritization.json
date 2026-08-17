@@ -77,7 +77,7 @@
     "label": "Ordenar por:",
     "priority": "Prioridade",
     "priorityFull": "Pontuação de Prioridade",
-    "teamOrdered": "Ordena a lista pelos números da equipe, os que cada linha mostra — não pela sua própria pontuação.",
+    "teamOrdered": "{{fields}} ordenam pelos números da equipe, os que cada linha mostra — não pela sua própria pontuação.",
     "ttm": "TTM",
     "ttmFull": "Tempo para o Mercado"
   },
@@ -91,6 +91,8 @@
   "team": {
     "disagreement": "Dispersão {{spread}}",
     "disagreementDescription": "Os revisores divergem em {{spread}} nesta pontuação. As notas deles explicam por quê — esta página mostra apenas a sua própria nota.",
+    "loading": "Carregando pontuação da equipe",
+    "loadingDescription": "As pontuações da equipe ainda estão carregando, portanto esta linha ainda não mostra se alguém votou. Ela será preenchida sozinha.",
     "noScores": "Ainda não pontuado",
     "noScoresDescription": "Nenhum revisor pontuou isto ainda, portanto não está mal avaliado, e sim sem avaliação. Os controles abaixo registram o primeiro voto.",
     "reviewers": "Revisores",

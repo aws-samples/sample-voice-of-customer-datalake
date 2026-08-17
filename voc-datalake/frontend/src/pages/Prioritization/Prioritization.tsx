@@ -31,7 +31,7 @@ import PRFAQRow from './PRFAQRow'
 import {
   applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
   MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments, priorityBand, sortPRFAQs,
-  withEditedField,
+  teamAggregatesOf, withEditedField,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection, TeamAggregates,
@@ -83,11 +83,12 @@ const selectPrioritization = (data: {
  * printing `4.0` as Medium. One function, one rounding, so a card and the row it
  * summarises cannot classify the same document differently.
  *
- * When the team read FAILED, the three team-derived cards show a dash rather than a
- * count. A zero is a claim ("none of these is high priority") and "1 Not Scored"
- * for every document in the backlog is a false one — the read said nothing about
- * any of them. Only "Total Documents" survives, because that is counted off the
- * project read, which succeeded.
+ * When the team read has not delivered a map — it FAILED, or is still running — the
+ * three team-derived cards show a dash rather than a count. A zero is a claim ("none
+ * of these is high priority") and "1 Not Scored" for every document in the backlog is
+ * a false one; neither read said anything about any of them. Only "Total Documents"
+ * survives, because that is counted off the project read, which is a different query
+ * and may well have succeeded already.
  */
 function StatsCards({
   allPRFAQs, aggregates,
@@ -97,9 +98,9 @@ function StatsCards({
 }) {
   const { t } = useTranslation('prioritization')
   const bands = allPRFAQs.map((p) => priorityBand(getTeamView(aggregates, p.document_id)))
-  /** How many rows fall in one band, or a dash when the team read failed. */
+  /** How many rows fall in one band, or a dash when no team view has arrived. */
   const countOf = (band: 'high' | 'medium' | 'none') => (
-    aggregates === null ? '—' : bands.filter((b) => b === band).length
+    typeof aggregates === 'string' ? '—' : bands.filter((b) => b === band).length
   )
 
   return (
@@ -120,18 +121,24 @@ function SortControls({
   readonly onToggleSort: (f: SortField) => void
 }) {
   const { t } = useTranslation('prioritization')
-  // "Priority Score", "Impact" and "TTM" name the team's numbers now, not the
-  // reader's own ballot — the same three the rows display. The names are unchanged,
-  // so the hint says whose they are: a button labelled "Impact" beside a row whose
-  // own impact slider is one level in is otherwise ambiguous in exactly the way the
-  // old "Score" heading was.
-  const teamOrdered = t('sort.teamOrdered')
   // Also announced, not only hovered. A `title` tooltip never appears on a touch
   // device and screen-reader support for it is inconsistent, so the readers who most
   // need "whose numbers are these" were the ones who could not reach the answer. The
   // three team-ordered buttons point at one visible line below the row; `title` stays
   // as the pointer affordance.
   const hintId = useId()
+  const teamOrderedFields = [t('sort.priorityFull'), t('sort.impact'), t('sort.ttmFull')]
+  // Describes the BUTTONS, not the current sort. It is permanently visible — that is
+  // the point of moving it out of a `title` — so a sentence about "the list" was false
+  // for as long as the reader had Date Created active: an ascending date order sat
+  // directly beneath the words "orders the list by the team's numbers". Naming the
+  // three options instead is true in every state, including before the reader has
+  // clicked anything, which is when the hint is most use.
+  //
+  // The names are INTERPOLATED from the same keys the buttons render, rather than
+  // restated inside the sentence in eight catalogues, so a relabelled button cannot
+  // leave the hint naming an option that is no longer on screen.
+  const teamOrdered = t('sort.teamOrdered', { fields: teamOrderedFields.join(', ') })
   const options = [
     {
       field: 'priority_score' as const,
@@ -249,18 +256,22 @@ function PrioritizationHeader({
   readonly hasChanges: boolean
   readonly isPending: boolean
   /**
-   * True while a save cannot honestly be made, for either of two reasons, each
-   * with its own panel above the list saying which.
+   * True while a save cannot honestly be made, for any of three reasons.
    *
    * The saved scores could not be READ: saving then writes the caller's edits
    * against numbers nobody has seen, because the rows on screen are defaults
-   * rather than their ballot.
+   * rather than their ballot. A panel above the list says so.
+   *
+   * Or that read has not finished. The same argument for the window before the
+   * outcome is known — the sliders are showing display defaults, not this reviewer's
+   * stored ballot — and it is the one reason with NO panel, because nothing has gone
+   * wrong and it clears itself the moment the read lands.
    *
    * Or a pending edit carries a note past `MAX_NOTE_LENGTH`: the API refuses it
    * rather than truncating, and `fetchApi` discards the reason, so pressing Save
-   * would look like a button that does nothing.
+   * would look like a button that does nothing. Its own panel too.
    *
-   * Disabled rather than left to look ordinary in both cases.
+   * Disabled rather than left to look ordinary in all three cases.
    */
   readonly saveBlocked: boolean
   readonly onReset: () => void
@@ -374,8 +385,15 @@ export default function Prioritization() {
   // `data` would undo that on screen: `savedScores` stays undefined, every row
   // falls back to DEFAULT_SCORE, and the user sees an unscored backlog with no
   // error. The server half of that invariant is worth nothing without this half.
+  //
+  // `isPending` is read for the SAME reason, one state along. It is undefined while
+  // the read is in flight too, and `?? {}` there made every row say "Not scored yet"
+  // and the panel invite a first ballot the moment the project fan-out settled first —
+  // a race, not an ordering, since this read scans a whole partition over up to
+  // MAX_PRIORITIZATION_PAGES round trips. No error panel retracts that, because
+  // nothing has failed.
   const {
-    data: savedScores, isError: scoresFailed,
+    data: savedScores, isError: scoresFailed, isPending: scoresPending,
   } = useQuery({
     queryKey: ['prioritization-scores'],
     queryFn: () => api.getPrioritizationScores(),
@@ -408,18 +426,19 @@ export default function Prioritization() {
   /**
    * The team view, as the rows show it and the list is ordered by.
    *
-   * `null` — not `{}` — when the read FAILED, which is the same `isError` the panel
-   * below is keyed on. An empty map means "the read arrived and nobody has scored
-   * anything", and absence from it is how this page says "nobody voted on this
-   * document"; falling back to one on a failure therefore made every row assert that
-   * about data that exists on the server, and the stats cards count the whole
-   * backlog as unscored. The row copy is the strongest statement on the page — it
-   * invites the reader to "cast the first ballot" — so it is exactly where an
-   * invented emptiness does the most damage.
+   * A READ STATE — not `{}` — whenever there is no map. An empty map means "the read
+   * arrived and nobody has scored anything", and absence from it is how this page says
+   * "nobody voted on this document"; falling back to one made every row assert that
+   * about data that exists on the server, and the stats cards count the whole backlog
+   * as unscored. The row copy is the strongest statement on the page — it invites the
+   * reader to "cast the first ballot" — so it is exactly where an invented emptiness
+   * does the most damage.
    *
-   * `savedScores` alone cannot tell the two apart: it is undefined while a read is
-   * in flight, when it has failed, and before it is enabled. Hence `scoresFailed`
-   * rather than `?? {}`.
+   * `savedScores` alone cannot tell the states apart: it is undefined while a read is
+   * in flight, when it has failed, and before it is enabled. Hence the query's own
+   * `isError` and `isPending` are passed alongside it — the first is what the error
+   * panel below is keyed on, and the second closes the same hole for the window before
+   * either outcome exists. Which of the two wins is `teamAggregatesOf`'s business.
    *
    * Deliberately NOT merged with `localEdits` the way `scores` is. A pending edit
    * is one reviewer's unsaved ballot; folding it into the team's mean would make
@@ -429,8 +448,12 @@ export default function Prioritization() {
    * backend owns.
    */
   const aggregates: TeamAggregates = useMemo(
-    () => scoresFailed ? null : savedScores?.aggregates ?? {},
-    [savedScores, scoresFailed],
+    () => teamAggregatesOf({
+      failed: scoresFailed,
+      pending: scoresPending,
+      aggregates: savedScores?.aggregates,
+    }),
+    [savedScores, scoresFailed, scoresPending],
   )
 
   const allPRFAQs = useMemo(() => collectPRFAQs(allProjectDetails, projects), [allProjectDetails, projects])
@@ -530,7 +553,7 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        saveBlocked={scoresFailed || overLongNotes.length > 0}
+        saveBlocked={typeof aggregates === 'string' || overLongNotes.length > 0}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />

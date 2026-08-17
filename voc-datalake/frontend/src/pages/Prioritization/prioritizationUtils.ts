@@ -72,8 +72,10 @@ export const calculatePriorityScore = (score: CompositeAxes): number => {
  * read as "no team data yet", never as an error.
  *
  * Lenient in the same spirit as `formLinkUtils.LinkedFormSchema`: an axis or a
- * spread that is missing, out of range or not a number degrades to 0 rather than
- * taking the row off the page, because a partial aggregate is still worth showing.
+ * spread that cannot be read degrades to 0 rather than taking the row off the page,
+ * because a partial aggregate is still worth showing. A number merely OUT OF RANGE
+ * is CLAMPED into [0, 5] instead — see `TEAM_AXIS`, which is where the difference
+ * between "unreadable" and "too large" is made.
  *
  * `reviewer_count` is the exception and carries NO fallback: it is the field that
  * says somebody voted, and an invented 1 would present a row nobody scored as a
@@ -93,38 +95,62 @@ export const calculatePriorityScore = (score: CompositeAxes): number => {
  * so a zeroed axis beside a scored one is real data rather than a parse failure.
  *
  * That floor is about READABILITY, never about range, which is why the two are
- * separate schemas. `TEAM_AXIS` bounds the value; `READABLE_AXIS` only asks whether
- * a number was sent at all. Testing the floor against the bounded schema conflated
+ * separate schemas. `TEAM_AXIS` reads the value; `READABLE_AXIS` only asks whether
+ * a number was sent at all. Testing the floor against a BOUNDED schema conflated
  * the two: four means of 6 with `reviewer_count: 4` were dropped and the row read
  * "Not scored yet" — a document four reviewers had voted on presented as one nobody
  * had opened — while the same row with ONE axis in range was kept with the other
- * three degraded to 0. Same data quality, opposite outcome, decided by whether one
- * axis happened to land inside the bound. An out-of-range number is a number, so it
- * degrades through `.catch(0)` like any other unusable value and the row stays.
+ * three at 0. Same data quality, opposite outcome, decided by whether one axis
+ * happened to land inside the bound.
  */
-const TEAM_AXIS = z.number().min(0).max(5)
+/**
+ * One team mean, as this page can render it: a number, clamped to the slider's scale.
+ *
+ * CLAMPED rather than caught to 0, because the two answer different questions and
+ * only clamping keeps the row derived from data somebody actually cast. Catching an
+ * out-of-range number to 0 combined with the readability floor below to produce the
+ * exact row the docstring above forbids: `{all axes 6, reviewer_count: 3}` cleared
+ * the floor (each axis IS a number) and then rendered `0.0 / 0.0 / 0.0`, "Reviewers
+ * 3", banded "Low Priority", with a "Spread 2.0" badge inviting the reader to read
+ * notes about a disagreement over numbers the parse had thrown away — and it sorted
+ * BELOW a row the team genuinely rated 1 across the board. Clamping answers `5.0`
+ * and "High Priority" instead, from the data as sent.
+ *
+ * The same line the backend draws on the way IN, for the same stated reason:
+ * `_is_clampable_number` is "CLAMP A NUMBER, REFUSE A NON-NUMBER", because `99` and
+ * `-4` plainly mean a value the slider range can hold while `'high'` has none to
+ * bound — so a 0 substituted there is INVENTED and, once stored, "indistinguishable
+ * from a deliberate lowest score". That is this defect exactly, on the read side.
+ * `.catch(0)` is therefore reached only by a value that is not a number at all, which
+ * expresses no position on the scale and so cannot be clamped onto it.
+ */
+const TEAM_AXIS = z.number()
+  .transform((mean) => Math.min(5, Math.max(0, mean)))
+  .catch(0)
 
 /**
  * Was a number sent for this axis at all — the question the drop rule asks.
  *
- * Deliberately unbounded. `min`/`max` answer "is this value usable", which is
- * `TEAM_AXIS`' job and is handled by degrading; this answers "did the row say
- * anything numeric here", which is what distinguishes a row asserting a score
- * nobody cast from one whose numbers merely need clamping. Still rejects `NaN` and
- * `Infinity`, which `z.number()` refuses, and bools and strings, which express no
- * slider position (the same reading the backend's `_readable_axis` takes).
+ * Deliberately unbounded. Range is `TEAM_AXIS`' business and is handled by clamping;
+ * this answers "did the row say anything numeric here", which is what distinguishes a
+ * row asserting a score nobody cast from one whose numbers merely need clamping.
+ * Still rejects `NaN` and `Infinity`, which `z.number()` refuses, and bools and
+ * strings, which express no slider position (the same reading the backend's
+ * `_readable_axis` takes).
  */
 const READABLE_AXIS = z.number()
 
 const TeamAggregateSchema = z.looseObject({
-  impact: TEAM_AXIS.catch(0),
-  time_to_market: TEAM_AXIS.catch(0),
-  confidence: TEAM_AXIS.catch(0),
-  strategic_fit: TEAM_AXIS.catch(0),
+  impact: TEAM_AXIS,
+  time_to_market: TEAM_AXIS,
+  confidence: TEAM_AXIS,
+  strategic_fit: TEAM_AXIS,
   reviewer_count: z.number().int().min(1),
   // In the same unit as `calculatePriorityScore`, so it is readable as "how far
-  // apart two reviewers were, in slider notches". Bounded by that scale.
-  score_spread: TEAM_AXIS.catch(0),
+  // apart two reviewers were, in slider notches" — and clamped to that scale for the
+  // same reason an axis is: a spread of 9 notches on a 0–5 scale is unreadable as
+  // sent but still says the reviewers were as far apart as they can be.
+  score_spread: TEAM_AXIS,
 })
 
 /** The four fields a row must be able to say SOMETHING about to be worth showing. */
@@ -140,15 +166,17 @@ const AXIS_FIELDS = ['impact', 'time_to_market', 'confidence', 'strategic_fit'] 
  * with.
  *
  * The axis check is made against the RAW input, after the lenient parse, because
- * `.catch(0)` has by then erased the difference between "the team scored this 0"
- * and "this field was unreadable". A row with no readable axis at all asserts a
- * score nobody cast, so it is dropped — the same argument as `reviewer_count`,
- * and it lands the row in the same "nobody scored this" state the page already
- * renders honestly.
+ * `TEAM_AXIS`' `.catch(0)` has by then erased the difference between "the team
+ * scored this 0" and "this field was unreadable". A row with no readable axis at all
+ * asserts a score nobody cast, so it is dropped — the same argument as
+ * `reviewer_count`, and it lands the row in the same "nobody scored this" state the
+ * page already renders honestly.
  *
  * Against `READABLE_AXIS`, not `TEAM_AXIS`: the rule is "did the row say anything
  * numeric", and an out-of-range mean plainly did. Dropping it too made a row four
- * reviewers voted on read as one nobody had opened — see `READABLE_AXIS`.
+ * reviewers voted on read as one nobody had opened; a row that clears the floor on a
+ * merely-out-of-range axis is honest because `TEAM_AXIS` clamps rather than zeroes
+ * it, so what the row shows is still the data as sent.
  */
 function parseAggregate(value: unknown): PrioritizationAggregate | null {
   const parsed = TeamAggregateSchema.safeParse(value)
@@ -160,28 +188,79 @@ function parseAggregate(value: unknown): PrioritizationAggregate | null {
 }
 
 /**
- * The team view of the whole backlog, or `null` when the read carrying it FAILED.
+ * Why the team view is not a map: the read is still running, or it failed.
  *
- * Two different absences, kept apart by the type. An empty map is "the read
- * arrived and nobody has scored anything", which every row may honestly state.
- * `null` is "we do not know what the team said", which no row may state as an
- * absence of votes: the endpoint raises rather than answering an empty map
- * precisely so the two stop looking alike, and reading a failure as an empty map
- * here would undo that on screen — every row asserting "no reviewer has scored
- * this yet" over data that exists on the server, and the stats cards counting the
- * whole backlog as unscored.
+ * Two states rather than one, because they license different words. "We could not
+ * read this" is a settled outcome the reader can act on by reloading; "we are still
+ * reading" is a claim about nothing at all, and will be replaced in a moment. What
+ * they share is the only thing that matters to every consumer: neither says anything
+ * about how anyone scored any document.
  */
-export type TeamAggregates = Record<string, PrioritizationAggregate> | null
+export type TeamReadState = 'loading' | 'unavailable'
 
 /**
- * What one row can say about the team, in the three states it can be in.
+ * The team view of the whole backlog, or why it is absent.
  *
- * A union rather than `TeamScore | null` plus a boolean beside it, so the third
- * state cannot be forgotten at a call site: every consumer either handles
- * `'unavailable'` or fails to compile. The distinction between the last two is the
- * one this page exists to keep — "the team rated this low", "nobody has voted",
- * "we could not find out" are three different statements, and only the first two
- * are about the document.
+ * THREE different absences, kept apart by the type. An empty map is "the read
+ * arrived and nobody has scored anything", which every row may honestly state.
+ * `'unavailable'` and `'loading'` are "we do not know what the team said", which no
+ * row may state as an absence of votes: the endpoint raises rather than answering an
+ * empty map precisely so the two stop looking alike, and reading either as an empty
+ * map would undo that on screen — every row asserting "no reviewer has scored this
+ * yet" over data that exists on the server, and the stats cards counting the whole
+ * backlog as unscored.
+ *
+ * `'loading'` is here rather than folded into `'unavailable'` because the page can
+ * tell them apart and a reader can too: the query's own `isPending` is the source,
+ * and the row that says "still loading" is not the row that says "reload me".
+ * Neither is representable as `undefined`, which is exactly why this is not derived
+ * from `data` alone — that is undefined while a read is in flight, when it has
+ * failed, and before it is enabled.
+ */
+export type TeamAggregates = Record<string, PrioritizationAggregate> | TeamReadState
+
+/**
+ * The team view, or the reason there is none, from the query's own three signals.
+ *
+ * Here rather than inline in the component so the mapping is testable without
+ * rendering a page, and so the precedence is stated once: FAILURE outranks pending,
+ * because a query that has failed and is retrying is pending again, and "reload the
+ * page" is the more useful of the two things to say about it.
+ *
+ * The read's `aggregates` is `undefined` in both of those cases AND when the response
+ * arrived carrying none — a deployment predating the field — which is why the caller
+ * cannot pass `data` alone. Only that third case means "no team data yet", and only it
+ * answers a map.
+ */
+export function teamAggregatesOf(read: {
+  readonly failed: boolean
+  readonly pending: boolean
+  readonly aggregates?: Record<string, PrioritizationAggregate>
+}): TeamAggregates {
+  const noMap = readStateOf(read)
+  return noMap ?? read.aggregates ?? {}
+}
+
+/** Why there is no map to read, or `null` when there is one. */
+function readStateOf(read: {
+  readonly failed: boolean
+  readonly pending: boolean
+}): TeamReadState | null {
+  if (read.failed) return 'unavailable'
+  return read.pending ? 'loading' : null
+}
+
+/**
+ * What one row can say about the team, in the four states it can be in.
+ *
+ * A union rather than `TeamScore | null` plus a boolean beside it, so a state cannot
+ * be forgotten at a call site: every consumer either handles each one or fails to
+ * compile. That is what made adding `'loading'` a widening of one type rather than
+ * five parallel edits — `tsc` walked to every surface that had to decide.
+ *
+ * The distinction the page exists to keep: "the team rated this low", "nobody has
+ * voted", "we could not find out" and "we have not finished looking" are four
+ * different statements, and only the first two are about the document.
  */
 export type TeamView =
   | {
@@ -190,13 +269,15 @@ export type TeamView =
   }
   | { readonly kind: 'unscored' }
   | { readonly kind: 'unavailable' }
+  | { readonly kind: 'loading' }
 
 /**
  * The `TeamScore` a view carries, or `null` when it carries none.
  *
  * For the two consumers that only ask about a score they can read — the spread
- * predicate and the numbers beside it. Both non-scored states answer `null`
- * because neither has a spread: nobody voted, or nobody could tell us.
+ * predicate and the numbers beside it. Every non-scored state answers `null`
+ * because none has a spread: nobody voted, nobody could tell us, or we are still
+ * asking.
  */
 export const teamScoreOf = (view: TeamView): TeamScore | null => (
   view.kind === 'scored' ? view.team : null
@@ -292,16 +373,17 @@ export function getTeamScore(
 }
 
 /**
- * What one row may say about the team — the three states, resolved in one place.
+ * What one row may say about the team — the four states, resolved in one place.
  *
- * `aggregates === null` means the read that carries the team view failed, so
- * nothing is known about ANY document and no row may claim nobody voted on it.
- * That check comes first, before the per-document lookup, because it is a fact
- * about the response rather than about the document: a missing key in a map that
- * never arrived says nothing.
+ * A read state instead of a map means nothing is known about ANY document, so no row
+ * may claim nobody voted on it. That check comes first, before the per-document
+ * lookup, because it is a fact about the response rather than about the document: a
+ * missing key in a map that has not arrived says nothing, whether it never will or
+ * merely has not yet.
  */
 export function getTeamView(aggregates: TeamAggregates, docId: string): TeamView {
-  if (aggregates === null) return { kind: 'unavailable' }
+  if (aggregates === 'unavailable') return { kind: 'unavailable' }
+  if (aggregates === 'loading') return { kind: 'loading' }
   const team = getTeamScore(aggregates, docId)
   return team === null ? { kind: 'unscored' } : {
     kind: 'scored',
@@ -408,10 +490,10 @@ export const getScoreColor = (score: number, max: number = 5): string => {
  * Which band a document falls in.
  *
  * `'none'` ONLY when the team view arrived and nobody had scored the document;
- * `'unavailable'` when it did not arrive, which is not a fact about the document
- * and must not be counted or labelled as one.
+ * `'unavailable'` and `'loading'` when it did not arrive, which is not a fact about
+ * the document and must not be counted or labelled as one.
  */
-export type PriorityBand = 'high' | 'medium' | 'low' | 'none' | 'unavailable'
+export type PriorityBand = 'high' | 'medium' | 'low' | 'none' | 'unavailable' | 'loading'
 
 /**
  * The band the row is labelled with and the stats cards count by.
@@ -422,8 +504,9 @@ export type PriorityBand = 'high' | 'medium' | 'low' | 'none' | 'unavailable'
  * this" into 0: a proposal three reviewers unanimously rated 1 across every axis
  * showed `1.0`, `Reviewers 3` and the band "Not Scored" — the same label as a
  * document nobody had opened. So `'none'` is reachable only from `'unscored'` and
- * every scored composite bands at least `'low'`. `'unavailable'` is separate again,
- * because a read that failed says nothing about how anyone scored anything.
+ * every scored composite bands at least `'low'`. `'unavailable'` and `'loading'` are
+ * separate again, because a read that failed — or has not finished — says nothing
+ * about how anyone scored anything.
  *
  * Classifies `displayComposite`, the value the row PRINTS, so the label and the
  * number beside it cannot disagree. Against `composite` the thresholds are unsafe:
@@ -432,6 +515,7 @@ export type PriorityBand = 'high' | 'medium' | 'low' | 'none' | 'unavailable'
  */
 export const priorityBand = (view: TeamView): PriorityBand => {
   if (view.kind === 'unavailable') return 'unavailable'
+  if (view.kind === 'loading') return 'loading'
   if (view.kind === 'unscored') return 'none'
   if (view.team.displayComposite >= 4) return 'high'
   if (view.team.displayComposite >= 3) return 'medium'
@@ -474,6 +558,14 @@ const BAND_STYLE: Record<PriorityBand, {
   unavailable: {
     i18nKey: 'prioritization:team.unavailable',
     color: 'bg-gray-100 text-gray-500',
+  },
+  // Says the answer is coming, which is neither "nobody voted" nor "we could not
+  // find out": a reader who sees "Not Scored" during the read has no way to know it
+  // will change, and the error panel is not on screen to retract it because nothing
+  // has gone wrong.
+  loading: {
+    i18nKey: 'prioritization:team.loading',
+    color: 'bg-gray-100 text-gray-400',
   },
 }
 
@@ -651,6 +743,17 @@ const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (t
  * signature: either side may be `null`, and a `null` on either side answers 0.
  * `sortPRFAQs` pins the unscored block itself, because whether a document has a
  * number at all is not a question the sort direction can answer (see there).
+ *
+ * Reads the TEAM aggregate, not the caller's own ballot, because that is what the row
+ * shows: a list that displays one number and sorts by another is worse than either
+ * alone. Before the team view, unscored rows sorted by whatever `DEFAULT_SCORE`
+ * implied (a composite of 0.9, above anything scored genuinely low), so an untouched
+ * proposal outranked one the team had looked at and rated poorly.
+ *
+ * The ONE comparator the page orders by, reached only through `sortPRFAQs`. It was
+ * once shadowed by an exported `comparePRFAQs` wrapper that no production code
+ * called, so a change here could break the shipped ordering with six test cases still
+ * green against the wrapper. Tests reach the ordering where the page does.
  */
 function compareByTeamScore(
   teamA: TeamScore | null,
@@ -660,35 +763,6 @@ function compareByTeamScore(
   if (!teamA || !teamB) return 0
   const value = TEAM_SORT_VALUE[sortField]
   return value(teamA) - value(teamB)
-}
-
-/**
- * The list order, ascending, for two rows that both carry the sort's data.
- *
- * Reads the TEAM aggregate, not the caller's own ballot, because that is what the
- * row now shows: a list that displays one number and sorts by another is worse
- * than either alone. `created_at` and `title` are document fields and are
- * unaffected.
- *
- * Unscored rows compare EQUAL here — to each other and to anything else — because
- * ordering them is `sortPRFAQs`' job, not this function's. Before the team view
- * they sorted by whatever `DEFAULT_SCORE` implied (a composite of 0.9, above
- * anything scored genuinely low), so an untouched proposal outranked one the team
- * had looked at and rated poorly.
- */
-export function comparePRFAQs(a: PRFAQWithProject, b: PRFAQWithProject, aggregates: Record<string, PrioritizationAggregate>, sortField: SortField): number {
-  switch (sortField) {
-    case 'created_at': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    case 'title': return a.title.localeCompare(b.title)
-    // A row with no team score has no value on this axis, so it cannot be ordered
-    // against one that has: `compareByTeamScore` answers 0 and `sortPRFAQs` groups
-    // those rows instead.
-    default: return compareByTeamScore(
-      getTeamScore(aggregates, a.document_id),
-      getTeamScore(aggregates, b.document_id),
-      sortField,
-    )
-  }
 }
 
 /** Does this sort field read a number only a scored document has? */
@@ -719,11 +793,11 @@ const ORDERS_BY_TEAM_SCORE: Record<SortField, boolean> = {
  * a block of never-voted-on ones puts unranked rows where the reader is looking for
  * ranked ones. They stay grouped at the bottom, where the row copy explains them.
  *
- * `aggregates === null` — the team read failed — leaves the list in the order it
- * arrived for the three score fields. There is no number to rank by and no honest
- * grouping either: pinning every row as "unscored" would order the backlog by a
- * property no row has been shown to have. Date and title still sort, because those
- * are document fields the failed read does not touch.
+ * A read state instead of a map — the team read failed, or has not finished — leaves
+ * the list in the order it arrived for the three score fields. There is no number to
+ * rank by and no honest grouping either: pinning every row as "unscored" would order
+ * the backlog by a property no row has been shown to have. Date and title still sort,
+ * because those are document fields neither state touches.
  *
  * Each row's team score is resolved ONCE, before the sort, rather than per
  * comparison. `getTeamScore` allocates and recomputes a composite, and a comparator
@@ -737,10 +811,11 @@ export function sortPRFAQs(
   sortDirection: SortDirection,
 ): PRFAQWithProject[] {
   const direction = sortDirection === 'desc' ? -1 : 1
-  const ordersByTeamScore = ORDERS_BY_TEAM_SCORE[sortField] && aggregates !== null
+  const arrived = typeof aggregates !== 'string' ? aggregates : null
+  const ordersByTeamScore = ORDERS_BY_TEAM_SCORE[sortField] && arrived !== null
   const teams = new Map<string, TeamScore | null>(
-    aggregates === null ? [] : prfaqs.map(
-      (prfaq) => [prfaq.document_id, getTeamScore(aggregates, prfaq.document_id)],
+    arrived === null ? [] : prfaqs.map(
+      (prfaq) => [prfaq.document_id, getTeamScore(arrived, prfaq.document_id)],
     ),
   )
   const unscored = (prfaq: PRFAQWithProject) => (

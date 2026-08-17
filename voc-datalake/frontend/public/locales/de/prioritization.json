@@ -77,7 +77,7 @@
     "label": "Sortieren nach:",
     "priority": "Priorität",
     "priorityFull": "Prioritätswert",
-    "teamOrdered": "Sortiert die Liste nach den Zahlen des Teams, die in jeder Zeile angezeigt werden – nicht nach Ihrer eigenen Bewertung.",
+    "teamOrdered": "{{fields}} sortieren nach den Zahlen des Teams, die in jeder Zeile angezeigt werden – nicht nach Ihrer eigenen Bewertung.",
     "ttm": "MeZ",
     "ttmFull": "Markteinführungszeit"
   },
@@ -91,6 +91,8 @@
   "team": {
     "disagreement": "Abweichung {{spread}}",
     "disagreementDescription": "Die Bewertenden liegen bei diesem Wert {{spread}} auseinander. Ihre Notizen erklären, warum — diese Seite zeigt nur Ihre eigene Notiz.",
+    "loading": "Teamwert wird geladen",
+    "loadingDescription": "Die Bewertungen des Teams werden noch geladen. Diese Zeile zeigt daher noch nicht an, ob jemand abgestimmt hat. Sie wird von selbst ergänzt.",
     "noScores": "Noch nicht bewertet",
     "noScoresDescription": "Noch niemand hat dies bewertet, es ist also nicht niedrig eingestuft, sondern unbewertet. Mit den Schiebereglern unten geben Sie die erste Stimme ab.",
     "reviewers": "Bewertende",

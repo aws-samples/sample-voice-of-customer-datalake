@@ -31,11 +31,34 @@ import type { TFunction } from 'i18next'
 import type { ReactElement } from 'react'
 
 /**
+ * Which words go under the dash, for each reason there is no number.
+ *
+ * Every key is spelled as a LITERAL here rather than assembled at the call site,
+ * because `scripts/i18n-check.mjs` cannot see a key it did not read verbatim: one
+ * built in a ternary — or held in a lookup without a namespace — is reported unused
+ * and becomes a deletion candidate in a cleanup pass, leaving the row rendering a raw
+ * key path. Same trap documented on `SCORABLE_TYPE_META`, and it fired here once
+ * already on a `t(kind === 'unavailable' ? … : …)`.
+ *
+ * `'scored'` is unreachable — the caller has a number in that case and renders it —
+ * but it is in the switch rather than a `default`, so adding a fifth state to
+ * `TeamView` fails to compile here instead of silently reading as "not scored yet".
+ */
+function unscoredLabel(kind: TeamView['kind'], t: TFunction): string {
+  switch (kind) {
+    case 'unavailable': return t('team.unavailable')
+    case 'loading': return t('team.loading')
+    case 'unscored': return t('team.noScores')
+    case 'scored': return t('team.score')
+  }
+}
+
+/**
  * The resting row's numbers: what the TEAM said about this document.
  *
  * Not the caller's own ballot, which used to be here and now lives behind the
  * expansion. A reader ranking a backlog is asking what the group thinks, and the
- * list sorts by exactly these numbers (`comparePRFAQs`), so the headline and the
+ * list sorts by exactly these numbers (`sortPRFAQs`), so the headline and the
  * order agree by construction.
  *
  * `'unscored'` means NOBODY HAS SCORED THIS — the aggregate omits a document
@@ -45,11 +68,13 @@ import type { ReactElement } from 'react'
  * so an untouched proposal presented as mid-table; a dash cannot be misread as a
  * score, and the label beneath it says which of the two states this is.
  *
- * `'unavailable'` is the third state and gets its OWN words: the read that carries
- * the team view failed, so this row knows nothing about how anyone scored the
- * document. Rendering it as "Not scored yet" claimed nobody had voted on data that
- * exists on the server — the very ambiguity the error panel above the list exists to
- * close, restated by the row in stronger terms than the panel can retract.
+ * `'unavailable'` and `'loading'` are the other two and get their OWN words: the read
+ * that carries the team view failed, or has not finished, so this row knows nothing
+ * about how anyone scored the document. Rendering either as "Not scored yet" claimed
+ * nobody had voted on data that exists on the server — the very ambiguity the error
+ * panel above the list exists to close, restated by the row in stronger terms than
+ * the panel can retract, and in the loading case with no panel on screen at all
+ * because nothing has gone wrong.
  *
  * The reviewer count sits beside the mean, never behind a hover, because one
  * ballot produces a mean equal to that ballot and a spread of zero: without the
@@ -62,14 +87,7 @@ function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
       <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
         <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
           <div className="text-lg sm:text-xl font-bold text-gray-300">—</div>
-          {/* Both keys spelled as literals rather than chosen inside one `t()`. A
-              key assembled at the call site is invisible to
-              `scripts/i18n-check.mjs`, which reports it unused and makes it a
-              deletion candidate in a cleanup pass — leaving the row rendering a raw
-              key path. Same trap documented on `SCORABLE_TYPE_META`. */}
-          <div className="text-xs text-gray-400">
-            {team.kind === 'unavailable' ? t('team.unavailable') : t('team.noScores')}
-          </div>
+          <div className="text-xs text-gray-400">{unscoredLabel(team.kind, t)}</div>
         </div>
       </div>
     )
@@ -216,10 +234,11 @@ function PRFAQRowHeader({
  * further down, which carries customer star ratings that deliberately do not feed
  * any score.
  *
- * Three states, not two. A failed read says so ("could not be read") rather than
- * inviting the reader to cast the first ballot on a document the team may already
- * have scored — the sliders are the one thing on this panel that can act, and
- * `team.noScoresDescription` points them at exactly that.
+ * Four states, not two. A read that failed says so ("could not be read"), and one
+ * still running says that, rather than either inviting the reader to cast the first
+ * ballot on a document the team may already have scored — the sliders are the one
+ * thing on this panel that can act, and `team.noScoresDescription` points them at
+ * exactly that.
  */
 function TeamScorePanel({ team }: { readonly team: TeamView }): ReactElement {
   const { t } = useTranslation('prioritization')
@@ -232,6 +251,13 @@ function TeamScorePanel({ team }: { readonly team: TeamView }): ReactElement {
       </h4>
       {team.kind === 'unavailable' ? (
         <p className="text-sm text-indigo-800 mt-1">{t('team.unavailableDescription')}</p>
+      ) : null}
+      {/* Reads the team view, not a spinner: this panel's job is to say what is known
+          about the group's opinion, and "we are still asking" is the honest answer
+          while the read runs. Anything else here invites a ballot the reader may be
+          about to see already cast. */}
+      {team.kind === 'loading' ? (
+        <p className="text-sm text-indigo-800 mt-1">{t('team.loadingDescription')}</p>
       ) : null}
       {team.kind === 'unscored' ? (
         <p className="text-sm text-indigo-800 mt-1">{t('team.noScoresDescription')}</p>

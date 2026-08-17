@@ -77,7 +77,7 @@
     "label": "Sort by:",
     "priority": "Priority",
     "priorityFull": "Priority Score",
-    "teamOrdered": "Orders the list by the team's numbers, the ones each row shows — not by your own ballot.",
+    "teamOrdered": "{{fields}} order by the team's numbers, the ones each row shows — not by your own ballot.",
     "ttm": "TTM",
     "ttmFull": "Time to Market"
   },
@@ -91,6 +91,8 @@
   "team": {
     "disagreement": "Spread {{spread}}",
     "disagreementDescription": "Reviewers are {{spread}} apart on this score. Their notes explain why — this page shows only your own note.",
+    "loading": "Loading team score",
+    "loadingDescription": "The team's scores are still loading, so this row does not yet show whether anyone has voted. It will fill in on its own.",
     "noScores": "Not scored yet",
     "noScoresDescription": "No reviewer has scored this yet, so it is unranked rather than ranked low. The sliders below cast the first ballot.",
     "reviewers": "Reviewers",
