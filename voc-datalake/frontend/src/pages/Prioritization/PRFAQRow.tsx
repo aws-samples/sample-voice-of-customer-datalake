@@ -15,6 +15,7 @@ import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../component
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import LinkedFormEvidence from './LinkedFormEvidence'
+import RoomVotePanel from './RoomVotePanel'
 import {
   getPriorityLabel, MAX_NOTE_LENGTH, reviewersDisagreed, SCORABLE_TYPE_META, teamScoreOf,
 } from './prioritizationUtils'
@@ -285,6 +286,15 @@ function TeamScorePanel({ team }: { readonly team: TeamView }): ReactElement {
               reviewers: score.reviewerCount,
             })}
           </p>
+          {/* Some of those ballots may be ANONYMOUS — cast from a phone in a room
+              through a voting session — and the aggregate cannot tell them apart
+              from a signed-in reviewer's, by design: each counts as one reviewer.
+              So the count above is a count of ballots and not of identifiable
+              people, and this line says so rather than leaving a reader to assume
+              the stronger claim. Unconditional, because nothing in the aggregate
+              distinguishes the kinds: a sentence shown only when anonymous ballots
+              exist would be a claim this page cannot make. */}
+          <p className="text-xs text-indigo-800 mt-1">{t('team.unattributedNote')}</p>
           {reviewersDisagreed(score) ? (
             /* The spread is what sends a reader to the notes, so the pointer to
                them sits with it. The same predicate the badge on the collapsed row
@@ -340,6 +350,13 @@ function PRFAQRowExpanded({
                 `maxLength`; `overLongNoteDocuments` blocks the save for it. */}
             <textarea value={score.notes} onChange={(e) => onUpdateScore('notes', e.target.value)} placeholder={t('notes.placeholder')} rows={2} maxLength={MAX_NOTE_LENGTH} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
           </div>
+          {/* Get the ROOM's ballots, not just this reader's: a facilitator opens a
+              session for this document and the QR goes on the projector. Under the
+              caller's own sliders because it is the other way to put a score in,
+              and above the customer evidence because it is still internal scoring.
+              Mounted expand-only, like everything else in this column — it opens
+              nothing and reads nothing until a facilitator asks. */}
+          <RoomVotePanel documentId={prfaq.document_id} documentTitle={prfaq.title} />
           {/* Ratings already collected about this document, beside the sliders
               that score it. Mounted here (expand-only) because the stats read is
               expensive per form — see LinkedFormEvidence. */}

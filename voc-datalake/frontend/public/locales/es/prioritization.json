@@ -6,6 +6,45 @@
     "saving": "Guardando...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "Tu voto es anónimo: cuenta para la puntuación del equipo de este documento, pero no se atribuye a ti ni a nadie más.",
+    "axes": {
+      "confidence": "Confianza",
+      "confidenceHint": "¿Qué seguridad tienes en las dos estimaciones anteriores?",
+      "impact": "Impacto",
+      "impactHint": "Valor de negocio y beneficio para el cliente.",
+      "strategicFit": "Encaje Estratégico",
+      "strategicFitHint": "Alineación con los objetivos de la empresa.",
+      "timeToMarket": "Tiempo de Lanzamiento",
+      "timeToMarketHint": "¿Con qué rapidez se puede entregar? 5 es lo más rápido."
+    },
+    "closed": {
+      "capReached": "Esta votación ya ha recogido todos los votos que acepta. Pide al facilitador que abra otra sesión.",
+      "closed": "El facilitador ha cerrado esta votación, por lo que no se aceptan más votos.",
+      "expired": "Esta votación ha caducado, por lo que no se aceptan más votos.",
+      "notFound": "Este enlace no abre ninguna votación. Comprueba que has escaneado el código que está en pantalla ahora.",
+      "title": "Esta votación no está abierta",
+      "unknown": "No se ha podido registrar tu voto en este momento. Inténtalo de nuevo en un instante."
+    },
+    "displayName": {
+      "hint": "Opcional. Los votos no se atribuyen a ninguna persona, así que puedes dejarlo en blanco.",
+      "label": "Tu nombre (opcional)"
+    },
+    "done": {
+      "description": "Tu voto cuenta para la puntuación del equipo de este documento. Puedes volver a abrir esta página desde el mismo teléfono para cambiarlo mientras la votación esté abierta.",
+      "title": "Voto registrado"
+    },
+    "loading": "Cargando esta votación...",
+    "notes": {
+      "label": "Notas (opcional)",
+      "placeholder": "Lo que los números no dicen..."
+    },
+    "submit": {
+      "label": "Enviar voto",
+      "pending": "Enviando..."
+    },
+    "title": "Puntúa esta propuesta"
+  },
   "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
   "docType": {
     "prd": "PRD",
@@ -49,6 +88,23 @@
     "low": "Baja prioridad",
     "medium": "Prioridad media",
     "none": "Sin puntuar"
+  },
+  "roomVote": {
+    "anonymousNote": "Los votos emitidos aquí cuentan para la puntuación del equipo de arriba y no se atribuyen a ninguna persona.",
+    "ballotsIn": "{{count}} de {{cap}} votos recibidos",
+    "close": "Cerrar la votación",
+    "closeFailed": "No se ha podido cerrar la votación. Inténtalo de nuevo: hasta que se cierre, se siguen aceptando votos.",
+    "closed": "Esta votación está cerrada. No se aceptan más votos.",
+    "closing": "Cerrando...",
+    "description": "Pon un código QR en pantalla y deja que todos los presentes envíen un voto anónimo desde su teléfono, sin cuenta.",
+    "open": "Abrir una votación en sala",
+    "openFailed": "No se ha podido abrir la votación. Inténtalo de nuevo.",
+    "opening": "Abriendo...",
+    "qrAccessibleName": "Código QR que abre la página de voto anónimo de {{title}}",
+    "qrCaption": "Escanea para puntuar esta propuesta desde un teléfono",
+    "qrUnavailable": "El código QR no está disponible porque la dirección de esta página no se puede compartir.",
+    "scopeNote": "Esta votación puntúa un solo documento: {{title}}. Una sala que lo escanee no puntúa ninguna otra versión de la misma idea.",
+    "title": "Puntuar en sala"
   },
   "scores": {
     "confidence": "Confianza",
@@ -102,6 +158,7 @@
     "score": "Puntuación del equipo",
     "summary": "Media del equipo {{score}} de 5 · Votos de revisores: {{reviewers}}",
     "title": "Lo que dijo el equipo",
+    "unattributedNote": "Algunos votos pueden ser votos anónimos de sala, que cuentan como un revisor cada uno y no se atribuyen a ninguna persona.",
     "unavailable": "Puntuación del equipo no disponible",
     "unavailableDescription": "Las puntuaciones del equipo no se han podido leer ahora mismo, así que esta fila no muestra nada sobre ellas; no significa que nadie haya votado. Vuelve a cargar la página para ver lo que dijo el equipo."
   },

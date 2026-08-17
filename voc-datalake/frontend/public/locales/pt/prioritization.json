@@ -6,6 +6,45 @@
     "saving": "Salvando...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "O seu voto é anónimo: conta para a pontuação da equipa deste documento, mas não é atribuído a você nem a mais ninguém.",
+    "axes": {
+      "confidence": "Confiança",
+      "confidenceHint": "Qual é a sua certeza sobre as duas estimativas acima?",
+      "impact": "Impacto",
+      "impactHint": "Valor de negócio e benefício para o cliente.",
+      "strategicFit": "Alinhamento Estratégico",
+      "strategicFitHint": "Alinhamento com os objetivos da empresa.",
+      "timeToMarket": "Tempo até ao Mercado",
+      "timeToMarketHint": "Com que rapidez isto pode ser entregue? 5 é o mais rápido."
+    },
+    "closed": {
+      "capReached": "Esta votação já recolheu todos os votos que aceita. Peça ao facilitador para abrir outra sessão.",
+      "closed": "O facilitador encerrou esta votação, pelo que não são aceites mais votos.",
+      "expired": "Esta votação expirou, pelo que não são aceites mais votos.",
+      "notFound": "Este link não abre nenhuma votação. Verifique se leu o código que está agora no ecrã.",
+      "title": "Esta votação não está aberta",
+      "unknown": "Não foi possível registar o seu voto neste momento. Tente novamente dentro de um instante."
+    },
+    "displayName": {
+      "hint": "Opcional. Os votos não são atribuídos a nenhuma pessoa, por isso pode deixar em branco.",
+      "label": "O seu nome (opcional)"
+    },
+    "done": {
+      "description": "O seu voto conta para a pontuação da equipa deste documento. Pode reabrir esta página no mesmo telemóvel para o alterar enquanto a votação estiver aberta.",
+      "title": "Voto registado"
+    },
+    "loading": "A carregar esta votação...",
+    "notes": {
+      "label": "Notas (opcional)",
+      "placeholder": "Aquilo que os números não dizem..."
+    },
+    "submit": {
+      "label": "Enviar voto",
+      "pending": "A enviar..."
+    },
+    "title": "Pontue esta proposta"
+  },
   "configureApiEndpoint": "Configure o endpoint da API em Configurações para visualizar a priorização.",
   "docType": {
     "prd": "PRD",
@@ -49,6 +88,23 @@
     "low": "Baixa Prioridade",
     "medium": "Média Prioridade",
     "none": "Não Pontuado"
+  },
+  "roomVote": {
+    "anonymousNote": "Os votos emitidos aqui contam para a pontuação da equipa acima e não são atribuídos a nenhuma pessoa.",
+    "ballotsIn": "{{count}} de {{cap}} votos recebidos",
+    "close": "Encerrar a votação",
+    "closeFailed": "Não foi possível encerrar a votação. Tente novamente — até encerrar, os votos continuam a ser aceites.",
+    "closed": "Esta votação está encerrada. Não são aceites mais votos.",
+    "closing": "A encerrar...",
+    "description": "Coloque um código QR no ecrã e deixe todos na sala enviar um voto anónimo do telemóvel, sem conta.",
+    "open": "Abrir uma votação de sala",
+    "openFailed": "Não foi possível abrir a votação. Tente novamente.",
+    "opening": "A abrir...",
+    "qrAccessibleName": "Código QR que abre a página de voto anónimo de {{title}}",
+    "qrCaption": "Leia para pontuar esta proposta a partir de um telemóvel",
+    "qrUnavailable": "O código QR está indisponível porque o endereço desta página não pode ser partilhado.",
+    "scopeNote": "Esta votação pontua um único documento: {{title}}. Uma sala que o leia não pontua nenhuma outra versão da mesma ideia.",
+    "title": "Pontuar em sala"
   },
   "scores": {
     "confidence": "Confiança",
@@ -102,6 +158,7 @@
     "score": "Pontuação da equipe",
     "summary": "Média da equipe {{score}} de 5 · Votos de revisores: {{reviewers}}",
     "title": "O que a equipe disse",
+    "unattributedNote": "Alguns votos podem ser votos anónimos de sala, que contam como um revisor cada e não são atribuídos a nenhuma pessoa.",
     "unavailable": "Pontuação da equipe indisponível",
     "unavailableDescription": "As pontuações da equipe não puderam ser lidas agora, portanto esta linha não mostra nada sobre elas — não que ninguém tenha votado. Recarregue a página para ver o que a equipe disse."
   },

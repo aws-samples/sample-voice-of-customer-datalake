@@ -37,14 +37,32 @@ import { z } from 'zod';
 import { VocApiStack } from './api-stack';
 import { ManifestSchema } from '../plugin-loader';
 
-/** The only routes that may be served without credentials: the embeddable
- *  widget runs on the customer's own site. `config` and `submit` are fetched
- *  by lambda/api/static/feedback-widget.js; `iframe` is navigated to directly
- *  by the browser in the iframe embed variant. */
+/** The only routes that may be served without credentials.
+ *
+ *  The three `/feedback-forms/{form_id}/…` routes: the embeddable widget runs on
+ *  the customer's own site. `config` and `submit` are fetched by
+ *  lambda/api/static/feedback-widget.js; `iframe` is navigated to directly by the
+ *  browser in the iframe embed variant.
+ *
+ *  The two `/voting-sessions/{session_id}/…` routes: a prioritization meeting
+ *  scores a proposal as a room, each attendee submitting one ballot from a
+ *  personal phone with no account (issue #337). `config` is fetched by the ballot
+ *  page so it can say "this session is closed" rather than show a form that
+ *  cannot submit; `submit` writes the ballot. The control is the SESSION, not the
+ *  obscurity of the link: a ballot is accepted only against a valid unguessable
+ *  session token, only while that session is open and unexpired, and only up to
+ *  the session's ballot cap — enforced by a conditional atomic increment on the
+ *  session record. Closing the session is the revocation.
+ *
+ *  EXTENDING THIS LIST IS THE REVIEW GATE. It is not a description of the
+ *  template; it is the decision. A new entry means somebody chose to publish a
+ *  route, and the test below failing until the entry exists is the mechanism. */
 const INTENTIONALLY_PUBLIC_ROUTES = [
   'GET /feedback-forms/{form_id}/config',
   'GET /feedback-forms/{form_id}/iframe',
+  'GET /voting-sessions/{session_id}/config',
   'POST /feedback-forms/{form_id}/submit',
+  'POST /voting-sessions/{session_id}/submit',
 ];
 
 /** `/mcp` uses a custom Lambda token authorizer because MCP clients cannot run
@@ -229,7 +247,7 @@ function callerFormsPaths(source: string): string[] {
 const readRepoFile = (...segments: string[]) => readFileSync(join(__dirname, '..', '..', ...segments), 'utf-8');
 
 describe('VocApiStack authorization invariant', () => {
-  it('leaves only the three embeddable-widget routes unauthenticated', () => {
+  it('leaves only the allowlisted widget and ballot routes unauthenticated', () => {
     expect(unauthenticatedRoutes(apiTemplate())).toEqual(INTENTIONALLY_PUBLIC_ROUTES);
   });
 
@@ -245,7 +263,25 @@ describe('VocApiStack authorization invariant', () => {
     expect(ids).toContain('webscraper');
   });
 
-  it('leaves only those three unauthenticated with every plugin enabled too', () => {
+  it.each([
+    'POST /voting-sessions',
+    'GET /voting-sessions/{session_id}',
+    'POST /voting-sessions/{session_id}/close',
+  ])('keeps the facilitator half of a voting session behind Cognito: %s', (route) => {
+    // The public half of this feature is two routes and no more. OPENING a
+    // session is what authorizes anonymous writes, and CLOSING one is the
+    // revocation — publishing either would mean anyone could open a write window
+    // on any document, or shut a meeting's vote down from outside the room.
+    // Asserted per route rather than left to the invariant above, because that
+    // one would also pass if these three vanished from the template entirely.
+    const method = apiMethods(apiTemplate()).find((m) => m.route === route);
+
+    expect(method, `${route} is not wired at all`).toBeDefined();
+    expect(method?.authorizationType).toBe('COGNITO_USER_POOLS');
+    expect(method?.hasAuthorizerId).toBe(true);
+  });
+
+  it('leaves only those five unauthenticated with every plugin enabled too', () => {
     // The empty-plugin shape is not what anyone deploys. Plugin webhook
     // receivers are deliberately unauthenticated, so if a plugin ever declares
     // a webhook this fails and forces a considered allowlist entry rather than
@@ -256,7 +292,7 @@ describe('VocApiStack authorization invariant', () => {
   it('pins the fact that makes the allowlist complete: no plugin declares a webhook', () => {
     // Webhook receivers are added with no method options, i.e. deliberately
     // anonymous. Today no manifest declares one, which is why the allowlist
-    // above is exactly three routes. Reading the manifests directly makes that
+    // above holds no webhook route. Reading the manifests directly makes that
     // assumption fail loudly the day it stops holding — the previous test
     // compares two identical shapes until then, so on its own it cannot.
     //
@@ -332,6 +368,22 @@ describe('stack and callers stay in step', () => {
     expect(registered.filter((route) => !wired.has(route))).toEqual([]);
   });
 
+  it('wires every route the ballots handler registers', () => {
+    // Same independent oracle as the feedback-form check above, and it matters
+    // more here: two of these routes are reached by a phone with no credentials,
+    // so an unwired one answers 403 Missing Authentication Token to a room that
+    // has just scanned a QR — with nothing on the page able to explain it.
+    const handler = readRepoFile('lambda', 'api', 'ballots_handler.py');
+    const registered = [...handler.matchAll(/@app\.(get|post|put|delete|route)\(\s*['"]([^'"]+)['"]/g)]
+      .map(([, verb, path]) => `${verb.toUpperCase()} ${path.replace(/<(\w+)>/g, '{$1}')}`)
+      .sort();
+
+    expect(registered.length).toBeGreaterThan(0);
+
+    const wired = new Set(apiMethods(apiTemplate()).map((m) => m.route));
+    expect(registered.filter((route) => !wired.has(route))).toEqual([]);
+  });
+
   it.each([
     ['the API client', join('frontend', 'src', 'api', 'client.ts')],
     ['the embeddable widget', join('lambda', 'api', 'static', 'feedback-widget.js')],
@@ -385,10 +437,20 @@ describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
     expect(routes).toContain('POST /feedback-forms');
   });
 
-  it('leaves nothing unauthenticated during that transitional deploy', () => {
-    // The window is fail-closed: the public widget routes live under {form_id},
-    // so they are absent too rather than exposed.
-    expect(unauthenticatedRoutes(flagged())).toEqual([]);
+  it('leaves no FORM route unauthenticated during that transitional deploy', () => {
+    // The window is fail-closed for the forms: the public widget routes live
+    // under {form_id}, so they are absent too rather than exposed.
+    //
+    // The public BALLOT routes are unaffected and stay up, which is the intended
+    // scope of a flag named for the feedback-form item routes: it exists to retire
+    // one old {proxy+}, and taking a prioritization meeting's voting down with it
+    // would be an unrelated outage. Asserted as an exact list rather than by
+    // filtering the forms out, so a future public route cannot join this window
+    // unremarked.
+    expect(unauthenticatedRoutes(flagged())).toEqual([
+      'GET /voting-sessions/{session_id}/config',
+      'POST /voting-sessions/{session_id}/submit',
+    ]);
   });
 
   it('is a no-op when absent — the default template keeps the item routes', () => {
@@ -439,5 +501,57 @@ describe('metrics Lambda IAM grants', () => {
       return list.some((r) => JSON.stringify(r).includes('Aggregates') && !JSON.stringify(r).includes('index/*'));
     });
     expect(hasBareTableArn, 'aggregates Query granted on indexes only').toBe(true);
+  });
+});
+
+
+describe('ballots Lambda IAM grants', () => {
+  // A ballot is a DECISION record, not customer voice: it is never written to the
+  // feedback table and never enqueued for processing, so it gains no sentiment, no
+  // persona and no place in any customer metric. That split was made at the write
+  // path on purpose, and a comment cannot enforce it — the grants can. The ballots
+  // role holds the aggregates table and nothing else, so the unwanted write is
+  // impossible rather than merely absent from today's handler.
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+
+  function ballotsStatements(): { actions: string[]; resource: string }[] {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const policy = Object.entries(policies).find(([id]) => id.includes('BallotsLambdaRole'));
+    expect(policy, 'no IAM policy found for BallotsLambdaRole').toBeDefined();
+
+    return z
+      .object({ Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(StatementSchema) }) }) })
+      .parse(policy?.[1]).Properties.PolicyDocument.Statement
+      .map((s) => ({
+        actions: Array.isArray(s.Action) ? s.Action : [s.Action],
+        resource: JSON.stringify(s.Resource),
+      }));
+  }
+
+  it('can write the aggregates table, which holds sessions and ballots', () => {
+    const writes = ballotsStatements().filter(
+      (s) => s.actions.includes('dynamodb:UpdateItem') && s.resource.includes('Aggregates'),
+    );
+
+    expect(writes.length).toBeGreaterThan(0);
+  });
+
+  it('cannot reach the feedback table or the processing queue', () => {
+    // The resource-name matching is the same logical-ID substring approach the
+    // metrics grant test above uses, and carries the same caveat: renaming the
+    // Feedback table construct fails this test rather than silently passing it.
+    const offenders = ballotsStatements().filter(
+      (s) => s.resource.includes('Feedback') || s.actions.some((a) => a.startsWith('sqs:')),
+    );
+
+    expect(
+      offenders,
+      'the ballots Lambda has been granted access to customer feedback or to the '
+      + 'processing queue. A ballot is an internal decision record: enriching it '
+      + 'would assign a colleague\'s vote a customer persona.',
+    ).toEqual([]);
   });
 });

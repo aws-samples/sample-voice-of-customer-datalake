@@ -6,6 +6,45 @@
     "saving": "Enregistrement...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "Votre vote est anonyme : il compte dans le score de l'équipe pour ce document, mais il n'est attribué ni à vous ni à personne d'autre.",
+    "axes": {
+      "confidence": "Confiance",
+      "confidenceHint": "Quelle est votre certitude sur les deux estimations ci-dessus ?",
+      "impact": "Portée",
+      "impactHint": "Valeur métier et bénéfice pour le client.",
+      "strategicFit": "Adéquation Stratégique",
+      "strategicFitHint": "Alignement avec les objectifs de l'entreprise.",
+      "timeToMarket": "Délai de Mise sur le Marché",
+      "timeToMarketHint": "À quelle vitesse cela peut-il être livré ? 5 est le plus rapide."
+    },
+    "closed": {
+      "capReached": "Ce vote a déjà recueilli tous les bulletins qu'il accepte. Demandez à l'animateur d'ouvrir une autre session.",
+      "closed": "L'animateur a clos ce vote, aucun autre bulletin n'est accepté.",
+      "expired": "Ce vote a expiré, aucun autre bulletin n'est accepté.",
+      "notFound": "Ce lien n'ouvre aucun vote. Vérifiez que vous avez scanné le code affiché à l'écran maintenant.",
+      "title": "Ce vote n'est pas ouvert",
+      "unknown": "Votre bulletin n'a pas pu être enregistré pour l'instant. Réessayez dans un moment."
+    },
+    "displayName": {
+      "hint": "Facultatif. Les bulletins ne sont attribués à personne, vous pouvez donc laisser ce champ vide.",
+      "label": "Votre nom (facultatif)"
+    },
+    "done": {
+      "description": "Votre bulletin compte dans le score d'équipe de ce document. Vous pouvez réouvrir cette page depuis le même téléphone pour le modifier tant que le vote est ouvert.",
+      "title": "Bulletin enregistré"
+    },
+    "loading": "Chargement de ce vote...",
+    "notes": {
+      "label": "Notes (facultatif)",
+      "placeholder": "Ce que les chiffres ne disent pas..."
+    },
+    "submit": {
+      "label": "Envoyer le bulletin",
+      "pending": "Envoi..."
+    },
+    "title": "Notez cette proposition"
+  },
   "configureApiEndpoint": "Configurez le point de terminaison API dans les paramètres pour afficher la priorisation.",
   "docType": {
     "prd": "PRD",
@@ -49,6 +88,23 @@
     "low": "Basse priorité",
     "medium": "Priorité moyenne",
     "none": "Non évalué"
+  },
+  "roomVote": {
+    "anonymousNote": "Les bulletins déposés ici comptent dans le score d'équipe ci-dessus et ne sont attribués à personne.",
+    "ballotsIn": "{{count}} bulletins sur {{cap}} reçus",
+    "close": "Clore le vote",
+    "closeFailed": "Le vote n'a pas pu être clos. Réessayez : jusqu'à sa clôture, les bulletins sont encore acceptés.",
+    "closed": "Ce vote est clos. Aucun autre bulletin n'est accepté.",
+    "closing": "Clôture...",
+    "description": "Affichez un QR code et laissez chaque personne présente envoyer un bulletin anonyme depuis son téléphone, sans compte.",
+    "open": "Ouvrir un vote en salle",
+    "openFailed": "Le vote n'a pas pu être ouvert. Réessayez.",
+    "opening": "Ouverture...",
+    "qrAccessibleName": "QR code ouvrant la page de vote anonyme pour {{title}}",
+    "qrCaption": "Scannez pour noter cette proposition depuis un téléphone",
+    "qrUnavailable": "Le QR code est indisponible car l'adresse de cette page ne peut pas être partagée.",
+    "scopeNote": "Ce vote note un seul document : {{title}}. Une salle qui le scanne ne note aucune autre version de la même idée.",
+    "title": "Noter en salle"
   },
   "scores": {
     "confidence": "Confiance",
@@ -102,6 +158,7 @@
     "score": "Note de l'équipe",
     "summary": "Moyenne de l'équipe {{score}} sur 5 · Votes d'évaluateurs : {{reviewers}}",
     "title": "Ce que l'équipe a dit",
+    "unattributedNote": "Certains bulletins peuvent être des bulletins anonymes de salle : ils comptent chacun pour un évaluateur et ne sont attribués à personne.",
     "unavailable": "Note de l'équipe indisponible",
     "unavailableDescription": "Les notes de l'équipe n'ont pas pu être lues pour le moment : cette ligne n'affiche donc rien à leur sujet — cela ne signifie pas que personne n'a voté. Rechargez la page pour voir ce que l'équipe a dit."
   },
