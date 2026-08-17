@@ -68,7 +68,7 @@
   },
   "scoresUnavailable": {
     "description": "Sus puntuaciones guardadas no están disponibles en este momento, por lo que los números que se muestran a continuación son valores predeterminados y no los que alguien introdujo. Vuelva a cargar la página antes de guardar.",
-    "staleDescription": "La última actualización de las puntuaciones guardadas falló, por lo que las cifras que se muestran son las últimas que se leyeron correctamente. Su propia valoración no se ha visto afectada y todavía se puede guardar.",
+    "staleDescription": "La última actualización de las puntuaciones guardadas falló, por lo que las cifras que se muestran son las últimas que se leyeron correctamente. Su propia valoración no se ha visto afectada: no hace falta recargar antes de guardar.",
     "title": "No se pudieron cargar las puntuaciones"
   },
   "sort": {

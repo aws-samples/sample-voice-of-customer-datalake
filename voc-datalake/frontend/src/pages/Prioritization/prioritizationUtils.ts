@@ -199,6 +199,23 @@ function parseAggregate(value: unknown): PrioritizationAggregate | null {
 export type TeamReadState = 'loading' | 'unavailable'
 
 /**
+ * What to call each read state, for the surfaces that name one without a document.
+ *
+ * A `Record` over the union rather than a ternary, for the reason `unscoredLabel`'s
+ * switch keeps its unreachable arm: a ternary silently folds any state it does not
+ * name into its else branch, so a third read state would be announced as "could not
+ * be read" and compile. A missing key here is a type error instead.
+ *
+ * Namespace-QUALIFIED, like `BAND_STYLE`: `scripts/i18n-check.mjs` only collects a
+ * data-held key that carries a namespace, and an unprefixed one becomes a deletion
+ * candidate — which then renders the raw key path to users.
+ */
+export const READ_STATE_I18N_KEY: Record<TeamReadState, `prioritization:${string}`> = {
+  loading: 'prioritization:team.loading',
+  unavailable: 'prioritization:team.unavailable',
+}
+
+/**
  * The team view of the whole backlog, or why it is absent.
  *
  * THREE different absences, kept apart by the type. An empty map is "the read
@@ -364,8 +381,6 @@ export interface TeamScore {
    * describes it agree by construction rather than by two matching literals.
    */
   readonly displayComposite: number
-  readonly impact: number
-  readonly timeToMarket: number
   /**
    * The two sortable axes AS THE ROW PRINTS THEM, for the same reason
    * `displayComposite` exists — and for a reason that needs no floating-point dust.
@@ -376,6 +391,12 @@ export interface TeamScore {
    * identical — worse, it swaps them when the direction is toggled, which is the
    * instability `sortPRFAQs` negates rather than reverses to avoid. Rounding here, once,
    * makes the printed axis and the order it produces the same number.
+   *
+   * The RAW `impact` / `timeToMarket` are deliberately not carried alongside them. They
+   * had no reader left once the row and both axis sorts moved here, and a second,
+   * unrounded copy of a value whose whole point is that everything reads one rounding is
+   * exactly the drift this replaced. The unrounded means are still on the
+   * `PrioritizationAggregate` for anything that genuinely needs them.
    */
   readonly displayImpact: number
   readonly displayTimeToMarket: number
@@ -418,8 +439,6 @@ export function getTeamScore(
   return {
     composite,
     displayComposite: roundToDisplay(composite),
-    impact: aggregate.impact,
-    timeToMarket: aggregate.time_to_market,
     displayImpact: roundToDisplay(aggregate.impact),
     displayTimeToMarket: roundToDisplay(aggregate.time_to_market),
     reviewerCount: aggregate.reviewer_count,

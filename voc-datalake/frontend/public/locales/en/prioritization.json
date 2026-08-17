@@ -68,7 +68,7 @@
   },
   "scoresUnavailable": {
     "description": "Your saved scores are unavailable right now, so the numbers below are defaults rather than what anyone entered. Reload the page before saving.",
-    "staleDescription": "The latest refresh of the saved scores failed, so the figures shown are the last ones read successfully. Your own ballot is unaffected and can still be saved.",
+    "staleDescription": "The latest refresh of the saved scores failed, so the figures shown are the last ones read successfully. Your own ballot is unaffected — there is no need to reload before saving.",
     "title": "Scores could not be loaded"
   },
   "sort": {

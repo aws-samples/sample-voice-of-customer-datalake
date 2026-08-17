@@ -512,7 +512,7 @@ describe('Prioritization', () => {
 
       // Scoped to the stats grid: "High Priority" and "Not Scored" are also the
       // row's own priority-band labels, so an unscoped query reads a row.
-      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
       expect(grid).not.toBeNull()
       /** The number printed above one card's label. */
       const cardValue = (label: string) => within(grid ?? document.body)
@@ -601,7 +601,7 @@ describe('Prioritization', () => {
       expect(row).toHaveTextContent('High Priority')
       expect(row).not.toHaveTextContent('Medium Priority')
       // And the card above the row agrees with the label on it.
-      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
       const cardValue = (label: string) => within(grid ?? document.body)
         .getByText(label).previousElementSibling?.textContent
       expect(cardValue('High Priority')).toBe('1')
@@ -1088,7 +1088,7 @@ describe('Prioritization', () => {
       })
 
       // Scoped to the stats grid: these labels are also the rows' own band labels.
-      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
       const cardValue = (label: string) => within(grid ?? document.body)
         .getByText(label).previousElementSibling?.textContent
 
@@ -1193,7 +1193,7 @@ describe('Prioritization', () => {
       expect(row).not.toHaveTextContent('Team score unavailable')
       expect(row).not.toHaveTextContent('Not scored yet')
       // The cards keep counting the map they are holding rather than dashing it.
-      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
       expect(within(grid ?? document.body).getByText('Not Scored').previousElementSibling?.textContent).toBe('0')
 
       // And the save guard follows the same line, which is a BEHAVIOUR change and so
@@ -1243,6 +1243,34 @@ describe('Prioritization', () => {
 
       // The edit registered — Reset appears with `hasChanges` — so the disabled Save is
       // the guard's doing and not the absence of anything to save.
+      expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+    })
+
+    it('refuses the save when the response arrived carrying no ballots at all', async () => {
+      // The guard reads the caller's OWN half, not merely "a response arrived". `scores`
+      // is passed through the query's `select` untouched — only `aggregates` is validated
+      // there — so a response that omits it leaves every slider on DEFAULT_SCORE while a
+      // response-level check reads as fine. That is the exact state the guard exists to
+      // refuse: saving would write this reviewer's edits over numbers they never saw.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({ aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      fireEvent.change((await screen.findAllByRole('slider'))[0], { target: { value: '4' } })
+
+      // The edit registered, so only the guard can be holding the button.
       expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
     })
@@ -1339,7 +1367,7 @@ describe('Prioritization', () => {
       renderPrioritization()
       await screen.findByText('Feature A PR/FAQ')
 
-      const grid = screen.getByText('Total Documents').closest('div.grid')
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
       const cardValue = (label: string) => within(grid ?? document.body)
         .getByText(label).previousElementSibling?.textContent
 

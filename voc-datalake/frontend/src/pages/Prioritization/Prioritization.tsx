@@ -31,8 +31,8 @@ import {
 import PRFAQRow from './PRFAQRow'
 import {
   applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments, priorityBand, sortPRFAQs,
-  teamAggregatesOf, teamReadDelivered, withEditedField,
+  MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments, priorityBand,
+  READ_STATE_I18N_KEY, sortPRFAQs, teamAggregatesOf, teamReadDelivered, withEditedField,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection, TeamAggregates,
@@ -121,7 +121,7 @@ function StatsCards({
     return (
       <>
         <span aria-hidden="true">—</span>
-        <span className="sr-only">{aggregates === 'loading' ? t('team.loading') : t('team.unavailable')}</span>
+        <span className="sr-only">{t(READ_STATE_I18N_KEY[aggregates])}</span>
       </>
     )
   }
@@ -290,13 +290,18 @@ function PrioritizationHeader({
    * in-flight case does not, because nothing has gone wrong and it clears itself the
    * moment the read lands.
    *
-   * Tested on `savedScores` — the caller's OWN half of the response — because that is the
-   * value being protected. It was briefly `!teamReadDelivered(aggregates)`, which agrees
-   * in every reachable state (`teamAggregatesOf` answers a map exactly when a response
-   * arrived), but agreeing is not the same as asking, and the predicate is what the next
-   * reader reads. A pre-#333 response carrying `scores` and no `aggregates` field is the
-   * case that shows the difference in intent: the reviewer's ballot did arrive, so the
-   * save is offered even though the team column has nothing.
+   * Tested on `savedScores?.scores` — the caller's OWN ballots, the exact value being
+   * protected — and not on any proxy for them. Two proxies were tried and both were
+   * weaker: `!teamReadDelivered(aggregates)` asks about the TEAM column, and a bare
+   * `savedScores === undefined` proves only that *a response* arrived. `scores` is passed
+   * through the query's `select` untouched (only `aggregates` is validated there), so a
+   * response that omits it leaves every slider on `DEFAULT_SCORE` — the state this guard
+   * exists to refuse — while both proxies read as "fine". An empty `{}` is still a save:
+   * the response arrived and this reviewer simply has no ballot yet.
+   *
+   * A pre-#333 response carrying `scores` and no `aggregates` field shows the other
+   * direction: the reviewer's ballot did arrive, so the save is offered even though the
+   * team column has nothing to show.
    *
    * A failed REFETCH is deliberately NOT blocked: the cached response is still on screen,
    * sliders included, so the reader is editing their real ballot and a save is as honest
@@ -591,7 +596,7 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        saveBlocked={savedScores === undefined || overLongNotes.length > 0}
+        saveBlocked={savedScores?.scores === undefined || overLongNotes.length > 0}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />

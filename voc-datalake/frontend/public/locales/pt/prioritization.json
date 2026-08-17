@@ -68,7 +68,7 @@
   },
   "scoresUnavailable": {
     "description": "Suas pontuações salvas estão indisponíveis neste momento, portanto os números abaixo são valores padrão e não o que alguém inseriu. Recarregue a página antes de salvar.",
-    "staleDescription": "A última atualização das pontuações salvas falhou, portanto os números exibidos são os últimos lidos com sucesso. A sua própria avaliação não foi afetada e ainda pode ser salva.",
+    "staleDescription": "A última atualização das pontuações salvas falhou, portanto os números exibidos são os últimos lidos com sucesso. A sua própria avaliação não foi afetada — não é necessário recarregar antes de salvar.",
     "title": "Não foi possível carregar as pontuações"
   },
   "sort": {

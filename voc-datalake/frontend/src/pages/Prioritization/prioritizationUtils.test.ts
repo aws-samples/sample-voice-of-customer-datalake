@@ -527,7 +527,7 @@ describe('teamReadDelivered asks "did a map arrive" in one place', () => {
 
     // The `getTeamScore` call is the assertion: it does not accept `TeamAggregates`,
     // so this line only compiles because the predicate narrowed the union.
-    expect(teamReadDelivered(aggregates) ? getTeamScore(aggregates, 'd1')?.impact : null).toBe(5)
+    expect(teamReadDelivered(aggregates) ? getTeamScore(aggregates, 'd1')?.displayImpact : null).toBe(5)
   })
 })
 
@@ -539,7 +539,7 @@ describe('getTeamView tells three states apart', () => {
     const view = getTeamView({ d1: aggregate({ impact: 5, reviewer_count: 2 }) }, 'd1')
 
     expect(view.kind).toBe('scored')
-    expect(teamScoreOf(view)?.impact).toBe(5)
+    expect(teamScoreOf(view)?.displayImpact).toBe(5)
   })
 
   it('reads a document absent from an arrived map as unscored', () => {
@@ -650,10 +650,12 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
       b: aggregate({ impact: 4.34, time_to_market: 4.34, reviewer_count: 2 }),
     }
 
-    // The premise: same printed value, different raw mean.
+    // The premise: same printed value, different mean on the wire. Read off the
+    // AGGREGATE for the raw half, since `TeamScore` deliberately no longer carries an
+    // unrounded copy — the input is where "these differ" actually lives.
+    expect(equalOnScreen.a.impact).not.toBe(equalOnScreen.b.impact)
     expect(getTeamScore(equalOnScreen, 'a')?.displayImpact).toBe(4.3)
     expect(getTeamScore(equalOnScreen, 'b')?.displayImpact).toBe(4.3)
-    expect(getTeamScore(equalOnScreen, 'a')?.impact).not.toBe(getTeamScore(equalOnScreen, 'b')?.impact)
 
     for (const field of ['impact', 'time_to_market'] as const) {
       expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, field, 'desc')), field)
