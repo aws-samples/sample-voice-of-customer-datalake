@@ -1275,6 +1275,33 @@ describe('Prioritization', () => {
       expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
     })
 
+    it('refuses the save when the ballots arrive as something other than a map', async () => {
+      // The wiring half of the boundary fix. `=== undefined` on the field catches an
+      // OMITTED `scores` and nothing else, so a `null` (or a string, or an array) reached
+      // the page as "present" while every slider sat on DEFAULT_SCORE. The select now
+      // normalizes `scores` the way it already normalized `aggregates`, so anything that
+      // is not a readable map answers `undefined` and the guard holds.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({ scores: null, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      fireEvent.change((await screen.findAllByRole('slider'))[0], { target: { value: '4' } })
+
+      expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+    })
+
     it('offers the save when the response carries a ballot but no aggregates at all', async () => {
       // A deployment predating #333. The guard asks about the CALLER'S own half, which
       // did arrive — the sliders hold this reviewer's stored ballot — so the save is

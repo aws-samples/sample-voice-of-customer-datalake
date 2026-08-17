@@ -8,7 +8,7 @@ import {
   getScore, calculatePriorityScore, collectPRFAQs, DEFAULT_SCORE, isScorable,
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
-  applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered,
+  applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
 } from './prioritizationUtils'
 import type { TeamAggregates } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
@@ -280,7 +280,13 @@ describe('getTeamScore', () => {
       d1: aggregate({ impact: 5, time_to_market: 4, strategic_fit: 2, confidence: 3, reviewer_count: 4 }),
     }, 'd1')
 
-    expect(team?.composite).toBeCloseTo(3.9)
+    // Read off `calculatePriorityScore` rather than a raw field on `TeamScore`, which
+    // deliberately carries only the rounded value. This is the stronger form anyway: it
+    // names the two functions whose agreement is the actual claim.
+    expect(calculatePriorityScore(aggregate({
+      impact: 5, time_to_market: 4, strategic_fit: 2, confidence: 3, reviewer_count: 4,
+    }))).toBeCloseTo(3.9)
+    expect(team?.displayComposite).toBe(3.9)
     expect(team?.reviewerCount).toBe(4)
   })
 
@@ -323,7 +329,12 @@ describe('getTeamScore', () => {
       d1: aggregate({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2 }),
     }, 'd1')
 
-    expect(team?.composite).toBeLessThan(4)
+    // The unrounded arithmetic is below 4 while the value the page reads is 4 — the
+    // whole point of rounding once. Taken from `calculatePriorityScore` because
+    // `TeamScore` carries no raw copy to disagree with it.
+    expect(calculatePriorityScore(aggregate({
+      impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2,
+    }))).toBeLessThan(4)
     expect(team?.displayComposite).toBe(4)
   })
 })
@@ -505,6 +516,76 @@ describe('teamAggregatesOf reads what the query is HOLDING, not only what it is 
   })
 })
 
+describe('normalizeScores validates the caller own half of the response too', () => {
+  // The half that used to be passed through untouched. A `=== undefined` check on the
+  // field caught an OMITTED `scores` and nothing else, so a null or non-object one left
+  // every slider on DEFAULT_SCORE with the save offered.
+  it('answers undefined for a container that is not a map', () => {
+    for (const raw of [null, undefined, 'nope', 42, true]) {
+      expect(normalizeScores(raw), String(raw)).toBeUndefined()
+    }
+  })
+
+  it('tells an arrived-but-empty map apart from no map at all', () => {
+    // The distinction the save guard turns on: `{}` is "you have no ballot yet", which
+    // must stay saveable, and `undefined` is "we have nothing to show you".
+    expect(normalizeScores({})).toEqual({})
+    expect(normalizeScores({})).not.toBeUndefined()
+  })
+
+  it('keeps a readable ballot as sent', () => {
+    const scores = normalizeScores({
+      d1: {
+        document_id: 'd1', impact: 5, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'mine',
+      },
+    })
+
+    expect(scores?.d1).toEqual({
+      document_id: 'd1', impact: 5, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'mine',
+    })
+  })
+
+  it('coerces an unreadable ROW rather than dropping the reviewer ballot', () => {
+    // The opposite policy to the team map, and deliberately: this is the reader's own
+    // stored ballot, so an unusable row falls back to what an unset axis already shows
+    // instead of vanishing. `time_to_market` is 3 in DEFAULT_SCORE, not 0, which is what
+    // makes this assertion about the fallback rather than about zeroes.
+    const scores = normalizeScores({ d1: 'not an object' })
+
+    expect(scores?.d1).toEqual({ ...DEFAULT_SCORE, document_id: 'd1' })
+    expect(scores?.d1.time_to_market).toBe(3)
+  })
+
+  it('degrades an unreadable AXIS and clamps an out-of-range one', () => {
+    const scores = normalizeScores({
+      d1: {
+        impact: 'high', time_to_market: 99, confidence: -4, strategic_fit: 3, notes: 7,
+      },
+    })
+
+    expect(scores?.d1.impact).toBe(DEFAULT_SCORE.impact)
+    expect(scores?.d1.time_to_market).toBe(5)
+    expect(scores?.d1.confidence).toBe(0)
+    expect(scores?.d1.strategic_fit).toBe(3)
+    expect(scores?.d1.notes).toBe('')
+  })
+
+  it('takes document_id from the map KEY, not from the row', () => {
+    // Every lookup on this page is by key, so a row disagreeing with its own key would
+    // otherwise produce a ballot that cannot be found.
+    expect(normalizeScores({ d1: { document_id: 'somewhere-else', impact: 2 } })?.d1.document_id)
+      .toBe('d1')
+  })
+
+  it('leaves a stored note longer than the API now accepts alone', () => {
+    // The bound arrived after the data. Truncating on READ would silently rewrite a
+    // reviewer's justification; refusing to SEND one is `overLongNoteDocuments`' job.
+    const long = 'x'.repeat(MAX_NOTE_LENGTH + 50)
+
+    expect(normalizeScores({ d1: { notes: long } })?.d1.notes).toBe(long)
+  })
+})
+
 describe('teamReadDelivered asks "did a map arrive" in one place', () => {
   // The binary question layered on the four-state union, which was spelled
   // `typeof aggregates === 'string'` at three call sites across two files: the sort,
@@ -631,7 +712,10 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     // The premise, asserted rather than assumed: same printed number, different raw.
     expect(rawA?.displayComposite).toBe(4)
     expect(rawB?.displayComposite).toBe(4)
-    expect(rawA?.composite).not.toBe(rawB?.composite)
+    // Different unrounded sums behind the same printed 4.0 — read off the arithmetic,
+    // since `TeamScore` carries only the rounded value.
+    expect(calculatePriorityScore(equalOnScreen.a))
+      .not.toBe(calculatePriorityScore(equalOnScreen.b))
 
     expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, 'priority_score', 'desc')))
       .toEqual(['Alpha', 'Beta'])

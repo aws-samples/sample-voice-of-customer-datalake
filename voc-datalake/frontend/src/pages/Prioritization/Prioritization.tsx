@@ -31,15 +31,16 @@ import {
 import PRFAQRow from './PRFAQRow'
 import {
   applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments, priorityBand,
-  READ_STATE_I18N_KEY, sortPRFAQs, teamAggregatesOf, teamReadDelivered, withEditedField,
+  MAX_NOTE_LENGTH, normalizeAggregates, normalizeScores, overLongNoteDocuments,
+  priorityBand, READ_STATE_I18N_KEY, sortPRFAQs, teamAggregatesOf, teamReadDelivered,
+  withEditedField,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection, TeamAggregates,
 } from './prioritizationUtils'
 import type { LinkedForm } from './formLinkUtils'
 import type {
-  Project, PrioritizationScore, PrioritizationAggregate, PrioritizationBallotEdit,
+  Project, PrioritizationScore, PrioritizationBallotEdit,
 } from '../../api/types'
 
 /**
@@ -58,11 +59,23 @@ import type {
  * referentially stable downstream), but this page re-renders on every slider drag,
  * so the waste scaled with both the backlog and the interaction.
  */
-const selectPrioritization = (data: {
-  scores: Record<string, PrioritizationScore>
-  aggregates?: Record<string, PrioritizationAggregate>
-}) => ({
-  scores: data.scores,
+/**
+ * The prioritization read, validated at the query boundary — BOTH halves of it.
+ *
+ * The parameter type is DERIVED from the client rather than restated, so `data.scores`
+ * and `data.aggregates` are proof that `getPrioritizationScores` declares those fields:
+ * remove one there and this fails to compile, where a hand-written shape would keep
+ * agreeing with itself while the wire moved.
+ *
+ * Both fields then go through a normalizer, because a declared type is a promise about
+ * the response and not a proof of it. `aggregates` was already validated; `scores` was
+ * passed through untouched, which let a `null` or non-object one leave every slider on
+ * `DEFAULT_SCORE` while the save guard read the field as present.
+ */
+type PrioritizationRead = Awaited<ReturnType<typeof api.getPrioritizationScores>>
+
+const selectPrioritization = (data: PrioritizationRead) => ({
+  scores: normalizeScores(data.scores),
   aggregates: normalizeAggregates(data.aggregates),
 })
 
@@ -131,7 +144,11 @@ function StatsCards({
       <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalDocuments')}</div></div>
       <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{countOf('high')}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
       <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{countOf('medium')}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-400">{countOf('none')}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
+      {/* `text-gray-500`, not the inherited `text-gray-400`: on this white card gray-400
+          measures 2.60:1, which fails AA even at the 3:1 allowance `text-2xl font-bold`
+          would qualify for — so it was missed by the contrast sweep rather than judged.
+          gray-500 is 4.84:1 and still reads as the quiet card of the four. */}
+      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-500">{countOf('none')}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
     </div>
   )
 }

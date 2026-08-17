@@ -260,11 +260,16 @@ export type TeamAggregates = Record<string, PrioritizationAggregate> | TeamReadS
  * refetch; the team half now survives it too, rather than one object off one query
  * having two outcomes.
  *
- * The states answer only when there is NO map to prefer — `aggregates` is `undefined`
- * while the read is in flight, when it failed with nothing cached, AND when the
- * response arrived carrying none (a deployment predating the field), which is why the
- * caller cannot pass `data` alone. Only that last case means "no team data yet", and
- * only it answers an empty map.
+ * The states answer only when there is NO map to prefer, which is why the caller cannot
+ * pass `data` alone: `aggregates` is `undefined` while the read is in flight and when it
+ * failed with nothing cached, and neither says anything about any document.
+ *
+ * The trailing `?? {}` is the total function's answer, not a case the page reaches: its
+ * `select` runs `normalizeAggregates`, which maps an absent field to an empty map before
+ * this is called, so "the response arrived carrying no aggregates" is already handled a
+ * step earlier. Kept rather than thrown, because a caller passing the raw field still
+ * needs an answer and "arrived with nothing in it" is the honest one — but it earns no
+ * justification of its own here.
  */
 export function teamAggregatesOf(read: {
   readonly failed: boolean
@@ -363,6 +368,66 @@ export function normalizeAggregates(raw: unknown): Record<string, Prioritization
 }
 
 /**
+ * One axis of the CALLER'S OWN ballot, coerced rather than dropped.
+ *
+ * The opposite policy to `TEAM_AXIS`' row-level drop, and deliberately so: a team row
+ * that cannot be read says nothing about the document and is honestly absent, but this
+ * is the reader's own stored ballot, and hiding a row of it would put their sliders on
+ * defaults with no sign that anything was lost. Out of range clamps, unreadable falls
+ * back to the value an unset axis already shows, which is what the sliders would have
+ * rendered anyway.
+ */
+const ownAxis = (fallback: number) => z.number()
+  .transform((value) => Math.min(5, Math.max(0, value)))
+  .catch(fallback)
+
+const OwnBallotSchema = z.looseObject({
+  impact: ownAxis(DEFAULT_SCORE.impact),
+  time_to_market: ownAxis(DEFAULT_SCORE.time_to_market),
+  confidence: ownAxis(DEFAULT_SCORE.confidence),
+  strategic_fit: ownAxis(DEFAULT_SCORE.strategic_fit),
+  // NOT bounded to `MAX_NOTE_LENGTH`. Notes longer than the API now accepts exist in
+  // stored data — the bound arrived after them — and truncating one here would silently
+  // rewrite a reviewer's justification. `overLongNoteDocuments` is what refuses to SEND
+  // one; reading it back is not the same act.
+  notes: z.string().catch(''),
+})
+
+/**
+ * The caller's own ballots as a map, or `undefined` when the response carried none that
+ * can be read.
+ *
+ * `undefined` rather than `{}`, because the save guard turns on exactly this difference:
+ * an empty map means "the response arrived and this reviewer has no ballot yet", which
+ * is the first-ballot case and must stay saveable, while `undefined` means the sliders
+ * are showing `DEFAULT_SCORE` and a save would write over numbers nobody has seen.
+ *
+ * Here for the reason `normalizeAggregates` is: `select` runs on whatever the wire
+ * actually sent, and the declared response type is a promise about it rather than a
+ * proof. `null`, a string, or an array all reach this as `scores` and all used to pass
+ * a `=== undefined` check on the field while leaving the page on defaults.
+ *
+ * `document_id` is taken from the MAP KEY, not from the row: the key is what every
+ * lookup on this page uses, so a row disagreeing with its own key would produce a
+ * ballot that cannot be found. Never throws, for the same reason as
+ * `normalizeAggregates` — a throw in a `select` turns a readable response into a failed
+ * query.
+ */
+export function normalizeScores(raw: unknown): Record<string, PrioritizationScore> | undefined {
+  const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
+  if (!asMap.success) return undefined
+  return Object.fromEntries(
+    Object.entries(asMap.data).map(([documentId, value]): [string, PrioritizationScore] => {
+      const parsed = OwnBallotSchema.safeParse(value)
+      return [documentId, {
+        ...(parsed.success ? parsed.data : DEFAULT_SCORE),
+        document_id: documentId,
+      }]
+    }),
+  )
+}
+
+/**
  * What the resting row shows: the team's composite, who voted, how far apart.
  *
  * `null` means NOBODY HAS SCORED THIS, which is a different statement from "the
@@ -370,9 +435,15 @@ export function normalizeAggregates(raw: unknown): Record<string, Prioritization
  * hence a null rather than a zeroed record.
  */
 export interface TeamScore {
-  readonly composite: number
   /**
    * The composite AS THE ROW PRINTS IT, rounded to the one decimal the page shows.
+   *
+   * The only composite on this type. The raw weighted sum is deliberately NOT carried
+   * beside it, for the reason the raw axes are not: nothing outside `getTeamScore`
+   * needs it, and a second unrounded copy of the value everything is supposed to read
+   * one rounding of is how the band and the number beside it came to disagree in the
+   * first place. `calculatePriorityScore` is exported for anyone who genuinely wants
+   * the unrounded arithmetic.
    *
    * Every classification reads this rather than `composite`, because the raw
    * weighted sum is an IEEE-754 value: four means of 4 sum to 3.9999999999999996,
@@ -435,10 +506,8 @@ export function getTeamScore(
 ): TeamScore | null {
   if (!Object.hasOwn(aggregates, docId)) return null
   const aggregate = aggregates[docId]
-  const composite = calculatePriorityScore(aggregate)
   return {
-    composite,
-    displayComposite: roundToDisplay(composite),
+    displayComposite: roundToDisplay(calculatePriorityScore(aggregate)),
     displayImpact: roundToDisplay(aggregate.impact),
     displayTimeToMarket: roundToDisplay(aggregate.time_to_market),
     reviewerCount: aggregate.reviewer_count,

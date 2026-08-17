@@ -66,7 +66,9 @@ function unscoredLabel(kind: TeamView['kind'], t: TFunction): string {
  * renders as an em dash under the words "Not scored yet": a placeholder where the
  * number would be, never a number. The old summary substituted 3 for an unset axis,
  * so an untouched proposal presented as mid-table; a dash cannot be misread as a
- * score, and the label beneath it says which of the two states this is.
+ * score, and the label beneath it says WHICH of the non-scored states this is —
+ * `unscoredLabel` names each one, so the dash is never the only thing distinguishing
+ * them.
  *
  * `'unavailable'` and `'loading'` are the other two and get their OWN words: the read
  * that carries the team view failed, or has not finished, so this row knows nothing
@@ -458,11 +460,12 @@ export default function PRFAQRow({
    */
   readonly score: PrioritizationScore
   /**
-   * What every reviewer together said, in the three states that can be true of it.
+   * What every reviewer together said — the row's resting state, and the same numbers
+   * the list is ordered by.
    *
-   * The row's resting state, and the same numbers the list is ordered by.
-   * `'unscored'` is "nobody voted", which the row states rather than rendering as a
-   * low score; `'unavailable'` is "the read failed", which it states as neither.
+   * See `TeamView` for the states and what each one licenses the row to say, rather than
+   * a count restated here: the count was wrong for four commits after `'loading'` joined
+   * the union, and a pointer cannot drift from the type the way a number can.
    */
   readonly team: TeamView
   /** Forms that validate this document — see formLinkUtils.selectLinkedForms. */
