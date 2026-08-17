@@ -366,6 +366,19 @@ export interface TeamScore {
   readonly displayComposite: number
   readonly impact: number
   readonly timeToMarket: number
+  /**
+   * The two sortable axes AS THE ROW PRINTS THEM, for the same reason
+   * `displayComposite` exists — and for a reason that needs no floating-point dust.
+   *
+   * `_aggregate_scores` rounds each mean to TWO decimals (`round(…, 2)`) and the row
+   * prints ONE (`.toFixed(1)`), so 4.25 and 4.34 are both ordinary backend output, both
+   * print `4.3`, and ordering them by the raw value ranks two rows a reader sees as
+   * identical — worse, it swaps them when the direction is toggled, which is the
+   * instability `sortPRFAQs` negates rather than reverses to avoid. Rounding here, once,
+   * makes the printed axis and the order it produces the same number.
+   */
+  readonly displayImpact: number
+  readonly displayTimeToMarket: number
   readonly reviewerCount: number
   /**
    * The range of the composite across reviewers who scored every axis, or `null`
@@ -407,6 +420,8 @@ export function getTeamScore(
     displayComposite: roundToDisplay(composite),
     impact: aggregate.impact,
     timeToMarket: aggregate.time_to_market,
+    displayImpact: roundToDisplay(aggregate.impact),
+    displayTimeToMarket: roundToDisplay(aggregate.time_to_market),
     reviewerCount: aggregate.reviewer_count,
     spread: aggregate.reviewer_count > 1 ? aggregate.score_spread : null,
   }
@@ -597,17 +612,23 @@ const BAND_STYLE: Record<PriorityBand, {
   // be fetched — the ambiguity the error panel above the list exists to close.
   unavailable: {
     i18nKey: 'prioritization:team.unavailable',
-    color: 'bg-gray-100 text-gray-500',
+    color: 'bg-gray-100 text-gray-600',
   },
   // Says the answer is coming, which is neither "nobody voted" nor "we could not
   // find out": a reader who sees "Not Scored" during the read has no way to know it
   // will change, and the error panel is not on screen to retract it because nothing
   // has gone wrong.
-  // `text-gray-600`, not the fainter `text-gray-400` this started as: #9ca3af on
-  // #f3f4f6 is 2.2:1, under the 4.5:1 WCAG AA needs for body text, and a label whose
-  // whole job is to stop a reader misreading a row must be readable to make it.
-  // Faintness is not what tells these three apart anyway — the label text is, since
-  // the two others are grey too. `unavailable` at `text-gray-500` clears AA at 4.8:1.
+  // `text-gray-600`, not the fainter `text-gray-400` this started as: a label whose whole
+  // job is to stop a reader misreading a row must be readable to make it. Faintness is
+  // not what tells these three apart anyway — the label text is, since the others are
+  // grey too.
+  //
+  // Measured from the PINNED Tailwind v4 palette (its oklch values converted to sRGB), on
+  // this `bg-gray-100` #f3f4f6, at `text-xs` where AA wants 4.5:1:
+  //   gray-400 #99a1af → 2.36:1 FAIL · gray-500 #6a7282 → 4.39:1 FAIL ·
+  //   gray-600 #4a5565 → 6.87:1 PASS
+  // gray-500 is why `unavailable` moved as well: it looks like a pass and is not. (An
+  // earlier note here claimed 4.8:1 for it — that was the v3 hex, and wrong.)
   loading: {
     i18nKey: 'prioritization:team.loading',
     color: 'bg-gray-100 text-gray-600',
@@ -783,10 +804,13 @@ const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (t
   // difference. Reading the printed value makes them tie, and a tie keeps arrival
   // order in both directions (see `sortPRFAQs`).
   priority_score: (team) => team.displayComposite,
-  // The axis means are printed as the API sends them, so these already read what the
-  // row shows.
-  impact: (team) => team.impact,
-  time_to_market: (team) => team.timeToMarket,
+  // The axes are rounded here too, and NOT because of float dust: the backend rounds
+  // each mean to two decimals and the row prints one, so 4.25 and 4.34 both print `4.3`
+  // while the raw values still order — and flip when the reader toggles the direction.
+  // Reading the printed value ties them instead. These two tie most often of the three,
+  // because a 0–5 mean is a coarse scale.
+  impact: (team) => team.displayImpact,
+  time_to_market: (team) => team.displayTimeToMarket,
 }
 
 /**

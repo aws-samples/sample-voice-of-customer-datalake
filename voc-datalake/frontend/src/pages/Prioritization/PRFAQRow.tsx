@@ -86,8 +86,16 @@ function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
     return (
       <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
         <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
-          <div className="text-lg sm:text-xl font-bold text-gray-300">—</div>
-          <div className="text-xs text-gray-400">{unscoredLabel(team.kind, t)}</div>
+          {/* Decorative, and hidden as such: announced alone an em dash reads like a
+              value, and the label below is what carries the state. Same treatment as the
+              stats cards' dash. */}
+          <div aria-hidden="true" className="text-lg sm:text-xl font-bold text-gray-300">—</div>
+          {/* `text-gray-600`, not `text-gray-400`: #99a1af on this `bg-gray-50` is 2.49:1,
+              well under the 4.5:1 WCAG AA wants at `text-xs`, and this is the one string
+              that tells "nobody voted" from "we could not find out" from "still reading" —
+              the distinction the row exists to make. Matches the band label beside the
+              title, raised to `text-gray-600` for the same reason. */}
+          <div className="text-xs text-gray-600">{unscoredLabel(team.kind, t)}</div>
         </div>
       </div>
     )
@@ -95,13 +103,18 @@ function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
   const scored = team.team
   return (
     <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
+      {/* The axis values the SORT reads, not the raw means: the backend rounds to two
+          decimals and this prints one, so printing the raw value here would let the list
+          order two rows that show the same number. One rounding, shared — the rule
+          `displayComposite` already follows. Captions are `text-gray-500` (4.63:1 on this
+          white row) rather than `text-gray-400` (2.49:1), which is under AA at this size. */}
       <div className="text-center">
-        <div className="text-base sm:text-lg font-bold text-blue-600">{scored.impact.toFixed(1)}</div>
-        <div className="text-xs text-gray-400">{t('scores.impact')}</div>
+        <div className="text-base sm:text-lg font-bold text-blue-600">{scored.displayImpact.toFixed(1)}</div>
+        <div className="text-xs text-gray-500">{t('scores.impact')}</div>
       </div>
       <div className="text-center">
-        <div className="text-base sm:text-lg font-bold text-purple-600">{scored.timeToMarket.toFixed(1)}</div>
-        <div className="text-xs text-gray-400">{t('sort.ttm')}</div>
+        <div className="text-base sm:text-lg font-bold text-purple-600">{scored.displayTimeToMarket.toFixed(1)}</div>
+        <div className="text-xs text-gray-500">{t('sort.ttm')}</div>
       </div>
       <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
         {/* The same rounded value the priority band beside the title classifies, so
@@ -111,14 +124,14 @@ function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
         {/* Labelled as the TEAM's score, not "Score": this number changed meaning
             from "my composite" to "the team's mean composite", and a row a reader
             cannot attribute is worse than either alone. */}
-        <div className="text-xs text-gray-400">{t('team.score')}</div>
+        <div className="text-xs text-gray-500">{t('team.score')}</div>
       </div>
       <div className="text-center">
         <div className="flex items-center justify-center gap-1 text-sm sm:text-base font-bold text-gray-700">
           <Users size={14} className="text-gray-400" />
           {scored.reviewerCount}
         </div>
-        <div className="text-xs text-gray-400">{t('team.reviewers')}</div>
+        <div className="text-xs text-gray-500">{t('team.reviewers')}</div>
       </div>
     </div>
   )

@@ -408,8 +408,10 @@ describe('Prioritization', () => {
       // assertion held only while unrelated fixture data happened to avoid the digit.
       expect(within(row).queryByText('0.9')).toBeNull()
       expect(within(row).queryByText('3.0')).toBeNull()
-      // The em dash stands where the number would be — a placeholder, never a score.
-      expect(within(row).getByText('—')).toBeInTheDocument()
+      // The em dash stands where the number would be — a placeholder, never a score, and
+      // hidden from assistive technology for that reason: announced alone it reads like a
+      // value, while the label beneath it carries the actual state.
+      expect(within(row).getByText('—')).toHaveAttribute('aria-hidden', 'true')
       // And the band beside the title says so too, rather than "Low Priority".
       expect(row).toHaveTextContent('Not Scored')
     })
@@ -650,6 +652,36 @@ describe('Prioritization', () => {
         .map((h) => h.textContent)
         .filter((title) => title !== 'Prioritization Framework')
       expect(rowTitles).toEqual(['Out Of Range', 'Genuinely Lowest'])
+    })
+
+    it('prints the axis value the sort ranks by, where the two roundings differ', async () => {
+      // 4.35 is the discriminating mean: `(4.35).toFixed(1)` is "4.3" (the stored double
+      // is 4.34999…), while `Math.round(4.35 * 10) / 10` is 4.4. So printing the raw mean
+      // while ordering by the rounded one puts the row and the list back into
+      // disagreement — the thing one shared rounding exists to prevent. The row must show
+      // the value the sort uses.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: {
+          d1: {
+            impact: 4.35, time_to_market: 1, confidence: 1, strategic_fit: 1,
+            reviewer_count: 3, score_spread: 0,
+          },
+        },
+      })
+
+      renderPrioritization()
+
+      const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(within(row).getByText('4.4')).toBeInTheDocument()
+      expect(within(row).queryByText('4.3')).toBeNull()
     })
 
     it('keeps the unscored rows last when the reader sorts ascending', async () => {
@@ -1147,9 +1179,14 @@ describe('Prioritization', () => {
 
       // The failure is REPORTED — the panel is keyed on the query's own `isError`, and
       // the latest read did fail, so this stays true.
-      await waitFor(() => {
-        expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
-      })
+      const panel = await waitFor(() => screen.getByRole('alert', { name: 'Scores could not be loaded' }))
+      // But NOT in the first-load wording. Every clause of that sentence is false here,
+      // and the last one is dangerous: a reader who obeys "Reload the page before
+      // saving" loses the edit this state deliberately lets them save.
+      expect(panel).not.toHaveTextContent('are defaults')
+      expect(panel).not.toHaveTextContent('Reload the page before saving')
+      expect(panel).toHaveTextContent('latest refresh of the saved scores failed')
+      expect(panel).toHaveTextContent('last ones read successfully')
       // And the team's answer is still the one on screen, not a retraction of it.
       expect(screen.getByText('2.1')).toBeInTheDocument()
       const row = screen.getByRole('button', { name: /Feature A PR\/FAQ/ })
@@ -1194,7 +1231,13 @@ describe('Prioritization', () => {
       await waitFor(() => {
         expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
       })
-      expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
+      // The control for the refetch case above: with nothing held, the original wording
+      // is accurate and stays — the sliders really are defaults and reloading really is
+      // the right move before saving.
+      const panel = screen.getByRole('alert', { name: 'Scores could not be loaded' })
+      expect(panel).toHaveTextContent('are defaults')
+      expect(panel).toHaveTextContent('Reload the page before saving')
+      expect(panel).not.toHaveTextContent('last ones read successfully')
       await user.click(screen.getByText('Feature A PR/FAQ'))
       fireEvent.change((await screen.findAllByRole('slider'))[0], { target: { value: '4' } })
 
@@ -1202,6 +1245,42 @@ describe('Prioritization', () => {
       // the guard's doing and not the absence of anything to save.
       expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+    })
+
+    it('offers the save when the response carries a ballot but no aggregates at all', async () => {
+      // A deployment predating #333. The guard asks about the CALLER'S own half, which
+      // did arrive — the sliders hold this reviewer's stored ballot — so the save is
+      // honest even though the team column has nothing to show. This is the case where
+      // "did the response arrive" and "did a team map arrive" describe different things,
+      // and the reason the predicate reads `savedScores` rather than the aggregate.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {
+          d1: { document_id: 'd1', impact: 5, time_to_market: 4, confidence: 2, strategic_fit: 3, notes: '' },
+        },
+      })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      // Seeded from the stored ballot, not from defaults — the premise of allowing it.
+      expect(sliders[0]).toHaveValue('5')
+      fireEvent.change(sliders[0], { target: { value: '1' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
   })
 

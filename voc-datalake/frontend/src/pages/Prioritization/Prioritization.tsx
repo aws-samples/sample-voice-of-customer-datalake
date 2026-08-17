@@ -230,7 +230,9 @@ function PRFAQList({
   /**
    * What every reviewer together said — the resting row, and the sort order.
    *
-   * `null` when the read carrying it failed, which each row states as such rather
+   * A map, or a read state saying why there is none; see `TeamAggregates` for what the
+   * three absences mean, rather than a restatement here that can go stale (this one did,
+   * naming a `null` that left the union). Each row states the read state as such rather
    * than as an absence of votes.
    */
   readonly aggregates: TeamAggregates
@@ -279,21 +281,27 @@ function PrioritizationHeader({
   readonly hasChanges: boolean
   readonly isPending: boolean
   /**
-   * True while a save cannot honestly be made, for any of three reasons.
+   * True while a save cannot honestly be made, for either of two reasons.
    *
-   * The saved scores could not be READ, with nothing held from an earlier read:
-   * saving then writes the caller's edits against numbers nobody has seen, because
-   * the rows on screen are defaults rather than their ballot. A panel above the list
-   * says so. A failed REFETCH is deliberately not this case — the cached response is
-   * still on screen, sliders included, so the reader is editing their real ballot and
-   * a save is as honest as it was a moment earlier. That is why the test is "did a
-   * map arrive" rather than "did the query error": the two came apart on the refetch
-   * the save itself triggers.
+   * NO RESPONSE HAS EVER ARRIVED — the read failed on first load, or has not finished,
+   * with nothing held from an earlier one. Saving then writes the caller's edits against
+   * numbers nobody has seen, because the sliders are showing `DEFAULT_SCORE` rather than
+   * this reviewer's stored ballot. The failure case has a panel above the list; the
+   * in-flight case does not, because nothing has gone wrong and it clears itself the
+   * moment the read lands.
    *
-   * Or that read has not finished, again with nothing held. The same argument for the
-   * window before the outcome is known — the sliders are showing display defaults, not
-   * this reviewer's stored ballot — and it is the one reason with NO panel, because
-   * nothing has gone wrong and it clears itself the moment the read lands.
+   * Tested on `savedScores` — the caller's OWN half of the response — because that is the
+   * value being protected. It was briefly `!teamReadDelivered(aggregates)`, which agrees
+   * in every reachable state (`teamAggregatesOf` answers a map exactly when a response
+   * arrived), but agreeing is not the same as asking, and the predicate is what the next
+   * reader reads. A pre-#333 response carrying `scores` and no `aggregates` field is the
+   * case that shows the difference in intent: the reviewer's ballot did arrive, so the
+   * save is offered even though the team column has nothing.
+   *
+   * A failed REFETCH is deliberately NOT blocked: the cached response is still on screen,
+   * sliders included, so the reader is editing their real ballot and a save is as honest
+   * as it was a moment earlier. `savedScores` is retained through that failure, which is
+   * what lets one predicate cover both.
    *
    * Or a pending edit carries a note past `MAX_NOTE_LENGTH`: the API refuses it
    * rather than truncating, and `fetchApi` discards the reason, so pressing Save
@@ -583,7 +591,7 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        saveBlocked={!teamReadDelivered(aggregates) || overLongNotes.length > 0}
+        saveBlocked={savedScores === undefined || overLongNotes.length > 0}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />
@@ -625,7 +633,17 @@ export default function Prioritization() {
             <AlertTriangle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
             <div>
               <h3 id="scores-unavailable-title" className="font-medium text-red-900 text-sm sm:text-base">{t('scoresUnavailable.title')}</h3>
-              <p className="text-xs sm:text-sm text-red-700 mt-1">{t('scoresUnavailable.description')}</p>
+              {/* Two sentences for the two states the save guard already separates. The
+                  original wording says the numbers below are defaults and to reload BEFORE
+                  saving; on a failed REFETCH every clause of that is false — the sliders
+                  hold the reviewer's real ballot, Save is deliberately enabled, and a
+                  reader who obeys the instruction loses the edit they have pending. Both
+                  keys are spelled as literals with the condition OUTSIDE `t(...)`:
+                  `scripts/i18n-check.mjs` only sees a key it reads verbatim, so a ternary
+                  inside the call would report both as unused. */}
+              <p className="text-xs sm:text-sm text-red-700 mt-1">
+                {teamReadDelivered(aggregates) ? t('scoresUnavailable.staleDescription') : t('scoresUnavailable.description')}
+              </p>
             </div>
           </div>
         </div>

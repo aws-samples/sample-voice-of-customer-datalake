@@ -639,6 +639,41 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
       .toEqual(['Beta', 'Alpha'])
   })
 
+  it('ties the AXIS sorts on the printed value too, in both directions', () => {
+    // The same rule as the composite, and reachable without floating-point dust: the
+    // backend rounds each mean to TWO decimals (`round(…, 2)`) and the row prints ONE,
+    // so 4.25 and 4.34 are ordinary output that print identically. Ordering them ranked
+    // rows a reader sees as equal AND flipped the pair when the direction toggled —
+    // the instability the comparator is negated rather than reversed to avoid.
+    const equalOnScreen: Record<string, PrioritizationAggregate> = {
+      a: aggregate({ impact: 4.25, time_to_market: 4.25, reviewer_count: 2 }),
+      b: aggregate({ impact: 4.34, time_to_market: 4.34, reviewer_count: 2 }),
+    }
+
+    // The premise: same printed value, different raw mean.
+    expect(getTeamScore(equalOnScreen, 'a')?.displayImpact).toBe(4.3)
+    expect(getTeamScore(equalOnScreen, 'b')?.displayImpact).toBe(4.3)
+    expect(getTeamScore(equalOnScreen, 'a')?.impact).not.toBe(getTeamScore(equalOnScreen, 'b')?.impact)
+
+    for (const field of ['impact', 'time_to_market'] as const) {
+      expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, field, 'desc')), field)
+        .toEqual(['Alpha', 'Beta'])
+      expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, field, 'asc')), field)
+        .toEqual(['Alpha', 'Beta'])
+    }
+  })
+
+  it('still orders axis means that genuinely differ on screen', () => {
+    // The positive control for the tie above: rounding must not flatten the sort.
+    const different: Record<string, PrioritizationAggregate> = {
+      a: aggregate({ impact: 2, time_to_market: 2, reviewer_count: 2 }),
+      b: aggregate({ impact: 5, time_to_market: 5, reviewer_count: 2 }),
+    }
+
+    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], different, 'impact', 'desc'))).toEqual(['Beta', 'Alpha'])
+    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], different, 'impact', 'asc'))).toEqual(['Alpha', 'Beta'])
+  })
+
   it('leaves date and title sorts free of the unscored grouping', () => {
     // Those two read document fields every row has, so there is no unscored block
     // to pin and the direction reverses the whole list.

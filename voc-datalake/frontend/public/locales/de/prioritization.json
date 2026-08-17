@@ -68,6 +68,7 @@
   },
   "scoresUnavailable": {
     "description": "Ihre gespeicherten Bewertungen sind derzeit nicht verfügbar. Die unten angezeigten Zahlen sind daher Standardwerte und nicht die eingegebenen Werte. Laden Sie die Seite vor dem Speichern neu.",
+    "staleDescription": "Die letzte Aktualisierung der gespeicherten Bewertungen ist fehlgeschlagen. Angezeigt werden daher die zuletzt erfolgreich gelesenen Werte. Ihre eigene Bewertung ist davon nicht betroffen und kann weiterhin gespeichert werden.",
     "title": "Bewertungen konnten nicht geladen werden"
   },
   "sort": {
