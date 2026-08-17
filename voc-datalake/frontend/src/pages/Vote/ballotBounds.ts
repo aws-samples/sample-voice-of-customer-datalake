@@ -3,7 +3,7 @@
  * API, in their own module.
  *
  * Separate from the components so that
- * `lambda/api/test/test_anon_ballot_bounds_lockstep.py` can read one small file:
+ * `lambda/api/test/test_anon_ballot_key_lockstep.py` can read one small file:
  * the API REFUSES a note past its bound rather than truncating it, and the public
  * ballot page has no way to explain a 400 it did not anticipate. A bound enforced
  * on one side only turns a refusal into a Submit button that appears to do

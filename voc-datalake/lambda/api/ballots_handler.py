@@ -83,7 +83,6 @@ from typing import Any
 
 from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import ClientError
-
 from shared.api import (
     api_handler,
     create_api_resolver,
@@ -328,18 +327,33 @@ def _validated_document_id(raw: Any) -> str:
 def _sanitized_text(raw: Any, max_length: int) -> str:
     """Free text reduced to something safe to store and to show a room.
 
-    Control characters are stripped rather than escaped — a name or a title has no
-    use for them, and they are what turns stored text into a broken line in a log
-    or a terminal. Unicode category 'Cc'/'Cf' covers C0/C1 and the bidi and
-    zero-width formatting characters that make one displayed name impersonate
-    another. Whitespace is collapsed for the same reason: 60 spaces is not a name.
+    Control characters go rather than being escaped — a name or a title has no use
+    for them, and they are what turns stored text into a forged extra line in a log
+    or a terminal. The two Unicode categories are treated DIFFERENTLY, on purpose:
+
+    * 'Cc' (C0/C1 controls, which includes newline and tab) becomes a SPACE. Simply
+      deleting it would join what the submitter separated, so `'Sam\\nADMIN'` would
+      read back as the single name `'SamADMIN'` — a worse outcome than the newline,
+      because it fabricates a plausible name nobody typed.
+    * 'Cf' (format characters: the bidi overrides and zero-width joiners) is
+      DELETED, because it separates nothing. Those are what make one displayed name
+      impersonate another, and turning each into a space would instead put a gap
+      inside a legitimate name that needs one to render.
+
+    Whitespace is then collapsed, so 60 spaces is not a name, and the result is
+    truncated: a display name is a courtesy rather than content, so unlike a note
+    there is nothing lost worth refusing the whole ballot over.
     """
     if not isinstance(raw, str):
         return ''
-    stripped = ''.join(
-        ch for ch in raw if unicodedata.category(ch) not in ('Cc', 'Cf')
-    )
-    return ' '.join(stripped.split())[:max_length]
+    cleaned = []
+    for ch in raw:
+        category = unicodedata.category(ch)
+        if category == 'Cc':
+            cleaned.append(' ')
+        elif category != 'Cf':
+            cleaned.append(ch)
+    return ' '.join(''.join(cleaned).split())[:max_length]
 
 
 def _validated_note(raw: Any) -> str | None:

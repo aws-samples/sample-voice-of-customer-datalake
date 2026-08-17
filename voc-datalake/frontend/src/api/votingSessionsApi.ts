@@ -75,7 +75,10 @@ const votingSessionResponseSchema = z.object({ session: votingSessionSchema })
  */
 const ballotSessionConfigSchema = z.object({
   open: z.boolean().catch(false),
-  reason: refusalReason.nullish().catch(null),
+  // Normalised to `null` rather than left `undefined` for an absent field: the page
+  // switches on this value, and two spellings of "no reason given" would mean the
+  // absent case fell through a `?? 'unknown'` differently from the explicit one.
+  reason: z.preprocess((value) => value ?? null, refusalReason.nullable().catch(null)),
   document_title: z.string().catch(''),
 })
 
