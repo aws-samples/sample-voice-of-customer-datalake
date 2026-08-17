@@ -13,6 +13,7 @@ import {
 import {
   useState, useMemo, useId,
 } from 'react'
+import type { ReactElement } from 'react'
 import {
   useTranslation, Trans,
 } from 'react-i18next'
@@ -98,10 +99,32 @@ function StatsCards({
 }) {
   const { t } = useTranslation('prioritization')
   const bands = allPRFAQs.map((p) => priorityBand(getTeamView(aggregates, p.document_id)))
-  /** How many rows fall in one band, or a dash when no team view has arrived. */
-  const countOf = (band: 'high' | 'medium' | 'none') => (
-    teamReadDelivered(aggregates) ? bands.filter((b) => b === band).length : '—'
-  )
+  /**
+   * How many rows fall in one band, or an EXPLAINED dash when no team view arrived.
+   *
+   * The dash is decorative and hidden from assistive technology, with the reason
+   * beside it in text only a screen reader reads. A bare `—` is the one card state a
+   * reader cannot interpret: sighted readers have the panel above the list to explain
+   * it, while a screen reader announces the card as its label and either nothing or
+   * "em dash" — indistinguishable from a zero count, which is the exact confusion the
+   * dash exists to avoid. `aria-label` on a `<span>` would not reliably be announced
+   * (no role to carry it), hence visually-hidden text, as `AiModelSection` does.
+   *
+   * The sentence is the one the rows are already showing for the same state, so this
+   * adds no key to eight catalogues and cannot drift from what the page says.
+   */
+  const countOf = (band: 'high' | 'medium' | 'none'): ReactElement => {
+    // Both arms return an element, not "a number or an element": `sonarjs`
+    // (`function-return-type`) refuses a union return here, and a fragment adds no DOM
+    // node, so the card still renders the bare count.
+    if (teamReadDelivered(aggregates)) return <>{bands.filter((b) => b === band).length}</>
+    return (
+      <>
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">{aggregates === 'loading' ? t('team.loading') : t('team.unavailable')}</span>
+      </>
+    )
+  }
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">

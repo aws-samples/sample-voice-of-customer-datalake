@@ -603,9 +603,14 @@ const BAND_STYLE: Record<PriorityBand, {
   // find out": a reader who sees "Not Scored" during the read has no way to know it
   // will change, and the error panel is not on screen to retract it because nothing
   // has gone wrong.
+  // `text-gray-600`, not the fainter `text-gray-400` this started as: #9ca3af on
+  // #f3f4f6 is 2.2:1, under the 4.5:1 WCAG AA needs for body text, and a label whose
+  // whole job is to stop a reader misreading a row must be readable to make it.
+  // Faintness is not what tells these three apart anyway — the label text is, since
+  // the two others are grey too. `unavailable` at `text-gray-500` clears AA at 4.8:1.
   loading: {
     i18nKey: 'prioritization:team.loading',
-    color: 'bg-gray-100 text-gray-400',
+    color: 'bg-gray-100 text-gray-600',
   },
 }
 
@@ -770,7 +775,16 @@ export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocu
 
 /** Which number on the team view each score sort field orders by. */
 const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (team: TeamScore) => number> = {
-  priority_score: (team) => team.composite,
+  // `displayComposite`, the value the row PRINTS, not the raw weighted sum — the rule
+  // `displayComposite` was introduced for ("every classification reads this") applies
+  // to the order as much as to the band. Rounding is monotonic, so raw never
+  // contradicts printed; what it does is order two rows the reader sees as equal by a
+  // difference nobody can see, and 3.9999999999999996 vs 4.0 is exactly that
+  // difference. Reading the printed value makes them tie, and a tie keeps arrival
+  // order in both directions (see `sortPRFAQs`).
+  priority_score: (team) => team.displayComposite,
+  // The axis means are printed as the API sends them, so these already read what the
+  // row shows.
   impact: (team) => team.impact,
   time_to_market: (team) => team.timeToMarket,
 }

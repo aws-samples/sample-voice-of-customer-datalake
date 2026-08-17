@@ -744,7 +744,7 @@ describe('Prioritization', () => {
       expect(screen.getByText('Sort by:')).toBeInTheDocument()
     })
 
-    it('says whose numbers the score sorts order by, reachably', async () => {
+    it('says whose numbers the score sorts order by, reachably', () => {
       // The three score sort buttons still read "Priority Score" / "Impact" / "TTM"
       // while now ordering by the TEAM's means, which is ambiguous in the same way the
       // old "Score" heading was. Delivered as visible text the buttons point at with
@@ -1061,9 +1061,15 @@ describe('Prioritization', () => {
         .getByText(label).previousElementSibling?.textContent
 
       expect(cardValue('Total Documents')).toBe('1')
-      expect(cardValue('Not Scored')).toBe('—')
-      expect(cardValue('High Priority')).toBe('—')
-      expect(cardValue('Medium Priority')).toBe('—')
+      // The dash, plus the reason for it in text only a screen reader reads: the em
+      // dash alone is announced as nothing or "em dash", which is indistinguishable
+      // from a zero count — the very confusion the dash is there to avoid.
+      for (const label of ['Not Scored', 'High Priority', 'Medium Priority']) {
+        expect(cardValue(label), label).toBe('—Team score unavailable')
+      }
+      const dashes = within(grid ?? document.body).getAllByText('—')
+      expect(dashes).toHaveLength(3)
+      for (const dash of dashes) expect(dash).toHaveAttribute('aria-hidden', 'true')
     })
 
     it('says the team view could not be read inside the expanded row too', async () => {
@@ -1152,6 +1158,50 @@ describe('Prioritization', () => {
       // The cards keep counting the map they are holding rather than dashing it.
       const grid = screen.getByText('Total Documents').closest('div.grid')
       expect(within(grid ?? document.body).getByText('Not Scored').previousElementSibling?.textContent).toBe('0')
+
+      // And the save guard follows the same line, which is a BEHAVIOUR change and so
+      // asserted rather than left to the rendered column: `saveBlocked` asks "did a map
+      // arrive", not "did the query error". The cached response is on screen, sliders
+      // included, so this reviewer is editing their own real ballot and may save it.
+      // Asserted after a fresh edit because a completed save clears `localEdits`, which
+      // disables the button for a different reason.
+      fireEvent.change((await screen.findAllByRole('slider'))[1], { target: { value: '2' } })
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+    })
+
+    it('still refuses a save on a FIRST-read failure, edit or no edit', async () => {
+      // The negative control for the assertion above, and it is not covered by
+      // `does not offer to save over scores it could not read`: that one has no pending
+      // edit, so the button is disabled by `hasChanges` whatever the guard says. Here a
+      // slider has moved, so only the guard can still be holding it — and it must,
+      // because with no cached read the sliders are showing DEFAULT_SCORE and saving
+      // would write this reviewer's edits over a ballot nobody has seen.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      // The row first: the scores read fails before the project fan-out settles, so the
+      // panel is on screen a tick before there is anything to expand.
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      fireEvent.change((await screen.findAllByRole('slider'))[0], { target: { value: '4' } })
+
+      // The edit registered — Reset appears with `hasChanges` — so the disabled Save is
+      // the guard's doing and not the absence of anything to save.
+      expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
     })
   })
 
@@ -1216,9 +1266,12 @@ describe('Prioritization', () => {
 
       // The project read succeeded, so the total is a number; nothing else is known.
       expect(cardValue('Total Documents')).toBe('1')
-      expect(cardValue('Not Scored')).toBe('—')
-      expect(cardValue('High Priority')).toBe('—')
-      expect(cardValue('Medium Priority')).toBe('—')
+      // And the hidden reason names THIS state, not the failed one — the two dashes
+      // look identical and mean different things, so the text a screen reader gets is
+      // the only place the difference survives.
+      for (const label of ['Not Scored', 'High Priority', 'Medium Priority']) {
+        expect(cardValue(label), label).toBe('—Loading team score')
+      }
     })
 
     it('does not offer to save against a ballot it has not read', async () => {

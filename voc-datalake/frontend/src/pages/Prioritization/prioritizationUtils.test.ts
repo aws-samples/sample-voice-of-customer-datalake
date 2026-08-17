@@ -614,6 +614,31 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
       .toEqual(['Alpha', 'Beta', 'Gamma'])
   })
 
+  it('orders by the composite the row PRINTS, so equal-looking rows tie', () => {
+    // The sort reads `displayComposite`, not the raw weighted sum, for the reason
+    // `displayComposite` exists: four means of 4 weigh to 3.9999999999999996 while
+    // another mix weighs to 4.000000000000001, and both rows print `4.0`. Ordering
+    // them by that invisible difference ranks two rows a reader sees as identical;
+    // reading the printed value makes them tie, and a tie keeps arrival order in
+    // BOTH directions.
+    const equalOnScreen: Record<string, PrioritizationAggregate> = {
+      a: aggregate({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2 }),
+      b: aggregate({ impact: 5, time_to_market: 4, confidence: 2, strategic_fit: 3, reviewer_count: 2 }),
+    }
+    const rawA = getTeamScore(equalOnScreen, 'a')
+    const rawB = getTeamScore(equalOnScreen, 'b')
+
+    // The premise, asserted rather than assumed: same printed number, different raw.
+    expect(rawA?.displayComposite).toBe(4)
+    expect(rawB?.displayComposite).toBe(4)
+    expect(rawA?.composite).not.toBe(rawB?.composite)
+
+    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, 'priority_score', 'desc')))
+      .toEqual(['Alpha', 'Beta'])
+    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA], equalOnScreen, 'priority_score', 'asc')))
+      .toEqual(['Beta', 'Alpha'])
+  })
+
   it('leaves date and title sorts free of the unscored grouping', () => {
     // Those two read document fields every row has, so there is no unscored block
     // to pin and the direction reverses the whole list.
