@@ -1300,6 +1300,50 @@ describe('Prioritization', () => {
 
       expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      // And it SAYS so. The query succeeded, so nothing used to be on screen: a primary
+      // action disabled with no explanation, over sliders showing defaults.
+      const panel = screen.getByRole('alert', { name: 'Scores could not be loaded' })
+      expect(panel).toHaveTextContent('are defaults')
+      expect(panel).toHaveTextContent('Reload the page before saving')
+    })
+
+    it('never tells a reader no reload is needed while the save is refused', async () => {
+      // The two sites used to read different halves of one response: the panel's wording
+      // came from the TEAM map and the button from the caller's own ballots. So a response
+      // whose `aggregates` were readable and whose `scores` were not — then a failed
+      // refetch — put "there is no need to reload before saving" beside a DISABLED Save.
+      // Both now ask the same question.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      // First read: team numbers readable, ballots not. Then every refetch fails.
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+      mockGetPrioritizationScores.mockResolvedValueOnce({
+        scores: 'not a map',
+        aggregates: {
+          d1: {
+            impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
+            reviewer_count: 3, score_spread: 0,
+          },
+        },
+      })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      fireEvent.change((await screen.findAllByRole('slider'))[0], { target: { value: '4' } })
+
+      const panel = screen.getByRole('alert', { name: 'Scores could not be loaded' })
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      expect(panel).not.toHaveTextContent('no need to reload before saving')
+      expect(panel).toHaveTextContent('Reload the page before saving')
     })
 
     it('offers the save when the response carries a ballot but no aggregates at all', async () => {

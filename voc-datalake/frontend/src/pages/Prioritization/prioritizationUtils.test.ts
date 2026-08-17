@@ -9,6 +9,7 @@ import {
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
+  ownBallotRead,
 } from './prioritizationUtils'
 import type { TeamAggregates } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
@@ -299,6 +300,11 @@ describe('getTeamScore', () => {
 
   it('does not let an inherited property name answer for a document', () => {
     expect(getTeamScore({}, 'toString')).toBeNull()
+    // The same guard on the caller's own half, which lacked it: `??` does not fire on an
+    // inherited value, so this answered `Object.prototype.toString` — a function where a
+    // ballot is declared, with every axis `undefined`.
+    expect(getScore({}, 'toString')).toEqual({ ...DEFAULT_SCORE, document_id: 'toString' })
+    expect(typeof getScore({}, 'toString')).toBe('object')
   })
 
   it('withholds the spread for a single ballot instead of reporting agreement', () => {
@@ -516,6 +522,70 @@ describe('teamAggregatesOf reads what the query is HOLDING, not only what it is 
   })
 })
 
+describe('ownBallotRead resolves the caller own half once, for all three consumers', () => {
+  // The sliders, the save guard and the panel's wording are one question. Asked separately,
+  // the guard read the caller's ballots while the panel read the TEAM map — so a response
+  // with readable aggregates and unreadable ballots said "no need to reload before saving"
+  // beside a disabled Save.
+  const ballots = { d1: { ...DEFAULT_SCORE, document_id: 'd1', impact: 4 } }
+
+  it('has the ballots in hand when the response carried a readable map', () => {
+    expect(ownBallotRead(false, { scores: ballots })).toEqual({
+      ballots, inHand: true, needsPanel: false,
+    })
+  })
+
+  it('counts an empty map as in hand — that is the first-ballot case', () => {
+    expect(ownBallotRead(false, { scores: {} })).toEqual({
+      ballots: {}, inHand: true, needsPanel: false,
+    })
+  })
+
+  it('keeps retained ballots through a failed refetch, and says the read failed', () => {
+    // In hand AND a panel: the numbers are the reviewer's own, so the save stands, and the
+    // panel says the latest read failed. This is the pair that must not contradict.
+    expect(ownBallotRead(true, { scores: ballots })).toEqual({
+      ballots, inHand: true, needsPanel: true,
+    })
+  })
+
+  it('asks for a panel when the response ARRIVED with no readable ballots', () => {
+    // Used to be silent: sliders on defaults, Save disabled, nothing on screen.
+    expect(ownBallotRead(false, { scores: undefined })).toEqual({
+      ballots: {}, inHand: false, needsPanel: true,
+    })
+  })
+
+  it('stays silent while the first read is still in flight', () => {
+    // Nothing has gone wrong and it clears itself, so no panel — but no save either.
+    expect(ownBallotRead(false, undefined)).toEqual({
+      ballots: {}, inHand: false, needsPanel: false,
+    })
+  })
+
+  it('asks for a panel when the first read failed outright', () => {
+    expect(ownBallotRead(true, undefined)).toEqual({
+      ballots: {}, inHand: false, needsPanel: true,
+    })
+  })
+
+  it('ties inHand to the ballots themselves across every combination of inputs', () => {
+    // The invariant the carried finding was about: `inHand` decides BOTH the save and the
+    // wording, so it must track the ballots and nothing else — not the failure flag, and
+    // not the team map (which is not even an input here, which is the point).
+    for (const failed of [false, true]) {
+      for (const response of [undefined, {}, { scores: undefined }, { scores: {} }, { scores: ballots }]) {
+        const state = ownBallotRead(failed, response)
+        const label = `failed=${failed} response=${JSON.stringify(response)}`
+
+        expect(state.inHand, label).toBe(response?.scores !== undefined)
+        // And when they are not in hand there is nothing to render but defaults.
+        if (!state.inHand) expect(state.ballots, label).toEqual({})
+      }
+    }
+  })
+})
+
 describe('normalizeScores validates the caller own half of the response too', () => {
   // The half that used to be passed through untouched. A `=== undefined` check on the
   // field caught an OMITTED `scores` and nothing else, so a null or non-object one left
@@ -545,15 +615,34 @@ describe('normalizeScores validates the caller own half of the response too', ()
     })
   })
 
-  it('coerces an unreadable ROW rather than dropping the reviewer ballot', () => {
-    // The opposite policy to the team map, and deliberately: this is the reader's own
-    // stored ballot, so an unusable row falls back to what an unset axis already shows
-    // instead of vanishing. `time_to_market` is 3 in DEFAULT_SCORE, not 0, which is what
-    // makes this assertion about the fallback rather than about zeroes.
-    const scores = normalizeScores({ d1: 'not an object' })
+  it('drops an unreadable ROW instead of inventing a stored ballot for it', () => {
+    // On screen this is indistinguishable from coercing the row to DEFAULT_SCORE — the
+    // sliders show the same defaults either way, because `getScore` answers those for a
+    // key it does not hold, and the save guard is about the MAP. What it changes is the
+    // map: coercing put a value nobody stored under a real key, which `applyBallotEdits`
+    // merges and any "documents I have scored" count would read as a ballot.
+    const scores = normalizeScores({ d1: 'not an object', d2: { impact: 4 } })
 
-    expect(scores?.d1).toEqual({ ...DEFAULT_SCORE, document_id: 'd1' })
-    expect(scores?.d1.time_to_market).toBe(3)
+    expect(scores).not.toBeUndefined()
+    expect(Object.hasOwn(scores ?? {}, 'd1')).toBe(false)
+    // The readable sibling survives — one bad row does not take the response with it.
+    expect(scores?.d2.impact).toBe(4)
+    // And the dropped row still reads as the display defaults through `getScore`.
+    expect(getScore(scores ?? {}, 'd1')).toEqual({ ...DEFAULT_SCORE, document_id: 'd1' })
+  })
+
+  it('keeps only the fields this page accepts, not whatever the wire sent', () => {
+    // `z.object` rather than `looseObject`: an unknown field used to ride into every
+    // `PrioritizationScore` and on through `applyBallotEdits`.
+    const scores = normalizeScores({
+      d1: {
+        impact: 4, time_to_market: 3, confidence: 2, strategic_fit: 1, notes: '', surprise: 'x',
+      },
+    })
+
+    expect(Object.hasOwn(scores?.d1 ?? {}, 'surprise')).toBe(false)
+    expect(Object.keys(scores?.d1 ?? {}).sort())
+      .toEqual(['confidence', 'document_id', 'impact', 'notes', 'strategic_fit', 'time_to_market'])
   })
 
   it('degrades an unreadable AXIS and clamps an out-of-range one', () => {

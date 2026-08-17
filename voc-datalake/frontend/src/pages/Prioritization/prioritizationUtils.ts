@@ -381,7 +381,13 @@ const ownAxis = (fallback: number) => z.number()
   .transform((value) => Math.min(5, Math.max(0, value)))
   .catch(fallback)
 
-const OwnBallotSchema = z.looseObject({
+// `z.object`, not `looseObject`: this is the shape the page ACCEPTS, and it reads exactly
+// these five fields plus the key. Loose let unknown wire fields ride into every
+// `PrioritizationScore` and on through `applyBallotEdits` — harmless while only
+// `localEdits` are sent, but a boundary that keeps what it does not understand is not
+// saying what it accepts. `TeamAggregateSchema` stays loose for the opposite reason: it is
+// checked field-by-field against a raw row that the drop rule then re-reads.
+const OwnBallotSchema = z.object({
   impact: ownAxis(DEFAULT_SCORE.impact),
   time_to_market: ownAxis(DEFAULT_SCORE.time_to_market),
   confidence: ownAxis(DEFAULT_SCORE.confidence),
@@ -392,6 +398,44 @@ const OwnBallotSchema = z.looseObject({
   // one; reading it back is not the same act.
   notes: z.string().catch(''),
 })
+
+/** What the page knows about the caller's own ballots, resolved in one place. */
+export interface OwnBallotRead {
+  /** The ballots to render — empty when there are none to show. */
+  readonly ballots: Record<string, PrioritizationScore>
+  /** Are this reviewer's stored ballots actually in hand? The save's precondition. */
+  readonly inHand: boolean
+  /** Does the reader need telling why their own numbers are missing? */
+  readonly needsPanel: boolean
+}
+
+/**
+ * The caller's own half of the prioritization read, as the three consumers need it.
+ *
+ * Here rather than as three expressions in the component, because the three are ONE
+ * question and were previously asked in two different ways: the save guard read the
+ * caller's ballots while the panel's wording read the TEAM map, so a response with
+ * readable aggregates and unreadable ballots said "there is no need to reload before
+ * saving" beside a disabled Save. Resolving once makes that disagreement unrepresentable
+ * rather than merely fixed, which is the same move `teamAggregatesOf` made for the team
+ * half — and it keeps the page's own branch count inside the lint budget.
+ *
+ * `needsPanel` covers BOTH ways the reader can be left without their numbers: the read
+ * failed, or it succeeded carrying ballots that could not be read. The second used to be
+ * silent — sliders on defaults, Save disabled, nothing said. A read still IN FLIGHT is
+ * deliberately not a panel: nothing has gone wrong and it clears itself.
+ */
+export function ownBallotRead(
+  failed: boolean,
+  response?: { readonly scores?: Record<string, PrioritizationScore> },
+): OwnBallotRead {
+  const ballots = response?.scores
+  return {
+    ballots: ballots ?? {},
+    inHand: ballots !== undefined,
+    needsPanel: failed || (response !== undefined && ballots === undefined),
+  }
+}
 
 /**
  * The caller's own ballots as a map, or `undefined` when the response carried none that
@@ -407,6 +451,14 @@ const OwnBallotSchema = z.looseObject({
  * proof. `null`, a string, or an array all reach this as `scores` and all used to pass
  * a `=== undefined` check on the field while leaving the page on defaults.
  *
+ * An unreadable ROW is dropped, which lands that document in the state a first ballot
+ * already occupies: `getScore` answers `DEFAULT_SCORE` for a key it does not hold, so the
+ * sliders show what they would have shown anyway. Coercing it to `DEFAULT_SCORE` under its
+ * own key was the same thing on screen — the row-level save is offered either way, since
+ * the guard is about the MAP — but it put a value nobody stored into the map that
+ * `applyBallotEdits` merges and that any "documents I have scored" count would read.
+ * Dropping keeps the map to rows the server actually told us about.
+ *
  * `document_id` is taken from the MAP KEY, not from the row: the key is what every
  * lookup on this page uses, so a row disagreeing with its own key would produce a
  * ballot that cannot be found. Never throws, for the same reason as
@@ -417,12 +469,9 @@ export function normalizeScores(raw: unknown): Record<string, PrioritizationScor
   const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
   if (!asMap.success) return undefined
   return Object.fromEntries(
-    Object.entries(asMap.data).map(([documentId, value]): [string, PrioritizationScore] => {
+    Object.entries(asMap.data).flatMap(([documentId, value]): [string, PrioritizationScore][] => {
       const parsed = OwnBallotSchema.safeParse(value)
-      return [documentId, {
-        ...(parsed.success ? parsed.data : DEFAULT_SCORE),
-        document_id: documentId,
-      }]
+      return parsed.success ? [[documentId, { ...parsed.data, document_id: documentId }]] : []
     }),
   )
 }
@@ -734,8 +783,19 @@ export const getPriorityLabel = (view: TeamView, t: (key: string) => string): {
   }
 }
 
+/**
+ * The caller's own ballot for one document, or the display defaults when they have none.
+ *
+ * `Object.hasOwn` rather than a nullish check on the lookup, matching `getTeamScore`: `??`
+ * does not fire on an inherited value, so `getScore(scores, 'toString')` answered
+ * `Object.prototype.toString` — a function where a `PrioritizationScore` is declared, and
+ * every axis on it `undefined`. Ids are server-minted so this was not reachable in
+ * practice, but it was the only unguarded map lookup left on a page whose method is one
+ * rule in one place, and its sibling is both documented and tested.
+ */
 export function getScore(scores: Record<string, PrioritizationScore>, docId: string): PrioritizationScore {
-  return scores[docId] ?? {
+  const stored = Object.hasOwn(scores, docId) ? scores[docId] : undefined
+  return stored ?? {
     ...DEFAULT_SCORE,
     document_id: docId,
   }

@@ -31,9 +31,9 @@ import {
 import PRFAQRow from './PRFAQRow'
 import {
   applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, normalizeScores, overLongNoteDocuments,
-  priorityBand, READ_STATE_I18N_KEY, sortPRFAQs, teamAggregatesOf, teamReadDelivered,
-  withEditedField,
+  MAX_NOTE_LENGTH, normalizeAggregates, normalizeScores, ownBallotRead,
+  overLongNoteDocuments, priorityBand, READ_STATE_I18N_KEY, sortPRFAQs, teamAggregatesOf,
+  teamReadDelivered, withEditedField,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection, TeamAggregates,
@@ -44,33 +44,27 @@ import type {
 } from '../../api/types'
 
 /**
- * The prioritization read, validated at the query boundary.
- *
- * Per project convention — the same place `normalizeLinkedForms` validates the form
- * list. `aggregates` is optional on the wire (a deployment predating it sends none
- * at all), and a partial or unreadable row must read as "nobody has scored this",
- * never break a row. `scores` is passed through untouched: it is the caller's own
- * ballot map, and `getScore` already carries its fallback.
- *
- * At MODULE level, not inline in the `useQuery` call. TanStack Query memoises a
- * `select` result only while the function's identity is stable, so an inline arrow
- * — a fresh closure on every render — re-parsed the whole aggregate map on each
- * render. That was waste rather than a bug (structural sharing kept the result
- * referentially stable downstream), but this page re-renders on every slider drag,
- * so the waste scaled with both the backlog and the interaction.
- */
-/**
  * The prioritization read, validated at the query boundary — BOTH halves of it.
+ *
+ * Per project convention, the same place `normalizeLinkedForms` validates the form list.
+ * `aggregates` is optional on the wire (a deployment predating it sends none at all) and
+ * a partial or unreadable row must read as "nobody has scored this" rather than break a
+ * row. `scores` goes through a normalizer too: a declared type is a promise about the
+ * response and not a proof of it, and passing this half through untouched let a `null` or
+ * non-object one leave every slider on `DEFAULT_SCORE` while the save guard read the
+ * field as present.
  *
  * The parameter type is DERIVED from the client rather than restated, so `data.scores`
  * and `data.aggregates` are proof that `getPrioritizationScores` declares those fields:
  * remove one there and this fails to compile, where a hand-written shape would keep
  * agreeing with itself while the wire moved.
  *
- * Both fields then go through a normalizer, because a declared type is a promise about
- * the response and not a proof of it. `aggregates` was already validated; `scores` was
- * passed through untouched, which let a `null` or non-object one leave every slider on
- * `DEFAULT_SCORE` while the save guard read the field as present.
+ * At MODULE level, not inline in the `useQuery` call. TanStack Query memoises a `select`
+ * result only while the function's identity is stable, so an inline arrow — a fresh
+ * closure on every render — re-parsed the whole map on each render. That was waste rather
+ * than a bug (structural sharing kept the result referentially stable downstream), but
+ * this page re-renders on every slider drag, so the waste scaled with both the backlog
+ * and the interaction.
  */
 type PrioritizationRead = Awaited<ReturnType<typeof api.getPrioritizationScores>>
 
@@ -300,21 +294,22 @@ function PrioritizationHeader({
   /**
    * True while a save cannot honestly be made, for either of two reasons.
    *
-   * NO RESPONSE HAS EVER ARRIVED — the read failed on first load, or has not finished,
-   * with nothing held from an earlier one. Saving then writes the caller's edits against
-   * numbers nobody has seen, because the sliders are showing `DEFAULT_SCORE` rather than
-   * this reviewer's stored ballot. The failure case has a panel above the list; the
-   * in-flight case does not, because nothing has gone wrong and it clears itself the
-   * moment the read lands.
+   * NO READABLE BALLOT MAP IS IN HAND — the read failed on first load, has not finished,
+   * or arrived carrying ballots that could not be read, with nothing held from an earlier
+   * one. Saving then writes the caller's edits against numbers nobody has seen, because
+   * the sliders are showing `DEFAULT_SCORE` rather than this reviewer's stored ballot. The
+   * panel above the list now covers both halves of that — a failed read AND a response
+   * whose ballots were unreadable — and is worded by the SAME predicate, so the sentence
+   * on screen cannot contradict the button. Only the in-flight case is silent, because
+   * nothing has gone wrong and it clears itself the moment the read lands.
    *
    * Tested on `savedScores?.scores` — the caller's OWN ballots, the exact value being
    * protected — and not on any proxy for them. Two proxies were tried and both were
    * weaker: `!teamReadDelivered(aggregates)` asks about the TEAM column, and a bare
-   * `savedScores === undefined` proves only that *a response* arrived. `scores` is passed
-   * through the query's `select` untouched (only `aggregates` is validated there), so a
-   * response that omits it leaves every slider on `DEFAULT_SCORE` — the state this guard
-   * exists to refuse — while both proxies read as "fine". An empty `{}` is still a save:
-   * the response arrived and this reviewer simply has no ballot yet.
+   * `savedScores === undefined` proves only that *a response* arrived, which `select` now
+   * makes a much weaker claim than it looks (`normalizeScores` answers `undefined` for a
+   * null, a string or an array, not just for an omitted field). An empty `{}` is still a
+   * save: the response arrived and this reviewer simply has no ballot yet.
    *
    * A pre-#333 response carrying `scores` and no `aggregates` field shows the other
    * direction: the reviewer's ballot did arrive, so the save is offered even though the
@@ -329,7 +324,8 @@ function PrioritizationHeader({
    * rather than truncating, and `fetchApi` discards the reason, so pressing Save
    * would look like a button that does nothing. Its own panel too.
    *
-   * Disabled rather than left to look ordinary in all three cases.
+   * Disabled rather than left to look ordinary, whichever reason applies — and each one
+   * that a reader cannot infer from the sliders has words above the list.
    */
   readonly saveBlocked: boolean
   readonly onReset: () => void
@@ -472,13 +468,21 @@ export default function Prioritization() {
     enabled: config.apiEndpoint.length > 0,
   })
 
+  // The caller's own half, resolved ONCE for its three consumers: the sliders, the save
+  // guard, and the panel's wording. Asking separately is how the guard came to read the
+  // reader's ballots while the panel read the team's — see `ownBallotRead`.
+  const ownBallots = useMemo(
+    () => ownBallotRead(scoresFailed, savedScores),
+    [scoresFailed, savedScores],
+  )
+
   // Merged per FIELD, not by spreading one object over the other: a pending edit
   // carries only what the reader set, so an object spread would let an axis it says
   // nothing about overwrite a saved one with `undefined` and blank a slider showing a
   // score the reviewer had stored.
   const scores = useMemo(
-    () => applyBallotEdits(savedScores?.scores ?? {}, localEdits),
-    [savedScores, localEdits],
+    () => applyBallotEdits(ownBallots.ballots, localEdits),
+    [ownBallots, localEdits],
   )
 
   /**
@@ -613,7 +617,7 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        saveBlocked={savedScores?.scores === undefined || overLongNotes.length > 0}
+        saveBlocked={!ownBallots.inHand || overLongNotes.length > 0}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />
@@ -649,22 +653,29 @@ export default function Prioritization() {
         </div>
       ) : null}
 
-      {scoresFailed ? (
+      {/* Both ways a reader can be left without their own numbers — the read failed, or it
+          succeeded carrying ballots that could not be read. The second used to say nothing
+          at all. `ownBallotRead` owns which is which. */}
+      {ownBallots.needsPanel ? (
         <div role="alert" aria-labelledby="scores-unavailable-title" className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
             <div>
               <h3 id="scores-unavailable-title" className="font-medium text-red-900 text-sm sm:text-base">{t('scoresUnavailable.title')}</h3>
-              {/* Two sentences for the two states the save guard already separates. The
-                  original wording says the numbers below are defaults and to reload BEFORE
-                  saving; on a failed REFETCH every clause of that is false — the sliders
-                  hold the reviewer's real ballot, Save is deliberately enabled, and a
-                  reader who obeys the instruction loses the edit they have pending. Both
-                  keys are spelled as literals with the condition OUTSIDE `t(...)`:
-                  `scripts/i18n-check.mjs` only sees a key it reads verbatim, so a ternary
-                  inside the call would report both as unused. */}
+              {/* Chosen by THE SAME question the save guard asks — the caller's own
+                  ballots — because these two sentences differ precisely on whether a save
+                  is possible, and the button next to them is controlled by that. Keyed on
+                  the team map instead, the page could say "no need to reload before
+                  saving" beside a DISABLED Save whenever `aggregates` was readable and
+                  `scores` was not: two predicates about two halves of one response, with
+                  the copy from one contradicting the button from the other.
+                  `staleDescription` is honest only while the reviewer's ballot is actually
+                  in hand; otherwise the original wording is true — the sliders below ARE
+                  defaults and reloading IS the right move before saving. Both keys are
+                  literals with the condition OUTSIDE `t(...)`: `i18n-check` only sees a
+                  key it reads verbatim, so a ternary inside the call reports both unused. */}
               <p className="text-xs sm:text-sm text-red-700 mt-1">
-                {teamReadDelivered(aggregates) ? t('scoresUnavailable.staleDescription') : t('scoresUnavailable.description')}
+                {ownBallots.inHand ? t('scoresUnavailable.staleDescription') : t('scoresUnavailable.description')}
               </p>
             </div>
           </div>
