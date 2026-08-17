@@ -48,7 +48,13 @@ vi.mock('../../api/projectsApi', () => ({
     getProject: (id: string) => mockGetProject(id),
   },
 }))
-vi.mock('../../api/client', () => ({
+// The REAL module is spread and only `api` replaced. A factory that returns just
+// `api` makes every other export of `client` disappear for this whole file —
+// `fetchApi` among them, which `votingSessionsApi` imports — so a component
+// anywhere in the Prioritization tree that reached for one would fail to resolve
+// it, and being file-wide the mock would take the panel-only tests down with it.
+vi.mock('../../api/client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../api/client')>(),
   api: {
     getPrioritizationScores: () => mockGetPrioritizationScores(),
     patchPrioritizationScores: () => Promise.resolve({ success: true }),
@@ -212,6 +218,42 @@ describe('a room vote that has ended', () => {
       expect(screen.getByText(t('prioritization:roomVote.expired'))).toBeInTheDocument()
     })
     expect(qr()).not.toBeInTheDocument()
+  })
+
+  it('offers a way back, so a second round needs no page reload', async () => {
+    // A vote ends without the facilitator choosing to: it expires. With no exit
+    // from the ended panel, asking the room again meant reloading the
+    // prioritization page and losing the expanded row.
+    const expired = session({ status: 'open', state: 'expired' })
+    mockCreateVotingSession.mockResolvedValue(expired)
+    mockGetVotingSession.mockResolvedValue(expired)
+    const user = await openVote()
+    await screen.findByText(t('prioritization:roomVote.expired'))
+
+    await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.openAnother') }))
+
+    expect(screen.getByRole('button', { name: t('prioritization:roomVote.open') })).toBeInTheDocument()
+    expect(screen.queryByText(t('prioritization:roomVote.expired'))).not.toBeInTheDocument()
+  })
+
+  it('opens the second vote cleanly instead of inheriting the first one', async () => {
+    // The trap in the reset: `closeMutation.data` deliberately overrides the poll,
+    // and `openMutation.data` seeds it as `initialData`, so leaving either behind
+    // would make a freshly opened session render as the previous ended one.
+    mockCreateVotingSession.mockResolvedValue(session())
+    mockGetVotingSession.mockResolvedValue(session())
+    mockCloseVotingSession.mockResolvedValue(session({ status: 'closed', state: 'closed' }))
+    const user = await openVote()
+    await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.close') }))
+    await screen.findByText(t('prioritization:roomVote.closed'))
+    await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.openAnother') }))
+
+    await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.open') }))
+
+    await waitFor(() => {
+      expect(qr()).toBeInTheDocument()
+    })
+    expect(screen.queryByText(t('prioritization:roomVote.closed'))).not.toBeInTheDocument()
   })
 
   it('says it expired rather than blaming the facilitator', async () => {

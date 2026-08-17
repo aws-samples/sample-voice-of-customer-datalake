@@ -107,6 +107,7 @@
     "description": "Put a QR on screen and let everyone in the room submit one anonymous ballot from their phone, without an account.",
     "expired": "This vote has expired. No further ballots are accepted.",
     "open": "Open a room vote",
+    "openAnother": "Open another vote",
     "openFailed": "The vote could not be opened. Try again.",
     "opening": "Opening...",
     "qrAccessibleName": "QR code opening the anonymous ballot page for {{title}}",

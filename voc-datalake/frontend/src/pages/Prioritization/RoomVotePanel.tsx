@@ -77,6 +77,27 @@ export default function RoomVotePanel({
     mutationFn: () => votingSessionsApi.closeVotingSession(sessionId ?? ''),
   })
 
+  /**
+   * Back to the un-opened state, so a second round can be run in the same
+   * meeting.
+   *
+   * Needed because a session ends in a way NOBODY CHOSE: it expires on a wall
+   * clock. Without this the panel showed the ended copy until the page was
+   * reloaded, so a facilitator whose vote timed out mid-discussion had to reload
+   * the prioritization page — losing their expanded row — to ask the room again.
+   *
+   * Both mutations are reset as well as the id. `closeMutation.data` overrides the
+   * query below by design (a close is authoritative the instant it returns), so
+   * leaving it behind would make the next session read as closed the moment it
+   * opened; and a stale `openMutation.data` would seed the query with the previous
+   * session as `initialData`.
+   */
+  const startOver = () => {
+    setSessionId(null)
+    closeMutation.reset()
+    openMutation.reset()
+  }
+
   // The CLOSED reading wins whenever either side says so: the close mutation's
   // own response is authoritative the instant it returns, and waiting for the
   // next poll would leave "open" on a projector after the facilitator pressed
@@ -157,6 +178,17 @@ export default function RoomVotePanel({
             {current.state === 'expired' ? t('roomVote.expired') : t('roomVote.closed')}
           </p>
           <SessionStatus session={current} />
+          {/* The way back. A vote can end without the facilitator doing anything —
+              it expires — so an ended panel with no exit means reloading the page
+              to ask the room a second time, and a reload collapses the row they
+              were reading. */}
+          <button
+            type="button"
+            onClick={startOver}
+            className="px-3 py-2 rounded-lg text-sm font-medium text-indigo-800 bg-white border border-indigo-200 hover:bg-indigo-100"
+          >
+            {t('roomVote.openAnother')}
+          </button>
         </>
       )}
       {/* Says what these ballots are, next to the count of them: they move the

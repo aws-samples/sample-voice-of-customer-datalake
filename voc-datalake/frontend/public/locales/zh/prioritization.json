@@ -107,6 +107,7 @@
     "description": "在屏幕上展示二维码，让会议室中的每个人无需账号即可用手机提交一张匿名选票。",
     "expired": "本次投票已过期，不再接受新的选票。",
     "open": "开启会场投票",
+    "openAnother": "另开一场投票",
     "openFailed": "无法开启投票。请重试。",
     "opening": "正在开启...",
     "qrAccessibleName": "打开 {{title}} 匿名投票页面的二维码",

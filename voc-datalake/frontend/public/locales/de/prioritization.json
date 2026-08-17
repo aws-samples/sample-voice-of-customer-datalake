@@ -107,6 +107,7 @@
     "description": "Zeigen Sie einen QR-Code auf dem Bildschirm und lassen Sie alle im Raum ohne Konto eine anonyme Stimme vom Telefon abgeben.",
     "expired": "Diese Abstimmung ist abgelaufen. Weitere Stimmen werden nicht angenommen.",
     "open": "Raumabstimmung öffnen",
+    "openAnother": "Weitere Abstimmung öffnen",
     "openFailed": "Die Abstimmung konnte nicht geöffnet werden. Versuchen Sie es erneut.",
     "opening": "Wird geöffnet...",
     "qrAccessibleName": "QR-Code, der die anonyme Stimmabgabe für {{title}} öffnet",

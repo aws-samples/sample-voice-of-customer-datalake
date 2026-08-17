@@ -107,6 +107,7 @@
     "description": "Coloque um código QR na tela e deixe que todos na sala enviem um voto anônimo pelo celular, sem conta.",
     "expired": "Esta votação expirou. Não são aceitos mais votos.",
     "open": "Abrir uma votação de sala",
+    "openAnother": "Abrir outra votação",
     "openFailed": "Não foi possível abrir a votação. Tente novamente.",
     "opening": "Abrindo...",
     "qrAccessibleName": "Código QR que abre a página de voto anônimo de {{title}}",

@@ -107,6 +107,7 @@
     "description": "Affichez un QR code et laissez chaque personne présente envoyer un bulletin anonyme depuis son téléphone, sans compte.",
     "expired": "Ce vote a expiré. Aucun autre bulletin n'est accepté.",
     "open": "Ouvrir un vote en salle",
+    "openAnother": "Ouvrir un autre vote",
     "openFailed": "Le vote n'a pas pu être ouvert. Réessayez.",
     "opening": "Ouverture...",
     "qrAccessibleName": "QR code ouvrant la page de vote anonyme pour {{title}}",
