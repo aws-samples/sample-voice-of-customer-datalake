@@ -16,31 +16,26 @@ import { QrCode, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SessionQrCode from './SessionQrCode'
+import { ballotCountRefetchInterval } from './roomVotePolling'
 import { votingSessionsApi } from '../../api/votingSessionsApi'
 import type { VotingSession } from '../../api/votingSessionsApi'
 import type { ReactElement } from 'react'
-
-/**
- * How often the ballot count is re-read while a session is open.
- *
- * Frequent enough that a facilitator can see the room voting (which is the whole
- * reason the count is on screen — it is how they know when to stop waiting), and
- * slow enough that a session left open on a projector for an hour costs a few
- * hundred cheap reads rather than thousands. Stops entirely once the session is
- * closed: there is nothing further to count.
- */
-const BALLOT_COUNT_POLL_MS = 5000
 
 function SessionStatus({ session }: { readonly session: VotingSession }): ReactElement {
   const { t } = useTranslation('prioritization')
   return (
     <p className="text-sm text-indigo-900 flex items-center gap-1.5">
       <Users size={14} className="text-indigo-500" />
-      {/* A plain interpolated number rather than a `count` plural: plural forms
+      {/* Plain interpolated numbers rather than a `count` plural: plural forms
           differ per locale and a missing one renders the raw key path in front of
           a room. Both numbers are shown, because "12 ballots" means something
-          different when the cap is 12. */}
-      {t('roomVote.ballotsIn', { count: session.ballot_count, cap: session.ballot_cap })}
+          different when the cap is 12.
+          `received`, NOT `count`: `count` is i18next's RESERVED option, so passing
+          it switches the resolver into plural mode and it looks for
+          `ballotsIn_one`/`ballotsIn_other` first — which is the exact fragility
+          this comment claims to be avoiding, invited by the name of the variable
+          holding the number. */}
+      {t('roomVote.ballotsIn', { received: session.ballot_count, cap: session.ballot_cap })}
     </p>
   )
 }
@@ -74,7 +69,7 @@ export default function RoomVotePanel({
     queryKey: ['voting-session', sessionId],
     queryFn: () => votingSessionsApi.getVotingSession(sessionId ?? ''),
     enabled: sessionId !== null,
-    refetchInterval: (query) => (query.state.data?.status === 'open' ? BALLOT_COUNT_POLL_MS : false),
+    refetchInterval: (query) => ballotCountRefetchInterval(query.state.data),
     initialData: openMutation.data,
   })
 
@@ -88,7 +83,12 @@ export default function RoomVotePanel({
   // Close. A stale "open" is the dangerous direction — it is the state in which
   // ballots are still being accepted.
   const current = closeMutation.data ?? session
-  const isOpen = current?.status === 'open'
+  // `state` and not `status`: the two differ for a session that EXPIRED, which is
+  // the ordinary end of a vote nobody remembered to close. `status` stays `open`
+  // on such a record for up to about 48 hours (that is TTL sweep lag, not a bug),
+  // so keying the QR on it puts a live-looking code in front of a room that the
+  // API refuses every ballot from.
+  const isOpen = current?.state === 'open'
 
   if (sessionId === null || current === undefined) {
     return (
@@ -143,7 +143,19 @@ export default function RoomVotePanel({
         </>
       ) : (
         <>
-          <p className="text-sm text-indigo-800">{t('roomVote.closed')}</p>
+          {/* WHY it stopped, because the two endings need different words: a
+              facilitator who pressed Close knows what happened, and one whose
+              session ran out its clock is otherwise left thinking somebody else
+              ended their vote. */}
+          {/* The branch is OUTSIDE `t()`, with both keys written out verbatim:
+              `scripts/i18n-check.mjs` reads keys literally, so `t(cond ? a : b)`
+              makes both of them look unreferenced and turns them into deletion
+              candidates in a cleanup pass — leaving a raw key path in front of a
+              room. Same trap `SCORABLE_TYPE_META` and the ballot page's
+              `refusalMessage` document. */}
+          <p className="text-sm text-indigo-800">
+            {current.state === 'expired' ? t('roomVote.expired') : t('roomVote.closed')}
+          </p>
           <SessionStatus session={current} />
         </>
       )}

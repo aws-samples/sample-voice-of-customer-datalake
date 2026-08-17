@@ -35,7 +35,12 @@ by a read-then-write check: a room full of phones submitting at once is exactly
 the case a read-then-write loses, and a flood has to be refused by the database
 rather than by arithmetic that raced. The read that happens first exists only to
 give an honest error message ("closed" vs "full" vs "no such session"); the
-condition is what actually holds the line.
+condition is what actually holds the line. A CORRECTION goes through the same
+condition, minus the cap it does not consume — see `_hold_open_session`.
+
+AND THE TOKEN IS NEVER WRITTEN TO A LOG IN FULL. While the session is open the id
+is a bearer credential, so a log line carrying it would turn log read access into
+vote access. Every line in this module puts it through `_session_ref`.
 
 ONE DEVICE, ONE BALLOT
 ----------------------
@@ -211,6 +216,13 @@ REASON_NOT_FOUND = 'not_found'
 REASON_CLOSED = 'closed'
 REASON_EXPIRED = 'expired'
 REASON_CAP_REACHED = 'cap_reached'
+# A body this route cannot read: an axis that is not a number, a note past the
+# bound, a ballot that scores nothing. PERMANENT, which is why it needs a reason
+# of its own: the shared `ValidationError` handler answers 400 with a message and
+# no `reason`, and the page reads only the reason — so every one of these arrived
+# as `unknown` and was rendered as "try again in a moment", which is advice that
+# can never work.
+REASON_INVALID = 'invalid'
 
 _REFUSAL_STATUS = {
     REASON_NOT_FOUND: 404,
@@ -221,6 +233,7 @@ _REFUSAL_STATUS = {
     # keeps "the room filled up" distinguishable from "the facilitator sat down"
     # for a page that shows different words for each.
     REASON_CAP_REACHED: 429,
+    REASON_INVALID: 400,
 }
 
 _REFUSAL_MESSAGE = {
@@ -228,18 +241,26 @@ _REFUSAL_MESSAGE = {
     REASON_CLOSED: 'This voting session is closed',
     REASON_EXPIRED: 'This voting session has expired',
     REASON_CAP_REACHED: 'This voting session has reached its ballot limit',
+    REASON_INVALID: 'This ballot could not be read',
 }
 
 
-def _refusal(reason: str) -> Response:
-    """One refusal shape for every reason a ballot is not accepted."""
+def _refusal(reason: str, message: str | None = None) -> Response:
+    """One refusal shape for every reason a ballot is not accepted.
+
+    `message` overrides the human sentence while leaving the machine-readable
+    `reason` alone — used for a validation refusal, where the validator's own
+    message names the field and the bound and is worth more to somebody holding a
+    terminal than 'could not be read'. It never echoes submitted content: every
+    validator in this module reports the field and the limit, never the value.
+    """
     return Response(
         status_code=_REFUSAL_STATUS[reason],
         content_type=content_types.APPLICATION_JSON,
         body=json.dumps({
             'success': False,
             'reason': reason,
-            'error': _REFUSAL_MESSAGE[reason],
+            'error': message or _REFUSAL_MESSAGE[reason],
         }),
     )
 
@@ -260,8 +281,55 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _json_object_body() -> dict:
+    """The request body as a JSON object, or a ValidationError.
+
+    Every route here reads its body through this, because `json_body` alone is two
+    unhandled failures on a route a stranger can reach: unparseable JSON raises
+    `JSONDecodeError`, and a body that parses to a LIST or a string passes the
+    `or {}` guard truthy and then dies on `.get` — both of which surface as a bare
+    500 with nothing the page can say. A `ValidationError` instead becomes the
+    caller's own refusal reason (see `REASON_INVALID`).
+    """
+    try:
+        body = app.current_event.json_body
+    except ValueError as e:
+        # json.JSONDecodeError is a ValueError; a body that is not JSON at all is
+        # the caller's mistake, not this service's.
+        raise ValidationError('the request body must be JSON') from e
+    if body is None:
+        return {}
+    if not isinstance(body, dict):
+        raise ValidationError('the request body must be a JSON object')
+    return body
+
+
 def _session_sk(session_id: str) -> str:
     return f'{SESSION_SK_PREFIX}{session_id}'
+
+
+# How much of a session id may be written to a log. The full id is the BEARER
+# CREDENTIAL the QR carries: while the session is open, anyone who can read a log
+# line containing it can cast a ballot, so log read access would become vote
+# access. An operator needs to correlate the lines about one session and to see
+# which document a session was opened for; neither needs the whole token.
+#
+# Eight hex characters is 32 bits of the id, which distinguishes a meeting's
+# sessions from each other while leaving 96 bits unknown — and the record itself
+# still has to be open, unexpired and under its cap before those bits are worth
+# guessing.
+SESSION_LOG_REF_CHARS = 8
+
+
+def _session_ref(session_id: Any) -> str:
+    """A session id in a form that is safe to log.
+
+    Every log line in this module goes through this. The truncation is the point:
+    see `SESSION_LOG_REF_CHARS`.
+    """
+    if not isinstance(session_id, str):
+        return '<none>'
+    return session_id[:len(SESSION_ID_PREFIX) + SESSION_LOG_REF_CHARS] + '...'
 
 
 def _ballot_sk(document_id: str, ballot_id: str) -> str:
@@ -468,7 +536,7 @@ def _load_session(session_id: str) -> dict | None:
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Failed to read voting session {session_id}: {e}')
+        logger.exception(f'Failed to read voting session {_session_ref(session_id)}: {e}')
         raise ServiceError('Failed to read the voting session') from e
     item = response.get('Item')
     return item if isinstance(item, dict) else None
@@ -514,7 +582,7 @@ def create_voting_session():
     session names. Resolving the row unit is a separate change; the facilitator UI
     names the document the session scores so the limitation is visible.
     """
-    body = app.current_event.json_body or {}
+    body = _json_object_body()
     document_id = _validated_document_id(body.get('document_id'))
     document_title = _sanitized_text(body.get('document_title'), MAX_DOCUMENT_TITLE_LEN)
     ballot_cap = validate_int(
@@ -565,12 +633,13 @@ def create_voting_session():
         logger.exception(f'Failed to open voting session for {document_id}: {e}')
         raise ServiceError('Failed to open the voting session') from e
 
-    # The session id is a credential (it is the whole of what the QR carries), so
-    # it is logged: an operator needs to be able to see which sessions were opened
-    # against which document, and the id alone authorizes nothing without the
-    # session being open. The creator's subject is NOT logged — it identifies a
-    # person.
-    logger.info(f'Opened voting session {session_id} for document {document_id}')
+    # TRUNCATED, because the session id is the credential the QR carries and this
+    # line would otherwise hand a vote to anyone who can read a log. What an
+    # operator actually needs is which document a session was opened against and
+    # enough of the id to follow that session's other lines, which
+    # `_session_ref` leaves intact. The creator's subject is not logged at all —
+    # it identifies a person.
+    logger.info(f'Opened voting session {_session_ref(session_id)} for document {document_id}')
     return {'success': True, 'session': _session_payload(item, now)}
 
 
@@ -616,13 +685,13 @@ def close_voting_session(session_id: str):
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
             raise NotFoundError('Voting session not found') from e
-        logger.exception(f'Failed to close voting session {validated}: {e}')
+        logger.exception(f'Failed to close voting session {_session_ref(validated)}: {e}')
         raise ServiceError('Failed to close the voting session') from e
     except Exception as e:
-        logger.exception(f'Failed to close voting session {validated}: {e}')
+        logger.exception(f'Failed to close voting session {_session_ref(validated)}: {e}')
         raise ServiceError('Failed to close the voting session') from e
 
-    logger.info(f'Closed voting session {validated}')
+    logger.info(f'Closed voting session {_session_ref(validated)}')
     return {'success': True, 'session': _session_payload(response.get('Attributes', {}), now)}
 
 
@@ -693,7 +762,7 @@ def _existing_ballot(document_id: str, session_id: str, raw_ballot_id: Any) -> s
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Failed to read an anonymous ballot for session {session_id}: {e}')
+        logger.exception(f'Failed to read an anonymous ballot for session {_session_ref(session_id)}: {e}')
         raise ServiceError('Failed to record the ballot') from e
     item = response.get('Item')
     if not isinstance(item, dict) or item.get('voting_session') != session_id:
@@ -701,50 +770,71 @@ def _existing_ballot(document_id: str, session_id: str, raw_ballot_id: Any) -> s
     return ballot_id
 
 
-def _claim_ballot_slot(session_id: str, now: datetime) -> bool:
-    """Take one slot of the session's cap, atomically. False when refused.
+def _hold_open_session(session_id: str, now: datetime, *, claim_slot: bool) -> bool:
+    """Assert at WRITE TIME that the session still accepts this ballot, in one
+    conditional write. False when it refuses.
 
-    THE conditional atomic increment. Everything the read before it checked is
-    checked again HERE, because only this is race-proof: a room submitting at once
-    means many invocations reading the same count and then writing it, which is
-    exactly the interleaving a read-then-write check loses. Four conjuncts:
+    Everything the read before it checked is checked again HERE, because only this
+    is race-proof: a room submitting at once means many invocations reading the
+    same record and then writing, which is exactly the interleaving a
+    read-then-write check loses. The read only supplied the wording of the refusal.
+
+    Three conjuncts always hold:
 
     * `attribute_exists(sk)` — `update_item` is an upsert, so without this a
       submission against a deleted or invented session id would CREATE a session
-      record with one ballot in it.
+      record out of thin air.
     * `#status = :open` — closing the session is the revocation, and it has to
       hold at the moment of the write, not at the moment of the read.
     * `#ttl > :now` — the wall-clock bound, read from the stored deadline rather
       than inferred from the row's continued existence (TTL deletion lags by up to
       about 48 hours).
-    * `ballot_count < ballot_cap` — the cap. Both attributes are written at
-      creation; if either is somehow absent the comparison is false and the
-      submission is refused, which is the direction to fail in.
+
+    `claim_slot` adds the FOURTH conjunct and the increment, and is what
+    distinguishes the two ways a ballot arrives:
+
+    * A NEW ballot claims a slot: `ballot_count < ballot_cap`, then
+      `ballot_count + 1`. Both attributes are written at creation; if either is
+      somehow absent the comparison is false and the submission is refused, which
+      is the direction to fail in.
+    * A CORRECTION claims none — it upserts a record this device already owns, so
+      it consumes nothing and the cap does not apply to it. It still takes this
+      path, though, so that a correction is refused by the same authority a new
+      ballot is: without it the correction path checked the session only at the
+      READ, and a device could amend its vote after the facilitator closed the
+      room. That asymmetry is the bug this argument exists to remove; the write is
+      a bare `updated_at` touch whose only purpose is to carry the condition.
     """
+    assignments = ['updated_at = :now']
+    condition = ['attribute_exists(sk)', '#status = :open', '#ttl > :now_epoch']
+    values: dict[str, Any] = {
+        ':now': now.isoformat(),
+        ':open': STATUS_OPEN,
+        ':now_epoch': int(now.timestamp()),
+    }
+    if claim_slot:
+        assignments.append('ballot_count = ballot_count + :one')
+        condition.append('ballot_count < ballot_cap')
+        # Added only on this branch: DynamoDB rejects an ExpressionAttributeValues
+        # entry that no expression references.
+        values[':one'] = 1
+
     try:
         _table().update_item(
             Key={'pk': VOTING_SESSION_PK, 'sk': _session_sk(session_id)},
-            UpdateExpression='SET ballot_count = ballot_count + :one, updated_at = :now',
-            ConditionExpression=(
-                'attribute_exists(sk) AND #status = :open AND #ttl > :now_epoch '
-                'AND ballot_count < ballot_cap'
-            ),
+            UpdateExpression='SET ' + ', '.join(assignments),
+            ConditionExpression=' AND '.join(condition),
             ExpressionAttributeNames={'#status': 'status', '#ttl': 'ttl'},
-            ExpressionAttributeValues={
-                ':one': 1,
-                ':now': now.isoformat(),
-                ':open': STATUS_OPEN,
-                ':now_epoch': int(now.timestamp()),
-            },
+            ExpressionAttributeValues=values,
         )
         return True
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
             return False
-        logger.exception(f'Failed to claim a ballot slot on session {session_id}: {e}')
+        logger.exception(f'Failed to claim a ballot slot on session {_session_ref(session_id)}: {e}')
         raise ServiceError('Failed to record the ballot') from e
     except Exception as e:
-        logger.exception(f'Failed to claim a ballot slot on session {session_id}: {e}')
+        logger.exception(f'Failed to claim a ballot slot on session {_session_ref(session_id)}: {e}')
         raise ServiceError('Failed to record the ballot') from e
 
 
@@ -812,7 +902,7 @@ def _write_ballot(
     except Exception as e:
         # Never echoes the note or the display name — both are submitter content,
         # and one of them is PII.
-        logger.exception(f'Failed to write an anonymous ballot for session {session_id}: {e}')
+        logger.exception(f'Failed to write an anonymous ballot for session {_session_ref(session_id)}: {e}')
         raise ServiceError('Failed to record the ballot') from e
 
 
@@ -830,8 +920,10 @@ def submit_ballot(session_id: str):
     3. Is this a CORRECTION? A device sending back an id it was given, on this
        session, upserts its own record and consumes no slot. This is what makes
        "one device, one ballot" true without cookies, accounts or fingerprinting.
-    4. Otherwise CLAIM A SLOT with the conditional atomic increment, which is the
-       enforcement; the read in step 2 only supplied the wording.
+    4. HOLD THE SESSION with the conditional write, which is the enforcement; the
+       read in step 2 only supplied the wording. A new ballot claims a slot of the
+       cap here; a correction claims none but is checked by the same condition, so
+       neither can land after the room was closed.
     5. WRITE the ballot on its own key and hand the device its id.
 
     A failure between 4 and 5 loses a slot without recording a ballot, and answers
@@ -841,9 +933,19 @@ def submit_ballot(session_id: str):
     does not get to choose which proposal it is scoring.
     """
     validated_session = _validated_session_id(session_id)
-    body = app.current_event.json_body or {}
-    axes = _validated_axes(body)
-    note = _validated_note(body.get('notes'))
+    try:
+        body = _json_object_body()
+        axes = _validated_axes(body)
+        note = _validated_note(body.get('notes'))
+    except ValidationError as e:
+        # Answered as a REFUSAL rather than left to the shared `ValidationError`
+        # handler, which returns 400 with a message and no `reason`. This page
+        # reads only the reason, so every malformed ballot arrived as `unknown`
+        # and was rendered as "try again in a moment" — advice that can never
+        # work for a permanent failure. The validator's own message is carried
+        # through for anyone reading the body directly; it names the field and
+        # the bound, never the value.
+        return _refusal(REASON_INVALID, e.message)
     display_name = _sanitized_text(body.get('display_name'), MAX_DISPLAY_NAME_LEN)
 
     item = _load_session(validated_session) if validated_session else None
@@ -861,23 +963,35 @@ def submit_ballot(session_id: str):
         # the id; refused rather than trusted because the write would otherwise
         # land on a mis-split key and appear in the aggregate as a phantom
         # document.
-        logger.error(f'Voting session {validated_session} has no usable document_id')
+        logger.error(f'Voting session {_session_ref(validated_session)} has no usable document_id')
         return _refusal(REASON_NOT_FOUND)
 
     ballot_id = _existing_ballot(document_id, validated_session, body.get('ballot_id'))
     corrected = ballot_id is not None
+
+    # BOTH paths pass through the conditional write, and that is the point: a
+    # correction consumes no slot, but it must be refused by the same authority a
+    # new ballot is. Checking the session only at the read above would let a device
+    # amend its vote after the facilitator closed the room.
+    if not _hold_open_session(validated_session, now, claim_slot=not corrected):
+        # The condition is the authority, and it does not say which conjunct
+        # failed. Re-read to name the reason: by now the session may have been
+        # closed, may have expired, or may be full, and the room deserves the
+        # right sentence.
+        refreshed = _load_session(validated_session)
+        if not refreshed:
+            return _refusal(REASON_NOT_FOUND)
+        state = _session_state(refreshed, now)
+        if state != STATUS_OPEN:
+            return _refusal(state)
+        # It reads open, so the conjunct that refused is one the read cannot see —
+        # the cap, which is the only conjunct a claiming submission has and a
+        # correction does not. A correction reaching here would mean the session
+        # was shut between the two calls and re-opened, which no route can do, so
+        # it answers CLOSED: the fail-closed reading of a refusal nothing explains.
+        return _refusal(REASON_CAP_REACHED if not corrected else REASON_CLOSED)
+
     if ballot_id is None:
-        if not _claim_ballot_slot(validated_session, now):
-            # The condition is the authority, and it does not say which conjunct
-            # failed. Re-read to name the reason: by now the session may have been
-            # closed, may have expired, or may be full, and the room deserves the
-            # right sentence. A read that comes back open means the cap is what
-            # refused.
-            refreshed = _load_session(validated_session)
-            if not refreshed:
-                return _refusal(REASON_NOT_FOUND)
-            state = _session_state(refreshed, now)
-            return _refusal(REASON_CAP_REACHED if state == STATUS_OPEN else state)
         ballot_id = _minted_ballot_id()
 
     _write_ballot(document_id, ballot_id, validated_session, axes, note, display_name, now)
@@ -885,7 +999,7 @@ def submit_ballot(session_id: str):
     # The ballot id is the device's own credential for correcting its vote, so it
     # is never logged; nor is the note or the display name.
     logger.info(
-        f'Recorded an anonymous ballot on session {validated_session} '
+        f'Recorded an anonymous ballot on session {_session_ref(validated_session)} '
         f'(correction={corrected})'
     )
     return {

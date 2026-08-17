@@ -336,10 +336,22 @@ describe('ManualImportModal', () => {
       })
     })
 
+    // This suite shares ONE jsdom across every test file (`singleFork` in
+    // vitest.config.ts), so a `window.location` replaced here and left in place
+    // leaks into every file that runs after this one — where `location.origin` is
+    // then undefined. It cost the room-vote QR tests an afternoon: they passed
+    // alone and failed in the full run, because the component reads the live
+    // origin to build the address a phone opens.
+    const originalLocation = window.location
+
+    afterEach(() => {
+      Object.defineProperty(window, 'location', { value: originalLocation, writable: true })
+    })
+
     it('calls confirmManualImport when Import is clicked', async () => {
       const user = userEvent.setup()
       mockConfirmManualImport.mockResolvedValue({ success: true, imported_count: 1 })
-      
+
       // Mock window.location.reload
       const reloadMock = vi.fn()
       Object.defineProperty(window, 'location', {

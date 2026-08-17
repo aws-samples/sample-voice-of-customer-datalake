@@ -82,7 +82,36 @@ function refusalMessage(failure: BallotFailure, t: (key: string) => string): str
     case 'closed': return t('ballot.closed.closed')
     case 'expired': return t('ballot.closed.expired')
     case 'cap_reached': return t('ballot.closed.capReached')
+    // A ballot the API could not read — an axis that is not a number, a note past
+    // the bound. PERMANENT, which is why it is not folded into `unknown`: the
+    // generic sentence says "try again in a moment", and trying again in a moment
+    // is exactly what will not help.
+    case 'invalid': return t('ballot.closed.invalid')
     case 'unknown': return t('ballot.closed.unknown')
+  }
+}
+
+/** The HEADLINE for a refusal, which is not the same question as the sentence.
+ *
+ *  Four of the failures are statements about the SESSION — it does not exist, the
+ *  facilitator closed it, it expired, it is full — and for those "this vote is not
+ *  open" is exactly right. Two are statements about THIS BALLOT: the API could not
+ *  read it, or the request did not complete. Those happen while the vote is open
+ *  and running, so the closed headline would be a false claim about the session
+ *  and would send a submitter away from a form they can still use.
+ *
+ *  Same literal-key rule as `refusalMessage`: `scripts/i18n-check.mjs` reads keys
+ *  verbatim, so they are written out per case rather than held in a table. */
+function refusalTitle(failure: BallotFailure, t: (key: string) => string): string {
+  switch (failure) {
+    case 'not_found':
+    case 'closed':
+    case 'expired':
+    case 'cap_reached':
+      return t('ballot.closed.title')
+    case 'invalid':
+    case 'unknown':
+      return t('ballot.rejected.title')
   }
 }
 
@@ -117,12 +146,18 @@ export default function Vote(): ReactElement {
   })
 
   const submitMutation = useMutation({
-    mutationFn: (ballot: AnonymousBallot) => votingSessionsApi.submitBallot(sessionId, {
-      ...ballot,
-      // Echoed back when this device has voted before, which makes the second
-      // submission a CORRECTION of its own ballot rather than a new one.
-      ...(readStoredBallotId(sessionId) ? { ballot_id: readStoredBallotId(sessionId) } : {}),
-    }),
+    mutationFn: (ballot: AnonymousBallot) => {
+      // Read ONCE. Two calls would be two reads of storage that could disagree,
+      // and the branch would then be deciding on a different value from the one it
+      // sends.
+      const storedBallotId = readStoredBallotId(sessionId)
+      return votingSessionsApi.submitBallot(sessionId, {
+        ...ballot,
+        // Echoed back when this device has voted before, which makes the second
+        // submission a CORRECTION of its own ballot rather than a new one.
+        ...(storedBallotId ? { ballot_id: storedBallotId } : {}),
+      })
+    },
     onSuccess: (result) => {
       if (result.ok) {
         storeBallotId(sessionId, result.ballotId)
@@ -142,17 +177,26 @@ export default function Vote(): ReactElement {
   const body = (): ReactElement => {
     if (!sessionId) return <VotePanel title={t('ballot.closed.title')}>{t('ballot.closed.notFound')}</VotePanel>
     if (isPending) return <VotePanel title={t('ballot.loading')} />
-    // A failed CONFIG read is not a statement about the session, so it gets the
-    // generic sentence rather than "this vote is closed" — the page must not tell
-    // a room a vote is over because a fetch failed. No companion `session ===
-    // undefined` check: `isPending` above already excluded the in-flight case, so
-    // TanStack's own result type proves the data is here and sonarjs reports the
-    // extra comparison as one that can never hold.
+    // A failed CONFIG read is not a statement about the session and not a refusal
+    // of a ballot — nothing was submitted yet — so it gets copy of its own rather
+    // than borrowing either. "This vote is not open" would tell a room their vote
+    // is over because a fetch failed, and "your ballot could not be recorded"
+    // would claim to have refused a ballot nobody had cast.
+    //
+    // No companion `session === undefined` check: `isPending` above already
+    // excluded the in-flight case, so TanStack's own result type proves the data is
+    // here and sonarjs reports the extra comparison as one that can never hold.
     if (isError) {
-      return <VotePanel title={t('ballot.closed.title')}>{t('ballot.closed.unknown')}</VotePanel>
+      return (
+        <VotePanel title={t('ballot.unavailable.title')}>
+          {t('ballot.unavailable.description')}
+        </VotePanel>
+      )
     }
     if (failure !== null) {
-      return <VotePanel title={t('ballot.closed.title')}>{refusalMessage(failure, t)}</VotePanel>
+      return (
+        <VotePanel title={refusalTitle(failure, t)}>{refusalMessage(failure, t)}</VotePanel>
+      )
     }
     if (submitted) {
       return (

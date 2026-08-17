@@ -29,7 +29,9 @@ import { fetchApi } from './client'
  * (`ballots_handler.py`), and the page maps each to its own translated sentence —
  * so a new reason arrives as `unknown` rather than as a blank screen.
  */
-export const BALLOT_REFUSAL_REASONS = ['not_found', 'closed', 'expired', 'cap_reached'] as const
+export const BALLOT_REFUSAL_REASONS = [
+  'not_found', 'closed', 'expired', 'cap_reached', 'invalid',
+] as const
 
 export type BallotRefusalReason = typeof BALLOT_REFUSAL_REASONS[number]
 
@@ -56,10 +58,30 @@ const votingSessionSchema = z.object({
   session_id: z.string().catch(''),
   document_id: z.string().catch(''),
   document_title: z.string().catch(''),
+  /**
+   * The stored flag, which says only whether anybody CLOSED the session.
+   *
+   * Not what the UI should decide anything on — see `state`. Kept because the two
+   * are different facts and a panel that showed "closed" for a session nobody
+   * closed would be lying about who ended the vote.
+   */
   status: z.enum(['open', 'closed']).catch('closed'),
+  /**
+   * Whether the session ACCEPTS BALLOTS, which is `status` folded together with
+   * the expiry deadline. This is the one the UI reads.
+   *
+   * The distinction is not academic: a session expires on a wall clock without
+   * anybody touching it, so its `status` stays `open` for as long as the record
+   * survives — DynamoDB's TTL sweeper lags by up to about 48 hours. A panel
+   * keyed on `status` therefore keeps a QR on screen, keeps polling, and sends a
+   * room to a page that refuses every one of them.
+   *
+   * Defaults to `closed` for an unreadable or absent value, which is the safe
+   * reading: the dangerous direction is claiming a dead session is live.
+   */
+  state: z.enum(['open', 'closed', 'expired']).catch('closed'),
   ballot_cap: z.number().catch(0),
   ballot_count: z.number().catch(0),
-  expires_at: z.string().catch(''),
 })
 
 export type VotingSession = z.infer<typeof votingSessionSchema>
@@ -168,9 +190,11 @@ export const votingSessionsApi = {
    */
   getBallotSessionConfig: async (sessionId: string): Promise<BallotSessionConfig> => {
     const closed: BallotSessionConfig = { open: false, reason: null, document_title: '' }
-    const response = await fetch(`${getBaseUrl()}${sessionPath(sessionId)}/config`, {
-      headers: { 'Content-Type': 'application/json' },
-    })
+    // No headers at all. A GET carries no body, so `Content-Type` describes
+    // nothing — and setting it is what turns a SIMPLE cross-origin request into
+    // one that needs a preflight round trip first. On the first thing a phone does
+    // after scanning a QR, that is a wasted request.
+    const response = await fetch(`${getBaseUrl()}${sessionPath(sessionId)}/config`)
     if (!response.ok) return closed
     const parsed = ballotConfigResponseSchema.safeParse(await response.json())
     return parsed.success ? parsed.data.session : closed

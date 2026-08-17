@@ -430,8 +430,19 @@ export class VocApiStack extends VocStack {
     // table and NO processing-queue grant — a ballot is a decision record, not
     // customer voice, so it must never be enriched, given a sentiment or assigned
     // a persona. The absent grants are what enforce that rather than remember it.
+    //
+    // THREE ACTIONS, not `grantReadWriteData`. That convenience method hands over
+    // Query, Scan, DeleteItem, BatchGetItem and BatchWriteItem across the WHOLE
+    // aggregates table, which also holds every feedback-form configuration and
+    // every signed-in reviewer's ballot — and this is the one function in the
+    // stack that two unauthenticated routes can reach. The handler reads one item
+    // at a time (`get_item`), creates a session (`put_item`) and upserts
+    // (`update_item`); it never lists, never deletes, never writes in bulk. So a
+    // caller who found a flaw in it still cannot enumerate the table or erase
+    // anybody's vote. `ballots Lambda IAM grants` in api-stack.test.ts pins both
+    // the three actions and the absence of the rest.
     const ballotsRole = this.createLambdaRole('BallotsLambdaRole');
-    aggregatesTable.grantReadWriteData(ballotsRole);
+    aggregatesTable.grant(ballotsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
     kmsKey.grantEncryptDecrypt(ballotsRole);
 
     const ballotsLambda = new lambda.Function(this, 'BallotsApi', {
@@ -445,10 +456,13 @@ export class VocApiStack extends VocStack {
       memorySize: 256,
       environment: {
         AGGREGATES_TABLE: aggregatesTable.tableName,
-        // '*' rather than the site origin: the ballot page is opened on a phone
-        // from a QR, and the public routes are fetched by that page. The session
-        // token is the control, not the origin header.
-        ALLOWED_ORIGIN: '*',
+        // The SAME origin every other API Lambda gets, not '*'. A phone reaches
+        // the ballot page by opening `/vote/{id}` on this app's own CloudFront
+        // domain, so the browser sends that domain as its Origin exactly as it
+        // does for every other page — being unauthenticated changes nothing about
+        // where the page is served from. And '*' here would loosen the three
+        // FACILITATOR routes too, which live on this same function.
+        ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-ballots-api',
         LOG_LEVEL: 'INFO',
       },
@@ -940,6 +954,26 @@ export class VocApiStack extends VocStack {
         stageName: 'v1',
         throttlingRateLimit: 100,
         throttlingBurstLimit: 200,
+        // Tighter limits on the two UNAUTHENTICATED ballot methods (see
+        // /voting-sessions/* below). Each request costs a DynamoDB read even for a
+        // session id that does not exist, and nothing in front of them asks who is
+        // calling — the session token is checked inside the handler, which means
+        // the cost is paid before the refusal.
+        //
+        // As STAGE METHOD SETTINGS rather than as a usage plan, which is what the
+        // /mcp route uses: a usage plan's throttle binds per API KEY, and these
+        // methods deliberately require none, so a plan attached to them would
+        // never apply to the requests that matter. Method settings are keyed by
+        // path and apply to every caller.
+        //
+        // 20/s with a burst of 40 is roughly 30x what the feature needs — a room
+        // is bounded by MAX_BALLOT_CAP (200) ballots and submits once each — while
+        // still cutting a scripted flood down to something a single small table
+        // absorbs.
+        methodOptions: {
+          '/voting-sessions/{session_id}/config/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          '/voting-sessions/{session_id}/submit/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+        },
         metricsEnabled: true,
         loggingLevel: apigateway.MethodLoggingLevel.INFO,
         dataTraceEnabled: false,
@@ -1194,6 +1228,10 @@ export class VocApiStack extends VocStack {
     // These two are named in INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts.
     // That list is the review gate: adding to it is a deliberate act, and the test
     // failing until it is extended is the intended behaviour.
+    //
+    // Both are throttled below the stage default by `deployOptions.methodOptions`
+    // at the top of this stack — keyed by these exact paths, and pinned against
+    // them by a test, because a mistyped key throttles nothing and says nothing.
     const publicBallotMethods = [
       votingSessionItem.addResource('config').addMethod('GET', ballotsIntegration),
       votingSessionItem.addResource('submit').addMethod('POST', ballotsIntegration),

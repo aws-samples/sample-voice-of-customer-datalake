@@ -22,6 +22,7 @@
       "capReached": "Esta votación ya ha recogido todos los votos que acepta. Pide al facilitador que abra otra sesión.",
       "closed": "El facilitador ha cerrado esta votación, por lo que no se aceptan más votos.",
       "expired": "Esta votación ha caducado, por lo que no se aceptan más votos.",
+      "invalid": "No se ha podido leer este voto, por lo que no se ha registrado nada. Revisa los números y la nota, y envíalo de nuevo.",
       "notFound": "Este enlace no abre ninguna votación. Comprueba que has escaneado el código que está en pantalla ahora.",
       "title": "Esta votación no está abierta",
       "unknown": "No se ha podido registrar tu voto en este momento. Inténtalo de nuevo en un instante."
@@ -39,11 +40,18 @@
       "label": "Notas (opcional)",
       "placeholder": "Lo que los números no dicen..."
     },
+    "rejected": {
+      "title": "Tu voto no se ha registrado"
+    },
     "submit": {
       "label": "Enviar voto",
       "pending": "Enviando..."
     },
-    "title": "Puntúa esta propuesta"
+    "title": "Puntúa esta propuesta",
+    "unavailable": {
+      "description": "No se ha enviado nada. Vuelve a cargar la página para intentarlo de nuevo; la votación en sí puede estar abierta.",
+      "title": "No se ha podido cargar esta votación"
+    }
   },
   "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
   "docType": {
@@ -91,12 +99,13 @@
   },
   "roomVote": {
     "anonymousNote": "Los votos emitidos aquí cuentan para la puntuación del equipo de arriba y no se atribuyen a ninguna persona.",
-    "ballotsIn": "{{count}} de {{cap}} votos recibidos",
+    "ballotsIn": "{{received}} de {{cap}} votos recibidos",
     "close": "Cerrar la votación",
     "closeFailed": "No se ha podido cerrar la votación. Inténtalo de nuevo: hasta que se cierre, se siguen aceptando votos.",
     "closed": "Esta votación está cerrada. No se aceptan más votos.",
     "closing": "Cerrando...",
     "description": "Pon un código QR en pantalla y deja que todos los presentes envíen un voto anónimo desde su teléfono, sin cuenta.",
+    "expired": "Esta votación ha caducado. No se aceptan más votos.",
     "open": "Abrir una votación en sala",
     "openFailed": "No se ha podido abrir la votación. Inténtalo de nuevo.",
     "opening": "Abriendo...",

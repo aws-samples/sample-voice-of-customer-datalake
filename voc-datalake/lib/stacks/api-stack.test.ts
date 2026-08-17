@@ -539,6 +539,30 @@ describe('ballots Lambda IAM grants', () => {
     expect(writes.length).toBeGreaterThan(0);
   });
 
+  it('holds only the three item actions the handler calls, and no listing or deletion', () => {
+    // `grantReadWriteData` would have handed over Query, Scan, DeleteItem,
+    // BatchGetItem and BatchWriteItem across the whole aggregates table — which
+    // also holds every feedback-form configuration and every signed-in reviewer's
+    // ballot — on the ONE function in this stack that two unauthenticated routes
+    // reach. The handler reads one item at a time, creates a session and upserts;
+    // it never lists, never deletes, never writes in bulk.
+    //
+    // Asserted as an exact SET rather than as an absence list, so an action nobody
+    // considered cannot arrive unremarked: a new grant fails this test and has to
+    // be argued for.
+    const granted = new Set(
+      ballotsStatements()
+        .flatMap((s) => s.actions)
+        .filter((action) => action.startsWith('dynamodb:')),
+    );
+
+    expect([...granted].sort()).toEqual([
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+    ]);
+  });
+
   it('cannot reach the feedback table or the processing queue', () => {
     // The resource-name matching is the same logical-ID substring approach the
     // metrics grant test above uses, and carries the same caveat: renaming the
@@ -553,5 +577,111 @@ describe('ballots Lambda IAM grants', () => {
       + 'processing queue. A ballot is an internal decision record: enriching it '
       + 'would assign a colleague\'s vote a customer persona.',
     ).toEqual([]);
+  });
+});
+
+
+describe('the public ballot routes', () => {
+  /** The two routes a phone reaches with no credentials, as
+   *  `deployOptions.methodOptions` keys them: `{resource path}/{METHOD}`. */
+  const PUBLIC_BALLOT_METHOD_KEYS = [
+    '/voting-sessions/{session_id}/config/GET',
+    '/voting-sessions/{session_id}/submit/POST',
+  ];
+
+  const StageSchema = z.object({
+    Properties: z.object({
+      MethodSettings: z.array(z.object({
+        ResourcePath: z.string(),
+        HttpMethod: z.string(),
+        ThrottlingRateLimit: z.number().optional(),
+        ThrottlingBurstLimit: z.number().optional(),
+      })).optional(),
+    }),
+  });
+
+  /** CloudFormation carries a method setting's path in API Gateway's escaped
+   *  form, where `~1` stands for `/` — `/voting-sessions/{session_id}/config`
+   *  is stored as `/~1voting-sessions~1{session_id}~1config`. Decoded back so the
+   *  assertions below read as routes.
+   *
+   *  This escaping is also why the key has to be pinned rather than trusted: a
+   *  mistyped `methodOptions` key is escaped just as happily as a correct one and
+   *  produces a setting that matches no method, silently. */
+  const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
+
+  function methodSettings(): { key: string; rate?: number; burst?: number }[] {
+    const stages = Object.values(apiTemplate().findResources('AWS::ApiGateway::Stage'));
+
+    expect(stages.length, 'expected exactly one API stage').toBe(1);
+
+    return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
+      key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
+      rate: s.ThrottlingRateLimit,
+      burst: s.ThrottlingBurstLimit,
+    }));
+  }
+
+  it('throttles both of them below the stage default', () => {
+    // The stage default is 100/200 for `/*/*`. These two are the only methods on
+    // the API that answer an anonymous caller a DynamoDB read, so they get their
+    // own tighter pair.
+    const settings = new Map(methodSettings().map((s) => [s.key, s]));
+
+    for (const key of PUBLIC_BALLOT_METHOD_KEYS) {
+      const setting = settings.get(key);
+
+      expect(setting, `${key} has no method-level throttle`).toBeDefined();
+      expect(setting?.rate).toBe(20);
+      expect(setting?.burst).toBe(40);
+    }
+  });
+
+  it('spells those throttle keys the same way the wired routes are spelled', () => {
+    // A methodOptions key is a STRING matched against a resource path at deploy
+    // time. A typo in it throttles nothing, breaks nothing and reports nothing —
+    // the setting is simply never applied — so the two spellings are compared
+    // against each other here rather than each being trusted on its own.
+    const wired = new Set(apiMethods(apiTemplate()).map((m) => `${m.path}/${m.httpMethod}`));
+
+    expect(PUBLIC_BALLOT_METHOD_KEYS.filter((key) => !wired.has(key))).toEqual([]);
+  });
+
+  it('answers CORS preflight on both, which a cross-origin JSON POST requires', () => {
+    // `submitBallot` sends Content-Type: application/json to a different host from
+    // the SPA, which makes it a non-simple request: the browser sends OPTIONS
+    // first and never sends the POST if that fails. The RestApi's
+    // `defaultCorsPreflightOptions` generates these, so this asserts the
+    // inheritance actually reached the two resources added for this feature —
+    // nothing in `addResource` guarantees it, and the failure mode is a room whose
+    // ballots never leave the phone.
+    const preflight = new Set(
+      apiMethods(apiTemplate()).filter((m) => m.httpMethod === 'OPTIONS').map((m) => m.path),
+    );
+
+    expect([...PUBLIC_BALLOT_METHOD_KEYS].map((key) => key.replace(/\/[A-Z]+$/, ''))
+      .filter((path) => !preflight.has(path))).toEqual([]);
+  });
+
+  it('serves the ballots Lambda the site origin, not a wildcard', () => {
+    // ALLOWED_ORIGIN is per-FUNCTION, and the three facilitator routes share this
+    // function with the two public ones, so a '*' for the benefit of the ballot
+    // page would also publish a facilitator's session responses to any origin.
+    // It needs no wildcard: the ballot page is a route of this SPA, so a phone
+    // opening it sends the same Origin every other page does.
+    const functions = apiTemplate().findResources('AWS::Lambda::Function');
+    const EnvSchema = z.object({
+      Properties: z.object({
+        Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }),
+      }),
+    });
+    const ballots = Object.values(functions).find(
+      (fn) => EnvSchema.safeParse(fn).success
+        && EnvSchema.parse(fn).Properties.Environment.Variables.POWERTOOLS_SERVICE_NAME === 'voc-ballots-api',
+    );
+
+    expect(ballots, 'no Lambda found with POWERTOOLS_SERVICE_NAME voc-ballots-api').toBeDefined();
+    expect(EnvSchema.parse(ballots).Properties.Environment.Variables.ALLOWED_ORIGIN)
+      .toBe('https://app.example.invalid');
   });
 });

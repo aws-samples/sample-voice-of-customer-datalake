@@ -22,6 +22,7 @@
       "capReached": "Ce vote a déjà recueilli tous les bulletins qu'il accepte. Demandez à l'animateur d'ouvrir une autre session.",
       "closed": "L'animateur a clos ce vote, aucun autre bulletin n'est accepté.",
       "expired": "Ce vote a expiré, aucun autre bulletin n'est accepté.",
+      "invalid": "Ce bulletin n'a pas pu être lu, rien n'a donc été enregistré. Vérifiez les valeurs et la note, puis renvoyez-le.",
       "notFound": "Ce lien n'ouvre aucun vote. Vérifiez que vous avez scanné le code affiché à l'écran maintenant.",
       "title": "Ce vote n'est pas ouvert",
       "unknown": "Votre bulletin n'a pas pu être enregistré pour l'instant. Réessayez dans un moment."
@@ -39,11 +40,18 @@
       "label": "Notes (facultatif)",
       "placeholder": "Ce que les chiffres ne disent pas..."
     },
+    "rejected": {
+      "title": "Votre bulletin n'a pas été enregistré"
+    },
     "submit": {
       "label": "Envoyer le bulletin",
       "pending": "Envoi..."
     },
-    "title": "Notez cette proposition"
+    "title": "Notez cette proposition",
+    "unavailable": {
+      "description": "Rien n'a été envoyé. Rechargez la page pour réessayer : le vote lui-même est peut-être bien ouvert.",
+      "title": "Ce vote n'a pas pu être chargé"
+    }
   },
   "configureApiEndpoint": "Configurez le point de terminaison API dans les paramètres pour afficher la priorisation.",
   "docType": {
@@ -91,12 +99,13 @@
   },
   "roomVote": {
     "anonymousNote": "Les bulletins déposés ici comptent dans le score d'équipe ci-dessus et ne sont attribués à personne.",
-    "ballotsIn": "{{count}} bulletins sur {{cap}} reçus",
+    "ballotsIn": "{{received}} bulletins sur {{cap}} reçus",
     "close": "Clore le vote",
     "closeFailed": "Le vote n'a pas pu être clos. Réessayez : jusqu'à sa clôture, les bulletins sont encore acceptés.",
     "closed": "Ce vote est clos. Aucun autre bulletin n'est accepté.",
     "closing": "Clôture...",
     "description": "Affichez un QR code et laissez chaque personne présente envoyer un bulletin anonyme depuis son téléphone, sans compte.",
+    "expired": "Ce vote a expiré. Aucun autre bulletin n'est accepté.",
     "open": "Ouvrir un vote en salle",
     "openFailed": "Le vote n'a pas pu être ouvert. Réessayez.",
     "opening": "Ouverture...",

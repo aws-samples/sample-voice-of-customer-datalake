@@ -22,6 +22,7 @@
       "capReached": "Diese Abstimmung hat bereits so viele Stimmen gesammelt, wie sie annimmt. Bitten Sie die Moderation, eine weitere Sitzung zu öffnen.",
       "closed": "Die Moderation hat diese Abstimmung geschlossen, weitere Stimmen werden nicht angenommen.",
       "expired": "Diese Abstimmung ist abgelaufen, weitere Stimmen werden nicht angenommen.",
+      "invalid": "Diese Stimme konnte nicht gelesen werden, daher wurde nichts erfasst. Prüfen Sie die Zahlen und die Notiz und senden Sie sie erneut.",
       "notFound": "Dieser Link öffnet keine Abstimmung. Prüfen Sie, ob Sie den Code gescannt haben, der jetzt auf dem Bildschirm zu sehen ist.",
       "title": "Diese Abstimmung ist nicht offen",
       "unknown": "Ihre Stimme konnte gerade nicht erfasst werden. Versuchen Sie es in einem Moment erneut."
@@ -39,11 +40,18 @@
       "label": "Notizen (optional)",
       "placeholder": "Was die Zahlen nicht sagen..."
     },
+    "rejected": {
+      "title": "Ihre Stimme wurde nicht erfasst"
+    },
     "submit": {
       "label": "Stimme abgeben",
       "pending": "Wird gesendet..."
     },
-    "title": "Diesen Vorschlag bewerten"
+    "title": "Diesen Vorschlag bewerten",
+    "unavailable": {
+      "description": "Es wurde nichts gesendet. Laden Sie die Seite neu, um es erneut zu versuchen — die Abstimmung selbst kann durchaus offen sein.",
+      "title": "Diese Abstimmung konnte nicht geladen werden"
+    }
   },
   "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um die Priorisierung anzuzeigen.",
   "docType": {
@@ -91,12 +99,13 @@
   },
   "roomVote": {
     "anonymousNote": "Hier abgegebene Stimmen zählen für die Teambewertung oben und werden keiner Person zugeordnet.",
-    "ballotsIn": "{{count}} von {{cap}} Stimmen eingegangen",
+    "ballotsIn": "{{received}} von {{cap}} Stimmen eingegangen",
     "close": "Abstimmung schließen",
     "closeFailed": "Die Abstimmung konnte nicht geschlossen werden. Versuchen Sie es erneut — bis sie geschlossen ist, werden weiterhin Stimmen angenommen.",
     "closed": "Diese Abstimmung ist geschlossen. Weitere Stimmen werden nicht angenommen.",
     "closing": "Wird geschlossen...",
     "description": "Zeigen Sie einen QR-Code auf dem Bildschirm und lassen Sie alle im Raum ohne Konto eine anonyme Stimme vom Telefon abgeben.",
+    "expired": "Diese Abstimmung ist abgelaufen. Weitere Stimmen werden nicht angenommen.",
     "open": "Raumabstimmung öffnen",
     "openFailed": "Die Abstimmung konnte nicht geöffnet werden. Versuchen Sie es erneut.",
     "opening": "Wird geöffnet...",

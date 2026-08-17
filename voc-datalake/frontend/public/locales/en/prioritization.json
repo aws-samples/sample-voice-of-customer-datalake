@@ -22,6 +22,7 @@
       "capReached": "This vote has already collected as many ballots as it accepts. Ask the facilitator to open another session.",
       "closed": "The facilitator has closed this vote, so no further ballots are accepted.",
       "expired": "This vote has expired, so no further ballots are accepted.",
+      "invalid": "This ballot could not be read, so nothing was recorded. Check the numbers and the note, then submit again.",
       "notFound": "This link does not open a vote. Check that you scanned the code that is on screen now.",
       "title": "This vote is not open",
       "unknown": "Your ballot could not be recorded just now. Try again in a moment."
@@ -39,11 +40,18 @@
       "label": "Notes (optional)",
       "placeholder": "Anything the numbers do not say..."
     },
+    "rejected": {
+      "title": "Your ballot was not recorded"
+    },
     "submit": {
       "label": "Submit ballot",
       "pending": "Submitting..."
     },
-    "title": "Score this proposal"
+    "title": "Score this proposal",
+    "unavailable": {
+      "description": "Nothing was submitted. Reload the page to try again — the vote itself may well be open.",
+      "title": "This vote could not be loaded"
+    }
   },
   "configureApiEndpoint": "Configure API endpoint in Settings to view prioritization.",
   "docType": {
@@ -91,12 +99,13 @@
   },
   "roomVote": {
     "anonymousNote": "Ballots cast here count toward the team score above and are not attributed to a person.",
-    "ballotsIn": "{{count}} of {{cap}} ballots in",
+    "ballotsIn": "{{received}} of {{cap}} ballots in",
     "close": "Close the vote",
     "closeFailed": "The vote could not be closed. Try again — until it closes, ballots are still accepted.",
     "closed": "This vote is closed. No further ballots are accepted.",
     "closing": "Closing...",
     "description": "Put a QR on screen and let everyone in the room submit one anonymous ballot from their phone, without an account.",
+    "expired": "This vote has expired. No further ballots are accepted.",
     "open": "Open a room vote",
     "openFailed": "The vote could not be opened. Try again.",
     "opening": "Opening...",
