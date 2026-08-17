@@ -172,7 +172,7 @@ function StatsCards({
           thing per document: it renders with the numbers it explains. `text-gray-600` per
           the measured table in `BAND_STYLE` (gray-500 fails AA below 18.5px on gray
           backgrounds; this line is text-sm on the page's gray-50). */}
-      {unreadableCount > 0 && (
+      {unreadableCount === 0 ? null : (
         <p className="text-sm text-gray-600 mt-2">
           {t('stats.unreadable', { count: unreadableCount })}
         </p>

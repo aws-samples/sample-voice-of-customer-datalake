@@ -216,6 +216,19 @@ export const READ_STATE_I18N_KEY: Record<TeamReadState, `prioritization:${string
 }
 
 /**
+ * A row the response named but nothing in it could be read.
+ *
+ * Kept under its own key rather than dropped, because the two are different statements: an
+ * ABSENT key is "nobody has voted on this document", which the backend says by omitting it,
+ * and this is "the server named this document and we could not read what it said". Dropping
+ * turned the second into the first — a scored document presented as unscored.
+ */
+export const UNREADABLE_ROW = 'unreadable'
+
+/** One document's team view as the wire gave it: readable, or named but unreadable. */
+export type TeamAggregateRow = PrioritizationAggregate | typeof UNREADABLE_ROW
+
+/**
  * The team view of the whole backlog, or why it is absent.
  *
  * THREE different absences, kept apart by the type. An empty map is "the read
@@ -234,19 +247,6 @@ export const READ_STATE_I18N_KEY: Record<TeamReadState, `prioritization:${string
  * from `data` alone — that is undefined while a read is in flight, when it has
  * failed, and before it is enabled.
  */
-/**
- * A row the response named but nothing in it could be read.
- *
- * Kept under its own key rather than dropped, because the two are different statements: an
- * ABSENT key is "nobody has voted on this document", which the backend says by omitting it,
- * and this is "the server named this document and we could not read what it said". Dropping
- * turned the second into the first — a scored document presented as unscored.
- */
-export const UNREADABLE_ROW = 'unreadable'
-
-/** One document's team view as the wire gave it: readable, or named but unreadable. */
-export type TeamAggregateRow = PrioritizationAggregate | typeof UNREADABLE_ROW
-
 export type TeamAggregates = Record<string, TeamAggregateRow> | TeamReadState
 
 /**
@@ -1139,6 +1139,25 @@ const ORDERS_BY_TEAM_SCORE: Record<SortField, boolean> = {
 }
 
 /**
+ * Where each team-view state sorts, in render order: ranked rows, then rows the
+ * response named but could not be read, then rows nobody has voted on.
+ *
+ * A `Record` over the kinds rather than conditionals in the comparator, for the
+ * reason `READ_STATE_I18N_KEY` is one: a fifth state must be PLACED here to compile,
+ * not silently fall into somebody's else branch. `unavailable` is reached here only
+ * as the per-row marker — `sortPRFAQs` consults blocks once a map arrived, so the
+ * container-level reading of that kind never gets this far. `loading` cannot reach it
+ * at all for the same reason; its entry is the total function's answer, and `0` is
+ * "no grouping", which is what the sort does for a whole loading backlog anyway.
+ */
+const SORT_BLOCK: Record<TeamView['kind'], number> = {
+  scored: 0,
+  loading: 0,
+  unavailable: 1,
+  unscored: 2,
+}
+
+/**
  * The rows in the order the page renders them.
  *
  * Direction is applied by NEGATING the comparator, not by reversing the sorted
@@ -1177,25 +1196,6 @@ const ORDERS_BY_TEAM_SCORE: Record<SortField, boolean> = {
  * calling it for both sides plus the grouping predicate did that `O(n log n)` times
  * for values constant across the whole sort.
  */
-/**
- * Where each team-view state sorts, in render order: ranked rows, then rows the
- * response named but could not be read, then rows nobody has voted on.
- *
- * A `Record` over the kinds rather than conditionals in the comparator, for the
- * reason `READ_STATE_I18N_KEY` is one: a fifth state must be PLACED here to compile,
- * not silently fall into somebody's else branch. `unavailable` is reached here only
- * as the per-row marker — `sortPRFAQs` consults blocks once a map arrived, so the
- * container-level reading of that kind never gets this far. `loading` cannot reach it
- * at all for the same reason; its entry is the total function's answer, and `0` is
- * "no grouping", which is what the sort does for a whole loading backlog anyway.
- */
-const SORT_BLOCK: Record<TeamView['kind'], number> = {
-  scored: 0,
-  loading: 0,
-  unavailable: 1,
-  unscored: 2,
-}
-
 export function sortPRFAQs(
   prfaqs: readonly PRFAQWithProject[],
   aggregates: TeamAggregates,
