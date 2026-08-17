@@ -1330,6 +1330,10 @@ describe('Prioritization', () => {
       const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
       expect(row).toHaveTextContent('Team score unavailable')
       expect(row).not.toHaveTextContent('Not scored yet')
+      // And the sort hint is withdrawn: those three buttons cannot order anything without
+      // a team map, so a permanently-visible line attributing the order to the team's
+      // numbers would describe an effect the reader can click for and not get.
+      expect(screen.queryByText(/order by the team's numbers/)).toBeNull()
       // The cards say "unknown", not "all of them are unscored".
       const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
       expect(within(grid ?? document.body).getByText('Not Scored').previousElementSibling?.textContent)

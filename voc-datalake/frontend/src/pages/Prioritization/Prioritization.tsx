@@ -148,11 +148,22 @@ function StatsCards({
 }
 
 function SortControls({
-  sortField, sortDirection, onToggleSort,
+  sortField, sortDirection, onToggleSort, ordersByTeam,
 }: {
   readonly sortField: SortField;
   readonly sortDirection: SortDirection;
-  readonly onToggleSort: (f: SortField) => void
+  readonly onToggleSort: (f: SortField) => void;
+  /**
+   * Can the three score buttons actually order the list — i.e. did a team map arrive?
+   *
+   * False only when the team read is `'unavailable'`: `sortPRFAQs` then leaves the order as
+   * it arrived for those three fields, because there is no number to rank by, and the hint
+   * below the buttons is permanently visible — so leaving it up left the page asserting the
+   * list is ordered by the team's numbers while nothing was ordering it. Still true while
+   * the read is in flight, because it will be true in a moment and a line that blinks out
+   * and back is worse than one that waits.
+   */
+  readonly ordersByTeam: boolean
 }) {
   const { t } = useTranslation('prioritization')
   // Also announced, not only hovered. A `title` tooltip never appears on a touch
@@ -172,7 +183,14 @@ function SortControls({
   // The names are INTERPOLATED from the same keys the buttons render, rather than
   // restated inside the sentence in eight catalogues, so a relabelled button cannot
   // leave the hint naming an option that is no longer on screen.
-  const teamOrdered = t('sort.teamOrdered', { fields: teamOrderedFields.join(', ') })
+  //
+  // And withdrawn entirely when no team map arrived: those three buttons cannot order
+  // anything then, so the sentence would be describing an effect the reader can click for
+  // and not get. The rows and the stats cards already say why the team's numbers are
+  // missing; this line's only job is to attribute an ordering that is not happening.
+  const teamOrdered = ordersByTeam
+    ? t('sort.teamOrdered', { fields: teamOrderedFields.join(', ') })
+    : undefined
   const options = [
     {
       field: 'priority_score' as const,
@@ -213,7 +231,9 @@ function SortControls({
           </button>
         ))}
       </div>
-      <p id={hintId} className="text-xs text-gray-500 mt-1.5">{teamOrdered}</p>
+      {teamOrdered === undefined ? null : (
+        <p id={hintId} className="text-xs text-gray-500 mt-1.5">{teamOrdered}</p>
+      )}
     </div>
   )
 }
@@ -702,7 +722,15 @@ export default function Prioritization() {
       </div>
 
       <StatsCards allPRFAQs={allPRFAQs} aggregates={aggregates} />
-      <SortControls sortField={sortField} sortDirection={sortDirection} onToggleSort={toggleSort} />
+      <SortControls
+        sortField={sortField}
+        sortDirection={sortDirection}
+        onToggleSort={toggleSort}
+        // Not `teamReadDelivered`: while the read is still running the buttons WILL order
+        // by the team's numbers in a moment, and withdrawing the line for that window would
+        // make it flicker. `'unavailable'` is the state that does not fix itself.
+        ordersByTeam={aggregates !== 'unavailable'}
+      />
 
       <PRFAQList
         isLoading={isLoading}
