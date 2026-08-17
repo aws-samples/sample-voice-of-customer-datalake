@@ -234,7 +234,20 @@ export const READ_STATE_I18N_KEY: Record<TeamReadState, `prioritization:${string
  * from `data` alone — that is undefined while a read is in flight, when it has
  * failed, and before it is enabled.
  */
-export type TeamAggregates = Record<string, PrioritizationAggregate> | TeamReadState
+/**
+ * A row the response named but nothing in it could be read.
+ *
+ * Kept under its own key rather than dropped, because the two are different statements: an
+ * ABSENT key is "nobody has voted on this document", which the backend says by omitting it,
+ * and this is "the server named this document and we could not read what it said". Dropping
+ * turned the second into the first — a scored document presented as unscored.
+ */
+export const UNREADABLE_ROW = 'unreadable'
+
+/** One document's team view as the wire gave it: readable, or named but unreadable. */
+export type TeamAggregateRow = PrioritizationAggregate | typeof UNREADABLE_ROW
+
+export type TeamAggregates = Record<string, TeamAggregateRow> | TeamReadState
 
 /**
  * The team view, or the reason there is none, from the query's own three signals.
@@ -281,7 +294,7 @@ export function teamAggregatesOf(read: {
    * "nothing readable", whether because the read has not delivered or because
    * `normalizeAggregates` refused what it carried.
    */
-  readonly aggregates?: Record<string, PrioritizationAggregate>
+  readonly aggregates?: Record<string, TeamAggregateRow>
 }): TeamAggregates {
   return read.aggregates ?? readStateOf(read) ?? 'unavailable'
 }
@@ -317,7 +330,7 @@ function readStateOf(read: {
  */
 export const teamReadDelivered = (
   aggregates: TeamAggregates,
-): aggregates is Record<string, PrioritizationAggregate> => typeof aggregates !== 'string'
+): aggregates is Record<string, TeamAggregateRow> => typeof aggregates !== 'string'
 
 /**
  * What one row can say about the team, in the four states it can be in.
@@ -361,20 +374,24 @@ export const teamScoreOf = (view: TeamView): TeamScore | null => (
  * and a dropped row renders as unscored — the same state as a document nobody
  * has voted on, which is the honest reading when that one row is unusable.
  *
- * An unreadable CONTAINER is a different matter and answers `undefined`, because the
- * alternative — an empty map — is the page's assertion that nobody has voted on anything.
- * So does a non-empty container whose EVERY row was dropped: one bad row among readable
- * ones is honestly absent, but nothing readable at all is a fact about the response rather
- * than about the documents, and it composes back into exactly the claim the container check
- * refuses. An empty container still answers `{}` — the server listed no scored documents,
- * which is a real answer.
+ * An unreadable CONTAINER answers `undefined`, because the alternative — an empty map — is
+ * the page's assertion that nobody has voted on anything. An empty container still answers
+ * `{}`: the server listing no scored documents is a real answer.
+ *
+ * An unreadable ROW keeps its key and answers `UNREADABLE_ROW`, so the document it names
+ * renders as "we could not find out" rather than as "nobody voted". Dropping it read as the
+ * latter — a scored document presented as unscored, the one claim this whole page exists to
+ * prevent — and a rule that only noticed when EVERY row dropped made the same bad row
+ * reported or silent depending on whether some unrelated document happened to parse. One
+ * rule per row has no such discontinuity: all rows unreadable simply means every row says
+ * so, which is the page-level outcome the special case was reaching for.
  *
  * A failed or in-flight READ is still not this function's to know: the query owns those,
  * and `teamAggregatesOf` folds them into `TeamAggregates`.
  */
 export function normalizeAggregates(
   raw: unknown,
-): Record<string, PrioritizationAggregate> | undefined {
+): Record<string, TeamAggregateRow> | undefined {
   // The FIELD BEING ABSENT is the one case that means "no team data yet": a deployment
   // predating `aggregates` sends none at all, and every row may honestly say nobody has
   // scored it. Anything else that is not a readable map — `null`, a string, a number, an
@@ -390,20 +407,11 @@ export function normalizeAggregates(
   if (raw === undefined) return {}
   const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
   if (!asMap.success) return undefined
-  const rows = Object.entries(asMap.data)
-  const readable = Object.fromEntries(
-    rows.flatMap(([documentId, value]): [string, PrioritizationAggregate][] => {
-      const aggregate = parseAggregate(value)
-      return aggregate ? [[documentId, aggregate]] : []
-    }),
+  return Object.fromEntries(
+    Object.entries(asMap.data).map(([documentId, value]): [string, TeamAggregateRow] => (
+      [documentId, parseAggregate(value) ?? UNREADABLE_ROW]
+    )),
   )
-  // EVERY row dropped from a non-empty container is a fact about the RESPONSE, not about
-  // the documents — the same argument the container check above makes, reached through the
-  // other door. Composing it back into `{}` would say "nobody has voted on any document" on
-  // the strength of a payload nothing in it could be read. An empty container is different
-  // and still answers `{}`: the server genuinely listed no scored documents.
-  if (rows.length > 0 && Object.keys(readable).length === 0) return undefined
-  return readable
 }
 
 /**
@@ -621,11 +629,15 @@ const roundToDisplay = (composite: number): number => Math.round(composite * 10)
  * document.
  */
 export function getTeamScore(
-  aggregates: Record<string, PrioritizationAggregate>,
+  aggregates: Record<string, TeamAggregateRow>,
   docId: string,
 ): TeamScore | null {
   if (!Object.hasOwn(aggregates, docId)) return null
   const aggregate = aggregates[docId]
+  // A row the response named but nothing in it could be read has no number, so it has no
+  // `TeamScore`. `null` here would read as "nobody voted", which is why `getTeamView` asks
+  // about `UNREADABLE_ROW` before it asks this — the two absences are not the same claim.
+  if (aggregate === UNREADABLE_ROW) return null
   return {
     displayComposite: roundToDisplay(calculatePriorityScore(aggregate)),
     displayImpact: roundToDisplay(aggregate.impact),
@@ -647,6 +659,10 @@ export function getTeamScore(
 export function getTeamView(aggregates: TeamAggregates, docId: string): TeamView {
   if (aggregates === 'unavailable') return { kind: 'unavailable' }
   if (aggregates === 'loading') return { kind: 'loading' }
+  // Per-DOCUMENT unavailability, asked before the score lookup for the same reason the
+  // whole-response check is: the server named this document and we could not read what it
+  // said about it, which is "we could not find out" rather than "nobody voted".
+  if (aggregates[docId] === UNREADABLE_ROW) return { kind: 'unavailable' }
   const team = getTeamScore(aggregates, docId)
   return team === null ? { kind: 'unscored' } : {
     kind: 'scored',

@@ -1307,6 +1307,45 @@ describe('Prioritization', () => {
       expect(panel).toHaveTextContent('Reload the page before saving')
     })
 
+    it('does not present a document whose OWN team row was unreadable as unscored', async () => {
+      // The discontinuity this closes: a single unreadable row used to be dropped, so that
+      // document rendered "Not scored yet" — a scored document presented as unscored, which
+      // is the one claim this page exists to prevent — while the SAME row alone made the
+      // whole page "unavailable". Per-row marking removes the dependency on its neighbours.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+          { document_id: 'd3', document_type: 'prfaq', title: 'Feature B PR/FAQ', content: '', created_at: '2025-01-02' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: {
+          // Readable, and its sibling is not.
+          d1: {
+            impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
+            reviewer_count: 3, score_spread: 0,
+          },
+          d3: { reviewer_count: 0 },
+        },
+      })
+
+      renderPrioritization()
+
+      const bad = await screen.findByRole('button', { name: /Feature B PR\/FAQ/ })
+      expect(bad).toHaveTextContent('Team score unavailable')
+      expect(bad).not.toHaveTextContent('Not scored yet')
+      // The readable sibling is unaffected — one bad row is not a page-wide failure.
+      const good = screen.getByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(good).toHaveTextContent('4.0')
+      // And the page still counts what it can: the cards are numbers, not dashes.
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
+      expect(within(grid ?? document.body).getByText('High Priority').previousElementSibling?.textContent)
+        .toBe('1')
+    })
+
     it('does not tell a reader nobody voted when the TEAM half was unreadable', async () => {
       // The mirror of the ballots fix, and the same false claim: an unreadable `aggregates`
       // container used to normalize to an empty map, and an empty map is this page's

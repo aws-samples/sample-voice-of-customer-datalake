@@ -9,9 +9,9 @@ import {
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
-  ownBallotRead,
+  ownBallotRead, UNREADABLE_ROW,
 } from './prioritizationUtils'
-import type { TeamAggregates } from './prioritizationUtils'
+import type { TeamAggregates, TeamAggregateRow } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
 
 describe('getScore', () => {
@@ -1008,11 +1008,21 @@ describe('normalizeAggregates', () => {
    * fails loudly here instead of silently reading as an empty map — which is the whole
    * distinction these tests are about.
    */
-  const parsedAggregates = (raw: unknown): Record<string, PrioritizationAggregate> => {
+  const parsedAggregates = (raw: unknown): Record<string, TeamAggregateRow> => {
     const parsed = normalizeAggregates(raw)
-    if (!teamReadDelivered(parsed)) throw new Error(`expected a map, got '${parsed}'`)
+    if (parsed === undefined) throw new Error('expected a map, got undefined')
     return parsed
   }
+
+  /** A readable row out of an already-parsed map, narrowed. */
+  const readable = (
+    map: Record<string, TeamAggregateRow>, docId: string,
+  ): PrioritizationAggregate => {
+    const row = map[docId]
+    if (row === UNREADABLE_ROW) throw new Error(`expected a readable row at ${docId}`)
+    return row
+  }
+
 
   it('keeps a complete row as sent', () => {
     expect(parsedAggregates({ d1: complete })).toEqual({ d1: complete })
@@ -1036,18 +1046,17 @@ describe('normalizeAggregates', () => {
     expect(normalizeAggregates(undefined)).toEqual({})
   })
 
-  it('refuses a readable container whose EVERY row was dropped', () => {
-    // The same claim through the other door: a record IS readable, so the container check
-    // passes, and every row failing then composed back into `{}` — "nobody has voted on any
-    // document" on the strength of a payload nothing in which could be read.
-    expect(normalizeAggregates({ d1: 'junk', d2: { reviewer_count: 0 } })).toBeUndefined()
+  it('marks every row when nothing in the container could be read', () => {
+    // A record IS readable, so the container check passes. Every row then being unreadable
+    // used to compose back into `{}` — "nobody has voted on any document" on the strength of
+    // a payload nothing in which could be read. Now each row says so for itself, which
+    // produces the same page-level outcome without a special case.
+    expect(parsedAggregates({ d1: 'junk', d2: { reviewer_count: 0 } }))
+      .toEqual({ d1: UNREADABLE_ROW, d2: UNREADABLE_ROW })
   })
 
-  it('still answers a map when SOME row survives, and for an empty container', () => {
-    // The two controls that stop the rule above from swallowing honest answers: one bad row
-    // among readable ones is absent, not fatal; and an empty container is the server saying
-    // no document has votes, which is a real answer rather than an unreadable one.
-    expect(parsedAggregates({ d1: complete, d2: 'junk' })).toEqual({ d1: complete })
+  it('answers an empty map for an empty container', () => {
+    // The server listing no scored documents is a real answer, not an unreadable one.
     expect(parsedAggregates({})).toEqual({})
   })
 
@@ -1060,33 +1069,34 @@ describe('normalizeAggregates', () => {
       d1: { ...complete, impact: 'high', score_spread: 'wide' },
     })
 
-    expect(parsed.d1.impact).toBe(0)
-    expect(parsed.d1.score_spread).toBe(0)
-    expect(parsed.d1.reviewer_count).toBe(2)
+    expect(readable(parsed, 'd1').impact).toBe(0)
+    expect(readable(parsed, 'd1').score_spread).toBe(0)
+    expect(readable(parsed, 'd1').reviewer_count).toBe(2)
   })
 
-  it('drops a row with no usable reviewer count rather than inventing one', () => {
-    // The count is the field that says somebody voted. An invented 1 would
-    // present a row nobody scored as a scored one, and the backend never emits a
-    // zero-count row — it omits the document instead.
-    expect(parsedAggregates({ keep: complete, d1: { ...complete, reviewer_count: 0 } })).toEqual({ keep: complete })
-    expect(parsedAggregates({ keep: complete, d1: { ...complete, reviewer_count: 'two' } })).toEqual({ keep: complete })
-    expect(parsedAggregates({ keep: complete, d1: { impact: 4 } })).toEqual({ keep: complete })
+  it('marks a row with no usable reviewer count rather than inventing one', () => {
+    // The count is the field that says somebody voted. An invented 1 would present a row
+    // nobody scored as a scored one, and the backend never emits a zero-count row — it omits
+    // the document instead. The row keeps its key and is marked unreadable, so the page says
+    // "we could not find out" about that document rather than "nobody voted".
+    for (const row of [{ ...complete, reviewer_count: 0 }, { ...complete, reviewer_count: 'two' }, { impact: 4 }]) {
+      expect(parsedAggregates({ keep: complete, d1: row }), JSON.stringify(row))
+        .toEqual({ keep: complete, d1: UNREADABLE_ROW })
+    }
   })
 
-  it('drops a row that carries a count but no readable axis at all', () => {
-    // The mirror of the reviewer-count rule, and the case the per-axis `.catch(0)`
-    // used to admit on its own: a bare count parsed into an all-zeros aggregate and
-    // rendered "0.0 · Reviewers 2" — a score nobody cast, dressed with a real count.
-    // A dropped row lands in the "nobody scored this" state the page renders
-    // honestly.
-    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2 } })).toEqual({ keep: complete })
+  it('marks a row that carries a count but no readable axis at all', () => {
+    // The mirror of the reviewer-count rule, and the case the per-axis `.catch(0)` used to
+    // admit on its own: a bare count parsed into an all-zeros aggregate and rendered
+    // "0.0 · Reviewers 2" — a score nobody cast, dressed with a real count.
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2 } }))
+      .toEqual({ keep: complete, d1: UNREADABLE_ROW })
     expect(parsedAggregates({
       keep: complete,
       d1: {
         reviewer_count: 2, impact: 'high', time_to_market: 'slow', confidence: null, strategic_fit: [],
       },
-    })).toEqual({ keep: complete })
+    })).toEqual({ keep: complete, d1: UNREADABLE_ROW })
   })
 
   it('CLAMPS an out-of-range axis onto the scale rather than zeroing it', () => {
@@ -1110,12 +1120,12 @@ describe('normalizeAggregates', () => {
     })
     // Named explicitly: the defect was a real reviewer count dressing an all-zeros
     // score, so "not zero" is the assertion, not merely "some number".
-    expect(parsed.d1.impact).not.toBe(0)
+    expect(readable(parsed, 'd1').impact).not.toBe(0)
   })
 
   it('clamps a negative axis up to the bottom of the scale, not through it', () => {
-    expect(parsedAggregates({ d1: { impact: -3, reviewer_count: 2 } }).d1.impact).toBe(0)
-    expect(parsedAggregates({ d1: { ...complete, score_spread: -2 } }).d1.score_spread).toBe(0)
+    expect(readable(parsedAggregates({ d1: { impact: -3, reviewer_count: 2 } }), 'd1').impact).toBe(0)
+    expect(readable(parsedAggregates({ d1: { ...complete, score_spread: -2 } }), 'd1').score_spread).toBe(0)
   })
 
   it('clamps each axis on its own, leaving the readable ones as sent', () => {
@@ -1126,10 +1136,10 @@ describe('normalizeAggregates', () => {
       },
     })
 
-    expect(parsed.d1.impact).toBe(4)
-    expect(parsed.d1.time_to_market).toBe(5)
-    expect(parsed.d1.confidence).toBe(2)
-    expect(parsed.d1.strategic_fit).toBe(1)
+    expect(readable(parsed, 'd1').impact).toBe(4)
+    expect(readable(parsed, 'd1').time_to_market).toBe(5)
+    expect(readable(parsed, 'd1').confidence).toBe(2)
+    expect(readable(parsed, 'd1').strategic_fit).toBe(1)
   })
 
   it('does not decide an out-of-range row by whether ONE axis happened to be in range', () => {
@@ -1150,19 +1160,19 @@ describe('normalizeAggregates', () => {
 
     expect(Object.keys(mixed)).toEqual(['d1'])
     expect(Object.keys(allOut)).toEqual(['d1'])
-    expect(allOut.d1.reviewer_count).toBe(3)
-    expect(mixed.d1.time_to_market).toBe(5)
-    expect(allOut.d1.time_to_market).toBe(5)
+    expect(readable(allOut, 'd1').reviewer_count).toBe(3)
+    expect(readable(mixed, 'd1').time_to_market).toBe(5)
+    expect(readable(allOut, 'd1').time_to_market).toBe(5)
   })
 
   it('still drops a row whose axes are unreadable rather than merely out of range', () => {
     // The discriminating negative for the two cases above: relaxing the floor to
     // `z.number()` must not relax it to "anything at all". `NaN` and `Infinity` are
     // rejected too — `z.number()` refuses both — since neither is a slider position.
-    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: '6' } })).toEqual({ keep: complete })
-    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: true } })).toEqual({ keep: complete })
-    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: NaN } })).toEqual({ keep: complete })
-    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: Infinity } })).toEqual({ keep: complete })
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: '6' } })).toEqual({ keep: complete, d1: UNREADABLE_ROW })
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: true } })).toEqual({ keep: complete, d1: UNREADABLE_ROW })
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: NaN } })).toEqual({ keep: complete, d1: UNREADABLE_ROW })
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: Infinity } })).toEqual({ keep: complete, d1: UNREADABLE_ROW })
   })
 
   it('keeps a row with one readable axis, degrading the rest', () => {
@@ -1188,13 +1198,20 @@ describe('normalizeAggregates', () => {
       },
     })
 
-    expect(parsed.d1.reviewer_count).toBe(3)
+    expect(readable(parsed, 'd1').reviewer_count).toBe(3)
   })
 
-  it('drops only the unreadable row, keeping its siblings', () => {
+  it('marks only the unreadable rows, leaving their siblings scored', () => {
+    // The discontinuity this replaced: dropping made the SAME bad row silent beside a good
+    // one (rendered "Not scored yet") and reported when it was alone (the whole page
+    // "unavailable"). Marking is one rule per row, so neither case depends on the other.
     const parsed = parsedAggregates({ d1: complete, d2: null, d3: 'nonsense' })
 
-    expect(Object.keys(parsed)).toEqual(['d1'])
+    expect(parsed).toEqual({ d1: complete, d2: UNREADABLE_ROW, d3: UNREADABLE_ROW })
+    expect(getTeamView(parsed, 'd2').kind).toBe('unavailable')
+    expect(getTeamView(parsed, 'd1').kind).toBe('scored')
+    // And a document the response never named is still unscored, not unavailable.
+    expect(getTeamView(parsed, 'never-sent').kind).toBe('unscored')
   })
 
   it('never throws, whatever the wire sent', () => {
