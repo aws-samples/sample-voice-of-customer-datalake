@@ -2,13 +2,14 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "149d573c20a51a6a3634a44038d3a1b4ab0cdd38e75a019af9f3a07e7a6f3bf4",
+      "templateSha256": "dae67ea17ac802148d285833a09e719e419b267cf713279c02b2c952bfc6f373",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer",
           "AWS::ApiGateway::RestApi Name = voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::ApiGateway::UsagePlan UsagePlanName = voc-mcp-throttle-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-ballots-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
@@ -30,6 +31,7 @@
           "AWS::Lambda::Function FunctionName = voc-settings-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-users-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ballots-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
@@ -62,6 +64,7 @@
         ],
         "environmentNames": [
           "MANUAL_IMPORT_PROCESSOR_FUNCTION = voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>",
+          "POWERTOOLS_SERVICE_NAME = voc-ballots-api",
           "POWERTOOLS_SERVICE_NAME = voc-chat-api",
           "POWERTOOLS_SERVICE_NAME = voc-data-explorer-api",
           "POWERTOOLS_SERVICE_NAME = voc-feedback-form-api",
