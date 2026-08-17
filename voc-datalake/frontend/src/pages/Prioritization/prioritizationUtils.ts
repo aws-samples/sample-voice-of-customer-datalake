@@ -264,19 +264,26 @@ export type TeamAggregates = Record<string, PrioritizationAggregate> | TeamReadS
  * pass `data` alone: `aggregates` is `undefined` while the read is in flight and when it
  * failed with nothing cached, and neither says anything about any document.
  *
- * The trailing `?? {}` is the total function's answer, not a case the page reaches: its
- * `select` runs `normalizeAggregates`, which maps an absent field to an empty map before
- * this is called, so "the response arrived carrying no aggregates" is already handled a
- * step earlier. Kept rather than thrown, because a caller passing the raw field still
- * needs an answer and "arrived with nothing in it" is the honest one — but it earns no
- * justification of its own here.
+ * The trailing arm is `'unavailable'`, not an empty map. It used to be `{}` and was then
+ * unreachable from the page, because `normalizeAggregates` mapped both an absent field and
+ * an unreadable one to `{}` before this was called. Now the normalizer keeps those apart —
+ * absent still answers an empty map, unreadable answers `undefined` — so this arm is
+ * reached by exactly one state: a response ARRIVED and its team half could not be read.
+ * "We could not find out" is the honest answer there, and an empty map would be the page's
+ * assertion that nobody has voted on anything.
  */
 export function teamAggregatesOf(read: {
   readonly failed: boolean
   readonly pending: boolean
+  /**
+   * What the response gave for the team half: a map — empty when the field was absent,
+   * which is the pre-#333 "no team data yet" case — or `undefined`, which now means
+   * "nothing readable", whether because the read has not delivered or because
+   * `normalizeAggregates` refused what it carried.
+   */
   readonly aggregates?: Record<string, PrioritizationAggregate>
 }): TeamAggregates {
-  return read.aggregates ?? readStateOf(read) ?? {}
+  return read.aggregates ?? readStateOf(read) ?? 'unavailable'
 }
 
 /**
@@ -348,17 +355,35 @@ export const teamScoreOf = (view: TeamView): TeamScore | null => (
 /**
  * The team view per document, from whatever the wire actually sent.
  *
- * Never throws and never rejects the whole map over one bad row: this feeds a
+ * Never throws and never rejects the whole map over one bad ROW: this feeds a
  * `select`, so a throw here would turn a readable response into a failed query
  * and take the page's error panel with it. A row that cannot be read is dropped,
  * and a dropped row renders as unscored — the same state as a document nobody
- * has voted on, which is the honest reading when that one row is unusable. A
- * failed READ is a different matter and is not this function's to represent: see
- * `TeamAggregates`.
+ * has voted on, which is the honest reading when that one row is unusable.
+ *
+ * An unreadable CONTAINER is a different matter and answers `'unavailable'`, because
+ * the alternative — an empty map — is the page's assertion that nobody has voted on
+ * anything. A failed or in-flight READ is still not this function's to know: the query
+ * owns those, and `teamAggregatesOf` folds all three into `TeamAggregates`.
  */
-export function normalizeAggregates(raw: unknown): Record<string, PrioritizationAggregate> {
+export function normalizeAggregates(
+  raw: unknown,
+): Record<string, PrioritizationAggregate> | undefined {
+  // The FIELD BEING ABSENT is the one case that means "no team data yet": a deployment
+  // predating `aggregates` sends none at all, and every row may honestly say nobody has
+  // scored it. Anything else that is not a readable map — `null`, a string, a number, an
+  // array — is a response we could not read, and answering `{}` there asserted that
+  // NOBODY HAS VOTED ON ANY DOCUMENT, which is this page's strongest claim. That is the
+  // same defect `normalizeScores` was changed to stop making on the other half of the
+  // response, and the same argument: a declared type is a promise, not a proof.
+  //
+  // `undefined` is the answer for unreadable, and `teamAggregatesOf` turns it into
+  // `'unavailable'`: this returns one type plus `undefined` rather than a union with a
+  // read state in it, both because `sonarjs/function-return-type` refuses the union and
+  // because naming a UI state is the query's job, not the parser's.
+  if (raw === undefined) return {}
   const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
-  if (!asMap.success) return {}
+  if (!asMap.success) return undefined
   return Object.fromEntries(
     Object.entries(asMap.data).flatMap(([documentId, value]): [string, PrioritizationAggregate][] => {
       const aggregate = parseAggregate(value)
@@ -368,14 +393,13 @@ export function normalizeAggregates(raw: unknown): Record<string, Prioritization
 }
 
 /**
- * One axis of the CALLER'S OWN ballot, coerced rather than dropped.
+ * One axis of the CALLER'S OWN ballot: out of range clamps, unreadable degrades.
  *
- * The opposite policy to `TEAM_AXIS`' row-level drop, and deliberately so: a team row
- * that cannot be read says nothing about the document and is honestly absent, but this
- * is the reader's own stored ballot, and hiding a row of it would put their sliders on
- * defaults with no sign that anything was lost. Out of range clamps, unreadable falls
- * back to the value an unset axis already shows, which is what the sliders would have
- * rendered anyway.
+ * The AXIS-level difference from `TEAM_AXIS`, which is the only difference left now that
+ * both halves drop an unreadable row: `TEAM_AXIS` catches to 0, because 0 is a mean the
+ * team could genuinely have, while this catches to the value an UNSET axis already shows
+ * (`time_to_market` is 3, not 0). A slider that cannot be given the reviewer's stored
+ * value should read as untouched rather than as a deliberate lowest score.
  */
 const ownAxis = (fallback: number) => z.number()
   .transform((value) => Math.min(5, Math.max(0, value)))
@@ -420,20 +444,29 @@ export interface OwnBallotRead {
  * rather than merely fixed, which is the same move `teamAggregatesOf` made for the team
  * half — and it keeps the page's own branch count inside the lint budget.
  *
+ * Takes the three FACTS rather than the response object: a hand-written response shape
+ * here would restate the wire one function after `selectPrioritization` went to the
+ * trouble of deriving its own from the client, and deriving it here instead
+ * (`Pick<ReturnType<typeof selectPrioritization>, 'scores'>`) would make this module
+ * import the page that imports it.
+ *
  * `needsPanel` covers BOTH ways the reader can be left without their numbers: the read
  * failed, or it succeeded carrying ballots that could not be read. The second used to be
  * silent — sliders on defaults, Save disabled, nothing said. A read still IN FLIGHT is
  * deliberately not a panel: nothing has gone wrong and it clears itself.
  */
-export function ownBallotRead(
-  failed: boolean,
-  response?: { readonly scores?: Record<string, PrioritizationScore> },
-): OwnBallotRead {
-  const ballots = response?.scores
+export function ownBallotRead(read: {
+  /** The query errored — including on a refetch, with an earlier response retained. */
+  readonly failed: boolean
+  /** Has a response landed at all? False only while the first read is in flight. */
+  readonly arrived: boolean
+  /** The ballots that response yielded, `undefined` when none could be read. */
+  readonly ballots?: Record<string, PrioritizationScore>
+}): OwnBallotRead {
   return {
-    ballots: ballots ?? {},
-    inHand: ballots !== undefined,
-    needsPanel: failed || (response !== undefined && ballots === undefined),
+    ballots: read.ballots ?? {},
+    inHand: read.ballots !== undefined,
+    needsPanel: read.failed || (read.arrived && read.ballots === undefined),
   }
 }
 
@@ -451,13 +484,14 @@ export function ownBallotRead(
  * proof. `null`, a string, or an array all reach this as `scores` and all used to pass
  * a `=== undefined` check on the field while leaving the page on defaults.
  *
- * An unreadable ROW is dropped, which lands that document in the state a first ballot
- * already occupies: `getScore` answers `DEFAULT_SCORE` for a key it does not hold, so the
- * sliders show what they would have shown anyway. Coercing it to `DEFAULT_SCORE` under its
- * own key was the same thing on screen — the row-level save is offered either way, since
- * the guard is about the MAP — but it put a value nobody stored into the map that
- * `applyBallotEdits` merges and that any "documents I have scored" count would read.
- * Dropping keeps the map to rows the server actually told us about.
+ * A row that STORED NOTHING READABLE is dropped — not an object, no readable axis and no
+ * note (see `storedSomething`, which is the floor the per-field `.catch()`es cannot
+ * enforce). That lands the document in the state a first ballot already occupies:
+ * `getScore` answers `DEFAULT_SCORE` for a key it does not hold, so the sliders show what
+ * they would have shown anyway. Coercing such a row under its own key was the same thing
+ * on screen — the save is offered either way, since the guard is about the MAP — but it
+ * put a value nobody stored into the map that `applyBallotEdits` merges and that any
+ * "documents I have scored" count would read as a ballot.
  *
  * `document_id` is taken from the MAP KEY, not from the row: the key is what every
  * lookup on this page uses, so a row disagreeing with its own key would produce a
@@ -471,9 +505,32 @@ export function normalizeScores(raw: unknown): Record<string, PrioritizationScor
   return Object.fromEntries(
     Object.entries(asMap.data).flatMap(([documentId, value]): [string, PrioritizationScore][] => {
       const parsed = OwnBallotSchema.safeParse(value)
-      return parsed.success ? [[documentId, { ...parsed.data, document_id: documentId }]] : []
+      return parsed.success && storedSomething(value)
+        ? [[documentId, { ...parsed.data, document_id: documentId }]]
+        : []
     }),
   )
+}
+
+/**
+ * Did this row actually store anything, or would keeping it invent a ballot?
+ *
+ * The floor `OwnBallotSchema` cannot enforce: every field carries `.catch()`, so `{}` and
+ * `{impact: 'high'}` PARSE — successfully — into a full `DEFAULT_SCORE`-shaped row. Without
+ * this, "an unreadable row is dropped" was true only of a row that is not an object at all,
+ * and the map still gained fabricated ballots. Same rule as `parseAggregate`'s axis floor,
+ * asked of the RAW row because `.catch()` has by then erased the difference between "the
+ * reviewer scored this 0" and "this field was unreadable".
+ *
+ * A NOTE counts on its own: `PATCH` assigns only the fields an entry carries, so a reviewer
+ * who saved a justification without moving a slider has a note-only ballot stored, and
+ * dropping it would lose their words.
+ */
+function storedSomething(raw: unknown): boolean {
+  const row = z.record(z.string(), z.unknown()).safeParse(raw)
+  if (!row.success) return false
+  return AXIS_FIELDS.some((axis) => READABLE_AXIS.safeParse(row.data[axis]).success)
+    || z.string().min(1).safeParse(row.data.notes).success
 }
 
 /**

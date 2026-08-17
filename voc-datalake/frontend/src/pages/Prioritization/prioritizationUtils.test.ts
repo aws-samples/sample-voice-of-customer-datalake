@@ -466,10 +466,19 @@ describe('teamAggregatesOf reads what the query is HOLDING, not only what it is 
   })
 
   it('answers an EMPTY map for a read that arrived carrying no aggregates', () => {
-    // A deployment predating the field. That genuinely is "no team data yet", and every
-    // row may honestly say so — which is why this case must stay distinct from the two
-    // below rather than being folded in with them.
-    expect(teamAggregatesOf({ failed: false, pending: false })).toEqual({})
+    // A deployment predating the field. That genuinely is "no team data yet", and every row
+    // may honestly say so — which is why this case must stay distinct from the two below.
+    // The empty map now comes from `normalizeAggregates(undefined)`, which is where absent
+    // and unreadable are told apart; this function receives the result.
+    expect(teamAggregatesOf({ failed: false, pending: false, aggregates: normalizeAggregates(undefined) }))
+      .toEqual({})
+  })
+
+  it('answers unavailable when a response ARRIVED with an unreadable team half', () => {
+    // The one state that reaches the final arm: not failed, not pending, and nothing
+    // readable. An empty map here would assert that nobody has voted on any document.
+    expect(teamAggregatesOf({ failed: false, pending: false, aggregates: normalizeAggregates('boom') }))
+      .toBe('unavailable')
   })
 
   it('answers unavailable for a failed read rather than an empty map', () => {
@@ -530,13 +539,13 @@ describe('ownBallotRead resolves the caller own half once, for all three consume
   const ballots = { d1: { ...DEFAULT_SCORE, document_id: 'd1', impact: 4 } }
 
   it('has the ballots in hand when the response carried a readable map', () => {
-    expect(ownBallotRead(false, { scores: ballots })).toEqual({
+    expect(ownBallotRead({ failed: false, arrived: true, ballots: ballots })).toEqual({
       ballots, inHand: true, needsPanel: false,
     })
   })
 
   it('counts an empty map as in hand — that is the first-ballot case', () => {
-    expect(ownBallotRead(false, { scores: {} })).toEqual({
+    expect(ownBallotRead({ failed: false, arrived: true, ballots: {} })).toEqual({
       ballots: {}, inHand: true, needsPanel: false,
     })
   })
@@ -544,27 +553,27 @@ describe('ownBallotRead resolves the caller own half once, for all three consume
   it('keeps retained ballots through a failed refetch, and says the read failed', () => {
     // In hand AND a panel: the numbers are the reviewer's own, so the save stands, and the
     // panel says the latest read failed. This is the pair that must not contradict.
-    expect(ownBallotRead(true, { scores: ballots })).toEqual({
+    expect(ownBallotRead({ failed: true, arrived: true, ballots: ballots })).toEqual({
       ballots, inHand: true, needsPanel: true,
     })
   })
 
   it('asks for a panel when the response ARRIVED with no readable ballots', () => {
     // Used to be silent: sliders on defaults, Save disabled, nothing on screen.
-    expect(ownBallotRead(false, { scores: undefined })).toEqual({
+    expect(ownBallotRead({ failed: false, arrived: true, ballots: undefined })).toEqual({
       ballots: {}, inHand: false, needsPanel: true,
     })
   })
 
   it('stays silent while the first read is still in flight', () => {
     // Nothing has gone wrong and it clears itself, so no panel — but no save either.
-    expect(ownBallotRead(false, undefined)).toEqual({
+    expect(ownBallotRead({ failed: false, arrived: false })).toEqual({
       ballots: {}, inHand: false, needsPanel: false,
     })
   })
 
   it('asks for a panel when the first read failed outright', () => {
-    expect(ownBallotRead(true, undefined)).toEqual({
+    expect(ownBallotRead({ failed: true, arrived: false })).toEqual({
       ballots: {}, inHand: false, needsPanel: true,
     })
   })
@@ -574,13 +583,15 @@ describe('ownBallotRead resolves the caller own half once, for all three consume
     // wording, so it must track the ballots and nothing else — not the failure flag, and
     // not the team map (which is not even an input here, which is the point).
     for (const failed of [false, true]) {
-      for (const response of [undefined, {}, { scores: undefined }, { scores: {} }, { scores: ballots }]) {
-        const state = ownBallotRead(failed, response)
-        const label = `failed=${failed} response=${JSON.stringify(response)}`
+      for (const arrived of [false, true]) {
+        for (const ballotsIn of [undefined, {}, ballots]) {
+          const state = ownBallotRead({ failed, arrived, ballots: ballotsIn })
+          const label = `failed=${failed} arrived=${arrived} ballots=${JSON.stringify(ballotsIn)}`
 
-        expect(state.inHand, label).toBe(response?.scores !== undefined)
-        // And when they are not in hand there is nothing to render but defaults.
-        if (!state.inHand) expect(state.ballots, label).toEqual({})
+          expect(state.inHand, label).toBe(ballotsIn !== undefined)
+          // And when they are not in hand there is nothing to render but defaults.
+          if (!state.inHand) expect(state.ballots, label).toEqual({})
+        }
       }
     }
   })
@@ -629,6 +640,29 @@ describe('normalizeScores validates the caller own half of the response too', ()
     expect(scores?.d2.impact).toBe(4)
     // And the dropped row still reads as the display defaults through `getScore`.
     expect(getScore(scores ?? {}, 'd1')).toEqual({ ...DEFAULT_SCORE, document_id: 'd1' })
+  })
+
+  it('drops a row that stored nothing readable, which the per-field catches let through', () => {
+    // The floor the schema cannot enforce: every field carries `.catch()`, so `{}` and
+    // `{impact: 'high'}` PARSE successfully into a full DEFAULT_SCORE-shaped row. Without
+    // the floor, "an unreadable row is dropped" was true only of a non-object.
+    const scores = normalizeScores({
+      empty: {}, junkAxis: { impact: 'high' }, real: { impact: 0 },
+    })
+
+    expect(Object.keys(scores ?? {})).toEqual(['real'])
+    // `0` is a readable number and a legitimate lowest score, so that row stays.
+    expect(scores?.real.impact).toBe(0)
+  })
+
+  it('keeps a NOTE-only ballot, because PATCH lets a reviewer store one', () => {
+    // `_ballot_update_kwargs` assigns only the fields an entry carries, so a reviewer who
+    // wrote a justification without moving a slider has exactly this row stored. Dropping
+    // it for having no axis would lose their words.
+    const scores = normalizeScores({ d1: { notes: 'blocked on legal' } })
+
+    expect(scores?.d1.notes).toBe('blocked on legal')
+    expect(scores?.d1.impact).toBe(DEFAULT_SCORE.impact)
   })
 
   it('keeps only the fields this page accepts, not whatever the wire sent', () => {
@@ -701,7 +735,7 @@ describe('teamReadDelivered asks "did a map arrive" in one place', () => {
   })
 })
 
-describe('getTeamView tells three states apart', () => {
+describe('getTeamView tells the states of the team view apart', () => {
   // The distinction the page turns on: "the team rated this low", "nobody has voted"
   // and "we could not find out" are three different statements, and only the first
   // two are about the document.
@@ -967,15 +1001,39 @@ describe('normalizeAggregates', () => {
     reviewer_count: 2, score_spread: 1.5,
   }
 
+  /**
+   * `normalizeAggregates` narrowed to the map it answers for a readable container.
+   *
+   * Throws rather than asserting a type, so a case that starts answering `'unavailable'`
+   * fails loudly here instead of silently reading as an empty map — which is the whole
+   * distinction these tests are about.
+   */
+  const parsedAggregates = (raw: unknown): Record<string, PrioritizationAggregate> => {
+    const parsed = normalizeAggregates(raw)
+    if (!teamReadDelivered(parsed)) throw new Error(`expected a map, got '${parsed}'`)
+    return parsed
+  }
+
   it('keeps a complete row as sent', () => {
-    expect(normalizeAggregates({ d1: complete })).toEqual({ d1: complete })
+    expect(parsedAggregates({ d1: complete })).toEqual({ d1: complete })
   })
 
-  it('treats an absent aggregates field as no team data, not an error', () => {
+  it('treats an ABSENT aggregates field as no team data, not an error', () => {
     // The field is optional on the wire: a deployment predating it sends no
     // `aggregates` at all, and every row then has to read as unscored.
+    expect(parsedAggregates(undefined)).toEqual({})
+  })
+
+  it('refuses to call an unreadable CONTAINER an empty map', () => {
+    // An empty map is this page's assertion that nobody has voted on any document. A
+    // `null`, a string, a number or an array is not evidence of that — it is a response we
+    // could not read, so it answers `undefined` and `teamAggregatesOf` turns that into
+    // `'unavailable'`. Same treatment the ballots half already had.
+    for (const raw of [null, 'boom', 42, true, ['nope']]) {
+      expect(normalizeAggregates(raw), JSON.stringify(raw)).toBeUndefined()
+    }
+    // And the pair that must stay apart: absent is "no team data yet", unreadable is not.
     expect(normalizeAggregates(undefined)).toEqual({})
-    expect(normalizeAggregates(null)).toEqual({})
   })
 
   it('keeps a row whose axis is unreadable, with that axis at zero', () => {
@@ -983,7 +1041,7 @@ describe('normalizeAggregates', () => {
     // other axes are real — so an unreadable axis degrades rather than dropping the
     // row. `'high'` is not a number and expresses no position on the scale, so there
     // is nothing to clamp it to.
-    const parsed = normalizeAggregates({
+    const parsed = parsedAggregates({
       d1: { ...complete, impact: 'high', score_spread: 'wide' },
     })
 
@@ -996,9 +1054,9 @@ describe('normalizeAggregates', () => {
     // The count is the field that says somebody voted. An invented 1 would
     // present a row nobody scored as a scored one, and the backend never emits a
     // zero-count row — it omits the document instead.
-    expect(normalizeAggregates({ d1: { ...complete, reviewer_count: 0 } })).toEqual({})
-    expect(normalizeAggregates({ d1: { ...complete, reviewer_count: 'two' } })).toEqual({})
-    expect(normalizeAggregates({ d1: { impact: 4 } })).toEqual({})
+    expect(parsedAggregates({ d1: { ...complete, reviewer_count: 0 } })).toEqual({})
+    expect(parsedAggregates({ d1: { ...complete, reviewer_count: 'two' } })).toEqual({})
+    expect(parsedAggregates({ d1: { impact: 4 } })).toEqual({})
   })
 
   it('drops a row that carries a count but no readable axis at all', () => {
@@ -1007,8 +1065,8 @@ describe('normalizeAggregates', () => {
     // rendered "0.0 · Reviewers 2" — a score nobody cast, dressed with a real count.
     // A dropped row lands in the "nobody scored this" state the page renders
     // honestly.
-    expect(normalizeAggregates({ d1: { reviewer_count: 2 } })).toEqual({})
-    expect(normalizeAggregates({
+    expect(parsedAggregates({ d1: { reviewer_count: 2 } })).toEqual({})
+    expect(parsedAggregates({
       d1: {
         reviewer_count: 2, impact: 'high', time_to_market: 'slow', confidence: null, strategic_fit: [],
       },
@@ -1023,7 +1081,7 @@ describe('normalizeAggregates', () => {
     // and it sorted BELOW a row the team genuinely rated 1 across the board. Clamping
     // keeps the row derived from data somebody actually cast, the same reading the
     // backend's `validate_int` takes on the way in.
-    const parsed = normalizeAggregates({
+    const parsed = parsedAggregates({
       d1: {
         impact: 6, time_to_market: 6, confidence: 6, strategic_fit: 6,
         reviewer_count: 3, score_spread: 9,
@@ -1040,13 +1098,13 @@ describe('normalizeAggregates', () => {
   })
 
   it('clamps a negative axis up to the bottom of the scale, not through it', () => {
-    expect(normalizeAggregates({ d1: { impact: -3, reviewer_count: 2 } }).d1.impact).toBe(0)
-    expect(normalizeAggregates({ d1: { ...complete, score_spread: -2 } }).d1.score_spread).toBe(0)
+    expect(parsedAggregates({ d1: { impact: -3, reviewer_count: 2 } }).d1.impact).toBe(0)
+    expect(parsedAggregates({ d1: { ...complete, score_spread: -2 } }).d1.score_spread).toBe(0)
   })
 
   it('clamps each axis on its own, leaving the readable ones as sent', () => {
     // The positive control for clamping: it must not become "rewrite every axis".
-    const parsed = normalizeAggregates({
+    const parsed = parsedAggregates({
       d1: {
         impact: 4, time_to_market: 100, confidence: 2, strategic_fit: 1, reviewer_count: 3,
       },
@@ -1063,12 +1121,12 @@ describe('normalizeAggregates', () => {
     // the siblings degraded while `{all 6}` vanished — same data quality, opposite
     // outcome. Both are kept now, both clamped, and the reviewer count survives either
     // way.
-    const mixed = normalizeAggregates({
+    const mixed = parsedAggregates({
       d1: {
         impact: 4, time_to_market: 6, confidence: 6, strategic_fit: 6, reviewer_count: 3,
       },
     })
-    const allOut = normalizeAggregates({
+    const allOut = parsedAggregates({
       d1: {
         impact: 6, time_to_market: 6, confidence: 6, strategic_fit: 6, reviewer_count: 3,
       },
@@ -1085,10 +1143,10 @@ describe('normalizeAggregates', () => {
     // The discriminating negative for the two cases above: relaxing the floor to
     // `z.number()` must not relax it to "anything at all". `NaN` and `Infinity` are
     // rejected too — `z.number()` refuses both — since neither is a slider position.
-    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: '6' } })).toEqual({})
-    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: true } })).toEqual({})
-    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: NaN } })).toEqual({})
-    expect(normalizeAggregates({ d1: { reviewer_count: 2, impact: Infinity } })).toEqual({})
+    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: '6' } })).toEqual({})
+    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: true } })).toEqual({})
+    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: NaN } })).toEqual({})
+    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: Infinity } })).toEqual({})
   })
 
   it('keeps a row with one readable axis, degrading the rest', () => {
@@ -1096,7 +1154,7 @@ describe('normalizeAggregates', () => {
     // silently become "drop any row with a zero in it". The backend legitimately
     // reports 0.0 for an axis nobody scored, so a partially-scored document really
     // does arrive with zeroed axes and is still worth showing.
-    const parsed = normalizeAggregates({ d1: { reviewer_count: 2, impact: 4 } })
+    const parsed = parsedAggregates({ d1: { reviewer_count: 2, impact: 4 } })
 
     expect(parsed.d1).toEqual({
       impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0,
@@ -1107,7 +1165,7 @@ describe('normalizeAggregates', () => {
   it('keeps a row the team genuinely scored zero on every axis', () => {
     // Indistinguishable from an unreadable row by value, so it is distinguished by
     // READABILITY: an explicit numeric 0 is data the backend sends, a string is not.
-    const parsed = normalizeAggregates({
+    const parsed = parsedAggregates({
       d1: {
         impact: 0, time_to_market: 0, confidence: 0, strategic_fit: 0,
         reviewer_count: 3, score_spread: 0,
@@ -1118,7 +1176,7 @@ describe('normalizeAggregates', () => {
   })
 
   it('drops only the unreadable row, keeping its siblings', () => {
-    const parsed = normalizeAggregates({ d1: complete, d2: null, d3: 'nonsense' })
+    const parsed = parsedAggregates({ d1: complete, d2: null, d3: 'nonsense' })
 
     expect(Object.keys(parsed)).toEqual(['d1'])
   })
@@ -1126,9 +1184,11 @@ describe('normalizeAggregates', () => {
   it('never throws, whatever the wire sent', () => {
     // This feeds a react-query `select`: a throw would turn a readable response
     // into a failed query and fire the page's "scores could not be loaded" panel
-    // over data that arrived fine.
+    // over data that arrived fine. Asserted on `normalizeAggregates` itself, not through
+    // the narrowing helper above — the helper throws BY DESIGN on `'unavailable'`, which
+    // is a legitimate answer rather than a crash.
     for (const raw of [[], 'text', 42, true, { d1: [] }]) {
-      expect(() => normalizeAggregates(raw)).not.toThrow()
+      expect(() => normalizeAggregates(raw), JSON.stringify(raw)).not.toThrow()
     }
   })
 })

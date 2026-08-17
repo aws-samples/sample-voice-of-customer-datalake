@@ -1307,12 +1307,46 @@ describe('Prioritization', () => {
       expect(panel).toHaveTextContent('Reload the page before saving')
     })
 
+    it('does not tell a reader nobody voted when the TEAM half was unreadable', async () => {
+      // The mirror of the ballots fix, and the same false claim: an unreadable `aggregates`
+      // container used to normalize to an empty map, and an empty map is this page's
+      // assertion that nobody has voted on any document. So a response whose ballots were
+      // fine and whose team half was garbage showed every row "Not scored yet", counted the
+      // whole backlog as unscored, and raised no alert at all.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: { d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' } },
+        aggregates: 'boom',
+      })
+
+      renderPrioritization()
+
+      const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(row).toHaveTextContent('Team score unavailable')
+      expect(row).not.toHaveTextContent('Not scored yet')
+      // The cards say "unknown", not "all of them are unscored".
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
+      expect(within(grid ?? document.body).getByText('Not Scored').previousElementSibling?.textContent)
+        .toBe('—Team score unavailable')
+      // And the caller's own ballot is untouched by the team half being unreadable: their
+      // sliders and their save still work.
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
     it('never tells a reader no reload is needed while the save is refused', async () => {
       // The two sites used to read different halves of one response: the panel's wording
-      // came from the TEAM map and the button from the caller's own ballots. So a response
-      // whose `aggregates` were readable and whose `scores` were not — then a failed
-      // refetch — put "there is no need to reload before saving" beside a DISABLED Save.
-      // Both now ask the same question.
+      // came from the TEAM map and the button from the caller's own ballots, so a response
+      // whose `aggregates` were readable and whose `scores` were not put "there is no need
+      // to reload before saving" beside a DISABLED Save. Both now ask the same question.
+      // (No refetch is needed to reach it — under the fix the panel no longer waits for the
+      // query to error, which is the second half of that finding.)
       mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
       mockGetProject.mockResolvedValue({
         project_id: 'p1',

@@ -303,8 +303,9 @@ function PrioritizationHeader({
    * on screen cannot contradict the button. Only the in-flight case is silent, because
    * nothing has gone wrong and it clears itself the moment the read lands.
    *
-   * Tested on `savedScores?.scores` — the caller's OWN ballots, the exact value being
-   * protected — and not on any proxy for them. Two proxies were tried and both were
+   * Read off `ownBallotRead`'s `inHand` — the caller's OWN ballots, the exact value being
+   * protected, and the same value the panel above the list is worded by. Not any proxy for
+   * them: two were tried and both were
    * weaker: `!teamReadDelivered(aggregates)` asks about the TEAM column, and a bare
    * `savedScores === undefined` proves only that *a response* arrived, which `select` now
    * makes a much weaker claim than it looks (`normalizeScores` answers `undefined` for a
@@ -472,7 +473,11 @@ export default function Prioritization() {
   // guard, and the panel's wording. Asking separately is how the guard came to read the
   // reader's ballots while the panel read the team's — see `ownBallotRead`.
   const ownBallots = useMemo(
-    () => ownBallotRead(scoresFailed, savedScores),
+    () => ownBallotRead({
+      failed: scoresFailed,
+      arrived: savedScores !== undefined,
+      ballots: savedScores?.scores,
+    }),
     [scoresFailed, savedScores],
   )
 
