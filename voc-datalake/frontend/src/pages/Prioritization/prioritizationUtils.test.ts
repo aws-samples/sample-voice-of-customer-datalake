@@ -1036,6 +1036,21 @@ describe('normalizeAggregates', () => {
     expect(normalizeAggregates(undefined)).toEqual({})
   })
 
+  it('refuses a readable container whose EVERY row was dropped', () => {
+    // The same claim through the other door: a record IS readable, so the container check
+    // passes, and every row failing then composed back into `{}` — "nobody has voted on any
+    // document" on the strength of a payload nothing in which could be read.
+    expect(normalizeAggregates({ d1: 'junk', d2: { reviewer_count: 0 } })).toBeUndefined()
+  })
+
+  it('still answers a map when SOME row survives, and for an empty container', () => {
+    // The two controls that stop the rule above from swallowing honest answers: one bad row
+    // among readable ones is absent, not fatal; and an empty container is the server saying
+    // no document has votes, which is a real answer rather than an unreadable one.
+    expect(parsedAggregates({ d1: complete, d2: 'junk' })).toEqual({ d1: complete })
+    expect(parsedAggregates({})).toEqual({})
+  })
+
   it('keeps a row whose axis is unreadable, with that axis at zero', () => {
     // A partial aggregate is still worth showing — the reviewer count and the
     // other axes are real — so an unreadable axis degrades rather than dropping the
@@ -1054,9 +1069,9 @@ describe('normalizeAggregates', () => {
     // The count is the field that says somebody voted. An invented 1 would
     // present a row nobody scored as a scored one, and the backend never emits a
     // zero-count row — it omits the document instead.
-    expect(parsedAggregates({ d1: { ...complete, reviewer_count: 0 } })).toEqual({})
-    expect(parsedAggregates({ d1: { ...complete, reviewer_count: 'two' } })).toEqual({})
-    expect(parsedAggregates({ d1: { impact: 4 } })).toEqual({})
+    expect(parsedAggregates({ keep: complete, d1: { ...complete, reviewer_count: 0 } })).toEqual({ keep: complete })
+    expect(parsedAggregates({ keep: complete, d1: { ...complete, reviewer_count: 'two' } })).toEqual({ keep: complete })
+    expect(parsedAggregates({ keep: complete, d1: { impact: 4 } })).toEqual({ keep: complete })
   })
 
   it('drops a row that carries a count but no readable axis at all', () => {
@@ -1065,12 +1080,13 @@ describe('normalizeAggregates', () => {
     // rendered "0.0 · Reviewers 2" — a score nobody cast, dressed with a real count.
     // A dropped row lands in the "nobody scored this" state the page renders
     // honestly.
-    expect(parsedAggregates({ d1: { reviewer_count: 2 } })).toEqual({})
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2 } })).toEqual({ keep: complete })
     expect(parsedAggregates({
+      keep: complete,
       d1: {
         reviewer_count: 2, impact: 'high', time_to_market: 'slow', confidence: null, strategic_fit: [],
       },
-    })).toEqual({})
+    })).toEqual({ keep: complete })
   })
 
   it('CLAMPS an out-of-range axis onto the scale rather than zeroing it', () => {
@@ -1143,10 +1159,10 @@ describe('normalizeAggregates', () => {
     // The discriminating negative for the two cases above: relaxing the floor to
     // `z.number()` must not relax it to "anything at all". `NaN` and `Infinity` are
     // rejected too — `z.number()` refuses both — since neither is a slider position.
-    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: '6' } })).toEqual({})
-    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: true } })).toEqual({})
-    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: NaN } })).toEqual({})
-    expect(parsedAggregates({ d1: { reviewer_count: 2, impact: Infinity } })).toEqual({})
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: '6' } })).toEqual({ keep: complete })
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: true } })).toEqual({ keep: complete })
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: NaN } })).toEqual({ keep: complete })
+    expect(parsedAggregates({ keep: complete, d1: { reviewer_count: 2, impact: Infinity } })).toEqual({ keep: complete })
   })
 
   it('keeps a row with one readable axis, degrading the rest', () => {

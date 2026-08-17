@@ -361,10 +361,16 @@ export const teamScoreOf = (view: TeamView): TeamScore | null => (
  * and a dropped row renders as unscored — the same state as a document nobody
  * has voted on, which is the honest reading when that one row is unusable.
  *
- * An unreadable CONTAINER is a different matter and answers `'unavailable'`, because
- * the alternative — an empty map — is the page's assertion that nobody has voted on
- * anything. A failed or in-flight READ is still not this function's to know: the query
- * owns those, and `teamAggregatesOf` folds all three into `TeamAggregates`.
+ * An unreadable CONTAINER is a different matter and answers `undefined`, because the
+ * alternative — an empty map — is the page's assertion that nobody has voted on anything.
+ * So does a non-empty container whose EVERY row was dropped: one bad row among readable
+ * ones is honestly absent, but nothing readable at all is a fact about the response rather
+ * than about the documents, and it composes back into exactly the claim the container check
+ * refuses. An empty container still answers `{}` — the server listed no scored documents,
+ * which is a real answer.
+ *
+ * A failed or in-flight READ is still not this function's to know: the query owns those,
+ * and `teamAggregatesOf` folds them into `TeamAggregates`.
  */
 export function normalizeAggregates(
   raw: unknown,
@@ -384,12 +390,20 @@ export function normalizeAggregates(
   if (raw === undefined) return {}
   const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
   if (!asMap.success) return undefined
-  return Object.fromEntries(
-    Object.entries(asMap.data).flatMap(([documentId, value]): [string, PrioritizationAggregate][] => {
+  const rows = Object.entries(asMap.data)
+  const readable = Object.fromEntries(
+    rows.flatMap(([documentId, value]): [string, PrioritizationAggregate][] => {
       const aggregate = parseAggregate(value)
       return aggregate ? [[documentId, aggregate]] : []
     }),
   )
+  // EVERY row dropped from a non-empty container is a fact about the RESPONSE, not about
+  // the documents — the same argument the container check above makes, reached through the
+  // other door. Composing it back into `{}` would say "nobody has voted on any document" on
+  // the strength of a payload nothing in it could be read. An empty container is different
+  // and still answers `{}`: the server genuinely listed no scored documents.
+  if (rows.length > 0 && Object.keys(readable).length === 0) return undefined
+  return readable
 }
 
 /**
