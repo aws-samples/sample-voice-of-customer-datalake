@@ -86,7 +86,9 @@
     "highPriority": "Hohe Priorität",
     "mediumPriority": "Mittlere Priorität",
     "notScored": "Nicht bewertet",
-    "totalDocuments": "Dokumente gesamt"
+    "totalDocuments": "Dokumente gesamt",
+    "unreadable_one": "Die Teambewertung für {{count}} Dokument konnte nicht gelesen werden. Es zählt daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen.",
+    "unreadable_other": "Die Teambewertungen für {{count}} Dokumente konnten nicht gelesen werden. Sie zählen daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen."
   },
   "subtitle": "PRDs und PR/FAQs über alle Projekte hinweg bewerten und priorisieren",
   "team": {

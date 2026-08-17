@@ -86,7 +86,9 @@
     "highPriority": "Alta prioridad",
     "mediumPriority": "Prioridad media",
     "notScored": "Sin puntuar",
-    "totalDocuments": "Total de documentos"
+    "totalDocuments": "Total de documentos",
+    "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count}} documento, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
+    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count}} documentos, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
   },
   "subtitle": "Puntuar y priorizar PRD y PR/FAQs en todos los proyectos",
   "team": {

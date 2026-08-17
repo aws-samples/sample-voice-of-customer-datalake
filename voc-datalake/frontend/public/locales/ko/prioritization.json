@@ -86,7 +86,9 @@
     "highPriority": "높은 우선순위",
     "mediumPriority": "중간 우선순위",
     "notScored": "평가되지 않음",
-    "totalDocuments": "전체 문서"
+    "totalDocuments": "전체 문서",
+    "unreadable_one": "{{count}}개 문서의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다.",
+    "unreadable_other": "{{count}}개 문서의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다."
   },
   "subtitle": "모든 프로젝트에서 PRD 및 PR/FAQ를 평가하고 우선순위를 지정하세요",
   "team": {

@@ -333,6 +333,57 @@ export const teamReadDelivered = (
 ): aggregates is Record<string, TeamAggregateRow> => typeof aggregates !== 'string'
 
 /**
+ * Why the surfaces that aggregate OVER rows cannot count this read, or `null` when
+ * they can.
+ *
+ * The one spelling of a question that was being asked as "did a map arrive"
+ * (`teamReadDelivered`) by the stats cards and as a bare `!== 'unavailable'` by the
+ * sort hint — and both went wrong the same way when per-row marking landed: a
+ * response whose EVERY named row is unreadable now parses to a map, so `delivered`
+ * is true, while the response says exactly as little about the backlog as an
+ * unreadable container. Counting it produced three confident zeros — the claim the
+ * cards' own docstring forbids, since a zero asserts "none of these is high
+ * priority" about documents no read has described — and the hint went on
+ * attributing the sort to numbers that do not exist.
+ *
+ * So the aggregating surfaces ask THIS, and the map-shaped failure answers
+ * `'unavailable'` exactly as the container-shaped one does — same fault, same
+ * sentence. The rows themselves never ask it: per-row honesty is `getTeamView`'s,
+ * and one bad row must not decide what the page says about its siblings.
+ *
+ * An EMPTY map is countable, deliberately: the server listing no scored documents
+ * is a real answer, and zeros are then honest — nobody has voted on anything, and
+ * the whole backlog genuinely is "Not Scored". Only a map that NAMES documents and
+ * can read none of them has failed to answer.
+ */
+export function uncountableTeamRead(aggregates: TeamAggregates): TeamReadState | null {
+  if (!teamReadDelivered(aggregates)) return aggregates
+  const rows = Object.values(aggregates)
+  return rows.length > 0 && rows.every((row) => row === UNREADABLE_ROW) ? 'unavailable' : null
+}
+
+/**
+ * Can the three score sorts order the list by the team's numbers — now, or, for the
+ * states that clear on their own, in a moment?
+ *
+ * The predicate behind the permanently-visible hint under the sort buttons, which
+ * claims those buttons order the list by the team's numbers. That claim has to be
+ * withdrawn in the states where nothing can order anything and no amount of waiting
+ * fixes it, or the page is attributing an effect the reader can click for and not
+ * get — and `uncountableTeamRead` is precisely the list of those states, so this is
+ * spelled off it rather than re-deriving which shapes of the union count.
+ *
+ * `'loading'` is uncountable but keeps the hint: it will be a map in a moment, and a
+ * line that blinks out and back is worse than one that waits. An EMPTY map keeps it
+ * too — the buttons cannot reorder anything yet, but nobody voting is not a failure,
+ * the state fixes itself with the first ballot, and the hint is most use before the
+ * reader clicks.
+ */
+export function teamOrderingAvailable(aggregates: TeamAggregates): boolean {
+  return uncountableTeamRead(aggregates) !== 'unavailable'
+}
+
+/**
  * What one row can say about the team, in the four states it can be in.
  *
  * A union rather than `TeamScore | null` plus a boolean beside it, so a state cannot
@@ -1106,17 +1157,45 @@ const ORDERS_BY_TEAM_SCORE: Record<SortField, boolean> = {
  * a block of never-voted-on ones puts unranked rows where the reader is looking for
  * ranked ones. They stay grouped at the bottom, where the row copy explains them.
  *
+ * A row the response named but could not be read is its OWN block, between the two:
+ * folding it into the unscored block restated in the ordering exactly the conflation
+ * the row label refuses — "we could not find out" filed under "nobody voted". It sits
+ * ABOVE the unscored block because it is the weaker claim: the server said something
+ * about this document and it may be scored anywhere in the ranked list, whereas
+ * "nobody voted" is a settled absence; burying a possibly-ranked row beneath the
+ * definitely-unranked ones would be the sort asserting the one thing it does not
+ * know. Within the block, arrival order — there is no number to rank by.
+ *
  * A read state instead of a map — the team read failed, or has not finished — leaves
  * the list in the order it arrived for the three score fields. There is no number to
  * rank by and no honest grouping either: pinning every row as "unscored" would order
  * the backlog by a property no row has been shown to have. Date and title still sort,
  * because those are document fields neither state touches.
  *
- * Each row's team score is resolved ONCE, before the sort, rather than per
- * comparison. `getTeamScore` allocates and recomputes a composite, and a comparator
+ * Each row's team VIEW is resolved ONCE, before the sort, rather than per
+ * comparison. `getTeamView` allocates and recomputes a composite, and a comparator
  * calling it for both sides plus the grouping predicate did that `O(n log n)` times
  * for values constant across the whole sort.
  */
+/**
+ * Where each team-view state sorts, in render order: ranked rows, then rows the
+ * response named but could not be read, then rows nobody has voted on.
+ *
+ * A `Record` over the kinds rather than conditionals in the comparator, for the
+ * reason `READ_STATE_I18N_KEY` is one: a fifth state must be PLACED here to compile,
+ * not silently fall into somebody's else branch. `unavailable` is reached here only
+ * as the per-row marker — `sortPRFAQs` consults blocks once a map arrived, so the
+ * container-level reading of that kind never gets this far. `loading` cannot reach it
+ * at all for the same reason; its entry is the total function's answer, and `0` is
+ * "no grouping", which is what the sort does for a whole loading backlog anyway.
+ */
+const SORT_BLOCK: Record<TeamView['kind'], number> = {
+  scored: 0,
+  loading: 0,
+  unavailable: 1,
+  unscored: 2,
+}
+
 export function sortPRFAQs(
   prfaqs: readonly PRFAQWithProject[],
   aggregates: TeamAggregates,
@@ -1126,29 +1205,35 @@ export function sortPRFAQs(
   const direction = sortDirection === 'desc' ? -1 : 1
   const arrived = teamReadDelivered(aggregates) ? aggregates : null
   const ordersByTeamScore = ORDERS_BY_TEAM_SCORE[sortField] && arrived !== null
-  const teams = new Map<string, TeamScore | null>(
+  // Resolved ONCE per row, and the block and the score are both read off the one
+  // resolved view, so the grouping and the ordering cannot disagree about what a row
+  // is — `getTeamView` is where "a marked row is not an unscored one" already lives.
+  const views = new Map<string, TeamView>(
     arrived === null ? [] : prfaqs.map(
-      (prfaq) => [prfaq.document_id, getTeamScore(arrived, prfaq.document_id)],
+      (prfaq) => [prfaq.document_id, getTeamView(arrived, prfaq.document_id)],
     ),
   )
-  const unscored = (prfaq: PRFAQWithProject) => (
-    ordersByTeamScore && (teams.get(prfaq.document_id) ?? null) === null
-  )
+  const teamOf = (prfaq: PRFAQWithProject): TeamScore | null => {
+    const view = views.get(prfaq.document_id)
+    return view === undefined ? null : teamScoreOf(view)
+  }
+  const blockOf = (prfaq: PRFAQWithProject): number => {
+    if (!ordersByTeamScore) return 0
+    const view = views.get(prfaq.document_id)
+    return view === undefined ? 0 : SORT_BLOCK[view.kind]
+  }
   return [...prfaqs].sort((a, b) => {
-    const unscoredA = unscored(a)
-    const unscoredB = unscored(b)
-    // Ahead of the direction multiplier, so the block does not move when the
+    const blockA = blockOf(a)
+    const blockB = blockOf(b)
+    // Ahead of the direction multiplier, so the blocks do not move when the
     // reader flips the direction.
-    if (unscoredA !== unscoredB) return unscoredA ? 1 : -1
-    if (unscoredA) return 0
+    if (blockA !== blockB) return blockA - blockB
+    // Within the two number-less blocks there is nothing to rank by: arrival order.
+    if (blockA !== 0) return 0
     switch (sortField) {
       case 'created_at': return direction * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
       case 'title': return direction * a.title.localeCompare(b.title)
-      default: return direction * compareByTeamScore(
-        teams.get(a.document_id) ?? null,
-        teams.get(b.document_id) ?? null,
-        sortField,
-      )
+      default: return direction * compareByTeamScore(teamOf(a), teamOf(b), sortField)
     }
   })
 }

@@ -9,7 +9,7 @@ import {
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
-  ownBallotRead, UNREADABLE_ROW,
+  ownBallotRead, UNREADABLE_ROW, teamOrderingAvailable, uncountableTeamRead,
 } from './prioritizationUtils'
 import type { TeamAggregates, TeamAggregateRow } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
@@ -801,6 +801,32 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
       .toEqual(['Alpha', 'Beta', 'Gamma'])
   })
 
+  it('keeps an unreadable row in its OWN block, between ranked and unscored', () => {
+    // Folding a marked row into the unscored block restated in the ordering the
+    // conflation the row label refuses: "we could not find out" filed under "nobody
+    // voted". It sits ABOVE the unscored block because it is the weaker claim — the
+    // server said something about this document and it may be scored anywhere in the
+    // ranked list, whereas "nobody voted" is settled.
+    const prfaqD = {
+      document_id: 'd', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Delta', content: '', created_at: '2025-01-04',
+    }
+    const map: Record<string, TeamAggregateRow> = {
+      a: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 2 }),
+      b: aggregate({ impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, reviewer_count: 2 }),
+      c: UNREADABLE_ROW,
+      // d absent: nobody voted.
+    }
+
+    // Arrival order deliberately interleaves the two number-less rows (Delta before
+    // Gamma), so a rule that lumps them into ONE block would keep Delta first — the
+    // blocks separating is what this asserts, not just "both at the bottom".
+    expect(titlesOf(sortPRFAQs([prfaqD, prfaqC, prfaqB, prfaqA], map, 'priority_score', 'desc')))
+      .toEqual(['Beta', 'Alpha', 'Gamma', 'Delta'])
+    // And neither block moves when the direction flips — only the ranked rows reorder.
+    expect(titlesOf(sortPRFAQs([prfaqD, prfaqC, prfaqB, prfaqA], map, 'priority_score', 'asc')))
+      .toEqual(['Alpha', 'Beta', 'Gamma', 'Delta'])
+  })
+
   it('does not reorder tied rows when the direction flips', () => {
     // `[...rows].sort(cmp).reverse()` reverses TIES as well as ranks, so two rows
     // the sort considers equal swapped places purely because the reader flipped the
@@ -920,6 +946,63 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
       expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], state, 'title', 'desc')), state)
         .toEqual(['Gamma', 'Beta', 'Alpha'])
     }
+  })
+})
+
+describe('uncountableTeamRead treats a map of markers as the failure it is', () => {
+  // The one spelling of "can the row-aggregating surfaces count this read" shared by
+  // the stats cards and the sort hint. The discriminating case is the map-shaped
+  // failure: a response whose EVERY named row is unreadable parses to a map, so
+  // "did a map arrive" answers yes while the read says exactly as little as an
+  // unreadable container — and counting it printed three confident zeros.
+  it('answers the read state for the two container-level states, unchanged', () => {
+    expect(uncountableTeamRead('unavailable')).toBe('unavailable')
+    expect(uncountableTeamRead('loading')).toBe('loading')
+  })
+
+  it('answers unavailable for a non-empty map with not one readable row', () => {
+    expect(uncountableTeamRead({ d1: UNREADABLE_ROW, d2: UNREADABLE_ROW })).toBe('unavailable')
+  })
+
+  it('counts an empty map — nobody voting is an answer, and zeros are then honest', () => {
+    expect(uncountableTeamRead({})).toBeNull()
+  })
+
+  it('counts a map with even one readable row', () => {
+    expect(uncountableTeamRead({
+      d1: UNREADABLE_ROW,
+      d2: aggregate({ impact: 3, reviewer_count: 2 }),
+    })).toBeNull()
+  })
+})
+
+describe('teamOrderingAvailable withdraws the ordering claim only where waiting cannot fix it', () => {
+  // The predicate behind the permanently-visible hint that attributes the three score
+  // sorts to the team's numbers. The two FALSE states are both settled: the read
+  // failed, or it arrived and named documents without one readable number among them —
+  // the second stopped reaching `'unavailable'` when the container-wide rule became
+  // per-row marking, which is exactly how the hint came to describe an ordering that
+  // was not happening.
+  it('answers false when the read settled with nothing to order by', () => {
+    expect(teamOrderingAvailable('unavailable')).toBe(false)
+    expect(teamOrderingAvailable({ d1: UNREADABLE_ROW, d2: UNREADABLE_ROW })).toBe(false)
+  })
+
+  it('answers true while the read is running — it will order in a moment', () => {
+    expect(teamOrderingAvailable('loading')).toBe(true)
+  })
+
+  it('answers true for an empty map: nobody voting is an answer, not a failure', () => {
+    // Withdrawing the hint here would make a sentence about the BUTTONS flicker with
+    // the backlog's voting state, and the hint is most use before the reader clicks.
+    expect(teamOrderingAvailable({})).toBe(true)
+  })
+
+  it('answers true when even one row is readable', () => {
+    expect(teamOrderingAvailable({
+      d1: UNREADABLE_ROW,
+      d2: aggregate({ impact: 3, reviewer_count: 2 }),
+    })).toBe(true)
   })
 })
 

@@ -86,7 +86,9 @@
     "highPriority": "Haute priorité",
     "mediumPriority": "Priorité moyenne",
     "notScored": "Non évalué",
-    "totalDocuments": "Total documents"
+    "totalDocuments": "Total documents",
+    "unreadable_one": "La note de l'équipe pour {{count}} document n'a pas pu être lue : il compte dans le total mais dans aucun des autres décomptes. Rechargez la page pour la voir.",
+    "unreadable_other": "Les notes de l'équipe pour {{count}} documents n'ont pas pu être lues : ils comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir."
   },
   "subtitle": "Évaluer et prioriser les PRD et PR/FAQ de tous les projets",
   "team": {

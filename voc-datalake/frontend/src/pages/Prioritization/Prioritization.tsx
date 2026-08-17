@@ -33,7 +33,7 @@ import {
   applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
   MAX_NOTE_LENGTH, normalizeAggregates, normalizeScores, ownBallotRead,
   overLongNoteDocuments, priorityBand, READ_STATE_I18N_KEY, sortPRFAQs, teamAggregatesOf,
-  teamReadDelivered, withEditedField,
+  teamOrderingAvailable, uncountableTeamRead, withEditedField,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection, TeamAggregates,
@@ -91,10 +91,11 @@ const selectPrioritization = (data: PrioritizationRead) => ({
  * printing `4.0` as Medium. One function, one rounding, so a card and the row it
  * summarises cannot classify the same document differently.
  *
- * When the team read has not delivered a map — it FAILED, or is still running — the
+ * When the team read is UNCOUNTABLE (`uncountableTeamRead`: it failed, is still
+ * running, or arrived naming documents with not one readable row among them) the
  * three team-derived cards show a dash rather than a count. A zero is a claim ("none
  * of these is high priority") and "1 Not Scored" for every document in the backlog is
- * a false one; neither read said anything about any of them. Only "Total Documents"
+ * a false one; no such read said anything about any of them. Only "Total Documents"
  * survives, because that is counted off the project read, which is a different query
  * and may well have succeeded already.
  */
@@ -107,7 +108,27 @@ function StatsCards({
   const { t } = useTranslation('prioritization')
   const bands = allPRFAQs.map((p) => priorityBand(getTeamView(aggregates, p.document_id)))
   /**
-   * How many rows fall in one band, or an EXPLAINED dash when no team view arrived.
+   * Not `teamReadDelivered`: a response whose EVERY named row is unreadable parses to
+   * a map, so "delivered" is true while the read says exactly as little as a failed
+   * one — and counting it printed `0 / 0 / 0`, three confident claims about documents
+   * no read has described, where the same fault one encoding over (an unreadable
+   * container) already dashed. Same fault, same dashes, same sr-only sentence.
+   */
+  const uncountable = uncountableTeamRead(aggregates)
+  /**
+   * Rows the response named but could not be read — the gap the line under the grid
+   * explains. When the cards are counting, a marked row is in "Total Documents" and in
+   * no other card: it is not high, medium or low (no number), and calling it "Not
+   * Scored" is the conflation the row label refuses. Leaving that silent made the
+   * cards stop adding up with nothing on the page saying why. Zero when the read is
+   * uncountable, because then every team-derived card is already a dash with the same
+   * reason in its sr-only text — there are no numbers on screen to explain a gap in.
+   */
+  const unreadableCount = uncountable === null
+    ? bands.filter((band) => band === 'unavailable').length
+    : 0
+  /**
+   * How many rows fall in one band, or an EXPLAINED dash when the read is uncountable.
    *
    * The dash is decorative and hidden from assistive technology, with the reason
    * beside it in text only a screen reader reads. A bare `—` is the one card state a
@@ -124,25 +145,38 @@ function StatsCards({
     // Both arms return an element, not "a number or an element": `sonarjs`
     // (`function-return-type`) refuses a union return here, and a fragment adds no DOM
     // node, so the card still renders the bare count.
-    if (teamReadDelivered(aggregates)) return <>{bands.filter((b) => b === band).length}</>
+    if (uncountable === null) return <>{bands.filter((b) => b === band).length}</>
     return (
       <>
         <span aria-hidden="true">—</span>
-        <span className="sr-only">{t(READ_STATE_I18N_KEY[aggregates])}</span>
+        <span className="sr-only">{t(READ_STATE_I18N_KEY[uncountable])}</span>
       </>
     )
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalDocuments')}</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{countOf('high')}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{countOf('medium')}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
-      {/* `text-gray-500`, not the inherited `text-gray-400`: on this white card gray-400
-          measures 2.60:1, which fails AA even at the 3:1 allowance `text-2xl font-bold`
-          would qualify for — so it was missed by the contrast sweep rather than judged.
-          gray-500 is 4.84:1 and still reads as the quiet card of the four. */}
-      <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-500">{countOf('none')}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
+    <div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalDocuments')}</div></div>
+        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{countOf('high')}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
+        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{countOf('medium')}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
+        {/* `text-gray-500`, not the inherited `text-gray-400`: on this white card gray-400
+            measures 2.60:1, which fails AA even at the 3:1 allowance `text-2xl font-bold`
+            would qualify for — so it was missed by the contrast sweep rather than judged.
+            gray-500 is 4.84:1 and still reads as the quiet card of the four. */}
+        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-500">{countOf('none')}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
+      </div>
+      {/* Why the counts above may not add up: a row the response named but could not be
+          read is in the total and in no other card — see `unreadableCount`. Ordinary
+          visible text rather than a live region, like the row labels that state the same
+          thing per document: it renders with the numbers it explains. `text-gray-600` per
+          the measured table in `BAND_STYLE` (gray-500 fails AA below 18.5px on gray
+          backgrounds; this line is text-sm on the page's gray-50). */}
+      {unreadableCount > 0 && (
+        <p className="text-sm text-gray-600 mt-2">
+          {t('stats.unreadable', { count: unreadableCount })}
+        </p>
+      )}
     </div>
   )
 }
@@ -154,14 +188,12 @@ function SortControls({
   readonly sortDirection: SortDirection;
   readonly onToggleSort: (f: SortField) => void;
   /**
-   * Can the three score buttons actually order the list — i.e. did a team map arrive?
+   * Can the three score buttons actually order the list by the team's numbers?
    *
-   * False only when the team read is `'unavailable'`: `sortPRFAQs` then leaves the order as
-   * it arrived for those three fields, because there is no number to rank by, and the hint
-   * below the buttons is permanently visible — so leaving it up left the page asserting the
-   * list is ordered by the team's numbers while nothing was ordering it. Still true while
-   * the read is in flight, because it will be true in a moment and a line that blinks out
-   * and back is worse than one that waits.
+   * `teamOrderingAvailable(aggregates)` — see there for which states answer false. When
+   * they do, `sortPRFAQs` leaves the order as it arrived for those three fields, and the
+   * hint below the buttons is permanently visible — so leaving it up left the page
+   * asserting the list is ordered by the team's numbers while nothing was ordering it.
    */
   readonly ordersByTeam: boolean
 }) {
@@ -184,10 +216,11 @@ function SortControls({
   // restated inside the sentence in eight catalogues, so a relabelled button cannot
   // leave the hint naming an option that is no longer on screen.
   //
-  // And withdrawn entirely when no team map arrived: those three buttons cannot order
-  // anything then, so the sentence would be describing an effect the reader can click for
-  // and not get. The rows and the stats cards already say why the team's numbers are
-  // missing; this line's only job is to attribute an ordering that is not happening.
+  // And withdrawn entirely when nothing gives the buttons a number to order by — the
+  // read failed, or arrived with no readable row (`teamOrderingAvailable`): the sentence
+  // would be describing an effect the reader can click for and not get. The rows and the
+  // stats cards already say why the team's numbers are missing; this line's only job is
+  // to attribute an ordering that is not happening.
   const teamOrdered = ordersByTeam
     ? t('sort.teamOrdered', { fields: teamOrderedFields.join(', ') })
     : undefined
@@ -726,10 +759,7 @@ export default function Prioritization() {
         sortField={sortField}
         sortDirection={sortDirection}
         onToggleSort={toggleSort}
-        // Not `teamReadDelivered`: while the read is still running the buttons WILL order
-        // by the team's numbers in a moment, and withdrawing the line for that window would
-        // make it flicker. `'unavailable'` is the state that does not fix itself.
-        ordersByTeam={aggregates !== 'unavailable'}
+        ordersByTeam={teamOrderingAvailable(aggregates)}
       />
 
       <PRFAQList

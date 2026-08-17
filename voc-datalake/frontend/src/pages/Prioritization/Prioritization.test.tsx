@@ -981,6 +981,11 @@ describe('Prioritization', () => {
 
       // StatsCards should render without crashing
       expect(screen.getByText('Total Documents')).toBeInTheDocument()
+      // And with every named row readable (there are none), no line under the cards
+      // claims otherwise — the unreadable-count sentence is for a gap that exists.
+      // The phrase is the stats line's own, not `team.unavailableDescription`'s, so
+      // this cannot pass or fail on a row label.
+      expect(screen.queryByText(/counted in the total but in none/)).toBeNull()
     })
 
     it('renders stats cards when scores API returns no scores key', async () => {
@@ -1344,6 +1349,81 @@ describe('Prioritization', () => {
       const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
       expect(within(grid ?? document.body).getByText('High Priority').previousElementSibling?.textContent)
         .toBe('1')
+    })
+
+    it('explains, beside the cards, the row that counts in the total and nowhere else', async () => {
+      // The per-row consequence of per-row marking: a marked row has no number (not
+      // high, medium or low) and calling it "Not Scored" is the conflation the row
+      // label refuses — so it is in "Total Documents" and in no other card, and the
+      // counts stop adding up. That gap must not be silent: the total says 2, the
+      // other cards account for 1, and the line under the grid is what says why.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+          { document_id: 'd3', document_type: 'prfaq', title: 'Feature B PR/FAQ', content: '', created_at: '2025-01-02' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: {
+          d1: {
+            impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
+            reviewer_count: 3, score_spread: 0,
+          },
+          d3: 'junk',
+        },
+      })
+
+      renderPrioritization()
+
+      expect(await screen.findByText(/The team score for 1 document could not be read/))
+        .toBeInTheDocument()
+      // Not folded into "Not Scored" instead: that card stays 0, because the marked
+      // row is not a document nobody voted on.
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
+      expect(within(grid ?? document.body).getByText('Not Scored').previousElementSibling?.textContent)
+        .toBe('0')
+      // And with a readable row in the map, the score sorts still order — the hint
+      // stays up for the ordering that IS happening.
+      expect(screen.getByText(/order by the team's numbers/)).toBeInTheDocument()
+    })
+
+    it('treats a response whose EVERY named row is unreadable as the failure it is', async () => {
+      // The state that stopped reaching 'unavailable' when the container-wide rule
+      // became per-row marking: a response ARRIVED, named documents, and not one row
+      // carries a number. It says exactly as little about the backlog as an unreadable
+      // container, so the row-aggregating surfaces treat it identically — counting it
+      // printed `0 / 0 / 0`, three confident claims about documents no read has
+      // described, and left the sort hint attributing an ordering that was not
+      // happening. (An EMPTY map still counts and keeps the hint: nobody voting is an
+      // answer that fixes itself with the first ballot, not a failure.)
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      mockGetPrioritizationScores.mockResolvedValue({
+        scores: {},
+        aggregates: { d1: { reviewer_count: 0 } },
+      })
+
+      renderPrioritization()
+
+      const row = await screen.findByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(row).toHaveTextContent('Team score unavailable')
+      // The hint is withdrawn: no button can order by numbers that do not exist.
+      expect(screen.queryByText(/order by the team's numbers/)).toBeNull()
+      // The cards DASH with the read-state sentence, exactly as for an unreadable
+      // container — same fault, same dashes — rather than printing confident zeros.
+      const grid = screen.getByText('Total Documents').closest<HTMLElement>('div.grid')
+      expect(within(grid ?? document.body).getByText('High Priority').previousElementSibling?.textContent)
+        .toBe('—Team score unavailable')
+      // And no gap line: there are no numbers on screen for a gap to exist in.
+      expect(screen.queryByText(/counted in the total but in none/)).toBeNull()
     })
 
     it('does not tell a reader nobody voted when the TEAM half was unreadable', async () => {
