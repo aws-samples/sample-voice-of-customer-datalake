@@ -78,12 +78,6 @@
     "settings": "Einstellungen"
   },
   "partialWindowHint": "Filter eingrenzen, um alle zu sehen",
-  "priority": {
-    "high": "Hoch",
-    "low": "Niedrig",
-    "medium": "Mittel",
-    "none": "Keine"
-  },
   "problemAnalysisPage": {
     "emptyHint": "Erweitere den Zeitraum oder passe die Filter an",
     "emptyTitle": "Keine Problemanalyse-Daten für den ausgewählten Zeitraum gefunden"

@@ -1096,6 +1096,63 @@ describe('Prioritization', () => {
       expect(row).toHaveTextContent('Not scored yet')
       expect(row).not.toHaveTextContent('Team score unavailable')
     })
+
+    it('keeps the team column when the refetch AFTER A SAVE fails', async () => {
+      // The failed-read cases above are all FIRST reads, where there is nothing to
+      // show. A failed refetch is the other half of `isError`, and it is the half this
+      // page creates for itself: saving invalidates `prioritization-scores`, so one
+      // unlucky retry used to pay a reviewer for casting a ballot by blanking the whole
+      // team column — every row "Team score unavailable", the cards dashed, the score
+      // sort stopped — while the previous response sat in the cache, unexpired and
+      // still correct.
+      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      mockGetProject.mockResolvedValue({
+        project_id: 'p1',
+        documents: [
+          { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        ],
+      })
+      // Second call onwards — the post-save refetch — rejects. The first resolves.
+      mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
+      mockGetPrioritizationScores.mockResolvedValueOnce({
+        scores: {
+          d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: 'mine' },
+        },
+        aggregates: {
+          d1: {
+            impact: 1, time_to_market: 3, confidence: 4, strategic_fit: 2,
+            reviewer_count: 3, score_spread: 1.8,
+          },
+        },
+      })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await waitFor(() => {
+        expect(screen.getByText('2.1')).toBeInTheDocument()
+      })
+      await user.click(screen.getByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      fireEvent.change(sliders[0], { target: { value: '1' } })
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      await user.click(screen.getByRole('button', { name: /save/i }))
+
+      // The failure is REPORTED — the panel is keyed on the query's own `isError`, and
+      // the latest read did fail, so this stays true.
+      await waitFor(() => {
+        expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
+      })
+      // And the team's answer is still the one on screen, not a retraction of it.
+      expect(screen.getByText('2.1')).toBeInTheDocument()
+      const row = screen.getByRole('button', { name: /Feature A PR\/FAQ/ })
+      expect(row).not.toHaveTextContent('Team score unavailable')
+      expect(row).not.toHaveTextContent('Not scored yet')
+      // The cards keep counting the map they are holding rather than dashing it.
+      const grid = screen.getByText('Total Documents').closest('div.grid')
+      expect(within(grid ?? document.body).getByText('Not Scored').previousElementSibling?.textContent).toBe('0')
+    })
   })
 
   describe('a score read still in flight is not an unscored backlog either', () => {

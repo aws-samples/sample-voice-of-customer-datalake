@@ -31,7 +31,7 @@ import PRFAQRow from './PRFAQRow'
 import {
   applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
   MAX_NOTE_LENGTH, normalizeAggregates, overLongNoteDocuments, priorityBand, sortPRFAQs,
-  teamAggregatesOf, withEditedField,
+  teamAggregatesOf, teamReadDelivered, withEditedField,
 } from './prioritizationUtils'
 import type {
   PRFAQWithProject, SortField, SortDirection, TeamAggregates,
@@ -100,7 +100,7 @@ function StatsCards({
   const bands = allPRFAQs.map((p) => priorityBand(getTeamView(aggregates, p.document_id)))
   /** How many rows fall in one band, or a dash when no team view has arrived. */
   const countOf = (band: 'high' | 'medium' | 'none') => (
-    typeof aggregates === 'string' ? '—' : bands.filter((b) => b === band).length
+    teamReadDelivered(aggregates) ? bands.filter((b) => b === band).length : '—'
   )
 
   return (
@@ -258,14 +258,19 @@ function PrioritizationHeader({
   /**
    * True while a save cannot honestly be made, for any of three reasons.
    *
-   * The saved scores could not be READ: saving then writes the caller's edits
-   * against numbers nobody has seen, because the rows on screen are defaults
-   * rather than their ballot. A panel above the list says so.
+   * The saved scores could not be READ, with nothing held from an earlier read:
+   * saving then writes the caller's edits against numbers nobody has seen, because
+   * the rows on screen are defaults rather than their ballot. A panel above the list
+   * says so. A failed REFETCH is deliberately not this case — the cached response is
+   * still on screen, sliders included, so the reader is editing their real ballot and
+   * a save is as honest as it was a moment earlier. That is why the test is "did a
+   * map arrive" rather than "did the query error": the two came apart on the refetch
+   * the save itself triggers.
    *
-   * Or that read has not finished. The same argument for the window before the
-   * outcome is known — the sliders are showing display defaults, not this reviewer's
-   * stored ballot — and it is the one reason with NO panel, because nothing has gone
-   * wrong and it clears itself the moment the read lands.
+   * Or that read has not finished, again with nothing held. The same argument for the
+   * window before the outcome is known — the sliders are showing display defaults, not
+   * this reviewer's stored ballot — and it is the one reason with NO panel, because
+   * nothing has gone wrong and it clears itself the moment the read lands.
    *
    * Or a pending edit carries a note past `MAX_NOTE_LENGTH`: the API refuses it
    * rather than truncating, and `fetchApi` discards the reason, so pressing Save
@@ -438,7 +443,9 @@ export default function Prioritization() {
    * in flight, when it has failed, and before it is enabled. Hence the query's own
    * `isError` and `isPending` are passed alongside it — the first is what the error
    * panel below is keyed on, and the second closes the same hole for the window before
-   * either outcome exists. Which of the two wins is `teamAggregatesOf`'s business.
+   * either outcome exists. Which of the two wins — and that a map already in the cache
+   * outranks both, so the refetch this page fires after every save cannot blank the
+   * team column on one failure — is `teamAggregatesOf`'s business.
    *
    * Deliberately NOT merged with `localEdits` the way `scores` is. A pending edit
    * is one reviewer's unsaved ballot; folding it into the team's mean would make
@@ -553,7 +560,7 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        saveBlocked={typeof aggregates === 'string' || overLongNotes.length > 0}
+        saveBlocked={!teamReadDelivered(aggregates) || overLongNotes.length > 0}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />

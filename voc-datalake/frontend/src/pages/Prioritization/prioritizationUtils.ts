@@ -223,25 +223,47 @@ export type TeamAggregates = Record<string, PrioritizationAggregate> | TeamReadS
  * The team view, or the reason there is none, from the query's own three signals.
  *
  * Here rather than inline in the component so the mapping is testable without
- * rendering a page, and so the precedence is stated once: FAILURE outranks pending,
- * because a query that has failed and is retrying is pending again, and "reload the
- * page" is the more useful of the two things to say about it.
+ * rendering a page, and so the precedence is stated once: A MAP OUTRANKS BOTH READ
+ * STATES, and between the two states failure outranks pending.
  *
- * The read's `aggregates` is `undefined` in both of those cases AND when the response
- * arrived carrying none — a deployment predating the field — which is why the caller
- * cannot pass `data` alone. Only that third case means "no team data yet", and only it
- * answers a map.
+ * A map first, because `failed` is the query's `isError`, and that is true of a
+ * failed REFETCH just as much as of a failed first read — while TanStack Query goes
+ * on holding the last successful response. Answering `'unavailable'` there threw away
+ * team means the page was already showing: every row dropped to "Team score
+ * unavailable", the stats cards dashed, the score sort stopped ordering and Save
+ * disabled. And the refetch after a successful save is exactly that path, since the
+ * save invalidates this query — so the reader's reward for casting a ballot was the
+ * team column vanishing on one unlucky retry. "We could not read this" is a weaker
+ * statement than the data warrants when the previous answer is in hand: the retained
+ * map is what the reader saw a moment ago, and the error panel above the list, keyed
+ * on `isError` directly, is what says the latest read failed.
+ *
+ * It also puts the two halves of one query back in step. `scores` reads
+ * `data?.scores ?? {}` and so keeps the caller's own ballots through a failed
+ * refetch; the team half now survives it too, rather than one object off one query
+ * having two outcomes.
+ *
+ * The states answer only when there is NO map to prefer — `aggregates` is `undefined`
+ * while the read is in flight, when it failed with nothing cached, AND when the
+ * response arrived carrying none (a deployment predating the field), which is why the
+ * caller cannot pass `data` alone. Only that last case means "no team data yet", and
+ * only it answers an empty map.
  */
 export function teamAggregatesOf(read: {
   readonly failed: boolean
   readonly pending: boolean
   readonly aggregates?: Record<string, PrioritizationAggregate>
 }): TeamAggregates {
-  const noMap = readStateOf(read)
-  return noMap ?? read.aggregates ?? {}
+  return read.aggregates ?? readStateOf(read) ?? {}
 }
 
-/** Why there is no map to read, or `null` when there is one. */
+/**
+ * Why there is no map to read, or `null` when the caller has one to prefer.
+ *
+ * FAILURE outranks pending, because a query that has failed and is retrying is
+ * pending again, and "reload the page" is the more useful of the two things to say
+ * about it. This only decides the no-map case; see `teamAggregatesOf`.
+ */
 function readStateOf(read: {
   readonly failed: boolean
   readonly pending: boolean
@@ -249,6 +271,24 @@ function readStateOf(read: {
   if (read.failed) return 'unavailable'
   return read.pending ? 'loading' : null
 }
+
+/**
+ * Did the team read deliver a map — the binary question layered on the four states.
+ *
+ * One exported predicate rather than `typeof aggregates === 'string'` at each call
+ * site, for the reason `reviewersDisagreed` and `roundToDisplay` exist: the union
+ * makes the FOUR-state question impossible to get wrong, but "is there a map at all"
+ * escaped that and was spelled three times across two files. It is also the least
+ * self-describing form of the question — a reader at the Save button has to know that
+ * the only strings in the union are read states to see why the button is disabled.
+ *
+ * A type PREDICATE, so a caller that has asked can then read the map as a map. The
+ * union's string members are exactly `TeamReadState`, which is what makes the
+ * `typeof` test exhaustive rather than incidental.
+ */
+export const teamReadDelivered = (
+  aggregates: TeamAggregates,
+): aggregates is Record<string, PrioritizationAggregate> => typeof aggregates !== 'string'
 
 /**
  * What one row can say about the team, in the four states it can be in.
@@ -811,7 +851,7 @@ export function sortPRFAQs(
   sortDirection: SortDirection,
 ): PRFAQWithProject[] {
   const direction = sortDirection === 'desc' ? -1 : 1
-  const arrived = typeof aggregates !== 'string' ? aggregates : null
+  const arrived = teamReadDelivered(aggregates) ? aggregates : null
   const ordersByTeamScore = ORDERS_BY_TEAM_SCORE[sortField] && arrived !== null
   const teams = new Map<string, TeamScore | null>(
     arrived === null ? [] : prfaqs.map(

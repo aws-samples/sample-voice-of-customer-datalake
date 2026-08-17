@@ -8,8 +8,9 @@ import {
   getScore, calculatePriorityScore, collectPRFAQs, DEFAULT_SCORE, isScorable,
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
-  applyBallotEdits, withEditedField, teamAggregatesOf,
+  applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered,
 } from './prioritizationUtils'
+import type { TeamAggregates } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
 
 describe('getScore', () => {
@@ -437,7 +438,7 @@ describe('getPriorityLabel', () => {
   })
 })
 
-describe('teamAggregatesOf reads the query three ways, not one', () => {
+describe('teamAggregatesOf reads what the query is HOLDING, not only what it is doing', () => {
   // `data` is undefined while the read is in flight, when it has failed, and when it
   // arrived carrying no `aggregates` at all — so it cannot decide this on its own, and
   // `?? {}` answered "nobody has scored anything" for all three.
@@ -467,6 +468,66 @@ describe('teamAggregatesOf reads the query three ways, not one', () => {
     // more useful of the two things to say, and the panel above the list is already
     // saying it.
     expect(teamAggregatesOf({ failed: true, pending: true })).toBe('unavailable')
+  })
+
+  it('keeps a map it is still holding when a REFETCH fails', () => {
+    // `failed` is the query's `isError`, which is true of a failed refetch too — and
+    // TanStack Query keeps the last successful response in that state. Answering
+    // 'unavailable' discarded team means the page had rendered a moment earlier: every
+    // row dropped to "Team score unavailable", the cards dashed, the score sort stopped
+    // and Save disabled. The page fires exactly this refetch after every save.
+    const aggregates = { d1: aggregate({ impact: 5, reviewer_count: 3 }) }
+
+    expect(teamAggregatesOf({ failed: true, pending: false, aggregates })).toBe(aggregates)
+  })
+
+  it('still answers unavailable for a failure with NO map to fall back on', () => {
+    // The discriminating control for the case above: "keep what we are holding" must
+    // not become "never say the read failed", which is all a first-load failure has.
+    expect(teamAggregatesOf({ failed: true, pending: false, aggregates: undefined })).toBe('unavailable')
+  })
+
+  it('keeps a map it is still holding while a background refetch runs', () => {
+    // The same argument one state along. A refetch in flight over cached data is not a
+    // reason to blank a column that has an answer.
+    const aggregates = { d1: aggregate({ impact: 5, reviewer_count: 3 }) }
+
+    expect(teamAggregatesOf({ failed: false, pending: true, aggregates })).toBe(aggregates)
+  })
+
+  it('keeps an EMPTY map it is holding rather than calling it unavailable', () => {
+    // A read that arrived saying "nobody has scored anything" is retained on the same
+    // terms as a populated one: it is still the last thing the server told us, and it
+    // is the answer the rows are already showing.
+    const arrivedEmpty = {}
+
+    expect(teamAggregatesOf({ failed: true, pending: false, aggregates: arrivedEmpty })).toBe(arrivedEmpty)
+  })
+})
+
+describe('teamReadDelivered asks "did a map arrive" in one place', () => {
+  // The binary question layered on the four-state union, which was spelled
+  // `typeof aggregates === 'string'` at three call sites across two files: the sort,
+  // the stats cards and the Save button. A fifth read state would leave all three
+  // compiling and correct only by luck.
+  it('is false for both read states', () => {
+    expect(teamReadDelivered('loading')).toBe(false)
+    expect(teamReadDelivered('unavailable')).toBe(false)
+  })
+
+  it('is true for an arrived map, including an empty one', () => {
+    // Empty is an ANSWER — "nobody has scored anything" — so the sort groups by it,
+    // the cards count it, and a save against it is honest.
+    expect(teamReadDelivered({})).toBe(true)
+    expect(teamReadDelivered({ d1: aggregate({ impact: 5, reviewer_count: 2 }) })).toBe(true)
+  })
+
+  it('narrows, so a caller that has asked can read the map as a map', () => {
+    const aggregates: TeamAggregates = { d1: aggregate({ impact: 5, reviewer_count: 2 }) }
+
+    // The `getTeamScore` call is the assertion: it does not accept `TeamAggregates`,
+    // so this line only compiles because the predicate narrowed the union.
+    expect(teamReadDelivered(aggregates) ? getTeamScore(aggregates, 'd1')?.impact : null).toBe(5)
   })
 })
 

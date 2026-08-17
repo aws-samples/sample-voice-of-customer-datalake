@@ -78,12 +78,6 @@
     "settings": "设置"
   },
   "partialWindowHint": "缩小筛选范围以查看全部",
-  "priority": {
-    "high": "高",
-    "low": "低",
-    "medium": "中",
-    "none": "无"
-  },
   "problemAnalysisPage": {
     "emptyHint": "请尝试扩大时间范围或调整筛选条件",
     "emptyTitle": "未找到所选时间段的问题分析数据"
