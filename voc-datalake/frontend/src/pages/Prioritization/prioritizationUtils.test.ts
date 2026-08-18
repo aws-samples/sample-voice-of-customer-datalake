@@ -5,19 +5,19 @@ import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
-  getScore, calculatePriorityScore, collectPRFAQs, DEFAULT_SCORE, isScorable,
-  SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteDocuments, getTeamScore, normalizeAggregates,
-  getPriorityLabel, priorityBand, reviewersDisagreed, sortPRFAQs, getTeamView, teamScoreOf,
+  getScore, calculatePriorityScore, collectRows, normalizeRows, DEFAULT_SCORE, isScorable,
+  SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteRows, getTeamScore, normalizeAggregates,
+  getPriorityLabel, priorityBand, reviewersDisagreed, sortRows, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
   ownBallotRead, UNREADABLE_ROW, teamOrderingAvailable, uncountableTeamRead,
 } from './prioritizationUtils'
-import type { TeamAggregates, TeamAggregateRow } from './prioritizationUtils'
+import type { TeamAggregates, TeamAggregateRow, PrioritizationRowView } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
 
 describe('getScore', () => {
   it('returns stored score when document_id exists', () => {
     const scores: Record<string, PrioritizationScore> = {
-      'd1': { document_id: 'd1', impact: 4, time_to_market: 2, confidence: 3, strategic_fit: 5, notes: 'test' },
+      'd1': { row_id: 'd1', impact: 4, time_to_market: 2, confidence: 3, strategic_fit: 5, notes: 'test' },
     }
 
     const result = getScore(scores, 'd1')
@@ -34,19 +34,19 @@ describe('getScore', () => {
     expect(result.impact).toBe(0)
     expect(result.time_to_market).toBe(3)
     expect(result.confidence).toBe(0)
-    expect(result.document_id).toBe('missing-id')
+    expect(result.row_id).toBe('missing-id')
   })
 
   it('returns DEFAULT_SCORE for empty scores object', () => {
     const result = getScore({}, 'any-id')
 
-    expect(result).toStrictEqual({ ...DEFAULT_SCORE, document_id: 'any-id' })
+    expect(result).toStrictEqual({ ...DEFAULT_SCORE, row_id: 'any-id' })
   })
 })
 
 describe('calculatePriorityScore', () => {
   it('returns 0 for default unscored item', () => {
-    const score = { ...DEFAULT_SCORE, document_id: 'd1' }
+    const score = { ...DEFAULT_SCORE, row_id: 'd1' }
 
     // impact=0*0.4 + ttm=3*0.3 + strategic=0*0.2 + confidence=0*0.1 = 0.9
     expect(calculatePriorityScore(score)).toBeCloseTo(0.9)
@@ -54,7 +54,7 @@ describe('calculatePriorityScore', () => {
 
   it('computes weighted score correctly', () => {
     const score: PrioritizationScore = {
-      document_id: 'd1', impact: 5, time_to_market: 4, confidence: 3, strategic_fit: 2, notes: '',
+      row_id: 'd1', impact: 5, time_to_market: 4, confidence: 3, strategic_fit: 2, notes: '',
     }
 
     // 5*0.4 + 4*0.3 + 2*0.2 + 3*0.1 = 2.0 + 1.2 + 0.4 + 0.3 = 3.9
@@ -63,7 +63,7 @@ describe('calculatePriorityScore', () => {
 
   it('returns max score for all-5 ratings', () => {
     const score: PrioritizationScore = {
-      document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '',
+      row_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '',
     }
 
     expect(calculatePriorityScore(score)).toBeCloseTo(5.0)
@@ -90,99 +90,268 @@ describe('isScorable', () => {
   })
 })
 
-describe('collectPRFAQs', () => {
-  it('returns empty array when no project details', () => {
-    expect(collectPRFAQs(undefined, undefined)).toStrictEqual([])
-    expect(collectPRFAQs([], [])).toStrictEqual([])
+const project = (project_id: string, name: string) => ({
+  project_id,
+  name,
+  description: '',
+  status: 'active' as const,
+  created_at: '',
+  updated_at: '',
+  persona_count: 0,
+  document_count: 0,
+})
+
+const doc = (
+  document_id: string,
+  document_type: ProjectDocument['document_type'],
+  title: string,
+  created_at: string,
+): ProjectDocument => ({
+  document_id, document_type, title, content: '', created_at,
+})
+
+/** A stored row record, as the wire sends it. */
+const storedRow = (
+  row_id: string, project_id: string, document_ids: string[], prototype_id = '',
+) => ({
+  row_id, project_id, document_ids, prototype_id, is_default: true, created_at: '2026-01-01',
+})
+
+describe('collectRows resolves stored rows against the documents on screen', () => {
+  it('returns nothing when either read is missing', () => {
+    // Not `[]` as a stand-in for "still loading": the page distinguishes those, and
+    // this function is only reached once both reads exist.
+    expect(collectRows({}, undefined, undefined)).toStrictEqual([])
+    expect(collectRows({}, [], [])).toStrictEqual([])
   })
 
-  it('includes prfaq document types', () => {
+  it('a project whose PRD and PR/FAQ describe one idea is ONE row', () => {
+    // The whole point of the change. Two scorable documents, one row, one ballot —
+    // where the page previously listed the same idea twice and scored it twice.
     const details = [{
       documents: [
-        { document_id: 'd1', document_type: 'prfaq' as const, title: 'A', content: '', created_at: '2025-01-01' },
-        { document_id: 'd2', document_type: 'research' as const, title: 'R', content: '', created_at: '2025-01-01' },
+        doc('prfaq-1', 'prfaq', 'Feature A PR/FAQ', '2025-01-02'),
+        doc('prd-1', 'prd', 'Feature A PRD', '2025-01-01'),
+        doc('research-1', 'research', 'Research', '2025-01-03'),
       ],
     }]
-    const projects = [{ project_id: 'p1', name: 'P1', description: '', status: 'active' as const, created_at: '', updated_at: '', persona_count: 0, document_count: 0 }]
 
-    const result = collectPRFAQs(details, projects)
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prd-1', 'prfaq-1']) },
+      details, [project('p1', 'P1')],
+    )
 
-    expect(result).toHaveLength(1)
-    expect(result[0].document_id).toBe('d1')
-    expect(result[0].document_type).toBe('prfaq')
-    expect(result[0].project_name).toBe('P1')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].row_id).toBe('row-1')
+    expect(rows[0].project_name).toBe('P1')
+    expect(rows[0].documents.map((d) => d.document_id)).toEqual(['prfaq-1', 'prd-1'])
   })
 
-  it('includes prd document types', () => {
+  it('holds only the documents the row NAMES, not every scorable one the project has', () => {
+    // A row stores concrete ids. Recomputing "every scorable document of this
+    // project" would make generating a new PRD silently change what an existing
+    // row's ballots describe — which is the property the ids exist to give.
     const details = [{
       documents: [
-        { document_id: 'd1', document_type: 'prd' as const, title: 'My PRD', content: '', created_at: '2025-01-01' },
-        { document_id: 'd2', document_type: 'research' as const, title: 'R', content: '', created_at: '2025-01-01' },
+        doc('prd-1', 'prd', 'Original PRD', '2025-01-01'),
+        doc('prd-2', 'prd', 'Regenerated PRD', '2025-06-01'),
       ],
     }]
-    const projects = [{ project_id: 'p1', name: 'P1', description: '', status: 'active' as const, created_at: '', updated_at: '', persona_count: 0, document_count: 0 }]
 
-    const result = collectPRFAQs(details, projects)
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prd-1']) },
+      details, [project('p1', 'P1')],
+    )
 
-    expect(result).toHaveLength(1)
-    expect(result[0].document_id).toBe('d1')
-    expect(result[0].document_type).toBe('prd')
-    expect(result[0].project_name).toBe('P1')
+    expect(rows[0].documents.map((d) => d.document_id)).toEqual(['prd-1'])
   })
 
-  it('collects both prd and prfaq from the same project', () => {
+  it('names the row after its NEWEST document, which is also what the date sort reads', () => {
     const details = [{
       documents: [
-        { document_id: 'd1', document_type: 'prfaq' as const, title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        { document_id: 'd2', document_type: 'prd' as const, title: 'Feature A PRD', content: '', created_at: '2025-01-02' },
-        { document_id: 'd3', document_type: 'research' as const, title: 'Research', content: '', created_at: '2025-01-03' },
+        doc('prd-1', 'prd', 'Older PRD', '2025-01-01'),
+        doc('prfaq-1', 'prfaq', 'Newer PR/FAQ', '2025-03-01'),
       ],
     }]
-    const projects = [{ project_id: 'p1', name: 'P1', description: '', status: 'active' as const, created_at: '', updated_at: '', persona_count: 0, document_count: 0 }]
 
-    const result = collectPRFAQs(details, projects)
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prd-1', 'prfaq-1']) },
+      details, [project('p1', 'P1')],
+    )
 
-    expect(result).toHaveLength(2)
-    const ids = result.map((r) => r.document_id)
-    expect(ids).toContain('d1')
-    expect(ids).toContain('d2')
+    expect(rows[0].title).toBe('Newer PR/FAQ')
+    expect(rows[0].created_at).toBe('2025-03-01')
   })
 
-  it('excludes non-scorable document types (research, custom, product_report, prototype)', () => {
-    const details = [{
-      documents: [
-        { document_id: 'd1', document_type: 'research' as const, title: 'R', content: '', created_at: '2025-01-01' },
-        { document_id: 'd2', document_type: 'custom' as const, title: 'C', content: '', created_at: '2025-01-01' },
-        { document_id: 'd3', document_type: 'product_report' as const, title: 'PR', content: '', created_at: '2025-01-01' },
-        { document_id: 'd4', document_type: 'prototype' as const, title: 'Proto', content: '', created_at: '2025-01-01' },
-      ],
-    }]
-    const projects = [{ project_id: 'p1', name: 'P1', description: '', status: 'active' as const, created_at: '', updated_at: '', persona_count: 0, document_count: 0 }]
+  it('drops a row whose project is not on screen rather than rendering it unattributed', () => {
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p-gone', ['prd-1']) },
+      [{ documents: [doc('prd-1', 'prd', 'A', '2025-01-01')] }],
+      [project('p1', 'P1')],
+    )
 
-    const result = collectPRFAQs(details, projects)
-
-    expect(result).toHaveLength(0)
+    expect(rows).toStrictEqual([])
   })
 
-  it('attaches the most-recent prototype to each scorable document', () => {
+  it('drops a row when NONE of its ids resolve, because there is nothing to score', () => {
+    // A stored row naming only deleted documents has no title, no preview and
+    // nothing a reviewer could read. The backend ignores a ballot keyed to a row
+    // that no longer resolves for the same reason.
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['deleted-1', 'deleted-2']) },
+      [{ documents: [doc('prd-1', 'prd', 'A', '2025-01-01')] }],
+      [project('p1', 'P1')],
+    )
+
+    expect(rows).toStrictEqual([])
+  })
+
+  it('keeps a row whose ids PARTLY resolve, holding the ones that do', () => {
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prd-1', 'deleted-1']) },
+      [{ documents: [doc('prd-1', 'prd', 'A', '2025-01-01')] }],
+      [project('p1', 'P1')],
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].documents.map((d) => d.document_id)).toEqual(['prd-1'])
+  })
+
+  it('carries the prototype the row was composed with', () => {
     const details = [{
       documents: [
-        { document_id: 'prfaq1', document_type: 'prfaq' as const, title: 'A', content: '', created_at: '2025-01-01' },
-        { document_id: 'proto-old', document_type: 'prototype' as const, title: 'Old Proto', content: '', created_at: '2025-01-10' },
-        { document_id: 'proto-new', document_type: 'prototype' as const, title: 'New Proto', content: '', created_at: '2025-02-01' },
+        doc('prfaq-1', 'prfaq', 'A', '2025-01-01'),
+        doc('proto-old', 'prototype', 'Old Proto', '2025-01-10'),
+        doc('proto-new', 'prototype', 'New Proto', '2025-02-01'),
       ],
     }]
-    const projects = [{ project_id: 'p1', name: 'P1', description: '', status: 'active' as const, created_at: '', updated_at: '', persona_count: 0, document_count: 0 }]
 
-    const result = collectPRFAQs(details, projects)
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], 'proto-old') },
+      details, [project('p1', 'P1')],
+    )
 
-    expect(result).toHaveLength(1)
-    expect(result[0].prototype?.document_id).toBe('proto-new')
+    expect(rows[0].prototype?.document_id).toBe('proto-old')
+  })
+
+  it('falls back to the project latest prototype when the row names none', () => {
+    // The fallback, not the rule: it keeps a demo on screen for a row composed
+    // before the field existed, or one whose prototype has since been deleted. A
+    // prototype is context a reviewer looks at rather than something the row is
+    // scored on, so a stale pointer here costs a demo, not the meaning of a ballot.
+    const details = [{
+      documents: [
+        doc('prfaq-1', 'prfaq', 'A', '2025-01-01'),
+        doc('proto-old', 'prototype', 'Old Proto', '2025-01-10'),
+        doc('proto-new', 'prototype', 'New Proto', '2025-02-01'),
+      ],
+    }]
+
+    const named = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], '') },
+      details, [project('p1', 'P1')],
+    )
+    const deleted = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], 'proto-gone') },
+      details, [project('p1', 'P1')],
+    )
+
+    expect(named[0].prototype?.document_id).toBe('proto-new')
+    expect(deleted[0].prototype?.document_id).toBe('proto-new')
+  })
+
+  it('gives a project with no prototype no prototype, rather than another project one', () => {
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1']) },
+      [
+        { documents: [doc('prfaq-1', 'prfaq', 'A', '2025-01-01')] },
+        { documents: [doc('proto-1', 'prototype', 'Other Proto', '2025-02-01')] },
+      ],
+      [project('p1', 'P1'), project('p2', 'P2')],
+    )
+
+    expect(rows[0].prototype).toBeUndefined()
   })
 })
 
-const prfaqA = { document_id: 'a', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Alpha', content: '', created_at: '2025-01-01' }
-const prfaqB = { document_id: 'b', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Beta', content: '', created_at: '2025-01-02' }
+describe('normalizeRows', () => {
+  it('parses the rows on the wire', () => {
+    const rows = normalizeRows({ 'row-1': storedRow('row-1', 'p1', ['prd-1']) })
+
+    expect(rows?.['row-1'].project_id).toBe('p1')
+    expect(rows?.['row-1'].document_ids).toEqual(['prd-1'])
+  })
+
+  it('takes row_id from the map KEY, not from the record', () => {
+    // Every lookup addresses the key, so a record disagreeing with its own key would
+    // produce a row nothing can find — the same rule `normalizeScores` follows.
+    const rows = normalizeRows({ 'row-1': storedRow('somewhere-else', 'p1', ['prd-1']) })
+
+    expect(rows?.['row-1'].row_id).toBe('row-1')
+  })
+
+  it('tells "no rows on the wire" apart from "unreadable"', () => {
+    // `{}` is a deployment that has no rows yet — an honest empty backlog. `undefined`
+    // is a read that said nothing, which the page must not render as an empty one.
+    expect(normalizeRows(undefined)).toEqual({})
+    expect(normalizeRows({})).toEqual({})
+    expect(normalizeRows('not a map')).toBeUndefined()
+    expect(normalizeRows(null)).toBeUndefined()
+    expect(normalizeRows([])).toBeUndefined()
+  })
+
+  it('drops an unreadable ROW rather than inventing a project or a composition', () => {
+    // `project_id` and `document_ids` carry no fallback: they are what makes a row
+    // renderable, and an invented `''`/`[]` would put an empty unscorable row in the
+    // list under a project nobody can open.
+    const rows = normalizeRows({
+      good: storedRow('good', 'p1', ['prd-1']),
+      noProject: { row_id: 'noProject', document_ids: ['prd-1'] },
+      noDocuments: { row_id: 'noDocuments', project_id: 'p1' },
+      notAnObject: 'nope',
+    })
+
+    expect(Object.keys(rows ?? {})).toEqual(['good'])
+  })
+
+  it('degrades the metadata that does not decide whether the row exists', () => {
+    const rows = normalizeRows({
+      'row-1': { project_id: 'p1', document_ids: ['prd-1'] },
+    })
+
+    expect(rows?.['row-1'].prototype_id).toBe('')
+    expect(rows?.['row-1'].is_default).toBe(false)
+    expect(rows?.['row-1'].created_at).toBe('')
+  })
+})
+
+/**
+ * A row as the sort sees it: an id, a title, a date, and the documents it holds.
+ *
+ * `row_id` is what the aggregate is keyed by — the sort looks up `row.row_id`, so a
+ * fixture keyed by a document id would exercise nothing the page does. The single
+ * document exists because a row must resolve to at least one to be rendered at all;
+ * multi-document rows are `collectRows`' subject, not the sort's.
+ */
+const rowView = (
+  rowId: string, title: string, createdAt: string,
+): PrioritizationRowView => ({
+  row_id: rowId,
+  project_id: 'p1',
+  project_name: 'P1',
+  title,
+  created_at: createdAt,
+  documents: [{
+    document_id: `${rowId}-doc`,
+    document_type: 'prfaq' as const,
+    title,
+    content: '',
+    created_at: createdAt,
+  }],
+})
+
+const rowA = rowView('a', 'Alpha', '2025-01-01')
+const rowB = rowView('b', 'Beta', '2025-01-02')
 
 /** One document's team view, all four axes at the same value unless told otherwise. */
 const aggregate = (
@@ -192,11 +361,11 @@ const aggregate = (
 })
 
 describe('the sort orders by the TEAM aggregate, not the caller own ballot', () => {
-  // Asserted through `sortPRFAQs`, which is the ONLY way the page reaches the
+  // Asserted through `sortRows`, which is the ONLY way the page reaches the
   // ordering. These cases used to call an exported `comparePRFAQs` wrapper that no
   // production code called, so the comparator the page actually uses could have
   // regressed with every one of them still green.
-  const idsOf = (rows: readonly { document_id: string }[]) => rows.map((row) => row.document_id)
+  const idsOf = (rows: readonly { row_id: string }[]) => rows.map((row) => row.row_id)
 
   it('sorts by the team mean impact when the field is impact', () => {
     const aggregates: Record<string, PrioritizationAggregate> = {
@@ -204,8 +373,8 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
       b: aggregate({ impact: 5, reviewer_count: 2 }),
     }
 
-    expect(idsOf(sortPRFAQs([prfaqA, prfaqB], aggregates, 'impact', 'asc'))).toEqual(['a', 'b'])
-    expect(idsOf(sortPRFAQs([prfaqA, prfaqB], aggregates, 'impact', 'desc'))).toEqual(['b', 'a'])
+    expect(idsOf(sortRows([rowA, rowB], aggregates, 'impact', 'asc'))).toEqual(['a', 'b'])
+    expect(idsOf(sortRows([rowA, rowB], aggregates, 'impact', 'desc'))).toEqual(['b', 'a'])
   })
 
   it('sorts by the team composite, not by the caller composite', () => {
@@ -218,7 +387,7 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
       b: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 2 }),
     }
 
-    expect(idsOf(sortPRFAQs([prfaqB, prfaqA], aggregates, 'priority_score', 'desc'))).toEqual(['a', 'b'])
+    expect(idsOf(sortRows([rowB, rowA], aggregates, 'priority_score', 'desc'))).toEqual(['a', 'b'])
   })
 
   it('ranks an unscored document BELOW one the team scored low, rather than above it', () => {
@@ -227,7 +396,7 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
     // at and rated 1 across the board — composite 1.0. Absent from the aggregate
     // means nobody voted, which is not a low score.
     //
-    // Asserted through `sortPRFAQs`, which owns the unscored block: the comparator
+    // Asserted through `sortRows`, which owns the unscored block: the comparator
     // answers 0 for a row with no number on the axis (see below), and it is the sort
     // that then pins those rows to the bottom — in both directions, so this holds
     // ascending too rather than only in the default view.
@@ -236,8 +405,8 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
     }
 
     for (const direction of ['asc', 'desc'] as const) {
-      const order = sortPRFAQs([prfaqA, prfaqB], aggregates, 'priority_score', direction)
-      expect(order.map((row) => row.document_id), direction).toEqual(['b', 'a'])
+      const order = sortRows([rowA, rowB], aggregates, 'priority_score', direction)
+      expect(order.map((row) => row.row_id), direction).toEqual(['b', 'a'])
     }
   })
 
@@ -245,9 +414,9 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
     // Two rows nobody has scored tie, in both directions, so they stay in the order
     // they arrived rather than being ranked by a number neither has.
     for (const direction of ['asc', 'desc'] as const) {
-      expect(() => sortPRFAQs([prfaqA, prfaqB], {}, 'priority_score', direction)).not.toThrow()
-      expect(idsOf(sortPRFAQs([prfaqA, prfaqB], {}, 'priority_score', direction)), direction).toEqual(['a', 'b'])
-      expect(idsOf(sortPRFAQs([prfaqB, prfaqA], {}, 'impact', direction)), direction).toEqual(['b', 'a'])
+      expect(() => sortRows([rowA, rowB], {}, 'priority_score', direction)).not.toThrow()
+      expect(idsOf(sortRows([rowA, rowB], {}, 'priority_score', direction)), direction).toEqual(['a', 'b'])
+      expect(idsOf(sortRows([rowB, rowA], {}, 'impact', direction)), direction).toEqual(['b', 'a'])
     }
   })
 
@@ -261,14 +430,14 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
     }
 
     for (const direction of ['asc', 'desc'] as const) {
-      expect(idsOf(sortPRFAQs([prfaqA, prfaqB], aggregates, 'priority_score', direction)), direction)
+      expect(idsOf(sortRows([rowA, rowB], aggregates, 'priority_score', direction)), direction)
         .toEqual(['b', 'a'])
     }
   })
 
   it('still orders created_at and title by the document, which no aggregate touches', () => {
-    expect(idsOf(sortPRFAQs([prfaqB, prfaqA], {}, 'created_at', 'asc'))).toEqual(['a', 'b'])
-    expect(idsOf(sortPRFAQs([prfaqB, prfaqA], {}, 'title', 'asc'))).toEqual(['a', 'b'])
+    expect(idsOf(sortRows([rowB, rowA], {}, 'created_at', 'asc'))).toEqual(['a', 'b'])
+    expect(idsOf(sortRows([rowB, rowA], {}, 'title', 'asc'))).toEqual(['a', 'b'])
   })
 })
 
@@ -303,7 +472,7 @@ describe('getTeamScore', () => {
     // The same guard on the caller's own half, which lacked it: `??` does not fire on an
     // inherited value, so this answered `Object.prototype.toString` — a function where a
     // ballot is declared, with every axis `undefined`.
-    expect(getScore({}, 'toString')).toEqual({ ...DEFAULT_SCORE, document_id: 'toString' })
+    expect(getScore({}, 'toString')).toEqual({ ...DEFAULT_SCORE, row_id: 'toString' })
     expect(typeof getScore({}, 'toString')).toBe('object')
   })
 
@@ -536,7 +705,7 @@ describe('ownBallotRead resolves the caller own half once, for all three consume
   // the guard read the caller's ballots while the panel read the TEAM map — so a response
   // with readable aggregates and unreadable ballots said "no need to reload before saving"
   // beside a disabled Save.
-  const ballots = { d1: { ...DEFAULT_SCORE, document_id: 'd1', impact: 4 } }
+  const ballots = { d1: { ...DEFAULT_SCORE, row_id: 'd1', impact: 4 } }
 
   it('has the ballots in hand when the response carried a readable map', () => {
     expect(ownBallotRead({ failed: false, arrived: true, ballots: ballots })).toEqual({
@@ -617,12 +786,12 @@ describe('normalizeScores validates the caller own half of the response too', ()
   it('keeps a readable ballot as sent', () => {
     const scores = normalizeScores({
       d1: {
-        document_id: 'd1', impact: 5, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'mine',
+        row_id: 'd1', impact: 5, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'mine',
       },
     })
 
     expect(scores?.d1).toEqual({
-      document_id: 'd1', impact: 5, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'mine',
+      row_id: 'd1', impact: 5, time_to_market: 2, confidence: 3, strategic_fit: 4, notes: 'mine',
     })
   })
 
@@ -639,7 +808,7 @@ describe('normalizeScores validates the caller own half of the response too', ()
     // The readable sibling survives — one bad row does not take the response with it.
     expect(scores?.d2.impact).toBe(4)
     // And the dropped row still reads as the display defaults through `getScore`.
-    expect(getScore(scores ?? {}, 'd1')).toEqual({ ...DEFAULT_SCORE, document_id: 'd1' })
+    expect(getScore(scores ?? {}, 'd1')).toEqual({ ...DEFAULT_SCORE, row_id: 'd1' })
   })
 
   it('drops a row that stored nothing readable, which the per-field catches let through', () => {
@@ -676,7 +845,7 @@ describe('normalizeScores validates the caller own half of the response too', ()
 
     expect(Object.hasOwn(scores?.d1 ?? {}, 'surprise')).toBe(false)
     expect(Object.keys(scores?.d1 ?? {}).sort())
-      .toEqual(['confidence', 'document_id', 'impact', 'notes', 'strategic_fit', 'time_to_market'])
+      .toEqual(['confidence', 'impact', 'notes', 'row_id', 'strategic_fit', 'time_to_market'])
   })
 
   it('degrades an unreadable AXIS and clamps an out-of-range one', () => {
@@ -693,16 +862,19 @@ describe('normalizeScores validates the caller own half of the response too', ()
     expect(scores?.d1.notes).toBe('')
   })
 
-  it('takes document_id from the map KEY, not from the row', () => {
-    // Every lookup on this page is by key, so a row disagreeing with its own key would
-    // otherwise produce a ballot that cannot be found.
-    expect(normalizeScores({ d1: { document_id: 'somewhere-else', impact: 2 } })?.d1.document_id)
+  it('takes row_id from the map KEY, not from the entry', () => {
+    // Every lookup on this page is by key, so an entry disagreeing with its own key
+    // would otherwise produce a ballot that cannot be found. The key is the ROW now,
+    // and a stored `document_id` from the pre-row shape must not be read as one.
+    expect(normalizeScores({ d1: { row_id: 'somewhere-else', impact: 2 } })?.d1.row_id)
+      .toBe('d1')
+    expect(normalizeScores({ d1: { document_id: 'a-document', impact: 2 } })?.d1.row_id)
       .toBe('d1')
   })
 
   it('leaves a stored note longer than the API now accepts alone', () => {
     // The bound arrived after the data. Truncating on READ would silently rewrite a
-    // reviewer's justification; refusing to SEND one is `overLongNoteDocuments`' job.
+    // reviewer's justification; refusing to SEND one is `overLongNoteRows`' job.
     const long = 'x'.repeat(MAX_NOTE_LENGTH + 50)
 
     expect(normalizeScores({ d1: { notes: long } })?.d1.notes).toBe(long)
@@ -778,8 +950,8 @@ describe('getTeamView tells the states of the team view apart', () => {
   })
 })
 
-describe('sortPRFAQs applies direction without disturbing what has no number', () => {
-  const prfaqC = { document_id: 'c', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Gamma', content: '', created_at: '2025-01-03' }
+describe('sortRows applies direction without disturbing what has no number', () => {
+  const rowC = rowView('c', 'Gamma', '2025-01-03')
   const titlesOf = (rows: readonly { title: string }[]) => rows.map((row) => row.title)
 
   const aggregates: Record<string, PrioritizationAggregate> = {
@@ -788,7 +960,7 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
   }
 
   it('puts the highest team score first when descending', () => {
-    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], aggregates, 'priority_score', 'desc')))
+    expect(titlesOf(sortRows([rowA, rowB, rowC], aggregates, 'priority_score', 'desc')))
       .toEqual(['Beta', 'Alpha', 'Gamma'])
   })
 
@@ -797,7 +969,7 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     // "Nobody voted on this" is not a rating, so it is not a value the direction
     // toggle can invert — answering with a block of never-voted-on rows puts
     // unranked ones where the reader is looking for ranked.
-    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], aggregates, 'priority_score', 'asc')))
+    expect(titlesOf(sortRows([rowA, rowB, rowC], aggregates, 'priority_score', 'asc')))
       .toEqual(['Alpha', 'Beta', 'Gamma'])
   })
 
@@ -807,9 +979,7 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     // voted". It sits ABOVE the unscored block because it is the weaker claim — the
     // server said something about this document and it may be scored anywhere in the
     // ranked list, whereas "nobody voted" is settled.
-    const prfaqD = {
-      document_id: 'd', project_id: 'p1', project_name: 'P1', document_type: 'prfaq' as const, title: 'Delta', content: '', created_at: '2025-01-04',
-    }
+    const rowD = rowView('d', 'Delta', '2025-01-04')
     const map: Record<string, TeamAggregateRow> = {
       a: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 2 }),
       b: aggregate({ impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, reviewer_count: 2 }),
@@ -820,10 +990,10 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     // Arrival order deliberately interleaves the two number-less rows (Delta before
     // Gamma), so a rule that lumps them into ONE block would keep Delta first — the
     // blocks separating is what this asserts, not just "both at the bottom".
-    expect(titlesOf(sortPRFAQs([prfaqD, prfaqC, prfaqB, prfaqA], map, 'priority_score', 'desc')))
+    expect(titlesOf(sortRows([rowD, rowC, rowB, rowA], map, 'priority_score', 'desc')))
       .toEqual(['Beta', 'Alpha', 'Gamma', 'Delta'])
     // And neither block moves when the direction flips — only the ranked rows reorder.
-    expect(titlesOf(sortPRFAQs([prfaqD, prfaqC, prfaqB, prfaqA], map, 'priority_score', 'asc')))
+    expect(titlesOf(sortRows([rowD, rowC, rowB, rowA], map, 'priority_score', 'asc')))
       .toEqual(['Alpha', 'Beta', 'Gamma', 'Delta'])
   })
 
@@ -838,9 +1008,9 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
       c: aggregate({ impact: 5, reviewer_count: 2 }),
     }
 
-    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], tied, 'impact', 'desc')))
+    expect(titlesOf(sortRows([rowA, rowB, rowC], tied, 'impact', 'desc')))
       .toEqual(['Gamma', 'Alpha', 'Beta'])
-    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB, prfaqC], tied, 'impact', 'asc')))
+    expect(titlesOf(sortRows([rowA, rowB, rowC], tied, 'impact', 'asc')))
       .toEqual(['Alpha', 'Beta', 'Gamma'])
   })
 
@@ -866,9 +1036,9 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     expect(calculatePriorityScore(equalOnScreen.a))
       .not.toBe(calculatePriorityScore(equalOnScreen.b))
 
-    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, 'priority_score', 'desc')))
+    expect(titlesOf(sortRows([rowA, rowB], equalOnScreen, 'priority_score', 'desc')))
       .toEqual(['Alpha', 'Beta'])
-    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA], equalOnScreen, 'priority_score', 'asc')))
+    expect(titlesOf(sortRows([rowB, rowA], equalOnScreen, 'priority_score', 'asc')))
       .toEqual(['Beta', 'Alpha'])
   })
 
@@ -891,9 +1061,9 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     expect(getTeamScore(equalOnScreen, 'b')?.displayImpact).toBe(4.3)
 
     for (const field of ['impact', 'time_to_market'] as const) {
-      expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, field, 'desc')), field)
+      expect(titlesOf(sortRows([rowA, rowB], equalOnScreen, field, 'desc')), field)
         .toEqual(['Alpha', 'Beta'])
-      expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], equalOnScreen, field, 'asc')), field)
+      expect(titlesOf(sortRows([rowA, rowB], equalOnScreen, field, 'asc')), field)
         .toEqual(['Alpha', 'Beta'])
     }
   })
@@ -905,22 +1075,22 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
       b: aggregate({ impact: 5, time_to_market: 5, reviewer_count: 2 }),
     }
 
-    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], different, 'impact', 'desc'))).toEqual(['Beta', 'Alpha'])
-    expect(titlesOf(sortPRFAQs([prfaqA, prfaqB], different, 'impact', 'asc'))).toEqual(['Alpha', 'Beta'])
+    expect(titlesOf(sortRows([rowA, rowB], different, 'impact', 'desc'))).toEqual(['Beta', 'Alpha'])
+    expect(titlesOf(sortRows([rowA, rowB], different, 'impact', 'asc'))).toEqual(['Alpha', 'Beta'])
   })
 
   it('leaves date and title sorts free of the unscored grouping', () => {
     // Those two read document fields every row has, so there is no unscored block
     // to pin and the direction reverses the whole list.
-    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], aggregates, 'created_at', 'asc')))
+    expect(titlesOf(sortRows([rowB, rowA, rowC], aggregates, 'created_at', 'asc')))
       .toEqual(['Alpha', 'Beta', 'Gamma'])
-    expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], aggregates, 'title', 'desc')))
+    expect(titlesOf(sortRows([rowB, rowA, rowC], aggregates, 'title', 'desc')))
       .toEqual(['Gamma', 'Beta', 'Alpha'])
   })
 
   it('does not mutate the array it was given', () => {
-    const rows = [prfaqA, prfaqB, prfaqC]
-    sortPRFAQs(rows, aggregates, 'priority_score', 'desc')
+    const rows = [rowA, rowB, rowC]
+    sortRows(rows, aggregates, 'priority_score', 'desc')
     expect(titlesOf(rows)).toEqual(['Alpha', 'Beta', 'Gamma'])
   })
 
@@ -931,7 +1101,7 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     // about any document.
     for (const state of ['unavailable', 'loading'] as const) {
       for (const direction of ['asc', 'desc'] as const) {
-        expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], state, 'priority_score', direction)), `${state} ${direction}`)
+        expect(titlesOf(sortRows([rowB, rowA, rowC], state, 'priority_score', direction)), `${state} ${direction}`)
           .toEqual(['Beta', 'Alpha', 'Gamma'])
       }
     }
@@ -941,9 +1111,9 @@ describe('sortPRFAQs applies direction without disturbing what has no number', (
     // Those read document fields, which neither state touches — so the sort a reader
     // can still trust keeps working.
     for (const state of ['unavailable', 'loading'] as const) {
-      expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], state, 'created_at', 'asc')), state)
+      expect(titlesOf(sortRows([rowB, rowA, rowC], state, 'created_at', 'asc')), state)
         .toEqual(['Alpha', 'Beta', 'Gamma'])
-      expect(titlesOf(sortPRFAQs([prfaqB, prfaqA, prfaqC], state, 'title', 'desc')), state)
+      expect(titlesOf(sortRows([rowB, rowA, rowC], state, 'title', 'desc')), state)
         .toEqual(['Gamma', 'Beta', 'Alpha'])
     }
   })
@@ -1013,9 +1183,9 @@ describe('a pending edit carries only the fields the reader set', () => {
   // explicit value as a vote and averages each axis over the reviewers who cast one,
   // so those fabricated zeros moved the TEAM means this page displays and sorts by.
   it('records one axis without inventing the other three', () => {
-    const edit = withEditedField({ document_id: 'd1' }, 'impact', 5)
+    const edit = withEditedField({ row_id: 'd1' }, 'impact', 5)
 
-    expect(edit).toEqual({ document_id: 'd1', impact: 5 })
+    expect(edit).toEqual({ row_id: 'd1', impact: 5 })
     // Named explicitly, because "absent" is what the route reads as "leave it alone"
     // and a 0 here is what it reads as a vote.
     expect('time_to_market' in edit).toBe(false)
@@ -1028,17 +1198,17 @@ describe('a pending edit carries only the fields the reader set', () => {
     // The positive control: omitting untouched axes must not become omitting touched
     // ones, or a reviewer's second slider would silently not save.
     const edit = withEditedField(
-      withEditedField({ document_id: 'd1' }, 'impact', 5), 'confidence', 2,
+      withEditedField({ row_id: 'd1' }, 'impact', 5), 'confidence', 2,
     )
 
-    expect(edit).toEqual({ document_id: 'd1', impact: 5, confidence: 2 })
+    expect(edit).toEqual({ row_id: 'd1', impact: 5, confidence: 2 })
   })
 
   it('keeps an axis a number and a note a string', () => {
     // The slider hands over a string from the DOM event; a note stored as a number,
     // or an axis as a string, is refused by the API rather than caught here.
-    expect(withEditedField({ document_id: 'd1' }, 'impact', '4').impact).toBe(4)
-    expect(withEditedField({ document_id: 'd1' }, 'notes', 'why').notes).toBe('why')
+    expect(withEditedField({ row_id: 'd1' }, 'impact', '4').impact).toBe(4)
+    expect(withEditedField({ row_id: 'd1' }, 'notes', 'why').notes).toBe('why')
   })
 
   it('shows a partial edit over the stored ballot without blanking what it omits', () => {
@@ -1047,12 +1217,12 @@ describe('a pending edit carries only the fields the reader set', () => {
     // showing a score the reviewer had stored.
     const merged = applyBallotEdits({
       d1: {
-        document_id: 'd1', impact: 2, time_to_market: 3, confidence: 4, strategic_fit: 5, notes: 'kept',
+        row_id: 'd1', impact: 2, time_to_market: 3, confidence: 4, strategic_fit: 5, notes: 'kept',
       },
-    }, { d1: { document_id: 'd1', impact: 5 } })
+    }, { d1: { row_id: 'd1', impact: 5 } })
 
     expect(merged.d1).toEqual({
-      document_id: 'd1', impact: 5, time_to_market: 3, confidence: 4, strategic_fit: 5, notes: 'kept',
+      row_id: 'd1', impact: 5, time_to_market: 3, confidence: 4, strategic_fit: 5, notes: 'kept',
     })
   })
 
@@ -1060,17 +1230,17 @@ describe('a pending edit carries only the fields the reader set', () => {
     // The sliders still need four numbers to render. That seeding is a DISPLAY
     // concern and stays here, on the way to the screen — not in the edit, which is
     // what gets sent.
-    const merged = applyBallotEdits({}, { d1: { document_id: 'd1', impact: 5 } })
+    const merged = applyBallotEdits({}, { d1: { row_id: 'd1', impact: 5 } })
 
     expect(merged.d1).toEqual({
-      ...DEFAULT_SCORE, document_id: 'd1', impact: 5,
+      ...DEFAULT_SCORE, row_id: 'd1', impact: 5,
     })
   })
 
   it('leaves rows nobody edited exactly as they were saved', () => {
     const saved = {
       d1: {
-        document_id: 'd1', impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '',
+        row_id: 'd1', impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '',
       },
     }
 
@@ -1388,7 +1558,7 @@ describe('SCORABLE_TYPE_META display labels', () => {
   })
 })
 
-describe('overLongNoteDocuments', () => {
+describe('overLongNoteRows', () => {
   // The API refuses a note past MAX_NOTE_LENGTH rather than truncating it, and
   // `fetchApi` discards the response body, so the page has to spot the refusal
   // before sending or Save appears to do nothing.
@@ -1399,7 +1569,7 @@ describe('overLongNoteDocuments', () => {
   it('names the document whose note is over the bound', () => {
     const edits = { d1: score('x'.repeat(MAX_NOTE_LENGTH + 1)) }
 
-    expect(overLongNoteDocuments(edits)).toEqual(['d1'])
+    expect(overLongNoteRows(edits)).toEqual(['d1'])
   })
 
   it('accepts a note exactly at the bound', () => {
@@ -1407,7 +1577,7 @@ describe('overLongNoteDocuments', () => {
     // off-by-one here would block a save the API would have accepted.
     const edits = { d1: score('x'.repeat(MAX_NOTE_LENGTH)) }
 
-    expect(overLongNoteDocuments(edits)).toEqual([])
+    expect(overLongNoteRows(edits)).toEqual([])
   })
 
   it('names every offending document, not just the first', () => {
@@ -1417,23 +1587,23 @@ describe('overLongNoteDocuments', () => {
       d3: score('y'.repeat(MAX_NOTE_LENGTH + 500)),
     }
 
-    expect(overLongNoteDocuments(edits).sort()).toEqual(['d1', 'd3'])
+    expect(overLongNoteRows(edits).sort()).toEqual(['d1', 'd3'])
   })
 
   it('treats a missing note as no note rather than crashing', () => {
     // Stored ballots predate `notes` being written on every save, and this record
     // arrives from the network with no runtime guarantee it matches the type. A
     // throw here would take down the page on a save the API would have accepted.
-    expect(overLongNoteDocuments({ d1: score(undefined) })).toEqual([])
-    expect(overLongNoteDocuments({ d1: score(null) })).toEqual([])
+    expect(overLongNoteRows({ d1: score(undefined) })).toEqual([])
+    expect(overLongNoteRows({ d1: score(null) })).toEqual([])
   })
 
   it('is empty when nothing is pending', () => {
-    expect(overLongNoteDocuments({})).toEqual([])
+    expect(overLongNoteRows({})).toEqual([])
   })
 })
 
-describe('overLongNoteDocuments counts in the unit the API uses', () => {
+describe('overLongNoteRows counts in the unit the API uses', () => {
   // JS `.length` is UTF-16 code units; the API's `len()` is code points. Pinning
   // the unit, not just the number: a lockstep on the two constants would pass while
   // the page measured a different thing with them.
@@ -1451,7 +1621,7 @@ describe('overLongNoteDocuments counts in the unit the API uses', () => {
     // and quotes a limit the reviewer never reached.
     const emoji = '😀'.repeat(MAX_NOTE_LENGTH - 500)
 
-    expect(overLongNoteDocuments({ d1: score(emoji) })).toEqual([])
+    expect(overLongNoteRows({ d1: score(emoji) })).toEqual([])
   })
 
   it('still refuses astral characters past the bound', () => {
@@ -1459,6 +1629,6 @@ describe('overLongNoteDocuments counts in the unit the API uses', () => {
     // "emoji are free".
     const emoji = '😀'.repeat(MAX_NOTE_LENGTH + 1)
 
-    expect(overLongNoteDocuments({ d1: score(emoji) })).toEqual(['d1'])
+    expect(overLongNoteRows({ d1: score(emoji) })).toEqual(['d1'])
   })
 })

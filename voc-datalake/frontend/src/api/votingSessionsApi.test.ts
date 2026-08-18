@@ -48,7 +48,7 @@ describe('reading a session as the facilitator', () => {
   it('carries the state the panel decides on', async () => {
     mockFetchApi.mockResolvedValue({
       session: {
-        session_id: SESSION_ID, document_id: 'doc', document_title: 'Refunds',
+        session_id: SESSION_ID, row_id: 'row_p1_default', row_title: 'Refunds',
         status: 'open', state: 'open', ballot_cap: 40, ballot_count: 3,
       },
     })
@@ -83,12 +83,12 @@ describe('reading a session as the facilitator', () => {
 describe('what the ballot page is told before it renders a form', () => {
   it('reads an open session', async () => {
     fetchMock.mockResolvedValue(jsonResponse({
-      session: { open: true, reason: null, document_title: 'Refunds' },
+      session: { open: true, reason: null, row_title: 'Refunds' },
     }))
 
     const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    expect(config).toEqual({ open: true, reason: null, document_title: 'Refunds' })
+    expect(config).toEqual({ open: true, reason: null, row_title: 'Refunds' })
   })
 
   it('asks for it without a Content-Type, which a GET has no body to describe', async () => {
@@ -110,7 +110,7 @@ describe('what the ballot page is told before it renders a form', () => {
 
     const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    expect(config).toEqual({ open: false, reason: null, document_title: '' })
+    expect(config).toEqual({ open: false, reason: null, row_title: '' })
   })
 
   it('normalises an absent reason to null rather than leaving it undefined', async () => {

@@ -287,6 +287,18 @@ function SortControls({
  */
 const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
 
+/**
+ * Query key for the prioritization read: rows, the caller's ballots, the team aggregates.
+ *
+ * A constant for the same reason as `ALL_PROJECT_DETAILS_KEY`, and more urgently: it is
+ * fetched once and invalidated from THREE places (after a save, after the prototype
+ * re-sign, and after the row-ensure effect below). Spelled four times, a rename would
+ * leave the invalidations matching nothing and the page would show stale rows after a
+ * save with nothing failing. Stays private to this page per the rule in
+ * api/projectQueryKeys.
+ */
+const PRIORITIZATION_SCORES_KEY = ['prioritization-scores'] as const
+
 function PRFAQList({
   isLoading, rows, scores, aggregates, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
@@ -511,7 +523,7 @@ export default function Prioritization() {
   const {
     data: savedScores, isError: scoresFailed, isPending: scoresPending,
   } = useQuery({
-    queryKey: ['prioritization-scores'],
+    queryKey: PRIORITIZATION_SCORES_KEY,
     queryFn: () => api.getPrioritizationScores(),
     select: selectPrioritization,
     enabled: config.apiEndpoint.length > 0,
@@ -610,29 +622,41 @@ export default function Prioritization() {
    *
    * Fired from an effect rather than lazily per row because the rows ARE the list: a
    * project whose row does not exist yet has nothing to render, so there is no row to
-   * hang a lazy create off. Failures are deliberately silent here: a project whose row
-   * could not be created simply does not appear this time round, the page's own empty
-   * state covers a backlog with no rows, and a red panel per project would report an
-   * error a reader cannot act on.
+   * hang a lazy create off. Failures are silent ON SCREEN — the page's own empty state
+   * covers a backlog with no rows, and a red panel per project would report an error a
+   * reader cannot act on — but they are NOT forgotten: a rejected ask is un-marked
+   * below so the next pass retries it. Marked-and-never-cleared meant one transient 500
+   * or one throttle hid that project for the whole mount, on a page whose entire
+   * content is rows, with nothing on screen saying so and no way for the reader to get
+   * it back short of a reload.
    *
-   * `void`, and no `await` of the settled results: what the page reads is the
-   * prioritization query, which is invalidated once when the asks finish. Refetching
-   * per project would fan out N reads of a whole partition.
+   * `void`, and no `await` of the settled results in the effect body: what the page
+   * reads is the prioritization query, which is invalidated once when the asks finish.
+   * Refetching per project would fan out N reads of a whole partition.
    */
   const rowsEnsured = useRef(new Set<string>())
   useEffect(() => {
     if (config.apiEndpoint.length === 0 || rowProjectIds.length === 0) return
-    // Asked ONCE per project per mount. Without this the effect re-runs whenever the
-    // project read is refetched — which the prototype re-signing does hourly, and
-    // which the invalidation below triggers directly — and each pass would spend one
-    // refused conditional write per project.
+    // Asked ONCE per project per mount, while the ask keeps succeeding. Without this
+    // the effect re-runs whenever the project read is refetched — which the prototype
+    // re-signing does hourly, and which the invalidation below triggers directly — and
+    // each pass would spend one refused conditional write per project.
     const pending = rowProjectIds.filter((id) => !rowsEnsured.current.has(id))
     if (pending.length === 0) return
+    // Marked BEFORE the request, not after: two renders in the same tick would
+    // otherwise both see an unmarked id and both write.
     for (const id of pending) rowsEnsured.current.add(id)
     void Promise.allSettled(
       pending.map((id) => api.createPrioritizationRow(id)),
-    ).then(() => {
-      void queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] })
+    ).then((results) => {
+      // A failed ask is released, so a later render of this same mount — the
+      // invalidation below, an hourly prototype re-sign, any project refetch — asks
+      // again. Idempotent server-side, so a retry costs one refused conditional write
+      // and never a duplicate row.
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') rowsEnsured.current.delete(pending[index])
+      })
+      void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
     })
     // `rowProjectKey` rather than the array: see its own comment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -707,7 +731,7 @@ export default function Prioritization() {
     mutationFn: () => api.patchPrioritizationScores(localEdits),
     onSuccess: () => {
       setLocalEdits({})
-      void queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] })
+      void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
     },
   })
 

@@ -181,16 +181,44 @@ describe('collectProjectDocumentIds', () => {
 })
 
 describe('buildLinkedFormsByDocument', () => {
-  it('keys each row\'s forms by document_id', () => {
+  it('keys forms by document_id for every document a row holds', () => {
+    // ONE row, TWO documents — which is the shape a row now has. Its evidence stays
+    // attached to the document it belongs to: a form pinned to the PR/FAQ must not
+    // also appear under the PRD just because one ballot now covers both.
     const pinned = form({ form_id: 'f1', project_id: 'p1', document_id: 'doc_prfaq' })
-    const rows = [
-      { project_id: 'p1', document_id: 'doc_prfaq' },
-      { project_id: 'p1', document_id: 'doc_prd' },
-    ]
+    const rows = [{
+      project_id: 'p1',
+      documents: [{ document_id: 'doc_prfaq' }, { document_id: 'doc_prd' }],
+    }]
 
     const byDocument = buildLinkedFormsByDocument([pinned], rows, new Map([['p1', liveDocs]]))
 
     expect(byDocument.get('doc_prfaq')).toEqual([pinned])
     expect(byDocument.get('doc_prd')).toEqual([])
+  })
+
+  it('keys documents from every row, not only the first', () => {
+    const forP1 = form({ form_id: 'f1', project_id: 'p1', document_id: 'doc_prfaq' })
+    const rows = [
+      { project_id: 'p1', documents: [{ document_id: 'doc_prfaq' }] },
+      { project_id: 'p2', documents: [{ document_id: 'doc_other' }] },
+    ]
+
+    const byDocument = buildLinkedFormsByDocument(
+      [forP1], rows, new Map([['p1', liveDocs], ['p2', new Set(['doc_other'])]]),
+    )
+
+    expect(byDocument.get('doc_prfaq')).toEqual([forP1])
+    expect(byDocument.get('doc_other')).toEqual([])
+  })
+
+  it('a row holding no documents contributes no keys rather than throwing', () => {
+    // A stored row whose `document_ids` resolve to nothing on screen still reaches
+    // here. The page is built from this map, so an empty row must be uneventful.
+    const byDocument = buildLinkedFormsByDocument(
+      [], [{ project_id: 'p1', documents: [] }], new Map([['p1', liveDocs]]),
+    )
+
+    expect(byDocument.size).toBe(0)
   })
 })
