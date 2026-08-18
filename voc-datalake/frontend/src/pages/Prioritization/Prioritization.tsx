@@ -40,8 +40,56 @@ import type {
 } from './prioritizationUtils'
 import type { LinkedForm } from './formLinkUtils'
 import type {
-  Project, PrioritizationScore, PrioritizationBallotEdit,
+  Project, PrioritizationScore, PrioritizationBallotEdit, PrioritizationRow,
 } from '../../api/types'
+
+/**
+ * Is this rejection the server's settled answer, rather than a passing failure?
+ *
+ * The row-ensure retries a rejected ask, which is right for a throttle or a 500 and
+ * wrong for a refusal: a 403, or a 400 because the create route and
+ * `projectsNeedingARow` disagree about what is scorable, says the same thing however
+ * many times it is asked, so releasing it re-asks on every project refetch for the
+ * whole mount.
+ *
+ * Read off the MESSAGE because that is all `fetchApi` keeps — it throws
+ * `API Error: {status}` and discards the body — so the status is recovered from the
+ * text rather than from a field no error carries. Anything unrecognised counts as
+ * transient, which keeps the retry the default: a network failure has no status at
+ * all, and hiding a project is the worse of the two mistakes.
+ */
+function isPermanentRefusal(reason: unknown): boolean {
+  const message = reason instanceof Error ? reason.message : ''
+  const status = Number(/^API Error: (\d{3})$/.exec(message)?.[1])
+  return status >= 400 && status < 500
+}
+
+/**
+ * The rows a batch of row-ensure asks actually handed back, keyed by row id.
+ *
+ * The create route is idempotent and answers the STORED row whether it just wrote it
+ * or found it, so every fulfilled ask carries a row the server holds — the same record
+ * the prioritization read reports, one round trip earlier. Keeping them is what lets
+ * the list survive a read that fails or has not landed.
+ *
+ * A fulfilled ask with no `row` — or one whose id is empty — contributes nothing: the
+ * field is optional on the wire, and a row the page cannot address is a row no ballot,
+ * aggregate or expansion could ever be looked up against.
+ *
+ * At module level rather than inside the effect for the reason `selectPrioritization`
+ * is: this is a pure mapping over a response, and nesting it there put a closure four
+ * levels deep inside a `useEffect` inside a component, which the lint budget refuses.
+ */
+function rowsAnswered(
+  results: readonly PromiseSettledResult<{ readonly row?: PrioritizationRow }>[],
+): Record<string, PrioritizationRow> {
+  const answered = results.flatMap(
+    (result) => (result.status === 'fulfilled' && result.value.row ? [result.value.row] : []),
+  )
+  return Object.fromEntries(
+    answered.filter((row) => row.row_id.length > 0).map((row) => [row.row_id, row]),
+  )
+}
 
 /**
  * The prioritization read, validated at the query boundary — BOTH halves of it.
@@ -96,7 +144,7 @@ const selectPrioritization = (data: PrioritizationRead) => ({
  * running, or arrived naming documents with not one readable row among them) the
  * three team-derived cards show a dash rather than a count. A zero is a claim ("none
  * of these is high priority") and "1 Not Scored" for every document in the backlog is
- * a false one; no such read said anything about any of them. Only "Total Documents"
+ * a false one; no such read said anything about any of them. Only "Total Proposals"
  * survives, because that is counted off the project read, which is a different query
  * and may well have succeeded already.
  */
@@ -118,7 +166,7 @@ function StatsCards({
   const uncountable = uncountableTeamRead(aggregates)
   /**
    * Rows the response named but could not be read — the gap the line under the grid
-   * explains. When the cards are counting, a marked row is in "Total Documents" and in
+   * explains. When the cards are counting, a marked row is in "Total Proposals" and in
    * no other card: it is not high, medium or low (no number), and calling it "Not
    * Scored" is the conflation the row label refuses. Leaving that silent made the
    * cards stop adding up with nothing on the page saying why. Zero when the read is
@@ -635,12 +683,13 @@ export default function Prioritization() {
    * Refetching per project would fan out N reads of a whole partition.
    */
   const rowsEnsured = useRef(new Set<string>())
+  const [ensuredRows, setEnsuredRows] = useState<Record<string, PrioritizationRow>>({})
   useEffect(() => {
     if (config.apiEndpoint.length === 0 || rowProjectIds.length === 0) return
     // Asked ONCE per project per mount, while the ask keeps succeeding. Without this
     // the effect re-runs whenever the project read is refetched — which the prototype
-    // re-signing does hourly, and which the invalidation below triggers directly — and
-    // each pass would spend one refused conditional write per project.
+    // re-signing does hourly — and each pass would spend one refused conditional write
+    // per project.
     const pending = rowProjectIds.filter((id) => !rowsEnsured.current.has(id))
     if (pending.length === 0) return
     // Marked BEFORE the request, not after: two renders in the same tick would
@@ -649,14 +698,42 @@ export default function Prioritization() {
     void Promise.allSettled(
       pending.map((id) => api.createPrioritizationRow(id)),
     ).then((results) => {
-      // A failed ask is released, so a later render of this same mount — the
-      // invalidation below, an hourly prototype re-sign, any project refetch — asks
-      // again. Idempotent server-side, so a retry costs one refused conditional write
-      // and never a duplicate row.
+      // A TRANSIENT failure is released, so a later render of this same mount — an
+      // hourly prototype re-sign, any project refetch — asks again. Idempotent
+      // server-side, so a retry costs one refused conditional write and never a
+      // duplicate row.
+      //
+      // A REFUSAL is not released. A 4xx is the server's settled answer about this
+      // project — no permission, or no scorable document by the route's reading of it,
+      // which is a disagreement with `projectsNeedingARow` that asking again cannot
+      // resolve — so releasing it re-asks on every project refetch for the whole mount
+      // and never gets a different reply.
       results.forEach((result, index) => {
-        if (result.status === 'rejected') rowsEnsured.current.delete(pending[index])
+        if (result.status !== 'rejected') return
+        if (!isPermanentRefusal(result.reason)) rowsEnsured.current.delete(pending[index])
       })
-      void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
+      // The rows the asks HANDED BACK, kept rather than discarded. Each is the row the
+      // server holds for that project — created just now or already there, since the
+      // route is idempotent and answers the stored row either way — so it is the same
+      // record the read below reports, arriving one round trip earlier. Keeping it is
+      // what makes the list survive a prioritization read that fails or is still in
+      // flight: rows ARE the page's content now, and read from that one query alone a
+      // 500 on the scores emptied the whole page rather than only the numbers on it.
+      const answered = rowsAnswered(results)
+      setEnsuredRows((known) => ({
+        ...known,
+        ...answered,
+      }))
+      // Refetched only when an ask actually CREATED something, which is what makes the
+      // read out of date. `created: false` — the common case, since the route is
+      // idempotent and every mount after the first only confirms rows that exist —
+      // leaves the read alone: it either already reports those rows or is about to, and
+      // invalidating unconditionally spent one whole-partition read per mount and
+      // discarded a response the reader was already looking at.
+      const created = results.some(
+        (result) => result.status === 'fulfilled' && result.value.created === true,
+      )
+      if (created) void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
     })
     // `rowProjectKey` rather than the array: see its own comment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -669,10 +746,35 @@ export default function Prioritization() {
    * `collectRows` decides what each row holds from the server's own `document_ids`,
    * not by recomputing "every scorable document of this project" — a row stores
    * concrete ids, so generating a new PRD leaves existing rows alone.
+   *
+   * TWO sources for one map, and the READ WINS where both name a row. The read is
+   * authoritative — it reports every row in the partition, including ones this page
+   * never asked for — while `ensuredRows` covers the window the read cannot: the
+   * prioritization query failing, or not having landed, on a page whose entire content
+   * is rows. Without it a 500 on the scores read left the reader an empty backlog with
+   * "no documents found" over data that exists, rather than the rows they can see with
+   * the numbers marked unavailable, which is the distinction the rest of this page is
+   * built to keep.
+   *
+   * The three absences `normalizeRows` distinguishes all land here as "the read adds
+   * nothing to what the asks confirmed", which is why the `?? {}` is honest rather than
+   * a collapse of that distinction: an absent field (a deployment predating rows), an
+   * unreadable one, and a read that has not delivered are all states in which the only
+   * rows anybody has vouched for are the ones the create route handed back — and it
+   * vouches for each by returning it. An EMPTY map is different only in that it adds
+   * nothing to merge, and with no asks answered yet it leaves the page's own empty
+   * state, which is the honest reading of a deployment that holds no rows.
    */
   const allRows = useMemo(
-    () => collectRows(savedScores?.rows ?? {}, allProjectDetails, projects),
-    [savedScores, allProjectDetails, projects],
+    () => collectRows(
+      {
+        ...ensuredRows,
+        ...(savedScores?.rows ?? {}),
+      },
+      allProjectDetails,
+      projects,
+    ),
+    [savedScores, ensuredRows, allProjectDetails, projects],
   )
 
   // True when data is loaded, nothing is scorable, but non-scorable documents exist.
