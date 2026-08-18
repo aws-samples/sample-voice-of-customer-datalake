@@ -5,7 +5,7 @@ import os
 import sys
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from datetime import datetime, timezone
 
 # Add lambda directory to path for shared module imports
@@ -29,6 +29,20 @@ os.environ['SECRETS_ARN'] = 'arn:aws:secretsmanager:us-east-1:123456789012:secre
 os.environ['RAW_DATA_BUCKET'] = 'test-raw-data-bucket'
 os.environ['PROCESSING_QUEUE_URL'] = 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue'
 os.environ['USER_POOL_ID'] = 'us-east-1_testpool'
+
+
+@pytest.fixture
+def feedback_form_handler():
+    """The imported `feedback_form_handler` module.
+
+    `sys.path` already carries `lambda/api` (set at the top of this file), so the
+    import needs no per-test path juggling. A fixture rather than a module-level
+    import so that a test importing it is still what triggers the import, and a
+    handler that cannot be imported fails the tests that use it rather than
+    collection of the whole file.
+    """
+    import feedback_form_handler
+    return feedback_form_handler
 
 
 @pytest.fixture

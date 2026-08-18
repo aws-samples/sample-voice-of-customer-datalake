@@ -1,7 +1,43 @@
+import type { TFunction } from 'i18next'
 import type { FeedbackItem } from '../../api/client'
 
 export type ViewMode = 'grid' | 'list'
 export type SentimentFilter = 'all' | 'positive' | 'negative' | 'neutral' | 'mixed'
+
+/** Direction of the star-rating filter: at least N stars, or at most N stars. */
+export type RatingDirection = 'up' | 'below'
+
+/** Star-rating filter. `value` 0 means "any rating" (direction is inert). */
+export interface RatingFilter {
+  /** 1-5 star threshold; 0 = any rating. */
+  value: number
+  /** 'up' = value or more stars; 'below' = value or fewer stars. */
+  direction: RatingDirection
+}
+
+export const ANY_RATING_FILTER: Readonly<RatingFilter> = Object.freeze({ value: 0, direction: 'up' as const })
+
+/**
+ * True when an item's star rating passes the filter. Unrated items are
+ * excluded in BOTH directions once a threshold is set — "3 stars and below"
+ * implies the item was rated, mirroring how "3+ stars" always behaved.
+ */
+export function matchesRatingFilter(rating: number | undefined, filter: RatingFilter): boolean {
+  if (filter.value === 0) return true
+  if (!rating) return false
+  return filter.direction === 'up' ? rating >= filter.value : rating <= filter.value
+}
+
+/**
+ * Compact localized label for active-filter summaries, e.g. "3+ stars" /
+ * "≤3 stars". Keys are namespace-prefixed so any `t` works as long as the
+ * `categories` namespace is loaded.
+ */
+export function ratingFilterLabel(filter: RatingFilter, t: TFunction): string {
+  return filter.direction === 'up'
+    ? t('categories:starsMin', { count: filter.value })
+    : t('categories:starsMaxShort', { count: filter.value })
+}
 
 export interface CategoryData {
   name: string

@@ -39,13 +39,17 @@ vi.mock('./TemplateWizard', () => ({
 
 vi.mock('./FormCard', () => ({
   default: ({ form, onEdit, onDelete, onToggle }: { 
-    form: { form_id: string; name: string; enabled: boolean }
+    form: { form_id: string; name: string; enabled: boolean; theme?: { primary_color: string } }
     onEdit: (f: unknown) => void
     onDelete: (id: string) => void
     onToggle: (id: string, enabled: boolean) => void
   }) => (
     <div data-testid={`form-card-${form.form_id}`}>
       <span>{form.name}</span>
+      {/* Surfaces whether the page delivered a normalized form (issue #171). */}
+      <span data-testid={`form-card-${form.form_id}-theme`}>
+        {form.theme ? form.theme.primary_color : 'missing-theme'}
+      </span>
       <button onClick={() => onEdit(form)}>Edit</button>
       <button onClick={() => onDelete(form.form_id)}>Delete</button>
       <button onClick={() => onToggle(form.form_id, !form.enabled)}>Toggle</button>
@@ -54,6 +58,7 @@ vi.mock('./FormCard', () => ({
 }))
 
 import FeedbackForms from './FeedbackForms'
+import { defaultFormConfig } from './formTemplates'
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -138,6 +143,36 @@ describe('FeedbackForms', () => {
       render(<FeedbackForms />, { wrapper: createWrapper() })
 
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+    })
+  })
+
+  describe('sparse wire records (issue #171)', () => {
+    it('normalizes theme-less legacy forms at the query boundary before they reach cards', async () => {
+      // Exactly what the wire delivered when /feedback-forms crashed:
+      // identity fields only, no theme, no custom_fields.
+      mockGetFeedbackForms.mockResolvedValue({
+        forms: [{ form_id: 'form-legacy', name: 'Legacy Form', enabled: false }],
+      })
+
+      render(<FeedbackForms />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('form-card-form-legacy')).toBeInTheDocument()
+      })
+      // The card must receive a normalized form with a usable theme.
+      expect(screen.getByTestId('form-card-form-legacy-theme')).toHaveTextContent(
+        defaultFormConfig.theme.primary_color,
+      )
+    })
+
+    it('renders an empty list when the response has no forms array', async () => {
+      mockGetFeedbackForms.mockResolvedValue({})
+
+      render(<FeedbackForms />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('No feedback forms yet')).toBeInTheDocument()
+      })
     })
   })
 

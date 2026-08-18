@@ -1,5 +1,7 @@
 import { NagPackSuppression } from 'cdk-nag';
 
+import { bedrockFoundationModelSuppressionTargets } from './model-allowlist';
+
 /**
  * cdk-nag suppressions for the VoC Data Lake project
  * Add suppressions here as we review and approve them
@@ -83,6 +85,21 @@ export const apiSecretsSuppressions: NagPackSuppression[] = [
   },
 ];
 
+// CloudFront URL-signing key (issue #229)
+export const cdnSigningKeySuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-SMG4',
+    reason:
+      'Automatic rotation would be actively harmful here. This secret holds the RSA private key '
+      + 'that signs /avatars/* and /prototypes/* URLs; rotating it invalidates every signed URL '
+      + 'already delivered to a browser, and the matching CloudFront PublicKey and KeyGroup would '
+      + 'have to be replaced in the same instant to stay consistent. Rotation is therefore a '
+      + 'deliberate, coordinated operation: delete the secret value and redeploy, which makes the '
+      + 'bootstrap custom resource mint a fresh keypair. Exposure is bounded instead by the '
+      + 'short signed-URL TTL (CDN_SIGNED_URL_TTL_SECONDS, 1h by default).',
+  },
+];
+
 // DynamoDB Global Secondary Index access
 export const dynamoDbGsiSuppressions: NagPackSuppression[] = [
   {
@@ -138,34 +155,53 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-IAM5',
     reason: 'Bedrock foundation model ARNs require region wildcard as models are cross-region resources',
-    appliesTo: [
-      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      'Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
-    ],
+    // DERIVED from lib/utils/model-allowlist.ts (every grantable model: the
+    // picker allowlist plus fallback safety nets) so a model added there can
+    // never leave a stale or missing suppression behind. Only the
+    // foundation-model ARNs carry a region wildcard; the inference-profile
+    // ARNs are region/account-scoped and need no suppression.
+    appliesTo: bedrockFoundationModelSuppressionTargets(),
   },
 ];
 
 // Dynamic plugin system - Lambda and EventBridge wildcards
-export const pluginSystemSuppressions: NagPackSuppression[] = [
+//
+// A FUNCTION of the deployment prefix, not a constant: the findings these
+// suppress quote the concrete resource ARN, so under `-c deploymentPrefix=stg`
+// the ARN reads `function:stg-voc-ingestor-*` and a hardcoded `voc-ingestor-`
+// regex silently stops matching — leaving a fresh AwsSolutions-IAM5 warning on
+// every prefixed synth. With no prefix the strings are unchanged.
+export function pluginSystemSuppressions(deploymentPrefix?: string): NagPackSuppression[] {
+  // Safe to interpolate into a regex: validateDeploymentPrefix() admits a
+  // leading lowercase letter followed by lowercase letters, digits and inner
+  // hyphens — none of which are regex metacharacters.
+  const p = deploymentPrefix ? `${deploymentPrefix}-` : '';
+  return [
   {
     id: 'AwsSolutions-IAM5',
     reason: 'Plugin system requires wildcards for dynamic Lambda function names and EventBridge rules created at runtime',
     appliesTo: [
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-webscraper-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-manual-import-processor-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-projects-api-\*/' },
-      { regex: '/Resource::arn:aws:events:.*:.*:rule.voc-ingest-.*-schedule/' },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-webscraper-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-manual-import-processor-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-projects-api-\*/` },
+      { regex: `/Resource::arn:aws:events:.*:.*:rule.${p}voc-ingest-.*-schedule/` },
     ],
   },
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations',
+    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations and async job Lambda invocations',
     appliesTo: [
       { regex: '/Resource::<.*ResearchStepLambda.*\.Arn>:\*/' },
       { regex: '/Resource::<.*ModelAgreementLambda.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*PersonaGeneratorJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*DocumentGeneratorJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*DocumentMergerJob.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
     ],
   },
-];
+  ];
+}
 
 // CDK deployment assets
 export const cdkAssetsSuppressions: NagPackSuppression[] = [
@@ -239,5 +275,24 @@ export const publicFeedbackEndpointSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-COG4',
     reason: 'Feedback form endpoints are intentionally public to allow anonymous customer feedback submission - Cognito authentication would prevent external users from submitting feedback',
+  },
+];
+
+// Public ballot endpoints (intentionally unauthenticated).
+//
+// Separate from the feedback-form list above, deliberately: the reason differs,
+// and one shared suppression would let a reviewer of a future public route read a
+// justification about customer feedback and think it had been assessed. The
+// control here is the voting session — a ballot is accepted only against a valid
+// unguessable session token, only while that session is open and unexpired, and
+// only up to its ballot cap, enforced by a conditional atomic increment.
+export const publicBallotEndpointSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-APIG4',
+    reason: 'Anonymous prioritization ballots are submitted by attendees from personal phones with no account; the unguessable voting-session token, its open/closed state, its expiry and its ballot cap are the authorization',
+  },
+  {
+    id: 'AwsSolutions-COG4',
+    reason: 'Cognito authentication would defeat the feature - a room scores a proposal without accounts; the session record authorizes each write and closing the session revokes it',
   },
 ];

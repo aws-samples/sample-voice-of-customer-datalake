@@ -1,0 +1,48 @@
+{
+  "configureApi": "Please configure your API endpoint in Settings",
+  "filters": {
+    "allCategories": "All Categories",
+    "allSources": "All Sources",
+    "allSubcategories": "All Subcategories",
+    "clear": "Clear",
+    "collapse": "Collapse",
+    "collapseAll": "Collapse All",
+    "expand": "Expand",
+    "expandAll": "Expand All",
+    "pdf": "PDF",
+    "showResolved": "Show resolved",
+    "similarity": "Similarity:",
+    "similarityHigh": "High",
+    "similarityLow": "Low",
+    "similarityMed": "Med",
+    "similarityOff": "Off",
+    "urgentOnly": "Urgent only"
+  },
+  "noDataHint": "Try expanding the time range or adjusting filters",
+  "noDataTitle": "No problem analysis data found for the selected period",
+  "stats": {
+    "categories": "Categories",
+    "feedback": "Feedback",
+    "loadFailed": "Could not load feedback for this window, so no counts are shown. Retry, or narrow the time range.",
+    "loadingWindow": "Loading feedback… {{loaded, number}} of {{total, number}} so far.",
+    "partialWindow": "Counts cover {{loaded, number}} of {{total, number}} items in this window.",
+    "problems": "Problems",
+    "retry": "Retry",
+    "subcategories": "Subcategories",
+    "urgent": "Urgent"
+  },
+  "tree": {
+    "markResolved": "Mark as resolved",
+    "markUnresolved": "Mark as unresolved",
+    "original": "Original: {{text}}",
+    "problems_one": "{{count}} problem",
+    "problems_other": "{{count}} problems",
+    "resolved": "Resolved",
+    "reviews_one": "{{count}} review",
+    "reviews_other": "{{count}} reviews",
+    "similar": "Similar:",
+    "sub_one": "{{count}} sub",
+    "sub_other": "{{count}} sub",
+    "unknown": "Unknown"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "contactAdmin": "如需访问权限，请联系管理员。",
+  "enterPassword": "输入密码",
+  "enterUsername": "输入用户名",
+  "errors": {
+    "failedNewPassword": "设置新密码失败",
+    "failedResetPassword": "重置密码失败",
+    "failedSendCode": "发送验证码失败",
+    "loginFailed": "登录失败",
+    "passwordResetSuccess": "密码重置成功，请重新登录。",
+    "passwordsDoNotMatch": "密码不匹配",
+    "passwordTooShort": "密码至少需要8个字符",
+    "sessionExpired": "会话已过期，请重新登录。",
+    "verificationCodeSent": "验证码已发送到您的邮箱"
+  },
+  "forgotPassword": "忘记密码？",
+  "newPassword": {
+    "confirmLabel": "确认密码",
+    "confirmPlaceholder": "再次输入新密码",
+    "description": "您需要为账户设置新密码。",
+    "label": "新密码",
+    "placeholder": "输入新密码",
+    "settingPassword": "正在设置密码...",
+    "showPassword": "显示密码",
+    "submit": "设置密码",
+    "title": "设置新密码"
+  },
+  "password": "密码",
+  "resetPassword": {
+    "backToLogin": "返回登录",
+    "description": "输入用户名以接收验证码。",
+    "sendCode": "发送验证码",
+    "sendingCode": "正在发送验证码...",
+    "title": "重置密码"
+  },
+  "signIn": "登录",
+  "signingIn": "正在登录...",
+  "usernameOrEmail": "用户名或邮箱",
+  "verifyCode": {
+    "description": "请查看邮箱中的验证码。",
+    "label": "验证码",
+    "placeholder": "输入验证码",
+    "resettingPassword": "正在重置密码...",
+    "submit": "重置密码",
+    "title": "输入验证码"
+  }
+}

@@ -7,7 +7,7 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 - **AWS CLI** configured with appropriate credentials
 - **Node.js** 18+ and npm
 - **Python** 3.12+ (for Lambda functions)
-- **Docker** (for building Lambda layers)
+- **Docker or Finch** (for building Lambda layers and CDK asset bundling)
 
 ## Project Structure
 
@@ -32,7 +32,7 @@ From the project root:
 # Install all dependencies
 npm run install:all
 
-# Build Lambda layers (requires Docker)
+# Build Lambda layers (requires Docker; Finch users: CDK_DOCKER=finch npm run build:layers)
 npm run build:layers
 
 # Bootstrap CDK (first time only)
@@ -48,22 +48,34 @@ Always run quality checks before deploying:
 
 ```bash
 # From project root
-npm run lint         # ESLint code quality
-npm run typecheck    # TypeScript type checking
-npm run test         # Run test suite
+npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/
+npm run typecheck    # frontend TypeScript only
+npm run test         # frontend Vitest only
 
 # Or run all at once
-npm run check        # lint + typecheck + test
+npm run check        # lint + typecheck:all + test + test:cdk + test:stream + test:backend
 ```
 
 ### What Each Check Does
 
-| Command | Description |
-|---------|-------------|
-| `npm run lint` | Runs ESLint to catch code quality issues |
-| `npm run typecheck` | Runs TypeScript compiler to verify types |
-| `npm run test` | Runs Vitest test suite (frontend + CDK) |
-| `npm run test:coverage` | Runs tests with coverage report |
+| Command | Covers |
+|---------|--------|
+| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
+| `npm run typecheck` | Frontend only — use `typecheck:all` for frontend + CDK + stream |
+| `npm run test` | Frontend Vitest only |
+| `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
+| `npm run test:stream` | Streaming chat Lambda Vitest |
+| `npm run test:backend` | Python pytest via `.venv/bin/python` |
+| `npm run check` | All of the above, chained with `&&` |
+| `npm run test:coverage` | Frontend tests with coverage report |
+
+Two things to know about the gate:
+
+- **`check` chains with `&&`, so the first failure hides every later step.** If
+  `lint:python` fails you never find out whether the CDK or backend tests pass.
+  When triaging, run the individual scripts rather than inferring from `check`.
+- **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
+  only by `typecheck:cdk`, so "lint is clean" says nothing about the CDK app.
 
 ### Python Lambda Tests
 
@@ -92,7 +104,9 @@ Anthropic requires first-time customers to submit use case details before invoki
 
 ### Automatic Setup via CDK
 
-The `BedrockAccessStack` automates this process. To enable it:
+The model-access half of `VocWebSearchStack` automates this process (it was its
+own `BedrockAccessStack` before the two us-east-1 stacks were merged). To enable
+it:
 
 1. Copy the example config:
    ```bash
@@ -130,6 +144,25 @@ The `BedrockAccessStack` automates this process. To enable it:
 | `useCases` | Yes | Description of how you'll use the models |
 | `otherIndustryOption` | No | Specify if industryOption is "Other" |
 
+### Accounts That Already Have Model Access
+
+If your account already has Anthropic model access (a previous submission,
+organization-level access, or an AWS-internal account), the use case
+submission is skipped gracefully: rejections such as
+`Internal Accounts should not submit use case details` are treated as a
+no-op instead of failing the deployment. Permission and throttling errors
+still fail loudly.
+
+You can also skip the submission entirely via `cdk.context.json`:
+
+```json
+{
+  "skipUseCaseSubmission": true
+}
+```
+
+or on the CLI: `cdk deploy --all --context skipUseCaseSubmission=true`.
+
 ### Security Note
 
 The `anthropicUseCase` config contains company information. For open source forks:
@@ -150,15 +183,35 @@ Access is granted immediately after successful submission.
 
 ## CDK Stacks
 
-The platform consists of 5 CDK stacks:
+The platform consists of 4 core stacks plus 1 AI-enablement stack.
+
+> The web-search gateway and Bedrock model access used to be two separate
+> stacks (`VocWebSearchStack` and `BedrockAccessStack`). They were merged
+> because they are the same deployment unit: both must live in us-east-1, both
+> are one-shot account enablement built from custom resources, and neither
+> depends on the core chain. The merged stack keeps the id `VocWebSearchStack`
+> because that id determines the export names `VocProcessingStack` and
+> `VocApiStack` import.
+>
+> **Adding a stack is not a free action.** A downstream packaging consumer of
+> this repo caps the template count at five, so a sixth stack breaks it — and
+> the failure appears only at packaging time, never at `cdk synth`. Prefer
+> folding new infrastructure into an existing stack.
+>
+> **Migrating an existing deployment:** run `cdk deploy --all` (the agreements
+> are recreated in `VocWebSearchStack` and re-run idempotently — Bedrock
+> agreements persist per account, so nothing is lost), then delete the old
+> stack with `cdk destroy BedrockAccessStack`. CDK does not remove a stack that
+> has been dropped from the app, so that second step is manual. No gateway is
+> recreated and there is no feature downtime.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
-| `VocProcessingStackConsolidated` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
+| `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `VocBedrockAccessStack` | Bedrock model access configuration | None |
+| `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) Bedrock model access / Anthropic use-case submission — created only when `anthropicUseCase` is set in `cdk.context.json`. The stack is not created at all when both are off. Always deploys to us-east-1: the web-search connector exists only there, and `PutUseCaseForModelAccess` works only there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
 
@@ -174,7 +227,7 @@ cd voc-datalake
 # Deploy specific stack
 cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
-cdk deploy VocProcessingStackConsolidated
+cdk deploy VocProcessingStack
 cdk deploy VocApiStack
 
 # Deploy multiple stacks
@@ -184,16 +237,151 @@ cdk deploy VocCoreStack VocIngestionStack
 cdk deploy --all --require-approval never
 ```
 
+A clean `cdk synth`/`cdk deploy` prints **zero warnings** — treat any new
+warning as a regression to investigate rather than noise to ignore.
+
+### Two Deployments in One Account and Region
+
+Every physical name is `{base}-{account}-{region}`, which keeps two AWS accounts
+apart but **not** two deployments inside one account and region — those resolve
+to identical names, so a second deploy would update the first deployment's
+stacks. `-c deploymentPrefix=<prefix>` supplies the missing dimension, so a
+staging copy can sit beside a demo copy in one account:
+
+```bash
+# the original deployment — unchanged, no flag, nothing to migrate
+npm run deploy:infra
+
+# a second, fully independent copy
+cd voc-datalake
+cdk deploy --all -c deploymentPrefix=b --require-approval never
+```
+
+The prefix reaches stack names (`b-VocCoreStack`), every physical resource name
+(`b-voc-feedback-<account>-<region>`), all CloudFormation exports, and the IAM
+wildcards that would otherwise let one copy invoke the other's ingestors. Pass
+the same flag on **every** command for that deployment — `cdk deploy`,
+`cdk diff`, `cdk destroy`.
+
+The two frontend shell scripts cannot see CDK context, so they take the stack
+names as environment variables instead. **Both** need them, and forgetting them
+on `deploy:frontend` is the expensive one: it resolves the *unprefixed*
+deployment's bucket and CloudFront distribution and syncs this build over that
+site, silently, because every output resolves fine.
+
+```bash
+# frontend of the prefixed deployment (build + S3 sync + invalidation),
+# from the repository root
+CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack npm run deploy:frontend
+
+# local .env pointed at the prefixed deployment, from voc-datalake/frontend/
+cd voc-datalake/frontend
+CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack bash scripts/update-env.sh
+```
+
+There is no limit of two: the prefix is a namespace, so any number of copies can
+coexist. Verified by synthesizing three (`b`, `c`, `e`) and intersecting every
+name they generate — **no shared stack name, physical resource name, export name
+or IAM policy ARN between any pair.** What is shared is listed under
+"Known limitations" below.
+
+Three things to know before using it:
+
+- **The prefix must start with a lowercase letter.** It reaches CloudFormation
+  *stack* names, which must match `/^[A-Za-z][A-Za-z0-9-]*$/`, so a leading digit
+  is rejected at synth even though `9-voc-raw-data-…` would be a perfectly valid
+  bucket name. Combined with the one-character budget below, that makes 26
+  usable prefixes on the committed defaults, plus the unprefixed deployment.
+
+- **It is opt-in, and it must stay that way for an existing deployment.**
+  Renaming a DynamoDB table, S3 bucket or Cognito user pool is a
+  CloudFormation *replacement*, not a rename: adding the flag to a deployment
+  that was created without it would leave the old data behind in orphaned
+  resources. There is deliberately no `deploymentPrefix` in
+  `cdk.context.json` — it is a per-deployment CLI flag, not project config.
+  With no flag the synthesized templates are byte-identical to a build from
+  before the flag existed, which `lib/app-baseline.test.ts` enforces.
+- **On the committed defaults the prefix has to be ONE character.** That is why
+  the example above is `b` and not `stg`. Lambda function, IAM role and
+  EventBridge rule names cap at 64 characters, and with the `pluginStatus` in
+  `cdk.context.json` the longest name the app generates
+  (`voc-ingest-app_reviews_android-schedule` plus `-<account>-<region>`) already
+  uses 62 of them in `us-east-1` — so `-c deploymentPrefix=stg` does not
+  synthesize until you widen the budget by disabling a plugin with a long id.
+  A longer region name costs more still. Synth fails immediately, naming the
+  offending resource and the exact remaining budget:
+
+  ```
+  [staging-VocIngestionStack] deploymentPrefix "staging" makes
+  "staging-voc-ingest-app_reviews_android-schedule-<account>-<region>" 70
+  characters, over the 64-character limit for Lambda function, IAM role and
+  EventBridge rule names. Use a prefix of at most 1 character, or shorten the
+  resource name (e.g. disable the plugin that owns it).
+  ```
+
+  Disabling unused plugins in `pluginStatus` widens the budget: each character
+  removed from the longest plugin id buys one for the prefix. S3 bucket names
+  and the Cognito hosted-UI domain prefix are checked against **63** characters
+  rather than 64, since both must be a single DNS label — a difference of one
+  character that decides whether the deploy succeeds, so the check keys off the
+  call site (`uniqueDnsName()`) rather than guessing from the name.
+
+  Shortening the schedule-rule base name itself (`voc-ingest-<id>-schedule`)
+  would widen the budget for everyone, but it renames a resource on **every**
+  existing deployment, which is exactly what the opt-in design exists to avoid.
+  That is a separate change with its own baseline regeneration.
+
+#### Known limitations of a prefixed deployment
+
+Neither is a resource collision — nothing is shared that could cause data loss —
+but both are worth knowing before running several copies:
+
+- **CloudWatch metrics co-mingle.** The Lambdas publish EMF metrics to a
+  hardcoded namespace (`Metrics(namespace="VoC")` in `lambda/shared/logging.py`)
+  with a `service` dimension from `POWERTOOLS_SERVICE_NAME`, and that value is
+  the same literal in every deployment (`voc-metrics-api`, `voc-processor`, …).
+  So two copies' metrics land on the same namespace and dimension, and a
+  dashboard or alarm cannot tell them apart. **Logs are not affected** — log
+  group names carry the prefix, so each deployment's logs stay separate.
+- **API Gateway authorizer names are shared** (`voc-cognito-authorizer`,
+  `voc-mcp-token-authorizer`). Deliberate: those names only have to be unique
+  inside their own RestApi, and each deployment has its own, so prefixing them
+  would add churn without preventing a collision.
+
 ### Stack Deployment Order
 
 Due to dependencies, stacks should be deployed in this order:
 
-1. `VocCoreStack` + `VocBedrockAccessStack` (parallel, no dependencies)
-2. `VocIngestionStack`
-3. `VocProcessingStackConsolidated`
-4. `VocApiStack`
+1. `VocWebSearchStack` (no dependencies — but it must come **before** Processing
+   and Api, which import its gateway exports when web search is enabled)
+2. `VocCoreStack` (no dependencies)
+3. `VocIngestionStack`
+4. `VocProcessingStack`
+5. `VocApiStack`
 
 The `cdk deploy --all` command handles this automatically.
+
+### Web Search (on by default)
+
+Public web search in AI Chat and Research deploys by default; individual
+searches stay opt-in per request (chat toggle, research wizard checkbox).
+
+Requirement: the gateway only exists in us-east-1, so that region must be
+bootstrapped even when the app lives elsewhere (cross-region references):
+
+```bash
+cdk bootstrap aws://ACCOUNT_ID/us-east-1
+```
+
+To opt OUT (e.g. when a us-east-1 bootstrap isn't possible) set
+`"enableWebSearch": false` in `cdk.context.json` or deploy with
+`-c enableWebSearch=false` — the UI then hides the web-search surfaces
+entirely (the deployment reports `WebSearchAvailable=false` and
+`config.json` ships `features.webSearch: false`).
+
+Cost model (per `bin/voc-datalake.ts`): the gateway has no standing cost;
+searches bill per query ($7/1k at the time of writing — check AgentCore
+pricing) and only run for requests where the user turned the toggle on.
 
 ## Frontend Deployment
 
@@ -220,6 +408,28 @@ This script:
 3. Syncs to S3
 4. Invalidates CloudFront cache
 
+### Frontend Caching Model
+
+Learned the hard way (issues #188/#191 — returning browsers rendered raw
+i18n keys after a redeploy):
+
+- **Hashed assets** (`dist/assets/*`) upload with
+  `Cache-Control: public,max-age=31536000,immutable` — content-hashed
+  names change on every code change, so they can cache forever.
+- **Stable-name files** (`index.html`, `config.json`, `locales/**`,
+  manifests) upload with `Cache-Control: no-cache` — browsers revalidate
+  with ETags (cheap 304s) and can never serve a stale copy. Without this,
+  browsers apply *heuristic* caching (~10% of object age) and can serve
+  week-old locale JSONs for days, no matter how many CloudFront
+  invalidations run — the staleness lives in the browser.
+- **Locale URLs are version-stamped** (`/locales/en/common.json?v=<git-sha>`
+  via `import.meta.env.APP_VERSION`, injected at build): each new bundle
+  requests URLs no old cache entry can match, which also retroactively
+  bust caches created before the headers existed.
+- The assets sync deliberately does **not** `--delete`: visitors holding a
+  previously-cached `index.html` still reference the previous deploy's
+  chunks; deleting them would turn a stale-but-working page into 404s.
+
 ### Frontend Build Process
 
 ```bash
@@ -232,6 +442,57 @@ npm run prebuild
 npm run build
 
 # Output in dist/ folder
+```
+
+### Frontend Build Freshness Guard
+
+`VocApiStack` deploys the frontend by packaging `voc-datalake/frontend/dist`
+as-is (`s3deploy.Source.asset('frontend/dist')`). **CDK does not rebuild the
+frontend** — whatever is in `dist` at synth time is what ships.
+
+To prevent shipping a stale UI (a common mistake after switching branches or
+editing `src/` without rebuilding), a synth-time guard runs at the top of the
+`VocApiStack` constructor. It fails `cdk synth`/`diff`/`deploy` if:
+
+- `frontend/dist/index.html` is missing (frontend never built), or
+- any source input (`src/`, `public/`, `index.html`, `vite.config.ts`,
+  `tsconfig*.json`, `package.json`) is newer than the built `dist/index.html`.
+
+The error names the offending file and tells you to rebuild:
+
+```bash
+cd voc-datalake/frontend && npm run build
+```
+
+Always run `npm run deploy:frontend` (which builds, syncs, and invalidates) or
+rebuild `dist` before `cdk deploy`. The guard is a safety net, not a substitute
+for building.
+
+> ### 🔴 Never `aws s3 sync --delete` the website bucket
+>
+> **`config.json` is NOT in `frontend/dist`.** It is generated at deploy time
+> (`s3deploy.Source.data('config.json', …)` in `api-stack.ts`, and by
+> `scripts/deploy.sh`), so a hand-rolled
+> `aws s3 sync frontend/dist s3://<bucket> --delete` **deletes it** and the app
+> loses every Cognito value — the login screen reads "Cognito not configured".
+>
+> 🪤 **A `curl` of the deleted path returns 200, not 404**: CloudFront serves the
+> SPA's `index.html` fallback, so the site looks healthy from the shell while
+> being broken in the browser. Check the app, or assert the body parses as JSON.
+>
+> Deploy the frontend with `npm run deploy:frontend` or `cdk deploy VocApiStack`.
+> If you must sync by hand, omit `--delete`. Recovery is a normal
+> `cdk deploy VocApiStack --exclusively`, which regenerates the file from the
+> stack — do not hand-write it: a wrong `identityPoolId` makes
+> `RuntimeConfigSchema` blank all four Cognito values and reproduces the same
+> symptom (see "Environment Variables" below).
+
+**Bypass** (rare, intentional cases only):
+
+```bash
+cdk deploy VocApiStack -c skipFrontendBuildCheck=true
+# or
+SKIP_FRONTEND_BUILD_CHECK=1 cdk deploy VocApiStack
 ```
 
 ## Configuration
@@ -260,6 +521,82 @@ Enable/disable menu items in `voc-datalake/cdk.context.json`:
     "scrapers": false
   }
 }
+```
+
+### Web Search (Amazon Bedrock AgentCore)
+
+AI Chat and Projects research can optionally ground answers with public web
+results via the AWS-managed [Web Search Tool connector](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html)
+behind an AgentCore Gateway (`VocWebSearchStack`). Queries are served
+entirely within AWS and are billed at $7 per 1,000 searches; the feature is
+opt-in per request in both UIs (chat toggle, research wizard checkbox).
+
+The connector only exists in **us-east-1**, so the stack always deploys
+there. Deployment is **on by default** (opt out with
+`"enableWebSearch": false` in `cdk.context.json`):
+
+- App deployed to us-east-1: nothing else needed.
+- App deployed to any other region: a us-east-1 bootstrap
+  (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`); CDK cross-region references
+  carry the gateway URL/ARN to the app region.
+
+> **Setting the app region:** `bin/voc-datalake.ts` reads
+> `process.env.CDK_DEFAULT_REGION`, but **the CDK CLI overwrites that variable**
+> for the app subprocess from the resolved AWS environment — exporting it
+> yourself has no effect. Use `AWS_REGION` / `AWS_DEFAULT_REGION`, or
+> `--profile`. (Observed with the CDK CLI pinned in `voc-datalake/package.json`;
+> re-check if that behaviour ever changes, since the guidance below depends on
+> it.) This matters here because `VocWebSearchStack` is the only
+> region-pinned stack, so it is the only one whose region can differ from the
+> app's, and that difference is what triggers the cross-region wiring above.
+
+**Data residency note:** search queries are processed by the connector in
+us-east-1 regardless of where the app is deployed. Queries are derived from
+user input — the research question is sent as-is, and in chat the model
+composes queries from the conversation — so deployments with regional
+data-handling requirements should factor this in before enabling the flag.
+
+The frontend discovers availability through the `features.webSearch` flag in
+`config.json` (set by CDK and by `scripts/deploy.sh` from the
+`WebSearchAvailable` stack output). For local development against the mock,
+set `VITE_ENABLE_WEB_SEARCH=true`.
+
+### Pinning All AI Surfaces to One Model
+
+Each AI surface (chat, documents, prototypes, enrichment, utilities) has its own
+default model, and some accounts cannot invoke all of them — Bedrock model access
+is granted per account, and organizations behind an AWS Private Marketplace are
+commonly restricted to a subset. When a surface's default is unavailable, that
+feature fails at inference time with `AccessDeniedException`.
+
+To pin every surface to one known-available model at deploy time:
+
+```bash
+cdk deploy --all -c defaultModelId=global.anthropic.claude-sonnet-4-6
+```
+
+This creates a `Custom::ModelPin` resource in `VocCoreStack` that writes
+`model_id` to the `SETTINGS#model` configuration item. Behaviour worth knowing:
+
+- **Write-once.** The value is only set if absent, so an administrator's later
+  choice in Settings is never clobbered by a redeploy. It is a floor, not a lock —
+  per-surface overrides still take precedence.
+- **Validated at synth.** The id must be in `ALLOWED_MODEL_IDS`
+  (`lib/utils/model-allowlist.ts`); an unrecognized value fails the synth rather
+  than being silently discarded at read time and falling back to the very
+  defaults the flag exists to bypass.
+- **Absent flag creates nothing** — no Lambda, no custom resource, no log group.
+  Deployments that don't need it are unaffected.
+
+To check which models an account can actually invoke, call Converse — agreement
+and availability APIs can report a model as available when inference still
+returns `AccessDeniedException`:
+
+```bash
+aws bedrock-runtime converse --region us-east-1 \
+  --model-id global.anthropic.claude-sonnet-4-6 \
+  --messages '[{"role":"user","content":[{"text":"say ok"}]}]' \
+  --inference-config '{"maxTokens":5}'
 ```
 
 After changing configuration:
@@ -342,8 +679,23 @@ jobs:
         with:
           node-version: '20'
           
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
       - name: Install dependencies
         run: npm run install:all
+          
+      - name: Install Python dev dependencies
+        # The check gate needs the venv: test:backend runs
+        # .venv/bin/python -m pytest and lint:python runs
+        # .venv/bin/python -m ruff
+        run: |
+          cd voc-datalake
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt \
+            -r lambda/layers/ingestion-deps/requirements.txt \
+            -r lambda/layers/processing-deps/requirements.txt
           
       - name: Build Lambda layers
         run: npm run build:layers
@@ -378,6 +730,67 @@ npm run cdk:bootstrap
 aws cloudformation continue-update-rollback --stack-name STACK_NAME
 ```
 
+### VocCoreStack fails: "Updates are not allowed for property - UsernameConfiguration"
+
+User pools created before #105 predate the `signInCaseSensitive: false`
+setting, and Cognito treats `UsernameConfiguration` as create-only — any
+stack update that introduces it on an existing pool is rejected and the
+whole VocCoreStack update rolls back. (A secondary
+`Invalid AttributeDataType` error on the same update is a symptom of the
+same rejected pool update.)
+
+Deploy with the compatibility flag to leave the existing pool untouched:
+
+```bash
+cdk deploy VocCoreStack -c omitUserPoolUsernameConfiguration=true
+```
+
+Add the flag to every subsequent deploy of that environment (or to a
+local, uncommitted context override). New deployments should NOT set it —
+fresh pools get case-insensitive sign-in by default.
+
+### VocApiStack fails: "A sibling ({proxy+}) of this resource already has a variable path part"
+
+Only affects environments deployed **before** the `/feedback-forms` item
+routes were made explicit. Those routes used to sit behind a `{proxy+}`
+catch-all; they are now declared individually, which means the deploy has to
+create `/feedback-forms/{form_id}` and delete `/feedback-forms/{proxy+}`.
+CloudFormation creates new resources before deleting old ones inside a single
+update, so both variable path parts exist momentarily and API Gateway rejects
+the pair. The stack rolls back cleanly and the API keeps serving.
+
+**Fresh deployments are unaffected** — there is no proxy to remove.
+
+Upgrade an existing environment in two deploys, using the transitional flag —
+no source edits are involved:
+
+```bash
+# 1. Retire the old {proxy+}. The per-form routes are not created yet.
+cdk deploy VocApiStack --exclusively -c skipFeedbackFormItemRoutes=true
+
+# 2. Create the explicit per-form routes.
+cdk deploy VocApiStack --exclusively
+```
+
+`skipFeedbackFormItemRoutes` is a no-op when absent, so the second command is
+just a normal deploy and fresh deployments never need the flag. Step 1 prints a
+warning naming itself as the first of two deploys. **Never leave the flag set** —
+while it is on, `/feedback-forms/{form_id}/*` does not exist.
+
+Between the two deploys the per-form routes are unavailable, so the embeddable
+widget stops working until the second deploy finishes. They fail closed (no data
+is served, and nothing is left unauthenticated), and the window is one deploy
+long. Schedule it accordingly if forms are live.
+
+### The embeddable widget served from the frontend bucket is stale
+
+`frontend/public/feedback-widget.js` is published to the CDN but is **not** the
+widget the application uses. The live one is `lambda/api/static/feedback-widget.js`,
+served by the feedback-form Lambda. The frontend copy still calls the retired
+`/feedback-form/*` (singular) routes, so it has been broken independently of the
+authorization change above — do not debug it as a symptom of that change. It has
+no callers in the codebase; it is pending deletion or a repoint.
+
 ### CloudFront Cache
 
 If changes don't appear after deployment:
@@ -401,7 +814,7 @@ aws cloudformation describe-stacks \
 | Command | Description |
 |---------|-------------|
 | `npm run install:all` | Install all dependencies (root + CDK + frontend) |
-| `npm run build:layers` | Build Lambda layers with Docker (ARM64) |
+| `npm run build:layers` | Build Lambda layers with Docker (ARM64); honors `CONTAINER_CMD`/`CDK_DOCKER` (e.g. `finch`) |
 | `npm run cdk:bootstrap` | Bootstrap CDK in AWS account |
 | `npm run check` | Run all quality checks (lint + typecheck + test) |
 | `npm run deploy:all` | Deploy infrastructure + frontend |

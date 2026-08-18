@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentExportMenu from './DocumentExportMenu'
-import type { ProjectDocument, Project } from '../../api/client'
+import type { ProjectDocument, Project } from '../../api/types'
 
 // Mock printUtils
 const mockOpenPrintWindow = vi.fn()
@@ -57,6 +57,7 @@ describe('DocumentExportMenu', () => {
 
     it('returns null when document is null', () => {
       const { container } = render(<DocumentExportMenu document={null} />)
+      // eslint-disable-next-line testing-library/no-node-access
       expect(container.firstChild).toBeNull()
     })
 
@@ -209,6 +210,7 @@ describe('DocumentExportMenu', () => {
       await user.click(screen.getByRole('button', { name: /download options/i }))
       await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
 
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(writeTextSpy).toHaveBeenCalled()
     })
   })
@@ -281,6 +283,39 @@ describe('DocumentExportMenu', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument()
       })
     })
+  })
+})
+
+describe('DocumentExportMenu with S3-only HTML prototypes', () => {
+  it('returns null for a new (S3-only) prototype with prototype_url and no content', () => {
+    // New prototypes have no `content` field at all — text export doesn't make
+    // sense for a rendered iframe, and calling any of the export handlers on
+    // `undefined` content would throw. The menu should not render at all.
+    const s3OnlyPrototype: ProjectDocument = {
+      document_id: 'proto-1',
+      document_type: 'prototype',
+      title: 'Test Prototype',
+      content: '',
+      prototype_format: 'html',
+      prototype_url: 'https://cdn.example.com/prototypes/proj-1/proto-1.html',
+      created_at: '2025-01-01T00:00:00Z',
+    }
+    const { container } = render(<DocumentExportMenu document={s3OnlyPrototype} />)
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('still renders for a legacy prototype (no prototype_url, has inline content)', () => {
+    const legacyPrototype: ProjectDocument = {
+      document_id: 'proto-legacy-1',
+      document_type: 'prototype',
+      title: 'Legacy Prototype',
+      content: '<!DOCTYPE html><html><body>Legacy</body></html>',
+      prototype_format: 'html',
+      created_at: '2025-01-01T00:00:00Z',
+    }
+    render(<DocumentExportMenu document={legacyPrototype} />)
+    expect(screen.getByRole('button', { name: /download options/i })).toBeInTheDocument()
   })
 })
 

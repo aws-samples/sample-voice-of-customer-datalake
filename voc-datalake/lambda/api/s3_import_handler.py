@@ -3,18 +3,16 @@ S3 Import API Lambda - File explorer for S3 import bucket.
 Dedicated Lambda to avoid 20KB IAM policy limit on OpsApi.
 """
 
-import json
 import os
 import re
 import sys
 import urllib.parse
-from datetime import datetime, timezone
 from typing import Any
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_s3_client
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError

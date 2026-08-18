@@ -24,7 +24,7 @@ import { projectsApi } from './projectsApi'
 describe('projectsApi', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    global.fetch = vi.fn()
+    vi.spyOn(global, 'fetch').mockImplementation(vi.fn())
   })
 
   afterEach(() => {
@@ -50,7 +50,7 @@ describe('projectsApi', () => {
           }),
         })
       )
-      expect(result).toEqual(mockProjects)
+      expect(result).toStrictEqual(mockProjects)
     })
   })
 
@@ -105,7 +105,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1',
         expect.any(Object)
       )
-      expect(result).toEqual(mockProject)
+      expect(result).toStrictEqual(mockProject)
     })
   })
 
@@ -147,7 +147,8 @@ describe('projectsApi', () => {
 
   describe('generatePersonas', () => {
     it('sends POST request to generate personas', async () => {
-      const mockResponse = { success: true, personas: [{ persona_id: 'per1', name: 'Power User' }] }
+      // The route is async: it answers with a job id, not with personas.
+      const mockResponse = { success: true, job_id: 'job1', status: 'running', message: 'Persona generation started.' }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
@@ -162,7 +163,7 @@ describe('projectsApi', () => {
           body: JSON.stringify({}),
         })
       )
-      expect(result).toEqual(mockResponse)
+      expect(result).toStrictEqual(mockResponse)
     })
 
     it('includes filters when provided', async () => {
@@ -176,7 +177,7 @@ describe('projectsApi', () => {
       }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ success: true, personas: [] }),
+        json: () => Promise.resolve({ success: true, job_id: 'job1', status: 'running', message: '' }),
       })
 
       await projectsApi.generatePersonas('p1', filters)
@@ -195,11 +196,10 @@ describe('projectsApi', () => {
       const persona = {
         name: 'Power User',
         tagline: 'Uses all features',
-        description: 'A power user',
-        pain_points: ['Slow loading'],
-        goals: ['Efficiency'],
-        behaviors: ['Daily usage'],
-        demographics: { age: '25-34' },
+        pain_points: { current_challenges: ['Slow loading'] },
+        goals_motivations: { primary_goal: 'Efficiency' },
+        behaviors: { current_solutions: ['Daily usage'] },
+        identity: { age_range: '25-34' },
       }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
@@ -255,8 +255,11 @@ describe('projectsApi', () => {
   })
 
   describe('importPersona', () => {
-    it('sends POST request with PDF import data', async () => {
-      const data = { input_type: 'pdf' as const, content: 'base64content', media_type: 'application/pdf' }
+    // Was a PDF import. PDF is no longer an accepted input_type — the API refuses
+    // it because nothing extracts PDF text — so this exercises the same
+    // file-plus-media_type shape with the type that IS supported.
+    it('sends POST request with image import data', async () => {
+      const data = { input_type: 'image' as const, content: 'base64content', media_type: 'image/png' }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ success: true, job_id: 'job1', status: 'processing' }),
@@ -286,41 +289,6 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/personas/import',
         expect.objectContaining({
           body: JSON.stringify(data),
-        })
-      )
-    })
-  })
-
-  describe('projectChat', () => {
-    it('sends POST request with message', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, response: 'AI response' }),
-      })
-
-      await projectsApi.projectChat('p1', 'What do users want?')
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/chat',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ message: 'What do users want?', selected_personas: undefined, selected_documents: undefined }),
-        })
-      )
-    })
-
-    it('includes selected personas and documents', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, response: 'AI response' }),
-      })
-
-      await projectsApi.projectChat('p1', 'Question', ['per1', 'per2'], ['doc1'])
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/p1/chat',
-        expect.objectContaining({
-          body: JSON.stringify({ message: 'Question', selected_personas: ['per1', 'per2'], selected_documents: ['doc1'] }),
         })
       )
     })
@@ -446,7 +414,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/jobs/job1',
         expect.any(Object)
       )
-      expect(result).toEqual(mockJob)
+      expect(result).toStrictEqual(mockJob)
     })
   })
 
@@ -464,7 +432,7 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1/jobs',
         expect.any(Object)
       )
-      expect(result).toEqual(mockJobs)
+      expect(result).toStrictEqual(mockJobs)
     })
   })
 
@@ -558,5 +526,97 @@ describe('projectsApi', () => {
 
       await expect(projectsApi.getProjects()).rejects.toThrow('API Error: 500')
     })
+  })
+})
+
+
+describe('date basis threading (issue #150)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(global, 'fetch').mockImplementation(vi.fn())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  async function setDateBasis(basis: 'imported' | 'review') {
+    const { useConfigStore } = await import('../store/configStore')
+    ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+      config: { apiEndpoint: 'https://api.example.com' },
+      dateBasis: basis,
+    })
+  }
+
+  function mockOkFetch() {
+    ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true }),
+    })
+  }
+
+  function lastRequestBody(): Record<string, unknown> {
+    const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    return JSON.parse(options.body)
+  }
+
+  it('persona generation carries date_basis on review basis', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.generatePersonas('p1', { days: 30, persona_count: 3 })
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'review', days: 30 })
+  })
+
+  it('research carries date_basis on review basis', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.runResearch('p1', { question: 'What hurts?' })
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'review' })
+  })
+
+  it('document generation carries date_basis on review basis', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.generateDocument('p1', {
+      doc_type: 'prd',
+      title: 'T',
+      feature_idea: 'F',
+      data_sources: { feedback: true, personas: false, documents: false, research: false },
+      selected_persona_ids: [],
+      selected_document_ids: [],
+      feedback_sources: [],
+      feedback_categories: [],
+      days: 30,
+    })
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'review' })
+  })
+
+  it('payloads stay unchanged on the default imported basis', async () => {
+    await setDateBasis('imported')
+    mockOkFetch()
+
+    await projectsApi.generatePersonas('p1', { days: 30 })
+
+    expect(lastRequestBody()).not.toHaveProperty('date_basis')
+  })
+
+  it('an explicit caller value wins over the store', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.runResearch('p1', {
+      question: 'q',
+      // Callers may pass their own basis in `data`; it spreads after the
+      // store default, so it takes precedence.
+      ...( { date_basis: 'imported' } as Record<string, unknown>),
+    } as Parameters<typeof projectsApi.runResearch>[1])
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'imported' })
   })
 })

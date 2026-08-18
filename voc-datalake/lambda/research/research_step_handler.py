@@ -3,28 +3,38 @@ Research Step Lambda Handler
 Handles individual steps of the research workflow orchestrated by Step Functions.
 Each step can run up to 15 minutes, allowing for deep analysis.
 """
+
 import json
 import os
-import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
 # Shared module imports
 from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
-from shared.api import api_handler, DecimalEncoder
+from shared.api import api_handler
 from shared.converse import converse, BedrockThrottlingError
+from shared.prompts import (
+    get_research_step_config,
+    get_response_language_instruction,
+)
 from shared.feedback import (
     get_feedback_context as _get_feedback_context,
     format_feedback_for_llm,
     get_feedback_statistics,
+    validate_date_basis,
 )
 from shared.tables import get_projects_table, get_feedback_table
 from shared.jobs import update_job_status
+from shared.derivation import (
+    DERIVATION_FIELD,
+    ROLE_REFERENCE,
+    build_derivation,
+    derivation_source,
+)
+from shared.agentic_search import run_agentic_web_search
+from shared.web_search import is_web_search_configured
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -37,45 +47,72 @@ feedback_table = None
 projects_table = None
 
 MODEL_ID = BEDROCK_MODEL_ID
-
-
 def _get_feedback_table():
     """Get feedback table, initializing if needed."""
     global feedback_table
     if feedback_table is None:
         feedback_table = get_feedback_table()
     return feedback_table
-
-
 def _get_projects_table():
     """Get projects table, initializing if needed."""
     global projects_table
     if projects_table is None:
         projects_table = get_projects_table()
     return projects_table
-
-
 # Alias for backward compatibility with Step Functions error handling
 BedrockThrottlingException = BedrockThrottlingError
-
-
-def invoke_bedrock_with_retry(system_prompt: str, user_message: str, max_tokens: int = 4096, max_retries: int = 3) -> str:
+def invoke_bedrock_with_retry(
+    system_prompt: str,
+    user_message: str,
+    max_tokens: int = 4096,
+    max_retries: int = 3,
+    thinking_budget: int = 0,
+    step_name: str = 'unknown',
+) -> str:
     """Invoke Bedrock with retry support using shared converse module."""
     return converse(
         prompt=user_message,
         system_prompt=system_prompt,
         max_tokens=max_tokens,
+        thinking_budget=thinking_budget,
+        surface='documents',
         max_retries=max_retries,
         raise_on_throttle=True,
+        step_name=step_name,
     )
 
 
+def _step_inference(step_name: str, config: dict) -> dict:
+    """Resolve a research step's system prompt and token budgets.
+
+    Both research paths read the SAME config (lambda/api/prompts/
+    research-analysis.json): the sync path via build_chain_steps, this async
+    Step Functions path via here. Previously this module hardcoded its own
+    budgets and duplicated the system prompts, so edits to that JSON silently
+    had no effect on the async path — it looked authoritative but was never
+    read. Keep it that way: budgets belong in the JSON, not inline.
+
+    The user prompt stays inline per step, because this path adds context the
+    templated sync path has no placeholders for (personas, uploaded documents,
+    public web-search results).
+    """
+    step_config = get_research_step_config(step_name)
+    system_prompt = step_config['system_prompt']
+    lang_instruction = get_response_language_instruction(config.get('response_language'))
+    if lang_instruction:
+        system_prompt = f"{system_prompt}\n\n{lang_instruction}"
+    return {
+        'system_prompt': system_prompt,
+        'max_tokens': step_config['max_tokens'],
+        'thinking_budget': step_config['thinking_budget'],
+        # Resolved by shared.prompts from the config's 'name', so [BEDROCK] log
+        # lines match between this path and the sync chain.
+        'step_name': step_config['step_name'],
+    }
 # Wrapper function to pass module-level table reference to shared function
 def get_feedback_context(filters: dict, limit: int = 100) -> list[dict]:
     """Get feedback items based on filters for LLM context."""
     return _get_feedback_context(_get_feedback_table(), filters, limit)
-
-
 @tracer.capture_method
 def step_initialize(event: dict) -> dict:
     """Step 1: Initialize research - fetch data and prepare context."""
@@ -91,7 +128,11 @@ def step_initialize(event: dict) -> dict:
         'sources': config.get('sources', []),
         'categories': config.get('categories', []),
         'sentiments': config.get('sentiments', []),
-        'days': config.get('days', 30)
+        'days': config.get('days', 30),
+        # Step Functions execution input is an unvalidated boundary (anyone
+        # with StartExecution can pass arbitrary JSON), so validate here
+        # rather than trusting the API layer's earlier validation.
+        'date_basis': validate_date_basis(config.get('date_basis')),
     }
     
     update_job_status(project_id, job_id, 'running', 12, 'fetching_feedback')
@@ -113,6 +154,7 @@ def step_initialize(event: dict) -> dict:
     
     # Optional: Get selected personas context
     personas_context = ""
+    used_persona_ids: list[str] = []
     selected_persona_ids = config.get('selected_persona_ids', [])
     proj_table = _get_projects_table()
     if selected_persona_ids and proj_table:
@@ -128,9 +170,12 @@ def step_initialize(event: dict) -> dict:
                 personas_context += f"- Goals: {', '.join(p.get('goals', [])[:3])}\n"
                 personas_context += f"- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n"
                 personas_context += f"- Quote: \"{p.get('quote', '')}\"\n\n"
+                if p.get('persona_id'):
+                    used_persona_ids.append(p['persona_id'])
     
     # Optional: Get selected documents context
     documents_context = ""
+    used_sources: list[dict] = []
     selected_document_ids = config.get('selected_document_ids', [])
     if selected_document_ids and proj_table:
         update_job_status(project_id, job_id, 'running', 18, 'fetching_documents')
@@ -140,10 +185,49 @@ def step_initialize(event: dict) -> dict:
         
         if selected_docs:
             documents_context = "## Reference Documents\n\n"
+            # Recorded from THIS loop, so the report's provenance names the
+            # documents that actually reached the model rather than every id the
+            # request selected; selected_document_count keeps the difference
+            # visible. The [:3] cap is left exactly as it is.
             for d in selected_docs[:3]:  # Limit to 3 docs to avoid context overflow
                 content = d.get('content', '')[:5000]  # Truncate long docs
                 documents_context += f"### {d.get('title', 'Untitled')} ({d.get('document_type', 'doc').upper()})\n\n{content}\n\n---\n\n"
+                source = derivation_source(d.get('document_id'), ROLE_REFERENCE)
+                if source:
+                    used_sources.append(source)
     
+    # Optional: web search grounding (AgentCore Web Search Tool) via a bounded
+    # agentic loop — the model plans several queries, reviews results, and
+    # refines until coverage is sufficient (shared.agentic_search). Always an
+    # enrichment — a search/planning failure must never fail the research job,
+    # and the 'web_context' key must ALWAYS be present in the return value
+    # because the Step Functions resultSelector references it unconditionally
+    # (as must 'web_search_queries', which flows to step_save for the report
+    # disclosure).
+    # Strict boolean: the state machine can be started by other producers or
+    # execution replays, where a string "false" must not enable a billed
+    # feature (parity with projects_handler's normalization).
+    web_context = ''
+    web_search_queries: list[str] = []
+    if config.get('use_web_search') is True:
+        if is_web_search_configured():
+            update_job_status(project_id, job_id, 'running', 19, 'searching_web')
+            question = config.get('question', '')
+            try:
+                outcome = run_agentic_web_search(question, context_hint=feedback_stats)
+                web_context = outcome.context
+                web_search_queries = outcome.queries
+                logger.info(
+                    f"Web search grounding: {len(outcome.queries)} queries, "
+                    f"{outcome.result_count} results"
+                )
+            except Exception as e:
+                # run_agentic_web_search degrades internally; this is the
+                # final belt so no web-search failure mode can kill the job.
+                logger.warning(f"Web search failed, continuing without web context: {e}")
+        else:
+            logger.warning("use_web_search requested but web search is not configured; skipping")
+
     update_job_status(project_id, job_id, 'running', 20, 'data_ready')
     
     return {
@@ -151,10 +235,26 @@ def step_initialize(event: dict) -> dict:
         'feedback_stats': feedback_stats,
         'feedback_count': len(feedback_items),
         'personas_context': personas_context,
-        'documents_context': documents_context
+        'documents_context': documents_context,
+        'web_context': web_context,
+        'web_search_queries': web_search_queries,
+        # What this research report was built from. Decided here — this is the
+        # only step that reads the inputs — and written by step_save, so it
+        # travels the state machine like web_search_queries does. ALWAYS
+        # present (empty when nothing was selected), because the resultSelector
+        # references it unconditionally and an absent key fails the state.
+        # Spelled literally, NOT as DERIVATION_FIELD: this is the Step Functions
+        # payload key, whose counterparts are `event.get('derivation')` in
+        # step_save and 'derivation.$': '$.Payload.derivation' in the CDK.
+        # DERIVATION_FIELD is the DynamoDB attribute name, and coupling the two
+        # would make renaming the stored column silently change the wire.
+        'derivation': build_derivation(
+            sources=used_sources,
+            selected_document_count=len(selected_document_ids),
+            feedback_count=len(feedback_items),
+            persona_ids=used_persona_ids,
+        ),
     }
-
-
 @tracer.capture_method
 def step_analyze(event: dict) -> dict:
     """Step 2: Deep analysis of feedback data."""
@@ -165,22 +265,33 @@ def step_analyze(event: dict) -> dict:
     feedback_stats = event['feedback_stats']
     personas_context = event.get('personas_context', '')
     documents_context = event.get('documents_context', '')
+    web_context = event.get('web_context', '')
     
     research_question = config.get('question', 'What are the main customer pain points?')
     
     logger.info(f"Starting analysis for job {job_id}")
     update_job_status(project_id, job_id, 'running', 25, 'preparing_analysis')
     
-    system_prompt = """You are a senior user researcher conducting rigorous analysis of REAL customer feedback data.
-Your analysis must be grounded in the actual feedback provided - cite specific reviews, quote customers directly, and identify patterns from the data.
-Be thorough, data-driven, and cite specific examples."""
-    
+    inference = _step_inference('data_analysis', config)
+
     # Build additional context sections
     additional_context = ""
     if personas_context:
         additional_context += f"\n{personas_context}\n"
     if documents_context:
         additional_context += f"\n{documents_context}\n"
+    if web_context:
+        additional_context += f"""
+## PUBLIC WEB SEARCH RESULTS
+
+The following results come from public web searches (grouped by the search
+query that found them), NOT from customer feedback. Use them only to add
+market/industry context. When you draw on a web result, cite its source URL
+inline and clearly attribute the finding to "public web sources" rather than
+to customers.
+
+{web_context}
+"""
     
     user_prompt = f"""Conduct a thorough analysis to answer this research question based on the ACTUAL CUSTOMER FEEDBACK DATA provided below.
 
@@ -205,26 +316,30 @@ Based on the ACTUAL FEEDBACK DATA above{' and the provided context' if additiona
 IMPORTANT: Base ALL findings on the actual feedback data provided. Do not make assumptions beyond what the data shows."""
 
     update_job_status(project_id, job_id, 'running', 30, 'calling_ai')
-    analysis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=4000)
+    analysis = invoke_bedrock_with_retry(
+        inference['system_prompt'],
+        user_prompt,
+        max_tokens=inference['max_tokens'],
+        thinking_budget=inference['thinking_budget'],
+        step_name=inference['step_name'],
+    )
     
     update_job_status(project_id, job_id, 'running', 45, 'analysis_complete')
     
     return {'analysis': analysis}
-
-
 @tracer.capture_method
 def step_synthesize(event: dict) -> dict:
     """Step 3: Synthesize findings into actionable insights."""
     project_id = event['project_id']
     job_id = event['job_id']
     analysis = event['analysis']
+    config = event.get('research_config', {})
     
     logger.info(f"Synthesizing findings for job {job_id}")
     update_job_status(project_id, job_id, 'running', 50, 'preparing_synthesis')
     
-    system_prompt = """You are synthesizing research findings into actionable insights.
-Focus on clarity, prioritization, and recommendations."""
-    
+    inference = _step_inference('synthesis', config)
+
     user_prompt = f"""Synthesize the analysis into clear findings.
 
 Previous analysis:
@@ -238,13 +353,17 @@ Provide:
 5. **Areas for Further Research**"""
 
     update_job_status(project_id, job_id, 'running', 55, 'calling_ai')
-    synthesis = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
+    synthesis = invoke_bedrock_with_retry(
+        inference['system_prompt'],
+        user_prompt,
+        max_tokens=inference['max_tokens'],
+        thinking_budget=inference['thinking_budget'],
+        step_name=inference['step_name'],
+    )
     
     update_job_status(project_id, job_id, 'running', 70, 'synthesis_complete')
     
     return {'synthesis': synthesis}
-
-
 @tracer.capture_method
 def step_validate(event: dict) -> dict:
     """Step 4: Validate and cross-check findings."""
@@ -252,13 +371,13 @@ def step_validate(event: dict) -> dict:
     job_id = event['job_id']
     analysis = event['analysis']
     synthesis = event['synthesis']
+    config = event.get('research_config', {})
     
     logger.info(f"Validating research for job {job_id}")
     update_job_status(project_id, job_id, 'running', 75, 'preparing_validation')
     
-    system_prompt = """You are a critical reviewer ensuring research quality.
-Challenge assumptions and verify conclusions."""
-    
+    inference = _step_inference('validation', config)
+
     user_prompt = f"""Review and validate the research findings.
 
 Analysis:
@@ -276,13 +395,17 @@ Check:
 Provide a final validated research report."""
 
     update_job_status(project_id, job_id, 'running', 80, 'calling_ai')
-    validation = invoke_bedrock_with_retry(system_prompt, user_prompt, max_tokens=3000)
+    validation = invoke_bedrock_with_retry(
+        inference['system_prompt'],
+        user_prompt,
+        max_tokens=inference['max_tokens'],
+        thinking_budget=inference['thinking_budget'],
+        step_name=inference['step_name'],
+    )
     
     update_job_status(project_id, job_id, 'running', 90, 'validation_complete')
     
     return {'validation': validation}
-
-
 @tracer.capture_method
 def step_save(event: dict) -> dict:
     """Step 5: Save final research results."""
@@ -303,12 +426,45 @@ def step_save(event: dict) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     research_id = f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     
+    # Strict boolean for parity with step_initialize's gating: a foreign
+    # "false" string skips the search, so it must not stamp the disclosure.
+    # The executed queries flow from step_initialize through the state machine
+    # ('' on old executions pinned to a pre-#207 definition — .get defaults).
+    web_search_used = config.get('use_web_search') is True
+    # Queries land verbatim in the report markdown — collapse whitespace and
+    # newlines so a model-drafted query can't break the list layout.
+    web_queries = [
+        ' '.join(q.split())
+        for q in (event.get('web_search_queries') or [])
+        if isinstance(q, str) and q.strip()
+    ] if web_search_used else []
+    if web_search_used and web_queries:
+        query_word = 'query' if len(web_queries) == 1 else 'queries'
+        web_search_note = f' | Web search: enabled ({len(web_queries)} {query_word})'
+    elif web_search_used:
+        web_search_note = ' | Web search: enabled'
+    else:
+        web_search_note = ''
+    # Acceptable-use disclosure: list the exact searches that grounded the
+    # report so readers can judge the web-sourced context.
+    web_searches_section = ''
+    if web_queries:
+        listed = '\n'.join(f'{i}. "{q}"' for i, q in enumerate(web_queries, 1))
+        web_searches_section = f"""
+---
+
+## Web Searches
+
+Public-web grounding for this report came from the following searches:
+
+{listed}
+"""
     # Build comprehensive report
     full_report = f"""# Research Report: {research_question}
 
 **Generated:** {now[:10]}
 **Feedback Analyzed:** {feedback_count} items
-**Filters:** Sources: {', '.join(filters.get('sources', [])) or 'All'} | Categories: {', '.join(filters.get('categories', [])) or 'All'} | Sentiments: {', '.join(filters.get('sentiments', [])) or 'All'} | Days: {filters.get('days', 30)}
+**Filters:** Sources: {', '.join(filters.get('sources', [])) or 'All'} | Categories: {', '.join(filters.get('categories', [])) or 'All'} | Sentiments: {', '.join(filters.get('sentiments', [])) or 'All'} | Days: {filters.get('days', 30)}{web_search_note}
 
 ---
 
@@ -327,7 +483,7 @@ def step_save(event: dict) -> dict:
 ## Validation & Confidence Assessment
 
 {validation}
-"""
+{web_searches_section}"""
     
     # Truncate if needed (DynamoDB 400KB limit)
     max_content_size = 350000
@@ -349,6 +505,12 @@ def step_save(event: dict) -> dict:
             'content': full_report,
             'feedback_count': feedback_count,
             'job_id': job_id,
+            # Built by step_initialize and threaded through the state machine.
+            # The .get() default covers the rollout skew where an in-flight
+            # execution is still pinned to a definition that does not forward it
+            # (same pattern as web_search_queries): an empty derivation reads as
+            # "no lineage", which is a legitimate answer rather than an error.
+            DERIVATION_FIELD: event.get('derivation') or build_derivation(),
             'created_at': now,
         }
         proj_table.put_item(Item=item)
@@ -371,8 +533,6 @@ def step_save(event: dict) -> dict:
         'document_id': research_id,
         'feedback_count': feedback_count
     }
-
-
 @tracer.capture_method
 def step_error(event: dict) -> dict:
     """Handle errors - update job status."""
@@ -396,8 +556,6 @@ def step_error(event: dict) -> dict:
     update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_message)
     
     return {'success': False, 'error': error_message}
-
-
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler - routes to appropriate step function."""

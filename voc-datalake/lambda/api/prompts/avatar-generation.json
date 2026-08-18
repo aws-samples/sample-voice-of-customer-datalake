@@ -6,9 +6,9 @@
   "fallback_prompt_template": "Professional headshot of a {occupation}, friendly expression, soft studio lighting, neutral background, photorealistic",
   "max_tokens": 200,
   "image_model": {
-    "model_id": "amazon.nova-canvas-v1:0",
-    "region": "us-east-1",
-    "width": 1024,
-    "height": 1024
+    "model_id": "stability.stable-image-core-v1:1",
+    "region": "us-west-2",
+    "aspect_ratio": "1:1",
+    "output_format": "jpeg"
   }
 }

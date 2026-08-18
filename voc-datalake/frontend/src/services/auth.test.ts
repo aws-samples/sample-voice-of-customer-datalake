@@ -9,43 +9,48 @@ const mockConfirmPassword = vi.fn()
 const mockCompleteNewPasswordChallenge = vi.fn()
 const mockSignOut = vi.fn()
 
+// The implementations MUST be `function`, not arrow, expressions: the source calls
+// `new CognitoUserPool(...)` / `new CognitoUser(...)`, and vitest 4 honours `new` with real
+// construct semantics, which an arrow function does not support. Vitest 3 invoked the
+// implementation as a plain call even under `new`, so an arrow worked there by accident.
 vi.mock('amazon-cognito-identity-js', () => ({
-  CognitoUserPool: vi.fn().mockImplementation(() => ({
-    getCurrentUser: vi.fn().mockReturnValue({
+  CognitoUserPool: vi.fn().mockImplementation(function () {
+    return {
+      getCurrentUser: vi.fn().mockReturnValue({
+        getSession: mockGetSession,
+        refreshSession: mockRefreshSession,
+        signOut: mockSignOut,
+      }),
+    }
+  }),
+  CognitoUser: vi.fn().mockImplementation(function () {
+    return {
+      authenticateUser: mockAuthenticateUser,
+      forgotPassword: mockForgotPassword,
+      confirmPassword: mockConfirmPassword,
+      completeNewPasswordChallenge: mockCompleteNewPasswordChallenge,
       getSession: mockGetSession,
       refreshSession: mockRefreshSession,
       signOut: mockSignOut,
-    }),
-  })),
-  CognitoUser: vi.fn().mockImplementation(() => ({
-    authenticateUser: mockAuthenticateUser,
-    forgotPassword: mockForgotPassword,
-    confirmPassword: mockConfirmPassword,
-    completeNewPasswordChallenge: mockCompleteNewPasswordChallenge,
-    getSession: mockGetSession,
-    refreshSession: mockRefreshSession,
-    signOut: mockSignOut,
-  })),
+    }
+  }),
   AuthenticationDetails: vi.fn(),
   CognitoRefreshToken: vi.fn(),
 }))
 
 // Mock config
-vi.mock('../config', () => ({
-  config: {
-    cognito: {
-      userPoolId: 'us-east-1_test123',
-      clientId: 'testclientid123',
-    },
-  },
-  getConfig: () => ({
+vi.mock('../runtimeConfig', () => ({
+  getRuntimeConfig: () => ({
     apiEndpoint: 'https://api.example.com',
     cognito: {
       userPoolId: 'us-east-1_test123',
       clientId: 'testclientid123',
       region: 'us-east-1',
+      identityPoolId: 'us-east-1:test-pool-id',
     },
   }),
+  isConfigLoaded: () => true,
+  loadRuntimeConfig: vi.fn(),
 }))
 
 // Mock authStore
@@ -91,19 +96,20 @@ describe('authService', () => {
         }),
       }
 
-      mockAuthenticateUser.mockImplementation((authDetails, callbacks) => {
+      mockAuthenticateUser.mockImplementation((_authDetails, callbacks) => {
         callbacks.onSuccess(mockSession)
       })
 
       const result = await authService.signIn('testuser', 'password123')
 
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockAuthenticateUser).toHaveBeenCalled()
       expect(result).toBe(mockSession)
     })
 
     it('rejects with error on authentication failure', async () => {
       const error = new Error('Incorrect username or password')
-      mockAuthenticateUser.mockImplementation((authDetails, callbacks) => {
+      mockAuthenticateUser.mockImplementation((_authDetails, callbacks) => {
         callbacks.onFailure(error)
       })
 
@@ -114,7 +120,7 @@ describe('authService', () => {
   describe('signOut', () => {
     it('calls logout on authStore', () => {
       authService.signOut()
-      expect(mockLogout).toHaveBeenCalled()
+      expect(mockLogout).toHaveBeenCalledWith()
     })
   })
 
@@ -125,17 +131,19 @@ describe('authService', () => {
       })
 
       await expect(authService.forgotPassword('testuser')).resolves.not.toThrow()
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockForgotPassword).toHaveBeenCalled()
     })
   })
 
   describe('confirmPassword', () => {
     it('confirms new password with verification code', async () => {
-      mockConfirmPassword.mockImplementation((code, newPassword, callbacks) => {
+      mockConfirmPassword.mockImplementation((_code, _newPassword, callbacks) => {
         callbacks.onSuccess()
       })
 
       await expect(authService.confirmPassword('testuser', '123456', 'newpassword')).resolves.not.toThrow()
+      // eslint-disable-next-line vitest/prefer-called-with
       expect(mockConfirmPassword).toHaveBeenCalled()
     })
   })

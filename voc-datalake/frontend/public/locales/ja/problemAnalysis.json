@@ -1,0 +1,48 @@
+{
+  "configureApi": "設定でAPIエンドポイントを構成してください",
+  "filters": {
+    "allCategories": "すべてのカテゴリ",
+    "allSources": "すべてのソース",
+    "allSubcategories": "すべてのサブカテゴリ",
+    "clear": "クリア",
+    "collapse": "折りたたむ",
+    "collapseAll": "すべて折りたたむ",
+    "expand": "展開",
+    "expandAll": "すべて展開",
+    "pdf": "PDF",
+    "showResolved": "解決済みを表示",
+    "similarity": "類似度:",
+    "similarityHigh": "高",
+    "similarityLow": "低",
+    "similarityMed": "中",
+    "similarityOff": "オフ",
+    "urgentOnly": "緊急のみ"
+  },
+  "noDataHint": "時間範囲を広げるか、フィルターを調整してみてください",
+  "noDataTitle": "選択した期間の問題分析データが見つかりません",
+  "stats": {
+    "categories": "カテゴリ",
+    "feedback": "フィードバック",
+    "loadFailed": "この期間のフィードバックを読み込めなかったため、件数は表示されません。再試行するか、期間を狭めてください。",
+    "loadingWindow": "フィードバックを読み込み中… 現在 {{total, number}} 件中 {{loaded, number}} 件。",
+    "partialWindow": "件数はこの期間の {{total, number}} 件中 {{loaded, number}} 件を対象としています。",
+    "problems": "問題",
+    "retry": "再試行",
+    "subcategories": "サブカテゴリ",
+    "urgent": "緊急"
+  },
+  "tree": {
+    "markResolved": "解決済みにする",
+    "markUnresolved": "未解決にする",
+    "original": "元: {{text}}",
+    "problems_one": "{{count}} 問題",
+    "problems_other": "{{count}} 問題",
+    "resolved": "解決済み",
+    "reviews_one": "{{count}} レビュー",
+    "reviews_other": "{{count}} レビュー",
+    "similar": "類似:",
+    "sub_one": "{{count}} サブ",
+    "sub_other": "{{count}} サブ",
+    "unknown": "不明"
+  }
+}

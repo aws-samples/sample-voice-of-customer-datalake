@@ -2,10 +2,9 @@
 Tests for projects.py - Projects API core functions.
 """
 import json
+import os
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
-from decimal import Decimal
 
 
 class TestFixPersonaName:
@@ -189,20 +188,23 @@ class TestDeleteProject:
 class TestGetAvatarCdnUrl:
     """Tests for get_avatar_cdn_url function."""
 
-    def test_converts_s3_uri_to_cdn_url(self):
-        """Converts S3 URI to CloudFront CDN URL."""
+    def test_converts_s3_uri_to_signed_cdn_url(self, cdn_signing_configured):
+        """Converts S3 URI to a SIGNED CloudFront CDN URL (issue #229)."""
         from shared.avatar import get_avatar_cdn_url
         
         s3_uri = 's3://bucket/avatars/persona_123.png'
         result = get_avatar_cdn_url(s3_uri, cdn_url='https://cdn.example.com')
         
-        assert result == 'https://cdn.example.com/persona_123.png'
+        assert result.startswith('https://cdn.example.com/persona_123.png?')
+        assert 'Signature=' in result and 'Expires=' in result
 
     def test_returns_none_when_cdn_not_configured(self):
         """Returns None when CDN URL not configured."""
         from shared.avatar import get_avatar_cdn_url
         
-        result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('AVATARS_CDN_URL', None)
+            result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
         
         assert result is None
 

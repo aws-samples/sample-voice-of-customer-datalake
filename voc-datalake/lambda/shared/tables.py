@@ -6,81 +6,43 @@ Provides centralized table access with connection reuse.
 import os
 from shared.aws import get_dynamodb_resource
 
-# Module-level cached table references
-_jobs_table = None
-_aggregates_table = None
-_feedback_table = None
-_projects_table = None
+_cache: dict[str, object] = {}
+
+
+def _get_table(env_var: str):
+    """Get a DynamoDB table resource by env var name, with connection reuse."""
+    if env_var not in _cache:
+        table_name = os.environ.get(env_var, '')
+        if table_name:
+            _cache[env_var] = get_dynamodb_resource().Table(table_name)
+    return _cache.get(env_var)
 
 
 def get_jobs_table():
-    """Get jobs table resource with connection reuse.
-    
-    Requires JOBS_TABLE environment variable to be set.
-    
-    Returns:
-        DynamoDB Table resource or None if not configured
-    """
-    global _jobs_table
-    if _jobs_table is None:
-        table_name = os.environ.get('JOBS_TABLE', '')
-        if table_name:
-            _jobs_table = get_dynamodb_resource().Table(table_name)
-    return _jobs_table
+    """Get jobs table resource. Requires JOBS_TABLE env var."""
+    return _get_table('JOBS_TABLE')
 
 
 def get_aggregates_table():
-    """Get aggregates table resource with connection reuse.
-    
-    Requires AGGREGATES_TABLE environment variable to be set.
-    
-    Returns:
-        DynamoDB Table resource or None if not configured
-    """
-    global _aggregates_table
-    if _aggregates_table is None:
-        table_name = os.environ.get('AGGREGATES_TABLE', '')
-        if table_name:
-            _aggregates_table = get_dynamodb_resource().Table(table_name)
-    return _aggregates_table
+    """Get aggregates table resource. Requires AGGREGATES_TABLE env var."""
+    return _get_table('AGGREGATES_TABLE')
 
 
 def get_feedback_table():
-    """Get feedback table resource with connection reuse.
-    
-    Requires FEEDBACK_TABLE environment variable to be set.
-    
-    Returns:
-        DynamoDB Table resource or None if not configured
-    """
-    global _feedback_table
-    if _feedback_table is None:
-        table_name = os.environ.get('FEEDBACK_TABLE', '')
-        if table_name:
-            _feedback_table = get_dynamodb_resource().Table(table_name)
-    return _feedback_table
+    """Get feedback table resource. Requires FEEDBACK_TABLE env var."""
+    return _get_table('FEEDBACK_TABLE')
 
 
 def get_projects_table():
-    """Get projects table resource with connection reuse.
-    
-    Requires PROJECTS_TABLE environment variable to be set.
-    
-    Returns:
-        DynamoDB Table resource or None if not configured
-    """
-    global _projects_table
-    if _projects_table is None:
-        table_name = os.environ.get('PROJECTS_TABLE', '')
-        if table_name:
-            _projects_table = get_dynamodb_resource().Table(table_name)
-    return _projects_table
+    """Get projects table resource. Requires PROJECTS_TABLE env var."""
+    return _get_table('PROJECTS_TABLE')
+
+
+def get_conversations_table():
+    """Get conversations table resource. Requires CONVERSATIONS_TABLE env var."""
+    return _get_table('CONVERSATIONS_TABLE')
 
 
 def clear_table_cache():
     """Clear all cached table references. Useful for testing."""
-    global _jobs_table, _aggregates_table, _feedback_table, _projects_table
-    _jobs_table = None
-    _aggregates_table = None
-    _feedback_table = None
-    _projects_table = None
+    _cache.clear()

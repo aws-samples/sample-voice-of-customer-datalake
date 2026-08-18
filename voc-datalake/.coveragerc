@@ -1,0 +1,8 @@
+# Coverage config (pytest-cov reads this automatically).
+[run]
+omit =
+    # Plugin scaffold: not shipped, its tests are excluded (norecursedirs),
+    # so keep it out of coverage noise too.
+    plugins/_template/*
+    # Vendored layer build output.
+    lambda/layers/*

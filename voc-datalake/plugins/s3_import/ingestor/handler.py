@@ -10,7 +10,6 @@ import io
 import hashlib
 import boto3
 import urllib.parse
-from datetime import datetime, timezone
 from typing import Generator
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
 
@@ -189,20 +188,27 @@ class S3ImportIngestor(BaseIngestor):
         batch: list[dict] = []
         total = 0
 
-        for item in parser(stream, source_name):
-            normalized = self.normalize_item(item)
-            batch.append(normalized)
-            if len(batch) >= 100:
-                self.send_to_queue(batch)
-                total += len(batch)
-                batch = []
+        try:
+            for item in parser(stream, source_name):
+                normalized = self.normalize_item(item)
+                batch.append(normalized)
+                if len(batch) >= 100:
+                    # Count what SQS confirmed, not what was attempted:
+                    # send_to_queue raises rather than losing items, so the
+                    # returned count is the only honest input to ItemsImported.
+                    total += self.send_to_queue(batch)
+                    batch = []
 
-        if batch:
-            self.send_to_queue(batch)
-            total += len(batch)
+            if batch:
+                total += self.send_to_queue(batch)
+        finally:
+            # Emit in a finally for the same reason the shared helper does: when
+            # send_to_queue raises, the batches already accepted must still be
+            # recorded, otherwise what landed on the queue is unrecoverable from
+            # metrics.  The exception is not swallowed.
+            logger.info(f"Processed {key}: {total} items")
+            metrics.add_metric(name="ItemsImported", unit="Count", value=total)
 
-        logger.info(f"Processed {key}: {total} items")
-        metrics.add_metric(name="ItemsImported", unit="Count", value=total)
         return total
 
 

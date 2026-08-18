@@ -190,7 +190,7 @@ describe('Plugin Loader', () => {
       expect(() => loadPlugins('/test/plugins')).toThrow();
     });
 
-    it('rejects timeout exceeding 300 seconds', async () => {
+    it('rejects timeout exceeding 900 seconds', async () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readdirSync.mockReturnValue(mockDirents('slow_plugin'));
 
@@ -201,7 +201,7 @@ describe('Plugin Loader', () => {
         infrastructure: {
           ingestor: {
             enabled: true,
-            timeout: 600,  // Exceeds 300
+            timeout: 901,  // Exceeds 900 (Lambda hard max)
           },
         },
       }));
@@ -209,6 +209,29 @@ describe('Plugin Loader', () => {
       const { loadPlugins } = await import('./plugin-loader');
 
       expect(() => loadPlugins('/test/plugins')).toThrow();
+    });
+
+    it('accepts timeout of exactly 900 seconds (Lambda hard max)', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(mockDirents('max_timeout_plugin'));
+
+      mockFs.readFileSync.mockReturnValue(JSON.stringify({
+        id: 'max_timeout_plugin',
+        name: 'Max Timeout Plugin',
+        icon: '⏱️',
+        infrastructure: {
+          ingestor: {
+            enabled: true,
+            timeout: 900,  // inclusive boundary — Lambda hard max
+          },
+        },
+      }));
+
+      const { loadPlugins } = await import('./plugin-loader');
+      const result = loadPlugins('/test/plugins');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].infrastructure.ingestor?.timeout).toBe(900);
     });
 
     it('rejects memory exceeding 1024 MB', async () => {
@@ -251,6 +274,48 @@ describe('Plugin Loader', () => {
       const { loadPlugins } = await import('./plugin-loader');
 
       expect(() => loadPlugins('/test/plugins')).toThrow();
+    });
+
+    it('accepts the synthetic category and the ingestor.bedrock capability flag', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(mockDirents('synthetic_reviews'));
+
+      mockFs.readFileSync.mockReturnValue(JSON.stringify({
+        id: 'synthetic_reviews',
+        name: 'Synthetic Data Review Generator',
+        icon: '🧪',
+        category: 'synthetic',
+        infrastructure: {
+          ingestor: { enabled: true, timeout: 300, memory: 512, bedrock: true },
+        },
+        config: [],
+      }));
+
+      const { loadPlugins } = await import('./plugin-loader');
+      const result = loadPlugins('/test/plugins');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].category).toBe('synthetic');
+      expect(result[0].infrastructure.ingestor?.bedrock).toBe(true);
+    });
+
+    it('defaults ingestor.bedrock to false so non-opted-in plugins never get a Bedrock role', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(mockDirents('webscraper'));
+
+      mockFs.readFileSync.mockReturnValue(JSON.stringify({
+        id: 'webscraper',
+        name: 'Web Scraper',
+        icon: '🌐',
+        infrastructure: { ingestor: { enabled: true } },
+      }));
+
+      const { loadPlugins } = await import('./plugin-loader');
+      const result = loadPlugins('/test/plugins');
+
+      // The dedicated Bedrock role in ingestion-stack keys off `bedrock === true`,
+      // so the default MUST be false to keep the shared least-privilege role.
+      expect(result[0].infrastructure.ingestor?.bedrock).toBe(false);
     });
   });
 

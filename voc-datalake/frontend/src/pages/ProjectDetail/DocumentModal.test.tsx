@@ -41,6 +41,7 @@ describe('DocumentModal', () => {
     render(<DocumentModal {...defaultProps} onTitleChange={onTitleChange} />)
     
     await user.type(screen.getByPlaceholderText('Document title...'), 'New')
+    // eslint-disable-next-line vitest/prefer-called-with
     expect(onTitleChange).toHaveBeenCalled()
   })
 
@@ -50,6 +51,7 @@ describe('DocumentModal', () => {
     render(<DocumentModal {...defaultProps} onContentChange={onContentChange} />)
     
     await user.type(screen.getByPlaceholderText(/Write your document/), 'Text')
+    // eslint-disable-next-line vitest/prefer-called-with
     expect(onContentChange).toHaveBeenCalled()
   })
 

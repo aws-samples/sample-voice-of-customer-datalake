@@ -1,0 +1,189 @@
+{
+  "actions": {
+    "reset": "重置",
+    "save": "保存评分",
+    "saveMobile": "保存",
+    "saving": "保存中...",
+    "savingMobile": "..."
+  },
+  "ballot": {
+    "anonymousNotice": "你的投票是匿名的：它会计入该文档的团队评分，但不会归属于你或任何其他人。",
+    "axes": {
+      "confidence": "信心",
+      "confidenceHint": "你对以上两项估计有多大把握？",
+      "impact": "影响",
+      "impactHint": "业务价值与客户收益。",
+      "strategicFit": "战略契合度",
+      "strategicFitHint": "与公司目标的一致程度。",
+      "timeToMarket": "上市时间",
+      "timeToMarketHint": "多快能交付？5 表示最快。"
+    },
+    "closed": {
+      "capReached": "本次投票收集的票数已达上限。请主持人另开一场投票。",
+      "closed": "主持人已结束本次投票，不再接受新的选票。",
+      "expired": "本次投票已过期，不再接受新的选票。",
+      "invalid": "无法读取此投票，因此未记录任何内容。请检查评分和备注后重新提交。",
+      "notFound": "此链接无法打开任何投票。请确认你扫描的是当前屏幕上的二维码。",
+      "title": "该投票未开放",
+      "unknown": "暂时无法记录你的投票。请稍后再试。"
+    },
+    "displayName": {
+      "hint": "可选。选票不会归属于任何个人，因此可以留空。",
+      "label": "你的姓名（可选）"
+    },
+    "done": {
+      "description": "你的选票会计入该文档的团队评分。投票开放期间，你可以用同一部手机重新打开本页面修改。",
+      "title": "已记录选票"
+    },
+    "loading": "正在加载本次投票...",
+    "notes": {
+      "label": "备注（可选）",
+      "placeholder": "数字之外想补充的内容..."
+    },
+    "rejected": {
+      "title": "您的投票未被记录"
+    },
+    "scopeNote": "你评分的是一个完整提案：本次投票以一张选票涵盖其背后的整套文档。",
+    "submit": {
+      "label": "提交选票",
+      "pending": "正在提交..."
+    },
+    "title": "为该提案评分",
+    "unavailable": {
+      "description": "尚未提交任何内容。请重新加载页面再试——本次投票本身可能仍在进行。",
+      "title": "无法加载本次投票"
+    }
+  },
+  "configureApiEndpoint": "在设置中配置 API 端点以查看优先级排序。",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
+  "empty": {
+    "description": "在项目中创建 PRD 或 PR/FAQ 以开始优先级排序。",
+    "title": "未找到文档",
+    "wrongTypeDescription": "您的项目有文档，但没有 PRD 或 PR/FAQ。请打开项目并生成 PRD 或 PR/FAQ 以在此处评分。",
+    "wrongTypeTitle": "没有可评分的文档"
+  },
+  "evidence": {
+    "avgRating": "平均评分",
+    "noLinkedForm": "没有反馈表单与此文档关联。",
+    "noRatings": "未收集到评分",
+    "submissions": "提交数",
+    "title": "已收集的反馈",
+    "unavailable": "评分不可用"
+  },
+  "framework": {
+    "description": "对每个文档进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
+    "title": "优先级排序框架"
+  },
+  "loading": "加载文档中...",
+  "noteTooLong": {
+    "description": "备注最多 {{max}} 个字符，超出长度的备注会被拒绝，而不会被截断。请缩短所编辑行的备注，然后重新保存。目前尚未保存任何内容。",
+    "title": "备注过长，无法保存"
+  },
+  "notes": {
+    "label": "备注",
+    "placeholder": "添加关于此优先级排序决策的备注..."
+  },
+  "preview": {
+    "prototypeTitle": "原型",
+    "title": "文档预览",
+    "viewFull": "查看完整文档",
+    "viewMobile": "查看"
+  },
+  "priority": {
+    "high": "高优先级",
+    "low": "低优先级",
+    "medium": "中优先级",
+    "none": "未评分"
+  },
+  "roomVote": {
+    "anonymousNote": "在此投出的选票会计入上方的团队评分，且不会归属于任何个人。",
+    "ballotsIn": "已收到 {{received}} / {{cap}} 张选票",
+    "close": "结束投票",
+    "closeFailed": "无法结束投票。请重试——在结束之前仍会接受选票。",
+    "closed": "本次投票已结束，不再接受新的选票。",
+    "closing": "正在结束...",
+    "description": "在屏幕上展示二维码，让会议室中的每个人无需账号即可用手机提交一张匿名选票。",
+    "expired": "本次投票已过期，不再接受新的选票。",
+    "open": "开启会场投票",
+    "openAnother": "另开一场投票",
+    "openFailed": "无法开启投票。请重试。",
+    "opening": "正在开启...",
+    "qrAccessibleName": "打开 {{title}} 匿名投票页面的二维码",
+    "qrCaption": "扫码即可用手机为该提案评分",
+    "qrUnavailable": "因无法共享本页地址，二维码不可用。",
+    "scopeDocuments": "一张选票覆盖其背后的全部 {{documents}} 个文档，因此现场评分的是整个提案。",
+    "scopeNote": "本次投票评分一个提案：{{title}}。",
+    "title": "在会场共同评分"
+  },
+  "row": {
+    "multiDocument": "{{documents}} 个文档，一张选票"
+  },
+  "scores": {
+    "confidence": "置信度",
+    "confidenceDescription": "对影响力和上市时间估计的确定性",
+    "fast": "快速",
+    "high": "高",
+    "impact": "影响力",
+    "impactDescription": "业务价值和客户收益",
+    "low": "低",
+    "notScored": "未评分",
+    "slow": "缓慢",
+    "strategicFit": "战略契合度",
+    "strategicFitDescription": "与公司目标的一致性",
+    "timeToMarket": "上市时间",
+    "timeToMarketDescription": "能多快交付？",
+    "title": "优先级排序评分",
+    "wholeRow": "一张选票覆盖本行的全部 {{documents}} 个文档。",
+    "yoursOnly": "这是你自己的评分。保存时只会写入你的分数。"
+  },
+  "scoresUnavailable": {
+    "description": "当前无法获取已保存的评分，因此下方显示的是默认值，而非任何人输入的数值。请在保存前重新加载页面。",
+    "staleDescription": "最近一次重新获取已保存的评分失败，因此显示的是上次成功读取的数值。您自己的评分未受影响，保存前无需重新加载页面。",
+    "title": "无法加载评分"
+  },
+  "sort": {
+    "date": "日期",
+    "dateFull": "创建日期",
+    "impact": "影响力",
+    "label": "排序方式：",
+    "priority": "优先级",
+    "priorityFull": "优先级评分",
+    "teamOrdered": "{{fields}} 按每行显示的团队数值排序，而不是按你自己的评分。",
+    "ttm": "上市时间",
+    "ttmFull": "上市时间"
+  },
+  "stats": {
+    "highPriority": "高优先级",
+    "mediumPriority": "中优先级",
+    "notScored": "未评分",
+    "totalRows": "提案总数",
+    "unreadable_one": "无法读取 {{count}} 个提案的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
+    "unreadable_other": "无法读取 {{count}} 个提案的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
+  },
+  "subtitle": "对所有项目中的 PRD 和 PR/FAQ 进行评分和优先级排序",
+  "team": {
+    "disagreement": "分歧 {{spread}}",
+    "disagreementDescription": "评审人对该评分的差距为 {{spread}}。原因写在各自的备注中——本页仅显示你自己的备注。",
+    "loading": "正在加载团队评分",
+    "loadingDescription": "团队评分仍在加载中，因此本行尚未显示是否有人投票。加载完成后会自动填充。",
+    "noScores": "尚未评分",
+    "noScoresDescription": "还没有人评分，因此它是未排序而不是评分偏低。使用下面的滑块可投出第一票。",
+    "reviewers": "评审人",
+    "score": "团队评分",
+    "summary": "团队平均分 {{score}} / 5 · 评审票数：{{reviewers}}",
+    "title": "团队的评分",
+    "unattributedNote": "部分选票可能来自匿名的会场投票，每张各计为一位评审，且不归属于任何个人。",
+    "unavailable": "无法获取团队评分",
+    "unavailableDescription": "目前无法读取团队的评分，因此本行不显示相关信息——这并不表示没有人投票。请重新加载页面以查看团队的评分。"
+  },
+  "title": "优先级排序",
+  "unsavedChanges": {
+    "cancel": "留在此页面",
+    "confirm": "放弃更改",
+    "message": "您有未保存的优先级排序评分。要放弃更改并离开此页面吗？",
+    "title": "未保存的更改"
+  }
+}

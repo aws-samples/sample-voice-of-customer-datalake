@@ -25,12 +25,17 @@ vi.mock('../../services/auth', () => ({
 
 // Mock react-router-dom
 const mockNavigate = vi.fn()
+// Mutable so a test can arrive here the way an expired session does.
+let mockLocation: { state?: unknown; search: string } = {
+  state: { from: '/dashboard' },
+  search: '',
+}
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useLocation: () => ({ state: { from: '/dashboard' } }),
+    useLocation: () => mockLocation,
   }
 })
 
@@ -52,6 +57,44 @@ function createWrapper() {
 describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockLocation = { state: { from: '/dashboard' }, search: '' }
+  })
+
+  /*
+   * Landing here because a session died is not the same as landing here to
+   * sign in. Without the notice, an app that was working a moment ago simply
+   * becomes a login form with no explanation.
+   */
+  describe('expired-session notice', () => {
+    it('explains itself when redirected by an expired session', () => {
+      mockLocation = { search: '?expired=1' }
+
+      render(<Login />, { wrapper: createWrapper() })
+
+      expect(screen.getByText(/session expired/i)).toBeInTheDocument()
+    })
+
+    it('says nothing on an ordinary visit', () => {
+      render(<Login />, { wrapper: createWrapper() })
+
+      expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument()
+    })
+
+    it('yields to a real submit error', async () => {
+      mockLocation = { search: '?expired=1' }
+      mockSignIn.mockRejectedValue(new Error('Incorrect username or password'))
+      const user = userEvent.setup()
+
+      render(<Login />, { wrapper: createWrapper() })
+      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
+      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'wrong')
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/incorrect username or password/i)).toBeInTheDocument()
+      })
+      expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument()
+    })
   })
 
   describe('initial render', () => {
@@ -235,15 +278,13 @@ describe('Login', () => {
       const passwordInput = screen.getByPlaceholderText(/Enter your password/i)
       expect(passwordInput).toHaveAttribute('type', 'password')
       
-      // Find the toggle button by its position relative to the password input
-      const passwordContainer = passwordInput.parentElement
-      const toggleButton = passwordContainer?.querySelector('button')
+      // The toggle button is inside the same container as the password input
+      // eslint-disable-next-line testing-library/no-node-access
+      const toggleButton = passwordInput.parentElement!.querySelector('button')!
       expect(toggleButton).toBeInTheDocument()
       
-      if (toggleButton) {
-        await user.click(toggleButton)
-        expect(passwordInput).toHaveAttribute('type', 'text')
-      }
+      await user.click(toggleButton)
+      expect(passwordInput).toHaveAttribute('type', 'text')
     })
   })
 

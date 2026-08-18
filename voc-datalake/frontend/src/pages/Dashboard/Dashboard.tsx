@@ -12,15 +12,45 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar } from 'recharts'
-import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap } from 'lucide-react'
-import { api, getDaysFromRange } from '../../api/client'
+import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap, FileDown } from 'lucide-react'
+import { api, getDateRangeParams } from '../../api/client'
 import type { MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import MetricCard from '../../components/MetricCard'
 import FeedbackCard from '../../components/FeedbackCard'
 import SocialFeed from '../../components/SocialFeed'
+import { generateDashboardPDF } from './dashboardPdfGenerator'
+import { getTimeRangeLabel } from '../../utils/dateUtils'
+import { useTranslation } from 'react-i18next'
+import DashboardEmptyState from './DashboardEmptyState'
+import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 
 const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
+
+/**
+ * How many urgent items the dashboard previews. The list is a preview, not the
+ * full set — the heading reports the true total from /metrics/summary, so this
+ * number must never be presented as a count.
+ */
+const URGENT_PREVIEW_LIMIT = 5
+
+/**
+ * Count for the "Urgent Issues (N)" heading.
+ *
+ * The heading and the list beneath it come from different sources: the exact
+ * `METRIC#urgent` aggregate (via /metrics/summary) and a windowed scan (via
+ * /feedback/urgent). They can disagree when aggregates are missing, stale, or
+ * bounded differently — and the aggregate can legitimately read 0 while the scan
+ * still returns items, so a nullish fallback would not catch it (0 is not
+ * nullish).
+ *
+ * Taking the larger value holds two invariants at once: never understate the
+ * total (reporting the page size was the original defect), and never claim fewer
+ * items than are visibly rendered.
+ */
+function urgentHeadingCount(aggregateTotal: number | undefined, previewLength: number | undefined): number {
+  return Math.max(aggregateTotal ?? 0, previewLength ?? 0)
+}
 
 function NotConfiguredState() {
   return (
@@ -51,14 +81,22 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
   const avgSentiment = summary ? Number(summary.avg_sentiment) : 0
   const sentimentTrend = avgSentiment > 0 ? 'up' : 'down'
   const sentimentColor = avgSentiment > 0 ? 'green' : 'red'
+  // Review-basis metrics come from a budget-bounded scan; when truncated the
+  // counts are lower bounds and the cards must say so instead of look exact.
+  const isPartial = summary?.is_partial ?? false
+  const partialHint = isPartial
+    ? 'Approximate: the window exceeded the scan budget, counts are a lower bound'
+    : undefined
+  const approx = (n: number | string) => (isPartial ? `~${n}` : n)
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       <MetricCard
         title="Total Feedback"
-        value={summary?.total_feedback.toLocaleString() || 0}
+        value={approx(summary?.total_feedback.toLocaleString() || 0)}
         icon={<MessageSquare size={24} />}
         color="blue"
+        hint={partialHint}
       />
       <MetricCard
         title="Avg Sentiment"
@@ -69,9 +107,10 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
       />
       <MetricCard
         title="Urgent Issues"
-        value={summary?.urgent_count || 0}
+        value={approx(summary?.urgent_count || 0)}
         icon={<AlertTriangle size={24} />}
         color="orange"
+        hint={partialHint}
       />
       <MetricCard
         title="Sources Active"
@@ -216,11 +255,18 @@ function SourceChart({ sources }: Readonly<SourceChartProps>) {
 
 interface UrgentFeedbackProps {
   items: FeedbackItem[] | undefined
-  count: number
+  /**
+   * Exact urgent total for the window, from /metrics/summary's `urgent_count`.
+   * Deliberately not the preview list's `count`, which is that page's length and
+   * is clamped by the limit it was fetched with. The heading is reconciled
+   * against the rendered items by `urgentHeadingCount`.
+   */
+  aggregateTotal: number | undefined
 }
 
-function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
+function UrgentFeedback({ items, aggregateTotal }: Readonly<UrgentFeedbackProps>) {
   const hasItems = items && items.length > 0
+  const count = urgentHeadingCount(aggregateTotal, items?.length)
 
   return (
     <div className="card !p-4 sm:!p-6">
@@ -230,7 +276,7 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
       </h3>
       {hasItems ? (
         <div className="space-y-3 max-h-[400px] sm:max-h-[600px] overflow-y-auto">
-          {items.slice(0, 6).map((item) => (
+          {items.slice(0, URGENT_PREVIEW_LIMIT).map((item) => (
             <FeedbackCard key={item.feedback_id} feedback={item} compact />
           ))}
         </div>
@@ -243,38 +289,83 @@ function UrgentFeedback({ items, count }: Readonly<UrgentFeedbackProps>) {
   )
 }
 
+interface PDFExportInput {
+  summary: MetricsSummary | undefined
+  sentiment: SentimentBreakdown | undefined
+  categories: CategoryBreakdown | undefined
+  sources: SourceBreakdown | undefined
+  urgentFeedback: { items?: FeedbackItem[]; count?: number } | undefined
+  timeRange: string
+  sourcesCount: number
+}
+
+function buildSentimentEntries(sentiment: SentimentBreakdown | undefined) {
+  if (!sentiment) return []
+  return Object.entries(sentiment.breakdown)
+    .filter(([, v]) => v > 0)
+    .map(([name, value]) => ({ name, value }))
+}
+
+function buildCategoryEntries(categories: CategoryBreakdown | undefined) {
+  if (!categories) return []
+  return Object.entries(categories.categories)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([name, value]) => ({ name, value }))
+}
+
+function buildPDFExportData(input: PDFExportInput) {
+  return {
+    timeRange: input.timeRange,
+    totalFeedback: input.summary?.total_feedback ?? 0,
+    avgSentiment: input.summary ? Number(input.summary.avg_sentiment) : 0,
+    urgentCount: input.summary?.urgent_count ?? 0,
+    sourcesCount: input.sourcesCount,
+    dailyTotals: input.summary?.daily_totals ?? [],
+    sentimentBreakdown: buildSentimentEntries(input.sentiment),
+    categoryBreakdown: buildCategoryEntries(input.categories),
+    sourceBreakdown: prepareSourceData(input.sources),
+    urgentItems: input.urgentFeedback?.items ?? [],
+  }
+}
+
 export default function Dashboard() {
-  const { timeRange, customDateRange, config } = useConfigStore()
-  const days = getDaysFromRange(timeRange, customDateRange)
+  const { t } = useTranslation('common')
+  const { timeRange, customDays, dateBasis, config } = useConfigStore()
+  const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['summary', days],
-    queryFn: () => api.getSummary(days),
-    enabled: isConfigured,
-  })
+  // Shared with the sidebar urgent badge via useSummaryQuery so the two cannot
+  // resolve to different cache entries (see that module).
+  // Takes the endpoint rather than `isConfigured`: the hook owns both the query
+  // key and its enabling condition, so callers cannot make them disagree.
+  const { data: summary, isLoading: summaryLoading } = useSummaryQuery(dateParams, config.apiEndpoint)
 
   const { data: sentiment } = useQuery({
-    queryKey: ['sentiment', days],
-    queryFn: () => api.getSentiment(days),
+    queryKey: ['sentiment', dateParams],
+    queryFn: () => api.getSentiment(dateParams),
     enabled: isConfigured,
   })
 
   const { data: categories } = useQuery({
-    queryKey: ['categories', days],
-    queryFn: () => api.getCategories(days),
+    queryKey: ['categories', dateParams],
+    queryFn: () => api.getCategories(dateParams),
     enabled: isConfigured,
   })
 
   const { data: sources } = useQuery({
-    queryKey: ['sources', days],
-    queryFn: () => api.getSources(days),
+    queryKey: ['sources', dateParams],
+    queryFn: () => api.getSources(dateParams),
     enabled: isConfigured,
   })
 
+  // `limit` MUST stay in the query key: /feedback/urgent returns a different
+  // payload per limit, so a key that omits it lets two callers with different
+  // limits collide on one cache entry (which is how the sidebar badge used to
+  // render this list's page size).
   const { data: urgentFeedback } = useQuery({
-    queryKey: ['urgent', days],
-    queryFn: () => api.getUrgentFeedback({ days, limit: 5 }),
+    queryKey: ['urgent', dateParams, URGENT_PREVIEW_LIMIT],
+    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: URGENT_PREVIEW_LIMIT }),
     enabled: isConfigured,
   })
 
@@ -286,10 +377,44 @@ export default function Dashboard() {
     return <LoadingState />
   }
 
+  // No feedback in this range → show a compact prompt that points to the Home
+  // page, which carries the full getting-started walkthrough (prd-fix #10
+  // onboarding/IA). Avoids rendering empty charts or duplicating the guide.
+  if ((summary?.total_feedback ?? 0) === 0) {
+    return <DashboardEmptyState />
+  }
+
   const sourcesCount = Object.keys(sources?.sources || {}).length
+
+  const exportPDF = () => {
+    try {
+      generateDashboardPDF(buildPDFExportData({
+        summary,
+        sentiment,
+        categories,
+        sources,
+        urgentFeedback,
+        timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
+        sourcesCount,
+      }))
+    } catch {
+      // PDF generation is best-effort (e.g. popup blocked)
+    }
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      <div className="flex justify-end">
+        <button
+          onClick={exportPDF}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+          title={t('exportPdfTooltip')}
+        >
+          <FileDown size={14} />
+          {t('exportPdf')}
+        </button>
+      </div>
+
       <MetricsGrid summary={summary} sourcesCount={sourcesCount} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
@@ -310,7 +435,7 @@ export default function Dashboard() {
           </h3>
           <SocialFeed limit={8} showFilters={true} />
         </div>
-        <UrgentFeedback items={urgentFeedback?.items} count={urgentFeedback?.count || 0} />
+        <UrgentFeedback items={urgentFeedback?.items} aggregateTotal={summary?.urgent_count} />
       </div>
     </div>
   )

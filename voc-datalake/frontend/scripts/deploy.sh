@@ -9,30 +9,45 @@ FRONTEND_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$FRONTEND_DIR"
 
+# Stack names, overridable for a deployment created with -c deploymentPrefix=<p>,
+# whose stacks are <p>-VocCoreStack / <p>-VocApiStack. Same seam as
+# scripts/update-env.sh: bin/voc-datalake.ts reads the prefix from CDK context,
+# which a shell script cannot see, so an env var is the only way to point this at
+# the right deployment.
+#
+# It matters more here than in update-env.sh: with the names hardcoded, running
+# this for the second deployment resolves the FIRST deployment's bucket and
+# distribution and syncs the wrong build over its live site — silently, because
+# every output resolves fine.
+#
+#   CORE_STACK=b-VocCoreStack API_STACK=b-VocApiStack npm run deploy:frontend
+CORE_STACK="${CORE_STACK:-VocCoreStack}"
+API_STACK="${API_STACK:-VocApiStack}"
+
 echo "=== VoC Frontend Deployment ==="
 echo ""
 
 # Step 1: Fetch all outputs from CloudFormation stacks
-echo "Step 1: Fetching configuration from CloudFormation..."
+echo "Step 1: Fetching configuration from CloudFormation ($CORE_STACK, $API_STACK)..."
 
 CORE_OUTPUTS=$(aws cloudformation describe-stacks \
-  --stack-name VocCoreStack \
+  --stack-name "$CORE_STACK" \
   --query 'Stacks[0].Outputs' \
   --output json 2>&1)
 
 if [ $? -ne 0 ]; then
-  echo "Error: Failed to fetch VocCoreStack outputs"
+  echo "Error: Failed to fetch $CORE_STACK outputs"
   echo "$CORE_OUTPUTS"
   exit 1
 fi
 
 API_OUTPUTS=$(aws cloudformation describe-stacks \
-  --stack-name VocApiStack \
+  --stack-name "$API_STACK" \
   --query 'Stacks[0].Outputs' \
   --output json 2>&1)
 
 if [ $? -ne 0 ]; then
-  echo "Error: Failed to fetch VocApiStack outputs"
+  echo "Error: Failed to fetch $API_STACK outputs"
   echo "$API_OUTPUTS"
   exit 1
 fi
@@ -47,20 +62,22 @@ IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="Ident
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
 STREAM_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ChatStreamUrl") | .OutputValue // empty')
 AVATARS_CDN_URL=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="AvatarsCdnUrl") | .OutputValue // empty')
+# "true" when the AgentCore web search gateway is deployed (drives the UI toggles)
+WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebSearchAvailable") | .OutputValue // "false"')
 
 # Validate required values
 if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
-  echo "Error: Could not fetch bucket name from VocCoreStack"
+  echo "Error: Could not fetch bucket name from $CORE_STACK"
   exit 1
 fi
 
 if [ -z "$DISTRIBUTION_ID" ] || [ "$DISTRIBUTION_ID" = "null" ]; then
-  echo "Error: Could not fetch distribution ID from VocCoreStack"
+  echo "Error: Could not fetch distribution ID from $CORE_STACK"
   exit 1
 fi
 
 if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "null" ]; then
-  echo "Error: Could not fetch API endpoint from VocApiStack"
+  echo "Error: Could not fetch API endpoint from $API_STACK"
   exit 1
 fi
 
@@ -76,12 +93,12 @@ echo "  Avatars CDN: $AVATARS_CDN_URL"
 
 # Step 2: Build the frontend
 echo ""
-echo "Step 3: Building frontend..."
+echo "Step 2: Building frontend..."
 npm run build
 
 # Step 3: Generate runtime config.json
 echo ""
-echo "Step 4: Generating runtime config.json..."
+echo "Step 3: Generating runtime config.json..."
 
 # Use jq to properly escape values and generate valid JSON
 jq -n \
@@ -92,6 +109,7 @@ jq -n \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
   --arg identityPoolId "$IDENTITY_POOL_ID" \
+  --argjson webSearch "$([ "$WEB_SEARCH_AVAILABLE" = "true" ] && echo true || echo false)" \
   '{
     apiEndpoint: $apiEndpoint,
     streamEndpoint: $streamEndpoint,
@@ -101,19 +119,49 @@ jq -n \
       clientId: $clientId,
       region: $region,
       identityPoolId: $identityPoolId
+    },
+    features: {
+      webSearch: $webSearch
     }
   }' > dist/config.json
 
 echo "  ✓ config.json generated with CloudFormation values"
 
 # Step 4: Sync to S3
+#
+# Cache-Control is split by mutability (issue #188): Vite's /assets/* are
+# content-hashed, so they can cache forever — but everything with a STABLE
+# name (index.html, config.json, locales/**, manifests) must revalidate on
+# every load. Without this, browsers heuristically cache the old locale
+# JSONs across deploys and the new JS bundle renders raw i18n keys
+# (nav.home, home.title, ...) until a hard refresh. CloudFront invalidation
+# can't fix that: the staleness lives in the browser cache.
+#
+# Metadata note: sync only sets Cache-Control on objects it uploads. That
+# is sufficient because `npm run build` regenerates dist/ with fresh
+# mtimes, so every file uploads (and gets metadata) on each deploy —
+# including the first deploy after this change on buckets that predate it.
+# Don't add --size-only: it would skip unchanged-content files and leave
+# their old metadata in place.
 echo ""
-echo "Step 5: Syncing to S3..."
-aws s3 sync dist/ "s3://${BUCKET_NAME}" --delete
+echo "Step 4: Syncing to S3..."
+# Hashed, immutable assets: cache for a year. Deliberately NO --delete:
+# visitors whose browsers cached the previous index.html (which nothing
+# revalidates until they pick up this fix) still reference the previous
+# deploy's chunks — deleting them would turn a stale-but-working page into
+# 404s. Old hashed chunks are harmless and pennies to keep.
+aws s3 sync dist/assets/ "s3://${BUCKET_NAME}/assets" \
+  --cache-control 'public,max-age=31536000,immutable'
+# Everything else (stable names): always revalidate. ETags make this cheap
+# (304s), and no visitor ever holds a stale config/locale/index again.
+# --exclude also shields assets/* from this pass's --delete.
+aws s3 sync dist/ "s3://${BUCKET_NAME}" --delete \
+  --exclude 'assets/*' \
+  --cache-control 'no-cache'
 
 # Step 5: Invalidate CloudFront cache
 echo ""
-echo "Step 6: Invalidating CloudFront cache..."
+echo "Step 5: Invalidating CloudFront cache..."
 aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' > /dev/null
 
 echo ""

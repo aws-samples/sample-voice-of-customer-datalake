@@ -10,10 +10,13 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
-import { uniqueName } from '../utils/naming';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
+import { allowlistedModelArns } from '../utils/model-allowlist';
+import { pythonLayerCode } from '../utils/python-layer-bundling';
+import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
 
-export interface VocProcessingStackProps extends cdk.StackProps {
+export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
   projectsTable: dynamodb.Table;
@@ -21,6 +24,11 @@ export interface VocProcessingStackProps extends cdk.StackProps {
   idempotencyTable: dynamodb.Table;
   processingQueue: sqs.Queue;
   kmsKey: kms.Key;
+  // Web search (AgentCore Gateway, deployed in us-east-1 by VocWebSearchStack)
+  // — absent when the feature isn't enabled.
+  webSearchGatewayUrl?: string;
+  webSearchGatewayArn?: string;
+  webSearchToolName?: string;
   config: {
     brandName: string;
     brandHandles: string[];
@@ -40,7 +48,7 @@ export interface VocProcessingStackProps extends cdk.StackProps {
  * - Research Step Functions workflow
  * - Research step Lambda
  */
-export class VocProcessingStack extends cdk.Stack {
+export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
   public readonly aggregationLambda: lambda.Function;
   public readonly researchStateMachine: sfn.StateMachine;
@@ -53,16 +61,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     // Shared Lambda Layer
     const processingLayer = new lambda.LayerVersion(this, 'ProcessingDepsLayer', {
-      code: lambda.Code.fromAsset('lambda/layers/processing-deps', {
-        bundling: {
-          image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-          platform: 'linux/arm64',
-          command: [
-            'bash', '-c',
-            'pip install -r requirements.txt -t /asset-output/python && cp -r . /asset-output/python/'
-          ],
-        },
-      }),
+      code: pythonLayerCode('lambda/layers/processing-deps'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
       description: 'Dependencies for processing lambdas (ARM64/Graviton)',
@@ -79,15 +78,12 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     // Bedrock permissions
+    // Enrichment defaults to Haiku but admins can repoint the 'enrichment'
+    // surface via the picker, so grant every allowlisted model (issue #96).
     processingRole.addToPolicy(new iam.PolicyStatement({
       sid: 'BedrockInvoke',
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
-      ],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
     // Comprehend + Translate permissions
@@ -114,7 +110,8 @@ export class VocProcessingStack extends cdk.Stack {
     // FEEDBACK PROCESSOR LAMBDA
     // ============================================
     const processorCode = lambda.Code.fromAsset('lambda', {
-      exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'aggregator/**'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/api/', '/jobs/', '/research/'],
+      ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/processor/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
@@ -123,7 +120,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
-      functionName: uniqueName('voc-feedback-processor'),
+      functionName: this.uniqueName('voc-feedback-processor'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -137,14 +134,16 @@ export class VocProcessingStack extends cdk.Stack {
         PROJECTS_TABLE: projectsTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
-        BEDROCK_MODEL_ID: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        // No BEDROCK_MODEL_ID env: the enrichment model resolves through the
+        // per-surface AI-model picker (lambda/shared/model_config.py — the
+        // 'enrichment' surface defaults to Haiku, admins can override it).
         POWERTOOLS_SERVICE_NAME: 'voc-processor',
         POWERTOOLS_IDEMPOTENCY_DISABLED: '0',
         LOG_LEVEL: 'INFO',
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ProcessorLogs', {
-        logGroupName: uniqueName('/aws/lambda/voc-feedback-processor'),
+        logGroupName: this.uniqueName('/aws/lambda/voc-feedback-processor'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -161,7 +160,8 @@ export class VocProcessingStack extends cdk.Stack {
     // AGGREGATION LAMBDA
     // ============================================
     const aggregatorCode = lambda.Code.fromAsset('lambda', {
-      exclude: ['**/__pycache__', '*.pyc', 'api/**', 'ingestors/**', 'webhooks/**', 'research/**', 'layers/**', 'processor/**'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/api/', '/jobs/', '/processor/', '/research/'],
+      ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
         command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/aggregator/* /asset-output/ && cp -r /asset-input/shared /asset-output/'],
@@ -170,7 +170,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
-      functionName: uniqueName('voc-aggregation-processor'),
+      functionName: this.uniqueName('voc-aggregation-processor'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -185,7 +185,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'AggregatorLogs', {
-        logGroupName: uniqueName('/aws/lambda/voc-aggregation-processor'),
+        logGroupName: this.uniqueName('/aws/lambda/voc-aggregation-processor'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -212,27 +212,46 @@ export class VocProcessingStack extends cdk.Stack {
     feedbackTable.grantReadData(researchRole);
     projectsTable.grantReadWriteData(researchRole);
     jobsTable.grantReadWriteData(researchRole);
+    aggregatesTable.grantReadData(researchRole);
     kmsKey.grantEncryptDecrypt(researchRole);
 
+    // Research is a 'documents' surface (defaults to Sonnet 5) and is
+    // repointable via the picker, so grant every allowlisted model (issue #96).
     researchRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-        'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
+      resources: allowlistedModelArns(this.region, this.account),
     }));
 
-    const researchCode = lambda.Code.fromAsset('.', {
-      exclude: ['**/__pycache__', '*.pyc', 'node_modules/**', 'cdk.out/**', 'frontend/**', '*.ts', '*.js', '*.json', '*.md', 'bin/**', 'lib/**', 'dist/**', '.venv/**', '.pytest_cache/**', 'plugins/**', 'lambda/api/**', 'lambda/processor/**', 'lambda/ingestors/**', 'lambda/aggregator/**', 'lambda/webhooks/**', 'lambda/layers/**'],
+    // Same lambda/-rooted staging as processor/aggregator: root-based staging
+    // hashed the entire CDK project (scripts/, schemas/, coverage output...)
+    // into this asset, redeploying it on every unrelated edit.
+    const researchCode = lambda.Code.fromAsset('lambda', {
+      // research_step_handler reads api/prompts/research-analysis.json at RUNTIME,
+      // so the prompts must be BOTH copied into the bundle (the cp below) and kept
+      // in the asset FINGERPRINT (this per-entry exclude) — otherwise editing the
+      // config would not change the hash and the Lambda would keep the old budgets.
+      // Only prompts are re-included, so api/*.py edits can't churn this hash.
+      exclude: [
+        ...PY_LAMBDA_ASSET_EXCLUDES,
+        '/aggregator/',
+        '/api/*',
+        '!/api/prompts',
+        '/jobs/',
+        '/processor/',
+      ],
+      ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-        command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/lambda/research/* /asset-output/ && cp -r /asset-input/lambda/shared /asset-output/'],
+        // INVARIANT: prompts land at the bundle ROOT (/var/task/prompts) —
+        // shared/prompts.py::get_prompts_dir resolves that path first. Same
+        // staging contract as the api-stack bundles.
+        command: ['bash', '-c', 'mkdir -p /asset-output && cp -r /asset-input/research/* /asset-output/ && cp -r /asset-input/shared /asset-output/ && cp -r /asset-input/api/prompts /asset-output/prompts'],
         platform: 'linux/arm64',
       },
     });
 
     const researchStepLambda = new lambda.Function(this, 'ResearchStepLambda', {
-      functionName: uniqueName('voc-research-step'),
+      functionName: this.uniqueName('voc-research-step'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'research_step_handler.lambda_handler',
@@ -244,12 +263,15 @@ export class VocProcessingStack extends cdk.Stack {
         FEEDBACK_TABLE: feedbackTable.tableName,
         PROJECTS_TABLE: projectsTable.tableName,
         JOBS_TABLE: jobsTable.tableName,
+        // Needed so the per-surface AI-model picker ('documents') can resolve
+        // an admin override for research generation (issue #96).
+        AGGREGATES_TABLE: aggregatesTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-research-step',
         LOG_LEVEL: 'INFO',
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ResearchStepLogs', {
-        logGroupName: uniqueName('/aws/lambda/voc-research-step'),
+        logGroupName: this.uniqueName('/aws/lambda/voc-research-step'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -257,7 +279,22 @@ export class VocProcessingStack extends cdk.Stack {
 
     // Step Functions workflow
     this.researchStateMachine = this.createResearchStateMachine(researchStepLambda);
-    NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions, true);
+    NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions(this.deploymentPrefix), true);
+
+    // ============================================
+    // WEB SEARCH (AgentCore Gateway — see VocWebSearchStack)
+    // ============================================
+    // Opt-in per research request; without the gateway the env vars stay
+    // unset and step_initialize skips web grounding.
+    const { webSearchGatewayUrl, webSearchGatewayArn, webSearchToolName } = props;
+    if (webSearchGatewayUrl && webSearchGatewayArn && webSearchToolName) {
+      researchStepLambda.addEnvironment('WEB_SEARCH_GATEWAY_URL', webSearchGatewayUrl);
+      researchStepLambda.addEnvironment('WEB_SEARCH_TOOL_NAME', webSearchToolName);
+      researchStepLambda.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['bedrock-agentcore:InvokeGateway'],
+        resources: [webSearchGatewayArn],
+      }));
+    }
 
     // ============================================
     // OUTPUTS
@@ -284,6 +321,27 @@ export class VocProcessingStack extends cdk.Stack {
         'feedback_stats.$': '$.Payload.feedback_stats',
         'feedback_count.$': '$.Payload.feedback_count',
         'personas_context.$': '$.Payload.personas_context',
+        // step_initialize ALWAYS returns web_context (empty string when web
+        // search is off) — an absent key here would fail the state outright.
+        'web_context.$': '$.Payload.web_context',
+        // Always returned ([] when web search is off/failed) — flows to the
+        // save step for the report's web-search disclosure (#207).
+        // Update skew: the definition GetAtts the function (implicit CFN
+        // dependency), so the Lambda always updates BEFORE this definition
+        // and a new definition never runs against the old Lambda. In-flight
+        // executions keep the definition they started with; step_save's
+        // .get() defaults cover that opposite skew (old definition, new
+        // Lambda). Same rollout pattern as web_context (#157).
+        'web_search_queries.$': '$.Payload.web_search_queries',
+        // Always returned by step_initialize ('' when unused) — see #157.
+        'documents_context.$': '$.Payload.documents_context',
+        // What the report was built from (reference documents actually used,
+        // how many were selected, feedback count, persona ids). step_initialize
+        // is the only step that reads those inputs, and step_save is what
+        // persists them, so it rides the state like web_search_queries does.
+        // ALWAYS returned by step_initialize (empty when nothing was selected)
+        // — an absent key here would fail the state outright.
+        'derivation.$': '$.Payload.derivation',
       },
     });
     initializeStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
@@ -299,6 +357,8 @@ export class VocProcessingStack extends cdk.Stack {
         'feedback_context.$': '$.initialize_result.feedback_context',
         'feedback_stats.$': '$.initialize_result.feedback_stats',
         'personas_context.$': '$.initialize_result.personas_context',
+        'web_context.$': '$.initialize_result.web_context',
+        'documents_context.$': '$.initialize_result.documents_context',
       }),
       resultPath: '$.analysis_result',
       resultSelector: { 'analysis.$': '$.Payload.analysis' },
@@ -345,6 +405,10 @@ export class VocProcessingStack extends cdk.Stack {
         'project_id.$': '$.project_id',
         'research_config.$': '$.research_config',
         'feedback_count.$': '$.initialize_result.feedback_count',
+        // Executed web-search queries for the report disclosure (#207).
+        'web_search_queries.$': '$.initialize_result.web_search_queries',
+        // Provenance decided at initialize, persisted on the document here.
+        'derivation.$': '$.initialize_result.derivation',
         'analysis.$': '$.analysis_result.analysis',
         'synthesis.$': '$.synthesis_result.synthesis',
         'validation.$': '$.validate_result.validation',
@@ -380,13 +444,13 @@ export class VocProcessingStack extends cdk.Stack {
     handleError.next(failState);
 
     return new sfn.StateMachine(this, 'ResearchStateMachine', {
-      stateMachineName: uniqueName('voc-research-workflow'),
+      stateMachineName: this.uniqueName('voc-research-workflow'),
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       timeout: cdk.Duration.hours(1),
       tracingEnabled: true,
       logs: {
         destination: new logs.LogGroup(this, 'ResearchStateMachineLogs', {
-          logGroupName: uniqueName('/aws/stepfunctions/voc-research-workflow'),
+          logGroupName: this.uniqueName('/aws/stepfunctions/voc-research-workflow'),
           retention: logs.RetentionDays.TWO_WEEKS,
           removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),

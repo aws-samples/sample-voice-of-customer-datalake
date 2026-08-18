@@ -2,20 +2,24 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { randomInt } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Construct } from 'constructs';
-import { uniqueName } from '../utils/naming';
+import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, allowlistedModelArns } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
-import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
+import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
 
-export interface VocCoreStackProps extends cdk.StackProps {
+export interface VocCoreStackProps extends VocStackProps {
   brandName: string;
 }
 
@@ -31,7 +35,7 @@ export interface VocCoreStackProps extends cdk.StackProps {
  * - CloudFront distributions (avatars CDN, frontend hosting)
  * - Cognito User Pool + Client
  */
-export class VocCoreStack extends cdk.Stack {
+export class VocCoreStack extends VocStack {
   // Storage exports
   public readonly feedbackTable: dynamodb.Table;
   public readonly aggregatesTable: dynamodb.Table;
@@ -44,6 +48,22 @@ export class VocCoreStack extends cdk.Stack {
   public readonly rawDataBucket: s3.Bucket;
   public readonly accessLogsBucket: s3.Bucket;
   public readonly avatarsCdnUrl: string;
+  public readonly prototypesCdnUrl: string;
+
+  // CloudFront URL-signing material for the private /avatars/* and
+  // /prototypes/* paths. Consumed by the API stack, whose Lambdas mint signed
+  // URLs for the browser (issue #229).
+  //
+  // The ARN is exported as a STRING, not the Secret construct, and deliberately:
+  // `secret.grantRead(role)` on a CMK-encrypted secret adds a KMS KEY-POLICY
+  // statement naming the grantee, and since the key lives here while the roles
+  // live in the API stack, that makes CoreStack reference ApiStack and
+  // CloudFormation rejects the cycle. Consumers add an explicit
+  // `secretsmanager:GetSecretValue` statement instead — the same pattern the
+  // ingestion `secretsArn` already uses — and get KMS access from the
+  // kmsKey.grantEncryptDecrypt/grantDecrypt calls they already have.
+  public readonly cdnSigningSecretArn: string;
+  public readonly cdnSigningKeyPairId: string;
 
   // Frontend infrastructure exports
   public readonly frontendDistribution: cloudfront.Distribution;
@@ -67,7 +87,7 @@ export class VocCoreStack extends cdk.Stack {
     // KMS KEY
     // ============================================
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {
-      alias: uniqueName('voc-datalake-key'),
+      alias: this.uniqueName('voc-datalake-key'),
       description: 'KMS key for VoC Data Lake encryption',
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -77,7 +97,7 @@ export class VocCoreStack extends cdk.Stack {
     // S3 BUCKETS
     // ============================================
     this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
-      bucketName: uniqueName('voc-access-logs'),
+      bucketName: this.uniqueDnsName('voc-access-logs'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -89,7 +109,7 @@ export class VocCoreStack extends cdk.Stack {
     });
 
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
-      bucketName: uniqueName('voc-raw-data'),
+      bucketName: this.uniqueDnsName('voc-raw-data'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: this.kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -100,8 +120,13 @@ export class VocCoreStack extends cdk.Stack {
       serverAccessLogsBucket: this.accessLogsBucket,
       serverAccessLogsPrefix: 'raw-data-bucket/',
       cors: [{
-        allowedMethods: [s3.HttpMethods.GET],
-        allowedOrigins: corsAllowedOriginsBase,
+        // PUT is required for browser-side presigned uploads (project product docs).
+        // The CloudFront domain is not known at bucket-creation time (the frontend
+        // distribution references this bucket in its behaviors, so using its domain
+        // token here would create a circular dependency) — a *.cloudfront.net
+        // wildcard is safe because presigned URLs remain the actual auth gate.
+        allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT],
+        allowedOrigins: [...corsAllowedOriginsBase, 'https://*.cloudfront.net'],
         allowedHeaders: ['*'],
         maxAge: 3600,
       }],
@@ -109,7 +134,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Frontend hosting bucket
     this.websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
-      bucketName: uniqueName('voc-frontend'),
+      bucketName: this.uniqueDnsName('voc-frontend'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -127,7 +152,15 @@ export class VocCoreStack extends cdk.Stack {
     const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeadersPolicy', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(this).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+          // frame-src 'self': required so the SPA can embed generated prototype HTML via
+          // <iframe src="https://<this-domain>/prototypes/*"> (PR #131 Finding 3 fix). This is
+          // a SEPARATE concern from frame-ancestors below: frame-ancestors governs who may embed
+          // THIS page, frame-src governs what THIS page may embed. Without it, frame-src falls
+          // back to default-src 'none' and blocks framing of anything, even same-origin content —
+          // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
+          // still governs script execution inside that framed document; this only permits the
+          // cross-document load itself.
+          contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(this).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
           override: true,
         },
         contentTypeOptions: { override: true },
@@ -155,9 +188,22 @@ export class VocCoreStack extends cdk.Stack {
         responseHeadersPolicy: securityHeadersPolicy,
       },
       defaultRootObject: 'index.html',
+      // SPA deep-link routing: an unknown path is not a real 404, it is a
+      // client-side route, so it has to return index.html.
+      //
+      // 403 IS DELIBERATELY NOT MAPPED HERE (issue #229). Custom error
+      // responses are distribution-WIDE — CloudFront gives no way to scope
+      // them per behavior — so a 403 rule laundered EVERY denial on this
+      // distribution into a 200 carrying index.html. That is precisely why
+      // unauthenticated access to /avatars/* and /prototypes/* went unnoticed,
+      // and with trustedKeyGroups in place it would be actively harmful: a
+      // rejected prototype request would render the entire SPA inside the
+      // prototype iframe instead of failing, and no test could tell allow from
+      // deny. Deep links keep working through the 404 rule because the
+      // s3:ListBucket grant below makes S3 answer 404 (not 403) for a missing
+      // key.
       errorResponses: [
         { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.minutes(5) },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       enableLogging: true,
@@ -167,6 +213,149 @@ export class VocCoreStack extends cdk.Stack {
     NagSuppressions.addResourceSuppressions(this.frontendDistribution, cloudfrontDefaultCertSuppressions);
     this.frontendDomainName = this.frontendDistribution.distributionDomainName;
 
+    // Let CloudFront distinguish "missing object" from "not allowed" on the SPA
+    // bucket. Without s3:ListBucket, S3 answers 403 for a key that does not
+    // exist (it will not confirm absence to a caller that cannot list), which
+    // forced the 403 -> index.html mapping removed above and with it the
+    // laundering of every genuine denial into a 200 (issue #229). With the
+    // grant, an unknown SPA route is a clean 404 and the 404 rule serves the
+    // app shell.
+    //
+    // Scoped to this distribution and to the SPA bucket ONLY. The raw-data
+    // bucket deliberately does NOT get it: there, 403-for-missing-key is the
+    // desired answer, since confirming whether a given avatar or prototype key
+    // exists is itself information we do not owe an unauthenticated viewer.
+    this.websiteBucket.addToResourcePolicy(new iam.PolicyStatement({
+      actions: ['s3:ListBucket'],
+      principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
+      resources: [this.websiteBucket.bucketArn],
+      conditions: {
+        StringEquals: {
+          'AWS:SourceArn': cdk.Stack.of(this).formatArn({
+            service: 'cloudfront',
+            region: '',
+            resource: 'distribution',
+            resourceName: this.frontendDistribution.distributionId,
+          }),
+        },
+      },
+    }));
+
+    // ── Signed-URL trust for the private CDN paths (issue #229) ──────────────
+    // /avatars/* and /prototypes/* used to be world-readable: Cognito is
+    // enforced at API Gateway, never at the CDN, and both were plain cache
+    // behaviors on the distribution that must stay public to serve the login
+    // page. They are now restricted to a trusted key group, so a viewer needs
+    // a signature the already-authenticated API mints per request.
+    //
+    // The keypair is generated at DEPLOY time by a custom resource which writes
+    // the private half straight to Secrets Manager and returns only the public
+    // half. Generating at SYNTH time would break the deterministic-synth
+    // guarantee that core-stack.test.ts asserts, and a KMS asymmetric key
+    // cannot stand in — kms:Sign has no SHA-1 option and CloudFront requires
+    // RSA-SHA1. CloudFormation still owns the PublicKey and KeyGroup below, so
+    // their create/update/delete ordering is not hand-rolled.
+    const cdnSigningSecret = new secretsmanager.Secret(this, 'CdnSigningKeySecret', {
+      secretName: this.uniqueName('voc-cdn-signing-key'),
+      description: 'RSA private key that signs CloudFront URLs for /avatars/* and /prototypes/*',
+      encryptionKey: this.kmsKey,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const cdnSigningKeysLambda = new lambda.Function(this, 'CdnSigningKeysLambda', {
+      functionName: this.uniqueName('voc-cdn-signing-keys'),
+      runtime: lambda.Runtime.NODEJS_24_X,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'cdn_signing_keys.handler',
+      // Node rather than Python: crypto.generateKeyPairSync is stdlib, so this
+      // needs no layer. Python would need `cryptography`, i.e. Docker bundling
+      // in CoreStack. Real, unit-tested file (lib/stacks/cdn-signing-keys.test.ts).
+      //
+      // fromAsset, NOT fromInline: at ~7KB this handler is comfortably past the
+      // widely-cited 4096-character ceiling for an inline `Code.ZipFile`. In
+      // practice CloudFormation accepted it and aws-cdk-lib 2.261.0 does not
+      // check the limit at all, so the inline version deployed fine — but that
+      // is undocumented tolerance, and this is a sample repo other people deploy
+      // into their own accounts. An asset removes the question, and removes the
+      // trap where adding a comment to the handler breaks a deploy.
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/custom_resources'), {
+        // Ship only the Node handler. The directory also holds the Python
+        // admin-bootstrap handler and its pytest suite, which would otherwise
+        // be packaged into this function's zip.
+        //
+        // These patterns match AT ANY DEPTH, not just the top level: the default
+        // IgnoreMode.GLOB uses .gitignore semantics, where a pattern containing
+        // no slash matches by basename anywhere in the tree. Verified by staging
+        // a nested `.py` and confirming it was excluded, so `**/*.py` is not
+        // needed. The deployed zip contains exactly one file.
+        exclude: ['*.py', '*.d.ts', 'test', '__pycache__'],
+      }),
+      timeout: cdk.Duration.minutes(1),
+      description: 'Generates the CloudFront URL-signing keypair once, then reuses it',
+      logGroup: new logs.LogGroup(this, 'CdnSigningKeysLambdaLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+    // GetSecretValue is what makes the handler idempotent (reuse over rotate);
+    // PutSecretValue writes the generated key.
+    // Safe to use the L2 grants here: this Lambda is in THIS stack, so the
+    // KMS key-policy statement they add names a same-stack role and creates no
+    // cross-stack cycle (unlike the API stack's roles — see cdnSigningSecretArn).
+    cdnSigningSecret.grantRead(cdnSigningKeysLambda);
+    cdnSigningSecret.grantWrite(cdnSigningKeysLambda);
+    this.cdnSigningSecretArn = cdnSigningSecret.secretArn;
+
+    const cdnSigningKeysProvider = new cr.Provider(this, 'CdnSigningKeysProvider', {
+      onEventHandler: cdnSigningKeysLambda,
+      // Same reasoning as AdminBootstrapProvider: at INFO the provider
+      // framework logs the whole custom-resource response to CloudWatch. The
+      // response carries only the PUBLIC key, but keeping this at FATAL means a
+      // future field added to Data cannot leak by default.
+      frameworkLambdaLoggingLevel: lambda.ApplicationLogLevel.FATAL,
+      logGroup: new logs.LogGroup(this, 'CdnSigningKeysProviderLogs', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    const cdnSigningKeys = new cdk.CustomResource(this, 'CdnSigningKeys', {
+      serviceToken: cdnSigningKeysProvider.serviceToken,
+      resourceType: 'Custom::CdnSigningKeys',
+      properties: {
+        SecretId: cdnSigningSecret.secretArn,
+      },
+    });
+
+    NagSuppressions.addResourceSuppressions(cdnSigningSecret, cdnSigningKeySuppressions);
+    NagSuppressions.addResourceSuppressions(cdnSigningKeysLambda, lambdaBasicExecutionRoleSuppressions, true);
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/CdnSigningKeysProvider/framework-onEvent`,
+      [
+        ...cdkCustomResourceSuppressions,
+        ...lambdaBasicExecutionRoleSuppressions,
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to CdnSigningKeysLambda only (same pattern as AdminBootstrapLambda).',
+          appliesTo: [{ regex: '/Resource::<.*CdnSigningKeysLambda.*\\.Arn>:\\*/' }],
+        },
+      ],
+      true
+    );
+
+    // The L2 PublicKey validates the PEM prefix only for resolved strings, so
+    // an unresolved custom-resource attribute is accepted here by design.
+    const cdnSigningPublicKey = new cloudfront.PublicKey(this, 'CdnSigningPublicKey', {
+      encodedKey: cdnSigningKeys.getAttString('PublicKeyPem'),
+      comment: 'Signs /avatars/* and /prototypes/* URLs',
+    });
+    const cdnSigningKeyGroup = new cloudfront.KeyGroup(this, 'CdnSigningKeyGroup', {
+      items: [cdnSigningPublicKey],
+      comment: 'Viewers must present a signature for the private CDN paths',
+    });
+    this.cdnSigningKeyPairId = cdnSigningPublicKey.publicKeyId;
+
     // Avatars served from the same distribution under /avatars/* path
     // This avoids CSP issues (same-origin) and eliminates the need for a separate distribution
     this.frontendDistribution.addBehavior('/avatars/*', origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket), {
@@ -174,10 +363,55 @@ export class VocCoreStack extends cdk.Stack {
       allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
       cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
       compress: true,
+      // CACHING_OPTIMIZED forwards no query strings, so the signature is NOT
+      // part of the cache key — signed URLs stay shareable across viewers at
+      // the edge instead of fragmenting the cache per user.
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      trustedKeyGroups: [cdnSigningKeyGroup],
     });
-    cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
     this.avatarsCdnUrl = `https://${this.frontendDomainName}/avatars`;
+
+    // Prototypes served from the same distribution under /prototypes/* with their
+    // OWN response-headers policy that permits inline <script>/<style>. Bedrock
+    // (Opus 5) generates self-contained single-file HTML with inline JS for
+    // in-prototype navigation; the main SPA's securityHeadersPolicy above
+    // (script-src 'self') would block that JS entirely if reused here — hence a
+    // dedicated policy scoped ONLY to this path, applied via a second cache
+    // behavior (not a second distribution: cheaper, no extra propagation lag,
+    // mirrors the /avatars/* pattern). This is same-origin/same-domain as the
+    // main app, not a genuinely separate origin — the SCRIPT isolation that
+    // matters (the model's JS can't reach the parent app's DOM/storage/cookies)
+    // comes from the frontend loading this via a cross-document <iframe src=...>,
+    // not from the domain differing.
+    //
+    // TWO THINGS THIS POLICY IS, WHICH ARE EASY TO CONFLATE (issue #229):
+    //  1. It is NOT access control. Script isolation says nothing about who may
+    //     fetch the URL; that is the trustedKeyGroups line below.
+    //  2. It IS the EGRESS control on model-authored JS. `default-src 'none'`
+    //     with no `connect-src` is what stops inline script in a prototype —
+    //     running in a document holding PRD/PR-FAQ-derived content — from
+    //     making outbound requests. Serving prototypes from anywhere that
+    //     cannot set response headers (S3 directly, for instance) silently
+    //     drops that, so this policy has to travel with the path.
+    const prototypeHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'PrototypeHeadersPolicy', {
+      securityHeadersBehavior: {
+        contentSecurityPolicy: {
+          contentSecurityPolicy: "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'; object-src 'none'; base-uri 'none';",
+          override: true,
+        },
+        contentTypeOptions: { override: true },
+      },
+    });
+    this.frontendDistribution.addBehavior('/prototypes/*', origins.S3BucketOrigin.withOriginAccessControl(this.rawDataBucket), {
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+      cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+      compress: true,
+      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED, // prototypes are immutable per doc_id
+      responseHeadersPolicy: prototypeHeadersPolicy,
+      trustedKeyGroups: [cdnSigningKeyGroup],
+    });
+    this.prototypesCdnUrl = `https://${this.frontendDomainName}/prototypes`;
 
     // ============================================
     // DYNAMODB TABLES
@@ -185,7 +419,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Feedback Table
     this.feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
-      tableName: uniqueName('voc-feedback'),
+      tableName: this.uniqueName('voc-feedback'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -227,7 +461,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Aggregates Table
     this.aggregatesTable = new dynamodb.Table(this, 'AggregatesTable', {
-      tableName: uniqueName('voc-aggregates'),
+      tableName: this.uniqueName('voc-aggregates'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -247,7 +481,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Watermarks Table
     this.watermarksTable = new dynamodb.Table(this, 'WatermarksTable', {
-      tableName: uniqueName('voc-watermarks'),
+      tableName: this.uniqueName('voc-watermarks'),
       partitionKey: { name: 'source', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -258,7 +492,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Projects Table
     this.projectsTable = new dynamodb.Table(this, 'ProjectsTable', {
-      tableName: uniqueName('voc-projects'),
+      tableName: this.uniqueName('voc-projects'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -277,7 +511,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Jobs Table
     this.jobsTable = new dynamodb.Table(this, 'JobsTable', {
-      tableName: uniqueName('voc-jobs'),
+      tableName: this.uniqueName('voc-jobs'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -297,7 +531,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Conversations Table
     this.conversationsTable = new dynamodb.Table(this, 'ConversationsTable', {
-      tableName: uniqueName('voc-conversations'),
+      tableName: this.uniqueName('voc-conversations'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -310,7 +544,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Idempotency Table
     this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
-      tableName: uniqueName('voc-idempotency'),
+      tableName: this.uniqueName('voc-idempotency'),
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -319,6 +553,163 @@ export class VocCoreStack extends cdk.Stack {
       timeToLiveAttribute: 'expiration',
     });
     NagSuppressions.addResourceSuppressions(this.idempotencyTable, idempotencyTableSuppressions);
+
+
+    // ============================================
+    // PRODUCT DOC EXTRACTOR (S3-triggered)
+    // ============================================
+    // Turns an uploaded product document (image or .md/.txt) into the plain text
+    // that build_product_context_block injects into PRD/PR-FAQ/prototype prompts,
+    // and moves the DynamoDB record out of `pending` into `ready` or `failed`.
+    //
+    // WHY IT LIVES IN CORE-STACK RATHER THAN PROCESSING: CDK parents the
+    // notification resource under the BUCKET's construct scope, so calling
+    // rawDataBucket.addEventNotification() from the processing stack would put a
+    // Custom::S3BucketNotifications in VocCoreStack that references a
+    // VocProcessingStack Lambda — while processing already depends on core.
+    // CloudFormation rejects that cycle. Keeping the function beside the bucket
+    // it is triggered by is the only placement that has no cycle.
+    //
+    // The `documents` surface default from SURFACE_DEFAULTS in
+    // lambda/shared/model_config.py. Declared here rather than imported because
+    // the model-allowlist module carries the allowlist, not the per-surface
+    // defaults; lambda/product_doc_extractor/test/test_default_model_lockstep.py
+    // reads this line as source text and fails if the two ever disagree.
+    const documentsSurfaceDefaultModelId = 'global.anthropic.claude-sonnet-5';
+
+    const productDocExtractor = new lambda.Function(this, 'ProductDocExtractorLambda', {
+      functionName: this.uniqueName('voc-product-doc-extractor'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      // NO `bundling` block, mirroring CdnSigningKeysLambda: the handler is
+      // stdlib + boto3 only, so there is nothing to pip-install and CoreStack
+      // stays container-free. Depending on lambda/shared/ would need a
+      // LayerVersion, and building that layer would drag Docker/finch bundling
+      // into this stack — see the handler's module docstring.
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/product_doc_extractor'), {
+        exclude: ['test', '__pycache__'],
+      }),
+      // Must stay well under product_context.py's EXTRACTION_STALL_SECONDS (300),
+      // which fails a record that never got extracted: a healthy extraction has
+      // to finish inside that window or the API marks it failed on read.
+      timeout: cdk.Duration.seconds(120),
+      // A Bedrock image description holds one image (<= 3.75MB) plus the reply in
+      // memory; 512MB also buys proportionally more CPU for the wait-heavy call.
+      memorySize: 512,
+      description: 'Extracts text from uploaded project product documents (images via Bedrock)',
+      environment: {
+        RAW_DATA_BUCKET: this.rawDataBucket.bucketName,
+        PROJECTS_TABLE: this.projectsTable.tableName,
+        // Read-only: the model picker's per-surface overrides live here.
+        AGGREGATES_TABLE: this.aggregatesTable.tableName,
+        // Rendered from the one allowlist in lib/utils/model-allowlist.ts, so the
+        // handler validates configured models against the same list the IAM
+        // grants below are built from — no second copy to rot.
+        MODEL_ALLOWLIST: JSON.stringify(ALLOWED_MODEL_IDS),
+        DEFAULT_MODEL_ID: documentsSurfaceDefaultModelId,
+        MAX_IMAGE_BYTES: String(MAX_IMAGE_BYTES),
+        MAX_IMAGE_DIMENSION_PX: String(MAX_IMAGE_DIMENSION_PX),
+        // The handler emits structured JSON from a stdlib Formatter (it cannot
+        // import powertools — see its module docstring), so these are NOT the
+        // POWERTOOLS_* names used by every other function here: a
+        // POWERTOOLS_SERVICE_NAME on a function with no powertools would promise
+        // a library that is absent. The emitted FIELD is still `service`, so an
+        // operator's CloudWatch query is unchanged across functions.
+        //
+        // A LITERAL, not `uniqueName()`: this is a log label, not a physical
+        // resource name, so it must not carry the account/region suffix — every
+        // POWERTOOLS_SERVICE_NAME in this app is a bare literal for the same
+        // reason. Namespacing it also made the value a CloudFormation token,
+        // which is not a string a runtime field can be compared against.
+        SERVICE_NAME: 'voc-product-doc-extractor',
+        // Hardcoded, matching every other function in this app: LOG_LEVEL is a
+        // literal 'INFO' at all 24 definitions across the four stacks, so there is
+        // no context key or stack parameter to follow here. Raising verbosity
+        // during a diagnosis is an environment-variable change on the deployed
+        // function — the handler reads LOG_LEVEL at import (see _log_level), so it
+        // needs no stack edit and no code change.
+        LOG_LEVEL: 'INFO',
+      },
+      logGroup: new logs.LogGroup(this, 'ProductDocExtractorLambdaLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    // Prefix-scoped both ways, and asymmetrically: it reads only what users
+    // upload and writes only where its own output goes. Without the narrower
+    // write scope this role could overwrite any raw upload in the bucket.
+    this.rawDataBucket.grantRead(productDocExtractor, 'projects/*/product_docs/raw/*');
+    this.rawDataBucket.grantWrite(productDocExtractor, 'projects/*/product_docs/extracted/*');
+    this.projectsTable.grantReadWriteData(productDocExtractor);
+    this.aggregatesTable.grantReadData(productDocExtractor);
+    this.kmsKey.grantEncryptDecrypt(productDocExtractor);
+    productDocExtractor.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: allowlistedModelArns(this.region, this.account),
+    }));
+
+    // ONE notification rule, filtered on the broad `projects/` prefix. S3 allows
+    // only one prefix per rule and rejects overlapping rules on the same event
+    // type, so narrowing this to `product_docs/raw/` would mean a rule per
+    // project — impossible, the ids are runtime values. The handler's
+    // RAW_KEY_PATTERN guard is what makes the broad prefix safe: it also drops
+    // this function's OWN output under `product_docs/extracted/`, which would
+    // otherwise re-trigger it in a loop.
+    //
+    // First use of a `prefix` filter in this repo — the existing notifications
+    // (S3 import in the ingestion stack) filter by suffix only.
+    this.rawDataBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(productDocExtractor),
+      { prefix: 'projects/' },
+    );
+
+    // bin/voc-datalake.ts gives this stack only the basic-execution and
+    // cdk-assets suppressions, so everything the grants above generate has to be
+    // suppressed HERE rather than by widening the stack-level set: prefix-scoped
+    // S3 object ARNs, the DynamoDB index/* wildcards, the KMS grant wildcards
+    // and the Bedrock cross-region foundation-model ARNs.
+    NagSuppressions.addResourceSuppressions(
+      productDocExtractor,
+      [
+        ...lambdaBasicExecutionRoleSuppressions,
+        ...s3BucketSuppressions,
+        ...dynamoDbGsiSuppressions,
+        ...kmsEncryptionSuppressions,
+        ...bedrockModelSuppressions,
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes; the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
+          appliesTo: [
+            { regex: '/Resource::<.*RawDataBucket.*\\.Arn>/projects/\\*/product_docs/.*/' },
+          ],
+        },
+      ],
+      true,
+    );
+    // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
+    // configures the bucket notification. Same treatment as the cr.Provider
+    // frameworks above: CDK owns its runtime and its PutBucketNotification
+    // grant, neither of which this repo can narrow.
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834`,
+      [
+        ...cdkCustomResourceSuppressions,
+        ...lambdaBasicExecutionRoleSuppressions,
+        {
+          id: 'AwsSolutions-IAM4',
+          reason: 'CDK-managed bucket-notifications handler attaches the AWS-managed Lambda basic execution policy; the construct is not configurable.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'CDK-managed bucket-notifications handler needs s3:PutBucketNotification on the buckets it configures; the construct emits a wildcard resource and is not configurable.',
+        },
+      ],
+      true,
+    );
 
 
     // ============================================
@@ -349,11 +740,20 @@ export class VocCoreStack extends cdk.Stack {
     });
 
     // Cognito User Pool
+    //
+    // signInCaseSensitive (#105) maps to UsernameConfiguration, which Cognito
+    // treats as CREATE-ONLY: introducing it on a pool deployed before #105
+    // fails the whole stack update with "Updates are not allowed for property
+    // - UsernameConfiguration" (issue #184). Pre-#105 stacks set the context
+    // flag below to keep their pool untouched; greenfield deployments keep
+    // case-insensitive sign-in.
+    const omitUsernameConfigRaw = this.node.tryGetContext('omitUserPoolUsernameConfiguration');
+    const omitUsernameConfig = omitUsernameConfigRaw === true || omitUsernameConfigRaw === 'true';
     this.userPool = new cognito.UserPool(this, 'VocUserPool', {
-      userPoolName: uniqueName('voc-user-pool'),
+      userPoolName: this.uniqueName('voc-user-pool'),
       selfSignUpEnabled: false,
       signInAliases: { email: true, username: true },
-      signInCaseSensitive: false,
+      ...(omitUsernameConfig ? {} : { signInCaseSensitive: false }),
       autoVerify: { email: true },
       standardAttributes: {
         email: { required: true, mutable: true },
@@ -404,10 +804,18 @@ export class VocCoreStack extends cdk.Stack {
 
     // User Pool Client
     this.userPoolClient = this.userPool.addClient('VocWebClient', {
-      userPoolClientName: uniqueName('voc-web-client'),
+      userPoolClientName: this.uniqueName('voc-web-client'),
       authFlows: { userPassword: true, userSrp: true },
       oAuth: {
-        flows: { authorizationCodeGrant: true, implicitCodeGrant: true },
+        flows: {
+          authorizationCodeGrant: true,
+          // implicitCodeGrant is disabled: it is deprecated in OAuth 2.1, returns
+          // tokens in the URL fragment (browser history / Referer leakage), and
+          // cannot be protected by PKCE. The app signs in via SRP
+          // (amazon-cognito-identity-js) and never uses the hosted-UI redirect
+          // flow, so nothing here depends on it.
+          implicitCodeGrant: false,
+        },
         scopes: [cognito.OAuthScope.EMAIL, cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
         callbackUrls,
         logoutUrls,
@@ -419,8 +827,9 @@ export class VocCoreStack extends cdk.Stack {
       refreshTokenValidity: cdk.Duration.days(30),
     });
 
-    // User Pool Domain
-    const domainPrefix = uniqueName('voc');
+    // User Pool Domain. A hosted-UI domain prefix is a DNS label, so it is held
+    // to 63 characters rather than the 64 most names get.
+    const domainPrefix = this.uniqueDnsName('voc');
     this.userPoolDomain = this.userPool.addDomain('VocUserPoolDomain', {
       cognitoDomain: { domainPrefix },
     });
@@ -441,91 +850,179 @@ export class VocCoreStack extends cdk.Stack {
     // ============================================
     // INITIAL ADMIN USER (for greenfield deployments)
     // ============================================
-    const initialAdminUsername = 'admin';
-    const initialAdminEmail = 'admin@local.host';
-    
-    // Generate random password with guaranteed uppercase, lowercase, digit, and special char
-    const r = (s: string) => s[randomInt(0, s.length)];
-    const required = [r('ABCDEFGHJKLMNPQRSTUVWXYZ'), r('abcdefghjkmnpqrstuvwxyz'), r('123456789'), r('!@#$%^&*')];
-    const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789!@#$%^&*';
-    const rest = Array.from({ length: 12 }, () => r(pool));
-    const all = [...required, ...rest].sort(() => randomInt(0, 2) - 1);
-    const initialAdminPassword = all.join('');
+    // Idempotent bootstrap (issue #196). The handler generates the initial
+    // password AT RUNTIME, and only when it actually creates the admin:
+    //  - first deployment: create admin -> set temporary password -> add to
+    //    admins group -> the real password surfaces in InitialAdminPassword
+    //    (printing it is BY DESIGN: it is how operators find their first
+    //    login, and first use forces a change).
+    //  - any redeployment / admin already exists: strict no-op — no user
+    //    creation, no password reset, no fresh password minted. All resource
+    //    properties are deterministic, so the template no longer churns.
+    const adminBootstrapLambda = new lambda.Function(this, 'AdminBootstrapLambda', {
+      functionName: this.uniqueName('voc-admin-bootstrap'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'index.handler',
+      // Real, unit-tested file (lambda/custom_resources/test), inlined so a
+      // ~3KB handler needs no asset bundling.
+      code: lambda.Code.fromInline(
+        fs.readFileSync(path.join(__dirname, '../../lambda/custom_resources/admin_bootstrap.py'), 'utf8'),
+      ),
+      timeout: cdk.Duration.minutes(1),
+      description: 'Idempotent initial-admin bootstrap (create once, never reset)',
+      logGroup: new logs.LogGroup(this, 'AdminBootstrapLambdaLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+    adminBootstrapLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'cognito-idp:AdminGetUser',
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminSetUserPassword',
+        'cognito-idp:AdminAddUserToGroup',
+        'cognito-idp:AdminListGroupsForUser',
+      ],
+      resources: [this.userPool.userPoolArn],
+    }));
 
-    // Create the admin user
-    const createAdminUser = new cr.AwsCustomResource(this, 'CreateAdminUser', {
-      onCreate: {
-        service: 'CognitoIdentityServiceProvider',
-        action: 'adminCreateUser',
-        parameters: {
-          UserPoolId: this.userPool.userPoolId,
-          Username: initialAdminUsername,
-          UserAttributes: [
-            { Name: 'email', Value: initialAdminEmail },
-            { Name: 'email_verified', Value: 'true' },
-            { Name: 'name', Value: 'Admin' },
-          ],
-          MessageAction: 'SUPPRESS',
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-user')),
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['cognito-idp:AdminCreateUser'],
-          resources: [this.userPool.userPoolArn],
-        }),
-      ]),
+    const adminBootstrapProvider = new cr.Provider(this, 'AdminBootstrapProvider', {
+      onEventHandler: adminBootstrapLambda,
+      // MUST stay FATAL: at INFO the provider framework logs the full
+      // custom resource response — including Data.Password — to CloudWatch.
+      // FATAL is the aws-cdk-lib default today; pinning it guards against a
+      // default change and against anyone raising it while debugging.
+      frameworkLambdaLoggingLevel: lambda.ApplicationLogLevel.FATAL,
+      logGroup: new logs.LogGroup(this, 'AdminBootstrapProviderLogs', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
 
-    // Set temporary password for admin user (must change on first login)
-    const setAdminPassword = new cr.AwsCustomResource(this, 'SetAdminPassword', {
-      onCreate: {
-        service: 'CognitoIdentityServiceProvider',
-        action: 'adminSetUserPassword',
-        parameters: {
-          UserPoolId: this.userPool.userPoolId,
-          Username: initialAdminUsername,
-          Password: initialAdminPassword,
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-password')),
+    const adminBootstrap = new cdk.CustomResource(this, 'AdminBootstrap', {
+      serviceToken: adminBootstrapProvider.serviceToken,
+      resourceType: 'Custom::AdminBootstrap',
+      properties: {
+        UserPoolId: this.userPool.userPoolId,
+        Username: 'admin',
+        Email: 'admin@local.host',
+        GroupName: 'admins',
       },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['cognito-idp:AdminSetUserPassword'],
-          resources: [this.userPool.userPoolArn],
-        }),
-      ]),
     });
-    setAdminPassword.node.addDependency(createAdminUser);
+    adminBootstrap.node.addDependency(adminGroup);
 
-    // Add admin user to admins group
-    const addAdminToGroup = new cr.AwsCustomResource(this, 'AddAdminToGroup', {
-      onCreate: {
-        service: 'CognitoIdentityServiceProvider',
-        action: 'adminAddUserToGroup',
-        parameters: {
-          UserPoolId: this.userPool.userPoolId,
-          Username: initialAdminUsername,
-          GroupName: 'admins',
+    NagSuppressions.addResourceSuppressions(adminBootstrapLambda, lambdaBasicExecutionRoleSuppressions, true);
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/AdminBootstrapProvider/framework-onEvent`,
+      [
+        ...cdkCustomResourceSuppressions,
+        ...lambdaBasicExecutionRoleSuppressions,
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to AdminBootstrapLambda only (same pattern as ModelAgreementLambda).',
+          appliesTo: [{ regex: '/Resource::<.*AdminBootstrapLambda.*\\.Arn>:\\*/' }],
         },
-        physicalResourceId: cr.PhysicalResourceId.of(uniqueName('admin-group')),
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['cognito-idp:AdminAddUserToGroup'],
-          resources: [this.userPool.userPoolArn],
+      ],
+      true
+    );
+
+    // ============================================
+    // GLOBAL MODEL PIN (opt-in, for accounts that cannot use the newest models)
+    // ============================================
+    // `-c defaultModelId=<allowlisted id>` seeds settings.model_id, the legacy
+    // global override that outranks SURFACE_DEFAULTS in both resolvers
+    // (shared/model_config.py and lambda/stream/src/bedrock/model-override.ts).
+    // One attribute therefore repoints every AI surface without touching the
+    // built-in defaults, so deployments that CAN use the newer models are
+    // unaffected.
+    //
+    // Motivating case: Workshop Studio events sit behind a Private Marketplace
+    // that refuses the model agreements for Sonnet 5 / Opus 5, and they are
+    // fully automated — there is no human to pick a model per participant
+    // account. Without the flag nothing below is created at all.
+    const defaultModelIdRaw = this.node.tryGetContext('defaultModelId');
+    if (defaultModelIdRaw !== undefined && defaultModelIdRaw !== null && defaultModelIdRaw !== '') {
+      const defaultModelId = String(defaultModelIdRaw);
+      // Fail at synth rather than writing a value the app would ignore:
+      // _allowlisted() drops non-allowlisted ids at read time, which would
+      // silently fall back to the defaults this flag exists to avoid.
+      if (!ALLOWED_MODEL_IDS.includes(defaultModelId)) {
+        throw new Error(
+          `defaultModelId '${defaultModelId}' is not in the model allowlist. ` +
+          `Allowed: ${ALLOWED_MODEL_IDS.join(', ')}`,
+        );
+      }
+
+      const modelPinLambda = new lambda.Function(this, 'ModelPinLambda', {
+        functionName: this.uniqueName('voc-model-pin'),
+        runtime: lambda.Runtime.PYTHON_3_14,
+        architecture: lambda.Architecture.ARM_64,
+        handler: 'index.handler',
+        // Real, unit-tested file (lambda/custom_resources/test), inlined so a
+        // small handler needs no asset bundling — same pattern as
+        // AdminBootstrapLambda.
+        code: lambda.Code.fromInline(
+          fs.readFileSync(path.join(__dirname, '../../lambda/custom_resources/model_pin.py'), 'utf8'),
+        ),
+        timeout: cdk.Duration.minutes(1),
+        description: 'Seeds the global Bedrock model pin (create once, never reset)',
+        logGroup: new logs.LogGroup(this, 'ModelPinLambdaLogs', {
+          retention: logs.RetentionDays.TWO_WEEKS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),
-      ]),
-    });
-    addAdminToGroup.node.addDependency(setAdminPassword);
-    addAdminToGroup.node.addDependency(adminGroup);
-    addAdminToGroup.node.addDependency(createAdminUser);
+      });
+      this.aggregatesTable.grantWriteData(modelPinLambda);
+
+      const modelPinProvider = new cr.Provider(this, 'ModelPinProvider', {
+        onEventHandler: modelPinLambda,
+        logGroup: new logs.LogGroup(this, 'ModelPinProviderLogs', {
+          retention: logs.RetentionDays.ONE_WEEK,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+      });
+
+      new cdk.CustomResource(this, 'ModelPin', {
+        serviceToken: modelPinProvider.serviceToken,
+        resourceType: 'Custom::ModelPin',
+        properties: {
+          TableName: this.aggregatesTable.tableName,
+          ModelId: defaultModelId,
+        },
+      });
+
+      new cdk.CfnOutput(this, 'DefaultModelPin', { value: defaultModelId });
+
+      // grantWriteData() emits the standard GSI (<TableArn>/index/*) and KMS
+      // (GenerateDataKey*/ReEncrypt*) wildcards, so reuse the shared
+      // suppressions rather than restating the same evidence.
+      NagSuppressions.addResourceSuppressions(
+        modelPinLambda,
+        [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions],
+        true,
+      );
+      NagSuppressions.addResourceSuppressionsByPath(
+        this,
+        `${this.stackName}/ModelPinProvider/framework-onEvent`,
+        [
+          ...cdkCustomResourceSuppressions,
+          ...lambdaBasicExecutionRoleSuppressions,
+          {
+            id: 'AwsSolutions-IAM5',
+            reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to ModelPinLambda only (same pattern as AdminBootstrapLambda).',
+            appliesTo: [{ regex: '/Resource::<.*ModelPinLambda.*\\.Arn>:\\*/' }],
+          },
+        ],
+        true
+      );
+    }
 
     // ============================================
     // COGNITO IDENTITY POOL (for AWS IAM authentication)
     // ============================================
     this.identityPool = new cognito.CfnIdentityPool(this, 'VocIdentityPool', {
-      identityPoolName: uniqueName('voc-identity-pool'),
+      identityPoolName: this.uniqueName('voc-identity-pool'),
       allowUnauthenticatedIdentities: false,
       cognitoIdentityProviders: [{
         clientId: this.userPoolClient.userPoolClientId,
@@ -554,10 +1051,17 @@ export class VocCoreStack extends cdk.Stack {
     // Use wildcard to avoid circular dependency (specific Lambda is in ApiStack)
     this.authenticatedRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunctionUrl', 'lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*voc-chat-stream*`],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*${this.prefixed('voc-chat-stream')}*`],
     }));
 
-    // Suppress wildcard warning - necessary to avoid circular dependency
+    // Suppress wildcard warning - necessary to avoid circular dependency.
+    //
+    // No `appliesTo`, so it is blanket over this role and stays matching whatever
+    // the ARN above resolves to — including the prefixed form. That is why it
+    // needs no prefix threading, unlike pluginSystemSuppressions(), whose
+    // `appliesTo` regexes quote the concrete ARN and therefore must be a function
+    // of the prefix. Were that to change here, the zero-warnings assertion over
+    // the PREFIXED synth in lib/app-deployment-prefix.test.ts would catch it.
     NagSuppressions.addResourceSuppressions(
       this.authenticatedRole,
       [
@@ -617,13 +1121,21 @@ export class VocCoreStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'RawDataBucketName', { value: this.rawDataBucket.bucketName });
     new cdk.CfnOutput(this, 'RawDataBucketArn', { value: this.rawDataBucket.bucketArn });
     new cdk.CfnOutput(this, 'AccessLogsBucketName', { value: this.accessLogsBucket.bucketName });
-    new cdk.CfnOutput(this, 'AvatarsCdnUrl', { value: this.avatarsCdnUrl, description: 'CloudFront URL for persona avatar images' });
+    new cdk.CfnOutput(this, 'AvatarsCdnUrl', { value: this.avatarsCdnUrl, description: 'CloudFront URL for persona avatar images (signature required)' });
+    new cdk.CfnOutput(this, 'PrototypesCdnUrl', { value: this.prototypesCdnUrl, description: 'CloudFront URL for generated HTML prototypes (signature required)' });
+    new cdk.CfnOutput(this, 'CdnSigningKeyPairId', { value: this.cdnSigningKeyPairId, description: 'CloudFront public key id used to sign /avatars/* and /prototypes/* URLs' });
 
     // Frontend outputs
     new cdk.CfnOutput(this, 'WebsiteURL', { value: `https://${this.frontendDomainName}`, description: 'CloudFront Distribution URL' });
     new cdk.CfnOutput(this, 'WebsiteBucketName', { value: this.websiteBucket.bucketName, description: 'S3 Bucket Name' });
     new cdk.CfnOutput(this, 'DistributionId', { value: this.frontendDistribution.distributionId, description: 'CloudFront Distribution ID' });
-    new cdk.CfnOutput(this, 'DistributionDomainName', { value: this.frontendDomainName, description: 'CloudFront Distribution Domain Name', exportName: 'VocFrontendDomainName' });
+    // The app's ONLY hand-written export name, and therefore the only one the
+    // deployment prefix has to namespace by hand: CloudFormation export names
+    // are unique per account and region, so an unprefixed literal collides
+    // between two copies before any resource name does. (CDK's automatic
+    // cross-stack exports are already namespaced, because it derives them from
+    // the stack name, which the prefix covers.)
+    new cdk.CfnOutput(this, 'DistributionDomainName', { value: this.frontendDomainName, description: 'CloudFront Distribution Domain Name', exportName: this.prefixed('VocFrontendDomainName') });
 
     // Auth outputs
     new cdk.CfnOutput(this, 'UserPoolId', { value: this.userPool.userPoolId, description: 'Cognito User Pool ID' });
@@ -632,9 +1144,22 @@ export class VocCoreStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
     new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID for AWS IAM auth' });
     new cdk.CfnOutput(this, 'InitialAdminPassword', { 
-      value: initialAdminPassword, 
-      description: 'Initial admin user password (username: admin)'
+      value: adminBootstrap.getAttString('Password'), 
+      // ASCII only: CloudFormation mangles non-ASCII in output descriptions
+      // ('?'), which makes every subsequent cdk diff dirty.
+      description: 'Initial admin password (username: admin) - real only on the deployment that created the admin; forced to change at first login'
     });
+
+    // Acknowledged wildcard-key-policy warning (issue #189): the synthesized
+    // KMS condition is already scoped to THIS ACCOUNT's distributions
+    // (arn:...:cloudfront::ACCOUNT:distribution/*); scoping to the concrete
+    // distribution id would create exactly the circular dependency the
+    // warning describes, and the CDK README documents the wildcard as the
+    // supported shape. Kept as the LAST statement of the constructor:
+    // every withOriginAccessControl() call re-emits the warning, and
+    // acknowledgeWarning only strips messages added before it runs — an
+    // origin added below the ack would silently re-break warning-free synth.
+    cdk.Annotations.of(this).acknowledgeWarning('@aws-cdk/aws-cloudfront-origins:wildcardKeyPolicyForOac');
   }
 
   private getCustomMessageLambdaCode(signInUrl: string): string {

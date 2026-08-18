@@ -4,7 +4,6 @@ Provides pre-configured clients with connection reuse.
 """
 
 import json
-import os
 import boto3
 from functools import lru_cache
 from shared.logging import logger
@@ -102,26 +101,6 @@ def invoke_lambda_async(function_name: str, payload: dict) -> dict:
     )
 
 
-def invoke_self_async(payload: dict) -> dict:
-    """
-    Invoke the current Lambda function asynchronously.
-    
-    Uses AWS_LAMBDA_FUNCTION_NAME environment variable.
-    
-    Args:
-        payload: Event payload dict
-    
-    Returns:
-        Lambda invoke response
-    
-    Raises:
-        ValueError: If AWS_LAMBDA_FUNCTION_NAME is not set
-    """
-    function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', '')
-    if not function_name:
-        raise ValueError("AWS_LAMBDA_FUNCTION_NAME environment variable not set")
-    return invoke_lambda_async(function_name, payload)
-
 
 @lru_cache(maxsize=10)
 def get_secret(secret_arn: str) -> dict:
@@ -152,48 +131,9 @@ def clear_secret_cache():
     get_secret.cache_clear()
 
 
-# Bedrock model ID - Claude Sonnet 4.5 global inference profile
-BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
-
-
-def invoke_bedrock(
-    prompt: str,
-    system_prompt: str = "",
-    max_tokens: int = 2048,
-    temperature: float = 0.1,
-) -> str:
-    """
-    Invoke Bedrock Claude model using Converse API.
-
-    Args:
-        prompt: User message/prompt
-        system_prompt: Optional system prompt
-        max_tokens: Maximum tokens in response (default: 2048)
-        temperature: Model temperature (default: 0.1)
-
-    Returns:
-        Model response text
-
-    Raises:
-        Exception: On Bedrock API errors
-    """
-    client = get_bedrock_client()
-
-    messages = [{'role': 'user', 'content': [{'text': prompt}]}]
-    
-    kwargs = {
-        'modelId': BEDROCK_MODEL_ID,
-        'messages': messages,
-        'inferenceConfig': {
-            'maxTokens': max_tokens,
-            'temperature': temperature,
-        }
-    }
-    
-    if system_prompt:
-        kwargs['system'] = [{'text': system_prompt}]
-
-    response = client.converse(**kwargs)
-    
-    content = response.get('output', {}).get('message', {}).get('content', [])
-    return ''.join(block.get('text', '') for block in content if 'text' in block)
+# Default Bedrock model — Claude Sonnet 5 global cross-region inference profile.
+# This is the ultimate fallback for text inference. The per-surface AI-model
+# picker (shared/model_config.py) resolves a model per surface and only falls
+# back to this constant when nothing is configured and the surface has no more
+# specific default. Bumped from Sonnet 4.5 → Sonnet 5 (latest).
+BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-5"

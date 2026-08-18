@@ -24,8 +24,9 @@ vi.mock('../services/auth', () => ({
   },
 }))
 
-import { api, getDaysFromRange, getDateRangeParams } from './client'
+import { api, getDaysFromRange, getDateRangeParams, ALL_TIME_DAYS } from './client'
 import { authService } from '../services/auth'
+import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -56,7 +57,9 @@ describe('API Client', () => {
           }),
         })
       )
-      expect(result).toEqual(mockResponse)
+      // Items are normalized to the FeedbackItem contract at the client boundary.
+      expect(result.count).toBe(2)
+      expect(result.items.map((i) => i.feedback_id)).toEqual(['1', '2'])
     })
 
     it('throws error on non-ok response', async () => {
@@ -130,19 +133,25 @@ describe('API Client', () => {
       expect(global.fetch).toHaveBeenCalledTimes(2)
     })
 
-    it('signs out and redirects when refresh fails', async () => {
+    it('signs out and redirects with a reason when refresh fails', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce({ ok: false, status: 401 })
         .mockResolvedValueOnce({ ok: false, status: 401 })
 
       const originalLocation = window.location
+      const replace = vi.fn()
       Object.defineProperty(window, 'location', {
-        value: { href: '' },
+        value: { href: '', replace },
         writable: true,
       })
+      // The redirect is idempotent and only a real page load resets it.
+      resetSessionExpiryForTests()
 
       await expect(api.getFeedback({ days: 7 })).rejects.toThrow('Session expired')
       expect(authService.signOut).toHaveBeenCalled()
+      // The reason must travel with the redirect: without it /login cannot
+      // tell the user why the app they were using stopped working.
+      expect(replace).toHaveBeenCalledWith(SESSION_EXPIRED_PATH)
 
       window.location = originalLocation
     })
@@ -162,7 +171,8 @@ describe('API Client', () => {
         'https://api.example.com/feedback/abc123',
         expect.any(Object)
       )
-      expect(result).toEqual(mockFeedback)
+      // Response is normalized to the FeedbackItem contract at the client boundary.
+      expect(result.feedback_id).toBe('abc123')
     })
   })
 
@@ -191,7 +201,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSummary),
       })
 
-      const result = await api.getSummary(30)
+      const result = await api.getSummary({ days: 30 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/summary?days=30',
@@ -206,10 +216,24 @@ describe('API Client', () => {
         json: () => Promise.resolve({}),
       })
 
-      await api.getSummary(7, 'webscraper')
+      await api.getSummary({ days: 7 }, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/summary?days=7&source=webscraper',
+        expect.any(Object)
+      )
+    })
+
+    it('sends a rolling day count for a custom window', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({}),
+      })
+
+      await api.getSummary({ days: 21 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/metrics/summary?days=21',
         expect.any(Object)
       )
     })
@@ -223,7 +247,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSentiment),
       })
 
-      const result = await api.getSentiment(7)
+      const result = await api.getSentiment({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/sentiment?days=7',
@@ -241,7 +265,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockCategories),
       })
 
-      const result = await api.getCategories(14)
+      const result = await api.getCategories({ days: 14 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/categories?days=14',
@@ -259,7 +283,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSources),
       })
 
-      const result = await api.getSources(7)
+      const result = await api.getSources({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/sources?days=7',
@@ -303,6 +327,40 @@ describe('API Client', () => {
           body: JSON.stringify({ message: 'Question', context: 'Additional context' }),
         })
       )
+    })
+
+    it('threads the review date basis into the body (issue #150)', async () => {
+      const { useConfigStore } = await import('../store/configStore')
+      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+        config: { apiEndpoint: 'https://api.example.com' },
+        dateBasis: 'review',
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ response: 'Response' }),
+      })
+
+      await api.chat('Question')
+
+      const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(JSON.parse(options.body)).toMatchObject({ date_basis: 'review' })
+    })
+
+    it('omits date_basis on the default imported basis', async () => {
+      const { useConfigStore } = await import('../store/configStore')
+      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+        config: { apiEndpoint: 'https://api.example.com' },
+        dateBasis: 'imported',
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ response: 'Response' }),
+      })
+
+      await api.chat('Question')
+
+      const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(JSON.parse(options.body)).not.toHaveProperty('date_basis')
     })
   })
 
@@ -608,24 +666,6 @@ describe('API Client', () => {
     })
   })
 
-  describe('getFeedbackFormConfig', () => {
-    it('fetches feedback form configuration', async () => {
-      const mockConfig = { success: true, config: { enabled: true, title: 'Feedback' } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockConfig),
-      })
-
-      const result = await api.getFeedbackFormConfig()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockConfig)
-    })
-  })
-
   describe('getS3ImportSources', () => {
     it('fetches S3 import sources', async () => {
       const mockResponse = { sources: [{ name: 'default', display_name: 'Default' }], bucket: 'test-bucket' }
@@ -668,7 +708,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockResponse),
       })
 
-      const result = await api.getPersonas(7)
+      const result = await api.getPersonas({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/personas?days=7',
@@ -683,7 +723,7 @@ describe('API Client', () => {
         json: () => Promise.resolve({ period_days: 7, personas: {} }),
       })
 
-      await api.getPersonas(7, 'webscraper')
+      await api.getPersonas({ days: 7 }, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/personas?days=7&source=webscraper',
@@ -934,46 +974,6 @@ describe('API Client', () => {
     })
   })
 
-  describe('saveFeedbackFormConfig', () => {
-    it('sends PUT request with form config', async () => {
-      const config = { enabled: true, title: 'Feedback', description: 'Share your thoughts' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Saved' }),
-      })
-
-      await api.saveFeedbackFormConfig(config as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify(config),
-        })
-      )
-    })
-  })
-
-  describe('submitFeedbackForm', () => {
-    it('sends POST request with feedback data', async () => {
-      const data = { text: 'Great product!', rating: 5, email: 'test@example.com' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, feedback_id: 'fb-1' }),
-      })
-
-      await api.submitFeedbackForm(data)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/submit',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(data),
-        })
-      )
-    })
-  })
-
   describe('getFeedbackForms', () => {
     it('fetches all feedback forms', async () => {
       const mockForms = { success: true, forms: [{ form_id: 'f1', name: 'Form 1' }] }
@@ -1147,25 +1147,53 @@ describe('API Client', () => {
       )
       expect(result).toEqual(mockScores)
     })
+
+    it('passes through the aggregates the endpoint returns beside scores', async () => {
+      // `aggregates` exists so a later frontend change can show what every
+      // reviewer together said. Type-erasing it would leave the next author
+      // reaching for a cast, with nothing saying the field is already on the wire.
+      const response = {
+        scores: {
+          doc1: {
+            document_id: 'doc1', impact: 5, time_to_market: 3, confidence: 2, strategic_fit: 4, notes: '',
+          },
+        },
+        aggregates: {
+          doc1: {
+            impact: 4, time_to_market: 3, confidence: 2, strategic_fit: 4, reviewer_count: 2, score_spread: 0.4,
+          },
+        },
+      }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(response),
+      })
+
+      const result = await api.getPrioritizationScores()
+
+      expect(result.aggregates?.doc1.reviewer_count).toBe(2)
+      expect(result.aggregates?.doc1.score_spread).toBe(0.4)
+    })
+
+    it('still resolves when an older deployment omits aggregates', async () => {
+      // Which is why the field is optional in the type rather than required.
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ scores: {} }),
+      })
+
+      const result = await api.getPrioritizationScores()
+
+      expect(result.aggregates).toBeUndefined()
+    })
   })
 
   describe('savePrioritizationScores', () => {
-    it('sends PUT request with scores', async () => {
-      const scores = { issue1: { impact: 5, effort: 3 } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.savePrioritizationScores(scores as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/prioritization',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({ scores }),
-        })
-      )
+    it('is gone, because a whole-map PUT overwrote every reviewer', () => {
+      // Scores are per-reviewer ballots now, so one caller's map is not
+      // everyone's scores. The endpoint refuses PUT, so a client function for it
+      // could only ever produce a 400.
+      expect('savePrioritizationScores' in api).toBe(false)
     })
   })
 
@@ -1532,13 +1560,16 @@ describe('getDaysFromRange', () => {
     expect(getDaysFromRange('unknown')).toBe(7)
   })
 
-  it('calculates days from custom date range', () => {
-    const customRange = { start: '2025-01-01', end: '2025-01-10' }
-    expect(getDaysFromRange('custom', customRange)).toBe(10)
+  it('returns the custom lookback in days', () => {
+    expect(getDaysFromRange('custom', 10)).toBe(10)
   })
 
-  it('returns default when custom range is null', () => {
+  it('returns default when custom days is null', () => {
     expect(getDaysFromRange('custom', null)).toBe(7)
+  })
+
+  it('returns default when custom days is invalid', () => {
+    expect(getDaysFromRange('custom', 0)).toBe(7)
   })
 })
 
@@ -1548,15 +1579,46 @@ describe('getDateRangeParams', () => {
     expect(getDateRangeParams('30d')).toEqual({ days: 30 })
   })
 
-  it('returns start_date and end_date for custom range', () => {
-    const customRange = { start: '2025-01-01', end: '2025-01-31' }
-    expect(getDateRangeParams('custom', customRange)).toEqual({
-      start_date: '2025-01-01',
-      end_date: '2025-01-31',
+  it('returns the custom lookback as days', () => {
+    expect(getDateRangeParams('custom', 21)).toEqual({ days: 21 })
+  })
+
+  it('returns default days when custom days is null', () => {
+    expect(getDateRangeParams('custom', null)).toEqual({ days: 7 })
+  })
+
+  it('caps the "all" range at ALL_TIME_DAYS', () => {
+    expect(getDateRangeParams('all')).toEqual({ days: ALL_TIME_DAYS })
+    // The cap must not exceed the backend validate_days max (365) to avoid
+    // silent clamping server-side.
+    expect(ALL_TIME_DAYS).toBeLessThanOrEqual(365)
+  })
+
+  it('only ever carries a days param (no calendar window)', () => {
+    const params = getDateRangeParams('custom', 30)
+    expect(params).toEqual({ days: 30 })
+    expect(params).not.toHaveProperty('start_date')
+    expect(params).not.toHaveProperty('end_date')
+  })
+
+  it('omits date_basis for the default imported basis', () => {
+    // Keeping the params shape unchanged for 'imported' preserves existing
+    // request URLs and TanStack Query cache keys.
+    expect(getDateRangeParams('7d', null, 'imported')).toEqual({ days: 7 })
+    expect(getDateRangeParams('7d')).toEqual({ days: 7 })
+  })
+
+  it('includes date_basis=review when filtering by review date', () => {
+    expect(getDateRangeParams('30d', null, 'review')).toEqual({
+      days: 30,
+      date_basis: 'review',
     })
   })
 
-  it('returns days when custom range is null', () => {
-    expect(getDateRangeParams('custom', null)).toEqual({ days: 7 })
+  it('combines the custom lookback with the review basis', () => {
+    expect(getDateRangeParams('custom', 14, 'review')).toEqual({
+      days: 14,
+      date_basis: 'review',
+    })
   })
 })

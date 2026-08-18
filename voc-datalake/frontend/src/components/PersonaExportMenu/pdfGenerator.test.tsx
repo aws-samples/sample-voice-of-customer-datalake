@@ -4,12 +4,20 @@
  * @module components/PersonaExportMenu/pdfGenerator.test
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ProjectPersona } from '../../api/client'
+import type { ProjectPersona } from '../../api/types'
 
-// Mock the printUtils module
+// Mock the printUtils module — createPdfGenerator delegates to openPrintWindow internally,
+// so we mock createPdfGenerator to capture calls while preserving the factory pattern.
 const mockOpenPrintWindow = vi.fn()
 vi.mock('../../utils/printUtils', () => ({
-  openPrintWindow: (options: unknown) => mockOpenPrintWindow(options),
+  createPdfGenerator: (title: string | ((p: unknown) => string), render: (p: unknown) => unknown) =>
+    (props: unknown) => {
+      const resolvedTitle = typeof title === 'function' ? title(props) : title
+      const result = mockOpenPrintWindow({ title: resolvedTitle, content: render(props) })
+      if (!result) {
+        throw new TypeError('Failed to open print window. Please allow popups for this site.')
+      }
+    },
 }))
 
 describe('pdfGenerator module', () => {
@@ -114,6 +122,38 @@ describe('PersonaPDFContent for PDF generation', () => {
     expect(persona.feedback_count).toBe(100)
     expect(persona.identity?.occupation).toBe('Engineer')
     expect(persona.goals_motivations?.primary_goal).toBe('Primary goal')
+  })
+
+  it('handles persona optional collection fields', () => {
+    const persona: ProjectPersona = {
+      ...createTestPersona(),
+      confidence: 'high',
+      feedback_count: 100,
+      avatar_url: 'https://example.com/avatar.png',
+      identity: {
+        age_range: '25-34',
+        occupation: 'Engineer',
+        bio: 'A detailed bio',
+      },
+      goals_motivations: {
+        primary_goal: 'Primary goal',
+        secondary_goals: ['Secondary 1', 'Secondary 2'],
+        underlying_motivations: ['Motivation 1'],
+      },
+      pain_points: {
+        current_challenges: ['Challenge 1'],
+        blockers: ['Blocker 1'],
+        workarounds: ['Workaround 1'],
+      },
+      context_environment: {
+        usage_context: 'Office',
+        devices: ['Laptop', 'Phone'],
+        time_constraints: '9-5',
+      },
+      quotes: [{ text: 'Quote 1', context: 'Interview' }],
+      research_notes: ['Note 1', 'Note 2'],
+    }
+
     expect(persona.pain_points?.current_challenges).toHaveLength(1)
     expect(persona.context_environment?.devices).toHaveLength(2)
     expect(persona.quotes).toHaveLength(1)

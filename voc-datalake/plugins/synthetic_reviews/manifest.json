@@ -1,0 +1,117 @@
+{
+  "id": "synthetic_reviews",
+  "name": "Synthetic Data Review Generator",
+  "icon": "🧪",
+  "description": "Generate realistic synthetic customer reviews with AI (Amazon Bedrock) for demos, testing, and modeling. Ingested through the normal pipeline and tagged as synthetic data.",
+  "category": "synthetic",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "timeout": 900,
+      "memory": 512,
+      "bedrock": true
+    }
+  },
+
+  "config": [
+    {
+      "key": "company_name",
+      "label": "Company / Brand Name",
+      "type": "text",
+      "required": true,
+      "placeholder": "Acme Corp",
+      "secret": false
+    },
+    {
+      "key": "product_name",
+      "label": "Product / Service Name",
+      "type": "text",
+      "required": true,
+      "placeholder": "Acme Mobile App",
+      "secret": false
+    },
+    {
+      "key": "product_description",
+      "label": "Product Description",
+      "type": "textarea",
+      "required": false,
+      "placeholder": "What the product does, who it's for, key features...",
+      "secret": false
+    },
+    {
+      "key": "target_customer",
+      "label": "Target Customer / Persona",
+      "type": "textarea",
+      "required": false,
+      "placeholder": "e.g. busy parents who shop on mobile, price-sensitive small businesses...",
+      "secret": false
+    },
+    {
+      "key": "focus_areas",
+      "label": "Focus Areas (comma separated)",
+      "type": "textarea",
+      "required": false,
+      "placeholder": "delivery, pricing, customer support, app performance, checkout",
+      "secret": false
+    },
+    {
+      "key": "num_reviews",
+      "label": "Number of Reviews to Generate (max 150)",
+      "type": "text",
+      "required": false,
+      "placeholder": "10",
+      "secret": false
+    },
+    {
+      "key": "sentiment_mix",
+      "label": "Sentiment Mix",
+      "type": "select",
+      "required": false,
+      "secret": false,
+      "options": [
+        { "value": "balanced", "label": "Balanced (realistic mix)" },
+        { "value": "mostly_positive", "label": "Mostly Positive" },
+        { "value": "mostly_negative", "label": "Mostly Negative" },
+        { "value": "mixed", "label": "Polarized (very positive + very negative)" }
+      ]
+    },
+    {
+      "key": "language",
+      "label": "Review Language",
+      "type": "select",
+      "required": false,
+      "secret": false,
+      "options": [
+        { "value": "en", "label": "English" },
+        { "value": "de", "label": "German" },
+        { "value": "es", "label": "Spanish" },
+        { "value": "fr", "label": "French" }
+      ]
+    }
+  ],
+
+  "setup": {
+    "title": "Synthetic Data Review Generator",
+    "color": "blue",
+    "steps": [
+      "Enter your company/brand and product details so reviews sound realistic.",
+      "Optionally describe your target customer and the focus areas to cover (e.g. delivery, pricing, support).",
+      "Choose how many reviews to generate (max 150 per run) and the sentiment mix.",
+      "Click Generate. Reviews are created with AI and ingested through the normal pipeline.",
+      "Generated items are tagged as synthetic (source: synthetic_reviews) so you can filter them out anytime."
+    ]
+  },
+
+  "secrets": {
+    "company_name": "",
+    "product_name": "",
+    "product_description": "",
+    "target_customer": "",
+    "focus_areas": "",
+    "num_reviews": "",
+    "sentiment_mix": "",
+    "language": ""
+  }
+}

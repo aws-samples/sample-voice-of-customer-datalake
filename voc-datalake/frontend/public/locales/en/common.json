@@ -1,0 +1,127 @@
+{
+  "actions": {
+    "close": "Close"
+  },
+  "appDescription": "Unified customer feedback intelligence platform",
+  "appName": "VoC Analytics",
+  "appTagline": "Voice of the Customer Analytics",
+  "breadcrumbs": {
+    "categories": "Categories",
+    "chat": "AI Chat",
+    "dashboard": "Dashboard",
+    "dataExplorer": "Data Explorer",
+    "feedbackForms": "Feedback Forms",
+    "feedbackItem": "Feedback item",
+    "home": "Home",
+    "prioritization": "Prioritization",
+    "problems": "Problem Analysis",
+    "project": "Project",
+    "projects": "Projects",
+    "scrapers": "Web Scrapers",
+    "settings": "Settings"
+  },
+  "cancel": "Cancel",
+  "configureBrand": "Configure brand",
+  "dismiss": "Dismiss",
+  "exportCsvShort": "CSV",
+  "exportCsvTooltip": "Export as CSV",
+  "exportPdf": "Export PDF",
+  "exportPdfShort": "PDF",
+  "exportPdfTooltip": "Export as PDF",
+  "filters": {
+    "allCategories": "All Categories",
+    "allSentiments": "All Sentiments",
+    "allSources": "All Sources",
+    "clearFilters": "Clear Filters",
+    "mostRecent": "Most Recent",
+    "searchFeedback": "Search feedback...",
+    "urgentOnly": "Urgent Only"
+  },
+  "forQuery": "for \"{{query}}\"",
+  "goToSettings": "Go to Settings",
+  "loading": "Loading...",
+  "loadMore": "Load more",
+  "logs": {
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago",
+    "hoursAgo_one": "{{count}} hour ago",
+    "hoursAgo_other": "{{count}} hours ago",
+    "justNow": "Just now",
+    "minutesAgo_one": "{{count}} minute ago",
+    "minutesAgo_other": "{{count}} minutes ago"
+  },
+  "metrics": {
+    "avgSentiment": "Avg Sentiment",
+    "sourcesActive": "Sources Active",
+    "totalFeedback": "Total Feedback",
+    "urgentIssues": "Urgent Issues"
+  },
+  "nav": {
+    "aiChat": "AI Chat",
+    "categories": "Categories",
+    "dashboard": "Dashboard",
+    "dataExplorer": "Data Explorer",
+    "feedbackForms": "Feedback Forms",
+    "home": "Home",
+    "prioritization": "Prioritization",
+    "problemAnalysis": "Problem Analysis",
+    "projects": "Projects",
+    "scrapers": "Scrapers",
+    "section": {
+      "home": "Home",
+      "ideation": "Ideation",
+      "settings": "Settings",
+      "signals": "Signals",
+      "sources": "Sources",
+      "validation": "Validation"
+    },
+    "settings": "Settings"
+  },
+  "partialWindowHint": "narrow filters to see all",
+  "problemAnalysisPage": {
+    "emptyHint": "Try expanding the time range or adjusting filters",
+    "emptyTitle": "No problem analysis data found for the selected period"
+  },
+  "problemResolution": {
+    "allResolvedHint": "Enable \"Show resolved ({{total}})\" above to review them",
+    "allResolvedTitle": "All problems in this view are marked resolved",
+    "markResolved": "Mark as resolved",
+    "markUnresolved": "Mark as unresolved",
+    "resolved": "Resolved",
+    "saveFailed": "Could not update the resolved status. Try again.",
+    "showResolved": "Show resolved ({{total}})"
+  },
+  "send": "Send",
+  "sentiment": {
+    "mixed": "Mixed",
+    "negative": "Negative",
+    "neutral": "Neutral",
+    "positive": "Positive"
+  },
+  "showingOf_one": "Showing {{count}} of {{total}} result",
+  "showingOf_other": "Showing {{count}} of {{total}} results",
+  "sidebar": {
+    "closeMenu": "Close menu",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "openMenu": "Open menu",
+    "signOut": "Sign out"
+  },
+  "timeRange": {
+    "24h": "24h",
+    "24hFull": "24 Hours",
+    "30d": "30d",
+    "30dFull": "30 Days",
+    "48h": "48h",
+    "48hFull": "48 Hours",
+    "7d": "7d",
+    "7dFull": "7 Days",
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "custom": "Custom",
+    "endDate": "End Date",
+    "selectDateRange": "Select Date Range",
+    "startDate": "Start Date"
+  }
+}

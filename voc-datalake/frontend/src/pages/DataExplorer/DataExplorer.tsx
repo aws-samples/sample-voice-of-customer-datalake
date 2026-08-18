@@ -4,19 +4,18 @@
  */
 
 import { useState, useCallback } from 'react'
-import { Database, HardDrive, FolderOpen, Plus, RefreshCw, Search, Filter } from 'lucide-react'
+import { Database, HardDrive, Plus, RefreshCw, Search, Filter } from 'lucide-react'
 import type { FeedbackItem } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal'
 import clsx from 'clsx'
 import S3Browser from './S3Browser'
 import ProcessedFeedbackView from './ProcessedFeedbackView'
-import CategoriesView from './CategoriesView'
 import EditModal, { type EditModalState } from './EditModal'
 import { useDataExplorerQueries } from './useDataExplorerQueries'
 import { useDataExplorerMutations } from './useDataExplorerMutations'
 import { openS3Editor, openS3Creator, downloadS3File } from './s3Handlers'
 
-type ViewMode = 's3-raw' | 'dynamodb-processed' | 'dynamodb-categories'
+type ViewMode = 's3-raw' | 'dynamodb-processed'
 
 interface DeleteConfirmState {
   type: 's3' | 'dynamodb'
@@ -26,8 +25,7 @@ interface DeleteConfirmState {
 
 const VIEW_TABS = [
   { id: 's3-raw', icon: HardDrive, label: 'S3 Raw Data', shortLabel: 'S3' },
-  { id: 'dynamodb-processed', icon: Database, label: 'Processed Feedback', shortLabel: 'Feedback' },
-  { id: 'dynamodb-categories', icon: FolderOpen, label: 'Categories', shortLabel: 'Categories' },
+  { id: 'dynamodb-processed', icon: Database, label: 'Edit Processed Feedback', shortLabel: 'Edit' },
 ] as const
 
 // Extended feedback item type that may include s3_raw_uri from API
@@ -213,9 +211,6 @@ function ContentPanel({
           onEdit={(i) => onOpenFeedbackEditor(i, 'edit')}
           onDelete={(i) => onDeleteConfirm({ type: 'dynamodb', key: i.feedback_id, id: i.feedback_id })}
         />
-      )}
-      {viewMode === 'dynamodb-categories' && (
-        <CategoriesView data={queries.categoriesData} loading={queries.categoriesLoading} />
       )}
     </div>
   )

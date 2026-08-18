@@ -2,10 +2,15 @@
  * FormCard Component - displays a single feedback form with embed options and stats
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Trash2, Copy, Check, Code, ExternalLink, ToggleLeft, ToggleRight, Edit2, MessageSquare, Star, BarChart3 } from 'lucide-react'
 import type { FeedbackForm } from '../../api/client'
 import { api } from '../../api/client'
+import { formStatsKey, FORM_STATS_STALE_TIME_MS } from '../../api/feedbackFormQueryKeys'
+import { feedbackFormPublicUrl } from '../../api/feedbackFormUrls'
+import FormQrButton from '../../components/FormQrCode/FormQrButton'
+import { defaultFormConfig } from './formTemplates'
 import clsx from 'clsx'
 import SubmissionsModal from './SubmissionsModal'
 
@@ -72,14 +77,47 @@ function FormStats({ stats, onViewSubmissions }: FormStatsProps) {
   )
 }
 
+/**
+ * A form name safe to sit inside a double-quoted HTML attribute.
+ *
+ * The snippet below is pasted verbatim into a customer's own page, so a name
+ * containing a double quote closes `title="` early and hands them broken markup
+ * to debug. `&` is escaped first, or the `&` this very substitution introduces
+ * would be escaped a second time.
+ */
+function escapeAttributeValue(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
+}
+
 interface EmbedCodeSectionProps {
-  readonly iframeUrl: string
-  readonly iframeEmbed: string
+  /** Just the two fields the snippets need — not the whole form record. */
+  readonly formId: string
+  readonly formName: string
+  readonly apiEndpoint: string
   readonly copied: string | null
   readonly onCopy: (text: string, id: string) => void
 }
 
-function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeSectionProps) {
+function EmbedCodeSection({ formId, formName, apiEndpoint, copied, onCopy }: EmbedCodeSectionProps) {
+  const { t } = useTranslation('feedbackForms')
+  // Built here, from the one shared builder, because this section is the only
+  // consumer of both spellings — and the card's QR encodes the same string from
+  // the same builder, so a second construction site would let the printed URL
+  // and the scanned one drift.
+  const iframeUrl = feedbackFormPublicUrl(apiEndpoint, formId)
+  if (iframeUrl === null) {
+    // Without an addressable endpoint both the link and the snippet are dead, so
+    // say the one useful thing once instead of printing two broken artifacts for a
+    // customer to paste into their site. The QR says the same thing in its own
+    // words, inside its dialog, because that is the only place a viewer can be
+    // told before pointing a room at it.
+    return <p className="mt-3 text-xs text-gray-500">{t('configureApiFirst')}</p>
+  }
+  const iframeEmbed = `<iframe 
+  src="${iframeUrl}"
+  style="width: 100%; min-height: 400px; border: none;"
+  title="${escapeAttributeValue(formName)}"
+></iframe>`
   return (
     <div className="mt-3 space-y-3">
       <div>
@@ -109,19 +147,32 @@ function EmbedCodeSection({ iframeUrl, iframeEmbed, copied, onCopy }: EmbedCodeS
           <code>{iframeEmbed}</code>
         </pre>
       </div>
+      {/* No QR here. It used to sit under the snippet, which made the room-facing
+          artifact reachable only by opening a developer-facing disclosure about
+          iframes — a facilitator had no reason to look. It is now a first-class
+          affordance on the card itself (see FormQrButton below), and putting one
+          back here would give the card two entry points to the same thing. */}
     </div>
   )
 }
 
 export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: FormCardProps) {
+  const { t } = useTranslation('feedbackForms')
+  // Hoisted so the label is computed once and shared by aria-label and title,
+  // which also keeps this component under the ESLint complexity ceiling.
+  const toggleLabel = form.enabled ? t('card.disableForm') : t('card.enableForm')
   const [copied, setCopied] = useState<string | null>(null)
   const [showEmbed, setShowEmbed] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
+  // Belt-and-braces for issue #171: the list normalizes at its query boundary,
+  // but FormCard must stay render-safe standalone (sparse records pre-dating
+  // the theme field crashed the whole /feedback-forms route).
+  const theme = form.theme ?? defaultFormConfig.theme
 
   const { data: statsData } = useQuery({
-    queryKey: ['form-stats', form.form_id],
+    queryKey: formStatsKey(form.form_id),
     queryFn: () => api.getFeedbackFormStats(form.form_id),
-    staleTime: 30000,
+    staleTime: FORM_STATS_STALE_TIME_MS,
   })
 
   const copyToClipboard = (text: string, id: string) => {
@@ -129,13 +180,6 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
     setCopied(id)
     setTimeout(() => setCopied(null), 2000)
   }
-
-  const iframeUrl = `${apiEndpoint}/feedback-forms/${form.form_id}/iframe`
-  const iframeEmbed = `<iframe 
-  src="${iframeUrl}"
-  style="width: 100%; min-height: 400px; border: none;"
-  title="${form.name}"
-></iframe>`
 
   return (
     <>
@@ -160,13 +204,30 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
             )}
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            <button onClick={() => onToggle(form.form_id, !form.enabled)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title={form.enabled ? 'Disable form' : 'Enable form'}>
+            {/* aria-label as well as title: title is hover-only, so on its own it
+                leaves these icon-only controls poorly described for AT users. */}
+            <button
+              onClick={() => onToggle(form.form_id, !form.enabled)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label={toggleLabel}
+              title={toggleLabel}
+            >
               {form.enabled ? <ToggleRight size={20} className="text-green-600" /> : <ToggleLeft size={20} className="text-gray-400" />}
             </button>
-            <button onClick={() => onEdit(form)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit form">
+            <button
+              onClick={() => onEdit(form)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label={t('card.editForm')}
+              title={t('card.editForm')}
+            >
               <Edit2 size={18} className="text-gray-600" />
             </button>
-            <button onClick={() => onDelete(form.form_id)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete form">
+            <button
+              onClick={() => onDelete(form.form_id)}
+              className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+              aria-label={t('card.deleteForm')}
+              title={t('card.deleteForm')}
+            >
               <Trash2 size={18} className="text-red-500" />
             </button>
           </div>
@@ -186,22 +247,38 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
           <div>
             <p className="text-xs text-gray-500">Theme</p>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: form.theme.primary_color }} />
-              <span className="text-sm font-mono truncate">{form.theme.primary_color}</span>
+              <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: theme.primary_color }} />
+              <span className="text-sm font-mono truncate">{theme.primary_color}</span>
             </div>
           </div>
         </div>
 
         <div className="border-t pt-4">
-          <button onClick={() => setShowEmbed(!showEmbed)} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
-            <Code size={16} />
-            {showEmbed ? 'Hide Embed Code' : 'Show Embed Code'}
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Translated because it sits immediately beside the QR trigger, which
+                is: one row, two controls, and only one of them in the reader's
+                language reads as a bug rather than as a gap. The keys already
+                existed in all eight catalogues — they were simply never wired up. */}
+            <button onClick={() => setShowEmbed(!showEmbed)} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
+              <Code size={16} />
+              {showEmbed ? t('card.hideEmbedCode') : t('card.showEmbedCode')}
+            </button>
+            {/* Beside the embed disclosure rather than inside it: a facilitator
+                wanting a QR for a room is not looking for an iframe snippet. Same
+                trigger the Prioritization row uses. */}
+            <FormQrButton
+              apiEndpoint={apiEndpoint}
+              formId={form.form_id}
+              formName={form.name}
+              className="text-sm"
+            />
+          </div>
           
           {showEmbed && (
             <EmbedCodeSection
-              iframeUrl={iframeUrl}
-              iframeEmbed={iframeEmbed}
+              formId={form.form_id}
+              formName={form.name}
+              apiEndpoint={apiEndpoint}
               copied={copied}
               onCopy={copyToClipboard}
             />

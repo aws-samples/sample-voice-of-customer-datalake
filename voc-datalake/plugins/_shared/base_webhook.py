@@ -16,6 +16,7 @@ from shared.logging import logger, tracer, metrics
 from shared.aws import get_sqs_client, get_secret
 
 from .audit import emit_audit_event
+from .sqs_utils import send_messages_to_queue
 
 __all__ = ["BaseWebhook", "logger", "tracer", "metrics"]
 
@@ -88,22 +89,39 @@ class BaseWebhook(ABC):
             "raw_data": item,
         }
 
-    def send_to_queue(self, items: list[dict]):
-        """Send items to SQS processing queue."""
-        if not items:
-            return
+    def send_to_queue(self, items: list[dict]) -> int:
+        """Send items to SQS processing queue.
 
-        for i in range(0, len(items), 10):
-            batch = items[i : i + 10]
-            entries = [
-                {"Id": str(idx), "MessageBody": json.dumps(item, default=str)}
-                for idx, item in enumerate(batch)
-            ]
+        Delegates to the shared helper which checks the ``Failed`` list in every
+        batch response, retries transient errors, and raises ``RuntimeError`` if
+        any items cannot be enqueued — ensuring callers cannot silently lose
+        feedback.  It also reconciles ``Successful`` + ``Failed`` against the
+        submitted entries so an unaccounted entry is reported rather than
+        dropped.  The ``WebhookItemsIngested`` metric reflects the actual
+        enqueued count, not the attempted count.
 
-            self._sqs.send_message_batch(QueueUrl=PROCESSING_QUEUE_URL, Entries=entries)
+        Returns:
+            The number of items that SQS confirmed as enqueued.
 
-        logger.info(f"Sent {len(items)} webhook items to processing queue")
-        metrics.add_metric(name="WebhookItemsIngested", unit="Count", value=len(items))
+        Note — partial-failure duplicate-delivery trade-off:
+            If the helper raises ``RuntimeError`` after a partial success (some
+            items were already enqueued before the failure occurred), ``handle()``
+            catches it and returns HTTP 500.  Most webhook providers treat 500 as
+            transient and re-deliver the *entire* original payload, so items that
+            were already successfully enqueued will be sent a second time.  This
+            PR chooses "duplicate over loss" as the safer trade-off; the
+            downstream processor deduplicates on ``id`` via
+            ``check_duplicate`` / ``@idempotent_function`` when
+            ``IDEMPOTENCY_TABLE`` is configured.  Ensure ``IDEMPOTENCY_TABLE`` is
+            set in all production deployments to prevent double-processing.
+        """
+        return send_messages_to_queue(
+            self._sqs,
+            PROCESSING_QUEUE_URL,
+            items,
+            metric_name="WebhookItemsIngested",
+            log_label="webhook",
+        )
 
     def _extract_client_ip(self, event: dict) -> str:
         """Extract client IP from API Gateway event."""
@@ -148,10 +166,13 @@ class BaseWebhook(ABC):
 
             # Normalize and send to queue
             normalized_items = [self.normalize_item(item) for item in items]
-            self.send_to_queue(normalized_items)
+            # Use the confirmed-enqueued count, not the attempted count, so the
+            # audit event and HTTP response never report items SQS did not
+            # acknowledge (mirrors BaseIngestor.run()).
+            enqueued = self.send_to_queue(normalized_items)
 
             emit_audit_event("webhook.received", self.source_platform, True, {
-                "items_processed": len(normalized_items),
+                "items_processed": enqueued,
                 "ip_address": client_ip,
             })
 
@@ -159,7 +180,7 @@ class BaseWebhook(ABC):
                 "statusCode": 200,
                 "body": json.dumps({
                     "status": "ok",
-                    "items_processed": len(normalized_items),
+                    "items_processed": enqueued,
                 }),
             }
 

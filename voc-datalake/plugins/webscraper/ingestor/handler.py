@@ -9,24 +9,40 @@ from typing import Generator
 from urllib.parse import urljoin, urlparse
 import hashlib
 import json
+import random
 import re
+import time
 
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
 import requests
 
 
+# Word-based star-rating classes, e.g. <p class="star-rating Three">. Used by
+# books.toscrape.com and similar review widgets that encode the star count as a
+# number word in the element's CSS class rather than a digit or an attribute.
+# Keys MUST be lowercase — lookups normalize the class token via .lower().
+WORD_STAR_RATINGS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
+
+
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
 
-    def __init__(self, execution_id: str = None, target_scraper_id: str = None):
-        super().__init__()
-        self.execution_id = execution_id
+    def __init__(self, execution_id: str | None = None, target_scraper_id: str | None = None):
+        # execution_id → BaseIngestor manual-run cache clear (#141/#215).
+        super().__init__(execution_id=execution_id)
         self.target_scraper_id = target_scraper_id
         self.scraper_configs = self._load_scraper_configs()
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Cache-Control': 'no-cache',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
         }
         self.aggregates_table_name = os.environ.get('AGGREGATES_TABLE', '')
         self.aggregates_table = None
@@ -98,6 +114,12 @@ class WebScraperIngestor(BaseIngestor):
                 rating = int(match.group(1))
                 if 1 <= rating <= 5:
                     return rating
+            # Only consulted on the element the config's rating_selector
+            # resolves to, so a bare 'one'/'two' grid-column class elsewhere
+            # in the DOM can't leak in as a rating.
+            word_rating = WORD_STAR_RATINGS.get(cls.lower())
+            if word_rating is not None:
+                return word_rating
         
         text = element.get_text(strip=True)
         match = re.search(r'(\d+(?:\.\d+)?)\s*(?:/\s*5|stars?|★)', text, re.I)
@@ -205,7 +227,12 @@ class WebScraperIngestor(BaseIngestor):
     def _scrape_page(self, config: dict, url: str) -> Generator[dict, None, None]:
         """Scrape a single page based on configuration."""
         try:
-            response = fetch_with_retry(url, headers=self.headers, timeout=30)
+            # Set Referer to the site's root so it looks like in-site navigation
+            page_headers = {**self.headers, 'Referer': f"https://{urlparse(url).netloc}/"}
+            response = fetch_with_retry(url, headers=page_headers, timeout=15)
+            if response.status_code == 403:
+                logger.warning(f"Access denied (403) for {url} - site may be blocking automated requests")
+                return
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
         except requests.RequestException as e:
@@ -354,16 +381,24 @@ class WebScraperIngestor(BaseIngestor):
             
             for url in urls:
                 try:
+                    page_items = 0
                     for item in self._scrape_page(config, url):
                         items_found += 1
+                        page_items += 1
                         yield item
                     pages_scraped += 1
+                    
+                    if page_items == 0:
+                        logger.info(f"No items found on {url}")
                     
                     self._update_run_status(scraper_id, {
                         'pages_scraped': pages_scraped,
                         'items_found': items_found,
                         'current_url': url
                     })
+                    
+                    # Rate limit: randomized delay between pages to avoid bot detection
+                    time.sleep(random.uniform(2.0, 5.0))
                 except Exception as e:
                     error_msg = f"Error scraping {url}: {str(e)}"
                     logger.warning(error_msg)
@@ -390,7 +425,9 @@ def lambda_handler(event, context):
     """Lambda entry point."""
     execution_id = event.get('execution_id')
     scraper_id = event.get('scraper_id')
-    
+
+    # Manual-run secret-cache clearing (issue #141) is centralized in
+    # BaseIngestor.__init__ — passing execution_id below triggers it.
     ingestor = WebScraperIngestor(
         execution_id=execution_id,
         target_scraper_id=scraper_id

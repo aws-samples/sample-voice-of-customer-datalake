@@ -3,17 +3,30 @@
  * @module pages/Login/LoginSharedComponents
  */
 
-import { Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  Loader2, AlertCircle, Eye, EyeOff,
+} from 'lucide-react'
 
 // Error Alert Component
-interface ErrorAlertProps {
-  readonly message: string
-}
+interface ErrorAlertProps { readonly message: string }
 
 export function ErrorAlert({ message }: Readonly<ErrorAlertProps>) {
   return (
-    <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
+    /*
+     * This carried no role at all, so a screen-reader user got a red box they
+     * were never told about. `role="alert"` fixes that for errors that APPEAR
+     * — a failed sign-in, a password mismatch — which is nearly all of them.
+     *
+     * It does not help a message already present at mount (the session-expired
+     * notice): a live region has to exist before its content is inserted to be
+     * announced. Making that case announce needs focus management, which is a
+     * bigger change than this component.
+     */
+    <div
+      role="alert"
+      className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg"
+    >
       <AlertCircle size={16} />
       {message}
     </div>
@@ -21,9 +34,7 @@ export function ErrorAlert({ message }: Readonly<ErrorAlertProps>) {
 }
 
 // Success Message Component
-interface SuccessMessageProps {
-  readonly message: string
-}
+interface SuccessMessageProps { readonly message: string }
 
 export function SuccessMessage({ message }: Readonly<SuccessMessageProps>) {
   return (
@@ -40,17 +51,19 @@ interface SubmitButtonProps {
   readonly text: string
 }
 
-export function SubmitButton({ isLoading, loadingText, text }: Readonly<SubmitButtonProps>) {
+export function SubmitButton({
+  isLoading, loadingText, text,
+}: Readonly<SubmitButtonProps>) {
   return (
     <button
       type="submit"
       disabled={isLoading}
       className={clsx(
         'w-full btn btn-primary py-3 flex items-center justify-center gap-2',
-        isLoading && 'opacity-75 cursor-not-allowed'
+        isLoading && 'opacity-75 cursor-not-allowed',
       )}
     >
-      {isLoading && <Loader2 size={18} className="animate-spin" />}
+      {isLoading ? <Loader2 size={18} className="animate-spin" /> : null}
       {isLoading ? loadingText : text}
     </button>
   )

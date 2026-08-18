@@ -18,4 +18,9 @@ export const CATEGORIES = [
   'other',
 ]
 
-export const SENTIMENTS = ['positive', 'negative', 'neutral', 'mixed']
+// `as const` so a Sentiment is a literal union: any label map keyed by it has
+// to cover every value, making an unlabelled new sentiment a typecheck failure
+// rather than a slug leaking into the UI.
+export const SENTIMENTS = ['positive', 'negative', 'neutral', 'mixed'] as const
+
+export type Sentiment = (typeof SENTIMENTS)[number]
