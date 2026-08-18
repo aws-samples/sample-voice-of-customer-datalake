@@ -807,3 +807,30 @@ describe('mcp endpoint throttling', () => {
     expect(Object.keys(apiTemplate().findResources('AWS::ApiGateway::UsagePlan'))).toEqual([]);
   });
 });
+
+
+describe('unauthorized gateway response', () => {
+  // The ONLY place a REST API can emit a true WWW-Authenticate on a 401:
+  // Lambda-proxy responses have the header unconditionally remapped to
+  // x-amzn-remapped-www-authenticate (verified live). Removing this response
+  // or either header would be silent — the handler-side header keeps flowing,
+  // remapped — so the delivery path for the RFC 6750 challenge is pinned here.
+  it('carries the Bearer challenge and exposes it to browsers', () => {
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const unauthorized = responses
+      .map((r) => ResponseSchema.parse(r).Properties)
+      .find((p) => p.ResponseType === 'UNAUTHORIZED');
+    expect(unauthorized, 'no UNAUTHORIZED gateway response in the template').toBeDefined();
+    const params = unauthorized?.ResponseParameters ?? {};
+    expect(params['gatewayresponse.header.WWW-Authenticate']).toBe('\'Bearer error="invalid_token"\'');
+    expect(params['gatewayresponse.header.Access-Control-Expose-Headers']).toBe("'WWW-Authenticate'");
+  });
+});
