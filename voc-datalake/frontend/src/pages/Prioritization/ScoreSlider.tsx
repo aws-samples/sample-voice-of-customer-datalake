@@ -48,15 +48,22 @@ export default function ScoreSlider({
   // Was the press that is now ending a press ON THIS CONTROL? `pointerup` also
   // fires when a pointer that went down elsewhere is released over the input,
   // and that stray release must not cast a vote. A ref, not state: it changes
-  // nothing on screen. Cleared on EVERY way a press can stop mattering — up,
-  // leaving the control, cancel, lost capture — because a flag set on
-  // pointerdown and cleared only on pointerup-on-the-input sticks when the
-  // press ends elsewhere, and the NEXT unrelated release over the input would
-  // then cast the resting value: the exact stray vote the guard exists to
-  // prevent, one interaction later. (In real browsers a range input takes
-  // implicit pointer capture on press, so `pointerleave` does not fire during
-  // a legitimate drag that strays off the control and `pointerup` still
-  // arrives here — dragging off and releasing keeps working.)
+  // nothing on screen. Cleared on every way a press stops mattering — the up
+  // itself, leaving the control, cancel — because a flag cleared only on
+  // pointerup-on-the-input sticks when the press ends elsewhere, and the NEXT
+  // unrelated release over the input would then cast the resting value: the
+  // exact stray vote the guard exists to prevent, one interaction later.
+  //
+  // The three clears are ORDERING-SAFE by construction: `pointercancel` fires
+  // instead of an up, and a `pointerleave` after an up runs after the commit
+  // already happened. `lostpointercapture` is deliberately NOT used — per spec
+  // it follows the up (so it would add nothing), and an engine firing it early
+  // would break the click-at-the-resting-position commit on touch; a clear
+  // whose only distinctive ordering is the harmful one earns no place here.
+  // Browser-verified caveat: jsdom models no implicit pointer capture, so the
+  // drag-off-and-release path (capture keeps `pointerleave` from firing
+  // mid-drag and the up still lands here) holds in real browsers, not in the
+  // test harness — the tests pin the guard's logic, not the capture model.
   const pressedHere = useRef(false)
   const releasePress = () => { pressedHere.current = false }
   return (
@@ -85,7 +92,6 @@ export default function ScoreSlider({
           onPointerDown={() => { pressedHere.current = true }}
           onPointerLeave={releasePress}
           onPointerCancel={releasePress}
-          onLostPointerCapture={releasePress}
           /* A reader who wants EXACTLY the resting position: clicking the track
              at 3 leaves the value unchanged, so `onChange` never fires and the
              axis would stay unscored with no way to say "3" short of wiggling.

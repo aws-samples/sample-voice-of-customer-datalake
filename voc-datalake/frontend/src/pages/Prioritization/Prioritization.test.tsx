@@ -625,14 +625,27 @@ describe('Prioritization', () => {
 
       expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
       expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
+    })
 
-      // The stuck-flag variant: a press that STARTS on the slider and ends
-      // elsewhere must not leave the guard armed — without clearing it on
-      // pointerleave, the NEXT unrelated release over the input casts the
-      // resting value, the exact stray vote the guard exists to prevent, one
-      // interaction later.
+    it('a press that starts on an unscored slider and ends elsewhere does not arm the next stray release', async () => {
+      // The stuck-flag case: without clearing the guard on pointerleave, a
+      // press that started on the slider and ended off it leaves the flag
+      // armed, and the NEXT unrelated release over the input casts the resting
+      // value — the exact stray vote the guard exists to prevent, one
+      // interaction later. Removing the clearing handlers fails this test.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+
       fireEvent.pointerDown(sliders[1])
       fireEvent.pointerLeave(sliders[1])
+      // The press ended elsewhere; this later release over the input is stray.
       fireEvent.pointerUp(sliders[1])
 
       expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
