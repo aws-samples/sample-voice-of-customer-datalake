@@ -2014,10 +2014,15 @@ class TestTheResponseIsThreeMapsKeyedByRow:
         (2026-08-18) that the handful of ballots cast under the old key are
         expendable, in preference to carrying a re-key nothing will need again.
 
-        The distinction this pins is that the drop is TOTAL and QUIET: absent from
-        `scores`, from `aggregates` and from `rows`, with a 200 and no warning. That
-        is the accepted behaviour, and a future reader wondering whether it was
-        noticed should find this test rather than infer it from silence.
+        The distinction this pins is that the drop is TOTAL: absent from `scores`,
+        from `aggregates` and from `rows`, on a 200. That is the accepted behaviour,
+        and a future reader wondering whether it was noticed should find this test
+        rather than infer it from silence.
+
+        It is NOT quiet, and this docstring said it was until the read started
+        reporting the discard — `test_discarding_a_ballot_is_reported_rather_than_done_in_silence`
+        below owns that half. The accepted part is losing the ballots; nobody accepted
+        losing them without a trace.
 
         NOT covered here on purpose: nothing deletes the orphaned items, so they
         remain in the partition counting against `MAX_PRIORITIZATION_PAGES`. Harmless
@@ -2097,14 +2102,26 @@ class TestTheResponseIsThreeMapsKeyedByRow:
         assert body['scores'] == {}
         assert body['aggregates'] == {}
         assert body['rows']['row-1']['document_ids'] == [document_id]
-        # Reported once, with both counts: three ballots across two unresolved ids.
+        # Reported once, and asserted on the RENDERED message rather than on the
+        # positional format arguments. Reading `args[1]` and `args[2]` pins the
+        # argument ORDER, which is not the contract — reordering the two `%d`s and
+        # their arguments together would keep those assertions green while the line a
+        # human reads swaps the counts. Rendering is also what catches a template
+        # whose placeholders no longer match its arguments, which raises at log time
+        # and not here.
         assert logger.warning.call_count == 1
-        args = logger.warning.call_args[0]
-        assert args[1] == 3, f'ballot count, got {args[1]}'
-        assert args[2] == 2, f'distinct unresolved row ids, got {args[2]}'
+        template, *values = logger.warning.call_args[0]
+        rendered = template % tuple(values)
+
+        assert '3 prioritization ballot(s)' in rendered, rendered
+        assert '2 row id(s)' in rendered, rendered
+        # The remedy and the frequency, because a warning that cannot self-clear is
+        # noise unless it says how to stop it and what a rising count would mean.
+        assert 'every read until those items are removed' in rendered, rendered
+        assert 'RISING' in rendered, rendered
         # Neither identifier reaches the log line, in the template or the arguments.
-        assert document_id not in str(args)
-        assert 'row-gone' not in str(args)
+        assert document_id not in rendered
+        assert 'row-gone' not in rendered
 
     def test_a_read_with_nothing_to_discard_says_nothing(
         self, api_gateway_event, lambda_context
@@ -3446,8 +3463,14 @@ class TestAPartlyReadProjectCannotBeFrozenIntoARow:
         status, body = _create_row(aggregates, projects, api_gateway_event,
                                    lambda_context, body={'project_id': 'p1'})
 
-        assert status == 500
-        assert 'Too many project documents' in body['error']
+        # 409, not 500, and the status is the load-bearing part rather than a detail:
+        # the page releases a non-4xx for another attempt and re-asks on every project
+        # refetch, so a 500 against an answer that cannot change is a permanent loop —
+        # the very per-refetch loop `isPermanentRefusal` exists to prevent, on the one
+        # status class it cannot classify as settled. A 4xx is read as settled, so the
+        # project is asked for once and left alone.
+        assert status == 409
+        assert 'more documents than a prioritization row can be composed' in body['error']
         assert aggregates.put_item_calls == [], 'a partial read must freeze no row'
         assert len(projects.query_calls) == MAX_PROJECT_DOCUMENT_PAGES, (
             'the bound is what stopped the read'

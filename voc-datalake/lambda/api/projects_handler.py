@@ -28,6 +28,7 @@ from shared.exceptions import (
     ApiError,
     AuthorizationError,
     ConfigurationError,
+    ConflictError,
     NotFoundError,
     ServiceError,
     ValidationError,
@@ -586,16 +587,28 @@ MAX_BALLOTS_PER_SAVE = 100
 # documented team-sized deployment can never reach it.
 MAX_PRIORITIZATION_PAGES = 20
 
-# How many document pages a row COMPOSITION will follow, for the same reason and
-# with a lower number: it reads one project rather than the whole prioritization
-# partition, and it is projected to three fields, so a project needing more than
-# this has a document count far outside anything the product produces.
+# How many document pages a row COMPOSITION will follow.
+#
+# 🔴 CORRECTED: an earlier version of this said 5, on the reasoning that the read
+# "is projected to three fields, so a project needing more than this has a document
+# count far outside anything the product produces". That reasoning is WRONG.
+# DynamoDB's 1MB page limit applies to the data read BEFORE a
+# `ProjectionExpression` is applied, so projecting cuts what crosses the wire and
+# does nothing to the page count. The bound is therefore about a project's total
+# STORED BYTES, not its document count — and documents keep their body inline, so a
+# handful of long ones can page past a tight bound.
+#
+# Generous on purpose, because of what the bound does when it binds: the refusal
+# below is a 409, which the page reads as settled and does not retry, so the
+# project simply gets no row. A tight bound would spend that outcome on projects
+# the product can legitimately produce. A generous one costs nothing in the normal
+# case, which is a single page, and every extra page is paid only by a project
+# already far outside the shape the wizard creates.
 #
 # Separate from the constant above rather than shared, because the two bound
 # different things and would drift into one meaningless number: that one bounds a
-# partition growing as rows x reviewers, this one bounds a single project's
-# documents.
-MAX_PROJECT_DOCUMENT_PAGES = 5
+# partition growing as rows x reviewers, this one bounds one project's stored bytes.
+MAX_PROJECT_DOCUMENT_PAGES = 20
 
 
 def _json_object_body() -> dict:
@@ -1620,7 +1633,18 @@ def _project_documents(project_id: str) -> list[dict]:
         project_id,
         MAX_PROJECT_DOCUMENT_PAGES,
     )
-    raise ServiceError('Too many project documents to compose a prioritization row')
+    # 409, not 500, and the difference is behavioural rather than cosmetic. This is a
+    # settled fact about the project's stored state — it will answer the same on every
+    # attempt until documents are removed — so a status that invites a retry invites
+    # one that can never succeed. The page releases a non-4xx for another try and
+    # treats a 4xx as settled (`isPermanentRefusal`), and it re-asks on every project
+    # refetch, so a 500 here would be a permanent loop against an unchanging answer:
+    # exactly the per-refetch loop that predicate exists to prevent, on the one status
+    # class it cannot classify as settled.
+    raise ConflictError(
+        'This project holds more documents than a prioritization row can be composed '
+        'from in one read'
+    )
 
 
 # Which sort-key prefixes hold a SCORABLE document, and which holds a prototype.
