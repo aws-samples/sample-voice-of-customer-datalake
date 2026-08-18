@@ -625,6 +625,18 @@ describe('Prioritization', () => {
 
       expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
       expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
+
+      // The stuck-flag variant: a press that STARTS on the slider and ends
+      // elsewhere must not leave the guard armed — without clearing it on
+      // pointerleave, the NEXT unrelated release over the input casts the
+      // resting value, the exact stray vote the guard exists to prevent, one
+      // interaction later.
+      fireEvent.pointerDown(sliders[1])
+      fireEvent.pointerLeave(sliders[1])
+      fireEvent.pointerUp(sliders[1])
+
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
     })
 
     it('says nobody has scored a document absent from the aggregate', async () => {

@@ -606,9 +606,12 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
     }
 
     for (const direction of ['asc', 'desc'] as const) {
-      const order = idsOf(sortRows([rowA, rowB, rowC], aggregates, 'time_to_market', direction))
-      expect(order.indexOf('b'), direction).toBe(0)
-      expect(order.indexOf('a'), direction).toBeGreaterThan(order.indexOf('b'))
+      // The ranked row first, then the number-less block IN ARRIVAL ORDER (`a`
+      // was supplied before `c`) in BOTH directions — the block neither ranks
+      // its members against each other nor flips with the toggle, which is the
+      // determinism this grouping exists for.
+      expect(idsOf(sortRows([rowA, rowB, rowC], aggregates, 'time_to_market', direction)), direction)
+        .toEqual(['b', 'a', 'c'])
     }
   })
 

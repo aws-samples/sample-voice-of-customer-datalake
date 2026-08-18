@@ -48,8 +48,17 @@ export default function ScoreSlider({
   // Was the press that is now ending a press ON THIS CONTROL? `pointerup` also
   // fires when a pointer that went down elsewhere is released over the input,
   // and that stray release must not cast a vote. A ref, not state: it changes
-  // nothing on screen.
+  // nothing on screen. Cleared on EVERY way a press can stop mattering — up,
+  // leaving the control, cancel, lost capture — because a flag set on
+  // pointerdown and cleared only on pointerup-on-the-input sticks when the
+  // press ends elsewhere, and the NEXT unrelated release over the input would
+  // then cast the resting value: the exact stray vote the guard exists to
+  // prevent, one interaction later. (In real browsers a range input takes
+  // implicit pointer capture on press, so `pointerleave` does not fire during
+  // a legitimate drag that strays off the control and `pointerup` still
+  // arrives here — dragging off and releasing keeps working.)
   const pressedHere = useRef(false)
+  const releasePress = () => { pressedHere.current = false }
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center">
@@ -74,6 +83,9 @@ export default function ScoreSlider({
           aria-valuetext={unscored ? t('scores.notScored') : undefined}
           onChange={(e) => onChange(Number(e.target.value))}
           onPointerDown={() => { pressedHere.current = true }}
+          onPointerLeave={releasePress}
+          onPointerCancel={releasePress}
+          onLostPointerCapture={releasePress}
           /* A reader who wants EXACTLY the resting position: clicking the track
              at 3 leaves the value unchanged, so `onChange` never fires and the
              axis would stay unscored with no way to say "3" short of wiggling.

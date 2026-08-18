@@ -867,6 +867,10 @@ const roundToDisplay = (composite: number): number => Math.round(composite * 10)
  * One set of weights, two readers, zero copies.
  */
 const COMPOSITE_AXES: readonly (keyof CompositeAxes)[] = ['impact', 'time_to_market', 'strategic_fit', 'confidence']
+// Evaluated AT MODULE LOAD, and the file order is load-bearing:
+// `calculatePriorityScore` is a `const` arrow, so this block must stay BELOW
+// its declaration. Moving either past the other turns every import of this
+// module into a TDZ ReferenceError — a blank page, not a test failure.
 const weightOf = (axis: keyof CompositeAxes): number => calculatePriorityScore({
   impact: 0, time_to_market: 0, strategic_fit: 0, confidence: 0, [axis]: 1,
 })
