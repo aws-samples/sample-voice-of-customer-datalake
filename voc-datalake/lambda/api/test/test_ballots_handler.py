@@ -573,6 +573,25 @@ class TestValidationRefusalsAreTheirOwnReason:
 
         assert (status, response['reason']) == (400, 'invalid')
 
+    @pytest.mark.parametrize('body', [
+        {**AXES, 'notes': 'x' * 2001 + 'SUBMITTED-CONTENT'},
+        {'impact': 'SUBMITTED-CONTENT'},
+        {'notes': 'SUBMITTED-CONTENT'},
+    ])
+    def test_the_refusal_never_echoes_what_was_submitted(
+            self, api_gateway_event, lambda_context, body):
+        # The validator's own message is carried into the refusal body so somebody
+        # holding a terminal can see WHICH field and WHICH bound. That is only safe
+        # while those messages name the field and the limit and never the value —
+        # this is a public route, and its response is the one place submitted text
+        # could be reflected back.
+        table = FakeAggregatesTable([open_session()])
+
+        _, response = _submit(table, api_gateway_event, lambda_context, body=body)
+
+        assert response['reason'] == 'invalid'
+        assert 'SUBMITTED-CONTENT' not in json.dumps(response)
+
     def test_an_out_of_range_number_is_clamped_rather_than_refused(
             self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable([open_session()])
