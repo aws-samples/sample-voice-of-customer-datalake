@@ -573,13 +573,17 @@ class TestValidationRefusalsAreTheirOwnReason:
 
         assert (status, response['reason']) == (400, 'invalid')
 
-    @pytest.mark.parametrize('body', [
-        {**AXES, 'notes': 'x' * 2001 + 'SUBMITTED-CONTENT'},
-        {'impact': 'SUBMITTED-CONTENT'},
-        {'notes': 'SUBMITTED-CONTENT'},
+    @pytest.mark.parametrize('validator,body', [
+        # One case per validator that can reach the refusal, named for the one it
+        # actually reaches — the note bound only fires when the note is over it, and
+        # a body with no scorable axis is refused before the note is ever read.
+        ('the note bound', {**AXES, 'notes': 'x' * 2001 + 'SUBMITTED-CONTENT'}),
+        ('a non-numeric axis', {'impact': 'SUBMITTED-CONTENT'}),
+        ('nothing scored', {'notes': 'SUBMITTED-CONTENT'}),
+        ('a non-string note', {**AXES, 'notes': ['SUBMITTED-CONTENT']}),
     ])
     def test_the_refusal_never_echoes_what_was_submitted(
-            self, api_gateway_event, lambda_context, body):
+            self, api_gateway_event, lambda_context, validator, body):
         # The validator's own message is carried into the refusal body so somebody
         # holding a terminal can see WHICH field and WHICH bound. That is only safe
         # while those messages name the field and the limit and never the value —
@@ -587,10 +591,10 @@ class TestValidationRefusalsAreTheirOwnReason:
         # could be reflected back.
         table = FakeAggregatesTable([open_session()])
 
-        _, response = _submit(table, api_gateway_event, lambda_context, body=body)
+        status, response = _submit(table, api_gateway_event, lambda_context, body=body)
 
-        assert response['reason'] == 'invalid'
-        assert 'SUBMITTED-CONTENT' not in json.dumps(response)
+        assert (status, response['reason']) == (400, 'invalid'), validator
+        assert 'SUBMITTED-CONTENT' not in json.dumps(response), validator
 
     def test_an_out_of_range_number_is_clamped_rather_than_refused(
             self, api_gateway_event, lambda_context):
