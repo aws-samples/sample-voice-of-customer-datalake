@@ -1772,15 +1772,21 @@ def api_get_prioritization_scores():
             caller_ballots[row_id] = item
 
     if unresolved_ballots:
+        # EVERY read, not once per environment, and the message has to say so: nothing
+        # deletes an orphaned ballot, so a partition holding one logs this on every
+        # page load until somebody removes it. A line that implied "once" would leave
+        # an on-call reader hunting for a recurrence that is the normal state.
+        #
         # The row ids are not logged: one of them is a document id from the old key
-        # shape, and this module's rule is not to echo stored identifiers into logs.
-        # The counts are what make the loss detectable and bound it.
+        # shape, and this module's rule is not to echo stored identifiers. The counts
+        # are what make the loss detectable, and naming the remedy is what keeps a
+        # permanent warning from being permanent noise.
         logger.warning(
-            'Discarded %d prioritization ballot(s) across %d row id(s) that no '
-            'row record describes. Expected once per environment as ballots '
-            'written before rows existed are abandoned; a count that keeps '
-            'growing afterwards means ballots are being written against rows '
-            'that do not exist.',
+            'Discarded %d prioritization ballot(s) across %d row id(s) that no row '
+            'record describes; repeats on every read until those items are removed. '
+            'A stable count is the expected one-off from ballots written before rows '
+            'existed. A RISING count means ballots are being written against rows '
+            'that do not exist, which is a defect rather than history.',
             unresolved_ballots,
             len(unresolved_rows),
         )
