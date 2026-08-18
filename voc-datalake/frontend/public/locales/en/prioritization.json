@@ -43,6 +43,7 @@
     "rejected": {
       "title": "Your ballot was not recorded"
     },
+    "scopeNote": "You are scoring a whole proposal: this vote covers the set of documents behind it, in one ballot.",
     "submit": {
       "label": "Submit ballot",
       "pending": "Submitting..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "QR code opening the anonymous ballot page for {{title}}",
     "qrCaption": "Scan to score this proposal from a phone",
     "qrUnavailable": "The QR code is unavailable because this page's address cannot be shared.",
-    "scopeNote": "This vote scores one document: {{title}}. A room scanning it does not score any other version of the same idea.",
+    "scopeDocuments": "One ballot covers all {{documents}} documents behind it, so the room scores the whole proposal.",
+    "scopeNote": "This vote scores one proposal: {{title}}.",
     "title": "Score this as a room"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documents, one ballot"
   },
   "scores": {
     "confidence": "Confidence",
@@ -130,6 +135,7 @@
     "timeToMarket": "Time to Market",
     "timeToMarketDescription": "How quickly can this be delivered?",
     "title": "Prioritization Scores",
+    "wholeRow": "One ballot for all {{documents}} documents on this row.",
     "yoursOnly": "Your own ballot. Saving writes only your scores."
   },
   "scoresUnavailable": {
@@ -152,7 +158,7 @@
     "highPriority": "High Priority",
     "mediumPriority": "Medium Priority",
     "notScored": "Not Scored",
-    "totalDocuments": "Total Documents",
+    "totalRows": "Total Proposals",
     "unreadable_one": "The team score for {{count}} document could not be read, so it is counted in the total but in none of the other counts. Reload the page to see it.",
     "unreadable_other": "The team scores for {{count}} documents could not be read, so they are counted in the total but in none of the other counts. Reload the page to see them."
   },

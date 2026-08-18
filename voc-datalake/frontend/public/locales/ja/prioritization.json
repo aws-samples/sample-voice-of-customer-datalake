@@ -43,6 +43,7 @@
     "rejected": {
       "title": "投票は記録されませんでした"
     },
+    "scopeNote": "評価対象は提案全体です。この投票は提案を構成するドキュメント一式を、1票でまとめて評価します。",
     "submit": {
       "label": "投票する",
       "pending": "送信中..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "{{title}}の匿名投票ページを開くQRコード",
     "qrCaption": "スキャンしてスマートフォンからこの提案を評価",
     "qrUnavailable": "このページのアドレスを共有できないため、QRコードを表示できません。",
-    "scopeNote": "この投票が評価するのは1つのドキュメント「{{title}}」だけです。これを読み取った参加者は、同じアイデアの別バージョンを評価することにはなりません。",
+    "scopeDocuments": "1票が背後のドキュメント{{documents}}件すべてを対象とするため、会場は提案全体を評価します。",
+    "scopeNote": "この投票は提案1件を評価します: {{title}}。",
     "title": "会議室で評価する"
+  },
+  "row": {
+    "multiDocument": "ドキュメント{{documents}}件、投票は1票"
   },
   "scores": {
     "confidence": "確信度",
@@ -130,6 +135,7 @@
     "timeToMarket": "市場投入時間",
     "timeToMarketDescription": "どのくらい早く提供できますか？",
     "title": "優先順位付けスコア",
+    "wholeRow": "この行のドキュメント{{documents}}件すべてに対する1票です。",
     "yoursOnly": "自分自身の評価です。保存すると自分のスコアだけが書き込まれます。"
   },
   "scoresUnavailable": {
@@ -152,7 +158,7 @@
     "highPriority": "高優先度",
     "mediumPriority": "中優先度",
     "notScored": "未評価",
-    "totalDocuments": "ドキュメント合計",
+    "totalRows": "提案の総数",
     "unreadable_one": "{{count}}件のドキュメントのチームスコアを読み込めなかったため、合計には含まれていますが、他の集計には含まれていません。ページを再読み込みすると確認できます。",
     "unreadable_other": "{{count}}件のドキュメントのチームスコアを読み込めなかったため、合計には含まれていますが、他の集計には含まれていません。ページを再読み込みすると確認できます。"
   },

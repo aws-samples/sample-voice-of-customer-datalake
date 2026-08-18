@@ -446,13 +446,44 @@ export interface ProjectDetail {
   documents: ProjectDocument[]
 }
 
+/**
+ * One reviewer's complete ballot on ONE ROW, as read back.
+ *
+ * `row_id`, not `document_id`: a prioritization row is a project's set of
+ * documents and the ballot is about the row. A field named for a document would
+ * name something the row merely contains — and every lookup on the page addresses
+ * the row.
+ */
 export interface PrioritizationScore {
-  document_id: string
+  row_id: string
   impact: number
   time_to_market: number
   confidence: number
   strategic_fit: number
   notes: string
+}
+
+/**
+ * What a prioritization row IS: a project, and the concrete documents it holds.
+ *
+ * Returned as `rows` beside `scores` and `aggregates` on
+ * `GET /projects/prioritization`, keyed by the same row id, so the page learns
+ * every row's composition without a second round trip per row.
+ *
+ * `document_ids` are CONCRETE and stay put. "Latest of each type" is how a row is
+ * first composed and not a pointer it keeps following, so generating a new PRD
+ * changes no existing row — which is what keeps a ballot describing the documents
+ * it was cast about. `prototype_id` is context a reviewer looks at rather than a
+ * document the row is scored on, which is why it is its own field; it is `''` when
+ * the project has no prototype.
+ */
+export interface PrioritizationRow {
+  row_id: string
+  project_id: string
+  document_ids: string[]
+  prototype_id: string
+  is_default: boolean
+  created_at: string
 }
 
 /**
@@ -479,7 +510,7 @@ export interface PrioritizationScore {
  * complete ballot is still valid where one genuinely exists.
  */
 export interface PrioritizationBallotEdit {
-  document_id: string
+  row_id: string
   impact?: number
   time_to_market?: number
   confidence?: number
@@ -488,7 +519,7 @@ export interface PrioritizationBallotEdit {
 }
 
 /**
- * What every reviewer together said about one document.
+ * What every reviewer together said about one ROW.
  *
  * A sibling of `scores` on `GET /projects/prioritization`. Where `scores` holds
  * the CALLER'S OWN ballot, this holds the cross-reviewer view: each axis is the
@@ -501,11 +532,11 @@ export interface PrioritizationBallotEdit {
  * (`_aggregate_scores` in `projects_handler.py`) and repeated here because this
  * is where a frontend author reads:
  *
- *  - Documents NOBODY scored are absent, so presence means "somebody scored
+ *  - Rows NOBODY scored are absent, so presence means "somebody scored
  *    this" — do not treat a missing key as a zero row.
- *  - A row OUTLIVES its document. Ballots live in the aggregates table and
- *    deleting a document does not reach into it, so intersect these keys with the
- *    live document list rather than using the map as a document index.
+ *  - An entry can OUTLIVE its row. Ballots live beside the row record and nothing
+ *    removes them in this phase, so intersect these keys with the `rows` map
+ *    rather than using this one as a row index.
  *  - `score_spread` compares only reviewers who scored EVERY axis, and is 0 below
  *    two of them, so it can be 0 while `reviewer_count` is greater than 1. An
  *    absent axis counts as zero in the composite, so comparing a partially-scored

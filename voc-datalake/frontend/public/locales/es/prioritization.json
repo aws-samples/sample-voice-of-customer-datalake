@@ -43,6 +43,7 @@
     "rejected": {
       "title": "Tu voto no se ha registrado"
     },
+    "scopeNote": "Estás puntuando una propuesta completa: este voto cubre el conjunto de documentos que hay detrás, en una sola papeleta.",
     "submit": {
       "label": "Enviar voto",
       "pending": "Enviando..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "Código QR que abre la página de voto anónimo de {{title}}",
     "qrCaption": "Escanea para puntuar esta propuesta desde un teléfono",
     "qrUnavailable": "El código QR no está disponible porque la dirección de esta página no se puede compartir.",
-    "scopeNote": "Esta votación puntúa un solo documento: {{title}}. Una sala que lo escanee no puntúa ninguna otra versión de la misma idea.",
+    "scopeDocuments": "Una papeleta cubre los {{documents}} documentos que hay detrás, así que la sala puntúa la propuesta completa.",
+    "scopeNote": "Esta votación puntúa una propuesta: {{title}}.",
     "title": "Puntuar en sala"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documentos, una papeleta"
   },
   "scores": {
     "confidence": "Confianza",
@@ -130,6 +135,7 @@
     "timeToMarket": "Tiempo de comercialización",
     "timeToMarketDescription": "¿Qué tan rápido se puede entregar?",
     "title": "Puntuaciones de priorización",
+    "wholeRow": "Una sola papeleta para los {{documents}} documentos de esta fila.",
     "yoursOnly": "Tu propia puntuación. Al guardar solo se escriben tus valores."
   },
   "scoresUnavailable": {
@@ -152,7 +158,7 @@
     "highPriority": "Alta prioridad",
     "mediumPriority": "Prioridad media",
     "notScored": "Sin puntuar",
-    "totalDocuments": "Total de documentos",
+    "totalRows": "Propuestas totales",
     "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count}} documento, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
     "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count}} documentos, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
   },

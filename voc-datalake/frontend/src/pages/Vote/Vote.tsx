@@ -228,14 +228,19 @@ export default function Vote(): ReactElement {
       <div className="mx-auto max-w-lg space-y-5">
         <header className="space-y-1">
           <h1 className="text-xl font-bold text-gray-900">{t('ballot.title')}</h1>
-          {/* WHICH proposal this session scores. A room may have two rows for one
-              idea — a PRD and a PR/FAQ are separate documents today — and this
-              session scores exactly the one the facilitator opened it for, so the
-              title is not decoration. Empty until the config read lands, and blank
-              for a session whose facilitator sent none. */}
-          {session?.document_title ? (
-            <p className="text-base text-gray-700">{session.document_title}</p>
+          {/* WHICH proposal this session scores. It names the prioritization ROW —
+              a project's set of documents — so one ballot covers the whole proposal
+              rather than whichever of its documents a QR happened to sit on, which
+              is what the page used to have to hedge about. Empty until the config
+              read lands, and blank for a session whose facilitator sent no title. */}
+          {session?.row_title ? (
+            <p className="text-base text-gray-700">{session.row_title}</p>
           ) : null}
+          {/* And says plainly WHAT is being scored, since the room cannot see the
+              row: a proposal's documents, together, in one ballot. Unconditional,
+              because it is true of every session this page can open — the title
+              above may be blank, this sentence never is. */}
+          <p className="text-sm text-gray-700">{t('ballot.scopeNote')}</p>
           {/* THE sentence this page must carry, wherever the page ends up: a
               ballot cast here counts and is not attributed to anybody. Above the
               form rather than under the button, because it is a condition of

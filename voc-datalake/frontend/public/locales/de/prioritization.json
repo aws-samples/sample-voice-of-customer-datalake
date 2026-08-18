@@ -43,6 +43,7 @@
     "rejected": {
       "title": "Ihre Stimme wurde nicht erfasst"
     },
+    "scopeNote": "Sie bewerten einen ganzen Vorschlag: Diese Abstimmung umfasst die dahinterliegenden Dokumente in einem einzigen Stimmzettel.",
     "submit": {
       "label": "Stimme abgeben",
       "pending": "Wird gesendet..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "QR-Code, der die anonyme Stimmabgabe für {{title}} öffnet",
     "qrCaption": "Scannen, um diesen Vorschlag per Telefon zu bewerten",
     "qrUnavailable": "Der QR-Code ist nicht verfügbar, weil die Adresse dieser Seite nicht geteilt werden kann.",
-    "scopeNote": "Diese Abstimmung bewertet genau ein Dokument: {{title}}. Ein Raum, der sie scannt, bewertet keine andere Fassung derselben Idee.",
+    "scopeDocuments": "Ein Stimmzettel umfasst alle {{documents}} dahinterliegenden Dokumente, der Raum bewertet also den ganzen Vorschlag.",
+    "scopeNote": "Diese Abstimmung bewertet einen Vorschlag: {{title}}.",
     "title": "Im Raum bewerten"
+  },
+  "row": {
+    "multiDocument": "{{documents}} Dokumente, ein Stimmzettel"
   },
   "scores": {
     "confidence": "Konfidenz",
@@ -130,6 +135,7 @@
     "timeToMarket": "Markteinführungszeit",
     "timeToMarketDescription": "Wie schnell kann dies geliefert werden?",
     "title": "Priorisierungsbewertungen",
+    "wholeRow": "Ein Stimmzettel für alle {{documents}} Dokumente dieser Zeile.",
     "yoursOnly": "Ihre eigene Bewertung. Beim Speichern werden nur Ihre Werte geschrieben."
   },
   "scoresUnavailable": {
@@ -152,7 +158,7 @@
     "highPriority": "Hohe Priorität",
     "mediumPriority": "Mittlere Priorität",
     "notScored": "Nicht bewertet",
-    "totalDocuments": "Dokumente gesamt",
+    "totalRows": "Vorschläge insgesamt",
     "unreadable_one": "Die Teambewertung für {{count}} Dokument konnte nicht gelesen werden. Es zählt daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen.",
     "unreadable_other": "Die Teambewertungen für {{count}} Dokumente konnten nicht gelesen werden. Sie zählen daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen."
   },

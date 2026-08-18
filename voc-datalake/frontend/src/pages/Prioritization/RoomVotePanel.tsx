@@ -1,13 +1,13 @@
 /**
- * @fileoverview The facilitator's half of a room vote: open a session for THIS
- * document, put its QR on screen, watch the ballots arrive, close it.
+ * @fileoverview The facilitator's half of a room vote: open a session for THIS ROW,
+ * put its QR on screen, watch the ballots arrive, close it.
  *
  * Lives on the prioritization row rather than on a page of its own because the
- * session is opened FOR ONE DOCUMENT and the row is where a facilitator is already
- * looking at that document. That also makes the known limitation visible where it
- * bites: a proposal that exists as both a PRD row and a PR/FAQ row is two
- * documents today, so a room scanning this QR scores this row. The panel names the
- * document it is opening a vote for, and says so in words.
+ * session is opened FOR ONE ROW and the row is where a facilitator is already
+ * looking at it. A row is a project's set of documents, so a room scanning this QR
+ * scores the whole proposal — the limitation this panel used to name in words (a
+ * PRD row and a PR/FAQ row of one idea being two votes) is gone, and the panel now
+ * says what the one ballot covers instead.
  *
  * @module pages/Prioritization/RoomVotePanel
  */
@@ -41,24 +41,28 @@ function SessionStatus({ session }: { readonly session: VotingSession }): ReactE
 }
 
 /**
- * @param documentId the document this session scores. Sent to the API, which
+ * @param rowId the prioritization row this session scores. Sent to the API, which
  *   derives every ballot's key from it — a public submitter never chooses it.
- * @param documentTitle shown to the room on the ballot page, so a person holding a
+ * @param rowTitle shown to the room on the ballot page, so a person holding a
  *   phone knows which proposal they are rating.
+ * @param documentCount how many documents that row holds, so the facilitator's copy
+ *   can say what one ballot covers rather than leaving a room to assume it is one
+ *   document.
  */
 export default function RoomVotePanel({
-  documentId, documentTitle,
+  rowId, rowTitle, documentCount,
 }: {
-  readonly documentId: string
-  readonly documentTitle: string
+  readonly rowId: string
+  readonly rowTitle: string
+  readonly documentCount: number
 }): ReactElement {
   const { t } = useTranslation('prioritization')
   const [sessionId, setSessionId] = useState<string | null>(null)
 
   const openMutation = useMutation({
     mutationFn: () => votingSessionsApi.createVotingSession({
-      document_id: documentId,
-      document_title: documentTitle,
+      row_id: rowId,
+      row_title: rowTitle,
     }),
     onSuccess: (session) => setSessionId(session.session_id),
   })
@@ -119,9 +123,21 @@ export default function RoomVotePanel({
           {t('roomVote.title')}
         </h4>
         <p className="text-sm text-indigo-800">{t('roomVote.description')}</p>
-        {/* Names the ONE document the session will score, because a room scanning
-            a QR for a PRD row is not also scoring the PR/FAQ row of the same idea. */}
-        <p className="text-sm text-indigo-800">{t('roomVote.scopeNote', { title: documentTitle })}</p>
+        {/* Names the row the session will score. "One vote on this proposal" is what
+            a facilitator has to be able to tell a room, and it is now true — the
+            hedge this line used to carry (a PRD row and a PR/FAQ row being separate
+            votes) is gone. */}
+        <p className="text-sm text-indigo-800">{t('roomVote.scopeNote', { title: rowTitle })}</p>
+        {/* And that the one ballot covers the whole set, for a row that holds more
+            than one document. Only then: on a single-document row there is nothing
+            to clarify, which also lets the sentence be plural rather than a `count`
+            plural whose forms differ per locale. `documents`, not `count`, because
+            `count` is i18next's reserved plural option. */}
+        {documentCount > 1 ? (
+          <p className="text-sm text-indigo-800">
+            {t('roomVote.scopeDocuments', { documents: documentCount })}
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={() => openMutation.mutate()}
@@ -148,7 +164,7 @@ export default function RoomVotePanel({
           {/* The QR only while the session accepts ballots. Leaving it up after
               the vote closed would send a room to a page that refuses them, and a
               QR cannot say that about itself. */}
-          <SessionQrCode sessionId={sessionId} documentTitle={documentTitle} />
+          <SessionQrCode sessionId={sessionId} rowTitle={rowTitle} />
           <SessionStatus session={current} />
           <button
             type="button"

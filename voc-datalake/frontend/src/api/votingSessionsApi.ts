@@ -56,8 +56,13 @@ const refusalReason = z.enum(BALLOT_REFUSAL_REASONS)
  */
 const votingSessionSchema = z.object({
   session_id: z.string().catch(''),
-  document_id: z.string().catch(''),
-  document_title: z.string().catch(''),
+  /**
+   * The prioritization ROW this session scores — a project's set of documents, so a
+   * room scores the whole proposal rather than whichever of its documents a QR sat
+   * on. Every ballot's key derives from it, server-side.
+   */
+  row_id: z.string().catch(''),
+  row_title: z.string().catch(''),
   /**
    * The stored flag, which says only whether anybody CLOSED the session.
    *
@@ -101,7 +106,8 @@ const ballotSessionConfigSchema = z.object({
   // switches on this value, and two spellings of "no reason given" would mean the
   // absent case fell through a `?? 'unknown'` differently from the explicit one.
   reason: z.preprocess((value) => value ?? null, refusalReason.nullable().catch(null)),
-  document_title: z.string().catch(''),
+  /** What the room is scoring, named as the ROW it is. */
+  row_title: z.string().catch(''),
 })
 
 export type BallotSessionConfig = z.infer<typeof ballotSessionConfigSchema>
@@ -151,12 +157,12 @@ function sessionPath(sessionId: string): string {
 
 export const votingSessionsApi = {
   /**
-   * Open a session for ONE document. Authenticated: this is what authorizes
-   * anonymous writes, so only a signed-in facilitator may do it.
+   * Open a session for ONE prioritization ROW. Authenticated: this is what
+   * authorizes anonymous writes, so only a signed-in facilitator may do it.
    */
   createVotingSession: async (input: {
-    document_id: string
-    document_title?: string
+    row_id: string
+    row_title?: string
   }): Promise<VotingSession> => {
     const raw = await fetchApi<unknown>('/voting-sessions', {
       method: 'POST',
@@ -189,7 +195,7 @@ export const votingSessionsApi = {
    * failed.
    */
   getBallotSessionConfig: async (sessionId: string): Promise<BallotSessionConfig> => {
-    const closed: BallotSessionConfig = { open: false, reason: null, document_title: '' }
+    const closed: BallotSessionConfig = { open: false, reason: null, row_title: '' }
     // No headers at all. A GET carries no body, so `Content-Type` describes
     // nothing — and setting it is what turns a SIMPLE cross-origin request into
     // one that needs a preflight round trip first. On the first thing a phone does

@@ -39,14 +39,14 @@ const QR_ERROR_CORRECTION = 'M'
 /**
  * @param sessionId the session token the room scans. It is the whole of what the
  *   QR carries, and the only thing that makes the ballot route usable.
- * @param documentTitle names the QR for assistive technology — a facilitator's
+ * @param rowTitle names the QR for assistive technology — a facilitator's
  *   screen reader should say which proposal this opens a vote on.
  */
 export default function SessionQrCode({
-  sessionId, documentTitle,
+  sessionId, rowTitle,
 }: {
   readonly sessionId: string
-  readonly documentTitle: string
+  readonly rowTitle: string
 }): ReactElement {
   const { t } = useTranslation('prioritization')
   // The app's own origin, because the ballot page is a route of this SPA. Read
@@ -66,7 +66,7 @@ export default function SessionQrCode({
         marginSize={QR_MARGIN_MODULES}
         // Becomes the SVG's <title>, which is what assistive tech announces for
         // its role="img".
-        title={t('roomVote.qrAccessibleName', { title: documentTitle })}
+        title={t('roomVote.qrAccessibleName', { title: rowTitle })}
         className="bg-white w-full h-auto"
       />
       {/* The address in text under the symbol: a phone whose camera will not

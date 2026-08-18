@@ -43,6 +43,7 @@
     "rejected": {
       "title": "Votre bulletin n'a pas été enregistré"
     },
+    "scopeNote": "Vous notez une proposition entière : ce vote porte sur l'ensemble des documents qui la composent, en un seul bulletin.",
     "submit": {
       "label": "Envoyer le bulletin",
       "pending": "Envoi..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "QR code ouvrant la page de vote anonyme pour {{title}}",
     "qrCaption": "Scannez pour noter cette proposition depuis un téléphone",
     "qrUnavailable": "Le QR code est indisponible car l'adresse de cette page ne peut pas être partagée.",
-    "scopeNote": "Ce vote note un seul document : {{title}}. Une salle qui le scanne ne note aucune autre version de la même idée.",
+    "scopeDocuments": "Un bulletin porte sur les {{documents}} documents qui la composent : la salle note donc la proposition entière.",
+    "scopeNote": "Ce vote note une proposition : {{title}}.",
     "title": "Noter en salle"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documents, un seul bulletin"
   },
   "scores": {
     "confidence": "Confiance",
@@ -130,6 +135,7 @@
     "timeToMarket": "Délai de mise sur le marché",
     "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
     "title": "Scores de priorisation",
+    "wholeRow": "Un seul bulletin pour les {{documents}} documents de cette ligne.",
     "yoursOnly": "Votre propre note. L'enregistrement n'écrit que vos valeurs."
   },
   "scoresUnavailable": {
@@ -152,7 +158,7 @@
     "highPriority": "Haute priorité",
     "mediumPriority": "Priorité moyenne",
     "notScored": "Non évalué",
-    "totalDocuments": "Total documents",
+    "totalRows": "Propositions au total",
     "unreadable_one": "La note de l'équipe pour {{count}} document n'a pas pu être lue : il compte dans le total mais dans aucun des autres décomptes. Rechargez la page pour la voir.",
     "unreadable_other": "Les notes de l'équipe pour {{count}} documents n'ont pas pu être lues : ils comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir."
   },
