@@ -413,13 +413,22 @@ def api_delete_job(project_id: str, job_id: str):
     return {'success': True}
 
 
-# A DynamoDB sort key is capped at 1024 bytes. Bounding a document id well under
-# that makes an absurd one a 400 naming the field rather than a DynamoDB
-# ValidationException surfacing as a 500. Defined here, above the prioritization
-# block that is its first use, rather than beside `_validated_source_id` further
-# down: the previous placement worked only because every reference sat inside a
-# function body, which breaks the moment a helper is hoisted to module scope.
-MAX_SOURCE_DOCUMENT_ID_LEN = 256
+# A DynamoDB sort key is capped at 1024 bytes. Bounding an id that reaches one
+# well under that makes an absurd value a 400 naming the field rather than a
+# DynamoDB ValidationException surfacing as a 500.
+#
+# Named for the KEY SEGMENT rather than for the document, because it bounds every
+# caller-supplied id that becomes half of a sort key: a document id, a project id
+# (which `_default_row_id` composes a row id from), and a row id itself. It was
+# `MAX_SOURCE_DOCUMENT_ID_LEN` while documents were the only such id; a row is now
+# what a ballot is keyed to, and a name claiming documents was the last thing here
+# still saying otherwise.
+#
+# Defined here, above the prioritization block that is its first use, rather than
+# beside `_validated_source_id` further down: the previous placement worked only
+# because every reference sat inside a function body, which breaks the moment a
+# helper is hoisted to module scope.
+MAX_KEY_SEGMENT_ID_LEN = 256
 
 
 # ============================================
@@ -681,7 +690,7 @@ def _validated_ballot_row_id(raw: Any) -> str:
     row ids never contain it, and an id carrying one would make the key ambiguous
     to `_parse_ballot_sk`. The length bound keeps an absurd id a 400 naming the
     field instead of a DynamoDB ValidationException surfacing as a 500 (a sort key
-    is capped at 1024 bytes; MAX_SOURCE_DOCUMENT_ID_LEN is the same bound the
+    is capped at 1024 bytes; MAX_KEY_SEGMENT_ID_LEN is the same bound the
     document-aiming fields in this module already use, and a row id is derived
     from a project id so it is bounded in the same order).
 
@@ -708,9 +717,9 @@ def _validated_ballot_row_id(raw: Any) -> str:
     row_id = raw.strip()
     if '#' in row_id:
         raise ValidationError("scores keys must not contain '#', the sort-key delimiter")
-    if len(row_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+    if len(row_id) > MAX_KEY_SEGMENT_ID_LEN:
         raise ValidationError(
-            f'scores keys must be at most {MAX_SOURCE_DOCUMENT_ID_LEN} characters'
+            f'scores keys must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
         )
     return row_id
 
@@ -1348,9 +1357,17 @@ class _LegacyScores:
 
         Attempts a delete only for a document the map was seen to hold, so a row of
         25 freshly-generated documents in a deployment holding one legacy entry
-        issues at most one write rather than 25. The forgetting is local: an id is
-        dropped from the remembered set once attempted, so two scored rows sharing a
-        document do not both try.
+        issues at most one write rather than 25.
+
+        The forgetting is local, and it forgets a FAILED attempt as readily as a
+        successful one: an id leaves the remembered set once tried, whatever the
+        delete then did. That keeps the bound this method promises — one attempt per
+        id per save, so two scored rows sharing a document do not both try, and
+        neither does a retry loop inside one invocation — and it costs nothing that
+        matters, because the delete is best-effort either way. What guarantees the
+        entry is not double-counted is the READ side's suppression
+        (`_superseded_rows`), which holds whether or not any delete ever lands; the
+        next save reads the map again and tries what is still there.
         """
         if self.empty:
             return
@@ -1462,9 +1479,9 @@ def _validated_row_project_id(raw: Any) -> str:
     project_id = raw.strip()
     if '#' in project_id:
         raise ValidationError("project_id must not contain '#', the sort-key delimiter")
-    if len(project_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+    if len(project_id) > MAX_KEY_SEGMENT_ID_LEN:
         raise ValidationError(
-            f'project_id must be at most {MAX_SOURCE_DOCUMENT_ID_LEN} characters'
+            f'project_id must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
         )
     return project_id
 
@@ -2248,7 +2265,7 @@ def _validated_source_id(project_id: str, sk_prefix: str, raw: Any, field: str) 
     document_id = raw.strip()
     if not document_id:
         return None
-    if len(document_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+    if len(document_id) > MAX_KEY_SEGMENT_ID_LEN:
         raise ValidationError(f'{field} is not a valid document id')
     item = get_projects_table().get_item(
         Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},

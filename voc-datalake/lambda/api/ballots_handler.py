@@ -206,10 +206,11 @@ MAX_DISPLAY_NAME_LEN = 60
 # be the wrong claim in the one place a public reader looks.
 MAX_ROW_TITLE_LEN = 200
 
-# A DynamoDB sort key is capped at 1024 bytes; the same bound the row- and
-# document-aiming fields in `projects_handler` use, so an absurd id is a 400
-# naming the field rather than a ValidationException surfacing as a 500.
-MAX_SOURCE_DOCUMENT_ID_LEN = 256
+# A DynamoDB sort key is capped at 1024 bytes; the same bound `projects_handler`
+# holds every id that becomes half of a key to, so an absurd row id is a 400 naming
+# the field rather than a ValidationException surfacing as a 500. Named for the key
+# SEGMENT, not for a document: what it bounds here is a row id.
+MAX_KEY_SEGMENT_ID_LEN = 256
 
 
 # ============================================
@@ -406,9 +407,9 @@ def _validated_row_id(raw: Any) -> str:
     row_id = raw.strip()
     if '#' in row_id:
         raise ValidationError("row_id must not contain '#', the sort-key delimiter")
-    if len(row_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+    if len(row_id) > MAX_KEY_SEGMENT_ID_LEN:
         raise ValidationError(
-            f'row_id must be at most {MAX_SOURCE_DOCUMENT_ID_LEN} characters'
+            f'row_id must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
         )
     return row_id
 

@@ -1569,7 +1569,7 @@ describe('Prioritization', () => {
 
       renderPrioritization()
 
-      expect(await screen.findByText(/The team score for 1 document could not be read/))
+      expect(await screen.findByText(/The team score for 1 proposal could not be read/))
         .toBeInTheDocument()
       // Not folded into "Not Scored" instead: that card stays 0, because the marked
       // row is not a document nobody voted on.

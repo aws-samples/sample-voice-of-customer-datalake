@@ -228,7 +228,10 @@ describe('collected feedback on a prioritization row', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Concept test')).toHaveLength(2)
     })
-    expect(screen.getAllByText('3.2').length).toBeGreaterThan(0)
+    // Twice, once per document, matching the panel count above: pinning the exact
+    // number is what fails if the fallback stops fanning out, where "at least one"
+    // passes on a single panel and so cannot tell the two apart.
+    expect(screen.getAllByText('3.2')).toHaveLength(2)
   })
 
   it('degrades gracefully when a linked form no longer exists', async () => {

@@ -16,6 +16,21 @@
  * payload rather than pay for it twice, and two matching literals would drift
  * without anything failing.
  *
+ * WHAT ONE EXPANSION COSTS, now that a row holds a SET of documents: one stats read
+ * per LINKED FORM across every document the row holds, not one per row. Evidence
+ * belongs to the document a form validates, so a row of a PRD and a PR/FAQ with two
+ * forms each opens four — and a form whose stored document id names nothing live falls
+ * back to the whole project, so it appears under each of the row's documents and is
+ * read once per panel (the key is shared, so the cache collapses those to one call,
+ * but that is a cache and not a bound).
+ *
+ * The bound is therefore `MAX_ROW_DOCUMENT_IDS` (25) × the forms linked to those
+ * documents, per expansion, paid only when a reviewer opens the row. That is the same
+ * shape as before — expand-only, one read per panel on screen — with the multiplier a
+ * row's composition now carries. Should a project appear with dozens of forms per
+ * document, the fix is per-document lazy disclosure inside the expansion rather than
+ * moving these reads back onto the page load.
+ *
  * This panel only displays evidence. It deliberately does not derive, suggest or
  * pre-fill any score — the reviewer reads it and moves the sliders themselves.
  *

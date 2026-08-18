@@ -204,10 +204,17 @@ class TestBothWritersAgreeOnWhereABallotLives:
         #
         # BOTH guards are required, because a row id reaches the key by two
         # routes: the facilitator names it when opening a session
-        # (`_validated_row_id`), and the read path re-checks the value it
-        # read back off the session record before the submit uses it
-        # (`_session_row_id`). Asserting the rule appears merely SOMEWHERE would
-        # keep passing with either one deleted.
+        # (`_validated_row_id`), and the row id is re-checked where it is READ BACK
+        # off the session record, which is the one helper the submit path resolves
+        # it through (`_session_row_id`). Asserting the rule appears merely
+        # SOMEWHERE would keep passing with either one deleted.
+        #
+        # Not two INDEPENDENT checks, and the distinction is worth being exact
+        # about: the submit path carries no delimiter test of its own, it calls the
+        # read helper that has one. What that buys is that a session record written
+        # or edited outside the create route — the only way a '#' could be in there,
+        # since the validator refuses one — cannot reach a sort key, and it buys it
+        # for every reader of that record rather than for the submit path alone.
         #
         # Either spelling counts. The two guards read in opposite senses — one
         # raises when the delimiter IS present, the other answers "no usable row"

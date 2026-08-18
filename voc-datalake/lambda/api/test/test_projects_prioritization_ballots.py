@@ -2046,9 +2046,7 @@ class TestWholeMapOverwriteRouteIsGone:
     """
 
     def test_the_whole_map_overwrite_is_refused(self, api_gateway_event, lambda_context):
-        from unittest.mock import patch as patch_fn
-
-        with patch_fn('projects_handler.update_project') as update_project:
+        with patch('projects_handler.update_project') as update_project:
             status, body = _call(
                 FakeAggregatesTable(),
                 _event(api_gateway_event, method='PUT', body={'scores': {'row-1': AXES}}),
@@ -2945,12 +2943,17 @@ class TestADefaultRowExistsPerProjectWithoutASetupStep:
         # newer than `prd-v3` while sorting earlier by id.
         assert body['row']['document_ids'] == ['prd-v2', 'prfaq-new']
 
-    def test_the_badge_order_is_stable_rather_than_following_recency(
+    def test_the_stored_composition_is_ordered_by_type_not_by_recency(
         self, api_gateway_event, lambda_context
     ):
-        """The collapsed row renders one badge per document in this order. Ordering
-        by recency would flip PRD and PR/FAQ between two projects depending on which
-        was generated last, for no reason a reader could see."""
+        """`document_ids` is stored in TYPE order, so two projects holding the same
+        two types compose identically whichever document was generated last.
+
+        A property of the STORED record, and deliberately not justified by what the
+        page renders: `collectRows` re-sorts a row's resolved documents newest-first,
+        and the badges and the row's title follow THAT order — so nothing downstream
+        may rely on this one. What it buys is a record two projects can be compared
+        by, which is what lets the two assertions below differ only in their ids."""
         aggregates = FakeAggregatesTable()
 
         _, prfaq_newer = _create_row(aggregates, FakeProjectsTable([
@@ -3286,15 +3289,13 @@ class TestTheRowCreateRouteIsNotShadowedByTheProjectUpsert:
     def test_the_path_reaches_the_row_create_and_not_a_document_or_persona_route(
         self, api_gateway_event, lambda_context
     ):
-        from unittest.mock import patch as patch_fn
-
         projects = FakeProjectsTable([
             project_meta('p1'),
             project_document('p1', 'PRD#', 'prd-1', '2026-08-01T00:00:00+00:00'),
         ])
         with (
-            patch_fn('projects_handler.create_document') as create_document,
-            patch_fn('projects_handler.update_project') as update_project,
+            patch('projects_handler.create_document') as create_document,
+            patch('projects_handler.update_project') as update_project,
         ):
             status, body = _create_row(
                 FakeAggregatesTable(), projects, api_gateway_event, lambda_context,
@@ -3340,9 +3341,7 @@ class TestTheRowCreateRouteIsNotShadowedByTheProjectUpsert:
         make the two-segment path resolvable again — that is the fall-through to
         `update_project('prioritization')` the stub exists to prevent, and it
         answers 200 while discarding the body."""
-        from unittest.mock import patch as patch_fn
-
-        with patch_fn('projects_handler.update_project') as update_project:
+        with patch('projects_handler.update_project') as update_project:
             status, _ = _call(
                 FakeAggregatesTable(),
                 _event(api_gateway_event, method='PUT', body={'scores': {'row-1': AXES}}),

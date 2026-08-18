@@ -6,6 +6,7 @@ import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
   getScore, calculatePriorityScore, collectRows, normalizeRows, DEFAULT_SCORE, isScorable,
+  MAX_ROW_DOCUMENT_IDS,
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteRows, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortRows, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
@@ -118,11 +119,25 @@ const storedRow = (
 })
 
 describe('collectRows resolves stored rows against the documents on screen', () => {
-  it('returns nothing when either read is missing', () => {
-    // Not `[]` as a stand-in for "still loading": the page distinguishes those, and
-    // this function is only reached once both reads exist.
+  it('returns nothing when the project reads are missing or empty', () => {
+    // The PROJECT half, in both of its absences — never read, and read as empty. Not
+    // `[]` as a stand-in for "still loading": the page distinguishes those, and this
+    // function is only reached once both reads exist. An empty ROWS map is covered by
+    // `normalizeRows`' own cases and by the drop rules below, which is why both
+    // branches here pass `{}` for it.
     expect(collectRows({}, undefined, undefined)).toStrictEqual([])
     expect(collectRows({}, [], [])).toStrictEqual([])
+  })
+
+  it('returns nothing when the rows map is empty though the projects are read', () => {
+    // The other half, stated rather than implied: rows are what put a row on screen,
+    // so a deployment holding none renders nothing even with projects full of
+    // scorable documents. This is the state the page's empty invitation covers.
+    expect(collectRows(
+      {},
+      [{ documents: [doc('prd-1', 'prd', 'Feature A PRD', '2025-01-01')] }],
+      [project('p1', 'P1')],
+    )).toStrictEqual([])
   })
 
   it('a project whose PRD and PR/FAQ describe one idea is ONE row', () => {
@@ -322,6 +337,20 @@ describe('normalizeRows', () => {
     expect(rows?.['row-1'].prototype_id).toBe('')
     expect(rows?.['row-1'].is_default).toBe(false)
     expect(rows?.['row-1'].created_at).toBe('')
+  })
+
+  it('refuses a row longer than the API can compose, and keeps one at the bound', () => {
+    // `MAX_ROW_DOCUMENT_IDS` is where the backend TRUNCATES a composition, so a longer
+    // row is a response nothing on the server wrote — and a schema whose job is to say
+    // what it accepts should not accept it. The bound itself stays accepted, which is
+    // the half that fails if the two sides drift by one.
+    const ids = (count: number) => Array.from({ length: count }, (_, i) => `prd-${i}`)
+    const rows = normalizeRows({
+      atTheBound: storedRow('atTheBound', 'p1', ids(MAX_ROW_DOCUMENT_IDS)),
+      overIt: storedRow('overIt', 'p1', ids(MAX_ROW_DOCUMENT_IDS + 1)),
+    })
+
+    expect(Object.keys(rows ?? {})).toEqual(['atTheBound'])
   })
 })
 

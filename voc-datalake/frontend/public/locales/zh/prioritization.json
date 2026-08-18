@@ -159,8 +159,8 @@
     "mediumPriority": "中优先级",
     "notScored": "未评分",
     "totalRows": "提案总数",
-    "unreadable_one": "无法读取 {{count}} 个文档的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
-    "unreadable_other": "无法读取 {{count}} 个文档的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
+    "unreadable_one": "无法读取 {{count}} 个提案的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
+    "unreadable_other": "无法读取 {{count}} 个提案的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
   },
   "subtitle": "对所有项目中的 PRD 和 PR/FAQ 进行评分和优先级排序",
   "team": {

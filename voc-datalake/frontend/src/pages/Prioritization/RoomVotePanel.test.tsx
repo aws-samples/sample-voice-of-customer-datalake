@@ -323,11 +323,20 @@ describe('a room vote opens on the ROW, covering every document it holds', () =>
     project_id: 'p1', name: 'Project 1', status: 'active',
     created_at: '2025-01-01', updated_at: '2025-01-01', persona_count: 0, document_count: 2,
   }
-  const prfaq = {
-    document_id: 'doc_prfaq', document_type: 'prfaq', title: ROW_TITLE,
+  /**
+   * The row's two documents, PR/FAQ older than PRD.
+   *
+   * `collectRows` orders a row's documents NEWEST FIRST and names the row after the
+   * leading one, so this fixture makes the PRD the row's title — which is the case worth
+   * defaulting to here, because a facilitator naming the session after "whichever
+   * document happens to be newest" is the observable consequence of a row having no
+   * title of its own. The reversed case has its own test below.
+   */
+  const prfaqOlder = {
+    document_id: 'doc_prfaq', document_type: 'prfaq', title: 'Feature A PR/FAQ',
     content: '# Feature A', created_at: '2025-01-01',
   }
-  const prd = {
+  const prdNewer = {
     document_id: 'doc_prd', document_type: 'prd', title: 'Feature A PRD',
     content: 'PRD content', created_at: '2025-01-02',
   }
@@ -344,7 +353,7 @@ describe('a room vote opens on the ROW, covering every document it holds', () =>
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetProjects.mockResolvedValue({ projects: [project] })
-    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, prd] })
+    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaqOlder, prdNewer] })
     mockGetPrioritizationScores.mockResolvedValue({ scores: {}, rows: { [ROW_ID]: row } })
     mockCreatePrioritizationRow.mockResolvedValue({ success: true, created: false, row })
     mockGetFeedbackForms.mockResolvedValue({ forms: [] })
@@ -418,5 +427,37 @@ describe('a room vote opens on the ROW, covering every document it holds', () =>
     expect(await screen.findByText(
       t('prioritization:roomVote.scopeDocuments', { documents: 2 }),
     )).toBeInTheDocument()
+  })
+
+  it('names the session after the row title when a PR/FAQ leads the row', async () => {
+    // The other order, which the deleted `it.each` was the only cover for: the row's
+    // title is its LEADING document's, so a project whose PR/FAQ is the newer of the two
+    // opens a session named after the PR/FAQ. Same row id either way — that is the point,
+    // and it is what makes the title cosmetic and the id load-bearing.
+    mockGetProject.mockResolvedValue({
+      project_id: 'p1',
+      documents: [
+        { ...prfaqOlder, created_at: '2025-01-03' },
+        prdNewer,
+      ],
+    })
+    mockCreateVotingSession.mockResolvedValue(session())
+    mockGetVotingSession.mockResolvedValue(session())
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('Feature A PR/FAQ'))
+
+    await user.click(await screen.findByRole('button', {
+      name: t('prioritization:roomVote.open'),
+    }))
+
+    await waitFor(() => {
+      expect(mockCreateVotingSession).toHaveBeenCalledWith({
+        row_id: ROW_ID, row_title: 'Feature A PR/FAQ',
+      })
+    })
   })
 })

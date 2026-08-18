@@ -159,8 +159,8 @@
     "mediumPriority": "Medium Priority",
     "notScored": "Not Scored",
     "totalRows": "Total Proposals",
-    "unreadable_one": "The team score for {{count}} document could not be read, so it is counted in the total but in none of the other counts. Reload the page to see it.",
-    "unreadable_other": "The team scores for {{count}} documents could not be read, so they are counted in the total but in none of the other counts. Reload the page to see them."
+    "unreadable_one": "The team score for {{count}} proposal could not be read, so it is counted in the total but in none of the other counts. Reload the page to see it.",
+    "unreadable_other": "The team scores for {{count}} proposals could not be read, so they are counted in the total but in none of the other counts. Reload the page to see them."
   },
   "subtitle": "Score and prioritize PRDs and PR/FAQs across all projects",
   "team": {

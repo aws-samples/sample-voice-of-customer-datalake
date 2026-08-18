@@ -619,10 +619,17 @@ export function normalizeScores(raw: unknown): Record<string, PrioritizationScor
  * of it, and this map decides which documents a reviewer is shown inside a row.
  *
  * Absent answers an EMPTY MAP, not `undefined`: a deployment predating rows sends no
- * `rows` field, and the honest reading there is "this response describes no rows",
- * which the page renders as its existing empty state. Unreadable answers `undefined`,
- * because `{}` would be this page asserting that the backlog holds no rows at all —
- * the same distinction `normalizeAggregates` draws one field over.
+ * `rows` field, and the honest reading there is "this response describes no rows".
+ * Unreadable answers `undefined`, because `{}` would be this parser asserting that the
+ * backlog holds no rows at all — the same distinction `normalizeAggregates` draws one
+ * field over, and it is the parser's to draw whether or not a given consumer acts on it.
+ *
+ * What the PAGE does with the two is deliberately the same, and stated at its call site:
+ * neither adds a row to the list, and the rows it can still vouch for are the ones the
+ * create route handed back. The difference is kept here because it is a fact about the
+ * response, and because the page is not the only possible reader of this function — the
+ * next one may well want to tell "no rows yet" apart from "we could not read them", and
+ * collapsing it here would leave nothing to tell it from.
  *
  * A row that cannot be READ is dropped rather than kept under a marker. Unlike an
  * aggregate — where the difference between "nobody voted" and "we could not find
@@ -665,10 +672,24 @@ export function normalizeRows(raw: unknown): Record<string, PrioritizationRow> |
  * `OwnBallotSchema`'s reasoning — a boundary that keeps what it does not understand
  * is not saying what it accepts.
  */
+/**
+ * How many documents one row may hold.
+ *
+ * `MAX_ROW_DOCUMENT_IDS` in the backend's `projects_handler.py`, which TRUNCATES a
+ * composition at this length. Stated here so the two boundaries describe the same
+ * contract rather than the client accepting a row the API could never have written —
+ * a row longer than this is a response nothing on the server produced, which is
+ * exactly what a boundary that "says what it accepts" should refuse.
+ *
+ * The pair is pinned by `lambda/api/test/test_prioritization_row_bound_lockstep.py`,
+ * because a comment saying the two agree cannot fail CI.
+ */
+export const MAX_ROW_DOCUMENT_IDS = 25
+
 const RowSchema = z.object({
   row_id: z.string().catch(''),
   project_id: z.string().min(1),
-  document_ids: z.array(z.string().min(1)),
+  document_ids: z.array(z.string().min(1)).max(MAX_ROW_DOCUMENT_IDS),
   prototype_id: z.string().catch(''),
   is_default: z.boolean().catch(false),
   created_at: z.string().catch(''),
