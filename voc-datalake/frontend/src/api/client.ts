@@ -747,7 +747,7 @@ export const api = {
     }),
 
   // Project API tokens (used by the McpAccessTab to gate MCP server access)
-  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write' }) =>
+  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write'; expires_in_days?: number }) =>
     fetchApi<CreateApiTokenResponse>(`/projects/${projectId}/api-tokens`, {
       method: 'POST',
       body: JSON.stringify(data),
