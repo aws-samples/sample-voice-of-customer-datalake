@@ -160,11 +160,8 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     // Driven from both id orders, which must each be honoured. The project read lists
     // the documents in the opposite order to the first case on purpose, so this cannot
     // pass on the fixture's ordering.
-    // One format throughout, and a full instant rather than a bare date: these three
-    // cases turn on timestamps comparing EQUAL or not, and mixing `'2025-01-01'` with
-    // `'2025-01-01T09:00:00Z'` in neighbouring fixtures gets the intended answer only
-    // because string comparison happens to agree. A fixture pinning "the same instant"
-    // should say so unambiguously.
+    // The same instant, as a full ISO timestamp, so the equality these cases turn on is
+    // explicit rather than incidental to how two shorter strings happen to compare.
     const sameInstant = '2025-01-01T09:00:00Z'
     const details = [{
       project_id: 'p1',
