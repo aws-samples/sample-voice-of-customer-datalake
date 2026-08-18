@@ -1,0 +1,148 @@
+# Changelog
+
+All notable changes to the Voice of Customer (VoC) Data Lake are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+Versions are `0.x` on purpose: this is a sample platform whose interfaces still move between
+releases, so a minor bump may carry changes that would be breaking in a `1.x` project. Read the
+**Upgrade notes** of each release before deploying over an existing stack.
+
+The version recorded here is the one in the `package.json` files. It is **not** what the dashboard
+displays: the UI's build identifier is the short git commit SHA, injected at build time.
+
+## [0.2.0] - 2026-08-19
+
+The first release since the platform moved from a single-stack sample to a workspace covering
+research, prototyping and team prioritization. Roughly 120 changes, developed between 2026-06 and
+2026-08.
+
+### Added
+
+**Project research workspace**
+- Research projects that generate personas, PRDs and PR/FAQs from the feedback corpus, run as
+  asynchronous jobs with a Background Jobs panel for long-running progress.
+- Document provenance: each generated document records and shows how it was built, and which
+  specification a prototype was built from.
+- Prototype builds that read product context and research, and can be grounded in the mockups they
+  were aimed at.
+- An MCP endpoint so external agents can read project data, with a two-card Export / MCP layout.
+
+**Team prioritization**
+- A prioritization row now represents a project rather than a single document, with ballots keyed to
+  the row and PRDs scorable alongside PR/FAQs.
+- One ballot per reviewer, replacing a single shared score map, with rows leading on the team score.
+- Room voting: a meeting scores a proposal from their phones through a session QR code.
+- Linked feedback forms surface their collected ratings on the matching prioritization row.
+
+**Conversational and AI surfaces**
+- Streaming chat over Server-Sent Events, served by a TypeScript Lambda through API Gateway.
+- A per-surface AI model picker over a curated Claude allowlist, so chat, documents, prototypes,
+  enrichment and utilities can each use a different model.
+- Opt-in public web search through Amazon Bedrock AgentCore, with agentic multi-query research
+  grounding for chat and research. Deployed by default, and switchable off.
+- A `create_project` tool callable from chat, plus aggregate search mode and urgency sorting.
+
+**Internationalization**
+- A runtime i18n layer with eight locales and a language switcher, replacing hardcoded English.
+- Parity guards in CI-style tests so a missing key in one locale fails a check rather than silently
+  rendering a raw key path.
+
+**Data sources and ingestion**
+- CSV bulk upload with a 50,000-row cap, batched to SQS, with an upload modal.
+- A synthetic data review generator plugin, and a persistent Data Sources card for generators.
+- Mobile app review ingestion and a rebuilt scrapers UI.
+- Ingestion provenance (`ingestion_method`) persisted on each feedback record.
+- Feedback forms can be shown as a scannable QR code for a public submission page.
+
+**Interface**
+- A flow-ordered sidebar and a Home onboarding page.
+- A route-level error boundary, so one failing page no longer blanks the application.
+- A shared modal component that owns dialog semantics and keyboard handling.
+- Filtering by review date versus imported date across the application, honoured by chat, research
+  and MCP.
+- Marking problems as resolved in Problem Analysis.
+- Category distribution moved to Signals, the Feedback tab consolidated into Categories, and Data
+  Explorer tabs slimmed.
+
+**Operations**
+- An opt-in deployment prefix, allowing two independent copies in one AWS account.
+- Workshop artifacts made deployable, within a five-CloudFormation-template limit.
+
+### Changed
+
+- Claude Opus 4.8 upgraded to Opus 5; AI budgets are configuration-driven rather than hardcoded.
+- Persona generation fans out avatar creation and drops a validation step that discarded work.
+- Metric windows are read in a single query instead of one lookup per day.
+- The two `us-east-1` AI-enablement stacks were merged into one, keeping the stack count at five.
+- DynamoDB GSI names now come from a single source of truth.
+
+### Fixed
+
+- Persona generation no longer silently discards most of the feedback corpus.
+- Ingestion pages through complete review sets instead of stopping at the first page, and no longer
+  loses feedback when an SQS batch send partially fails.
+- Feedback form submission counts are honest, with one partition per form.
+- Problem Analysis counts over the whole window rather than its first page, and the urgent count
+  reports the true total.
+- Prioritization reports partial ballots honestly instead of presenting an incomplete average as
+  complete.
+- Chat conversation and message identifiers are collision-proof, and streamed replies land in the
+  conversation they came from.
+- Data Explorer queries an index that exists.
+- Recurring crash fixes for sparse or legacy records: scrapers without a base URL, categories without
+  identifiers, forms without a theme.
+- PDF import is refused rather than producing an invented persona.
+- Deployment reliability: eternal ingestor asset hash churn, a mismatched bundled botocore, and
+  pre-existing stacks blocked by a create-only Cognito property.
+- Repo-wide lint and test debt zeroed, with every surface gated.
+
+### Security
+
+- Chat conversations are partitioned by authenticated user, replacing a shared partition that placed
+  every user's history together.
+- Cognito authentication is required on feedback-form item routes that were reachable unauthenticated.
+- The deprecated Cognito implicit OAuth grant is disabled.
+- Avatar and prototype objects require signed URLs.
+- Raw Lambda events are no longer logged, with a CI guard against reintroduction.
+- MCP access uses constant-time token comparison, enforced scope, a narrowed IAM policy, a working
+  throttle, an Origin guard and token expiry.
+- Free-text fields on the streaming path are bounded and replayed history is clamped.
+
+### Upgrade notes
+
+- **Chat history written before this release becomes unreachable.** Conversations are now keyed by
+  authenticated user subject; there is no migration, and the change is deliberate.
+- Deploying over a stack created before the Cognito username change may require
+  `-c omitUserPoolUsernameConfiguration=true`. See `docs/deployment.md`.
+- Web search deploys by default. Opt out with `-c enableWebSearch=false`.
+- Lambda layers must be built for ARM64 before deploying: `./scripts/build-layers.sh`.
+
+### Toolchain
+
+- Frontend tests run on Vitest 4. Vite is deliberately held at 7.x: Vite 8 replaces the bundler with
+  Rolldown, which requires `manualChunks` to be a function and rejects the object form this project
+  uses. That migration is tracked separately.
+- After pulling this release, run `npm ci` in `voc-datalake/frontend` — an existing `node_modules`
+  from before it will be stale.
+
+## [0.1.0] - 2026-05-25
+
+Initial release of the sample: a fully serverless platform for ingesting, processing and analyzing
+customer feedback on AWS.
+
+### Added
+
+- Plugin-based ingestion, where each data source is self-contained and declares its infrastructure,
+  UI configuration and credentials in a `manifest.json` consumed by CDK.
+- An event-driven processing pipeline: raw payloads archived to S3, queued through SQS, enriched by a
+  processor Lambda using Amazon Bedrock and Amazon Comprehend, and aggregated in near real time off
+  DynamoDB Streams.
+- Multi-language support with automatic language detection and translation.
+- A REST API split across domain-specific Lambdas, behind API Gateway with Cognito authentication.
+- A React dashboard with metrics, charts, AI chat and project management, served through CloudFront.
+- A web scraper plugin, embeddable feedback forms, and an S3 import plugin.
+- Encryption at rest with a customer-managed KMS key, and cdk-nag suppressions recorded where AWS
+  services do not support resource-level permissions.
+
+[0.2.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/releases/tag/v0.2.0
+[0.1.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/releases/tag/v0.1.0
