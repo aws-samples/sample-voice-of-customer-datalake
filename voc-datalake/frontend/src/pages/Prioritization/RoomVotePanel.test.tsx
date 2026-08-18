@@ -85,7 +85,18 @@ const { t } = i18n
 // A ROW id, not a document id: the session names the row, and every ballot's key
 // derives from it server-side. The title is the row's — what the room reads.
 const ROW_ID = 'row_p1_default'
-const ROW_TITLE = 'Feature A PR/FAQ'
+/**
+ * What these tests hand the panel as the row's title.
+ *
+ * A proposal's name rather than a document's, deliberately. The panel is rendered
+ * DIRECTLY here and composes nothing: the title arrives as a prop, and the page decides
+ * upstream that it is the leading document's. Naming it `'Feature A PR/FAQ'` made the
+ * constant claim a type the row's leading document does not have in the page-level
+ * describe below (where the row leads with `'Feature A PRD'`), which read as a fixture
+ * disagreeing with itself. Which document a row leads with is that describe's subject,
+ * and it says so with its own fixtures.
+ */
+const ROW_TITLE = 'Instant refunds'
 /** How many documents the row holds; drives the "one ballot covers N" copy. */
 const ROW_DOCUMENT_COUNT = 2
 

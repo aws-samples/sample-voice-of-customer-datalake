@@ -30,7 +30,13 @@ _BOUND = re.compile(r'export\s+const\s+MAX_ROW_DOCUMENT_IDS\s*=\s*(\d+)')
 
 # `.max(MAX_ROW_DOCUMENT_IDS)` on the row's document ids — that the constant is
 # DECLARED is not the contract; that the schema is bounded BY it is.
-_APPLIED = re.compile(r'document_ids:[^\n]*\.max\(\s*MAX_ROW_DOCUMENT_IDS\s*\)')
+#
+# `[\s\S]` and a length cap rather than `[^\n]*`: a prettier-style formatter that wraps
+# a long zod chain across lines would otherwise fail this test with a message asserting
+# the schema is UNBOUNDED — the opposite of the truth, from a Python test that cannot
+# see TypeScript formatting. The cap keeps the match local to the `document_ids` field
+# rather than letting it reach a `.max()` on some later field of the same object.
+_APPLIED = re.compile(r'document_ids:[\s\S]{0,200}?\.max\(\s*MAX_ROW_DOCUMENT_IDS\s*\)')
 
 
 def _repo_root() -> Path:

@@ -18,6 +18,7 @@ import {
   useTranslation, Trans,
 } from 'react-i18next'
 import { useBlocker } from 'react-router-dom'
+import { isPermanentRefusal } from '../../api/apiErrorStatus'
 import { api } from '../../api/client'
 import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
 import { projectsKey } from '../../api/projectQueryKeys'
@@ -31,7 +32,7 @@ import {
 import PRFAQRow from './PRFAQRow'
 import {
   applyBallotEdits, getScore, getTeamView, collectRows, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRows, normalizeScores, ownBallotRead,
+  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRow, normalizeRows, normalizeScores, ownBallotRead,
   overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY, sortRows,
   teamAggregatesOf, teamOrderingAvailable, uncountableTeamRead, withEditedField,
 } from './prioritizationUtils'
@@ -44,27 +45,6 @@ import type {
 } from '../../api/types'
 
 /**
- * Is this rejection the server's settled answer, rather than a passing failure?
- *
- * The row-ensure retries a rejected ask, which is right for a throttle or a 500 and
- * wrong for a refusal: a 403, or a 400 because the create route and
- * `projectsNeedingARow` disagree about what is scorable, says the same thing however
- * many times it is asked, so releasing it re-asks on every project refetch for the
- * whole mount.
- *
- * Read off the MESSAGE because that is all `fetchApi` keeps — it throws
- * `API Error: {status}` and discards the body — so the status is recovered from the
- * text rather than from a field no error carries. Anything unrecognised counts as
- * transient, which keeps the retry the default: a network failure has no status at
- * all, and hiding a project is the worse of the two mistakes.
- */
-function isPermanentRefusal(reason: unknown): boolean {
-  const message = reason instanceof Error ? reason.message : ''
-  const status = Number(/^API Error: (\d{3})$/.exec(message)?.[1])
-  return status >= 400 && status < 500
-}
-
-/**
  * The rows a batch of row-ensure asks actually handed back, keyed by row id.
  *
  * The create route is idempotent and answers the STORED row whether it just wrote it
@@ -72,9 +52,17 @@ function isPermanentRefusal(reason: unknown): boolean {
  * the prioritization read reports, one round trip earlier. Keeping them is what lets
  * the list survive a read that fails or has not landed.
  *
- * A fulfilled ask with no `row` — or one whose id is empty — contributes nothing: the
- * field is optional on the wire, and a row the page cannot address is a row no ballot,
- * aggregate or expansion could ever be looked up against.
+ * Each answer goes through `normalizeRow` — the SAME schema the read half is validated
+ * by — rather than being trusted because its declared type says `PrioritizationRow`. A
+ * fulfilled ask answering `{success: true, row: {}}` type-checks and satisfies the
+ * compiler, and reading `row.row_id.length` off it threw inside this `.then`, which lost
+ * every row in the batch and left the rejection unhandled. Validating instead keeps the
+ * two halves of the same record held to one contract, including the document-count bound
+ * `RowSchema` states.
+ *
+ * A fulfilled ask with no `row`, an unreadable one, or one whose id is empty contributes
+ * nothing: the field is optional on the wire, and a row the page cannot address is a row
+ * no ballot, aggregate or expansion could ever be looked up against.
  *
  * At module level rather than inside the effect for the reason `selectPrioritization`
  * is: this is a pure mapping over a response, and nesting it there put a closure four
@@ -83,12 +71,12 @@ function isPermanentRefusal(reason: unknown): boolean {
 function rowsAnswered(
   results: readonly PromiseSettledResult<{ readonly row?: PrioritizationRow }>[],
 ): Record<string, PrioritizationRow> {
-  const answered = results.flatMap(
-    (result) => (result.status === 'fulfilled' && result.value.row ? [result.value.row] : []),
-  )
-  return Object.fromEntries(
-    answered.filter((row) => row.row_id.length > 0).map((row) => [row.row_id, row]),
-  )
+  const answered = results.flatMap((result) => {
+    if (result.status !== 'fulfilled') return []
+    const row = normalizeRow(result.value.row)
+    return row ? [row] : []
+  })
+  return Object.fromEntries(answered.map((row) => [row.row_id, row]))
 }
 
 /**
@@ -764,6 +752,15 @@ export default function Prioritization() {
    * vouches for each by returning it. An EMPTY map is different only in that it adds
    * nothing to merge, and with no asks answered yet it leaves the page's own empty
    * state, which is the honest reading of a deployment that holds no rows.
+   *
+   * `ensuredRows` is STICKY for the mount, and the merge therefore cannot REMOVE a row:
+   * the read wins only where it names one, so a row that disappears from a later
+   * successful read stays on screen until the page is remounted. That is deliberate in
+   * phase 1, where nothing deletes a row — and it is the same trade the fallback exists
+   * for, since "absent from this read" is exactly what a failed or partial read looks
+   * like. Phase 2 adds deletion, and at that point the merge needs the read's absence to
+   * mean something: the cheap answer is to clear `ensuredRows` on a SUCCESSFUL read
+   * (which by then is the authority on what exists) rather than to keep merging under it.
    */
   const allRows = useMemo(
     () => collectRows(

@@ -255,11 +255,12 @@ describe('Prioritization', () => {
       // the sibling case below, through the sliders it now lives behind.
       mockGetPrioritizationScores
         .mockResolvedValueOnce({
-        rows: DEFAULT_ROWS,
+          rows: DEFAULT_ROWS,
           scores: {},
           aggregates: {},
         })
         .mockResolvedValue({
+          rows: DEFAULT_ROWS,
           scores: {},
           aggregates: {
             [R.d1]: {
@@ -299,12 +300,13 @@ describe('Prioritization', () => {
       // sliders too, not only the row's team headline.
       mockGetPrioritizationScores
         .mockResolvedValueOnce({
-        rows: DEFAULT_ROWS,
+          rows: DEFAULT_ROWS,
           scores: {
             [R.d1]: { row_id: R.d1, impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
           },
         })
         .mockResolvedValue({
+          rows: DEFAULT_ROWS,
           scores: {
             [R.d1]: { row_id: R.d1, impact: 4, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
           },
@@ -1216,7 +1218,7 @@ describe('Prioritization', () => {
       ))
       await queryClient.invalidateQueries()
 
-      // p1's transient 500 is asked again; p3 is new and asked for the first time.
+      // p1's transient 500 is asked again.
       await waitFor(() => {
         expect(mockCreatePrioritizationRow.mock.calls.filter((call) => call[0] === 'p1').length)
           .toBeGreaterThan(1)
@@ -1224,6 +1226,13 @@ describe('Prioritization', () => {
       // p2's 400 is NOT. The server has answered about that project, and asking again
       // would spend a request per project refetch for the rest of the mount.
       expect(mockCreatePrioritizationRow.mock.calls.filter((call) => call[0] === 'p2')).toHaveLength(1)
+      // p3 is new to this pass and asked for the FIRST time — asserted, not merely
+      // described, because it is what proves the second pass actually reached the effect
+      // rather than p1's retry coming from something else. A never-marked id must always
+      // be asked, whatever the release rule does with the ones that failed.
+      await waitFor(() => {
+        expect(mockCreatePrioritizationRow.mock.calls.filter((call) => call[0] === 'p3')).toHaveLength(1)
+      })
     })
   })
 

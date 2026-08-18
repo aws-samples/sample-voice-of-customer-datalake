@@ -647,10 +647,35 @@ export function normalizeRows(raw: unknown): Record<string, PrioritizationRow> |
   if (!asMap.success) return undefined
   return Object.fromEntries(
     Object.entries(asMap.data).flatMap(([rowId, value]): [string, PrioritizationRow][] => {
-      const parsed = RowSchema.safeParse(value)
-      return parsed.success ? [[rowId, { ...parsed.data, row_id: rowId }]] : []
+      const row = normalizeRow(value, rowId)
+      return row ? [[rowId, row]] : []
     }),
   )
+}
+
+/**
+ * ONE row, validated the same way — for the response that carries a row on its own.
+ *
+ * `POST /projects/prioritization/rows` answers `{row: ...}` rather than a map, and that
+ * answer is a row the page then RENDERS: the create route is idempotent and hands back
+ * the stored record, which is what lets the list survive a prioritization read that
+ * failed or has not landed. Reading `row.row_id` off an unvalidated body to decide that
+ * is the same mistake `normalizeRows` exists to prevent one field over — a declared
+ * response type is a promise about the wire, and `{success: true, row: {}}` satisfies
+ * the compiler while throwing at the first property access.
+ *
+ * `rowId` is optional because the two callers know the id from different places: the
+ * read has it as the MAP KEY (what every lookup addresses), while a lone row carries it
+ * only in its own body. Either way an EMPTY id answers `undefined` — a row the page
+ * cannot address is one no ballot, aggregate or expansion could ever be looked up
+ * against, which is the same reason `collectRows` drops a row that resolves to no
+ * document.
+ */
+export function normalizeRow(raw: unknown, rowId?: string): PrioritizationRow | undefined {
+  const parsed = RowSchema.safeParse(raw)
+  if (!parsed.success) return undefined
+  const id = rowId ?? parsed.data.row_id
+  return id.length > 0 ? { ...parsed.data, row_id: id } : undefined
 }
 
 /**
@@ -683,6 +708,17 @@ export function normalizeRows(raw: unknown): Record<string, PrioritizationRow> |
  *
  * The pair is pinned by `lambda/api/test/test_prioritization_row_bound_lockstep.py`,
  * because a comment saying the two agree cannot fail CI.
+ *
+ * WHAT AN OVER-LONG ROW COSTS, and why that is acceptable HERE and not later. A row
+ * failing this bound is dropped by `normalizeRows` along with its ballots, with nothing
+ * on screen saying why. In phase 1 that state is unreachable from anything the product
+ * does — the API truncates every composition it writes, so a longer row is a response no
+ * server produced — which makes "drop it" the same answer as for any other unreadable
+ * row. Phase 2 adds composition EDITING, and then a row over the bound becomes something
+ * a person could have caused; at that point this belongs behind the `UNREADABLE_ROW`
+ * marker path (which exists to say "we could not read this" instead of "this is not
+ * there") rather than in the silent drop, and the API's answer to an over-long
+ * composition should be a 400 naming the bound rather than a truncation.
  */
 export const MAX_ROW_DOCUMENT_IDS = 25
 

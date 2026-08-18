@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from '../../i18n/options'
 import {
-  getScore, calculatePriorityScore, collectRows, normalizeRows, DEFAULT_SCORE, isScorable,
+  getScore, calculatePriorityScore, collectRows, normalizeRow, normalizeRows, DEFAULT_SCORE, isScorable,
   MAX_ROW_DOCUMENT_IDS,
   SCORABLE_TYPE_META, MAX_NOTE_LENGTH, overLongNoteRows, getTeamScore, normalizeAggregates,
   getPriorityLabel, priorityBand, reviewersDisagreed, sortRows, getTeamView, teamScoreOf,
@@ -133,11 +133,20 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     // The other half, stated rather than implied: rows are what put a row on screen,
     // so a deployment holding none renders nothing even with projects full of
     // scorable documents. This is the state the page's empty invitation covers.
+    //
+    // Paired with its own positive control, because "empty in, empty out" is what a
+    // function ignoring its project arguments entirely would also answer: the SAME
+    // details and projects, with one row named, produce that row. So the `[]` above is
+    // the rows map deciding it, not the documents being unreachable.
+    const details = [{ documents: [doc('prd-1', 'prd', 'Feature A PRD', '2025-01-01')] }]
+    const projects = [project('p1', 'P1')]
+
+    expect(collectRows({}, details, projects)).toStrictEqual([])
     expect(collectRows(
-      {},
-      [{ documents: [doc('prd-1', 'prd', 'Feature A PRD', '2025-01-01')] }],
-      [project('p1', 'P1')],
-    )).toStrictEqual([])
+      { 'row-1': storedRow('row-1', 'p1', ['prd-1']) },
+      details,
+      projects,
+    ).map((row) => row.row_id)).toStrictEqual(['row-1'])
   })
 
   it('a project whose PRD and PR/FAQ describe one idea is ONE row', () => {
@@ -351,6 +360,58 @@ describe('normalizeRows', () => {
     })
 
     expect(Object.keys(rows ?? {})).toEqual(['atTheBound'])
+  })
+})
+
+describe('normalizeRow validates the ONE row a create answers with', () => {
+  // `POST /projects/prioritization/rows` answers `{row: ...}` rather than a map, and the
+  // page RENDERS that answer — it is what keeps the list alive while the prioritization
+  // read is failing or in flight. So it is held to the same schema as the read half:
+  // reading `row.row_id` off an unvalidated body threw inside the effect's `.then`,
+  // losing every row in the batch and leaving the rejection unhandled.
+
+  it('parses a row that carries its own id', () => {
+    const row = normalizeRow(storedRow('row-1', 'p1', ['prd-1', 'prfaq-1']))
+
+    expect(row?.row_id).toBe('row-1')
+    expect(row?.project_id).toBe('p1')
+    expect(row?.document_ids).toEqual(['prd-1', 'prfaq-1'])
+  })
+
+  it('prefers a supplied id, which is how the read half addresses a row', () => {
+    // The map-key rule, available to this function too: the key is what every lookup
+    // uses, so it wins over a record disagreeing with it.
+    expect(normalizeRow(storedRow('somewhere-else', 'p1', ['prd-1']), 'row-1')?.row_id)
+      .toBe('row-1')
+  })
+
+  it('refuses a body that type-checks but says nothing', () => {
+    // The exact shapes that made the unvalidated read throw or fabricate: an answer with
+    // no row at all, an empty object (which `{success: true, row: {}}` is), a null id,
+    // and a row with no project or no composition.
+    expect(normalizeRow(undefined)).toBeUndefined()
+    expect(normalizeRow({})).toBeUndefined()
+    expect(normalizeRow({ row_id: null, project_id: 'p1', document_ids: ['prd-1'] }))
+      .toBeUndefined()
+    expect(normalizeRow({ row_id: 'row-1', document_ids: ['prd-1'] })).toBeUndefined()
+    expect(normalizeRow({ row_id: 'row-1', project_id: 'p1' })).toBeUndefined()
+  })
+
+  it('refuses a row it could not address', () => {
+    // An EMPTY id is not a row the page can use: no ballot, aggregate or expansion could
+    // ever be looked up against it, and merging it in would put an unreachable row on
+    // screen under a key nothing writes to.
+    expect(normalizeRow(storedRow('', 'p1', ['prd-1']))).toBeUndefined()
+  })
+
+  it('applies the same document bound the read half applies', () => {
+    // The create route truncates at `MAX_ROW_DOCUMENT_IDS`, so a longer row is a
+    // response nothing on the server wrote — and it must not slip in through the create
+    // path just because the read path refuses it.
+    const ids = (count: number) => Array.from({ length: count }, (_, i) => `prd-${i}`)
+
+    expect(normalizeRow(storedRow('r', 'p1', ids(MAX_ROW_DOCUMENT_IDS)))?.row_id).toBe('r')
+    expect(normalizeRow(storedRow('r', 'p1', ids(MAX_ROW_DOCUMENT_IDS + 1)))).toBeUndefined()
   })
 })
 
