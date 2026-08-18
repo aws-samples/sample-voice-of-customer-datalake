@@ -11,6 +11,7 @@ from the Authorization header against SHA-256 hashes in the projects table.
 
 import hmac
 import json
+import os
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -46,6 +47,13 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # Token prefix used during generation
 TOKEN_PREFIX = 'voc_'
 
+# The one origin a BROWSER may present. Not a CORS setting (see CORS_HEADERS
+# below) — it is the allowlist for the MCP spec's DNS-rebinding guard, which
+# REQUIRES that an invalid Origin be refused with 403. Real MCP clients are not
+# browsers and send no Origin header at all; those requests are untouched.
+# In dev deployments the stack sets '*', which disables the check.
+ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '')
+
 
 # ============================================
 # CORS helpers
@@ -57,14 +65,48 @@ CORS_HEADERS = {
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
 }
 
+# RFC 6750 §3: a 401 for a protected resource carries a WWW-Authenticate
+# challenge. MCP clients read it to learn the auth scheme; its absence is a
+# spec-conformance gap, not merely a nicety. `resource_metadata` is added when
+# the well-known route lands (plan §4.4 Track A).
+_WWW_AUTHENTICATE_401 = 'Bearer error="invalid_token"'
+
 
 def _cors_response(body: dict, status_code: int = 200) -> dict:
-    """Return a Lambda proxy response with CORS headers."""
+    """Return a Lambda proxy response with CORS headers.
+
+    Every 401 gains the RFC 6750 challenge here, at the one choke point all
+    responses pass through, so no future 401 path can forget it.
+    """
+    headers = {**CORS_HEADERS, 'Content-Type': 'application/json'}
+    if status_code == 401:
+        headers['WWW-Authenticate'] = _WWW_AUTHENTICATE_401
     return {
         'statusCode': status_code,
-        'headers': {**CORS_HEADERS, 'Content-Type': 'application/json'},
+        'headers': headers,
         'body': json.dumps(body, cls=DecimalEncoder),
     }
+
+
+def _origin_allowed(event: dict) -> bool:
+    """DNS-rebinding guard: reject a browser-presented Origin that is not ours.
+
+    The MCP Streamable HTTP transport REQUIRES servers to validate the Origin
+    header and answer 403 when it is present and invalid — a malicious page can
+    otherwise use DNS rebinding to reach this endpoint from a victim's browser.
+
+    Absent Origin (every non-browser MCP client) passes. A configured origin of
+    '*' (dev deployments) passes everything. Comparison is exact-string on the
+    scheme+host+port tuple the browser sends — no normalisation, mirroring the
+    strictness the MCP auth spec demands for issuer comparison.
+    """
+    headers = event.get('headers') or {}
+    origin = headers.get('origin') or headers.get('Origin') or ''
+    if not origin:
+        return True
+    if ALLOWED_ORIGIN == '*':
+        return True
+    return origin == ALLOWED_ORIGIN
 
 
 # ============================================
@@ -94,6 +136,38 @@ _RETRYABLE_BOTOCORE_ERRORS: tuple[type[botocore_exceptions.BotoCoreError], ...] 
     botocore_exceptions.ConnectionError,
     botocore_exceptions.HTTPClientError,
 )
+
+
+def _credential_expired(item: dict) -> bool:
+    """True when a matched token row must be refused because of its expiry.
+
+    Expiry is enforced HERE, in the credential check, not by a DynamoDB TTL:
+    TTL deletion is eventual (up to ~48 h), so a TTL alone would keep an
+    expired credential working for up to two days after its stated end.
+
+    An absent or empty ``expires_at`` means a non-expiring token — every row
+    minted before the field existed keeps working. A malformed value fails
+    CLOSED (the credential is refused, and the row's token_id is logged so an
+    operator can fix it): an unreadable expiry must not become an unlimited
+    one. Only the token_id — never the token or its hash — reaches the log.
+    """
+    expires_at = item.get('expires_at')
+    if not expires_at:
+        return False
+    try:
+        expired = datetime.fromisoformat(expires_at) <= datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        logger.warning(
+            'Token has malformed expires_at; refusing credential',
+            extra={'token_id': item.get('token_id', '')},
+        )
+        return True
+    if expired:
+        logger.info(
+            'Expired token presented',
+            extra={'token_id': item.get('token_id', '')},
+        )
+    return expired
 
 
 class AuthBackendUnavailable(Exception):
@@ -217,6 +291,10 @@ def _authenticate(event: dict) -> dict | None:
         # Both operands must be the same type (str); encode to bytes so
         # compare_digest can work even if one value is unexpectedly empty.
         if hmac.compare_digest(stored_hash.encode(), token_hash.encode()):
+            # Checked AFTER the hash match — only the matching row's expiry
+            # matters, and non-matching rows must not influence timing.
+            if _credential_expired(item):
+                return None
             # Update last_used_at
             try:
                 projects_table.update_item(
@@ -891,6 +969,16 @@ def _handle_autoseed(event: dict) -> dict:
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event: dict, context: Any) -> dict:
     """MCP server Lambda handler — JSON-RPC over HTTP POST + autoseed GET."""
+
+    # DNS-rebinding guard, FIRST — before auth, before method dispatch, and
+    # including OPTIONS. The MCP transport spec requires 403 for a present,
+    # invalid Origin; checking before _authenticate also means a rebound page
+    # cannot use a victim's browser to probe the token store at all.
+    if not _origin_allowed(event):
+        return _cors_response(
+            _jsonrpc_error(None, -32600, "Forbidden: invalid Origin"),
+            status_code=403,
+        )
 
     # Handle CORS preflight
     http_method = event.get('httpMethod', '')

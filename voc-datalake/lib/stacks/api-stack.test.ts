@@ -685,3 +685,112 @@ describe('the public ballot routes', () => {
       .toBe('https://app.example.invalid');
   });
 });
+
+
+describe('mcp Lambda IAM grants', () => {
+  // The MCP function is the ONE function in this stack reachable with a bearer
+  // token instead of a Cognito session, and its role once held
+  // grantReadWriteData over the projects table — read-write on every persona,
+  // PRD, PR/FAQ and prototype — for the sole purpose of reading token rows and
+  // stamping last_used_at. The narrow grant is the enforcement; this test is
+  // what makes widening it a deliberate act. Same shape as the ballots grants
+  // test above.
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  function mcpStatements(): { actions: string[]; resource: string }[] {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const policy = Object.entries(policies).find(([id]) => id.includes('McpLambdaRole'));
+    expect(policy, 'no IAM policy found for McpLambdaRole').toBeDefined();
+    return z
+      .object({ Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(StatementSchema) }) }) })
+      .parse(policy?.[1]).Properties.PolicyDocument.Statement
+      .map((s) => ({
+        actions: Array.isArray(s.Action) ? s.Action : [s.Action],
+        resource: JSON.stringify(s.Resource),
+      }));
+  }
+  it('holds exactly Query and UpdateItem on the projects table', () => {
+    // Asserted as an exact SET rather than an absence list, so an action nobody
+    // considered cannot arrive unremarked. Query is the token lookup plus the
+    // get_project/list_personas tools; UpdateItem is last_used_at and nothing
+    // else. PutItem, DeleteItem, Scan and the batch APIs are the point of this
+    // test: their absence is what makes the bearer-token surface read-only
+    // against project artifacts.
+    const granted = new Set(
+      mcpStatements()
+        .filter((s) => s.resource.includes('Projects'))
+        .flatMap((s) => s.actions)
+        .filter((action) => action.startsWith('dynamodb:')),
+    );
+    expect([...granted].sort()).toEqual(['dynamodb:Query', 'dynamodb:UpdateItem']);
+  });
+  it('can still encrypt against the KMS key, which the UpdateItem write needs', () => {
+    // The former grantReadWriteData brought KMS Encrypt along implicitly; the
+    // narrow table grant does not, so the role needs it explicitly or the
+    // last_used_at write starts failing at runtime — a fault no synth catches.
+    const kmsActions = mcpStatements()
+      .flatMap((s) => s.actions)
+      .filter((a) => a.startsWith('kms:'));
+    expect(kmsActions).toContain('kms:Encrypt');
+    expect(kmsActions).toContain('kms:Decrypt');
+  });
+});
+
+describe('mcp endpoint throttling', () => {
+  // The former McpUsagePlan never bound: a usage plan's throttle applies per
+  // API KEY and no MCP client sends one (SEC-10's fourth sub-claim, open since
+  // #260). The working mechanism is stage method settings, keyed by path —
+  // and a mistyped key throttles nothing silently, hence the lockstep test.
+  const MCP_METHOD_KEYS = [
+    '/mcp/POST',
+    '/mcp/{proxy+}/*',
+  ];
+  const StageSchema = z.object({
+    Properties: z.object({
+      MethodSettings: z.array(z.object({
+        ResourcePath: z.string(),
+        HttpMethod: z.string(),
+        ThrottlingRateLimit: z.number().optional(),
+        ThrottlingBurstLimit: z.number().optional(),
+      })).optional(),
+    }),
+  });
+  const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
+  function methodSettings(): { key: string; rate?: number; burst?: number }[] {
+    const stages = Object.values(apiTemplate().findResources('AWS::ApiGateway::Stage'));
+    expect(stages.length, 'expected exactly one API stage').toBe(1);
+    return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
+      key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
+      rate: s.ThrottlingRateLimit,
+      burst: s.ThrottlingBurstLimit,
+    }));
+  }
+  it('throttles the MCP methods below the stage default', () => {
+    const settings = new Map(methodSettings().map((s) => [s.key, s]));
+    for (const key of MCP_METHOD_KEYS) {
+      const setting = settings.get(key);
+      expect(setting, `${key} has no method-level throttle`).toBeDefined();
+      expect(setting?.rate).toBe(20);
+      expect(setting?.burst).toBe(40);
+    }
+  });
+  it('spells those keys the way the wired routes are spelled', () => {
+    // `/mcp/POST` must name a real method exactly. The proxy key ends in the
+    // method-settings wildcard `*` (its wired method is ANY, which is a routing
+    // construct, not a settings key), so for it the assertion is that the PATH
+    // it names carries a wired method.
+    const wired = apiMethods(apiTemplate());
+    const wiredKeys = new Set(wired.map((m) => `${m.path}/${m.httpMethod}`));
+    const wiredPaths = new Set(wired.map((m) => m.path));
+    expect(wiredKeys.has('/mcp/POST'), '/mcp/POST names no wired method').toBe(true);
+    expect(wiredPaths.has('/mcp/{proxy+}'), '/mcp/{proxy+} names no wired resource').toBe(true);
+  });
+  it('has no usage plan anywhere in the stack', () => {
+    // A usage plan that "throttles" a keyless endpoint is worse than absent:
+    // it reads as protection and provides none. If one ever returns, it has to
+    // be argued past this test.
+    expect(Object.keys(apiTemplate().findResources('AWS::ApiGateway::UsagePlan'))).toEqual([]);
+  });
+});

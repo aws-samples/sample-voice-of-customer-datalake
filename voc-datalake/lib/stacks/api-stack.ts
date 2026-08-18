@@ -973,6 +973,21 @@ export class VocApiStack extends VocStack {
         methodOptions: {
           '/voting-sessions/{session_id}/config/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
           '/voting-sessions/{session_id}/submit/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          // The MCP endpoint gets the same treatment for the same reason: its
+          // caller holds a bearer token, not a Cognito session, and an invalid
+          // token still costs a DynamoDB Query before the 401. This REPLACES the
+          // former McpUsagePlan, which never bound — a usage plan's throttle
+          // applies per API KEY and no MCP client sends one (SEC-10's fourth
+          // sub-claim, open since #260). 20/40 rather than the ballots' numbers
+          // by coincidence, not inheritance: an agent's tool loop is bursty, and
+          // a legitimate session fires a handful of calls per model turn, so a
+          // burst of 40 absorbs it while still capping a token brute-force at
+          // ~1.7M attempts/day against a 2^256 space.
+          '/mcp/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          // `*`, not `ANY`: MethodSettings' HttpMethod is documented as a verb
+          // or the `*` wildcard. `ANY` is a routing construct, not a settings
+          // key, and a key that matches nothing throttles nothing silently.
+          '/mcp/{proxy+}/*': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
         },
         metricsEnabled: true,
         loggingLevel: apigateway.MethodLoggingLevel.INFO,
@@ -1259,8 +1274,22 @@ export class VocApiStack extends VocStack {
     const mcpRole = this.createLambdaRole('McpLambdaRole');
     feedbackTable.grantReadData(mcpRole);
     aggregatesTable.grantReadData(mcpRole);
-    projectsTable.grantReadWriteData(mcpRole);  // read tokens + update last_used_at
-    kmsKey.grantDecrypt(mcpRole);
+    // TWO ACTIONS on the projects table, not `grantReadWriteData`. The handler
+    // Queries token rows (auth) and project/persona rows (the get_project and
+    // list_personas tools), and UpdateItems exactly one attribute (last_used_at).
+    // The convenience grant would additionally hand over PutItem, DeleteItem,
+    // Scan and both batch APIs across the WHOLE table — every persona, PRD,
+    // PR/FAQ and prototype — on the ONE function in this stack that is reachable
+    // with a bearer token instead of a Cognito session. The absent actions are
+    // what enforce read-only-ness rather than remember it; same reasoning as the
+    // ballots role above, and `mcp Lambda IAM grants` in api-stack.test.ts pins
+    // the exact set.
+    projectsTable.grant(mcpRole, 'dynamodb:Query', 'dynamodb:UpdateItem');
+    // EncryptDecrypt, not just Decrypt: the narrow grant above no longer brings
+    // the table's KMS permissions along the way grantReadWriteData did, and the
+    // last_used_at UpdateItem is a write to a KMS-encrypted table. Same pairing
+    // as the ballots role.
+    kmsKey.grantEncryptDecrypt(mcpRole);
 
     const mcpLambda = new lambda.Function(this, 'McpApi', {
       functionName: this.uniqueName('voc-mcp-api'),
@@ -1275,6 +1304,12 @@ export class VocApiStack extends VocStack {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
+        // NOT used for CORS here (MCP clients are not browsers, the handler
+        // answers Access-Control-Allow-Origin: *). It is the allowlist for the
+        // MCP spec's DNS-rebinding guard: a request that CARRIES an Origin
+        // header naming any other origin is refused 403 before auth runs. A
+        // request with no Origin header — every real MCP client — is untouched.
+        ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-mcp-api',
         LOG_LEVEL: 'INFO',
       },
@@ -1342,16 +1377,10 @@ exports.handler = async (event) => {
     const mcpMethod = mcpResource.addMethod('POST', mcpIntegration, mcpMethodOptions);
     const mcpProxy = mcpResource.addProxy({ defaultIntegration: mcpIntegration, anyMethod: true, defaultMethodOptions: mcpMethodOptions });
 
-    // Per-method throttling (10 req/s, burst 20) to limit brute-force token attempts
-    const mcpUsagePlan = this.api.addUsagePlan('McpUsagePlan', {
-      name: this.uniqueName('voc-mcp-throttle'),
-      description: 'Throttle MCP endpoints to limit brute-force token attempts',
-      throttle: { rateLimit: 10, burstLimit: 20 },
-    });
-    mcpUsagePlan.addApiStage({
-      stage: this.api.deploymentStage,
-      throttle: [{ method: mcpMethod, throttle: { rateLimit: 10, burstLimit: 20 } }],
-    });
+    // Throttling lives in `deployOptions.methodOptions` at the top of this stack
+    // ('/mcp/POST' and '/mcp/{proxy+}/*'), NOT in a usage plan. The McpUsagePlan
+    // that used to sit here never bound: a usage plan's throttle applies per API
+    // key, and no MCP client sends one. Do not reintroduce it.
 
     NagSuppressions.addResourceSuppressions(mcpProxy, [
       { id: 'AwsSolutions-COG4', reason: 'MCP uses a custom Lambda token authorizer instead of Cognito — MCP clients cannot use the Cognito auth flow' },

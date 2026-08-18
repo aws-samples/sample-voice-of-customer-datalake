@@ -1465,3 +1465,280 @@ class TestUnconfiguredTableIsAServerFault:
 
         assert response["statusCode"] == 500
         assert response["headers"]["Access-Control-Allow-Origin"] == "*"
+
+
+# ===========================================================================
+# Origin validation (MCP transport DNS-rebinding guard)
+# ===========================================================================
+
+class TestOriginValidation:
+    """A present, foreign Origin is refused 403 before anything else runs.
+
+    The MCP Streamable HTTP transport REQUIRES this: without it a malicious
+    page can use DNS rebinding to drive a victim's browser against this
+    endpoint.  Real MCP clients are not browsers and send no Origin header,
+    so the guard must be a no-op for them.
+
+    Revert stories:
+      - deleting the lambda_handler guard fails every 403 assertion here;
+      - moving the guard AFTER authentication fails
+        test_foreign_origin_never_reaches_the_token_store, which is the
+        difference between "refused" and "refused after a free probe".
+    """
+
+    def _initialize_event(self, origin: str | None) -> dict:
+        headers = {}
+        if origin is not None:
+            headers["Origin"] = origin
+        return {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": headers,
+            "body": json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        }
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_absent_origin_passes(self, lambda_context):
+        """No Origin header — every real MCP client — is untouched by the guard."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(self._initialize_event(None), lambda_context)
+        assert response["statusCode"] == 200
+        assert "result" in json.loads(response["body"])
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_matching_origin_passes(self, lambda_context):
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            self._initialize_event("https://voc.example.com"), lambda_context
+        )
+        assert response["statusCode"] == 200
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_foreign_origin_refused_403(self, lambda_context):
+        """Present-and-wrong Origin → 403, with a JSON-RPC envelope and CORS headers."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            self._initialize_event("https://evil.example.net"), lambda_context
+        )
+        assert response["statusCode"] == 403
+        body = json.loads(response["body"])
+        assert body["error"]["code"] == -32600
+        assert response["headers"]["Access-Control-Allow-Origin"] == "*"
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_lowercase_origin_header_is_also_checked(self, lambda_context):
+        """API Gateway lowercases header names in proxy mode; the guard must too."""
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"]["origin"] = "https://evil.example.net"
+        response = mcp_handler.lambda_handler(event, lambda_context)
+        assert response["statusCode"] == 403
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "*")
+    def test_wildcard_config_disables_the_guard(self, lambda_context):
+        """Dev deployments set ALLOWED_ORIGIN='*'; any Origin then passes."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            self._initialize_event("http://localhost:5173"), lambda_context
+        )
+        assert response["statusCode"] == 200
+
+    @patch("mcp_handler.projects_table")
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_foreign_origin_never_reaches_the_token_store(self, mock_table, lambda_context):
+        """The guard runs BEFORE _authenticate: a rebound page gets no free probe.
+
+        Asserted on the table mock, not on the status code — a 403 issued after
+        the token query would pass a status-only assertion while still letting
+        the attacker measure the auth path.
+        """
+        import mcp_handler
+        event = _rpc_event()
+        event["headers"]["Origin"] = "https://evil.example.net"
+        response = mcp_handler.lambda_handler(event, lambda_context)
+        assert response["statusCode"] == 403
+        mock_table.query.assert_not_called()
+
+
+# ===========================================================================
+# WWW-Authenticate challenge on 401 (RFC 6750 §3)
+# ===========================================================================
+
+class TestWwwAuthenticateChallenge:
+    """Every 401 carries a Bearer challenge; successful responses carry none.
+
+    The challenge is attached inside _cors_response — the one choke point all
+    responses pass through — so a future 401 path cannot forget it.  Reverting
+    that placement (re-attaching it per call site) is caught by the autoseed
+    test below the moment any site is missed.
+    """
+
+    @patch("mcp_handler.projects_table")
+    def test_invalid_token_401_carries_bearer_challenge(self, mock_table, lambda_context):
+        import mcp_handler
+        mock_table.query.return_value = {"Items": []}
+        response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
+        assert response["statusCode"] == 401
+        assert response["headers"]["WWW-Authenticate"].startswith("Bearer ")
+
+    @patch("mcp_handler.projects_table")
+    def test_autoseed_401_carries_the_same_challenge(self, mock_table, lambda_context):
+        """The REST side-door 401s through the same choke point."""
+        import mcp_handler
+        mock_table.query.return_value = {"Items": []}
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "GET",
+                "path": "/v1/mcp/autoseed/proj-1",
+                "headers": {"authorization": "Bearer voc_testtoken"},
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 401
+        assert response["headers"]["WWW-Authenticate"].startswith("Bearer ")
+
+    def test_success_carries_no_challenge(self, lambda_context):
+        """A 200 must not advertise an auth failure."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "POST",
+                "path": "/v1/mcp",
+                "headers": {},
+                "body": json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 200
+        assert "WWW-Authenticate" not in response["headers"]
+
+
+# ===========================================================================
+# Token expiry (enforced in the credential check, not by DynamoDB TTL)
+# ===========================================================================
+
+class TestTokenExpiry:
+    """expires_at is compared at auth time; a TTL alone is not expiry.
+
+    DynamoDB TTL deletion is eventual (up to ~48 h), so enforcement lives in
+    _credential_expired on the MATCHED row.  Revert stories:
+      - deleting the _credential_expired call in _authenticate fails
+        test_expired_token_is_refused_401;
+      - turning the malformed-value branch into `return False` (fail-open)
+        fails test_malformed_expires_at_fails_closed — an unreadable expiry
+        must not become an unlimited one.
+    """
+
+    def _row(self, **extra) -> dict:
+        from shared.tokens import hash_token
+        return {
+            "sk": "TOKEN#1",
+            "token_id": "tok_1",
+            "token_hash": hash_token("voc_testtoken"),
+            "scope": "read",
+            **extra,
+        }
+
+    def _auth(self, row: dict):
+        """Run _authenticate against a single stored row; return its result."""
+        import mcp_handler
+        with patch("mcp_handler.projects_table") as mock_table:
+            mock_table.query.return_value = {"Items": [row]}
+            mock_table.update_item.return_value = {}
+            return mcp_handler._authenticate(_make_event())
+
+    def test_absent_expires_at_authenticates(self):
+        """Every row minted before the field existed keeps working."""
+        assert self._auth(self._row()) is not None
+
+    def test_empty_expires_at_authenticates(self):
+        """A falsy value means non-expiring, matching the scope field's falsy rule."""
+        assert self._auth(self._row(expires_at="")) is not None
+
+    def test_future_expires_at_authenticates(self):
+        from datetime import datetime, timedelta, timezone
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        assert self._auth(self._row(expires_at=future)) is not None
+
+    def test_past_expires_at_is_refused(self):
+        from datetime import datetime, timedelta, timezone
+        past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        assert self._auth(self._row(expires_at=past)) is None
+
+    def test_expired_token_is_refused_401(self, lambda_context):
+        """End to end: the expired credential answers 401, not 500."""
+        from datetime import datetime, timedelta, timezone
+
+        import mcp_handler
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        with patch("mcp_handler.projects_table") as mock_table:
+            mock_table.query.return_value = {"Items": [self._row(expires_at=past)]}
+            response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
+        assert response["statusCode"] == 401
+
+    def test_malformed_expires_at_fails_closed(self):
+        """An unreadable expiry refuses the credential rather than ignoring it."""
+        assert self._auth(self._row(expires_at="not-a-date")) is None
+
+    def test_naive_datetime_fails_closed(self):
+        """A tz-naive timestamp cannot be compared to an aware now(); comparing
+        raises TypeError, which must land in the fail-closed branch rather than
+        escape as a 500."""
+        assert self._auth(self._row(expires_at="2099-01-01T00:00:00")) is None
+
+    def test_non_string_expires_at_fails_closed(self):
+        """A Decimal or number in the attribute is a data problem, not a 500."""
+        assert self._auth(self._row(expires_at=12345)) is None
+
+    @patch("mcp_handler.projects_table")
+    def test_expiry_logs_carry_no_token_material(self, mock_table):
+        """The refusal logs name the token_id and never the token or its hash.
+
+        Same mock-logger idiom as test_botocore_logs_carry_no_token_material —
+        caplog is NOT used because Powertools does not reliably propagate to
+        the root logger, which would make a caplog assertion vacuously green.
+        """
+        import mcp_handler
+        from shared.tokens import hash_token
+        sentinel = "voc_SENTINELTOKEN"
+        row = {
+            "sk": "TOKEN#1",
+            "token_id": "tok_1",
+            "token_hash": hash_token(sentinel),
+            "scope": "read",
+            "expires_at": "not-a-date",
+        }
+        mock_table.query.return_value = {"Items": [row]}
+        with patch("mcp_handler.logger") as mock_logger:
+            result = mcp_handler._authenticate(_make_event(token=sentinel))
+            assert result is None
+            calls = mock_logger.warning.call_args_list
+            assert calls, "the malformed expiry must be logged"
+            for call in calls:
+                extra = (call.kwargs or {}).get("extra", {})
+                rendered = " ".join(str(a) for a in call.args) + " " + str(extra)
+                assert "SENTINELTOKEN" not in rendered
+                assert hash_token(sentinel) not in rendered
+                assert extra.get("token_id") == "tok_1", (
+                    "the log must name the row so an operator can fix it"
+                )
+
+    def test_only_the_matching_row_is_expiry_checked(self):
+        """An expired NON-matching row must not block a valid matching row."""
+        from datetime import datetime, timedelta, timezone
+
+        import mcp_handler
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        expired_other = {
+            "sk": "TOKEN#0",
+            "token_id": "tok_0",
+            "token_hash": "hash-of-some-other-token",
+            "scope": "read",
+            "expires_at": past,
+        }
+        with patch("mcp_handler.projects_table") as mock_table:
+            mock_table.query.return_value = {"Items": [expired_other, self._row()]}
+            mock_table.update_item.return_value = {}
+            assert mcp_handler._authenticate(_make_event()) is not None

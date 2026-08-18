@@ -7,7 +7,7 @@ import json
 import math
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from shared.logging import logger, tracer
@@ -2264,6 +2264,11 @@ def api_patch_prioritization_scores():
 
 TOKEN_PREFIX = 'voc_'
 TOKEN_BYTE_LENGTH = 32
+# Ceiling for an OPTIONAL expires_in_days at mint time. A year, matching the
+# repo's outermost `days` bound (validate_days max_val=365). Omitting the field
+# still mints a non-expiring token — expiry is opt-in until the plan's Phase 1
+# credential model revisits the default.
+MAX_TOKEN_LIFETIME_DAYS = 365
 
 
 @app.get("/projects/<project_id>/api-tokens")
@@ -2286,6 +2291,9 @@ def api_list_tokens(project_id: str):
             'scope': item.get('scope', 'read'),
             'created_at': item['created_at'],
             'last_used_at': item.get('last_used_at'),
+            # None for rows minted before expiry existed — displayed as
+            # "never expires", which is also how mcp_handler enforces it.
+            'expires_at': item.get('expires_at'),
             'project_id': project_id,
         })
 
@@ -2305,6 +2313,28 @@ def api_create_token(project_id: str):
     if scope not in ('read', 'read-write'):
         raise ValidationError('Scope must be "read" or "read-write"')
 
+    # Optional expiry. Absent (or JSON null) = a non-expiring token, exactly
+    # what every existing caller gets today. When PRESENT it is validated
+    # strictly rather than clamped: this is a credential lifetime a human
+    # chose, so `validate_int`'s fall-back-to-default contract is wrong here —
+    # an unreadable value would silently mint a credential with a lifetime
+    # nobody picked. Bools are excluded before int() because isinstance(True,
+    # int) is True, and fractional values are refused rather than truncated.
+    expires_in_days = body.get('expires_in_days')
+    expires_at = None
+    if expires_in_days is not None:
+        if (
+            isinstance(expires_in_days, bool)
+            or not isinstance(expires_in_days, int)
+            or not (1 <= expires_in_days <= MAX_TOKEN_LIFETIME_DAYS)
+        ):
+            raise ValidationError(
+                f'expires_in_days must be an integer between 1 and {MAX_TOKEN_LIFETIME_DAYS}'
+            )
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+        ).isoformat()
+
     table = get_projects_table()
     if not table:
         raise ServiceError('Projects table not configured')
@@ -2319,7 +2349,7 @@ def api_create_token(project_id: str):
     token_id = f'tok_{secrets.token_hex(8)}'
     now = datetime.now(timezone.utc).isoformat()
 
-    table.put_item(Item={
+    item = {
         'pk': f'PROJECT#{project_id}',
         'sk': f'TOKEN#{token_id}',
         'token_id': token_id,
@@ -2328,7 +2358,12 @@ def api_create_token(project_id: str):
         'token_hash': hash_token(raw_token),
         'created_at': now,
         'project_id': project_id,
-    })
+    }
+    if expires_at is not None:
+        # The attribute is simply absent on a non-expiring token — the same
+        # shape as every pre-expiry row, so mcp_handler needs no special case.
+        item['expires_at'] = expires_at
+    table.put_item(Item=item)
 
     logger.info(f"Created API token {token_id} for project {project_id}")
 
@@ -2337,6 +2372,7 @@ def api_create_token(project_id: str):
         'token': raw_token,
         'token_id': token_id,
         'name': name,
+        'expires_at': expires_at,
     }
 
 
