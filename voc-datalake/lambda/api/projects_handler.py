@@ -756,7 +756,7 @@ def _validated_ballot_row_id(raw: Any) -> str:
     `validate_bool` in shared/api.py records).
 
     WHAT THIS CHECKS IS THE SHAPE, not the existence. Existence is checked by the
-    ROUTE, against the table, once per save (`_missing_ballot_rows`) — it cannot
+    ROUTE, against the table, once per save (`_fetched_ballot_rows`) — it cannot
     live here because this function sees one key at a time with no table in hand.
     The two checks answer differently on purpose: a malformed key is a 400 about
     the request, a well-formed key naming no row is a 404 about the world.
@@ -1045,15 +1045,18 @@ def _composite(entry: Any) -> float:
     than a fully-scored one carrying the same number.
 
     That floor is why `score_spread` compares only fully-scored ballots rather
-    than every voting one (see `_aggregate_scores`). Renormalising the weights
-    over the present axes would be the other way to make partial ballots
-    comparable, and is deliberately NOT done: renormalised weights no longer sum
-    to 1.0 against the four-axis 0-5 scale, so the composite — and therefore the
-    spread — would silently leave the unit the page's own column sorts by, for
-    some ballots and not others. That scale is what
-    `test_prioritization_weights_lockstep.py` exists to protect. Restricting
-    WHICH ballots are compared keeps every composite on the scale; changing how
-    one is computed would not.
+    than every voting one (see `_aggregate_scores`) — and restricting WHICH
+    ballots are compared is what keeps this function and the page agreeing.
+    Since #343 the page's TEAM composite renormalises its weights over the axes
+    the team expressed (so a one-axis ballot is not ranked on three zeros
+    nobody entered); on a fully-scored input the expressed weights sum to 1.0
+    and renormalisation is the identity, and fully-scored inputs are the only
+    ones this composite is ever compared across. So the spread stays in the
+    unit the page's column sorts by without this function renormalising —
+    which it deliberately does not, because for PARTIAL inputs the two
+    computations answer different questions (completeness versus disagreement)
+    and the spread must never mix them. The shared scale is what
+    `test_prioritization_weights_lockstep.py` exists to protect.
     """
     return sum(_axis_value(entry, axis) * weight for axis, weight in COMPOSITE_WEIGHTS.items())
 
@@ -1434,7 +1437,7 @@ class _LegacyScores:
         """
         return not self._held()
 
-    def drop_for_row(self, row_id: str) -> None:
+    def drop_for_row(self, row: Any) -> None:
         """Retire the pre-ballot value of every document the saved row holds.
 
         The translation the write side owes the read side: the legacy map is keyed
@@ -1442,8 +1445,11 @@ class _LegacyScores:
         that value" means the documents the row holds — the same mapping
         `_legacy_scores_by_row` performs on the read.
 
-        Costs one keyed read of the row, and only when the map is non-empty. That
-        read is the only way to learn what a row holds from a row id alone.
+        Takes the ROW RECORD, not a row id: the save has already read every named
+        row once to check it exists (`_fetched_ballot_rows`), and reading the same
+        key a second time here answered a question the request already answered.
+        The record is trusted defensively (`_row_document_ids` reads a malformed
+        one as holding nothing), the same stance the page read takes.
 
         Attempts a delete only for a document the map was seen to hold, so a row of
         25 freshly-generated documents in a deployment holding one legacy entry
@@ -1460,13 +1466,6 @@ class _LegacyScores:
         next save reads the map again and tries what is still there.
         """
         if self.empty:
-            return
-        try:
-            row = self._table.get_item(
-                Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)}
-            ).get('Item')
-        except Exception as e:  # noqa: BLE001 - a landed ballot must never be failed
-            logger.warning(f"Legacy prioritization score removal could not read its row: {e}")
             return
         held = self._held()
         for document_id in _row_document_ids(row):
@@ -1524,13 +1523,21 @@ def _row_document_ids(row: Any) -> list[str]:
     return [value for value in stored if isinstance(value, str) and value]
 
 
-def _missing_ballot_rows(table, row_ids: list[str]) -> list[str]:
-    """The named rows that have NO row record — the ones a save must refuse.
+def _fetched_ballot_rows(table, row_ids: list[str]) -> dict[str, dict]:
+    """The row records for a save's named rows, keyed by row id — existing ones.
 
-    One keyed read per row, before the first write, so a body naming a vanished
-    row persists nothing (see the call site for why the refusal exists at all).
-    The ids are validated shapes by the time they arrive here, so the key is
-    always legal.
+    One keyed read per row, before the first write; a named row absent from the
+    result is one the save must refuse. The ids are validated shapes by the
+    time they arrive here, so the key is always legal. The FETCHED items are
+    returned rather than a mere existence verdict, because the legacy migration
+    needs each scored row's `document_ids` and reading the same key twice in
+    one save is a round trip that answers a question already answered.
+
+    Sequential keyed reads rather than `batch_get_item`, deliberately: the page
+    sends the rows a reader touched (single digits), the batch API lives on the
+    client with unmarshalled-attribute plumbing this module otherwise never
+    needs, and the loop stays inspectable by the same fakes the rest of the
+    suite uses. The bound is MAX_BALLOTS_PER_SAVE either way.
 
     A FAILED read raises rather than answering "present" or "missing": either
     invented answer is worse than the truth. Calling it missing refuses a save
@@ -1540,18 +1547,24 @@ def _missing_ballot_rows(table, row_ids: list[str]) -> list[str]:
     "the read failed" and "nobody has scored anything" must stay
     distinguishable — applied to the write side.
     """
-    missing = []
+    fetched: dict[str, dict] = {}
     for row_id in row_ids:
         try:
+            # Strongly consistent, because this read GATES a write and the case
+            # it exists to distinguish is "created moments ago": the row create
+            # answers the page, the page saves, and an eventually-consistent
+            # read can miss the row it just handed out — refusing a legitimate
+            # save with 404. Negligible cost for a keyed read on a save path.
             item = table.get_item(
-                Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)}
+                Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)},
+                ConsistentRead=True,
             ).get('Item')
         except Exception as e:
             logger.exception(f'Failed to read a prioritization row before a save: {e}')
             raise ServiceError('Failed to save prioritization scores') from e
-        if not isinstance(item, dict):
-            missing.append(row_id)
-    return missing
+        if isinstance(item, dict):
+            fetched[row_id] = item
+    return fetched
 
 
 def _is_default_row(row: Any) -> bool:
@@ -2262,14 +2275,17 @@ def api_patch_prioritization_scores():
     # the discard protects the READER, but the WRITER was answered 200
     # `updated_count: 1` for a vote that then appeared nowhere — silent loss
     # reported as success. A keyed read per row is the price, and it is paid
-    # only by a save (the page issues one per click, not per render).
+    # only by a save (the page issues one per click, not per render); the
+    # fetched records are then what the legacy migration reads, so the same key
+    # is never read twice in one save.
     #
     # A read-then-write, not a condition on the write itself — honest about the
     # race: a row deleted between this check and the write below would still
     # orphan its ballot. Nothing can delete a row today, so the gap is
     # unreachable; phase 2 of #339, which introduces deletion, owes the
     # DB-enforced condition (a transaction), and this check is where it goes.
-    if _missing_ballot_rows(table, [row_id for row_id, _ in validated]):
+    rows_by_id = _fetched_ballot_rows(table, [row_id for row_id, _ in validated])
+    if any(row_id not in rows_by_id for row_id, _ in validated):
         raise NotFoundError(
             'scores name a row that does not exist; reload the page to get '
             'the current rows'
@@ -2301,8 +2317,9 @@ def api_patch_prioritization_scores():
             # away — but ONLY when this ballot actually scored something, because
             # that value is a score and nothing else supersedes it. An entry that
             # expressed no axis would otherwise delete a value it did not replace.
+            # The row record was already fetched by the existence pass above.
             if _is_a_vote(entry):
-                legacy.drop_for_row(row_id)
+                legacy.drop_for_row(rows_by_id[row_id])
         return {'success': True, 'updated_count': ballots}
     except ApiError:
         raise

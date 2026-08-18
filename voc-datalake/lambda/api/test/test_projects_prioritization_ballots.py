@@ -3667,12 +3667,17 @@ class TestTheOneLegacyScoreLandsOnItsProjectsDefaultRow:
         scored — and a save expressing nothing must not delete a value it did not
         replace. The one read that remains is the EXISTENCE check (#342), which
         every save pays even for a stamps-only entry: an entry that scores nothing
-        still writes a ballot record, and a phantom row must not collect one."""
+        still writes a ballot record, and a phantom row must not collect one.
+
+        The status is asserted so this cannot go vacuous: `self._table()` seeds
+        the row, but if that fixture ever stopped, the request would 404 and
+        'one read, map untouched' would hold for the wrong reason."""
         table = self._table()
 
-        _patch_scores(table, api_gateway_event, lambda_context,
-                      {'row-p1': {}}, subject='alice', seed_rows=False)
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'row-p1': {}}, subject='alice', seed_rows=False)
 
+        assert status == 200
         assert len(table.get_item_calls) == 1, (
             'exactly the existence read: a second get_item would be the '
             'migration reading a row for a save that scored nothing'

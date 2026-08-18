@@ -432,16 +432,20 @@ def _row_exists(row_id: str) -> bool:
     that collects unrepeatable votes the page will discard (#342). The same
     direction the signed-in save path fails in, for the same reason.
     """
+    table = _table()  # its ConfigurationError is not this read's failure
     try:
-        item = _table().get_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': f'{ROW_SK_PREFIX}{row_id}'}
-        ).get('Item')
-    except ApiError:
-        raise
+        # Strongly consistent, because this read GATES the write that opens a
+        # public window: the facilitator's flow is create-row-then-open-vote,
+        # and an eventually-consistent read can miss a row created moments ago
+        # — refusing a legitimate session with 404 in front of a room.
+        response = table.get_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': f'{ROW_SK_PREFIX}{row_id}'},
+            ConsistentRead=True,
+        )
     except Exception as e:
         logger.exception(f'Failed to read a prioritization row before opening a session: {e}')
         raise ServiceError('Failed to open the voting session') from e
-    return isinstance(item, dict)
+    return isinstance(response.get('Item'), dict)
 
 
 def _sanitized_text(raw: Any, max_length: int) -> str:

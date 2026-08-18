@@ -590,6 +590,28 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
     }
   })
 
+  it('groups a row with no number in the sorted column with the number-less, in both directions', () => {
+    // Sorting by time to market: `a` never scored that axis (a partial ballot —
+    // its TTM prints a dash), `b` scored it. A dash cannot be ordered against a
+    // number, and letting the comparator tie it against every ranked row makes
+    // the final order depend on the engine's sort rather than on the data —
+    // null would tie both a 5 and a 1 that do not tie each other. So the dash
+    // row is GROUPED below the ranked rows, deterministically, where the
+    // number-less already live; its own label still says which state it is.
+    const rowC = rowView('c', 'Gamma', '2025-01-03')
+    const aggregates: Record<string, PrioritizationAggregate> = {
+      a: aggregate({ impact: 5, reviewer_count: 2 }), // TTM unexpressed: dash
+      b: aggregate({ impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, reviewer_count: 2 }),
+      // c absent entirely: nobody voted.
+    }
+
+    for (const direction of ['asc', 'desc'] as const) {
+      const order = idsOf(sortRows([rowA, rowB, rowC], aggregates, 'time_to_market', direction))
+      expect(order.indexOf('b'), direction).toBe(0)
+      expect(order.indexOf('a'), direction).toBeGreaterThan(order.indexOf('b'))
+    }
+  })
+
   it('groups unscored documents rather than ordering them against each other', () => {
     // Two rows nobody has scored tie, in both directions, so they stay in the order
     // they arrived rather than being ranked by a number neither has.

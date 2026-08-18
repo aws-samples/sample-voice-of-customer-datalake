@@ -4,6 +4,7 @@
  */
 
 import clsx from 'clsx'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getScoreColor } from './prioritizationUtils'
 
@@ -44,6 +45,11 @@ export default function ScoreSlider({
   const { t } = useTranslation('prioritization')
   const unscored = value === 0
   const position = unscored ? UNSCORED_HANDLE_POSITION : value
+  // Was the press that is now ending a press ON THIS CONTROL? `pointerup` also
+  // fires when a pointer that went down elsewhere is released over the input,
+  // and that stray release must not cast a vote. A ref, not state: it changes
+  // nothing on screen.
+  const pressedHere = useRef(false)
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center">
@@ -67,15 +73,23 @@ export default function ScoreSlider({
           value={position}
           aria-valuetext={unscored ? t('scores.notScored') : undefined}
           onChange={(e) => onChange(Number(e.target.value))}
+          onPointerDown={() => { pressedHere.current = true }}
           /* A reader who wants EXACTLY the resting position: clicking the track
              at 3 leaves the value unchanged, so `onChange` never fires and the
              axis would stay unscored with no way to say "3" short of wiggling.
-             Releasing the pointer on an unscored slider commits wherever it
-             rests — a deliberate press on the control, not a hover or a tab
-             past it, so it cannot cast a vote by accident. (Keyboard readers
-             are covered by onChange itself: the first arrow key changes the
-             value and scores the axis.) */
-          onPointerUp={unscored ? () => onChange(position) : undefined}
+             Releasing a press that STARTED on an unscored slider commits the
+             value the control holds at release — read off the DOM, not off this
+             render's props, because on a click-at-5 the `change` event fires
+             first and a stale closure would rewrite that deliberate 5 back to
+             the resting 3 if the re-render has not flushed. `pressedHere` keeps
+             a pointer that went down elsewhere and was released over the input
+             from casting a vote nobody aimed at it. (Keyboard readers are
+             covered by onChange itself: the first arrow key scores the axis.) */
+          onPointerUp={(e) => {
+            const pressed = pressedHere.current
+            pressedHere.current = false
+            if (unscored && pressed) onChange(Number(e.currentTarget.value))
+          }}
           className={clsx(
             'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer',
             unscored ? 'accent-gray-400' : 'accent-blue-600',

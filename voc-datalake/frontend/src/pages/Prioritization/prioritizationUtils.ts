@@ -857,17 +857,25 @@ const roundToDisplay = (composite: number): number => Math.round(composite * 10)
  * document.
  */
 /**
- * The weight one axis carries in the composite, read OFF the pinned formula.
+ * The weight each axis carries in the composite, read OFF the pinned formula.
  *
- * Derived by evaluating `calculatePriorityScore` on an indicator (this axis 1,
- * the rest 0) rather than declared as a second table of literals, so the
- * renormalisation below cannot drift from the formula the backend lockstep
- * test pins (`test_prioritization_weights_lockstep.py` parses that function's
- * source) — one set of weights, two readers, zero copies.
+ * Derived once, at module load, by evaluating `calculatePriorityScore` on an
+ * indicator per axis (this axis 1, the rest 0) rather than declared as a
+ * second table of literals — so the renormalisation below cannot drift from
+ * the formula the backend lockstep test pins
+ * (`test_prioritization_weights_lockstep.py` parses that function's source).
+ * One set of weights, two readers, zero copies.
  */
-const compositeWeightOf = (axis: keyof CompositeAxes): number => calculatePriorityScore({
+const COMPOSITE_AXES: readonly (keyof CompositeAxes)[] = ['impact', 'time_to_market', 'strategic_fit', 'confidence']
+const weightOf = (axis: keyof CompositeAxes): number => calculatePriorityScore({
   impact: 0, time_to_market: 0, strategic_fit: 0, confidence: 0, [axis]: 1,
 })
+const COMPOSITE_WEIGHT: Readonly<Record<keyof CompositeAxes, number>> = {
+  impact: weightOf('impact'),
+  time_to_market: weightOf('time_to_market'),
+  strategic_fit: weightOf('strategic_fit'),
+  confidence: weightOf('confidence'),
+}
 
 /**
  * A team mean as the row may print it: the number, or `null` for an axis the
@@ -885,11 +893,15 @@ const expressedMean = (mean: number): number | null => (mean === 0 ? null : mean
  * a reviewer count that keeps "one person said one thing" visible. `null` when
  * nothing was expressed at all (a notes-only ballot), because there is no
  * number to print and inventing one is the defect this replaces.
+ *
+ * The backend's spread stays comparable without renormalising: it composites
+ * only FULLY-scored ballots, where the expressed weights sum to 1 and this
+ * computation is the identity (`_composite` in projects_handler.py records
+ * the same argument from its side).
  */
 const expressedComposite = (aggregate: CompositeAxes): number | null => {
-  const axes: readonly (keyof CompositeAxes)[] = ['impact', 'time_to_market', 'strategic_fit', 'confidence']
-  const expressedWeight = axes.reduce(
-    (sum, axis) => sum + (expressedMean(aggregate[axis]) === null ? 0 : compositeWeightOf(axis)),
+  const expressedWeight = COMPOSITE_AXES.reduce(
+    (sum, axis) => sum + (expressedMean(aggregate[axis]) === null ? 0 : COMPOSITE_WEIGHT[axis]),
     0,
   )
   if (expressedWeight === 0) return null
@@ -1464,9 +1476,12 @@ function compareByTeamScore(
   const a = value(teamA)
   const b = value(teamB)
   // An axis nobody scored prints as a dash, and a dash cannot be ordered
-  // against a number — the same rule the signature already states for a whole
-  // missing TeamScore, one level further in. Treating null as 0 would rank
-  // "nobody mentioned time to market" below "the team rated it worst".
+  // against a number — treating null as 0 would rank "nobody mentioned time to
+  // market" below "the team rated it worst". Within `sortRows` this branch is
+  // unreachable: `blockOf` groups a dash-in-this-column row with the
+  // number-less block before any comparison, precisely because a null that
+  // ties both a 5 and a 1 makes the order engine-dependent. Kept for the
+  // direct caller, where a tie is the honest answer for one comparison.
   if (a === null || b === null) return 0
   return a - b
 }
@@ -1562,7 +1577,22 @@ export function sortRows(
   const blockOf = (row: PrioritizationRowView): number => {
     if (!ordersByTeamScore) return 0
     const view = views.get(row.row_id)
-    return view === undefined ? 0 : SORT_BLOCK[view.kind]
+    if (view === undefined) return 0
+    // A scored row with NO NUMBER IN THIS COLUMN — an axis nobody scored, or a
+    // notes-only composite — prints a dash there, and a dash sorts with the
+    // number-less rows rather than tying arbitrarily among the ranked ones: a
+    // null that ties both a 5 and a 1 (which do not tie each other) makes the
+    // final order depend on the engine's sort, not on the data. Grouped with
+    // the unscored block because that is what the reader sees — no value in
+    // the sorted column — while the row's own label still says which state it
+    // is. Deciding this here, per row, is also what keeps the comparator's
+    // null branch unreachable within the ranked block.
+    if (view.kind === 'scored'
+      && (sortField === 'priority_score' || sortField === 'impact' || sortField === 'time_to_market')
+      && TEAM_SORT_VALUE[sortField](view.team) === null) {
+      return SORT_BLOCK.unscored
+    }
+    return SORT_BLOCK[view.kind]
   }
   return [...rows].sort((a, b) => {
     const blockA = blockOf(a)

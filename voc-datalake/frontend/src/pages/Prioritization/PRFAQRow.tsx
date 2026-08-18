@@ -55,6 +55,30 @@ function unscoredLabel(kind: TeamView['kind'], t: TFunction): string {
 }
 
 /**
+ * One team number as the row prints it: the value to one decimal, or the dash
+ * for an axis nobody scored (`null`). One renderer, because the three chips
+ * printing independently is how a dash and a `0.0` could otherwise coexist for
+ * the same absence. The dash itself is decorative (the treatment every dash on
+ * this page gets); the state is carried by visually-hidden text using the same
+ * catalogue key the slider's `aria-valuetext` uses, so a screen reader hears
+ * "not scored" where a sighted reader sees the dash — not silence.
+ */
+function TeamNumber({ value, notScoredLabel }: {
+  readonly value: number | null
+  readonly notScoredLabel: string
+}): ReactElement {
+  if (value === null) {
+    return (
+      <>
+        <span aria-hidden="true" className="text-gray-300">—</span>
+        <span className="sr-only">{notScoredLabel}</span>
+      </>
+    )
+  }
+  return <>{value.toFixed(1)}</>
+}
+
+/**
  * The resting row's numbers: what the TEAM said about this document.
  *
  * Not the caller's own ballot, which used to be here and now lives behind the
@@ -83,19 +107,6 @@ function unscoredLabel(kind: TeamView['kind'], t: TFunction): string {
  * ballot produces a mean equal to that ballot and a spread of zero: without the
  * count, "one person looked" is indistinguishable from "we agree".
  */
-/**
- * One team number as the row prints it: the value to one decimal, or the
- * decorative dash for an axis nobody scored (`null`). One renderer, because the
- * three chips printing independently is how a dash and a `0.0` could otherwise
- * coexist for the same absence.
- */
-function TeamNumber({ value }: { readonly value: number | null }): ReactElement {
-  if (value === null) {
-    return <span aria-hidden="true" className="text-gray-300">—</span>
-  }
-  return <>{value.toFixed(1)}</>
-}
-
 function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
   const { t } = useTranslation('prioritization')
   if (team.kind !== 'scored') {
@@ -129,11 +140,11 @@ function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
           0.0 for it, and printing that ranked "nobody mentioned time to market"
           as "the team rated it worst" (#343). */}
       <div className="text-center">
-        <div className="text-base sm:text-lg font-bold text-blue-600"><TeamNumber value={scored.displayImpact} /></div>
+        <div className="text-base sm:text-lg font-bold text-blue-600"><TeamNumber value={scored.displayImpact} notScoredLabel={t('scores.notScored')} /></div>
         <div className="text-xs text-gray-500">{t('scores.impact')}</div>
       </div>
       <div className="text-center">
-        <div className="text-base sm:text-lg font-bold text-purple-600"><TeamNumber value={scored.displayTimeToMarket} /></div>
+        <div className="text-base sm:text-lg font-bold text-purple-600"><TeamNumber value={scored.displayTimeToMarket} notScoredLabel={t('scores.notScored')} /></div>
         <div className="text-xs text-gray-500">{t('sort.ttm')}</div>
       </div>
       <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
@@ -142,7 +153,7 @@ function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
             two roundings of it. Null — a ballot that expressed no axis at all,
             only a note — prints the dash, and the band beside the title reads
             "Not Scored" off the same null. */}
-        <div className="text-lg sm:text-xl font-bold text-green-600"><TeamNumber value={scored.displayComposite} /></div>
+        <div className="text-lg sm:text-xl font-bold text-green-600"><TeamNumber value={scored.displayComposite} notScoredLabel={t('scores.notScored')} /></div>
         {/* Labelled as the TEAM's score, not "Score": this number changed meaning
             from "my composite" to "the team's mean composite", and a row a reader
             cannot attribute is worse than either alone. */}

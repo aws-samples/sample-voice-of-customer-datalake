@@ -573,6 +573,60 @@ describe('Prioritization', () => {
       }
     })
 
+    it('releasing a press on an unscored slider commits the resting value, so exactly-3 is reachable by click', async () => {
+      // Clicking the track AT the resting position fires no `change` (the value
+      // did not move), so without this path a reviewer who wants exactly 3 has
+      // no way to say so short of wiggling the handle. The commit reads the
+      // value off the CONTROL at release — not this render's props — so a
+      // click-at-5 (whose `change` fires first) cannot be rewritten back to 3
+      // by a stale closure. Reverting the onPointerUp path fails this test:
+      // no change event fires, no edit is recorded, Save stays disabled.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      expect(sliders[1]).toHaveAttribute('aria-valuetext', 'Not scored')
+
+      // A press that starts AND ends on the control, without moving: the
+      // click-at-the-resting-position case.
+      fireEvent.pointerDown(sliders[1])
+      fireEvent.pointerUp(sliders[1])
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      await user.click(screen.getByRole('button', { name: /save/i }))
+      expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
+        [R.d1]: { row_id: R.d1, time_to_market: 3 },
+      })
+    })
+
+    it('a pointer released over an unscored slider after going down elsewhere casts nothing', async () => {
+      // `pointerup` fires on whatever the pointer is over when it is released,
+      // including a press that started on the row header and drifted. A stray
+      // release must not cast a vote nobody aimed at the control.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+
+      // Release over the control with NO pointerdown on it first.
+      fireEvent.pointerUp(sliders[1])
+
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
+    })
+
     it('says nobody has scored a document absent from the aggregate', async () => {
       // The defect this closes: DEFAULT_SCORE has time_to_market 3 and the old
       // summary substituted 3 for an unset axis, so an untouched proposal
