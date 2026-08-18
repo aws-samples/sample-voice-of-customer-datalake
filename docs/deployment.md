@@ -468,6 +468,25 @@ Always run `npm run deploy:frontend` (which builds, syncs, and invalidates) or
 rebuild `dist` before `cdk deploy`. The guard is a safety net, not a substitute
 for building.
 
+> ### 🔴 Never `aws s3 sync --delete` the website bucket
+>
+> **`config.json` is NOT in `frontend/dist`.** It is generated at deploy time
+> (`s3deploy.Source.data('config.json', …)` in `api-stack.ts`, and by
+> `scripts/deploy.sh`), so a hand-rolled
+> `aws s3 sync frontend/dist s3://<bucket> --delete` **deletes it** and the app
+> loses every Cognito value — the login screen reads "Cognito not configured".
+>
+> 🪤 **A `curl` of the deleted path returns 200, not 404**: CloudFront serves the
+> SPA's `index.html` fallback, so the site looks healthy from the shell while
+> being broken in the browser. Check the app, or assert the body parses as JSON.
+>
+> Deploy the frontend with `npm run deploy:frontend` or `cdk deploy VocApiStack`.
+> If you must sync by hand, omit `--delete`. Recovery is a normal
+> `cdk deploy VocApiStack --exclusively`, which regenerates the file from the
+> stack — do not hand-write it: a wrong `identityPoolId` makes
+> `RuntimeConfigSchema` blank all four Cognito values and reproduces the same
+> symptom (see "Environment Variables" below).
+
 **Bypass** (rare, intentional cases only):
 
 ```bash

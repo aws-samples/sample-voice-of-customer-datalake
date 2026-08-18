@@ -45,6 +45,7 @@ import {
   McpConfigSnippetContent,
   TokenListContent,
 } from './McpAccessComponents'
+import type { TokenExpiryChoice } from './tokenExpiry'
 import {
   PickerSection, CheckboxItem,
 } from './PickerComponents'
@@ -122,9 +123,13 @@ function groupDocumentsByType(documents: ProjectDocument[]): Record<KiroExportab
 // Hooks
 // ---------------------------------------------------------------------------
 
-function useTokenMutations(projectId: string, tokenName: string, tokenScope: 'read' | 'read-write', onCreateSuccess: () => void) {
+function useTokenMutations(projectId: string, tokenName: string, tokenScope: 'read' | 'read-write', tokenExpiry: TokenExpiryChoice, onCreateSuccess: () => void) {
   const queryClient = useQueryClient()
   const [newlyCreatedToken, setNewlyCreatedToken] = useState<string | null>(null)
+  // Deadline echoed by the create response, shown on the one-time banner.
+  // Kept beside the token rather than derived from the list: the banner must
+  // describe THE credential just minted, not whatever a refetch returns.
+  const [newTokenExpiresAt, setNewTokenExpiresAt] = useState<string | null>(null)
   const [showToken, setShowToken] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
 
@@ -132,9 +137,13 @@ function useTokenMutations(projectId: string, tokenName: string, tokenScope: 're
     mutationFn: () => api.createApiToken(projectId, {
       name: tokenName,
       scope: tokenScope,
+      // 'never' omits the field entirely — the backend reads absence as a
+      // non-expiring token, and sending null would be refused (strict 400).
+      ...(tokenExpiry === 'never' ? {} : { expires_in_days: Number(tokenExpiry) }),
     }),
     onSuccess: (result) => {
       setNewlyCreatedToken(result.token)
+      setNewTokenExpiresAt(result.expires_at ?? null)
       setShowCreateForm(false)
       setShowToken(false)
       onCreateSuccess()
@@ -154,6 +163,8 @@ function useTokenMutations(projectId: string, tokenName: string, tokenScope: 're
     deleteMut,
     newlyCreatedToken,
     setNewlyCreatedToken,
+    newTokenExpiresAt,
+    setNewTokenExpiresAt,
     showToken,
     setShowToken,
     showCreateForm,
@@ -527,6 +538,7 @@ export default function McpAccessTab({
   // ── MCP token state ───────────────────────────────────────────────────────
   const [tokenName, setTokenName] = useState('')
   const [tokenScope, setTokenScope] = useState<'read' | 'read-write'>('read')
+  const [tokenExpiry, setTokenExpiry] = useState<TokenExpiryChoice>('never')
   const {
     copy, copiedKey: copiedId,
   } = useCopyToClipboard()
@@ -538,10 +550,12 @@ export default function McpAccessTab({
 
   const {
     createMut, deleteMut, newlyCreatedToken, setNewlyCreatedToken,
+    newTokenExpiresAt, setNewTokenExpiresAt,
     showToken, setShowToken, showCreateForm, setShowCreateForm,
-  } = useTokenMutations(projectId, tokenName, tokenScope, () => {
+  } = useTokenMutations(projectId, tokenName, tokenScope, tokenExpiry, () => {
     setTokenName('')
     setTokenScope('read')
+    setTokenExpiry('never')
   })
 
   const {
@@ -645,6 +659,7 @@ export default function McpAccessTab({
 
         {newlyCreatedToken != null && newlyCreatedToken !== '' ? <NewTokenBanner
           token={newlyCreatedToken}
+          expiresAt={newTokenExpiresAt}
           showToken={showToken}
           copiedId={copiedId}
           onToggleShow={() => setShowToken((prev) => !prev)}
@@ -652,20 +667,22 @@ export default function McpAccessTab({
             copyToClipboard(newlyCreatedToken, 'new-token')
           }}
           onDismiss={() => {
-            setNewlyCreatedToken(null); setShowToken(false)
+            setNewlyCreatedToken(null); setNewTokenExpiresAt(null); setShowToken(false)
           }}
         /> : null}
 
         {showCreateForm ? <CreateTokenForm
           tokenName={tokenName}
           tokenScope={tokenScope}
+          tokenExpiry={tokenExpiry}
           isCreating={createMut.isPending}
           error={createMut.error?.message}
           onNameChange={setTokenName}
           onScopeChange={setTokenScope}
+          onExpiryChange={setTokenExpiry}
           onSubmit={() => createMut.mutate()}
           onCancel={() => {
-            setShowCreateForm(false); setTokenName(''); createMut.reset()
+            setShowCreateForm(false); setTokenName(''); setTokenExpiry('never'); createMut.reset()
           }}
         /> : null}
 

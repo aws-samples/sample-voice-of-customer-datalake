@@ -685,3 +685,152 @@ describe('the public ballot routes', () => {
       .toBe('https://app.example.invalid');
   });
 });
+
+
+describe('mcp Lambda IAM grants', () => {
+  // The MCP function is the ONE function in this stack reachable with a bearer
+  // token instead of a Cognito session, and its role once held
+  // grantReadWriteData over the projects table — read-write on every persona,
+  // PRD, PR/FAQ and prototype — for the sole purpose of reading token rows and
+  // stamping last_used_at. The narrow grant is the enforcement; this test is
+  // what makes widening it a deliberate act. Same shape as the ballots grants
+  // test above.
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  function mcpStatements(): { actions: string[]; resource: string }[] {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const policy = Object.entries(policies).find(([id]) => id.includes('McpLambdaRole'));
+    expect(policy, 'no IAM policy found for McpLambdaRole').toBeDefined();
+    return z
+      .object({ Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(StatementSchema) }) }) })
+      .parse(policy?.[1]).Properties.PolicyDocument.Statement
+      .map((s) => ({
+        actions: Array.isArray(s.Action) ? s.Action : [s.Action],
+        resource: JSON.stringify(s.Resource),
+      }));
+  }
+  it('holds exactly Query and UpdateItem on the projects table', () => {
+    // Asserted as an exact SET rather than an absence list, so an action nobody
+    // considered cannot arrive unremarked. Query is the token lookup plus the
+    // get_project/list_personas tools; UpdateItem is last_used_at and nothing
+    // else. PutItem, DeleteItem, Scan and the batch APIs are the point of this
+    // test: their absence is what makes the bearer-token surface read-only
+    // against project artifacts.
+    const projectsStatements = mcpStatements().filter((s) => s.resource.includes('Projects'));
+    // Guard the filter itself: it string-matches the table's logical id, so a
+    // construct rename would make it match NOTHING and turn the exact-set
+    // assertion below vacuously green.
+    expect(projectsStatements.length, 'no statement names the Projects table').toBeGreaterThan(0);
+    const granted = new Set(
+      projectsStatements
+        .flatMap((s) => s.actions)
+        .filter((action) => action.startsWith('dynamodb:')),
+    );
+    expect([...granted].sort()).toEqual(['dynamodb:Query', 'dynamodb:UpdateItem']);
+  });
+  it('can still encrypt against the KMS key, which the UpdateItem write needs', () => {
+    // The former grantReadWriteData brought KMS Encrypt along implicitly; the
+    // narrow table grant does not, so the role needs it explicitly or the
+    // last_used_at write starts failing at runtime — a fault no synth catches.
+    const kmsActions = mcpStatements()
+      .flatMap((s) => s.actions)
+      .filter((a) => a.startsWith('kms:'));
+    expect(kmsActions).toContain('kms:Encrypt');
+    expect(kmsActions).toContain('kms:Decrypt');
+  });
+});
+
+describe('mcp endpoint throttling', () => {
+  // The former McpUsagePlan never bound: a usage plan's throttle applies per
+  // API KEY and no MCP client sends one (SEC-10's fourth sub-claim, open since
+  // #260). The working mechanism is stage method settings, keyed by path —
+  // and a mistyped key throttles nothing silently, hence the lockstep test.
+  const MCP_METHOD_KEYS = [
+    '/mcp/POST',
+    // Concrete verbs, not a wildcard: a live deploy established that API
+    // Gateway rejects both '/{path}/*' and 'ANY' as method-setting keys
+    // (per-path wildcards do not exist; '*/*' is stage-wide only). POST is
+    // JSON-RPC on subpaths, GET is the autoseed side-door — the two verbs
+    // the proxy serves that reach DynamoDB.
+    '/mcp/{proxy+}/POST',
+    '/mcp/{proxy+}/GET',
+  ];
+  const StageSchema = z.object({
+    Properties: z.object({
+      MethodSettings: z.array(z.object({
+        ResourcePath: z.string(),
+        HttpMethod: z.string(),
+        ThrottlingRateLimit: z.number().optional(),
+        ThrottlingBurstLimit: z.number().optional(),
+      })).optional(),
+    }),
+  });
+  const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
+  function methodSettings(): { key: string; rate?: number; burst?: number }[] {
+    const stages = Object.values(apiTemplate().findResources('AWS::ApiGateway::Stage'));
+    expect(stages.length, 'expected exactly one API stage').toBe(1);
+    return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
+      key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
+      rate: s.ThrottlingRateLimit,
+      burst: s.ThrottlingBurstLimit,
+    }));
+  }
+  it('throttles the MCP methods below the stage default', () => {
+    const settings = new Map(methodSettings().map((s) => [s.key, s]));
+    for (const key of MCP_METHOD_KEYS) {
+      const setting = settings.get(key);
+      expect(setting, `${key} has no method-level throttle`).toBeDefined();
+      expect(setting?.rate).toBe(20);
+      expect(setting?.burst).toBe(40);
+    }
+  });
+  it('spells those keys the way the wired routes are spelled', () => {
+    // Every key must name a wired resource path, and its concrete verb must
+    // be servable there: `/mcp/POST` is an exact method, and the proxy keys'
+    // verbs are covered by the proxy's ANY method. A mistyped key is escaped
+    // happily and throttles nothing, silently — this is the guard.
+    const wired = apiMethods(apiTemplate());
+    const wiredKeys = new Set(wired.map((m) => `${m.path}/${m.httpMethod}`));
+    for (const key of MCP_METHOD_KEYS) {
+      const path = key.slice(0, key.lastIndexOf('/'));
+      const verb = key.slice(key.lastIndexOf('/') + 1);
+      const servable = wiredKeys.has(`${path}/${verb}`) || wiredKeys.has(`${path}/ANY`);
+      expect(servable, `${key} names no wired method (nor an ANY on its path)`).toBe(true);
+    }
+  });
+  it('has no usage plan anywhere in the stack', () => {
+    // A usage plan that "throttles" a keyless endpoint is worse than absent:
+    // it reads as protection and provides none. If one ever returns, it has to
+    // be argued past this test.
+    expect(Object.keys(apiTemplate().findResources('AWS::ApiGateway::UsagePlan'))).toEqual([]);
+  });
+});
+
+
+describe('unauthorized gateway response', () => {
+  // The ONLY place a REST API can emit a true WWW-Authenticate on a 401:
+  // Lambda-proxy responses have the header unconditionally remapped to
+  // x-amzn-remapped-www-authenticate (verified live). Removing this response
+  // or either header would be silent — the handler-side header keeps flowing,
+  // remapped — so the delivery path for the RFC 6750 challenge is pinned here.
+  it('carries the Bearer challenge and exposes it to browsers', () => {
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const unauthorized = responses
+      .map((r) => ResponseSchema.parse(r).Properties)
+      .find((p) => p.ResponseType === 'UNAUTHORIZED');
+    expect(unauthorized, 'no UNAUTHORIZED gateway response in the template').toBeDefined();
+    const params = unauthorized?.ResponseParameters ?? {};
+    expect(params['gatewayresponse.header.WWW-Authenticate']).toBe('\'Bearer error="invalid_token"\'');
+    expect(params['gatewayresponse.header.Access-Control-Expose-Headers']).toBe("'WWW-Authenticate'");
+  });
+});

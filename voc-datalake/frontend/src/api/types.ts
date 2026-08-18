@@ -694,6 +694,9 @@ export interface ApiToken {
   scope: 'read' | 'read-write'
   created_at: string
   last_used_at?: string
+  /** ISO-8601 deadline after which the token stops authenticating; null for
+   *  non-expiring tokens (every token minted before expiry existed). */
+  expires_at?: string | null
   project_id: string
 }
 
@@ -703,6 +706,8 @@ export interface CreateApiTokenResponse {
   token: string
   token_id: string
   name: string
+  /** Echo of the minted deadline; null when the token does not expire. */
+  expires_at?: string | null
   message?: string
 }
 

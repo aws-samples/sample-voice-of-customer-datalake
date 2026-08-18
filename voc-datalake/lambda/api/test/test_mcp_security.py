@@ -1465,3 +1465,573 @@ class TestUnconfiguredTableIsAServerFault:
 
         assert response["statusCode"] == 500
         assert response["headers"]["Access-Control-Allow-Origin"] == "*"
+
+
+# ===========================================================================
+# Origin validation (MCP transport DNS-rebinding guard)
+# ===========================================================================
+
+class TestOriginValidation:
+    """A present, foreign Origin is refused 403 before anything else runs.
+
+    The MCP Streamable HTTP transport REQUIRES this: without it a malicious
+    page can use DNS rebinding to drive a victim's browser against this
+    endpoint.  Real MCP clients are not browsers and send no Origin header,
+    so the guard must be a no-op for them.
+
+    Revert stories:
+      - deleting the lambda_handler guard fails every 403 assertion here;
+      - moving the guard AFTER authentication fails
+        test_foreign_origin_never_reaches_the_token_store, which is the
+        difference between "refused" and "refused after a free probe".
+    """
+
+    def _initialize_event(self, origin: str | None) -> dict:
+        headers = {}
+        if origin is not None:
+            headers["Origin"] = origin
+        return {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": headers,
+            "body": json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        }
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_absent_origin_passes(self, lambda_context):
+        """No Origin header — every real MCP client — is untouched by the guard."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(self._initialize_event(None), lambda_context)
+        assert response["statusCode"] == 200
+        assert "result" in json.loads(response["body"])
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_matching_origin_passes(self, lambda_context):
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            self._initialize_event("https://voc.example.com"), lambda_context
+        )
+        assert response["statusCode"] == 200
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_foreign_origin_refused_403(self, lambda_context):
+        """Present-and-wrong Origin → 403, with a JSON-RPC envelope and CORS headers."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            self._initialize_event("https://evil.example.net"), lambda_context
+        )
+        assert response["statusCode"] == 403
+        body = json.loads(response["body"])
+        assert body["error"]["code"] == -32600
+        assert response["headers"]["Access-Control-Allow-Origin"] == "*"
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_lowercase_origin_header_is_also_checked(self, lambda_context):
+        """API Gateway lowercases header names in proxy mode; the guard must too."""
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"]["origin"] = "https://evil.example.net"
+        response = mcp_handler.lambda_handler(event, lambda_context)
+        assert response["statusCode"] == 403
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "*")
+    def test_wildcard_config_disables_the_guard(self, lambda_context):
+        """Dev deployments set ALLOWED_ORIGIN='*'; any Origin then passes."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            self._initialize_event("http://localhost:5173"), lambda_context
+        )
+        assert response["statusCode"] == 200
+
+    @patch("mcp_handler.projects_table")
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_foreign_origin_never_reaches_the_token_store(self, mock_table, lambda_context):
+        """The guard runs BEFORE _authenticate: a rebound page gets no free probe.
+
+        Asserted on the table mock, not on the status code — a 403 issued after
+        the token query would pass a status-only assertion while still letting
+        the attacker measure the auth path.
+        """
+        import mcp_handler
+        event = _rpc_event()
+        event["headers"]["Origin"] = "https://evil.example.net"
+        response = mcp_handler.lambda_handler(event, lambda_context)
+        assert response["statusCode"] == 403
+        mock_table.query.assert_not_called()
+
+
+# ===========================================================================
+# WWW-Authenticate challenge on 401 (RFC 6750 §3)
+# ===========================================================================
+
+class TestWwwAuthenticateChallenge:
+    """Every 401 carries a Bearer challenge; successful responses carry none.
+
+    The challenge is attached inside _cors_response — the one choke point all
+    responses pass through — so a future 401 path cannot forget it.  Reverting
+    that placement (re-attaching it per call site) is caught by the autoseed
+    test below the moment any site is missed.
+    """
+
+    @patch("mcp_handler.projects_table")
+    def test_invalid_token_401_carries_bearer_challenge(self, mock_table, lambda_context):
+        import mcp_handler
+        mock_table.query.return_value = {"Items": []}
+        response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
+        assert response["statusCode"] == 401
+        assert response["headers"]["WWW-Authenticate"].startswith("Bearer ")
+
+    @patch("mcp_handler.projects_table")
+    def test_autoseed_401_carries_the_same_challenge(self, mock_table, lambda_context):
+        """The REST side-door 401s through the same choke point."""
+        import mcp_handler
+        mock_table.query.return_value = {"Items": []}
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "GET",
+                "path": "/v1/mcp/autoseed/proj-1",
+                "headers": {"authorization": "Bearer voc_testtoken"},
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 401
+        assert response["headers"]["WWW-Authenticate"].startswith("Bearer ")
+
+    def test_success_carries_no_challenge(self, lambda_context):
+        """A 200 must not advertise an auth failure."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "POST",
+                "path": "/v1/mcp",
+                "headers": {},
+                "body": json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 200
+        assert "WWW-Authenticate" not in response["headers"]
+
+
+# ===========================================================================
+# Token expiry (enforced in the credential check, not by DynamoDB TTL)
+# ===========================================================================
+
+class TestTokenExpiry:
+    """expires_at is compared at auth time; a TTL alone is not expiry.
+
+    DynamoDB TTL deletion is eventual (up to ~48 h), so enforcement lives in
+    _credential_expired on the MATCHED row.  Revert stories:
+      - deleting the _credential_expired call in _authenticate fails
+        test_expired_token_is_refused_401;
+      - turning the malformed-value branch into `return False` (fail-open)
+        fails test_malformed_expires_at_fails_closed — an unreadable expiry
+        must not become an unlimited one.
+    """
+
+    def _row(self, **extra) -> dict:
+        from shared.tokens import hash_token
+        return {
+            "sk": "TOKEN#1",
+            "token_id": "tok_1",
+            "token_hash": hash_token("voc_testtoken"),
+            "scope": "read",
+            **extra,
+        }
+
+    def _auth(self, row: dict):
+        """Run _authenticate against a single stored row; return its result."""
+        import mcp_handler
+        with patch("mcp_handler.projects_table") as mock_table:
+            mock_table.query.return_value = {"Items": [row]}
+            mock_table.update_item.return_value = {}
+            return mcp_handler._authenticate(_make_event())
+
+    def test_absent_expires_at_authenticates(self):
+        """Every row minted before the field existed keeps working."""
+        assert self._auth(self._row()) is not None
+
+    def test_empty_expires_at_authenticates(self):
+        """A falsy value means non-expiring, matching the scope field's falsy rule."""
+        assert self._auth(self._row(expires_at="")) is not None
+
+    def test_future_expires_at_authenticates(self):
+        from datetime import datetime, timedelta, timezone
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        assert self._auth(self._row(expires_at=future)) is not None
+
+    def test_past_expires_at_is_refused(self):
+        from datetime import datetime, timedelta, timezone
+        past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        assert self._auth(self._row(expires_at=past)) is None
+
+    def test_expired_token_is_refused_401(self, lambda_context):
+        """End to end: the expired credential answers 401, not 500."""
+        from datetime import datetime, timedelta, timezone
+
+        import mcp_handler
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        with patch("mcp_handler.projects_table") as mock_table:
+            mock_table.query.return_value = {"Items": [self._row(expires_at=past)]}
+            response = mcp_handler.lambda_handler(_rpc_event(), lambda_context)
+        assert response["statusCode"] == 401
+
+    def test_malformed_expires_at_fails_closed(self):
+        """An unreadable expiry refuses the credential rather than ignoring it."""
+        assert self._auth(self._row(expires_at="not-a-date")) is None
+
+    def test_naive_datetime_fails_closed(self):
+        """A tz-naive timestamp cannot be compared to an aware now(); comparing
+        raises TypeError, which must land in the fail-closed branch rather than
+        escape as a 500."""
+        assert self._auth(self._row(expires_at="2099-01-01T00:00:00")) is None
+
+    def test_non_string_expires_at_fails_closed(self):
+        """A Decimal or number in the attribute is a data problem, not a 500."""
+        assert self._auth(self._row(expires_at=12345)) is None
+
+    @patch("mcp_handler.projects_table")
+    def test_expiry_logs_carry_no_token_material(self, mock_table):
+        """The refusal logs name the token_id and never the token or its hash.
+
+        Same mock-logger idiom as test_botocore_logs_carry_no_token_material —
+        caplog is NOT used because Powertools does not reliably propagate to
+        the root logger, which would make a caplog assertion vacuously green.
+        """
+        import mcp_handler
+        from shared.tokens import hash_token
+        sentinel = "voc_SENTINELTOKEN"
+        row = {
+            "sk": "TOKEN#1",
+            "token_id": "tok_1",
+            "token_hash": hash_token(sentinel),
+            "scope": "read",
+            "expires_at": "not-a-date",
+        }
+        mock_table.query.return_value = {"Items": [row]}
+        with patch("mcp_handler.logger") as mock_logger:
+            result = mcp_handler._authenticate(_make_event(token=sentinel))
+            assert result is None
+            calls = mock_logger.warning.call_args_list
+            assert calls, "the malformed expiry must be logged"
+            for call in calls:
+                extra = (call.kwargs or {}).get("extra", {})
+                rendered = " ".join(str(a) for a in call.args) + " " + str(extra)
+                assert "SENTINELTOKEN" not in rendered
+                assert hash_token(sentinel) not in rendered
+                assert extra.get("token_id") == "tok_1", (
+                    "the log must name the row so an operator can fix it"
+                )
+
+    def test_only_the_matching_row_is_expiry_checked(self):
+        """An expired NON-matching row must not block a valid matching row."""
+        from datetime import datetime, timedelta, timezone
+
+        import mcp_handler
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        expired_other = {
+            "sk": "TOKEN#0",
+            "token_id": "tok_0",
+            "token_hash": "hash-of-some-other-token",
+            "scope": "read",
+            "expires_at": past,
+        }
+        with patch("mcp_handler.projects_table") as mock_table:
+            mock_table.query.return_value = {"Items": [expired_other, self._row()]}
+            mock_table.update_item.return_value = {}
+            assert mcp_handler._authenticate(_make_event()) is not None
+
+
+# ===========================================================================
+# IAM lockstep: the handler's projects-table usage vs the narrowed CDK grant
+# ===========================================================================
+
+class TestProjectsTableUsageMatchesNarrowGrant:
+    """The CDK grant is exactly Query + UpdateItem; the code must not drift.
+
+    api-stack.test.ts pins the IAM side ('mcp Lambda IAM grants'), but every
+    backend test mocks projects_table, so a handler that started calling
+    get_item would pass the whole suite and then AccessDeniedException in
+    production — a runtime-only 500 on the token-authenticated path.  This is
+    the Python half of the lockstep: a mock whose non-granted methods raise,
+    driven through the full JSON-RPC path for every registered tool AND the
+    autoseed side-door (which reaches projects.get_project).
+    """
+
+    GRANTED = ("query", "update_item")
+
+    def _strict_table(self):
+        """A projects_table where any non-granted DynamoDB method raises."""
+        from shared.tokens import hash_token
+        table = MagicMock()
+        row = {
+            "sk": "TOKEN#1",
+            "token_id": "tok_1",
+            "token_hash": hash_token("voc_testtoken"),
+            "scope": "read-write",
+        }
+        table.query.return_value = {"Items": [row]}
+        table.update_item.return_value = {}
+        for method in self.FORBIDDEN:
+            getattr(table, method).side_effect = AssertionError(
+                f"mcp_handler called projects_table.{method}, which the narrowed "
+                f"IAM grant (Query, UpdateItem) does not permit — widen the grant "
+                f"in api-stack.ts AND its 'mcp Lambda IAM grants' test, or fix the code"
+            )
+        return table
+
+    def _call_tool(self, name: str, arguments: dict, lambda_context):
+        import mcp_handler
+        event = {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": {
+                "authorization": "Bearer voc_testtoken",
+                "x-project-id": "proj-1",
+            },
+            "body": json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            }),
+        }
+        return mcp_handler.lambda_handler(event, lambda_context)
+
+    FORBIDDEN = (
+        "get_item", "put_item", "delete_item", "scan",
+        "batch_get_item", "batch_write_item", "batch_writer",
+        "transact_get_items", "transact_write_items",
+    )
+
+    def test_every_tool_stays_within_the_granted_actions(self, lambda_context):
+        """Drive each registered tool end to end against the strict mock.
+
+        The verdict is read off the MOCK, not the response body: a violation
+        raised inside a tool is caught by _handle_tools_call's broad except
+        and could be rephrased into any message, so a body-text assertion
+        would go vacuous the day that message changes.  A positive control
+        asserts the loop actually reached the table at all.
+        """
+        import mcp_handler
+        strict = self._strict_table()
+        args_for = {"get_feedback_detail": {"feedback_id": "fb-1"}}
+        # PER-TOOL positive control: every call pays one auth Query, and the
+        # two projects-table tools pay exactly one more.  An aggregate count
+        # could not tell "every tool reached the table" from "auth queried N
+        # times"; an exact per-tool delta can, so a tool that starts
+        # validating its way past DynamoDB fails here by name.
+        expected_query_delta = {
+            "get_project": 2,
+            "list_personas": 2,
+        }
+        with patch("mcp_handler.projects_table", strict), \
+             patch("mcp_handler.feedback_table"), \
+             patch("mcp_handler.aggregates_table"), \
+             patch("mcp_handler.query_feedback_by_date", return_value=[]):
+            for tool_name in mcp_handler.TOOL_HANDLERS:
+                before = strict.query.call_count
+                self._call_tool(tool_name, args_for.get(tool_name, {}), lambda_context)
+                delta = strict.query.call_count - before
+                assert delta == expected_query_delta.get(tool_name, 1), (
+                    f"{tool_name}: expected "
+                    f"{expected_query_delta.get(tool_name, 1)} projects-table "
+                    f"queries (auth[, tool read]), saw {delta} — the strict-mock "
+                    f"assertions below no longer cover what this tool does"
+                )
+        for method in self.FORBIDDEN:
+            getattr(strict, method).assert_not_called()
+
+    def test_autoseed_stays_within_the_granted_actions(self, lambda_context):
+        """Drive the REAL autoseed path — the most plausible write site.
+
+        Nothing is patched away: the route runs projects.autoseed_project,
+        which runs projects.get_project, against a strict data table patched
+        at projects.projects_table (auth uses its own strict table on
+        mcp_handler.projects_table).  The verdict is read off both mocks.
+        """
+        import mcp_handler
+        import projects as projects_module
+        strict_auth = self._strict_table()
+        strict_data = self._strict_table()
+        strict_data.query.return_value = {
+            "Items": [{"pk": "PROJECT#proj-1", "sk": "META", "name": "P"}]
+        }
+        with patch("mcp_handler.projects_table", strict_auth), \
+             patch.object(projects_module, "projects_table", strict_data):
+            response = mcp_handler.lambda_handler(
+                {
+                    "httpMethod": "GET",
+                    "path": "/v1/mcp/autoseed/proj-1",
+                    "headers": {"authorization": "Bearer voc_testtoken"},
+                },
+                lambda_context,
+            )
+        assert response["statusCode"] == 200, response["body"]
+        # Positive control first: the real get_project read the data table.
+        strict_data.query.assert_called_once()
+        for method in self.FORBIDDEN:
+            getattr(strict_data, method).assert_not_called()
+            getattr(strict_auth, method).assert_not_called()
+
+    @staticmethod
+    def _table_calls(src: str) -> set[str]:
+        """All methods called on the name `projects_table` in `src`, via AST.
+
+        AST rather than line matching: a call split across lines, or aliased
+        formatting, defeats a substring scan silently.  The tree cannot be
+        defeated by formatting.
+        """
+        import ast
+        import textwrap
+        calls: set[str] = set()
+        for node in ast.walk(ast.parse(textwrap.dedent(src))):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "projects_table"
+            ):
+                calls.add(node.func.attr)
+        return calls
+
+    @staticmethod
+    def _called_names(src: str) -> set[str]:
+        """All bare-name calls (`foo(...)`) in `src`, via AST."""
+        import ast
+        import textwrap
+        return {
+            node.func.id
+            for node in ast.walk(ast.parse(textwrap.dedent(src)))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+
+    def test_no_reachable_call_site_uses_a_non_granted_action(self):
+        """Source-level half: the table operations reachable from this Lambda.
+
+        mcp_handler.py's own call sites, plus projects.get_project (the only
+        projects.py function the autoseed path reaches).  The rest of
+        projects.py runs on the projects Lambda, whose role legitimately
+        holds the write actions — scanning it here would be wrong.
+
+        Each scan carries its own positive control: a walker that silently
+        resolved nothing would report an empty (passing) set, so the granted
+        calls it MUST see are asserted present — the same fix the vitest IAM
+        filter got.  autoseed_project's control is different in kind: it has
+        no direct table call, so the assertion is that its only path to the
+        table is the get_project call this test scans.
+        """
+        import inspect
+
+        import mcp_handler
+        import projects as projects_module
+
+        # Derived from the strict mock's configuration, not restated: GRANTED
+        # is the single source of truth for what the IAM role permits, so the
+        # AST expectation cannot drift from the runtime one.
+        granted = set(self.GRANTED)
+
+        handler_calls = self._table_calls(inspect.getsource(mcp_handler))
+        assert handler_calls == granted, (
+            f"mcp_handler touches projects_table via {handler_calls - granted} "
+            f"which the narrowed IAM grant does not permit (or the scan lost "
+            f"sight of the granted calls: saw {handler_calls})"
+        )
+
+        get_project_calls = self._table_calls(
+            inspect.getsource(projects_module.get_project)
+        )
+        assert get_project_calls == {"query"}, (
+            f"projects.get_project (reached via autoseed) touches "
+            f"projects_table via {get_project_calls - granted}, or the scan "
+            f"went blind (saw {get_project_calls})"
+        )
+
+        # autoseed_project itself: no direct table call, AND every DIRECT
+        # bare-name callee resolving to a projects.py callable is on a pinned
+        # allowlist whose members are either scanned above or verified
+        # table-free here.  Deliberately one level deep and name-form only —
+        # deeper indirection (an attribute-form call, or a helper growing its
+        # own callee) is the runtime strict-mock test's job, which executes
+        # the real path and cannot be fooled by call shape.  A new direct
+        # callee (say, a save/update helper) fails this closure instead of
+        # slipping past a comment that claimed get_project was the only route.
+        autoseed_src = inspect.getsource(projects_module.autoseed_project)
+        assert self._table_calls(autoseed_src) == set(), (
+            "projects.autoseed_project now touches projects_table directly; "
+            "scan its calls and re-check the grant"
+        )
+        table_free_helpers = {
+            "_slugify", "_persona_to_markdown", "_document_to_markdown",
+            "_build_steering_file",
+        }
+        allowed_callees = {"get_project"} | table_free_helpers
+        callees = {
+            name for name in self._called_names(autoseed_src)
+            if hasattr(projects_module, name) and callable(getattr(projects_module, name))
+        }
+        unexpected = callees - allowed_callees
+        assert unexpected == set(), (
+            f"projects.autoseed_project now calls {unexpected}, which this "
+            f"test has not verified to be table-free — scan them and extend "
+            f"the allowlist deliberately"
+        )
+        assert "get_project" in callees  # positive control: the walker sees calls
+        for helper in table_free_helpers:
+            # Legible failure over a bare AttributeError when a private
+            # helper is renamed/dropped: the allowlist above must move with it.
+            assert hasattr(projects_module, helper), (
+                f"projects.{helper} no longer exists — update "
+                f"table_free_helpers to match autoseed_project's helpers"
+            )
+            helper_calls = self._table_calls(
+                inspect.getsource(getattr(projects_module, helper))
+            )
+            assert helper_calls == set(), (
+                f"projects.{helper} (reached via autoseed) now touches "
+                f"projects_table via {helper_calls}"
+            )
+
+
+class TestOriginDefaultFailsClosed:
+    """With ALLOWED_ORIGIN unset (''), a present Origin is refused.
+
+    The stack always injects the env var, so '' only happens on a
+    misconfigured deployment — and the safe reading of that state is
+    fail-closed for browsers while non-browser clients (no Origin header)
+    stay unaffected.  Pinned so the default cannot silently flip to
+    fail-open in a refactor.
+    """
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "")
+    def test_present_origin_refused_when_unconfigured(self, lambda_context):
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "POST",
+                "path": "/v1/mcp",
+                "headers": {"Origin": "https://anything.example.com"},
+                "body": json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 403
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "")
+    def test_absent_origin_still_passes_when_unconfigured(self, lambda_context):
+        """Fail-closed for browsers must not mean broken for MCP clients."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "POST",
+                "path": "/v1/mcp",
+                "headers": {},
+                "body": json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 200

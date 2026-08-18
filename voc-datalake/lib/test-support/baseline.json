@@ -2,13 +2,12 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "0be5340b0cbfc76e66ee3dcdcef9a4e0139f07403e00b01d7f000c99b934abfa",
+      "templateSha256": "908a83993d71c9cd40263f1538dd1a1e24b21e3e4eaae10a819a464df156bc53",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer",
           "AWS::ApiGateway::RestApi Name = voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
-          "AWS::ApiGateway::UsagePlan UsagePlanName = voc-mcp-throttle-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-ballots-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-stream-<AWS::AccountId>-<AWS::Region>",

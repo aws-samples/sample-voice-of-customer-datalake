@@ -520,3 +520,83 @@ class TestDocumentCRUDEndpoints:
 
 
 
+
+
+class TestCreateTokenExpiry:
+    """POST /projects/{id}/api-tokens — optional expires_in_days.
+
+    Absent (or JSON null) mints a non-expiring token with NO expires_at
+    attribute, byte-compatible with every pre-expiry row.  When present the
+    value is validated STRICTLY rather than clamped: this is a credential
+    lifetime a human chose, so validate_int's fall-back-to-default contract
+    would silently mint a lifetime nobody picked.  Reverting the strict check
+    to validate_int fails test_rejects_bool and test_rejects_fractional —
+    isinstance(True, int) is True, and int(30.5) truncates.
+    """
+
+    def _post(self, api_gateway_event, lambda_context, body):
+        from projects_handler import lambda_handler
+        with patch('projects_handler.get_projects_table') as mock_get_table:
+            mock_table = mock_get_table.return_value
+            mock_table.get_item.return_value = {'Item': {'pk': 'PROJECT#proj-1', 'sk': 'META'}}
+            mock_table.put_item.return_value = {}
+            event = api_gateway_event(
+                method='POST',
+                path='/projects/proj-1/api-tokens',
+                body=body,
+            )
+            response = lambda_handler(event, lambda_context)
+            return response, mock_table
+
+    def test_absent_expiry_stores_no_attribute(self, api_gateway_event, lambda_context):
+        """Omitting the field keeps today's exact row shape — attribute absent."""
+        response, mock_table = self._post(api_gateway_event, lambda_context, {'name': 't'})
+        assert response['statusCode'] == 200
+        stored = mock_table.put_item.call_args.kwargs['Item']
+        assert 'expires_at' not in stored
+        assert json.loads(response['body'])['expires_at'] is None
+
+    def test_valid_expiry_is_stored_and_echoed(self, api_gateway_event, lambda_context):
+        from datetime import datetime, timedelta, timezone
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't', 'expires_in_days': 30}
+        )
+        assert response['statusCode'] == 200
+        stored = mock_table.put_item.call_args.kwargs['Item']['expires_at']
+        assert json.loads(response['body'])['expires_at'] == stored
+        # ~30 days out, parseable, timezone-aware
+        parsed = datetime.fromisoformat(stored)
+        delta = parsed - datetime.now(timezone.utc)
+        assert timedelta(days=29, hours=23) < delta <= timedelta(days=30)
+
+    @pytest.mark.parametrize('bad', [0, -1, 366, 'thirty', 30.5, True, False, [30], {}])
+    def test_rejects_out_of_range_and_non_integer(self, api_gateway_event, lambda_context, bad):
+        """Strict 400, never a clamp: an unreadable lifetime must not mint."""
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't', 'expires_in_days': bad}
+        )
+        assert response['statusCode'] == 400
+        mock_table.put_item.assert_not_called()
+
+    def test_json_null_means_absent(self, api_gateway_event, lambda_context):
+        """An explicit null is 'no preference', same as omitting the field."""
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't', 'expires_in_days': None}
+        )
+        assert response['statusCode'] == 200
+        assert 'expires_at' not in mock_table.put_item.call_args.kwargs['Item']
+
+    def test_list_returns_expires_at(self, api_gateway_event, lambda_context):
+        """GET .../api-tokens surfaces the deadline; legacy rows read as None."""
+        from projects_handler import lambda_handler
+        with patch('projects_handler.get_projects_table') as mock_get_table:
+            mock_get_table.return_value.query.return_value = {'Items': [
+                {'token_id': 'tok_new', 'name': 'n', 'created_at': 'c',
+                 'expires_at': '2027-01-01T00:00:00+00:00'},
+                {'token_id': 'tok_legacy', 'name': 'l', 'created_at': 'c'},
+            ]}
+            event = api_gateway_event(method='GET', path='/projects/proj-1/api-tokens')
+            response = lambda_handler(event, lambda_context)
+        tokens = {t['token_id']: t for t in json.loads(response['body'])['tokens']}
+        assert tokens['tok_new']['expires_at'] == '2027-01-01T00:00:00+00:00'
+        assert tokens['tok_legacy']['expires_at'] is None
