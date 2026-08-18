@@ -1816,19 +1816,31 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         import mcp_handler
         strict = self._strict_table()
         args_for = {"get_feedback_detail": {"feedback_id": "fb-1"}}
+        # PER-TOOL positive control: every call pays one auth Query, and the
+        # two projects-table tools pay exactly one more.  An aggregate count
+        # could not tell "every tool reached the table" from "auth queried N
+        # times"; an exact per-tool delta can, so a tool that starts
+        # validating its way past DynamoDB fails here by name.
+        expected_query_delta = {
+            "get_project": 2,
+            "list_personas": 2,
+        }
         with patch("mcp_handler.projects_table", strict), \
              patch("mcp_handler.feedback_table"), \
              patch("mcp_handler.aggregates_table"), \
              patch("mcp_handler.query_feedback_by_date", return_value=[]):
             for tool_name in mcp_handler.TOOL_HANDLERS:
+                before = strict.query.call_count
                 self._call_tool(tool_name, args_for.get(tool_name, {}), lambda_context)
+                delta = strict.query.call_count - before
+                assert delta == expected_query_delta.get(tool_name, 1), (
+                    f"{tool_name}: expected "
+                    f"{expected_query_delta.get(tool_name, 1)} projects-table "
+                    f"queries (auth[, tool read]), saw {delta} — the strict-mock "
+                    f"assertions below no longer cover what this tool does"
+                )
         for method in self.FORBIDDEN:
             getattr(strict, method).assert_not_called()
-        # Positive control: auth queries once per call, and the two
-        # projects-table tools query again — if this stops being > number of
-        # tools, the loop stopped reaching the table and the assertions above
-        # stopped meaning anything.
-        assert strict.query.call_count > len(mcp_handler.TOOL_HANDLERS)
 
     def test_autoseed_stays_within_the_granted_actions(self, lambda_context):
         """Drive the REAL autoseed path — the most plausible write site.
@@ -1883,6 +1895,17 @@ class TestProjectsTableUsageMatchesNarrowGrant:
                 calls.add(node.func.attr)
         return calls
 
+    @staticmethod
+    def _called_names(src: str) -> set[str]:
+        """All bare-name calls (`foo(...)`) in `src`, via AST."""
+        import ast
+        import textwrap
+        return {
+            node.func.id
+            for node in ast.walk(ast.parse(textwrap.dedent(src)))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+
     def test_no_reachable_call_site_uses_a_non_granted_action(self):
         """Source-level half: the table operations reachable from this Lambda.
 
@@ -1903,7 +1926,10 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         import mcp_handler
         import projects as projects_module
 
-        granted = {"query", "update_item"}
+        # Derived from the strict mock's configuration, not restated: GRANTED
+        # is the single source of truth for what the IAM role permits, so the
+        # AST expectation cannot drift from the runtime one.
+        granted = set(self.GRANTED)
 
         handler_calls = self._table_calls(inspect.getsource(mcp_handler))
         assert handler_calls == granted, (
@@ -1921,13 +1947,40 @@ class TestProjectsTableUsageMatchesNarrowGrant:
             f"went blind (saw {get_project_calls})"
         )
 
+        # autoseed_project itself: no direct table call, AND every projects.py
+        # function it calls is on a pinned allowlist whose members are either
+        # scanned above or verified table-free here.  A new callee (say, a
+        # save/update helper) fails this closure instead of slipping past a
+        # comment that claimed get_project was the only route.
         autoseed_src = inspect.getsource(projects_module.autoseed_project)
         assert self._table_calls(autoseed_src) == set(), (
             "projects.autoseed_project now touches projects_table directly; "
             "scan its calls and re-check the grant"
         )
-        # ...and its only route to the table is the function scanned above.
-        assert "get_project(" in autoseed_src
+        table_free_helpers = {
+            "_slugify", "_persona_to_markdown", "_document_to_markdown",
+            "_build_steering_file",
+        }
+        allowed_callees = {"get_project"} | table_free_helpers
+        callees = {
+            name for name in self._called_names(autoseed_src)
+            if hasattr(projects_module, name) and callable(getattr(projects_module, name))
+        }
+        unexpected = callees - allowed_callees
+        assert unexpected == set(), (
+            f"projects.autoseed_project now calls {unexpected}, which this "
+            f"test has not verified to be table-free — scan them and extend "
+            f"the allowlist deliberately"
+        )
+        assert "get_project" in callees  # positive control: the walker sees calls
+        for helper in table_free_helpers:
+            helper_calls = self._table_calls(
+                inspect.getsource(getattr(projects_module, helper))
+            )
+            assert helper_calls == set(), (
+                f"projects.{helper} (reached via autoseed) now touches "
+                f"projects_table via {helper_calls}"
+            )
 
 
 class TestOriginDefaultFailsClosed:
