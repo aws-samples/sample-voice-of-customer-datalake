@@ -1119,6 +1119,147 @@ class TestLegacyScoresReadThroughAndMigrateOnWrite:
         assert status == 200
 
 
+class TestTheMigrationCostsNothingWhereThereIsNothingToMigrate:
+    """This path is permanent (see `_drop_legacy_score`'s RETIREMENT note), so its
+    steady-state cost is a cost every deployment pays forever — including every
+    deployment that never ran the pre-ballot version and so holds no legacy entry
+    at all.
+
+    Per scored row, attempting it blindly means one read of the row plus one
+    conditional delete per document it holds: up to MAX_BALLOTS_PER_SAVE ×
+    MAX_ROW_DOCUMENT_IDS sequential writes in a single invocation, to discover
+    nothing. One read of the map decides instead, once per save.
+    """
+
+    @staticmethod
+    def _rows(count, documents_each):
+        table = FakeAggregatesTable()
+        row_ids = [f'row-{n}' for n in range(count)]
+        for row_id in row_ids:
+            table.seed_rows(
+                row_id,
+                document_ids=[f'{row_id}-doc-{d}' for d in range(documents_each)],
+            )
+        return table, row_ids
+
+    def _legacy_reads(self, table):
+        return [
+            call for call in table.get_item_calls
+            if call['Key']['sk'] == LEGACY_SK
+        ]
+
+    def _row_reads(self, table):
+        return [
+            call for call in table.get_item_calls
+            if str(call['Key']['sk']).startswith('ROW#')
+        ]
+
+    def _removals(self, table):
+        return [
+            call for call in table.update_item_calls
+            if call['UpdateExpression'].strip().upper().startswith('REMOVE')
+        ]
+
+    def test_a_deployment_with_no_legacy_map_issues_no_removals_and_no_row_reads(
+        self, api_gateway_event, lambda_context
+    ):
+        """The common case, forever. Ten scored rows of five documents each would
+        otherwise be ten row reads and fifty refused conditional writes."""
+        table, row_ids = self._rows(10, 5)
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {row_id: AXES for row_id in row_ids},
+        )
+
+        assert status == 200
+        assert self._removals(table) == []
+        assert self._row_reads(table) == []
+
+    def test_the_map_is_read_once_per_save_not_once_per_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """Per row it would scale with the body; the entries a save can supersede
+        are the ones present when it started, so once is the right number."""
+        table, row_ids = self._rows(10, 5)
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {row_id: AXES for row_id in row_ids})
+
+        assert len(self._legacy_reads(table)) == 1
+
+    def test_a_save_that_scores_nothing_does_not_read_the_map_at_all(
+        self, api_gateway_event, lambda_context
+    ):
+        """`_is_a_vote` gates the whole path, and the read is lazy behind it: an
+        entry that expressed no axis supersedes nothing, so there is nothing to
+        ask about."""
+        table, _ = self._rows(3, 2)
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'row-0': {'notes': 'thinking about it'}})
+
+        assert self._legacy_reads(table) == []
+
+    def test_only_documents_the_map_actually_holds_are_deleted(
+        self, api_gateway_event, lambda_context
+    ):
+        """A deployment that DOES hold one legacy entry still pays one write, not
+        one per document of the row: the read already said which id is there."""
+        table = FakeAggregatesTable(items=[{
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'row-0-doc-3': {'impact': 2}},
+        }])
+        table.seed_rows('row-0', document_ids=[f'row-0-doc-{d}' for d in range(25)])
+
+        _patch_scores(table, api_gateway_event, lambda_context, {'row-0': AXES})
+
+        removals = self._removals(table)
+        assert len(removals) == 1
+        assert removals[0]['ExpressionAttributeNames']['#document'] == 'row-0-doc-3'
+        assert 'row-0-doc-3' not in table.items[(PARTITION, LEGACY_SK)]['scores']
+
+    def test_two_rows_sharing_a_document_attempt_its_removal_once(
+        self, api_gateway_event, lambda_context
+    ):
+        """Phase 2 can compose two rows over one document. The removal is
+        idempotent either way — the condition sees it gone — but the second attempt
+        is a round trip that buys nothing."""
+        table = FakeAggregatesTable(items=[{
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'shared-doc': {'impact': 2}},
+        }])
+        table.seed_rows('row-a', document_ids=['shared-doc'])
+        table.seed_rows('row-b', document_ids=['shared-doc'])
+
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'row-a': AXES, 'row-b': AXES})
+
+        assert len(self._removals(table)) == 1
+
+    def test_an_unreadable_map_leaves_the_ballot_landed(
+        self, api_gateway_event, lambda_context
+    ):
+        """Best effort throughout: the ballot is already durably written by the time
+        this runs, so a failed read must not tell a reviewer their vote failed."""
+        table = FakeAggregatesTable()
+        table.seed_rows('row-1')
+        original = table.get_item
+
+        def failing_get_item(**kwargs):
+            if kwargs['Key']['sk'] == LEGACY_SK:
+                table.get_item_calls.append(kwargs)
+                raise RuntimeError('DynamoDB is having a day')
+            return original(**kwargs)
+
+        table.get_item = failing_get_item
+
+        status, body = _patch_scores(table, api_gateway_event, lambda_context,
+                                     {'row-1': AXES})
+
+        assert status == 200
+        assert body['updated_count'] == 1
+        assert table.ballot('row-1', 'reviewer-1') is not None
+
+
 class TestTheReadThroughAndTheAggregateAgree:
     """A legacy value the write path would REFUSE is not read back as if a reviewer
     had entered it.
@@ -2779,6 +2920,86 @@ class TestADefaultRowExistsPerProjectWithoutASetupStep:
         assert body['row']['project_id'] == 'p1'
         assert body['row']['is_default'] is True
 
+    def test_a_revised_prd_puts_only_its_latest_revision_on_the_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """LATEST PER TYPE, not every revision. A superseded draft is not a separate
+        thing to score — it is the same thing, earlier — and putting all four
+        revisions on the row would give the collapsed header five type badges and
+        make the room's copy say "5 documents, one ballot" about one idea. That is
+        the defect this whole change removes, one level down."""
+        projects = FakeProjectsTable([
+            project_meta('p1'),
+            project_document('p1', 'PRD#', 'prd-v1', '2026-08-01T00:00:00+00:00'),
+            project_document('p1', 'PRD#', 'prd-v2', '2026-08-05T00:00:00+00:00'),
+            project_document('p1', 'PRD#', 'prd-v3', '2026-08-03T00:00:00+00:00'),
+            project_document('p1', 'PRFAQ#', 'prfaq-old', '2026-08-02T00:00:00+00:00'),
+            project_document('p1', 'PRFAQ#', 'prfaq-new', '2026-08-04T00:00:00+00:00'),
+        ])
+        aggregates = FakeAggregatesTable()
+
+        _, body = _create_row(aggregates, projects, api_gateway_event,
+                              lambda_context, body={'project_id': 'p1'})
+
+        # Newest of each, and not by document order in the partition: `prd-v2` is
+        # newer than `prd-v3` while sorting earlier by id.
+        assert body['row']['document_ids'] == ['prd-v2', 'prfaq-new']
+
+    def test_the_badge_order_is_stable_rather_than_following_recency(
+        self, api_gateway_event, lambda_context
+    ):
+        """The collapsed row renders one badge per document in this order. Ordering
+        by recency would flip PRD and PR/FAQ between two projects depending on which
+        was generated last, for no reason a reader could see."""
+        aggregates = FakeAggregatesTable()
+
+        _, prfaq_newer = _create_row(aggregates, FakeProjectsTable([
+            project_meta('p1'),
+            project_document('p1', 'PRD#', 'prd-1', '2026-08-01T00:00:00+00:00'),
+            project_document('p1', 'PRFAQ#', 'prfaq-1', '2026-08-09T00:00:00+00:00'),
+        ]), api_gateway_event, lambda_context, body={'project_id': 'p1'})
+        _, prd_newer = _create_row(FakeAggregatesTable(), FakeProjectsTable([
+            project_meta('p2'),
+            project_document('p2', 'PRD#', 'prd-2', '2026-08-09T00:00:00+00:00'),
+            project_document('p2', 'PRFAQ#', 'prfaq-2', '2026-08-01T00:00:00+00:00'),
+        ]), api_gateway_event, lambda_context, body={'project_id': 'p2'})
+
+        assert prfaq_newer['row']['document_ids'] == ['prd-1', 'prfaq-1']
+        assert prd_newer['row']['document_ids'] == ['prd-2', 'prfaq-2']
+
+    def test_a_project_holding_one_scorable_type_gets_a_single_document_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """The one-row-per-project rule does not require two documents to be worth a
+        row — most projects start with a PRD alone."""
+        aggregates = FakeAggregatesTable()
+
+        _, body = _create_row(aggregates, FakeProjectsTable([
+            project_meta('p1'),
+            project_document('p1', 'PRD#', 'prd-1', '2026-08-01T00:00:00+00:00'),
+            project_document('p1', 'PRD#', 'prd-2', '2026-08-02T00:00:00+00:00'),
+        ]), api_gateway_event, lambda_context, body={'project_id': 'p1'})
+
+        assert body['row']['document_ids'] == ['prd-2']
+
+    def test_a_document_with_no_readable_timestamp_loses_to_one_that_has_it(
+        self, api_gateway_event, lambda_context
+    ):
+        """"Latest" has to decide something for a stored document missing
+        `created_at`. Oldest is the right way for an unreadable timestamp to lose:
+        the alternative puts an undatable draft on the row over a dated one."""
+        undated = project_document('p1', 'PRD#', 'prd-undated', '')
+        del undated['created_at']
+        aggregates = FakeAggregatesTable()
+
+        _, body = _create_row(aggregates, FakeProjectsTable([
+            project_meta('p1'),
+            undated,
+            project_document('p1', 'PRD#', 'prd-dated', '2026-08-01T00:00:00+00:00'),
+        ]), api_gateway_event, lambda_context, body={'project_id': 'p1'})
+
+        assert body['row']['document_ids'] == ['prd-dated']
+
     def test_only_scorable_documents_and_the_latest_prototype_are_on_it(
         self, api_gateway_event, lambda_context
     ):
@@ -3039,3 +3260,94 @@ class TestTheOneLegacyScoreLandsOnItsProjectsDefaultRow:
 
         assert table.get_item_calls == []
         assert table.items[(PARTITION, LEGACY_SK)]['scores']['prd-1']['impact'] == 4
+
+
+class TestTheRowCreateRouteIsNotShadowedByTheProjectUpsert:
+    """`POST /projects/prioritization/rows` must reach its own handler.
+
+    This module already carries a deliberate 405 on `PUT /projects/prioritization`
+    whose whole justification is that the path otherwise falls through to
+    `PUT /projects/<project_id>` and upserts a phantom project. Powertools sorts
+    routes into static and dynamic buckets and resolves static first regardless of
+    registration order, so the reasoning is about SEGMENT COUNT, not order — and the
+    new route is the same class of risk one segment longer:
+    `POST /projects/<project_id>/documents` and
+    `POST /projects/<project_id>/personas` are both registered, both two segments
+    under `/projects`, and both take a dynamic first segment that `prioritization`
+    matches.
+
+    Pinned by resolving the real path through the real resolver, not by reading the
+    decorator: what a route table does with a path is the only thing that answers
+    this, and every other assertion in this file about the create route calls the
+    handler indirectly through exactly this resolution — so a shadowing bug would
+    make them all fail confusingly rather than fail HERE with a reason.
+    """
+
+    def test_the_path_reaches_the_row_create_and_not_a_document_or_persona_route(
+        self, api_gateway_event, lambda_context
+    ):
+        from unittest.mock import patch as patch_fn
+
+        projects = FakeProjectsTable([
+            project_meta('p1'),
+            project_document('p1', 'PRD#', 'prd-1', '2026-08-01T00:00:00+00:00'),
+        ])
+        with (
+            patch_fn('projects_handler.create_document') as create_document,
+            patch_fn('projects_handler.update_project') as update_project,
+        ):
+            status, body = _create_row(
+                FakeAggregatesTable(), projects, api_gateway_event, lambda_context,
+                body={'project_id': 'p1'},
+            )
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-1']
+        assert create_document.call_count == 0, (
+            'the path fell through to a document route; `prioritization` was read '
+            'as a project id'
+        )
+        assert update_project.call_count == 0
+
+    def test_a_project_named_prioritization_cannot_reach_it_by_accident(
+        self, api_gateway_event, lambda_context
+    ):
+        """The mirror of the shadowing question: the literal route must not swallow
+        a request meant for the dynamic one. `/projects/prioritization/rows` is the
+        row create; a project genuinely called `prioritization` addresses its
+        documents at `/projects/prioritization/documents`, which is a different
+        two-segment path and still dynamic."""
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/prioritization/documents',
+            body={'title': 'x'},
+            path_params={'project_id': 'prioritization'},
+        )
+        with (
+            patch('projects_handler.get_aggregates_table', return_value=FakeAggregatesTable()),
+            patch('projects_handler.api_create_prioritization_row') as create_row,
+        ):
+            lambda_handler(event, lambda_context)
+
+        assert create_row.call_count == 0
+
+    def test_the_405_stub_still_covers_the_shorter_path(
+        self, api_gateway_event, lambda_context
+    ):
+        """Adding a longer literal route under `/projects/prioritization` must not
+        make the two-segment path resolvable again — that is the fall-through to
+        `update_project('prioritization')` the stub exists to prevent, and it
+        answers 200 while discarding the body."""
+        from unittest.mock import patch as patch_fn
+
+        with patch_fn('projects_handler.update_project') as update_project:
+            status, _ = _call(
+                FakeAggregatesTable(),
+                _event(api_gateway_event, method='PUT', body={'scores': {'row-1': AXES}}),
+                lambda_context,
+            )
+
+        assert status == 405
+        assert update_project.call_count == 0

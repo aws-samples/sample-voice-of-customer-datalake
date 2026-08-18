@@ -864,3 +864,129 @@ class TestTheFacilitatorHalf:
         assert status == 200
         assert body['session']['status'] == 'open'
         assert body['session']['state'] == 'expired'
+
+
+class TestASessionOpenedBeforeThisChangeDoesNotEatARoomsBallots:
+    """A session record written by the PREVIOUS deployment names a `document_id` and
+    no `row_id`, and one such session can be open, unexpired and on a screen at the
+    moment this deploys.
+
+    The failure this pins out is silent and happens mid-meeting. The room's phones
+    ask the config route, it answers `open: true`, everyone fills in the form, and
+    every submission is refused — or, had the document id been adopted as a row id,
+    every ballot lands on `BALLOT#{document_id}#anon:...`, a key the page resolves
+    to no row and drops on read, so each phone says "thanks" and the team's score
+    does not move. Either way the facilitator learns nothing until they look at a
+    score that did not change.
+
+    CLOSED is the answer, everywhere, because it is true of what can be done with
+    the session and both pages already have words for it: the room reads "this
+    voting session is closed" and the facilitator re-opens, which composes a session
+    on the row.
+    """
+
+    @staticmethod
+    def _pre_row_session(**overrides):
+        item = open_session(**overrides)
+        item['document_id'] = item.pop('row_id')
+        item['document_title'] = item.pop('row_title')
+        return item
+
+    def test_the_public_config_route_says_closed_rather_than_inviting_a_ballot(
+            self, api_gateway_event, lambda_context):
+        table = FakeAggregatesTable([self._pre_row_session()])
+
+        status, body = _config(table, api_gateway_event, lambda_context)
+
+        assert status == 200
+        assert body['session']['open'] is False
+        assert body['session']['reason'] == 'closed'
+
+    def test_it_still_names_the_thing_so_the_page_is_not_blank(
+            self, api_gateway_event, lambda_context):
+        """Titling is presentation and a stale title misleads nobody; keying is not,
+        which is why the row id has no matching fallback."""
+        table = FakeAggregatesTable([self._pre_row_session()])
+
+        _, body = _config(table, api_gateway_event, lambda_context)
+
+        assert body['session']['row_title'] == 'Instant refunds'
+
+    def test_a_ballot_submitted_through_it_is_refused_as_closed(
+            self, api_gateway_event, lambda_context):
+        """`closed` and not `not_found`: the session exists and the room can see it
+        did. `not_found` would have the page say the link is wrong."""
+        table = FakeAggregatesTable([self._pre_row_session()])
+
+        status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 409
+        assert body['reason'] == 'closed'
+
+    def test_no_ballot_is_written_on_a_document_keyed_sort_key(
+            self, api_gateway_event, lambda_context):
+        """THE POINT. A ballot on `BALLOT#{document_id}#anon:...` is a vote the
+        aggregate never reads — recorded, acknowledged, and invisible. Nothing is
+        better than that."""
+        table = FakeAggregatesTable([self._pre_row_session()])
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert table.ballot_keys == []
+
+    def test_the_slot_claim_never_runs_so_the_count_does_not_move(
+            self, api_gateway_event, lambda_context):
+        """Refused before the conditional hold, so a room retrying against a dead
+        session cannot exhaust its cap."""
+        table = FakeAggregatesTable([self._pre_row_session()])
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert table.session(OPEN_SESSION_ID)['ballot_count'] == 0
+
+    def test_the_facilitators_status_view_agrees_it_is_closed(
+            self, api_gateway_event, lambda_context):
+        """The facilitator UI keys its QR on `state`, so this is what takes a dead
+        QR off the screen and offers re-opening."""
+        table = FakeAggregatesTable([self._pre_row_session()])
+        event = api_gateway_event(
+            method='GET',
+            path=f'/voting-sessions/{OPEN_SESSION_ID}',
+            path_params={'session_id': OPEN_SESSION_ID},
+        )
+
+        status, body = _call(table, event, lambda_context)
+
+        assert status == 200
+        assert body['session']['state'] == 'closed'
+        assert body['session']['row_id'] == '', (
+            'a document id must not be handed back as a row id: the page would '
+            'address a row that does not exist'
+        )
+
+    def test_a_session_naming_a_row_is_unaffected(
+            self, api_gateway_event, lambda_context):
+        """The guard must not cost the normal case anything — this is the regression
+        that fails if the state test is widened past "names no usable row"."""
+        table = FakeAggregatesTable([open_session()])
+
+        status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 200
+        assert body['success'] is True
+        assert table.ballot_keys and table.ballot_keys[0].startswith(
+            'BALLOT#row_proj_20260817_default#anon:'
+        )
+
+    def test_a_row_id_carrying_the_key_delimiter_is_treated_the_same_way(
+            self, api_gateway_event, lambda_context):
+        """Unreachable through `create_voting_session`, which refuses it. Still
+        refused here rather than trusted, because the write would land on a
+        mis-split key and surface in the aggregate as a phantom row."""
+        table = FakeAggregatesTable([open_session(row_id='row#injected')])
+
+        status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 409
+        assert body['reason'] == 'closed'
+        assert table.ballot_keys == []

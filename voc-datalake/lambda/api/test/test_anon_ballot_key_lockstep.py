@@ -204,11 +204,18 @@ class TestBothWritersAgreeOnWhereABallotLives:
         #
         # BOTH guards are required, because a row id reaches the key by two
         # routes: the facilitator names it when opening a session
-        # (`_validated_row_id`), and the submit path re-checks the value it
-        # read back off the session record. Asserting the rule appears merely
-        # SOMEWHERE would keep passing with either one deleted.
+        # (`_validated_row_id`), and the read path re-checks the value it
+        # read back off the session record before the submit uses it
+        # (`_session_row_id`). Asserting the rule appears merely SOMEWHERE would
+        # keep passing with either one deleted.
+        #
+        # Either spelling counts. The two guards read in opposite senses — one
+        # raises when the delimiter IS present, the other answers "no usable row"
+        # when it is NOT absent — and pinning one phrasing would fail a rename that
+        # kept the invariant, which is the sort of failure that gets a lockstep test
+        # deleted rather than heeded. What is pinned is that TWO places refuse it.
         source = _read(BALLOTS_SOURCE)
-        guards = source.count("'#' in row_id")
+        guards = source.count("'#' in row_id") + source.count("'#' not in row_id")
         assert guards >= 2, (
             f"{BALLOTS_SOURCE} enforces \"no '#' in a row id\" in {guards} "
             f'place(s); both the session-creation validator and the submit path '

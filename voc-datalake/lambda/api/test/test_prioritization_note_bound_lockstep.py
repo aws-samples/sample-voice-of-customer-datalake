@@ -100,13 +100,17 @@ class TestPrioritizationNoteBoundLockstep:
 
         The pre-ballot score map was written by a route with no note bound at all,
         so an over-long note can be read through to a reviewer and is sent back the
-        moment they touch a slider on that row. `overLongNoteDocuments` is what
-        turns that into a blocked Save with a reason instead of a 400 the page
-        cannot report.
+        moment they touch a slider on that row. `overLongNoteRows` is what turns
+        that into a blocked Save with a reason instead of a 400 the page cannot
+        report.
+
+        Named `…Rows`, not `…Documents`: a ballot is keyed to a prioritization ROW —
+        a project's set of documents — so what the guard collects is the rows whose
+        pending note is too long.
         """
         page = _repo_root() / 'frontend/src/pages/Prioritization/Prioritization.tsx'
         if not page.is_file():
             pytest.skip('Prioritization.tsx not present in this tree')
 
         source = page.read_text(encoding='utf-8')
-        assert 'overLongNoteDocuments' in source
+        assert 'overLongNoteRows' in source

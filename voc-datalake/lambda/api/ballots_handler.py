@@ -527,6 +527,40 @@ def _validated_axes(body: dict) -> dict[str, int]:
 # ============================================
 
 
+def _session_row_id(item: dict) -> str:
+    """The row a session's ballots are keyed to, or '' if the record cannot name one.
+
+    '' for a session written by the deployment BEFORE this one, which recorded a
+    `document_id` and no `row_id`. Such a session is not adopted onto the document
+    it names: the document id is not a row id, so every ballot would land on
+    `BALLOT#{document_id}#anon:...`, a key the page resolves to no row and drops on
+    read — the room votes, each phone says "thanks", and the team's score does not
+    move. That silent loss is the exact failure the sort-key lockstep test exists to
+    prevent, so it is not worth buying deploy continuity with.
+
+    Instead the caller treats '' as CLOSED (see `_session_state`), which is a state
+    the ballot page already has words for and the facilitator already has a button
+    for: re-open, put the new QR on screen, and the room's ballots land on the row.
+    """
+    row_id = item.get('row_id')
+    return row_id if isinstance(row_id, str) and row_id and '#' not in row_id else ''
+
+
+def _session_row_title(item: dict) -> str:
+    """What to call the thing being scored, tolerating a pre-row session record.
+
+    Falls back to the legacy `document_title` purely so the facilitator's own status
+    view names the session it is telling them is closed. Titling is presentation and
+    a stale title misleads nobody; keying is not, which is why `_session_row_id`
+    refuses the matching fallback.
+    """
+    for key in ('row_title', 'document_title'):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ''
+
+
 def _session_state(item: dict, now: datetime) -> str:
     """`STATUS_OPEN`, `STATUS_CLOSED`, or the expired reason.
 
@@ -535,8 +569,17 @@ def _session_state(item: dict, now: datetime) -> str:
     up to two days after a meeting the record is still there and still says
     'open'. Reading the deadline is what makes the wall-clock bound real; the
     `ttl` attribute is only how the row eventually cleans itself up.
+
+    A record that names no usable ROW reads as CLOSED, and that is what carries this
+    change across its own deploy. A session opened by the previous deployment holds a
+    `document_id` and no `row_id`; answering `open: true` for it would give a room a
+    green ballot page whose every submission is then refused by `submit_ballot`, or —
+    had the id been adopted — recorded on a key no aggregate reads. Closed is the one
+    answer that is both true of what can be done with the session and already
+    expressible on the pages: the room reads "this voting session is closed" and the
+    facilitator re-opens, which composes a session on the row.
     """
-    if item.get('status') != STATUS_OPEN:
+    if item.get('status') != STATUS_OPEN or not _session_row_id(item):
         return REASON_CLOSED
     expires_at = item.get('ttl')
     try:
@@ -572,8 +615,8 @@ def _session_payload(item: dict, now: datetime) -> dict:
     """
     return {
         'session_id': item.get('session_id', ''),
-        'row_id': item.get('row_id', ''),
-        'row_title': item.get('row_title', ''),
+        'row_id': _session_row_id(item),
+        'row_title': _session_row_title(item),
         'status': item.get('status', STATUS_CLOSED),
         'state': _session_state(item, now),
         'ballot_cap': int(item.get('ballot_cap', 0)),
@@ -758,7 +801,7 @@ def get_ballot_config(session_id: str):
             # Names the ROW — a project's set of documents — so the sentence a
             # phone reads is about the proposal it is scoring. Copied off the
             # session, which is what the facilitator put on screen.
-            'row_title': item.get('row_title', ''),
+            'row_title': _session_row_title(item),
         },
     }
 
@@ -986,15 +1029,17 @@ def submit_ballot(session_id: str):
     if state != STATUS_OPEN:
         return _refusal(state)
 
-    row_id = item.get('row_id')
-    if not isinstance(row_id, str) or not row_id or '#' in row_id:
-        # A session that cannot name a ballot key is not a session to write
-        # against. Unreachable through `create_voting_session`, which validates
-        # the id; refused rather than trusted because the write would otherwise
-        # land on a mis-split key and appear in the aggregate as a phantom
-        # row.
+    row_id = _session_row_id(item)
+    if not row_id:
+        # Unreachable: `_session_state` above already reads a record naming no
+        # usable row as CLOSED, which is what a session from the deployment before
+        # this one — holding a `document_id` and no `row_id` — answers, and it is
+        # answered with words both pages have. Kept as a belt-and-braces guard
+        # because the alternative is writing a mis-split sort key that surfaces in
+        # the aggregate as a phantom row, and because it must not silently become
+        # reachable if that state test is ever relaxed.
         logger.error(f'Voting session {_session_ref(validated_session)} has no usable row_id')
-        return _refusal(REASON_NOT_FOUND)
+        return _refusal(REASON_CLOSED)
 
     ballot_id = _existing_ballot(row_id, validated_session, body.get('ballot_id'))
     corrected = ballot_id is not None
@@ -1036,7 +1081,7 @@ def submit_ballot(session_id: str):
         'success': True,
         'ballot_id': ballot_id,
         'corrected': corrected,
-        'row_title': item.get('row_title', ''),
+        'row_title': _session_row_title(item),
     }
 
 

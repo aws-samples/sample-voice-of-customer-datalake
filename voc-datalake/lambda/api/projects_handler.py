@@ -558,11 +558,14 @@ MAX_AXIS_VALUE = 5
 # nothing.
 MAX_BALLOT_NOTE_LEN = 2000
 
-# How many ROWS one save may carry. Each one costs the ballot write plus, when the
-# entry actually scored something, one read of the row and one conditional legacy
-# removal per document it holds — so an unbounded body turns a single invocation
-# into hundreds of sequential round trips, and a Lambda timeout part way through
-# leaves the save half-persisted behind a bare 500. The page scores a team-sized
+# How many ROWS one save may carry. Each one costs one ballot write. A save that
+# scores something also pays the legacy migration, but that is bounded per
+# INVOCATION rather than per row: one read of the `SCORES` item decides whether
+# there is anything to retire at all (`_LegacyScores`), and only a deployment that
+# actually holds pre-ballot entries then pays a row read plus a conditional delete
+# per held document. An unbounded body would still turn a single invocation into
+# hundreds of sequential ballot writes, with a Lambda timeout part way through
+# leaving the save half-persisted behind a bare 500. The page scores a team-sized
 # backlog, so a body larger than this is a client defect, and a 400 naming the
 # bound is a better answer than a partially-applied save.
 MAX_BALLOTS_PER_SAVE = 100
@@ -1212,11 +1215,15 @@ def _drop_legacy_score(table, document_id: str) -> None:
     (already migrated, or never present) is a no-op rather than a resurrection of
     an empty `scores` map.
 
-    Attempted on every save rather than only when the caller's GET saw a legacy
-    entry: the alternative is trusting a client-supplied "please migrate" flag, or
-    reading the shared map first — which is the read-modify-write this change
-    exists to remove. The steady-state cost is one refused conditional write per
-    document of the saved row, which is bounded by MAX_ROW_DOCUMENT_IDS.
+    Attempted without the caller saying so, rather than on a client-supplied
+    "please migrate" flag. It is not attempted BLINDLY, though: the caller
+    (`_drop_legacy_scores_for_row`) asks `_LegacyScores` which document ids the map
+    actually holds — one read of the `SCORES` item per invocation, shared by every
+    row of the save — so in a deployment with no legacy entries, which is every
+    deployment that never ran the pre-ballot version, no write is issued at all.
+    Removing the entry is still done by CONDITION rather than by that read, because
+    a concurrent save may have retired the same entry in between; the read decides
+    what is worth attempting, the condition decides what happens.
 
     NOW CALLED PER DOCUMENT OF THE SAVED ROW, because the legacy map is keyed by
     document while a ballot is keyed by row. A row's ballot supersedes the
@@ -1260,15 +1267,15 @@ def _drop_legacy_score(table, document_id: str) -> None:
     migration is visible without being fatal.
 
     RETIREMENT: this path is PERMANENT unless someone deliberately makes "drained"
-    observable first. Nothing here can tell a drained map from an empty one — the
-    conditional fails identically whether the entry was just migrated or never
-    existed, and removing the last member leaves an empty `scores` map rather than
-    deleting the item. So "delete this once every deployment has drained" is a
-    condition that can never be shown to have fired, and the one refused
-    conditional write per saved document is the standing cost of keeping it. A
-    future change that wants the path gone has to add the marker it would key on
-    (delete the item when the map empties, or stamp a `migrated_at` on it) as its
-    first step, not assume one exists.
+    observable first. The conditional fails identically whether the entry was just
+    migrated or never existed, and removing the last member leaves an empty `scores`
+    map rather than deleting the item, so "delete this once every deployment has
+    drained" is a condition that can never be shown to have fired. What the
+    per-invocation read above buys is that keeping it costs a deployment with nothing
+    to migrate ONE `get_item` per save and no writes, rather than a write per
+    document of every scored row forever. A future change that wants the path gone
+    still has to add the marker it would key on (delete the item when the map
+    empties, or stamp a `migrated_at` on it) as its first step.
     """
     try:
         table.update_item(
@@ -1284,34 +1291,106 @@ def _drop_legacy_score(table, document_id: str) -> None:
         logger.warning(f"Legacy prioritization score removal failed: {e}")
 
 
-def _drop_legacy_scores_for_row(table, row_id: str) -> None:
-    """Retire the pre-ballot value of every document the saved row holds.
+class _LegacyScores:
+    """Which documents the pre-ballot `SCORES` map still holds, read ONCE per save.
 
-    The translation the write side owes the read side: the legacy map is keyed by
-    DOCUMENT and a ballot is keyed by ROW, so "this row's ballot supersedes that
-    value" means the documents the row holds — the same mapping
-    `_legacy_scores_by_row` performs on the read.
+    THE POINT IS THE EMPTY CASE. Migrate-on-write has to be attempted without the
+    client asking for it, and it is keyed by DOCUMENT while a ballot is keyed by ROW
+    — so "retire what this ballot supersedes" is, per scored row, a read of the row
+    and a conditional delete per document it holds. Done unconditionally that is up
+    to MAX_BALLOTS_PER_SAVE × MAX_ROW_DOCUMENT_IDS sequential writes in one
+    invocation, forever, in a deployment that has never held a single legacy entry —
+    which is every deployment that never ran the pre-ballot version. One keyed read
+    of the map tells us there is nothing to do, and `empty` then skips the row read
+    as well as the writes.
 
-    Costs one keyed read of the row. That read is the only way to learn what a row
-    holds from a row id alone, and it happens only for a save that actually SCORED
-    something (`_is_a_vote`), so an unscored no-op pays nothing.
+    ONE INSTANCE PER SAVE, not per row and not module-level. Per row would re-read
+    the map for each of up to 100 rows. Module-level (or `lru_cache`) would outlive
+    the request on a warm Lambda and cache "there is something here" against a map
+    another invocation has since drained — and, worse, cache emptiness against a
+    table handle from a previous configuration. A save is the natural scope: the
+    entries this save can supersede are the ones present when it started.
 
-    BEST EFFORT THROUGHOUT, including the read: the caller's ballot is already
-    durably written, `_drop_legacy_score` is already documented as unable to
-    surface a failure, and the read's own suppression (`_superseded_rows`) is what
-    makes the no-double-count guarantee hold whether or not any of this lands. So a
-    row that cannot be read leaves the map alone and logs, rather than telling a
-    reviewer their vote failed.
+    BEST EFFORT, like everything on this path: the ballot is already durably
+    written, so a failed read reports NOTHING to remove rather than raising. The
+    read's own suppression (`_superseded_rows`) is what makes the no-double-count
+    guarantee hold whether or not any of this lands.
+    """
+
+    def __init__(self, table) -> None:
+        self._table = table
+        self._document_ids: set[str] | None = None
+
+    def _held(self) -> set[str]:
+        if self._document_ids is None:
+            self._document_ids = _legacy_score_document_ids(self._table)
+        return self._document_ids
+
+    @property
+    def empty(self) -> bool:
+        """True when the map holds nothing this save could supersede.
+
+        The one question worth asking before touching a row: false here and the
+        whole migrate-on-write path — the row read included — is skipped.
+        """
+        return not self._held()
+
+    def drop_for_row(self, row_id: str) -> None:
+        """Retire the pre-ballot value of every document the saved row holds.
+
+        The translation the write side owes the read side: the legacy map is keyed
+        by DOCUMENT and a ballot is keyed by ROW, so "this row's ballot supersedes
+        that value" means the documents the row holds — the same mapping
+        `_legacy_scores_by_row` performs on the read.
+
+        Costs one keyed read of the row, and only when the map is non-empty. That
+        read is the only way to learn what a row holds from a row id alone.
+
+        Attempts a delete only for a document the map was seen to hold, so a row of
+        25 freshly-generated documents in a deployment holding one legacy entry
+        issues at most one write rather than 25. The forgetting is local: an id is
+        dropped from the remembered set once attempted, so two scored rows sharing a
+        document do not both try.
+        """
+        if self.empty:
+            return
+        try:
+            row = self._table.get_item(
+                Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)}
+            ).get('Item')
+        except Exception as e:  # noqa: BLE001 - a landed ballot must never be failed
+            logger.warning(f"Legacy prioritization score removal could not read its row: {e}")
+            return
+        held = self._held()
+        for document_id in _row_document_ids(row):
+            if document_id not in held:
+                continue
+            held.discard(document_id)
+            _drop_legacy_score(self._table, document_id)
+
+
+def _legacy_score_document_ids(table) -> set[str]:
+    """The document ids the legacy `SCORES` map holds, or an empty set.
+
+    Empty for the case that matters — no such item, which is every deployment that
+    never ran the pre-ballot version — and also for a map that has been fully
+    drained, an unreadable one, and a failed read. Every one of those means "nothing
+    here to supersede", and this is a best-effort path on which a landed ballot must
+    never be failed.
     """
     try:
-        row = table.get_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)}
+        item = table.get_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': LEGACY_SCORES_SK}
         ).get('Item')
     except Exception as e:  # noqa: BLE001 - a landed ballot must never be failed
-        logger.warning(f"Legacy prioritization score removal could not read its row: {e}")
-        return
-    for document_id in _row_document_ids(row):
-        _drop_legacy_score(table, document_id)
+        logger.warning(f"Legacy prioritization score read failed: {e}")
+        return set()
+    if not isinstance(item, dict):
+        return set()
+    scores = item.get('scores')
+    if not isinstance(scores, dict):
+        return set()
+    return {key for key in scores if isinstance(key, str) and key}
 
 
 # ============================================
@@ -1422,30 +1501,61 @@ PROTOTYPE_SK_PREFIX = 'PROTOTYPE#'
 def _default_row_composition(documents: list[dict]) -> tuple[list[str], str]:
     """The concrete ids a project's default row is first composed of.
 
+    THE LATEST OF EACH SCORABLE TYPE — one PRD and one PR/FAQ at most — plus the
+    project's latest prototype as a separate field. The prototype is context a
+    reviewer looks at rather than a document the row is scored on, which is why it
+    is not in `document_ids`.
+
     "Latest of each type" describes THIS FUNCTION and nothing else. What it
     returns is a list of ids, and the row stores those ids; a row never holds a
     selector, so generating a new PRD later changes no existing row. That is what
     keeps a ballot describing the documents it was cast about.
 
-    Every scorable document of the project, newest first per type, plus the
-    project's latest prototype as a separate field — the prototype is context a
-    reviewer looks at rather than a document the row is scored on, which is why it
-    is not in `document_ids`.
+    LATEST PER TYPE, NOT EVERY REVISION. Every scorable document of the project
+    would put each iteration of a PRD on the row: a project that revised its PRD
+    four times would get a row whose collapsed header shows seven type badges and
+    whose copy says "7 documents, one ballot" about one idea described twice. A
+    superseded draft is not a separate thing to score — it is the same thing,
+    earlier — and the defect this change exists to fix is precisely one idea being
+    presented as several. Choosing a different set (an older revision, both of two
+    PRDs) is phase 2's `document_ids`-on-the-request, and the storage already holds
+    an arbitrary list so nothing here has to move for it.
 
-    Bounded at MAX_ROW_DOCUMENT_IDS, keeping the NEWEST: a row is one item read on
-    every page load, and a project with hundreds of generated PRDs would otherwise
-    compose a row nobody can read. Newest is the half a reviewer is scoring.
+    Still bounded at MAX_ROW_DOCUMENT_IDS. Unreachable while the rule is
+    latest-per-type and there are two types, and kept anyway: a row is one item read
+    on every page load, the bound is the storage contract the frontend's schema
+    mirrors, and it must hold whatever a later composition rule decides.
     """
-    scorable = [
-        item for item in documents
-        if str(item.get('sk', '')).startswith(SCORABLE_SK_PREFIXES)
-    ]
-    scorable.sort(key=lambda item: str(item.get('created_at', '')), reverse=True)
-    document_ids: list[str] = []
-    for item in scorable[:MAX_ROW_DOCUMENT_IDS]:
+    # Newest per type, by sort-key prefix — which is how the type is spelled in
+    # storage (`SCORABLE_SK_PREFIXES`), so this cannot disagree with what counts as
+    # scorable. `created_at` compares lexicographically because it is an ISO-8601
+    # instant; a document with none sorts oldest, which is the right way for an
+    # unreadable timestamp to lose to a readable one.
+    newest_by_type: dict[str, dict] = {}
+    for item in documents:
+        sk = str(item.get('sk', ''))
+        prefix = next((p for p in SCORABLE_SK_PREFIXES if sk.startswith(p)), None)
+        if prefix is None:
+            continue
         document_id = item.get('document_id')
-        if isinstance(document_id, str) and document_id and document_id not in document_ids:
+        if not isinstance(document_id, str) or not document_id:
+            continue
+        incumbent = newest_by_type.get(prefix)
+        if incumbent is None or str(item.get('created_at', '')) > str(incumbent.get('created_at', '')):
+            newest_by_type[prefix] = item
+
+    # Ordered by SCORABLE_SK_PREFIXES rather than by recency, so the badges on a
+    # collapsed row read in a stable order across projects instead of flipping with
+    # which document happened to be generated last.
+    document_ids: list[str] = []
+    for prefix in SCORABLE_SK_PREFIXES:
+        item = newest_by_type.get(prefix)
+        if item is None:
+            continue
+        document_id = item['document_id']
+        if document_id not in document_ids:
             document_ids.append(document_id)
+    document_ids = document_ids[:MAX_ROW_DOCUMENT_IDS]
 
     prototypes = [
         item for item in documents
@@ -1923,6 +2033,9 @@ def api_patch_prioritization_scores():
     # `updated_count` claims to be.
     rows_written = 0
     ballots = 0
+    # Read ONCE for the whole save, and lazily: a save that scores nothing never
+    # touches it. See `_LegacyScores` for why the scope is the save.
+    legacy = _LegacyScores(table)
     try:
         for row_id, entry in validated:
             update_kwargs = _ballot_update_kwargs(row_id, subject, entry, now)
@@ -1935,7 +2048,7 @@ def api_patch_prioritization_scores():
             # that value is a score and nothing else supersedes it. An entry that
             # expressed no axis would otherwise delete a value it did not replace.
             if _is_a_vote(entry):
-                _drop_legacy_scores_for_row(table, row_id)
+                legacy.drop_for_row(row_id)
         return {'success': True, 'updated_count': ballots}
     except ApiError:
         raise
