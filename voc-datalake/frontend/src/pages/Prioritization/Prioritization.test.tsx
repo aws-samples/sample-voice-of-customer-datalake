@@ -514,8 +514,9 @@ describe('Prioritization', () => {
       })
       await user.click(screen.getByText('Feature A PR/FAQ'))
       const sliders = await screen.findAllByRole('slider')
-      // Exactly one slider moves. The other three display 3 — the seeding that makes
-      // the control usable — and that display value must not become a vote.
+      // Exactly one slider moves. The other three read "Not scored" (#343 —
+      // the handle rests mid-track as presentation, but no number is asserted
+      // on screen), and an unscored axis must not become a vote.
       fireEvent.change(sliders[0], { target: { value: '5' } })
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
@@ -531,6 +532,44 @@ describe('Prioritization', () => {
       const body = mockPatchPrioritizationScores.mock.calls[0][0]
       for (const axis of ['time_to_market', 'confidence', 'strategic_fit', 'notes']) {
         expect(Object.hasOwn(body[R.d1], axis), axis).toBe(false)
+      }
+    })
+
+    it('shows a stored partial ballot as it is recorded: the scored axis a number, the rest not scored', async () => {
+      // The assertion nothing made before #343. The editor coerced a stored 0
+      // to a displayed 3 — purely for display, never written — so after a
+      // partial save the sliders read 4/3/3/3 against a record of 4/0/0/0,
+      // and the reviewer could never discover on screen that three quarters of
+      // their ballot was recorded as nothing. Reproduced on production before
+      // it was fixed; this pins that the editor and the record now agree.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({
+        // Exactly what the API returns after `PATCH {impact: 4}` on a fresh
+        // row: the expressed axis, and 0.0 (the wire encoding of "absent") for
+        // the rest.
+        scores: {
+          [R.d1]: { row_id: R.d1, impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, notes: '' },
+        },
+        aggregates: {
+          [R.d1]: { impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, reviewer_count: 1, score_spread: 0 },
+        },
+      })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+
+      // The one scored axis reads as its number...
+      expect(sliders[0]).toHaveValue('4')
+      expect(sliders[0]).not.toHaveAttribute('aria-valuetext')
+      // ...and each unscored one says so where a screen reader listens. The
+      // handle may REST at mid-track (a range input cannot be valueless), but
+      // no number is presented as the axis's value.
+      for (const slider of sliders.slice(1)) {
+        expect(slider).toHaveAttribute('aria-valuetext', 'Not scored')
       }
     })
 

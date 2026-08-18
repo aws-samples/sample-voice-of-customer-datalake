@@ -24,10 +24,12 @@ import type { ReactElement } from 'react'
  *
  * The MIDDLE of the range, deliberately, and every axis alike: a submitter is a
  * person in a room with no stored ballot to restore, so there is nothing to
- * default to except a neutral position. It matches the value the prioritization
- * page shows for an unset axis (`score.impact === 0 ? 3 : …`), so a ballot cast
- * here without touching a slider reads the same as the signed-in page's own
- * untouched row rather than as an emphatic zero.
+ * default to except a neutral position. This is a REAL 3 that the submit sends
+ * — every axis goes in the body, so an unmoved slider casts a genuine neutral
+ * vote — which is different from the signed-in page's unscored state, where a
+ * slider showing no value sends nothing and the axis stays unrecorded
+ * (`ScoreSlider`, #343). A room glancing at a phone gets a position to accept
+ * or move; a reviewer at a desk gets an honest "you have not scored this".
  */
 const NEUTRAL = 3
 

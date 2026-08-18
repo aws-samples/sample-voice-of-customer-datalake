@@ -129,6 +129,7 @@
     "impact": "Impacto",
     "impactDescription": "Valor comercial e benefício ao cliente",
     "low": "Baixo",
+    "notScored": "Sem pontuação",
     "slow": "Lento",
     "strategicFit": "Alinhamento Estratégico",
     "strategicFitDescription": "Alinhamento com objetivos da empresa",

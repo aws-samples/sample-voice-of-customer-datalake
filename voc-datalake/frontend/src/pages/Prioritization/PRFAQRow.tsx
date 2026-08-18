@@ -83,6 +83,19 @@ function unscoredLabel(kind: TeamView['kind'], t: TFunction): string {
  * ballot produces a mean equal to that ballot and a spread of zero: without the
  * count, "one person looked" is indistinguishable from "we agree".
  */
+/**
+ * One team number as the row prints it: the value to one decimal, or the
+ * decorative dash for an axis nobody scored (`null`). One renderer, because the
+ * three chips printing independently is how a dash and a `0.0` could otherwise
+ * coexist for the same absence.
+ */
+function TeamNumber({ value }: { readonly value: number | null }): ReactElement {
+  if (value === null) {
+    return <span aria-hidden="true" className="text-gray-300">—</span>
+  }
+  return <>{value.toFixed(1)}</>
+}
+
 function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
   const { t } = useTranslation('prioritization')
   if (team.kind !== 'scored') {
@@ -111,19 +124,25 @@ function TeamScoreSummary({ team }: { readonly team: TeamView }): ReactElement {
           order two rows that show the same number. One rounding, shared — the rule
           `displayComposite` already follows. Captions are `text-gray-500` (4.63:1 on this
           white row) rather than `text-gray-400` (2.49:1), which is under AA at this size. */}
+      {/* An axis nobody scored is `null` and prints as the same decorative dash
+          the non-scored branch above uses — never a number. The backend reports
+          0.0 for it, and printing that ranked "nobody mentioned time to market"
+          as "the team rated it worst" (#343). */}
       <div className="text-center">
-        <div className="text-base sm:text-lg font-bold text-blue-600">{scored.displayImpact.toFixed(1)}</div>
+        <div className="text-base sm:text-lg font-bold text-blue-600"><TeamNumber value={scored.displayImpact} /></div>
         <div className="text-xs text-gray-500">{t('scores.impact')}</div>
       </div>
       <div className="text-center">
-        <div className="text-base sm:text-lg font-bold text-purple-600">{scored.displayTimeToMarket.toFixed(1)}</div>
+        <div className="text-base sm:text-lg font-bold text-purple-600"><TeamNumber value={scored.displayTimeToMarket} /></div>
         <div className="text-xs text-gray-500">{t('sort.ttm')}</div>
       </div>
       <div className="text-center px-2 sm:px-3 py-1 bg-gray-50 rounded-lg">
         {/* The same rounded value the priority band beside the title classifies, so
             the printed number and the label describing it are one value rather than
-            two roundings of it. */}
-        <div className="text-lg sm:text-xl font-bold text-green-600">{scored.displayComposite.toFixed(1)}</div>
+            two roundings of it. Null — a ballot that expressed no axis at all,
+            only a note — prints the dash, and the band beside the title reads
+            "Not Scored" off the same null. */}
+        <div className="text-lg sm:text-xl font-bold text-green-600"><TeamNumber value={scored.displayComposite} /></div>
         {/* Labelled as the TEAM's score, not "Score": this number changed meaning
             from "my composite" to "the team's mean composite", and a row a reader
             cannot attribute is worse than either alone. */}
@@ -326,8 +345,12 @@ function TeamScorePanel({ team }: { readonly team: TeamView }): ReactElement {
       {score ? (
         <>
           <p className="text-sm text-indigo-900 mt-1">
+            {/* A null composite — a ballot that expressed no axis, only a note —
+                interpolates the same dash the chips print, keeping one key in
+                eight catalogues rather than a second sentence for a state the
+                reviewer count beside it already explains. */}
             {t('team.summary', {
-              score: score.displayComposite.toFixed(1),
+              score: score.displayComposite === null ? '—' : score.displayComposite.toFixed(1),
               reviewers: score.reviewerCount,
             })}
           </p>
@@ -439,10 +462,16 @@ function PRFAQRowExpanded({
               </p>
             ) : null}
           </div>
-          <ScoreSlider label={t('scores.impact')} value={score.impact === 0 ? 3 : score.impact} onChange={(v) => onUpdateScore('impact', v)} description={t('scores.impactDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
-          <ScoreSlider label={t('scores.timeToMarket')} value={score.time_to_market === 0 ? 3 : score.time_to_market} onChange={(v) => onUpdateScore('time_to_market', v)} description={t('scores.timeToMarketDescription')} lowLabel={t('scores.slow')} highLabel={t('scores.fast')} />
-          <ScoreSlider label={t('scores.strategicFit')} value={score.strategic_fit === 0 ? 3 : score.strategic_fit} onChange={(v) => onUpdateScore('strategic_fit', v)} description={t('scores.strategicFitDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
-          <ScoreSlider label={t('scores.confidence')} value={score.confidence === 0 ? 3 : score.confidence} onChange={(v) => onUpdateScore('confidence', v)} description={t('scores.confidenceDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
+          {/* The stored value goes in RAW: 0 means unscored (the API's own
+              contract) and `ScoreSlider` renders it as such. The old
+              `=== 0 ? 3` coercion here painted a mid-range number the record
+              did not hold, indistinguishable from a stored 3 — so a reviewer
+              whose partial save recorded three axes as nothing could never
+              discover it on screen (#343). */}
+          <ScoreSlider label={t('scores.impact')} value={score.impact} onChange={(v) => onUpdateScore('impact', v)} description={t('scores.impactDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
+          <ScoreSlider label={t('scores.timeToMarket')} value={score.time_to_market} onChange={(v) => onUpdateScore('time_to_market', v)} description={t('scores.timeToMarketDescription')} lowLabel={t('scores.slow')} highLabel={t('scores.fast')} />
+          <ScoreSlider label={t('scores.strategicFit')} value={score.strategic_fit} onChange={(v) => onUpdateScore('strategic_fit', v)} description={t('scores.strategicFitDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
+          <ScoreSlider label={t('scores.confidence')} value={score.confidence} onChange={(v) => onUpdateScore('confidence', v)} description={t('scores.confidenceDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
           <div>
             <label className="text-sm font-medium text-gray-700">{t('notes.label')}</label>
             {/* Bounded, because the API REFUSES a longer note rather than

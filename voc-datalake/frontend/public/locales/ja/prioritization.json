@@ -129,6 +129,7 @@
     "impact": "インパクト",
     "impactDescription": "ビジネス価値と顧客メリット",
     "low": "低",
+    "notScored": "未採点",
     "slow": "遅い",
     "strategicFit": "戦略的適合性",
     "strategicFitDescription": "会社の目標との整合性",

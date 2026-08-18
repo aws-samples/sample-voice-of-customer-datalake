@@ -32,9 +32,14 @@ describe('getScore', () => {
 
     const result = getScore(scores, 'missing-id')
 
+    // 0 on EVERY axis, one shared unscored sentinel (#343). time_to_market
+    // used to default to 3 while its siblings defaulted to 0, so the number 3
+    // had two unrelated sources — a default here and a display coercion in the
+    // row — that agreed only by accident.
     expect(result.impact).toBe(0)
-    expect(result.time_to_market).toBe(3)
+    expect(result.time_to_market).toBe(0)
     expect(result.confidence).toBe(0)
+    expect(result.strategic_fit).toBe(0)
     expect(result.row_id).toBe('missing-id')
   })
 
@@ -49,8 +54,11 @@ describe('calculatePriorityScore', () => {
   it('returns 0 for default unscored item', () => {
     const score = { ...DEFAULT_SCORE, row_id: 'd1' }
 
-    // impact=0*0.4 + ttm=3*0.3 + strategic=0*0.2 + confidence=0*0.1 = 0.9
-    expect(calculatePriorityScore(score)).toBeCloseTo(0.9)
+    // The name finally tells the truth: with every axis at the unscored
+    // sentinel (0), the raw weighted sum is 0. It used to be 0.9 — the phantom
+    // composite of time_to_market's old default of 3 — which is what let an
+    // untouched proposal outrank one the team genuinely rated low.
+    expect(calculatePriorityScore(score)).toBe(0)
   })
 
   it('computes weighted score correctly', () => {
@@ -614,6 +622,67 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
 })
 
 describe('getTeamScore', () => {
+  // The #343 arithmetic: the composite covers what the team EXPRESSED, weights
+  // renormalised to the expressed axes, and an axis the backend reported as 0.0
+  // (its contract for "nobody scored this") is null — a dash, not a number.
+
+  it('renormalises a one-axis ballot to that axis rather than averaging in zeros', () => {
+    // Impact 4 alone. Weighing the three unexpressed axes as 0 composited this
+    // to 1.6 and banded it Low Priority — three zeros nobody entered outvoting
+    // the one number somebody did, which is the production defect (#343).
+    const team = getTeamScore({
+      d1: aggregate({ impact: 4, time_to_market: 0, strategic_fit: 0, confidence: 0, reviewer_count: 1 }),
+    }, 'd1')
+
+    expect(team?.displayComposite).toBe(4.0)
+    expect(team?.displayImpact).toBe(4.0)
+    expect(team?.reviewerCount).toBe(1)
+  })
+
+  it('reports an axis nobody scored as null, never as a number', () => {
+    const team = getTeamScore({
+      d1: aggregate({ impact: 4, time_to_market: 0, strategic_fit: 0, confidence: 0, reviewer_count: 1 }),
+    }, 'd1')
+
+    // 0.0 TTM on a ballot that never mentioned time to market was the chip
+    // that made the row read as rated-worst on an axis nobody rated.
+    expect(team?.displayTimeToMarket).toBeNull()
+  })
+
+  it('renormalises two expressed axes over their own weights', () => {
+    // impact 4 (weight .4) + confidence 2 (weight .1): (1.6 + 0.2) / 0.5 = 3.6.
+    const team = getTeamScore({
+      d1: aggregate({ impact: 4, time_to_market: 0, strategic_fit: 0, confidence: 2, reviewer_count: 2 }),
+    }, 'd1')
+
+    expect(team?.displayComposite).toBe(3.6)
+  })
+
+  it('a ballot that expressed no axis at all has no composite', () => {
+    // A notes-only ballot: the aggregate row exists (reviewer_count 1) and no
+    // axis was scored. There is no number to print, and inventing one is the
+    // defect this replaces. The band reads 'none' off the same null.
+    const team = getTeamScore({
+      d1: aggregate({ impact: 0, time_to_market: 0, strategic_fit: 0, confidence: 0, reviewer_count: 1 }),
+    }, 'd1')
+
+    expect(team?.displayComposite).toBeNull()
+    expect(team?.displayImpact).toBeNull()
+    expect(team?.displayTimeToMarket).toBeNull()
+    expect(team?.reviewerCount).toBe(1)
+  })
+
+  it('a fully-expressed aggregate composites exactly as before', () => {
+    // The regression guard for the renormalisation: when every axis is
+    // expressed, the expressed weights sum to 1 and dividing by them changes
+    // nothing — a full ballot's number is untouched by #343.
+    const team = getTeamScore({
+      d1: aggregate({ impact: 5, time_to_market: 4, strategic_fit: 2, confidence: 3, reviewer_count: 4 }),
+    }, 'd1')
+
+    expect(team?.displayComposite).toBe(3.9)
+  })
+
   it('composites the team means through the same weights the page sorts by', () => {
     // 5*0.4 + 4*0.3 + 2*0.2 + 3*0.1 = 3.9 — the calculatePriorityScore case above,
     // reached through the aggregate. The displayed number and the sort order are
@@ -716,6 +785,21 @@ describe('priorityBand', () => {
 
   it('names an unscored document, and ONLY an unscored one, as unbanded', () => {
     expect(priorityBand(getTeamView({}, 'd1'))).toBe('none')
+  })
+
+  it('bands a notes-only ballot as Not Scored rather than Low', () => {
+    // Somebody said something — the reviewer count is real — but nobody scored
+    // an axis, so there is no composite to band. 'low' would rank a comment as
+    // a verdict; before #343 the four zeros composited to 0 and did exactly
+    // that.
+    expect(bandOf({ ...uniform(0), reviewer_count: 1 })).toBe('none')
+  })
+
+  it('bands a one-axis ballot by that axis, not by the zeros beside it', () => {
+    // The production reproduction of #343: impact 4 alone banded 'low' off a
+    // 1.6 composite. Renormalised, the one expressed number is the composite.
+    expect(bandOf({ impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, reviewer_count: 1 }))
+      .toBe('high')
   })
 
   it('names a document whose team view could not be READ as neither', () => {
@@ -1672,7 +1756,9 @@ describe('StatsCards regression: scores with missing document_id', () => {
 
     const score = getScore(scores, 'missing')
     expect(() => calculatePriorityScore(score)).not.toThrow()
-    expect(calculatePriorityScore(score)).toBeCloseTo(0.9)
+    // All-zero sentinel composites to 0 (#343) — see 'returns 0 for default
+    // unscored item' for why this stopped being 0.9.
+    expect(calculatePriorityScore(score)).toBe(0)
   })
 })
 

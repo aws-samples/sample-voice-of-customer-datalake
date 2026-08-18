@@ -129,6 +129,7 @@
     "impact": "영향도",
     "impactDescription": "비즈니스 가치 및 고객 이점",
     "low": "낮음",
+    "notScored": "미채점",
     "slow": "느림",
     "strategicFit": "전략적 부합도",
     "strategicFitDescription": "회사 목표와의 부합도",
