@@ -72,14 +72,46 @@ describe('the status behind a real fetchApi rejection', () => {
     expect(isPermanentRefusal(reason)).toBe(false)
   })
 
-  it('recovers every 4xx status, not just the one a caller thought of', async () => {
-    // 403 (no permission) and 404 (nothing there) are the two the row-ensure meets in
-    // practice; 429 is a refusal by status class and a retry by intent, and it is
-    // deliberately read as permanent here — the API's throttling answer is a 5xx.
-    for (const status of [403, 404, 409, 429]) {
+  it('recovers every settled 4xx, not just the one a caller thought of', async () => {
+    // 404 (nothing there) and 409 (a conflict with stored state) answer the same however
+    // often they are asked, so the row-ensure must stop asking — as does the 400 its own
+    // case above covers. These are the statuses whose permanence is the POINT of the
+    // predicate: widening the retryable set until it swallows one of them turns the
+    // once-per-mount ask back into a per-refetch loop.
+    for (const status of [404, 409]) {
       // eslint-disable-next-line no-await-in-loop
       expect(isPermanentRefusal(await rejectionFor(status))).toBe(true)
     }
+  })
+
+  it('recovers a 429 and calls it worth retrying, because a throttle is not an answer', async () => {
+    // INVERTED from asserting `true`. The old justification — "the API's throttling
+    // answer is a 5xx" — was simply wrong about the platform: API Gateway answers 429
+    // for method and stage throttling, for a usage plan limit, and for the
+    // account-level request quota, and the SDKs treat 429 as the retryable status by
+    // definition. The caller fans out one request per project inside a single
+    // `Promise.allSettled` on mount, which is precisely the burst that trips those
+    // limits, so calling a throttle settled is worst exactly when it fires most: the
+    // throttled projects are never released, and a page whose whole content is those
+    // rows loses them for the rest of the mount with no message on screen.
+    const reason = await rejectionFor(429)
+
+    expect(apiErrorStatus(reason)).toBe(429)
+    expect(isPermanentRefusal(reason)).toBe(false)
+  })
+
+  it('recovers a 403 and calls it worth retrying, because the edge answers it too', async () => {
+    // Also inverted. 403 is not only "you may not": AWS WAF answers 403 for a blocked
+    // request — including a rate-based rule tripped by the same mount burst as above —
+    // and an authorizer answers it for authorization that has LAPSED rather than never
+    // existed. A real refusal does live here, so this is the deliberate trade: retrying
+    // one costs a further idempotent, refused conditional write per pass, while not
+    // retrying a WAF block drops the project off the page silently. The cheap mistake
+    // is the one to make.
+    const reason = await rejectionFor(403)
+
+    expect(apiErrorStatus(reason)).toBe(403)
+    expect(isPermanentRefusal(reason)).toBe(false)
   })
 
   it('never sees a 401, because fetchApi answers that one itself', async () => {
@@ -137,7 +169,13 @@ describe('a typed status is preferred to a parsed one', () => {
     // working, which a message-only reader would not.
     expect(apiErrorStatus(new ApiError(403))).toBe(403)
     expect(apiErrorStatus(new ApiError(503, 'Upstream unavailable'))).toBe(503)
-    expect(isPermanentRefusal(new ApiError(403, 'Forbidden: not a reviewer'))).toBe(true)
+    // Custom messages on purpose: none of these three parses as `API Error: {status}`,
+    // so each answer can ONLY come from the typed field. The permanence case carries a
+    // 404 rather than the 403 it used to, because a 403 now answers `false` — and so
+    // does a dropped `ApiError` branch, which would have left that one assertion passing
+    // for the wrong reason while the line above it did all the pinning.
+    expect(isPermanentRefusal(new ApiError(404, 'No such project'))).toBe(true)
     expect(isPermanentRefusal(new ApiError(503, 'Upstream unavailable'))).toBe(false)
+    expect(isPermanentRefusal(new ApiError(403, 'Blocked by WAF'))).toBe(false)
   })
 })

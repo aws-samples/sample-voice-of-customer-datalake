@@ -45,16 +45,42 @@ export function apiErrorStatus(reason: unknown): number | null {
 }
 
 /**
+ * The two 4xx statuses that are NOT the server's settled answer about the request.
+ *
+ * Both are answered by the edge rather than by the route, so neither says anything
+ * about the request's own merits:
+ *
+ * - **429** is throttling — API Gateway's method/stage limits, a usage plan, or the
+ *   account-level request quota. A caller that fans out one request per project on
+ *   mount is exactly the shape that gets throttled, and "you asked too fast" is the
+ *   definition of "ask again".
+ * - **403** is what AWS WAF answers for a blocked request, including a rate-based
+ *   rule tripped by that same burst, and what an authorizer answers for
+ *   authorization that has lapsed rather than authorization that was never there.
+ *   A genuine "you may not" does live here too, so this one is a JUDGEMENT: the two
+ *   mistakes cost wildly different amounts. Retrying a real refusal costs one more
+ *   idempotent, refused write per pass; NOT retrying a WAF block or a lapsed token
+ *   loses that project off the page for the rest of the mount with nothing on screen
+ *   saying so. Cheap-and-wrong beats silent-and-wrong.
+ *
+ * A status is only listed here when asking again can plausibly get a DIFFERENT
+ * reply. 400, 404 and 409 are not: a body the route refuses, a resource that is not
+ * there, and a conflict with stored state all answer the same however often they are
+ * asked.
+ */
+const RETRYABLE_4XX = new Set([403, 429])
+
+/**
  * Is this rejection the server's settled answer about the request, rather than a
  * passing failure worth retrying?
  *
- * A 4xx says the same thing however many times it is asked — no permission, a body
- * the route refuses, a resource that is not there — while a 5xx, a throttle and a
- * network fault are all reasons to try again. Anything with NO recoverable status
+ * Most of 4xx says the same thing however many times it is asked — a body the route
+ * refuses, a resource that is not there — while a 5xx, a throttle, an edge block and
+ * a network fault are all reasons to try again. Anything with NO recoverable status
  * counts as retryable, deliberately: a request that never reached a server has not
  * been answered.
  */
 export function isPermanentRefusal(reason: unknown): boolean {
   const status = apiErrorStatus(reason)
-  return status !== null && status >= 400 && status < 500
+  return status !== null && status >= 400 && status < 500 && !RETRYABLE_4XX.has(status)
 }

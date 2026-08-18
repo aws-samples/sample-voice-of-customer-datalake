@@ -2964,23 +2964,40 @@ class TestAColonInTheSubjectIsNotTheDelimiter:
 class FakeProjectsTable:
     """The projects table, only as far as a row composition reads it.
 
-    One `query` on a project's partition, which is exactly what
+    One paginated `query` on a project's partition, which is exactly what
     `_project_documents` issues. Nothing else, so a composition that reached for
     another read would fail here rather than pass against a permissive fake.
+
+    `page_size` is what makes the pagination observable, and it mirrors
+    `FakeAggregatesTable`'s: unset, the whole partition comes back in one page and
+    no `LastEvaluatedKey` is offered, which is the shape every test that does not
+    care about paging already relies on. Set, a partition longer than one page
+    comes back cut, exactly as DynamoDB cuts a query at 1MB — and a reader that
+    ignores the continuation key sees a project it has only partly read.
     """
 
-    def __init__(self, items=None):
+    def __init__(self, items=None, page_size=None):
         self.items = [dict(item) for item in (items or [])]
+        self.page_size = page_size
         self.query_calls = []
 
     def query(self, **kwargs):
         self.query_calls.append(kwargs)
         # The condition is `Key('pk').eq(f'PROJECT#{project_id}')`; read the value
         # back out of it rather than accepting every query, so a composition
-        # reading the WRONG project's partition fails here.
+        # reading the WRONG project's partition fails here. Asked on EVERY page, so
+        # a continuation that lost the project id fails here too.
         expression = kwargs['KeyConditionExpression']
         wanted = expression._values[1]
-        return {'Items': [item for item in self.items if item['pk'] == wanted]}
+        items = [item for item in self.items if item['pk'] == wanted]
+        start = kwargs.get('ExclusiveStartKey')
+        if start:
+            items = items[[item['sk'] for item in items].index(start['sk']) + 1:]
+        if self.page_size and len(items) > self.page_size:
+            page = items[:self.page_size]
+            return {'Items': page,
+                    'LastEvaluatedKey': {'pk': wanted, 'sk': page[-1]['sk']}}
+        return {'Items': items}
 
 
 def project_document(project_id, sk_prefix, document_id, created_at):
@@ -2997,12 +3014,21 @@ def project_meta(project_id):
 
 
 def _create_row(aggregates, projects, api_gateway_event, lambda_context,
-                body=None, subject='reviewer-1'):
+                body=None, subject='reviewer-1', raw_body=None):
+    """`raw_body` puts bytes on the wire as they arrive, bypassing `body`.
+
+    Needed because the event fixture serialises whatever it is handed, so a body
+    that is not JSON at all cannot be expressed as `body=` — `'{not json'` would go
+    out as the valid JSON string `'"{not json"'`. Same technique
+    `test_ballots_handler` uses for the non-object bodies of its own submit route.
+    """
     from projects_handler import lambda_handler
 
     event = api_gateway_event(
         method='POST', path='/projects/prioritization/rows', body=body,
     )
+    if raw_body is not None:
+        event['body'] = raw_body
     event['requestContext']['authorizer']['claims']['sub'] = subject
     with (
         patch('projects_handler.get_aggregates_table', return_value=aggregates),
@@ -3131,6 +3157,35 @@ class TestADefaultRowExistsPerProjectWithoutASetupStep:
         ]), api_gateway_event, lambda_context, body={'project_id': 'p1'})
 
         assert body['row']['document_ids'] == ['prd-dated']
+
+    def test_two_same_type_documents_sharing_a_timestamp_keep_the_earlier_key(
+        self, api_gateway_event, lambda_context
+    ):
+        """Two PRDs generated in the same second have to resolve to ONE of them, and
+        which one is frozen into the row forever: the create is idempotent on the row
+        id and there is no recompose route, so every ballot cast afterwards describes
+        whichever document this tie handed back.
+
+        The incumbent wins — the first the query returned, which is the lower sort
+        key, since `sk` carries the document id and DynamoDB returns a partition in
+        sort-key order. Pinned because the comparison is a strict `>` whose tie
+        behaviour is invisible: relaxing it to `>=` flips the frozen document to the
+        LAST one read while every other composition test still passes, so nothing
+        else in this file would notice a project's row quietly changing what it is
+        about.
+
+        Distinct from its absent-timestamp sibling above: that one asks which of an
+        undated and a dated document wins, this one asks what happens when neither
+        is newer."""
+        aggregates = FakeAggregatesTable()
+
+        _, body = _create_row(aggregates, FakeProjectsTable([
+            project_meta('p1'),
+            project_document('p1', 'PRD#', 'prd-a', '2026-08-01T00:00:00+00:00'),
+            project_document('p1', 'PRD#', 'prd-b', '2026-08-01T00:00:00+00:00'),
+        ]), api_gateway_event, lambda_context, body={'project_id': 'p1'})
+
+        assert body['row']['document_ids'] == ['prd-a']
 
     def test_only_scorable_documents_and_the_latest_prototype_are_on_it(
         self, api_gateway_event, lambda_context
@@ -3277,6 +3332,128 @@ class TestADefaultRowExistsPerProjectWithoutASetupStep:
         assert sorted(body['rows'][row_id]['document_ids']) == ['prd-1', 'prfaq-1']
 
 
+class TestAPartlyReadProjectCannotBeFrozenIntoARow:
+    """A composition reads a whole project or refuses. It never composes from part
+    of one.
+
+    DynamoDB cuts a query at 1MB, and project documents store their body inline, so
+    a project with a few revisions and a product report reaches that without being
+    unusual. What a short read costs here is not a hidden document: `sk` sorts
+    ascending and `DOC#` precedes `META`, so truncation inside the document range
+    makes the existence check answer 404 for a project that exists — and truncation
+    later composes the row from a SUPERSEDED PRD, or refuses a project that has one.
+
+    Then it sticks. The create is idempotent on the row id and there is no recompose
+    route, so a row built from a short read cannot be corrected through the product,
+    and every ballot cast on it afterwards describes documents nobody chose. That
+    asymmetry between a refusal (retryable) and a wrong composition (permanent) is
+    why the page bound raises instead of returning what it has.
+    """
+
+    @staticmethod
+    def _one_document_per_page(project_id='p1', documents=()):
+        return FakeProjectsTable([project_meta(project_id), *documents], page_size=1)
+
+    def test_the_newest_prd_still_composes_the_row_when_it_arrives_on_a_later_page(
+        self, api_gateway_event, lambda_context
+    ):
+        """The read has to follow the continuation key, and the test has to make the
+        difference visible in the STORED row rather than in a page count: a reader
+        that stopped at the first page would compose this project's row around its
+        superseded PRD and freeze it there, which is a wrong row rather than a
+        missing one."""
+        projects = self._one_document_per_page(documents=[
+            project_document('p1', 'PRD#', 'prd-old', '2026-08-01T00:00:00+00:00'),
+            project_document('p1', 'PRD#', 'prd-new', '2026-08-09T00:00:00+00:00'),
+        ])
+        aggregates = FakeAggregatesTable()
+
+        status, body = _create_row(aggregates, projects, api_gateway_event,
+                                   lambda_context, body={'project_id': 'p1'})
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-new']
+        assert len(projects.query_calls) == 3, 'the read stopped before the partition did'
+
+    def test_a_project_whose_meta_arrives_after_its_documents_is_not_reported_missing(
+        self, api_gateway_event, lambda_context
+    ):
+        """The worst shape a short read produces, because it does not look like a
+        paging fault to anybody — it looks like a deleted project.
+
+        Seeded in the sort-key order storage actually returns: `DOC#` precedes `META`,
+        which precedes `PRD#`, so a project carrying generic documents hands back
+        neither its own record nor its PRD until the pages before them are done. A
+        reader stopping early answers 404 for a project sitting right there, and the
+        page's own words for that are about a project that does not exist."""
+        projects = FakeProjectsTable([
+            project_document('p1', 'DOC#', 'doc-1', '2026-08-01T00:00:00+00:00'),
+            project_meta('p1'),
+            project_document('p1', 'PRD#', 'prd-1', '2026-08-02T00:00:00+00:00'),
+        ], page_size=1)
+
+        status, body = _create_row(FakeAggregatesTable(), projects, api_gateway_event,
+                                   lambda_context, body={'project_id': 'p1'})
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-1']
+
+    def test_the_read_asks_only_for_the_fields_the_composition_uses(
+        self, api_gateway_event, lambda_context
+    ):
+        """Documents keep their body in `content`, so an unprojected read drags every
+        full PRD, PR/FAQ, research doc and product report across the wire to pick two
+        ids — and the page asks for one composition per project on mount. Asserted on
+        the request rather than on the response, because projecting fewer fields
+        changes nothing a composition returns: the cost is the whole observable
+        effect."""
+        projects = self._one_document_per_page(documents=[
+            project_document('p1', 'PRD#', 'prd-old', '2026-08-01T00:00:00+00:00'),
+            project_document('p1', 'PRD#', 'prd-new', '2026-08-09T00:00:00+00:00'),
+        ])
+
+        _create_row(FakeAggregatesTable(), projects, api_gateway_event,
+                    lambda_context, body={'project_id': 'p1'})
+
+        assert projects.query_calls
+        for call in projects.query_calls:
+            projected = {field.strip() for field in call['ProjectionExpression'].split(',')}
+            assert projected == {'sk', 'document_id', 'created_at'}, (
+                'the composition selects on the type, the id and the timestamp; '
+                'anything else here is a document body being paid for'
+            )
+
+    def test_a_project_with_more_pages_than_the_bound_refuses_rather_than_composing(
+        self, api_gateway_event, lambda_context
+    ):
+        """Past the bound there are two options and only one of them is recoverable.
+        A refusal is a 500 the caller can retry against a fixed bound; a row composed
+        from what arrived is frozen, and it is frozen holding a document chosen by
+        where the page happened to end.
+
+        The bound is read from the module rather than spelled here, so raising it
+        moves this test with it instead of leaving a stale number asserting nothing.
+        """
+        from projects_handler import MAX_PROJECT_DOCUMENT_PAGES
+
+        # One document per page, one more page than the read will follow.
+        projects = self._one_document_per_page(documents=[
+            project_document('p1', 'PRD#', f'prd-{n}', f'2026-08-01T00:00:{n:02d}+00:00')
+            for n in range(1, MAX_PROJECT_DOCUMENT_PAGES + 1)
+        ])
+        aggregates = FakeAggregatesTable()
+
+        status, body = _create_row(aggregates, projects, api_gateway_event,
+                                   lambda_context, body={'project_id': 'p1'})
+
+        assert status == 500
+        assert 'Too many project documents' in body['error']
+        assert aggregates.put_item_calls == [], 'a partial read must freeze no row'
+        assert len(projects.query_calls) == MAX_PROJECT_DOCUMENT_PAGES, (
+            'the bound is what stopped the read'
+        )
+
+
 class TestTheOneLegacyScoreLandsOnItsProjectsDefaultRow:
     """The single pre-ballot entry in the deployed partition is keyed by DOCUMENT.
     It must surface on the default row of the project owning that document rather
@@ -3394,6 +3571,161 @@ class TestTheOneLegacyScoreLandsOnItsProjectsDefaultRow:
         assert table.items[(PARTITION, LEGACY_SK)]['scores']['prd-1']['impact'] == 4
 
 
+class TestABodyThatIsNotAJsonObjectIsTheCallersMistake:
+    """A malformed request is answered 400, on both routes that take a body.
+
+    It used to be 500 `Internal server error`. `json_body` has two unhandled
+    failures: unparseable JSON raises, and a body parsing to a LIST or a string
+    passes an `or {}` guard truthy and then dies on `.get` with an `AttributeError`
+    that has no registered handler. Probed before the fix, `[1, 2]`, `"hi"` and
+    `{not json` each answered 500 on each route.
+
+    Which is worse than a wrong number. A 500 tells the caller the fault is the
+    service's, so a client retries a body that can never succeed; it puts a page
+    error and an alarmable server-fault count on somebody's dashboard for a request
+    the sender could have corrected; and the log carries a traceback rather than the
+    one thing worth knowing, which is that the body was not an object.
+
+    Both routes, because they are the two doors into the same partition and a
+    contract that holds on one of them is a coincidence.
+    """
+
+    # The three shapes probed on the way in. Written as wire bytes rather than as
+    # objects because the event fixture serialises what it is handed — `'{not json'`
+    # passed as `body=` would arrive as the perfectly valid JSON string
+    # `'"{not json"'` and never reach the parse failure at all.
+    NON_OBJECT_BODIES: ClassVar[list] = ['[1, 2]', '"hi"', '{not json']
+
+    @pytest.mark.parametrize('raw_body', NON_OBJECT_BODIES)
+    def test_the_save_refuses_it_instead_of_reporting_a_server_fault(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        table = FakeAggregatesTable()
+        event = _event(api_gateway_event, method='PATCH')
+        event['body'] = raw_body
+
+        status, body = _call(table, event, lambda_context)
+
+        assert status == 400
+        assert 'JSON' in body['error']
+        assert table.update_item_calls == []
+        assert table.ballot_keys == []
+
+    @pytest.mark.parametrize('raw_body', NON_OBJECT_BODIES)
+    def test_the_row_create_refuses_it_instead_of_reporting_a_server_fault(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        aggregates = FakeAggregatesTable()
+        projects = FakeProjectsTable([project_meta('p1')])
+
+        status, body = _create_row(aggregates, projects, api_gateway_event,
+                                   lambda_context, raw_body=raw_body)
+
+        assert status == 400
+        assert 'JSON' in body['error']
+        assert aggregates.put_item_calls == []
+        assert projects.query_calls == [], 'a body that cannot name a project is not read for'
+
+
+class TestTwoPreBallotValuesOnOneRowAreOneUnattributedOpinion:
+    """A row holding two documents that each carry a pre-ballot value has ONE old
+    opinion on it, not two reviewers.
+
+    The pre-ballot item was a single shared map that every reviewer wrote into, with
+    no attribution anywhere in it — that is why #333 replaced it. So a value on a
+    project's PRD and another on its PR/FAQ is most plausibly one person scoring one
+    idea twice, which is exactly the duplication the row unit exists to collapse.
+    Before rows those were two separate rows, each reporting one reviewer and no
+    spread.
+
+    Counting them separately made the response say things nobody said, in the two
+    fields whose documented meanings are "reviewers who scored something" and "zero
+    means agreement" — and it made `scores` and `aggregates` disagree by
+    construction, since the read-through took the first entry that expressed
+    anything while the aggregate counted every entry as its own reviewer.
+    """
+
+    @staticmethod
+    def _with_legacy(scores):
+        """One default row holding BOTH documents, and whichever of them the
+        pre-ballot map carries an entry for.
+
+        The row's composition is fixed and the MAP is what each test varies, because
+        the question here is which of a row's pre-ballot values is read — not which
+        row they land on, which is the sibling class above.
+        """
+        table = FakeAggregatesTable(items=[{
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': dict(scores),
+        }])
+        return table.seed_rows('row-p1', document_ids=['doc-a', 'doc-b'])
+
+    def test_two_values_on_one_row_report_one_reviewer_who_agreed_with_herself(
+        self, api_gateway_event, lambda_context
+    ):
+        """The measured defect: a project whose PRD read all-5s and whose PR/FAQ read
+        all-1s reported `reviewer_count: 2` and `score_spread: 4.0` — two reviewers at
+        maximum disagreement about a row on which nobody ever disagreed. `score_spread`
+        is the field a reader consults to decide whether a room needs to talk, so a
+        manufactured 4.0 out of 5.0 sends people into a meeting about an agreement.
+
+        The numbers read back are the first document's, in the order sorting fixed, so
+        `scores` and `aggregates` describe the same opinion rather than one each."""
+        table = self._with_legacy({
+            'doc-a': {'impact': 5, 'time_to_market': 5, 'confidence': 5,
+                      'strategic_fit': 5},
+            'doc-b': {'impact': 1, 'time_to_market': 1, 'confidence': 1,
+                      'strategic_fit': 1},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['aggregates']['row-p1']['reviewer_count'] == 1
+        assert body['aggregates']['row-p1']['score_spread'] == 0.0
+        assert body['aggregates']['row-p1']['impact'] == 5
+        assert body['scores']['row-p1']['impact'] == 5
+
+    @pytest.mark.parametrize('voting_document', ['doc-a', 'doc-b'])
+    def test_the_value_that_scored_something_is_read_over_a_notes_only_sibling(
+        self, api_gateway_event, lambda_context, voting_document
+    ):
+        """Choosing has to prefer the VOTE, and both document orders have to be tried
+        to know that it does — pick the first entry that merely expressed something
+        and the answer is right only when the vote happens to sort first.
+
+        What losing costs is a real score leaving the response entirely: a notes-only
+        entry is not a vote, so the row would drop out of `aggregates` altogether
+        while `scores` showed the caller four zeros beside somebody's note. The old
+        pre-ballot map has no attribution to reconstruct that number from later."""
+        note_document = 'doc-b' if voting_document == 'doc-a' else 'doc-a'
+        table = self._with_legacy({
+            voting_document: {**AXES, 'notes': 'scored before the sliders'},
+            note_document: {'notes': 'no numbers from me'},
+        })
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['scores']['row-p1']['impact'] == AXES['impact']
+        assert body['scores']['row-p1']['notes'] == 'scored before the sliders'
+        assert body['aggregates']['row-p1']['reviewer_count'] == 1
+        assert body['aggregates']['row-p1']['impact'] == AXES['impact']
+
+    def test_the_single_value_a_deployed_partition_holds_still_reads_through(
+        self, api_gateway_event, lambda_context
+    ):
+        """Choosing among a row's values must not cost the one case that is actually
+        in the field. The deployed partition holds exactly ONE pre-ballot entry, so
+        the multi-entry rule above is about being explainable — this is the path every
+        real read takes, and it is on the document that sorts SECOND so that "the one
+        that is there" cannot be confused with "the first one"."""
+        table = self._with_legacy({'doc-b': dict(AXES)})
+
+        _, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['scores']['row-p1']['impact'] == AXES['impact']
+        assert body['aggregates']['row-p1']['reviewer_count'] == 1
+        assert body['aggregates']['row-p1']['score_spread'] == 0.0
+
+
 class TestTheRowCreateRouteIsNotShadowedByTheProjectUpsert:
     """`POST /projects/prioritization/rows` must reach its own handler.
 
@@ -3439,14 +3771,25 @@ class TestTheRowCreateRouteIsNotShadowedByTheProjectUpsert:
         )
         assert update_project.call_count == 0
 
-    def test_a_project_named_prioritization_cannot_reach_it_by_accident(
+    def test_a_project_named_prioritization_still_reaches_its_own_document_route(
         self, api_gateway_event, lambda_context
     ):
         """The mirror of the shadowing question: the literal route must not swallow
         a request meant for the dynamic one. `/projects/prioritization/rows` is the
         row create; a project genuinely called `prioritization` addresses its
         documents at `/projects/prioritization/documents`, which is a different
-        two-segment path and still dynamic."""
+        two-segment path and still dynamic.
+
+        Asserted POSITIVELY — the document route ran, with the project id it was
+        addressed with — because the negative cannot fail. Powertools binds the
+        handler OBJECT into its route table when the decorator runs at import, so
+        patching `projects_handler.api_create_prioritization_row` afterwards replaces
+        a module attribute the resolver never consults again: a mock recording zero
+        calls is what a genuinely shadowed route would report too. `create_document`
+        is different, and is the technique its sibling above relies on: it lives in
+        `projects.py` and is looked up in this module's globals at CALL time, so the
+        patch does intercept, and the interception is only reached by resolving this
+        path to the route that takes a project id."""
         from projects_handler import lambda_handler
 
         event = api_gateway_event(
@@ -3456,12 +3799,20 @@ class TestTheRowCreateRouteIsNotShadowedByTheProjectUpsert:
             path_params={'project_id': 'prioritization'},
         )
         with (
+            # The aggregates fake is here so that a path resolving to a prioritization
+            # route fails on THIS assertion rather than against real AWS.
             patch('projects_handler.get_aggregates_table', return_value=FakeAggregatesTable()),
-            patch('projects_handler.api_create_prioritization_row') as create_row,
+            patch('projects_handler.create_document',
+                  return_value={'success': True}) as create_document,
         ):
-            lambda_handler(event, lambda_context)
+            response = lambda_handler(event, lambda_context)
 
-        assert create_row.call_count == 0
+        assert response['statusCode'] == 200
+        assert create_document.call_count == 1, (
+            'the literal route swallowed a request addressed to a project called '
+            '`prioritization`'
+        )
+        assert create_document.call_args.args[0] == 'prioritization'
 
     def test_the_405_stub_still_covers_the_shorter_path(
         self, api_gateway_event, lambda_context

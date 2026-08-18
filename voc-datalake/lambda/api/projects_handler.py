@@ -586,6 +586,50 @@ MAX_BALLOTS_PER_SAVE = 100
 # documented team-sized deployment can never reach it.
 MAX_PRIORITIZATION_PAGES = 20
 
+# How many document pages a row COMPOSITION will follow, for the same reason and
+# with a lower number: it reads one project rather than the whole prioritization
+# partition, and it is projected to three fields, so a project needing more than
+# this has a document count far outside anything the product produces.
+#
+# Separate from the constant above rather than shared, because the two bound
+# different things and would drift into one meaningless number: that one bounds a
+# partition growing as rows x reviewers, this one bounds a single project's
+# documents.
+MAX_PROJECT_DOCUMENT_PAGES = 5
+
+
+def _json_object_body() -> dict:
+    """The request body as a JSON object, or a ValidationError.
+
+    `json_body` alone is two unhandled failures: unparseable JSON raises
+    `JSONDecodeError`, and a body that parses to a LIST or a string passes an
+    `or {}` guard truthy and then dies on `.get`. Neither has a registered handler,
+    so both surface as a bare 500 — a malformed REQUEST reported as a server fault,
+    counted as an error, with nothing the page can say about it. Probed before
+    fixing: `[1,2]`, `"hi"` and `{not json` each answered 500.
+
+    Deliberately the same helper, with the same name and contract, as
+    `ballots_handler._json_object_body` — one idiom rather than two spellings of it.
+    Not extracted into `shared/` while it has two copies; the third one should do
+    that rather than a second refactor of the first two.
+
+    SCOPE: applied to the prioritization routes only. The other bodies in this
+    module have the same latent shape and predate this change, and sweeping ~20
+    pre-existing routes is its own reviewable diff rather than a rider on a
+    data-model change.
+    """
+    try:
+        body = app.current_event.json_body
+    except ValueError as e:
+        # json.JSONDecodeError is a ValueError; a body that is not JSON at all is
+        # the caller's mistake, not this service's.
+        raise ValidationError('the request body must be JSON') from e
+    if body is None:
+        return {}
+    if not isinstance(body, dict):
+        raise ValidationError('the request body must be a JSON object')
+    return body
+
 
 def _caller_reviewer_subject() -> str:
     """The authenticated Cognito subject of the caller, or raise (403).
@@ -1082,7 +1126,7 @@ def _superseded_rows(ballots_by_row: dict[str, list[dict]]) -> set[str]:
 
 def _legacy_scores_by_row(
     legacy_scores: dict, rows_by_id: dict[str, dict]
-) -> dict[str, list[Any]]:
+) -> dict[str, Any]:
     """The pre-ballot score map, re-keyed from documents onto rows.
 
     The legacy item predates rows entirely: its keys are document ids. It is the
@@ -1102,12 +1146,31 @@ def _legacy_scores_by_row(
     alternative is a score appearing under a row that does not contain the
     document it was cast on.
 
-    A LIST per row, not one entry, because two documents of one project can each
-    carry a pre-ballot value and each is a separate unattributed opinion. Sorted
-    by document id so the read-through's choice among them (see
-    `api_get_prioritization_scores`) is the same on every request rather than
-    dependent on map order. The deployed partition holds exactly one legacy entry,
-    so this is about being explainable rather than about a case in the field.
+    ONE entry per row, not a list, and that is the whole of this function's
+    judgement about the old data.
+
+    Two documents of one project can each carry a pre-ballot value, and it is
+    tempting to read those as two opinions. They are not: the pre-ballot item was a
+    SINGLE SHARED MAP that every reviewer wrote into, with no attribution anywhere
+    in it — that lack of attribution is precisely why #333 replaced it. So two
+    entries on a project's PRD and its PR/FAQ are most plausibly one person scoring
+    one idea twice, which is the very duplication the row unit exists to collapse.
+
+    Counting them separately made the aggregate say things nobody said. Measured on
+    a project whose PRD read all-5s and whose PR/FAQ read all-1s, both on its
+    default row: `reviewer_count: 2` and `score_spread: 4.0` — two reviewers at
+    maximum disagreement about a row on which nobody ever disagreed, rendered in
+    the two fields whose documented meanings are "reviewers who scored something"
+    and "zero means agreement". Before rows, those were two separate rows, each
+    reporting one reviewer and no spread.
+
+    WHICH entry, in the document order fixed by sorting: the first that is a VOTE,
+    falling back to the first that merely expresses something. Preferring a vote
+    matters in both directions — a notes-only entry winning would take a real score
+    out of the aggregate, and it also gives the read-through a better starting
+    number than a note. The deployed partition holds exactly one legacy entry, so
+    the multi-entry case is about being explainable rather than about a case in the
+    field; the single-entry behaviour is unchanged either way.
     """
     row_of_document: dict[str, str] = {}
     for row_id, row in rows_by_id.items():
@@ -1115,17 +1178,25 @@ def _legacy_scores_by_row(
             continue
         for document_id in _row_document_ids(row):
             row_of_document.setdefault(document_id, row_id)
-    by_row: dict[str, list[Any]] = {}
+    candidates: dict[str, list[Any]] = {}
     for document_id in sorted(legacy_scores or {}):
         row_id = row_of_document.get(document_id)
         if row_id is None:
             continue
-        by_row.setdefault(row_id, []).append(legacy_scores[document_id])
+        candidates.setdefault(row_id, []).append(legacy_scores[document_id])
+    by_row: dict[str, Any] = {}
+    for row_id, entries in candidates.items():
+        chosen = next(
+            (entry for entry in entries if _is_a_vote(entry)),
+            next((entry for entry in entries if _expresses_something(entry)), None),
+        )
+        if chosen is not None:
+            by_row[row_id] = chosen
     return by_row
 
 
 def _aggregate_scores(
-    ballots_by_row: dict[str, list[dict]], legacy_by_row: dict[str, list[Any]]
+    ballots_by_row: dict[str, list[dict]], legacy_by_row: dict[str, Any]
 ) -> dict:
     """Per row: the mean of each axis, how many reviewers scored it, and the
     spread of the composite score.
@@ -1187,9 +1258,12 @@ def _aggregate_scores(
     superseded = _superseded_rows(ballots_by_row)
     for row_id in set(ballots_by_row) | set(legacy):
         entries: list[Any] = list(ballots_by_row.get(row_id, []))
-        # A legacy value counts only until a real ballot on this row supersedes it.
-        if row_id not in superseded:
-            entries.extend(legacy.get(row_id, []))
+        # A legacy value counts only until a real ballot on this row supersedes it,
+        # and counts as exactly ONE unattributed opinion — see
+        # `_legacy_scores_by_row`, which now chooses among a row's pre-ballot values
+        # rather than handing all of them over as separate reviewers.
+        if row_id not in superseded and row_id in legacy:
+            entries.append(legacy[row_id])
         votes = [entry for entry in entries if _is_a_vote(entry)]
         if not votes:
             continue
@@ -1489,18 +1563,64 @@ def _validated_row_project_id(raw: Any) -> str:
 def _project_documents(project_id: str) -> list[dict]:
     """The project's documents, from the projects table.
 
-    One query on the project's own partition — the same read `get_project`
+    One logical query on the project's own partition — the same read `get_project`
     performs, minus the signing and the personas. Not `get_project` itself: that
     signs every prototype URL through CloudFront, which is work a row composition
     has no use for.
+
+    PROJECTED to the three fields a composition reads. Documents store their body
+    inline (`content`), so without this every full PRD, PR/FAQ, research doc and
+    product report crossed the wire to pick two ids — and the page asks for one
+    composition per project on mount.
+
+    PAGINATED, and bounded then RAISED rather than truncated, which is the part that
+    matters most here. DynamoDB caps a query page at 1MB; with bodies inline a
+    project with a few revisions plus a product report reaches that without being
+    unusual. A short read does not merely hide a document:
+
+      * `sk` sorts ascending and `DOC#` precedes `META`, so a project carrying
+        enough generic documents pushes its own `META` item onto a later page and
+        the existence check answers 404 FOR A PROJECT THAT EXISTS. Only `DOC#`
+        does this: `PRD#`, `PRFAQ#`, `PROTOTYPE#`, `RESEARCH#` and the rest all
+        sort AFTER `META` (`ME` < `PR`), so revising a PRD alone cannot reach this
+        shape — it reaches the next one;
+      * truncation later composes a row from a superseded PRD, or refuses with "no
+        PRD or PR/FAQ to score" for a project that has one.
+
+    And a composition is FROZEN: the create is idempotent on the row id and there is
+    no recompose route, so a row built from a short read cannot be corrected through
+    the product, and every ballot on it then describes documents nobody chose. That
+    asymmetry is why this refuses instead of returning what it has — the same reading
+    `_read_prioritization_partition` takes one screen up, where "a silently-short
+    window is exactly how this codebase has been bitten before".
     """
     table = get_projects_table()
     if not table:
         raise ConfigurationError('Projects table not configured')
-    response = table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
+    query_kwargs: dict[str, Any] = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        # `sk` identifies the type, `document_id` and `created_at` are what the
+        # composition selects on. None is a DynamoDB reserved word.
+        'ProjectionExpression': 'sk, document_id, created_at',
+    }
+    items: list[dict] = []
+    for _ in range(MAX_PROJECT_DOCUMENT_PAGES):
+        response = table.query(**query_kwargs)
+        items.extend(
+            item for item in response.get('Items', []) if isinstance(item, dict)
+        )
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            return items
+        query_kwargs['ExclusiveStartKey'] = last_key
+    logger.error(
+        'Project %s has more document pages than the %d this composition reads. '
+        'A row composed from a short read is frozen and cannot be recomposed, so '
+        'this refuses rather than composing from part of the project.',
+        project_id,
+        MAX_PROJECT_DOCUMENT_PAGES,
     )
-    return [item for item in response.get('Items', []) if isinstance(item, dict)]
+    raise ServiceError('Too many project documents to compose a prioritization row')
 
 
 # Which sort-key prefixes hold a SCORABLE document, and which holds a prototype.
@@ -1612,7 +1732,7 @@ def api_create_prioritization_row():
     the decision recorded on the issue: the freeze phase 2 adds is the protection,
     not the identity of whoever created the row.
     """
-    body = app.current_event.json_body or {}
+    body = _json_object_body()
     project_id = _validated_row_project_id(body.get('project_id'))
 
     documents = _project_documents(project_id)
@@ -1826,18 +1946,16 @@ def api_get_prioritization_scores():
     # depend on whether a write nobody was told about landed.
     legacy_by_row = _legacy_scores_by_row(legacy_scores, rows_by_id)
     superseded = _superseded_rows(ballots_by_row)
-    for row_id, entries in legacy_by_row.items():
+    for row_id, entry in legacy_by_row.items():
         if row_id in scores or row_id in superseded:
             continue
-        # The FIRST entry that expressed something, in the document order
-        # `_legacy_scores_by_row` fixed. `scores` holds one ballot per row because
-        # a reviewer has one ballot per row, so two pre-ballot values on documents
-        # of one row cannot both be the caller's starting numbers — and the
-        # aggregate, which can hold several unattributed opinions, counts both.
-        for entry in entries:
-            if _expresses_something(entry):
-                scores[row_id] = _score_payload(row_id, entry)
-                break
+        # ONE pre-ballot value per row, already chosen by `_legacy_scores_by_row`
+        # (a vote in preference to a note, in a fixed document order). Choosing
+        # there rather than here is what keeps `scores` and `aggregates` describing
+        # the SAME opinion: they used to disagree by construction — this loop took
+        # the first entry that expressed anything while the aggregate counted every
+        # entry as its own reviewer.
+        scores[row_id] = _score_payload(row_id, entry)
 
     return {
         'rows': {row_id: _row_payload(row) for row_id, row in rows_by_id.items()},
@@ -2041,7 +2159,7 @@ def api_patch_prioritization_scores():
     act on ("retry the body") is better than a number it would have to interpret.
     """
     subject = _caller_reviewer_subject()
-    body = app.current_event.json_body or {}
+    body = _json_object_body()
     changed_scores = body.get('scores') or {}
     if not isinstance(changed_scores, dict):
         raise ValidationError('scores must be an object keyed by row id')
