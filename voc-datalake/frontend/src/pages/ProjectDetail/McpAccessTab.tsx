@@ -164,6 +164,7 @@ function useTokenMutations(projectId: string, tokenName: string, tokenScope: 're
     newlyCreatedToken,
     setNewlyCreatedToken,
     newTokenExpiresAt,
+    setNewTokenExpiresAt,
     showToken,
     setShowToken,
     showCreateForm,
@@ -549,7 +550,8 @@ export default function McpAccessTab({
 
   const {
     createMut, deleteMut, newlyCreatedToken, setNewlyCreatedToken,
-    newTokenExpiresAt, showToken, setShowToken, showCreateForm, setShowCreateForm,
+    newTokenExpiresAt, setNewTokenExpiresAt,
+    showToken, setShowToken, showCreateForm, setShowCreateForm,
   } = useTokenMutations(projectId, tokenName, tokenScope, tokenExpiry, () => {
     setTokenName('')
     setTokenScope('read')
@@ -665,7 +667,7 @@ export default function McpAccessTab({
             copyToClipboard(newlyCreatedToken, 'new-token')
           }}
           onDismiss={() => {
-            setNewlyCreatedToken(null); setShowToken(false)
+            setNewlyCreatedToken(null); setNewTokenExpiresAt(null); setShowToken(false)
           }}
         /> : null}
 

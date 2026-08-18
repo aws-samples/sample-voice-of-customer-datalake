@@ -76,7 +76,10 @@ export function NewTokenBanner({
             </button>
           </div>
           <p className="text-xs text-green-600 mt-2">{t('mcp.tokenPasteHint')}</p>
-          {expiresAt != null && expiresAt !== '' ? (
+          {/* Gated on tokenExpiryState, not on presence: a malformed echo
+              would otherwise render "Invalid Date" on the one-time banner.
+              Same fail-quiet rule as the row badge. */}
+          {expiresAt != null && tokenExpiryState(expiresAt) !== 'none' ? (
             <p className="text-xs text-green-700 mt-1 flex items-center gap-1">
               <Clock size={12} />
               {t('mcp.tokenExpiresOn', { date: new Date(expiresAt).toLocaleDateString() })}
