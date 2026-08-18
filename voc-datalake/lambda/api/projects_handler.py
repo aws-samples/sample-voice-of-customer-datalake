@@ -755,17 +755,21 @@ def _validated_ballot_row_id(raw: Any) -> str:
     input that a response body gains nothing by repeating (the same reasoning
     `validate_bool` in shared/api.py records).
 
-    WHAT THIS DELIBERATELY DOES NOT CHECK: that the row exists. A save against a
-    row that does not resolve writes a ballot nothing will read, which is the same
-    outcome the read already has to tolerate for a stored key naming a vanished
-    row — and requiring a keyed read per entry would put N round trips in front of
-    every save to refuse a body the shipped page cannot compose. That a row's
-    documents belong to its project is guaranteed one level up, where a row is
-    composed: `_default_row_composition` picks from the project's OWN partition
-    (`pk = PROJECT#{project_id}`), so an id from elsewhere cannot be selected, and
-    the caller never supplies one. Phase 2, which lets a caller name a set, is
-    where that becomes a check rather than a construction — and where
-    `_validated_source_id` in this module is the pattern to follow.
+    WHAT THIS CHECKS IS THE SHAPE, not the existence. Existence is checked by the
+    ROUTE, against the table, once per save (`_missing_ballot_rows`) — it cannot
+    live here because this function sees one key at a time with no table in hand.
+    The two checks answer differently on purpose: a malformed key is a 400 about
+    the request, a well-formed key naming no row is a 404 about the world.
+
+    An earlier version deliberately skipped the existence check, reasoning that an
+    orphaned ballot is "a ballot nothing will read, which is the same outcome the
+    read already has to tolerate". Production showed why that reasoning was wrong
+    (#342): the same outcome for the READER is not the same outcome for the
+    WRITER, who was told 200 `updated_count: 1` while their vote appeared nowhere
+    — silent loss reported as success, the exact fault class this module's read
+    side counts and warns about. That a row's documents belong to its project is
+    still guaranteed one level up, where a row is composed
+    (`_default_row_composition` picks from the project's own partition).
     """
     if not isinstance(raw, str) or not raw.strip():
         raise ValidationError('scores keys must be non-empty row id strings')
@@ -932,11 +936,13 @@ def _axis_value(entry: Any, axis: str) -> float:
     Values come back from DynamoDB as Decimal and may be absent, so this
     normalises to float and reads anything the entry did not express as 0.0.
 
-    0.0 here means ABSENT, and it matches the frontend's `DEFAULT_SCORE` for
-    `impact`, `confidence` and `strategic_fit` — but NOT for `time_to_market`,
-    whose frontend default is 3 and which `PRFAQRow` reads as its untouched signal
-    (`time_to_market !== 3`). So a stored ballot missing `time_to_market` reads
-    back as a deliberate lowest-possible score rather than "not set".
+    0.0 here means ABSENT, and since #343 the frontend adopts that reading for
+    ALL FOUR axes: `DEFAULT_SCORE` is 0 across the board, the slider renders a
+    0 as "not scored" rather than borrowing a 3, and the team chips print a
+    dash for a 0.0 mean. (Historically `time_to_market`'s frontend default was
+    3 while its siblings were 0, so a stored ballot missing that one axis read
+    back as a deliberate lowest-possible score — the divergence this paragraph
+    used to document is the one #343 removed.)
 
     An axis is absent whenever the caller has never sent it (see `_readable_axis`
     for the exhaustive list), which happens three ways: a legacy entry predating
@@ -944,8 +950,7 @@ def _axis_value(entry: Any, axis: str) -> float:
     writes the axes it was given; and a legacy value no number can be read out of,
     which predates the validation that now refuses one. A reviewer who saves only
     `notes`, or only `impact`, therefore reads back `time_to_market: 0.0`, which
-    the page renders as the lowest possible time-to-market and `PRFAQRow` treats as
-    touched. Pinned by
+    the page now renders as unscored. Pinned by
     `test_a_notes_only_first_save_reads_back_a_zero_time_to_market`.
 
     Not corrected on the read: seeding an absent axis from the frontend's default
@@ -1517,6 +1522,36 @@ def _row_document_ids(row: Any) -> list[str]:
     if not isinstance(stored, list):
         return []
     return [value for value in stored if isinstance(value, str) and value]
+
+
+def _missing_ballot_rows(table, row_ids: list[str]) -> list[str]:
+    """The named rows that have NO row record — the ones a save must refuse.
+
+    One keyed read per row, before the first write, so a body naming a vanished
+    row persists nothing (see the call site for why the refusal exists at all).
+    The ids are validated shapes by the time they arrive here, so the key is
+    always legal.
+
+    A FAILED read raises rather than answering "present" or "missing": either
+    invented answer is worse than the truth. Calling it missing refuses a save
+    the caller could legitimately make over a transient throttle; calling it
+    present waves through exactly the orphan this check exists to refuse. The
+    same reasoning the page read gives for raising on a failed partition read —
+    "the read failed" and "nobody has scored anything" must stay
+    distinguishable — applied to the write side.
+    """
+    missing = []
+    for row_id in row_ids:
+        try:
+            item = table.get_item(
+                Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)}
+            ).get('Item')
+        except Exception as e:
+            logger.exception(f'Failed to read a prioritization row before a save: {e}')
+            raise ServiceError('Failed to save prioritization scores') from e
+        if not isinstance(item, dict):
+            missing.append(row_id)
+    return missing
 
 
 def _is_default_row(row: Any) -> bool:
@@ -2219,6 +2254,27 @@ def api_patch_prioritization_scores():
     table = get_aggregates_table()
     if not table:
         raise ConfigurationError('Aggregates table not configured')
+
+    # EVERY named row must exist BEFORE the first write, joining the up-front
+    # pass above: a body naming one vanished row among five persists NOTHING,
+    # which keeps the promise that only a mid-save infrastructure failure can
+    # half-persist. Checked here rather than left to the read's discard (#342):
+    # the discard protects the READER, but the WRITER was answered 200
+    # `updated_count: 1` for a vote that then appeared nowhere — silent loss
+    # reported as success. A keyed read per row is the price, and it is paid
+    # only by a save (the page issues one per click, not per render).
+    #
+    # A read-then-write, not a condition on the write itself — honest about the
+    # race: a row deleted between this check and the write below would still
+    # orphan its ballot. Nothing can delete a row today, so the gap is
+    # unreachable; phase 2 of #339, which introduces deletion, owes the
+    # DB-enforced condition (a transaction), and this check is where it goes.
+    if _missing_ballot_rows(table, [row_id for row_id, _ in validated]):
+        raise NotFoundError(
+            'scores name a row that does not exist; reload the page to get '
+            'the current rows'
+        )
+
     now = datetime.now(timezone.utc).isoformat()
 
     # Counted so a failure part way through a multi-row save is diagnosable.

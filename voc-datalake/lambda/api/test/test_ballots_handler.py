@@ -217,7 +217,23 @@ def _config(table, api_gateway_event, lambda_context, *, session_id=OPEN_SESSION
     return _call(table, event, lambda_context)
 
 
-def _create(table, api_gateway_event, lambda_context, *, body, subject='facilitator-sub'):
+def _create(table, api_gateway_event, lambda_context, *, body, subject='facilitator-sub',
+            seed_row=True):
+    """Open a session, seeding the named row's record first.
+
+    Seeded by default because that is the only state the page can reach: a
+    facilitator opens a vote from a row the page rendered, and the route refuses
+    a row with no record (#342). `seed_row=False` is for the tests asking about
+    exactly that refusal. A row id the route will refuse on SHAPE (empty, '#')
+    seeds nothing usable and the shape refusal is unaffected — the same rule
+    `_patch_scores` follows in the sibling harness.
+    """
+    row_id = body.get('row_id') if isinstance(body, dict) else None
+    if seed_row and isinstance(row_id, str) and row_id.strip() and '#' not in row_id:
+        table.items.setdefault(
+            (PRIORITIZATION_PK, f'ROW#{row_id}'),
+            {'pk': PRIORITIZATION_PK, 'sk': f'ROW#{row_id}', 'row_id': row_id},
+        )
     event = api_gateway_event(method='POST', path='/voting-sessions', body=body)
     claims = event['requestContext']['authorizer']['claims']
     if subject is None:
@@ -804,6 +820,51 @@ class TestTheFacilitatorHalf:
                             body={'row_id': 'row_p1#default'})
 
         assert status == 400
+        assert table.put_item_calls == []
+
+    def test_a_row_with_no_record_opens_no_session(
+            self, api_gateway_event, lambda_context):
+        """The anonymous half of #342. A session is a public write window onto its
+        row; opened for a row nothing describes, it collects a room's ballots that
+        the page then discards on read — and a room's votes cannot be recast. So
+        the window is refused at creation, where the facilitator is present to see
+        the answer, rather than the loss surfacing later as a warning in a log.
+
+        404, not 400: the id is well-formed and the page sent one it was shown —
+        the world changed, not the request. Reverting the fix (removing the
+        `_row_exists` check) fails this on the status: the session opens."""
+        table = FakeAggregatesTable([])
+
+        status, body = _create(table, api_gateway_event, lambda_context,
+                               body={'row_id': 'row_gone_default'}, seed_row=False)
+
+        assert status == 404
+        assert 'does not exist' in body['error']
+        assert 'row_gone_default' not in body['error'], 'no echo of caller input'
+        assert table.put_item_calls == []
+
+    def test_a_failed_row_read_is_a_server_fault_not_a_refusal(
+            self, api_gateway_event, lambda_context):
+        """'Missing' would refuse a facilitator standing in front of a room over a
+        transient throttle; 'present' would open the window #342 exists to close.
+        A failed read is neither — it raises, and the facilitator retries."""
+        table = FakeAggregatesTable([])
+        real_get = table.get_item
+
+        def failing_get(**kwargs):
+            if str(kwargs['Key']['sk']).startswith('ROW#'):
+                raise ClientError(
+                    {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
+                    'GetItem',
+                )
+            return real_get(**kwargs)
+
+        table.get_item = failing_get
+
+        status, _ = _create(table, api_gateway_event, lambda_context,
+                            body={'row_id': 'row_p1_default'})
+
+        assert status == 500
         assert table.put_item_calls == []
 
     def test_the_session_id_is_unguessable_and_recognisable(
