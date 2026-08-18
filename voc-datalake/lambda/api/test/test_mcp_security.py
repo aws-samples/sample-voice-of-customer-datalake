@@ -1774,11 +1774,7 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         }
         table.query.return_value = {"Items": [row]}
         table.update_item.return_value = {}
-        for method in (
-            "get_item", "put_item", "delete_item", "scan",
-            "batch_get_item", "batch_write_item", "batch_writer",
-            "transact_get_items", "transact_write_items",
-        ):
+        for method in self.FORBIDDEN:
             getattr(table, method).side_effect = AssertionError(
                 f"mcp_handler called projects_table.{method}, which the narrowed "
                 f"IAM grant (Query, UpdateItem) does not permit — widen the grant "
@@ -1802,36 +1798,55 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         }
         return mcp_handler.lambda_handler(event, lambda_context)
 
+    FORBIDDEN = (
+        "get_item", "put_item", "delete_item", "scan",
+        "batch_get_item", "batch_write_item", "batch_writer",
+        "transact_get_items", "transact_write_items",
+    )
+
     def test_every_tool_stays_within_the_granted_actions(self, lambda_context):
-        """Drive each registered tool end to end against the strict mock."""
+        """Drive each registered tool end to end against the strict mock.
+
+        The verdict is read off the MOCK, not the response body: a violation
+        raised inside a tool is caught by _handle_tools_call's broad except
+        and could be rephrased into any message, so a body-text assertion
+        would go vacuous the day that message changes.  A positive control
+        asserts the loop actually reached the table at all.
+        """
         import mcp_handler
+        strict = self._strict_table()
         args_for = {"get_feedback_detail": {"feedback_id": "fb-1"}}
-        with patch("mcp_handler.projects_table", self._strict_table()), \
+        with patch("mcp_handler.projects_table", strict), \
              patch("mcp_handler.feedback_table"), \
              patch("mcp_handler.aggregates_table"), \
              patch("mcp_handler.query_feedback_by_date", return_value=[]):
             for tool_name in mcp_handler.TOOL_HANDLERS:
-                response = self._call_tool(
-                    tool_name, args_for.get(tool_name, {}), lambda_context
-                )
-                body = json.loads(response["body"])
-                # A strict-mock violation surfaces as the AssertionError text
-                # inside the tool-error content; fail loudly with the tool name.
-                assert "does not permit" not in response["body"], (
-                    f"{tool_name} used a non-granted DynamoDB action:\n{body}"
-                )
+                self._call_tool(tool_name, args_for.get(tool_name, {}), lambda_context)
+        for method in self.FORBIDDEN:
+            getattr(strict, method).assert_not_called()
+        # Positive control: auth queries once per call, and the two
+        # projects-table tools query again — if this stops being > number of
+        # tools, the loop stopped reaching the table and the assertions above
+        # stopped meaning anything.
+        assert strict.query.call_count > len(mcp_handler.TOOL_HANDLERS)
 
     def test_autoseed_stays_within_the_granted_actions(self, lambda_context):
-        """The side-door reaches projects.get_project — pin its usage too."""
+        """Drive the REAL autoseed path — the most plausible write site.
+
+        Nothing is patched away: the route runs projects.autoseed_project,
+        which runs projects.get_project, against a strict data table patched
+        at projects.projects_table (auth uses its own strict table on
+        mcp_handler.projects_table).  The verdict is read off both mocks.
+        """
         import mcp_handler
-        strict = self._strict_table()
-        with patch("mcp_handler.projects_table", strict), \
-             patch("mcp_handler.autoseed_project") as mock_seed:
-            # autoseed_project lives in projects.py and reads through the
-            # module-level table there; patching mcp_handler's reference and
-            # asserting it is CALLED keeps this test hermetic while the
-            # projects.get_project call sites are pinned by the grep half below.
-            mock_seed.return_value = {"success": True, "files": []}
+        import projects as projects_module
+        strict_auth = self._strict_table()
+        strict_data = self._strict_table()
+        strict_data.query.return_value = {
+            "Items": [{"pk": "PROJECT#proj-1", "sk": "META", "name": "P"}]
+        }
+        with patch("mcp_handler.projects_table", strict_auth), \
+             patch.object(projects_module, "projects_table", strict_data):
             response = mcp_handler.lambda_handler(
                 {
                     "httpMethod": "GET",
@@ -1840,49 +1855,79 @@ class TestProjectsTableUsageMatchesNarrowGrant:
                 },
                 lambda_context,
             )
-        assert response["statusCode"] == 200
-        mock_seed.assert_called_once()
+        assert response["statusCode"] == 200, response["body"]
+        # Positive control first: the real get_project read the data table.
+        strict_data.query.assert_called_once()
+        for method in self.FORBIDDEN:
+            getattr(strict_data, method).assert_not_called()
+            getattr(strict_auth, method).assert_not_called()
+
+    @staticmethod
+    def _table_calls(src: str) -> set[str]:
+        """All methods called on the name `projects_table` in `src`, via AST.
+
+        AST rather than line matching: a call split across lines, or aliased
+        formatting, defeats a substring scan silently.  The tree cannot be
+        defeated by formatting.
+        """
+        import ast
+        import textwrap
+        calls: set[str] = set()
+        for node in ast.walk(ast.parse(textwrap.dedent(src))):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "projects_table"
+            ):
+                calls.add(node.func.attr)
+        return calls
 
     def test_no_reachable_call_site_uses_a_non_granted_action(self):
         """Source-level half: the table operations reachable from this Lambda.
 
-        mcp_handler.py's own projects_table call sites, plus projects.py's
-        get_project (the only projects.py function the autoseed path reaches),
-        must use only the granted actions.  Scanning THOSE functions rather
-        than all of projects.py: the rest of that module runs on the projects
-        Lambda, whose role legitimately holds the write actions.
+        mcp_handler.py's own call sites, plus projects.get_project (the only
+        projects.py function the autoseed path reaches).  The rest of
+        projects.py runs on the projects Lambda, whose role legitimately
+        holds the write actions — scanning it here would be wrong.
+
+        Each scan carries its own positive control: a walker that silently
+        resolved nothing would report an empty (passing) set, so the granted
+        calls it MUST see are asserted present — the same fix the vitest IAM
+        filter got.  autoseed_project's control is different in kind: it has
+        no direct table call, so the assertion is that its only path to the
+        table is the get_project call this test scans.
         """
         import inspect
 
         import mcp_handler
         import projects as projects_module
 
-        handler_src = inspect.getsource(mcp_handler)
-        get_project_src = inspect.getsource(projects_module.get_project)
-        autoseed_src = inspect.getsource(projects_module.autoseed_project)
+        granted = {"query", "update_item"}
 
-        forbidden = (
-            ".get_item(", ".put_item(", ".delete_item(", ".scan(",
-            ".batch_get_item(", ".batch_write_item(", ".batch_writer(",
-            ".transact_get_items(", ".transact_write_items(",
+        handler_calls = self._table_calls(inspect.getsource(mcp_handler))
+        assert handler_calls == granted, (
+            f"mcp_handler touches projects_table via {handler_calls - granted} "
+            f"which the narrowed IAM grant does not permit (or the scan lost "
+            f"sight of the granted calls: saw {handler_calls})"
         )
-        for src_name, src in (
-            ("mcp_handler", handler_src),
-            ("projects.get_project", get_project_src),
-            ("projects.autoseed_project", autoseed_src),
-        ):
-            for op in forbidden:
-                # projects_table is the module-level name in both files; a hit
-                # on any table variable in these functions is projects-table
-                # traffic on this Lambda.
-                hits = [
-                    line.strip() for line in src.splitlines()
-                    if op in line and "projects_table" in line
-                ]
-                assert hits == [], (
-                    f"{src_name} reaches projects_table via {op} which the "
-                    f"narrowed grant does not permit: {hits}"
-                )
+
+        get_project_calls = self._table_calls(
+            inspect.getsource(projects_module.get_project)
+        )
+        assert get_project_calls == {"query"}, (
+            f"projects.get_project (reached via autoseed) touches "
+            f"projects_table via {get_project_calls - granted}, or the scan "
+            f"went blind (saw {get_project_calls})"
+        )
+
+        autoseed_src = inspect.getsource(projects_module.autoseed_project)
+        assert self._table_calls(autoseed_src) == set(), (
+            "projects.autoseed_project now touches projects_table directly; "
+            "scan its calls and re-check the grant"
+        )
+        # ...and its only route to the table is the function scanned above.
+        assert "get_project(" in autoseed_src
 
 
 class TestOriginDefaultFailsClosed:
