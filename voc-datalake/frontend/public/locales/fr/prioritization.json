@@ -129,6 +129,7 @@
     "impact": "Portée",
     "impactDescription": "Valeur commerciale et bénéfice client",
     "low": "Faible",
+    "notScored": "Non noté",
     "slow": "Lent",
     "strategicFit": "Adéquation stratégique",
     "strategicFitDescription": "Alignement avec les objectifs de l'entreprise",

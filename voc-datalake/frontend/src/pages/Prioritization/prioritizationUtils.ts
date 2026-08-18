@@ -46,10 +46,23 @@ export interface PrioritizationRowView {
 export type SortField = 'priority_score' | 'impact' | 'time_to_market' | 'created_at' | 'title'
 export type SortDirection = 'asc' | 'desc'
 
+/**
+ * The score of a row with no stored ballot: every axis 0, and 0 MEANS UNSCORED.
+ *
+ * The backend reads an absent axis back as 0.0 and documents that "0.0 here
+ * means ABSENT" — this constant is the frontend adopting the same sentinel for
+ * all four axes rather than for three of them. `time_to_market` used to sit at
+ * 3 while its siblings sat at 0, so the number 3 had two unrelated sources (a
+ * default here, a display coercion in the row) that agreed only by accident,
+ * and an unreadable stored TTM degraded to "untouched" while an unreadable
+ * impact degraded to what the page then painted as 3 anyway (#343). One
+ * sentinel, and the sliders RENDER it as unscored (`ScoreSlider`) instead of
+ * borrowing a number from the middle of the range.
+ */
 export const DEFAULT_SCORE: PrioritizationScore = {
   row_id: '',
   impact: 0,
-  time_to_market: 3,
+  time_to_market: 0,
   confidence: 0,
   strategic_fit: 0,
   notes: '',
@@ -494,11 +507,14 @@ export function normalizeAggregates(
 /**
  * One axis of the CALLER'S OWN ballot: out of range clamps, unreadable degrades.
  *
- * The AXIS-level difference from `TEAM_AXIS`, which is the only difference left now that
- * both halves drop an unreadable row: `TEAM_AXIS` catches to 0, because 0 is a mean the
- * team could genuinely have, while this catches to the value an UNSET axis already shows
- * (`time_to_market` is 3, not 0). A slider that cannot be given the reviewer's stored
- * value should read as untouched rather than as a deliberate lowest score.
+ * Both catch to the axis's `DEFAULT_SCORE` value — 0, the shared unscored
+ * sentinel — so a slider that cannot be given the reviewer's stored value reads
+ * as UNSCORED rather than as a deliberate score. That used to differ per axis
+ * (`time_to_market` degraded to 3, its siblings to 0), which meant an
+ * unreadable TTM presented as a real mid-range vote; one sentinel ends the
+ * asymmetry (#343). `TEAM_AXIS` also catches to 0 and the row renders a 0 team
+ * mean as unscored, for the same reason: the backend reports 0.0 for an axis
+ * nobody scored, and a number nobody entered must not read as one they did.
  */
 const ownAxis = (fallback: number) => z.number()
   .transform((value) => Math.min(5, Math.max(0, value)))
@@ -775,8 +791,15 @@ export interface TeamScore {
    * which the row prints as `4.0` while an unrounded `>= 4` test calls it Medium.
    * Rounding once, here, is what makes the printed number and the band that
    * describes it agree by construction rather than by two matching literals.
+   *
+   * Composited over the axes the team EXPRESSED, with the weights renormalised
+   * to them (`getTeamScore`), and `null` when it expressed none — a notes-only
+   * ballot produces an aggregate row with a reviewer count and no scores.
+   * Weighing an unscored axis as 0 is what ranked a ballot of impact 4 alone at
+   * 1.6, Low Priority — three zeros nobody entered outvoting the one number
+   * somebody did (#343).
    */
-  readonly displayComposite: number
+  readonly displayComposite: number | null
   /**
    * The two sortable axes AS THE ROW PRINTS THEM, for the same reason
    * `displayComposite` exists — and for a reason that needs no floating-point dust.
@@ -793,9 +816,17 @@ export interface TeamScore {
    * unrounded copy of a value whose whole point is that everything reads one rounding is
    * exactly the drift this replaced. The unrounded means are still on the
    * `PrioritizationAggregate` for anything that genuinely needs them.
+   *
+   * `null` means NO REVIEWER SCORED THIS AXIS. The backend reports 0.0 for an
+   * axis nobody carried — its own docstring says 0.0 there means ABSENT — and
+   * painting that as a number is what put "0.0 TTM" on a row whose one ballot
+   * never mentioned time to market (#343). The row prints a dash for it and the
+   * sort treats it as unorderable rather than as lowest. A GENUINE zero mean
+   * cannot occur: the sliders put in 1–5, and the API's contract reads a stored
+   * 0 as absent.
    */
-  readonly displayImpact: number
-  readonly displayTimeToMarket: number
+  readonly displayImpact: number | null
+  readonly displayTimeToMarket: number | null
   readonly reviewerCount: number
   /**
    * The range of the composite across reviewers who scored every axis, or `null`
@@ -825,6 +856,62 @@ const roundToDisplay = (composite: number): number => Math.round(composite * 10)
  * on the lookup, so an inherited property name (`'toString'`) cannot answer for a
  * document.
  */
+/**
+ * The weight each axis carries in the composite, read OFF the pinned formula.
+ *
+ * Derived once, at module load, by evaluating `calculatePriorityScore` on an
+ * indicator per axis (this axis 1, the rest 0) rather than declared as a
+ * second table of literals — so the renormalisation below cannot drift from
+ * the formula the backend lockstep test pins
+ * (`test_prioritization_weights_lockstep.py` parses that function's source).
+ * One set of weights, two readers, zero copies.
+ */
+const COMPOSITE_AXES: readonly (keyof CompositeAxes)[] = ['impact', 'time_to_market', 'strategic_fit', 'confidence']
+// Evaluated AT MODULE LOAD, and the file order is load-bearing:
+// `calculatePriorityScore` is a `const` arrow, so this block must stay BELOW
+// its declaration. Moving either past the other turns every import of this
+// module into a TDZ ReferenceError — a blank page, not a test failure.
+const weightOf = (axis: keyof CompositeAxes): number => calculatePriorityScore({
+  impact: 0, time_to_market: 0, strategic_fit: 0, confidence: 0, [axis]: 1,
+})
+const COMPOSITE_WEIGHT: Readonly<Record<keyof CompositeAxes, number>> = {
+  impact: weightOf('impact'),
+  time_to_market: weightOf('time_to_market'),
+  strategic_fit: weightOf('strategic_fit'),
+  confidence: weightOf('confidence'),
+}
+
+/**
+ * A team mean as the row may print it: the number, or `null` for an axis the
+ * backend reported as 0.0 — its own contract for "no reviewer scored this".
+ */
+const expressedMean = (mean: number): number | null => (mean === 0 ? null : mean)
+
+/**
+ * The composite over the axes the team actually expressed, weights renormalised.
+ *
+ * Weighing an unexpressed axis as 0 is the arithmetic behind #343's ranking:
+ * one ballot of impact 4 composited to 1.6 and banded Low Priority, three
+ * zeros nobody entered outvoting the number somebody did. Renormalising says
+ * the composite of what the team HAS said — impact 4 alone reads 4.0 — beside
+ * a reviewer count that keeps "one person said one thing" visible. `null` when
+ * nothing was expressed at all (a notes-only ballot), because there is no
+ * number to print and inventing one is the defect this replaces.
+ *
+ * The backend's spread stays comparable without renormalising: it composites
+ * only FULLY-scored ballots, where the expressed weights sum to 1 and this
+ * computation is the identity (`_composite` in projects_handler.py records
+ * the same argument from its side).
+ */
+const expressedComposite = (aggregate: CompositeAxes): number | null => {
+  const expressedWeight = COMPOSITE_AXES.reduce(
+    (sum, axis) => sum + (expressedMean(aggregate[axis]) === null ? 0 : COMPOSITE_WEIGHT[axis]),
+    0,
+  )
+  if (expressedWeight === 0) return null
+  return calculatePriorityScore(aggregate) / expressedWeight
+}
+
 export function getTeamScore(
   aggregates: Record<string, TeamAggregateRow>,
   rowId: string,
@@ -835,10 +922,13 @@ export function getTeamScore(
   // `TeamScore`. `null` here would read as "nobody voted", which is why `getTeamView` asks
   // about `UNREADABLE_ROW` before it asks this — the two absences are not the same claim.
   if (aggregate === UNREADABLE_ROW) return null
+  const composite = expressedComposite(aggregate)
+  const impact = expressedMean(aggregate.impact)
+  const timeToMarket = expressedMean(aggregate.time_to_market)
   return {
-    displayComposite: roundToDisplay(calculatePriorityScore(aggregate)),
-    displayImpact: roundToDisplay(aggregate.impact),
-    displayTimeToMarket: roundToDisplay(aggregate.time_to_market),
+    displayComposite: composite === null ? null : roundToDisplay(composite),
+    displayImpact: impact === null ? null : roundToDisplay(impact),
+    displayTimeToMarket: timeToMarket === null ? null : roundToDisplay(timeToMarket),
     reviewerCount: aggregate.reviewer_count,
     spread: aggregate.reviewer_count > 1 ? aggregate.score_spread : null,
   }
@@ -993,6 +1083,11 @@ export const priorityBand = (view: TeamView): PriorityBand => {
   if (view.kind === 'unavailable') return 'unavailable'
   if (view.kind === 'loading') return 'loading'
   if (view.kind === 'unscored') return 'none'
+  // A scored view with no composite: somebody said something (the reviewer
+  // count is real) but nobody scored an axis — a notes-only ballot. There is
+  // no number to band, and 'low' would rank a comment as a verdict; 'none' is
+  // the honest label, and the row still shows the reviewer count beside it.
+  if (view.team.displayComposite === null) return 'none'
   if (view.team.displayComposite >= 4) return 'high'
   if (view.team.displayComposite >= 3) return 'medium'
   return 'low'
@@ -1333,7 +1428,7 @@ function byNewestFirst(a: ProjectDocument, b: ProjectDocument): number {
 }
 
 /** Which number on the team view each score sort field orders by. */
-const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (team: TeamScore) => number> = {
+const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (team: TeamScore) => number | null> = {
   // `displayComposite`, the value the row PRINTS, not the raw weighted sum — the rule
   // `displayComposite` was introduced for ("every classification reads this") applies
   // to the order as much as to the band. Rounding is monotonic, so raw never
@@ -1347,6 +1442,10 @@ const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (t
   // while the raw values still order — and flip when the reader toggles the direction.
   // Reading the printed value ties them instead. These two tie most often of the three,
   // because a 0–5 mean is a coarse scale.
+  //
+  // `null` — an axis no reviewer scored, printed as a dash — reaches the
+  // comparator and ties there: a dash is not a lowest value, and ordering by a
+  // number the row does not show is the mismatch this table exists to prevent.
   impact: (team) => team.displayImpact,
   time_to_market: (team) => team.displayTimeToMarket,
 }
@@ -1378,7 +1477,17 @@ function compareByTeamScore(
 ): number {
   if (!teamA || !teamB) return 0
   const value = TEAM_SORT_VALUE[sortField]
-  return value(teamA) - value(teamB)
+  const a = value(teamA)
+  const b = value(teamB)
+  // An axis nobody scored prints as a dash, and a dash cannot be ordered
+  // against a number — treating null as 0 would rank "nobody mentioned time to
+  // market" below "the team rated it worst". Within `sortRows` this branch is
+  // unreachable: `blockOf` groups a dash-in-this-column row with the
+  // number-less block before any comparison, precisely because a null that
+  // ties both a 5 and a 1 makes the order engine-dependent. Kept for the
+  // direct caller, where a tie is the honest answer for one comparison.
+  if (a === null || b === null) return 0
+  return a - b
 }
 
 /** Does this sort field read a number only a scored ROW has? */
@@ -1472,7 +1581,22 @@ export function sortRows(
   const blockOf = (row: PrioritizationRowView): number => {
     if (!ordersByTeamScore) return 0
     const view = views.get(row.row_id)
-    return view === undefined ? 0 : SORT_BLOCK[view.kind]
+    if (view === undefined) return 0
+    // A scored row with NO NUMBER IN THIS COLUMN — an axis nobody scored, or a
+    // notes-only composite — prints a dash there, and a dash sorts with the
+    // number-less rows rather than tying arbitrarily among the ranked ones: a
+    // null that ties both a 5 and a 1 (which do not tie each other) makes the
+    // final order depend on the engine's sort, not on the data. Grouped with
+    // the unscored block because that is what the reader sees — no value in
+    // the sorted column — while the row's own label still says which state it
+    // is. Deciding this here, per row, is also what keeps the comparator's
+    // null branch unreachable within the ranked block.
+    if (view.kind === 'scored'
+      && (sortField === 'priority_score' || sortField === 'impact' || sortField === 'time_to_market')
+      && TEAM_SORT_VALUE[sortField](view.team) === null) {
+      return SORT_BLOCK.unscored
+    }
+    return SORT_BLOCK[view.kind]
   }
   return [...rows].sort((a, b) => {
     const blockA = blockOf(a)

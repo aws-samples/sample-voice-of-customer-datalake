@@ -514,8 +514,9 @@ describe('Prioritization', () => {
       })
       await user.click(screen.getByText('Feature A PR/FAQ'))
       const sliders = await screen.findAllByRole('slider')
-      // Exactly one slider moves. The other three display 3 — the seeding that makes
-      // the control usable — and that display value must not become a vote.
+      // Exactly one slider moves. The other three read "Not scored" (#343 —
+      // the handle rests mid-track as presentation, but no number is asserted
+      // on screen), and an unscored axis must not become a vote.
       fireEvent.change(sliders[0], { target: { value: '5' } })
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
@@ -532,6 +533,123 @@ describe('Prioritization', () => {
       for (const axis of ['time_to_market', 'confidence', 'strategic_fit', 'notes']) {
         expect(Object.hasOwn(body[R.d1], axis), axis).toBe(false)
       }
+    })
+
+    it('shows a stored partial ballot as it is recorded: the scored axis a number, the rest not scored', async () => {
+      // The assertion nothing made before #343. The editor coerced a stored 0
+      // to a displayed 3 — purely for display, never written — so after a
+      // partial save the sliders read 4/3/3/3 against a record of 4/0/0/0,
+      // and the reviewer could never discover on screen that three quarters of
+      // their ballot was recorded as nothing. Reproduced on production before
+      // it was fixed; this pins that the editor and the record now agree.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({
+        // Exactly what the API returns after `PATCH {impact: 4}` on a fresh
+        // row: the expressed axis, and 0.0 (the wire encoding of "absent") for
+        // the rest.
+        scores: {
+          [R.d1]: { row_id: R.d1, impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, notes: '' },
+        },
+        aggregates: {
+          [R.d1]: { impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, reviewer_count: 1, score_spread: 0 },
+        },
+      })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+
+      // The one scored axis reads as its number...
+      expect(sliders[0]).toHaveValue('4')
+      expect(sliders[0]).not.toHaveAttribute('aria-valuetext')
+      // ...and each unscored one says so where a screen reader listens. The
+      // handle may REST at mid-track (a range input cannot be valueless), but
+      // no number is presented as the axis's value.
+      for (const slider of sliders.slice(1)) {
+        expect(slider).toHaveAttribute('aria-valuetext', 'Not scored')
+      }
+    })
+
+    it('releasing a press on an unscored slider commits the resting value, so exactly-3 is reachable by click', async () => {
+      // Clicking the track AT the resting position fires no `change` (the value
+      // did not move), so without this path a reviewer who wants exactly 3 has
+      // no way to say so short of wiggling the handle. The commit reads the
+      // value off the CONTROL at release — not this render's props — so a
+      // click-at-5 (whose `change` fires first) cannot be rewritten back to 3
+      // by a stale closure. Reverting the onPointerUp path fails this test:
+      // no change event fires, no edit is recorded, Save stays disabled.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+      expect(sliders[1]).toHaveAttribute('aria-valuetext', 'Not scored')
+
+      // A press that starts AND ends on the control, without moving: the
+      // click-at-the-resting-position case.
+      fireEvent.pointerDown(sliders[1])
+      fireEvent.pointerUp(sliders[1])
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeEnabled()
+      })
+      await user.click(screen.getByRole('button', { name: /save/i }))
+      expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
+        [R.d1]: { row_id: R.d1, time_to_market: 3 },
+      })
+    })
+
+    it('a pointer released over an unscored slider after going down elsewhere casts nothing', async () => {
+      // `pointerup` fires on whatever the pointer is over when it is released,
+      // including a press that started on the row header and drifted. A stray
+      // release must not cast a vote nobody aimed at the control.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+
+      // Release over the control with NO pointerdown on it first.
+      fireEvent.pointerUp(sliders[1])
+
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
+    })
+
+    it('a press that starts on an unscored slider and ends elsewhere does not arm the next stray release', async () => {
+      // The stuck-flag case: without clearing the guard on pointerleave, a
+      // press that started on the slider and ended off it leaves the flag
+      // armed, and the NEXT unrelated release over the input casts the resting
+      // value — the exact stray vote the guard exists to prevent, one
+      // interaction later. Removing the clearing handlers fails this test.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+      const user = userEvent.setup()
+
+      renderPrioritization()
+      await user.click(await screen.findByText('Feature A PR/FAQ'))
+      const sliders = await screen.findAllByRole('slider')
+
+      fireEvent.pointerDown(sliders[1])
+      fireEvent.pointerLeave(sliders[1])
+      // The press ended elsewhere; this later release over the input is stray.
+      fireEvent.pointerUp(sliders[1])
+
+      expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+      expect(mockPatchPrioritizationScores).not.toHaveBeenCalled()
     })
 
     it('says nobody has scored a document absent from the aggregate', async () => {

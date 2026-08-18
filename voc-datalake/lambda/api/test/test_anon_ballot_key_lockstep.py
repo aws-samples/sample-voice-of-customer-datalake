@@ -160,6 +160,18 @@ class TestBothWritersAgreeOnWhereABallotLives:
             f'anonymous ballots would be silently ignored by the aggregate.'
         )
 
+    def test_the_row_record_prefix_matches(self):
+        # ballots_handler READS row records it never writes: the session-open
+        # existence check (#342) looks a row up under the prefix projects_handler
+        # writes it under. If the two drift, the check answers "no such row" for
+        # every row, and no session can be opened at all.
+        ballots = _str_const(_read(BALLOTS_SOURCE), 'ROW_SK_PREFIX', BALLOTS_SOURCE)
+        projects = _str_const(_read(PROJECTS_SOURCE), 'ROW_SK_PREFIX', PROJECTS_SOURCE)
+        assert ballots == projects, (
+            f'ROW_SK_PREFIX differs: {ballots!r} vs {projects!r}. The existence '
+            f'check would look rows up under a key nothing writes.'
+        )
+
     def test_both_build_the_sort_key_in_the_same_shape(self):
         # The reader splits on the LAST '#', so the shape — prefix, ROW id, '#',
         # kind-namespaced subject — has to be identical in both writers.

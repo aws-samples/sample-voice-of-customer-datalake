@@ -129,6 +129,7 @@
     "impact": "Impact",
     "impactDescription": "Business value and customer benefit",
     "low": "Low",
+    "notScored": "Not scored",
     "slow": "Slow",
     "strategicFit": "Strategic Fit",
     "strategicFitDescription": "Alignment with company goals",

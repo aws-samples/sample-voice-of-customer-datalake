@@ -436,6 +436,79 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         assert table.update_item_calls == []
         assert table.ballot_keys == []
 
+    def test_a_row_with_no_record_is_refused_and_nothing_is_stored(
+        self, api_gateway_event, lambda_context
+    ):
+        """The write-side half of the orphan problem (#342). The read discards a
+        ballot whose row does not resolve — that protects the READER — but the
+        write answered `200 {"updated_count": 1}` and stored an orphan, so the
+        WRITER was told their vote saved while it appeared nowhere: silent loss
+        reported as success, verified against production. A row that does not
+        exist gets no ballot, and the caller is told the world changed (404)
+        rather than that their request was malformed (400).
+
+        Reverting the fix (removing the existence check) fails this on the
+        status: the save answers 200 and stores the orphan."""
+        table = FakeAggregatesTable()
+
+        status, body = _patch_scores(
+            table, api_gateway_event, lambda_context, {'row-ghost': AXES},
+            seed_rows=False,
+        )
+
+        assert status == 404
+        assert 'does not exist' in body['error']
+        assert 'row-ghost' not in body['error'], 'no echo of caller input'
+        assert table.update_item_calls == []
+        assert table.ballot_keys == []
+
+    def test_one_phantom_row_in_a_multi_row_save_persists_nothing(
+        self, api_gateway_event, lambda_context
+    ):
+        """The refusal joins the up-front pass: a body naming one vanished row
+        among several writes NOTHING, keeping the promise that only a mid-save
+        infrastructure failure can half-persist. Checking per row inside the
+        write loop instead would store the rows before the phantom and answer an
+        error about the whole body — a half-persist by design."""
+        table = FakeAggregatesTable().seed_rows('row-real')
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context,
+            {'row-real': AXES, 'row-ghost': AXES}, seed_rows=False,
+        )
+
+        assert status == 404
+        assert table.update_item_calls == []
+        assert table.ballot('row-real', 'reviewer-1') is None
+
+    def test_a_failed_existence_read_is_a_server_fault_not_a_refusal(
+        self, api_gateway_event, lambda_context
+    ):
+        """Either invented answer is worse than the truth: 'missing' refuses a
+        legitimate save over a transient throttle, 'present' waves through the
+        orphan the check exists to refuse. So a failed read raises, the caller
+        retries, and nothing is stored meanwhile."""
+        table = FakeAggregatesTable().seed_rows('row-1')
+        real_get = table.get_item
+
+        def failing_get(**kwargs):
+            if str(kwargs['Key']['sk']).startswith('ROW#'):
+                raise ClientError(
+                    {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
+                    'GetItem',
+                )
+            return real_get(**kwargs)
+
+        table.get_item = failing_get
+
+        status, _ = _patch_scores(
+            table, api_gateway_event, lambda_context, {'row-1': AXES},
+            seed_rows=False,
+        )
+
+        assert status == 500
+        assert table.update_item_calls == []
+
     def test_a_save_larger_than_the_bound_is_refused(self, api_gateway_event, lambda_context):
         """Each row costs the ballot write plus, when it scored, a read of the row
         and one conditional removal per document it holds — so an unbounded body
@@ -571,14 +644,13 @@ class TestAPartialEntryLeavesTheOtherAxesAlone:
         than leaving it described in a docstring.
 
         With no prior ballot there is nothing to fall back on, so an axis the
-        caller never sent is simply absent — and `_axis_value` reads absent as 0.0.
-        For `time_to_market` that diverges from the page, whose own DEFAULT_SCORE
-        is 3 and whose `PRFAQRow` reads `time_to_market !== 3` as "touched": a
-        reviewer who only left a note therefore appears to have deliberately rated
-        it lowest. Deliberately not corrected on the read, because seeding the
-        frontend's default would put a number nobody entered into a field named for
-        what a reviewer scored; the aggregate makes the distinction instead, by
-        asking whether the axis is carried at all."""
+        caller never sent is simply absent — and `_axis_value` reads absent as
+        0.0. Since #343 the page reads a 0.0 back as UNSCORED for every axis (a
+        dash, not a number), so this wire value no longer presents as a
+        deliberate lowest score. Still deliberately not corrected on the read,
+        because seeding a display default would put a number nobody entered into
+        a field named for what a reviewer scored; the aggregate makes the
+        distinction instead, by asking whether the axis is carried at all."""
         table = FakeAggregatesTable()
 
         _patch_scores(table, api_gateway_event, lambda_context,
@@ -1164,11 +1236,16 @@ class TestTheMigrationCostsNothingWhereThereIsNothingToMigrate:
             if call['UpdateExpression'].strip().upper().startswith('REMOVE')
         ]
 
-    def test_a_deployment_with_no_legacy_map_issues_no_removals_and_no_row_reads(
+    def test_a_deployment_with_no_legacy_map_issues_no_removals_and_no_migration_reads(
         self, api_gateway_event, lambda_context
     ):
         """The common case, forever. Ten scored rows of five documents each would
-        otherwise be ten row reads and fifty refused conditional writes."""
+        otherwise be ten MIGRATION row reads and fifty refused conditional writes.
+
+        The row reads that remain are the EXISTENCE check every save now pays —
+        exactly one per named row (#342) — so the assertion is "one read per row,
+        none of them the migration's", not "no reads": a migration read would be a
+        SECOND read of the same key, and the count is what catches it."""
         table, row_ids = self._rows(10, 5)
 
         status, _ = _patch_scores(
@@ -1178,7 +1255,10 @@ class TestTheMigrationCostsNothingWhereThereIsNothingToMigrate:
 
         assert status == 200
         assert self._removals(table) == []
-        assert self._row_reads(table) == []
+        assert len(self._row_reads(table)) == len(row_ids), (
+            'one existence read per named row, and not one more: the legacy '
+            'migration must add zero'
+        )
 
     def test_the_map_is_read_once_per_save_not_once_per_row(
         self, api_gateway_event, lambda_context
@@ -2333,7 +2413,11 @@ class TestReviewerIdentityComesFromTheSharedHelper:
     ):
         import projects_handler
 
-        table = FakeAggregatesTable()
+        # Seeded because this test bypasses `_patch_scores` (whose fixture seeds
+        # rows) to patch the helper — and the route refuses a row with no record
+        # before writing (#342), which would end the request before the ballot
+        # write this asserts on.
+        table = FakeAggregatesTable().seed_rows('row-1')
         with (
             patch('projects_handler.get_caller_subject', return_value='alice') as helper,
             patch('projects_handler.get_aggregates_table', return_value=table),
@@ -3576,18 +3660,29 @@ class TestTheOneLegacyScoreLandsOnItsProjectsDefaultRow:
         assert body['aggregates']['row-p1']['reviewer_count'] == 1
         assert body['aggregates']['row-p1']['score_spread'] == 0.0
 
-    def test_a_save_that_scored_nothing_reads_no_row_and_removes_nothing(
+    def test_a_save_that_scored_nothing_pays_one_existence_read_and_removes_nothing(
         self, api_gateway_event, lambda_context
     ):
-        """The row read costs a round trip, so it is only paid for by a save that
-        actually scored — and a save expressing nothing must not delete a value it
-        did not replace."""
+        """The MIGRATION's row read is only paid for by a save that actually
+        scored — and a save expressing nothing must not delete a value it did not
+        replace. The one read that remains is the EXISTENCE check (#342), which
+        every save pays even for a stamps-only entry: an entry that scores nothing
+        still writes a ballot record, and a phantom row must not collect one.
+
+        The status is asserted so this cannot go vacuous: `self._table()` seeds
+        the row, but if that fixture ever stopped, the request would 404 and
+        'one read, map untouched' would hold for the wrong reason."""
         table = self._table()
 
-        _patch_scores(table, api_gateway_event, lambda_context,
-                      {'row-p1': {}}, subject='alice', seed_rows=False)
+        status, _ = _patch_scores(table, api_gateway_event, lambda_context,
+                                  {'row-p1': {}}, subject='alice', seed_rows=False)
 
-        assert table.get_item_calls == []
+        assert status == 200
+        assert len(table.get_item_calls) == 1, (
+            'exactly the existence read: a second get_item would be the '
+            'migration reading a row for a save that scored nothing'
+        )
+        assert table.get_item_calls[0]['Key']['sk'] == 'ROW#row-p1'
         assert table.items[(PARTITION, LEGACY_SK)]['scores']['prd-1']['impact'] == 4
 
 

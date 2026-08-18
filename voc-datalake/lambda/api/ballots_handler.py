@@ -173,6 +173,10 @@ MAX_BALLOT_CAP = 200
 # that a room scores the whole proposal rather than one of its documents.
 PRIORITIZATION_PK = 'PRIORITIZATION'
 BALLOT_SK_PREFIX = 'BALLOT#'
+# The row-record prefix `projects_handler.ROW_SK_PREFIX` writes. Read here for one
+# purpose only: to check, at session creation, that the row the facilitator names
+# exists (`_row_exists`). This module still never composes or interprets a row.
+ROW_SK_PREFIX = 'ROW#'
 REVIEWER_KIND_ANON = 'anon'
 
 # Minted here, never accepted from a caller — see `_minted_ballot_id`.
@@ -395,12 +399,17 @@ def _validated_row_id(raw: Any) -> str:
     than a DynamoDB ValidationException surfacing as a 500. Neither message echoes
     the value, which is unbounded caller input.
 
-    NOT a check that the row EXISTS: this Lambda's role grants it one item read at
-    a time on one table and it deliberately knows nothing about row records, so the
-    only thing it can honestly check is the shape of the key it is about to write.
-    A session opened for a row that does not resolve collects ballots the page
-    ignores on read — the same outcome as the signed-in save path, whose reasoning
-    `_validated_ballot_row_id` records.
+    The SHAPE only; existence is the route's check (`_row_exists`), because this
+    function has one key in hand and no table. The route CAN check existence
+    honestly — one `get_item` on the aggregates table, which is exactly the
+    read this Lambda's role already grants — and it must (#342): a session
+    opened for a row that does not resolve collects a room's ballots that the
+    page then discards on read, and a room's votes are unrepeatable. The check
+    is at session CREATION and not at submit, deliberately: submit takes the
+    row id from the stored session, never from the body, so a session that
+    named a real row cannot start naming a phantom one (nothing deletes rows
+    today — phase 2's delete path owes the write-time condition), and the
+    public submit path stays at its current cost.
     """
     if not isinstance(raw, str) or not raw.strip():
         raise ValidationError('row_id is required')
@@ -412,6 +421,31 @@ def _validated_row_id(raw: Any) -> str:
             f'row_id must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
         )
     return row_id
+
+
+def _row_exists(row_id: str) -> bool:
+    """Does a row record exist for this id — the check a session must pass to open.
+
+    One `get_item`, the read this role already grants. A FAILED read raises
+    rather than answering either way: "missing" refuses a facilitator standing
+    in front of a room over a transient throttle, and "present" opens a window
+    that collects unrepeatable votes the page will discard (#342). The same
+    direction the signed-in save path fails in, for the same reason.
+    """
+    table = _table()  # its ConfigurationError is not this read's failure
+    try:
+        # Strongly consistent, because this read GATES the write that opens a
+        # public window: the facilitator's flow is create-row-then-open-vote,
+        # and an eventually-consistent read can miss a row created moments ago
+        # — refusing a legitimate session with 404 in front of a room.
+        response = table.get_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': f'{ROW_SK_PREFIX}{row_id}'},
+            ConsistentRead=True,
+        )
+    except Exception as e:
+        logger.exception(f'Failed to read a prioritization row before opening a session: {e}')
+        raise ServiceError('Failed to open the voting session') from e
+    return isinstance(response.get('Item'), dict)
 
 
 def _sanitized_text(raw: Any, max_length: int) -> str:
@@ -647,11 +681,24 @@ def create_voting_session():
     it is this one, and what changed is a single slot in the key.
 
     The row is named, not composed, here: this Lambda has no access to the projects
-    table by design and never reads a row record. `row_title` is copied onto the
-    session so the public page can say what is being scored without either.
+    table by design and never interprets a row record. It does now check that one
+    EXISTS (`_row_exists`, #342): a session is a public write window onto that row,
+    and one opened for a row nothing describes collects a room's ballots that the
+    page then discards — votes that cannot be recast. `row_title` is still copied
+    onto the session so the public page can say what is being scored without
+    reading anything.
     """
     body = _json_object_body()
     row_id = _validated_row_id(body.get('row_id'))
+    if not _row_exists(row_id):
+        # 404 about the world, not 400 about the request: the id is well-formed
+        # and the page sent one it was shown — a row created moments ago in
+        # another tab, or a stale tab after this deployment re-keyed rows. The
+        # id is not echoed (unbounded caller input, the module's standing rule).
+        raise NotFoundError(
+            'that prioritization row does not exist; reload the page and '
+            'reopen the vote'
+        )
     row_title = _sanitized_text(body.get('row_title'), MAX_ROW_TITLE_LEN)
     ballot_cap = validate_int(
         body.get('ballot_cap'),
