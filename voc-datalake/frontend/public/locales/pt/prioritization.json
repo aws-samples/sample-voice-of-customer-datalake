@@ -43,6 +43,7 @@
     "rejected": {
       "title": "Seu voto não foi registrado"
     },
+    "scopeNote": "Você está pontuando uma proposta completa: esta votação cobre o conjunto de documentos por trás dela, em uma única cédula.",
     "submit": {
       "label": "Enviar voto",
       "pending": "Enviando..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "Código QR que abre a página de voto anônimo de {{title}}",
     "qrCaption": "Escaneie para pontuar esta proposta pelo celular",
     "qrUnavailable": "O código QR está indisponível porque o endereço desta página não pode ser compartilhado.",
-    "scopeNote": "Esta votação pontua um único documento: {{title}}. Uma sala que o escanear não pontua nenhuma outra versão da mesma ideia.",
+    "scopeDocuments": "Uma cédula cobre todos os {{documents}} documentos por trás dela, então a sala pontua a proposta completa.",
+    "scopeNote": "Esta votação pontua uma proposta: {{title}}.",
     "title": "Pontuar em sala"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documentos, uma cédula"
   },
   "scores": {
     "confidence": "Confiança",
@@ -130,6 +135,7 @@
     "timeToMarket": "Tempo para o Mercado",
     "timeToMarketDescription": "Com que rapidez isso pode ser entregue?",
     "title": "Pontuações de Priorização",
+    "wholeRow": "Uma única cédula para os {{documents}} documentos desta linha.",
     "yoursOnly": "Sua própria pontuação. Ao salvar, apenas os seus valores são gravados."
   },
   "scoresUnavailable": {
@@ -152,9 +158,9 @@
     "highPriority": "Alta Prioridade",
     "mediumPriority": "Média Prioridade",
     "notScored": "Não Pontuado",
-    "totalDocuments": "Total de Documentos",
-    "unreadable_one": "A pontuação da equipe de {{count}} documento não pôde ser lida, portanto ele conta apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-la.",
-    "unreadable_other": "As pontuações da equipe de {{count}} documentos não puderam ser lidas, portanto eles contam apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-las."
+    "totalRows": "Total de propostas",
+    "unreadable_one": "A pontuação da equipe de {{count}} proposta não pôde ser lida, portanto ela conta apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-la.",
+    "unreadable_other": "As pontuações da equipe de {{count}} propostas não puderam ser lidas, portanto elas contam apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-las."
   },
   "subtitle": "Pontue e priorize PRDs e PR/FAQs em todos os projetos",
   "team": {

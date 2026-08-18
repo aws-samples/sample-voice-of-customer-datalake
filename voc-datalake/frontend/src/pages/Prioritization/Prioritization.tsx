@@ -11,13 +11,14 @@ import {
   AlertTriangle, ArrowUpDown, FileText, Sparkles, Save, RotateCcw,
 } from 'lucide-react'
 import {
-  useState, useMemo, useId,
+  useState, useMemo, useId, useEffect, useRef,
 } from 'react'
 import type { ReactElement } from 'react'
 import {
   useTranslation, Trans,
 } from 'react-i18next'
 import { useBlocker } from 'react-router-dom'
+import { isPermanentRefusal } from '../../api/apiErrorStatus'
 import { api } from '../../api/client'
 import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
 import { projectsKey } from '../../api/projectQueryKeys'
@@ -30,18 +31,53 @@ import {
 } from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
 import {
-  applyBallotEdits, getScore, getTeamView, collectPRFAQs, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, normalizeScores, ownBallotRead,
-  overLongNoteDocuments, priorityBand, READ_STATE_I18N_KEY, sortPRFAQs, teamAggregatesOf,
-  teamOrderingAvailable, uncountableTeamRead, withEditedField,
+  applyBallotEdits, getScore, getTeamView, collectRows, isScorable,
+  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRow, normalizeRows, normalizeScores, ownBallotRead,
+  overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY, sortRows,
+  teamAggregatesOf, teamOrderingAvailable, uncountableTeamRead, withEditedField,
 } from './prioritizationUtils'
 import type {
-  PRFAQWithProject, SortField, SortDirection, TeamAggregates,
+  PrioritizationRowView, SortField, SortDirection, TeamAggregates,
 } from './prioritizationUtils'
 import type { LinkedForm } from './formLinkUtils'
 import type {
-  Project, PrioritizationScore, PrioritizationBallotEdit,
+  Project, PrioritizationScore, PrioritizationBallotEdit, PrioritizationRow,
 } from '../../api/types'
+
+/**
+ * The rows a batch of row-ensure asks actually handed back, keyed by row id.
+ *
+ * The create route is idempotent and answers the STORED row whether it just wrote it
+ * or found it, so every fulfilled ask carries a row the server holds — the same record
+ * the prioritization read reports, one round trip earlier. Keeping them is what lets
+ * the list survive a read that fails or has not landed.
+ *
+ * Each answer goes through `normalizeRow` — the SAME schema the read half is validated
+ * by — rather than being trusted because its declared type says `PrioritizationRow`. A
+ * fulfilled ask answering `{success: true, row: {}}` type-checks and satisfies the
+ * compiler, and reading `row.row_id.length` off it threw inside this `.then`, which lost
+ * every row in the batch and left the rejection unhandled. Validating instead keeps the
+ * two halves of the same record held to one contract, including the document-count bound
+ * `RowSchema` states.
+ *
+ * A fulfilled ask with no `row`, an unreadable one, or one whose id is empty contributes
+ * nothing: the field is optional on the wire, and a row the page cannot address is a row
+ * no ballot, aggregate or expansion could ever be looked up against.
+ *
+ * At module level rather than inside the effect for the reason `selectPrioritization`
+ * is: this is a pure mapping over a response, and nesting it there put a closure four
+ * levels deep inside a `useEffect` inside a component, which the lint budget refuses.
+ */
+function rowsAnswered(
+  results: readonly PromiseSettledResult<{ readonly row?: PrioritizationRow }>[],
+): Record<string, PrioritizationRow> {
+  const answered = results.flatMap((result) => {
+    if (result.status !== 'fulfilled') return []
+    const row = normalizeRow(result.value.row)
+    return row ? [row] : []
+  })
+  return Object.fromEntries(answered.map((row) => [row.row_id, row]))
+}
 
 /**
  * The prioritization read, validated at the query boundary — BOTH halves of it.
@@ -69,6 +105,7 @@ import type {
 type PrioritizationRead = Awaited<ReturnType<typeof api.getPrioritizationScores>>
 
 const selectPrioritization = (data: PrioritizationRead) => ({
+  rows: normalizeRows(data.rows),
   scores: normalizeScores(data.scores),
   aggregates: normalizeAggregates(data.aggregates),
 })
@@ -95,18 +132,18 @@ const selectPrioritization = (data: PrioritizationRead) => ({
  * running, or arrived naming documents with not one readable row among them) the
  * three team-derived cards show a dash rather than a count. A zero is a claim ("none
  * of these is high priority") and "1 Not Scored" for every document in the backlog is
- * a false one; no such read said anything about any of them. Only "Total Documents"
+ * a false one; no such read said anything about any of them. Only "Total Proposals"
  * survives, because that is counted off the project read, which is a different query
  * and may well have succeeded already.
  */
 function StatsCards({
-  allPRFAQs, aggregates,
+  rows, aggregates,
 }: {
-  readonly allPRFAQs: PRFAQWithProject[];
+  readonly rows: PrioritizationRowView[];
   readonly aggregates: TeamAggregates
 }) {
   const { t } = useTranslation('prioritization')
-  const bands = allPRFAQs.map((p) => priorityBand(getTeamView(aggregates, p.document_id)))
+  const bands = rows.map((row) => priorityBand(getTeamView(aggregates, row.row_id)))
   /**
    * Not `teamReadDelivered`: a response whose EVERY named row is unreadable parses to
    * a map, so "delivered" is true while the read says exactly as little as a failed
@@ -117,7 +154,7 @@ function StatsCards({
   const uncountable = uncountableTeamRead(aggregates)
   /**
    * Rows the response named but could not be read — the gap the line under the grid
-   * explains. When the cards are counting, a marked row is in "Total Documents" and in
+   * explains. When the cards are counting, a marked row is in "Total Proposals" and in
    * no other card: it is not high, medium or low (no number), and calling it "Not
    * Scored" is the conflation the row label refuses. Leaving that silent made the
    * cards stop adding up with nothing on the page saying why. Zero when the read is
@@ -157,7 +194,11 @@ function StatsCards({
   return (
     <div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{allPRFAQs.length}</div><div className="text-sm text-gray-500">{t('stats.totalDocuments')}</div></div>
+        {/* Counts ROWS, and says so: one row is one proposal scored once, which is
+            the number a reader ranking a backlog is actually after. The old count was
+            documents, so a project whose PRD and PR/FAQ describe one idea inflated
+            every card by one. */}
+        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{rows.length}</div><div className="text-sm text-gray-500">{t('stats.totalRows')}</div></div>
         <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{countOf('high')}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
         <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{countOf('medium')}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
         {/* `text-gray-500`, not the inherited `text-gray-400`: on this white card gray-400
@@ -271,8 +312,6 @@ function SortControls({
   )
 }
 
-const NO_LINKED_FORMS: readonly LinkedForm[] = []
-
 /**
  * Query key root for the fan-out project read.
  *
@@ -284,12 +323,24 @@ const NO_LINKED_FORMS: readonly LinkedForm[] = []
  */
 const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
 
+/**
+ * Query key for the prioritization read: rows, the caller's ballots, the team aggregates.
+ *
+ * A constant for the same reason as `ALL_PROJECT_DETAILS_KEY`, and more urgently: it is
+ * fetched once and invalidated from THREE places (after a save, after the prototype
+ * re-sign, and after the row-ensure effect below). Spelled four times, a rename would
+ * leave the invalidations matching nothing and the page would show stale rows after a
+ * save with nothing failing. Stays private to this page per the rule in
+ * api/projectQueryKeys.
+ */
+const PRIORITIZATION_SCORES_KEY = ['prioritization-scores'] as const
+
 function PRFAQList({
-  isLoading, prfaqs, scores, aggregates, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
+  isLoading, rows, scores, aggregates, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
-  readonly prfaqs: PRFAQWithProject[]
-  /** The caller's own ballots, which stay behind each row's own sliders. */
+  readonly rows: PrioritizationRowView[]
+  /** The caller's own ballots, PER ROW, behind each row's own sliders. */
   readonly scores: Record<string, PrioritizationScore>
   /**
    * What every reviewer together said — the resting row, and the sort order.
@@ -300,12 +351,17 @@ function PRFAQList({
    * than as an absence of votes.
    */
   readonly aggregates: TeamAggregates
+  /**
+   * Forms per DOCUMENT, threaded whole rather than resolved per row: a row holds a
+   * set of documents and the evidence belongs to each document, so the row's
+   * expansion looks up its own — see `PRFAQRow.RowDocument`.
+   */
   readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
-  /** Passed through to each row's linked-form panel — see PRFAQRow. */
+  /** Passed through to each row's linked-form panels — see PRFAQRow. */
   readonly apiEndpoint: string
   readonly expandedId: string | null
   readonly onToggleExpand: (id: string) => void
-  readonly onUpdateScore: (docId: string, field: keyof PrioritizationScore, value: number | string) => void
+  readonly onUpdateScore: (rowId: string, field: keyof PrioritizationScore, value: number | string) => void
   readonly hasNonScorableOnly: boolean
 }) {
   const { t } = useTranslation('prioritization')
@@ -313,7 +369,7 @@ function PRFAQList({
   if (isLoading) {
     return <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" /><p className="text-gray-500 mt-4">{t('loading')}</p></div>
   }
-  if (prfaqs.length === 0) {
+  if (rows.length === 0) {
     if (hasNonScorableOnly) {
       return <div className="text-center py-12 bg-white rounded-lg border"><FileText size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium text-gray-900">{t('empty.wrongTypeTitle')}</h3><p className="text-gray-500 mt-1">{t('empty.wrongTypeDescription')}</p></div>
     }
@@ -321,18 +377,18 @@ function PRFAQList({
   }
   return (
     <div className="space-y-3">
-      {prfaqs.map((prfaq, index) => (
+      {rows.map((row, index) => (
         <PRFAQRow
-          key={prfaq.document_id}
-          prfaq={prfaq}
+          key={row.row_id}
+          row={row}
           index={index}
-          score={getScore(scores, prfaq.document_id)}
-          team={getTeamView(aggregates, prfaq.document_id)}
-          linkedForms={linkedFormsByDocument.get(prfaq.document_id) ?? NO_LINKED_FORMS}
+          score={getScore(scores, row.row_id)}
+          team={getTeamView(aggregates, row.row_id)}
+          linkedFormsByDocument={linkedFormsByDocument}
           apiEndpoint={apiEndpoint}
-          isExpanded={expandedId === prfaq.document_id}
-          onToggle={() => onToggleExpand(prfaq.document_id)}
-          onUpdateScore={(field, value) => onUpdateScore(prfaq.document_id, field, value)}
+          isExpanded={expandedId === row.row_id}
+          onToggle={() => onToggleExpand(row.row_id)}
+          onUpdateScore={(field, value) => onUpdateScore(row.row_id, field, value)}
         />
       ))}
     </div>
@@ -503,7 +559,7 @@ export default function Prioritization() {
   const {
     data: savedScores, isError: scoresFailed, isPending: scoresPending,
   } = useQuery({
-    queryKey: ['prioritization-scores'],
+    queryKey: PRIORITIZATION_SCORES_KEY,
     queryFn: () => api.getPrioritizationScores(),
     select: selectPrioritization,
     enabled: config.apiEndpoint.length > 0,
@@ -578,7 +634,145 @@ export default function Prioritization() {
     [savedScores, scoresFailed, scoresPending],
   )
 
-  const allPRFAQs = useMemo(() => collectPRFAQs(allProjectDetails, projects), [allProjectDetails, projects])
+  /**
+   * Which projects have something to score, and so should have a row.
+   *
+   * A JSON key rather than the array itself, because the array is a fresh object on
+   * every render of a page that re-renders on every slider drag — and this value is a
+   * mutation dependency. The key is the identity that matters: the same projects, in
+   * the same order, mean the same ask.
+   */
+  const rowProjectIds = useMemo(
+    () => projectsNeedingARow(allProjectDetails, projects),
+    [allProjectDetails, projects],
+  )
+  const rowProjectKey = rowProjectIds.join(',')
+
+  /**
+   * Ask the API to ensure a default row for every project that has something to score.
+   *
+   * NOBODY PERFORMS A SETUP STEP: a project with a PRD or a PR/FAQ has a row the first
+   * time somebody opens this page. The create is idempotent server-side — the row id is
+   * derived from the project id and the write is conditional — so this can run on
+   * every mount, from two tabs at once, without giving a project a second row.
+   *
+   * Fired from an effect rather than lazily per row because the rows ARE the list: a
+   * project whose row does not exist yet has nothing to render, so there is no row to
+   * hang a lazy create off. Failures are silent ON SCREEN — the page's own empty state
+   * covers a backlog with no rows, and a red panel per project would report an error a
+   * reader cannot act on — but they are NOT forgotten: a rejected ask is un-marked
+   * below so the next pass retries it. Marked-and-never-cleared meant one transient 500
+   * or one throttle hid that project for the whole mount, on a page whose entire
+   * content is rows, with nothing on screen saying so and no way for the reader to get
+   * it back short of a reload.
+   *
+   * `void`, and no `await` of the settled results in the effect body: what the page
+   * reads is the prioritization query, which is invalidated once when the asks finish.
+   * Refetching per project would fan out N reads of a whole partition.
+   */
+  const rowsEnsured = useRef(new Set<string>())
+  const [ensuredRows, setEnsuredRows] = useState<Record<string, PrioritizationRow>>({})
+  useEffect(() => {
+    if (config.apiEndpoint.length === 0 || rowProjectIds.length === 0) return
+    // Asked ONCE per project per mount, while the ask keeps succeeding. Without this
+    // the effect re-runs whenever the project read is refetched — which the prototype
+    // re-signing does hourly — and each pass would spend one refused conditional write
+    // per project.
+    const pending = rowProjectIds.filter((id) => !rowsEnsured.current.has(id))
+    if (pending.length === 0) return
+    // Marked BEFORE the request, not after: two renders in the same tick would
+    // otherwise both see an unmarked id and both write.
+    for (const id of pending) rowsEnsured.current.add(id)
+    void Promise.allSettled(
+      pending.map((id) => api.createPrioritizationRow(id)),
+    ).then((results) => {
+      // A TRANSIENT failure is released, so a later render of this same mount — an
+      // hourly prototype re-sign, any project refetch — asks again. Idempotent
+      // server-side, so a retry costs one refused conditional write and never a
+      // duplicate row.
+      //
+      // A REFUSAL is not released. A 4xx is the server's settled answer about this
+      // project — no permission, or no scorable document by the route's reading of it,
+      // which is a disagreement with `projectsNeedingARow` that asking again cannot
+      // resolve — so releasing it re-asks on every project refetch for the whole mount
+      // and never gets a different reply.
+      results.forEach((result, index) => {
+        if (result.status !== 'rejected') return
+        if (!isPermanentRefusal(result.reason)) rowsEnsured.current.delete(pending[index])
+      })
+      // The rows the asks HANDED BACK, kept rather than discarded. Each is the row the
+      // server holds for that project — created just now or already there, since the
+      // route is idempotent and answers the stored row either way — so it is the same
+      // record the read below reports, arriving one round trip earlier. Keeping it is
+      // what makes the list survive a prioritization read that fails or is still in
+      // flight: rows ARE the page's content now, and read from that one query alone a
+      // 500 on the scores emptied the whole page rather than only the numbers on it.
+      const answered = rowsAnswered(results)
+      setEnsuredRows((known) => ({
+        ...known,
+        ...answered,
+      }))
+      // Refetched only when an ask actually CREATED something, which is what makes the
+      // read out of date. `created: false` — the common case, since the route is
+      // idempotent and every mount after the first only confirms rows that exist —
+      // leaves the read alone: it either already reports those rows or is about to, and
+      // invalidating unconditionally spent one whole-partition read per mount and
+      // discarded a response the reader was already looking at.
+      const created = results.some(
+        (result) => result.status === 'fulfilled' && result.value.created === true,
+      )
+      if (created) void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
+    })
+    // `rowProjectKey` rather than the array: see its own comment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowProjectKey, config.apiEndpoint, queryClient])
+
+  /**
+   * The rows the page renders: the server's rows, resolved against the documents on
+   * screen.
+   *
+   * `collectRows` decides what each row holds from the server's own `document_ids`,
+   * not by recomputing "every scorable document of this project" — a row stores
+   * concrete ids, so generating a new PRD leaves existing rows alone.
+   *
+   * TWO sources for one map, and the READ WINS where both name a row. The read is
+   * authoritative — it reports every row in the partition, including ones this page
+   * never asked for — while `ensuredRows` covers the window the read cannot: the
+   * prioritization query failing, or not having landed, on a page whose entire content
+   * is rows. Without it a 500 on the scores read left the reader an empty backlog with
+   * "no documents found" over data that exists, rather than the rows they can see with
+   * the numbers marked unavailable, which is the distinction the rest of this page is
+   * built to keep.
+   *
+   * The three absences `normalizeRows` distinguishes all land here as "the read adds
+   * nothing to what the asks confirmed", which is why the `?? {}` is honest rather than
+   * a collapse of that distinction: an absent field (a deployment predating rows), an
+   * unreadable one, and a read that has not delivered are all states in which the only
+   * rows anybody has vouched for are the ones the create route handed back — and it
+   * vouches for each by returning it. An EMPTY map is different only in that it adds
+   * nothing to merge, and with no asks answered yet it leaves the page's own empty
+   * state, which is the honest reading of a deployment that holds no rows.
+   *
+   * `ensuredRows` is STICKY for the mount, and the merge therefore cannot REMOVE a row:
+   * the read wins only where it names one, so a row that disappears from a later
+   * successful read stays on screen until the page is remounted. That is deliberate in
+   * phase 1, where nothing deletes a row — and it is the same trade the fallback exists
+   * for, since "absent from this read" is exactly what a failed or partial read looks
+   * like. Phase 2 adds deletion, and at that point the merge needs the read's absence to
+   * mean something: the cheap answer is to clear `ensuredRows` on a SUCCESSFUL read
+   * (which by then is the authority on what exists) rather than to keep merging under it.
+   */
+  const allRows = useMemo(
+    () => collectRows(
+      {
+        ...ensuredRows,
+        ...(savedScores?.rows ?? {}),
+      },
+      allProjectDetails,
+      projects,
+    ),
+    [savedScores, ensuredRows, allProjectDetails, projects],
+  )
 
   // True when data is loaded, nothing is scorable, but non-scorable documents exist.
   // Used to show a more helpful empty-state message pointing the user toward
@@ -588,29 +782,31 @@ export default function Prioritization() {
     const hasNonScorableDoc = allProjectDetails.some(
       (detail) => detail.documents && detail.documents.some((doc) => !isScorable(doc)),
     )
-    return allPRFAQs.length === 0 && hasNonScorableDoc
-  }, [allProjectDetails, allPRFAQs])
+    return allRows.length === 0 && hasNonScorableDoc
+  }, [allProjectDetails, allRows])
 
   // Ordered by the team's numbers — the same ones each row displays. Sorting by
   // the caller's own composite while showing the team's would leave the list
   // ranked by one number and labelled with another. Direction and the unscored
-  // block are `sortPRFAQs`' business: it negates the comparator rather than
+  // block are `sortRows`' business: it negates the comparator rather than
   // reversing the array, so flipping the direction does not also flip rows the
   // sort considers equal, and it keeps unvoted rows at the bottom either way.
-  const sortedPRFAQs = useMemo(
-    () => sortPRFAQs(allPRFAQs, aggregates, sortField, sortDirection),
-    [allPRFAQs, aggregates, sortField, sortDirection],
+  const sortedRows = useMemo(
+    () => sortRows(allRows, aggregates, sortField, sortDirection),
+    [allRows, aggregates, sortField, sortDirection],
   )
 
-  // Which forms validate which row. Pure bookkeeping over data already fetched;
-  // no per-row request happens here.
+  // Which forms validate which DOCUMENT of which row. Pure bookkeeping over data
+  // already fetched; no per-row request happens here. Keyed by document because a
+  // form validates a document and its evidence stays attached to it — the row is how
+  // a reader reaches it.
   const linkedFormsByDocument = useMemo(
     () => buildLinkedFormsByDocument(
       formsData ?? [],
-      allPRFAQs,
+      allRows,
       collectProjectDocumentIds(allProjectDetails, projects),
     ),
-    [formsData, allPRFAQs, allProjectDetails, projects],
+    [formsData, allRows, allProjectDetails, projects],
   )
 
   // Which pending edits carry a note the API will refuse. The API refuses rather
@@ -619,22 +815,22 @@ export default function Prioritization() {
   // Save button that does nothing. The textarea's `maxLength` covers what a reviewer
   // TYPES; this covers a note that was already over the bound in the pre-ballot
   // data, which is sent along the moment they touch a slider on that row.
-  const overLongNotes = useMemo(() => overLongNoteDocuments(localEdits), [localEdits])
+  const overLongNotes = useMemo(() => overLongNoteRows(localEdits), [localEdits])
 
-  // Document titles, so the panel above can name the rows a reviewer has to fix
-  // rather than the ids, which mean nothing to them. Derived from the list already
-  // on screen, so a row that has since disappeared falls back to its id instead of
+  // ROW titles, so the panel above can name the rows a reviewer has to fix rather
+  // than the ids, which mean nothing to them. Derived from the list already on
+  // screen, so a row that has since disappeared falls back to its id instead of
   // rendering blank.
-  const titlesByDocument = useMemo(
-    () => Object.fromEntries(allPRFAQs.map((doc) => [doc.document_id, doc.title])),
-    [allPRFAQs],
+  const titlesByRow = useMemo(
+    () => Object.fromEntries(allRows.map((row) => [row.row_id, row.title])),
+    [allRows],
   )
 
   const saveMutation = useMutation({
     mutationFn: () => api.patchPrioritizationScores(localEdits),
     onSuccess: () => {
       setLocalEdits({})
-      void queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] })
+      void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
     },
   })
 
@@ -644,10 +840,10 @@ export default function Prioritization() {
   // the same row — a reviewer who sets impact and then confidence sends both — but it
   // never gains a field they did not touch, so an untouched axis stays absent from the
   // body and the route leaves the stored value (or the absence of one) alone.
-  const updateScore = (docId: string, field: keyof PrioritizationScore, value: number | string) => {
+  const updateScore = (rowId: string, field: keyof PrioritizationScore, value: number | string) => {
     setLocalEdits((prev) => ({
       ...prev,
-      [docId]: withEditedField(prev[docId] ?? { document_id: docId }, field, value),
+      [rowId]: withEditedField(prev[rowId] ?? { row_id: rowId }, field, value),
     }))
   }
 
@@ -702,8 +898,8 @@ export default function Prioritization() {
                   actionable half of the message is "expand every pending row and
                   look". Titles are data, not UI copy, so this needs no new key. */}
               <ul className="text-xs sm:text-sm text-amber-800 mt-2 list-disc list-inside">
-                {overLongNotes.map((documentId) => (
-                  <li key={documentId}>{titlesByDocument[documentId] ?? documentId}</li>
+                {overLongNotes.map((rowId) => (
+                  <li key={rowId}>{titlesByRow[rowId] ?? rowId}</li>
                 ))}
               </ul>
             </div>
@@ -754,7 +950,7 @@ export default function Prioritization() {
         </div>
       </div>
 
-      <StatsCards allPRFAQs={allPRFAQs} aggregates={aggregates} />
+      <StatsCards rows={allRows} aggregates={aggregates} />
       <SortControls
         sortField={sortField}
         sortDirection={sortDirection}
@@ -764,7 +960,7 @@ export default function Prioritization() {
 
       <PRFAQList
         isLoading={isLoading}
-        prfaqs={sortedPRFAQs}
+        rows={sortedRows}
         scores={scores}
         aggregates={aggregates}
         linkedFormsByDocument={linkedFormsByDocument}

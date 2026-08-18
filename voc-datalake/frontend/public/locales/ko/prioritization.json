@@ -43,6 +43,7 @@
     "rejected": {
       "title": "투표가 기록되지 않았습니다"
     },
+    "scopeNote": "제안 전체를 평가합니다. 이 투표는 제안을 구성하는 문서 묶음을 한 장의 표로 함께 평가합니다.",
     "submit": {
       "label": "투표 제출",
       "pending": "제출 중..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "{{title}}의 익명 투표 페이지를 여는 QR 코드",
     "qrCaption": "스캔하여 휴대폰에서 이 제안을 평가하세요",
     "qrUnavailable": "이 페이지의 주소를 공유할 수 없어 QR 코드를 사용할 수 없습니다.",
-    "scopeNote": "이 투표는 문서 하나만 평가합니다: {{title}}. 이를 스캔한 참석자가 같은 아이디어의 다른 버전을 평가하는 것은 아닙니다.",
+    "scopeDocuments": "표 1장이 뒤에 있는 문서 {{documents}}건 전체를 포함하므로, 회의실은 제안 전체를 평가합니다.",
+    "scopeNote": "이 투표는 제안 1건을 평가합니다: {{title}}.",
     "title": "회의실에서 함께 평가"
+  },
+  "row": {
+    "multiDocument": "문서 {{documents}}건, 표 1장"
   },
   "scores": {
     "confidence": "신뢰도",
@@ -130,6 +135,7 @@
     "timeToMarket": "출시 시간",
     "timeToMarketDescription": "얼마나 빨리 출시할 수 있나요?",
     "title": "우선순위 지정 점수",
+    "wholeRow": "이 행의 문서 {{documents}}건 전체에 대한 표 1장입니다.",
     "yoursOnly": "본인의 평가입니다. 저장하면 본인 점수만 기록됩니다."
   },
   "scoresUnavailable": {
@@ -152,9 +158,9 @@
     "highPriority": "높은 우선순위",
     "mediumPriority": "중간 우선순위",
     "notScored": "평가되지 않음",
-    "totalDocuments": "전체 문서",
-    "unreadable_one": "{{count}}개 문서의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다.",
-    "unreadable_other": "{{count}}개 문서의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다."
+    "totalRows": "전체 제안 수",
+    "unreadable_one": "제안 {{count}}건의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다.",
+    "unreadable_other": "제안 {{count}}건의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다."
   },
   "subtitle": "모든 프로젝트에서 PRD 및 PR/FAQ를 평가하고 우선순위를 지정하세요",
   "team": {

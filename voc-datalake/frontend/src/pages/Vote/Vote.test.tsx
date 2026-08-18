@@ -36,7 +36,7 @@ import Vote from './Vote'
 
 const { t } = i18n
 const SESSION_ID = 'vs_0123456789abcdef0123456789abcdef'
-const OPEN: BallotSessionConfig = { open: true, reason: null, document_title: 'Instant refunds' }
+const OPEN: BallotSessionConfig = { open: true, reason: null, row_title: 'Instant refunds' }
 
 function renderVotePage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -170,7 +170,7 @@ describe('a vote that will not take a ballot', () => {
     ['cap_reached', 'ballot.closed.capReached'],
     ['not_found', 'ballot.closed.notFound'],
   ] as const)('says which state it is in, and shows no form: %s', async (reason, sentence) => {
-    mockGetBallotSessionConfig.mockResolvedValue({ open: false, reason, document_title: '' })
+    mockGetBallotSessionConfig.mockResolvedValue({ open: false, reason, row_title: '' })
 
     renderVotePage()
 

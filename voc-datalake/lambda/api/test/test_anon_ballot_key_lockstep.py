@@ -29,10 +29,16 @@ WHY EACH ASSERTION IS HERE, IN ORDER OF WHAT IT COSTS TO GET WRONG
     ballot is written somewhere the aggregate never reads. Nothing fails: the
     room votes, each phone says "thanks", and the team's score does not move.
 
-  * THE SORT-KEY SHAPE. The reader splits `BALLOT#{document_id}#{kind}:{subject}`
+  * THE SORT-KEY SHAPE. The reader splits `BALLOT#{row_id}#{kind}:{subject}`
     on its LAST '#'. That is only unambiguous while neither half contains a '#',
     so both writers must construct the key the same way and refuse a '#' in a
-    document id.
+    row id.
+
+    The first half is a ROW id — a prioritization row is a project's set of
+    documents, so a room scores a whole proposal. Both writers must agree on THAT
+    UNIT too, not merely on the shape: a session opened against a document id
+    while the page reads rows would collect ballots that appear nowhere, which is
+    the silent version of the same defect the partition-key assertion covers.
 
   * NO `ttl` ON A BALLOT. The aggregates table expires any item carrying the
     expiry attribute. The session record should have one; a ballot must never,
@@ -155,8 +161,8 @@ class TestBothWritersAgreeOnWhereABallotLives:
         )
 
     def test_both_build_the_sort_key_in_the_same_shape(self):
-        # The reader splits on the LAST '#', so the shape — prefix, document id,
-        # '#', kind-namespaced subject — has to be identical in both writers.
+        # The reader splits on the LAST '#', so the shape — prefix, ROW id, '#',
+        # kind-namespaced subject — has to be identical in both writers.
         # Compared as source text because the two live in different bundles.
         ballots_key = _single(
             _read(BALLOTS_SOURCE),
@@ -170,15 +176,20 @@ class TestBothWritersAgreeOnWhereABallotLives:
             PROJECTS_SOURCE,
             'ballot sort-key f-string',
         )
-        # `{document_id}#` then the reviewer segment: projects_handler delegates the
+        # `{row_id}#` then the reviewer segment: projects_handler delegates the
         # segment to `_reviewer_segment`, ballots_handler inlines `{kind}:{id}`.
-        assert ballots_key.startswith('{document_id}#'), (
+        #
+        # The interpolated NAME is asserted, not just the shape, and that is the
+        # point of this pair: a room whose session names a document while the page
+        # keys ballots to rows votes into a key nothing reads, and every phone
+        # still says "thanks".
+        assert ballots_key.startswith('{row_id}#'), (
             f'{BALLOTS_SOURCE} builds a ballot key as {ballots_key!r}; the reader '
-            f"expects the document id first, then '#'."
+            f"expects the ROW id first, then '#'."
         )
-        assert projects_key.startswith('{document_id}#'), (
+        assert projects_key.startswith('{row_id}#'), (
             f'{PROJECTS_SOURCE} builds a ballot key as {projects_key!r}; the reader '
-            f"expects the document id first, then '#'."
+            f"expects the ROW id first, then '#'."
         )
         assert ballots_key.count('#') == projects_key.count('#') == 1, (
             f'A ballot sort key must contain exactly one "#" after its prefix, or '
@@ -186,20 +197,34 @@ class TestBothWritersAgreeOnWhereABallotLives:
             f'{ballots_key!r} vs {projects_key!r}.'
         )
 
-    def test_the_anonymous_writer_refuses_a_hash_in_a_document_id(self):
+    def test_the_anonymous_writer_refuses_a_hash_in_a_row_id(self):
         # The no-'#' invariant the split rests on is ENFORCED by the public writer,
         # not assumed of it — this is the one caller-supplied half of the key on
         # the unauthenticated path.
         #
-        # BOTH guards are required, because a document id reaches the key by two
+        # BOTH guards are required, because a row id reaches the key by two
         # routes: the facilitator names it when opening a session
-        # (`_validated_document_id`), and the submit path re-checks the value it
-        # read back off the session record. Asserting the rule appears merely
+        # (`_validated_row_id`), and the row id is re-checked where it is READ BACK
+        # off the session record, which is the one helper the submit path resolves
+        # it through (`_session_row_id`). Asserting the rule appears merely
         # SOMEWHERE would keep passing with either one deleted.
+        #
+        # Not two INDEPENDENT checks, and the distinction is worth being exact
+        # about: the submit path carries no delimiter test of its own, it calls the
+        # read helper that has one. What that buys is that a session record written
+        # or edited outside the create route — the only way a '#' could be in there,
+        # since the validator refuses one — cannot reach a sort key, and it buys it
+        # for every reader of that record rather than for the submit path alone.
+        #
+        # Either spelling counts. The two guards read in opposite senses — one
+        # raises when the delimiter IS present, the other answers "no usable row"
+        # when it is NOT absent — and pinning one phrasing would fail a rename that
+        # kept the invariant, which is the sort of failure that gets a lockstep test
+        # deleted rather than heeded. What is pinned is that TWO places refuse it.
         source = _read(BALLOTS_SOURCE)
-        guards = source.count("'#' in document_id")
+        guards = source.count("'#' in row_id") + source.count("'#' not in row_id")
         assert guards >= 2, (
-            f"{BALLOTS_SOURCE} enforces \"no '#' in a document id\" in {guards} "
+            f"{BALLOTS_SOURCE} enforces \"no '#' in a row id\" in {guards} "
             f'place(s); both the session-creation validator and the submit path '
             f'must check it. The sort-key split of every ballot in the partition '
             f'depends on it, and this is the one unauthenticated writer.'

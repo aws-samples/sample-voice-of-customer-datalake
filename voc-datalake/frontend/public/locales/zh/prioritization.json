@@ -43,6 +43,7 @@
     "rejected": {
       "title": "您的投票未被记录"
     },
+    "scopeNote": "你评分的是一个完整提案：本次投票以一张选票涵盖其背后的整套文档。",
     "submit": {
       "label": "提交选票",
       "pending": "正在提交..."
@@ -113,8 +114,12 @@
     "qrAccessibleName": "打开 {{title}} 匿名投票页面的二维码",
     "qrCaption": "扫码即可用手机为该提案评分",
     "qrUnavailable": "因无法共享本页地址，二维码不可用。",
-    "scopeNote": "本次投票只为一份文档评分：{{title}}。扫码的参与者不会为同一想法的其他版本评分。",
+    "scopeDocuments": "一张选票覆盖其背后的全部 {{documents}} 个文档，因此现场评分的是整个提案。",
+    "scopeNote": "本次投票评分一个提案：{{title}}。",
     "title": "在会场共同评分"
+  },
+  "row": {
+    "multiDocument": "{{documents}} 个文档，一张选票"
   },
   "scores": {
     "confidence": "置信度",
@@ -130,6 +135,7 @@
     "timeToMarket": "上市时间",
     "timeToMarketDescription": "能多快交付？",
     "title": "优先级排序评分",
+    "wholeRow": "一张选票覆盖本行的全部 {{documents}} 个文档。",
     "yoursOnly": "这是你自己的评分。保存时只会写入你的分数。"
   },
   "scoresUnavailable": {
@@ -152,9 +158,9 @@
     "highPriority": "高优先级",
     "mediumPriority": "中优先级",
     "notScored": "未评分",
-    "totalDocuments": "文档总数",
-    "unreadable_one": "无法读取 {{count}} 个文档的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
-    "unreadable_other": "无法读取 {{count}} 个文档的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
+    "totalRows": "提案总数",
+    "unreadable_one": "无法读取 {{count}} 个提案的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
+    "unreadable_other": "无法读取 {{count}} 个提案的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
   },
   "subtitle": "对所有项目中的 PRD 和 PR/FAQ 进行评分和优先级排序",
   "team": {

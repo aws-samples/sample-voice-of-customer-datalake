@@ -19,6 +19,7 @@ import type {
   PrioritizationScore,
   PrioritizationAggregate,
   PrioritizationBallotEdit,
+  PrioritizationRow,
   S3ImportSource,
   S3ImportFile,
   FeedbackForm,
@@ -50,6 +51,7 @@ export type {
   PrioritizationScore,
   PrioritizationAggregate,
   PrioritizationBallotEdit,
+  PrioritizationRow,
   S3ImportSource,
   S3ImportFile,
   FeedbackFormConfig,
@@ -483,20 +485,55 @@ export const api = {
 
   // Prioritization
   /**
-   * The caller's own ballots, plus what every reviewer together said.
+   * The rows, the caller's own ballots on them, and what every reviewer said.
    *
-   * `aggregates` is optional in the TYPE but not on the wire: the field is
-   * additive, and declaring it required would make a response from a deployment
-   * running the older handler fail to type-check against a client that only reads
-   * `scores`. See `PrioritizationAggregate` for what a row means — notably that a
-   * document nobody scored is absent, and that a row can outlive its document, so
-   * a consumer should intersect these keys with the live document list.
+   * All three maps are keyed by ROW ID — a prioritization row is one project's set
+   * of documents, so a project whose PRD and PR/FAQ describe one idea is one row
+   * scored once. `rows` says what each row HOLDS, which is why the page needs no
+   * second request per row.
+   *
+   * `rows` and `aggregates` are optional in the TYPE but not on the wire: both are
+   * additive, and declaring either required would make a response from a
+   * deployment running an older handler fail to type-check against a client that
+   * only reads `scores`. See `PrioritizationAggregate` for what an entry means —
+   * notably that a row nobody scored is absent, and that an entry can outlive its
+   * row, so a consumer should intersect those keys with `rows`.
    */
   getPrioritizationScores: () =>
     fetchApi<{
+      rows?: Record<string, PrioritizationRow>
       scores: Record<string, PrioritizationScore>
       aggregates?: Record<string, PrioritizationAggregate>
     }>('/projects/prioritization'),
+
+  /**
+   * Ensure a project's DEFAULT prioritization row exists, and return it.
+   *
+   * IDEMPOTENT: asking twice yields the same row rather than a second one, decided
+   * by a conditional write on a row id derived from the project id — so two tabs
+   * opening the page at once cannot give one project two rows with two sets of
+   * ballots. `created` says which of the two happened, for a caller that cares.
+   *
+   * TWO settled refusals, both of which the caller reads through
+   * `isPermanentRefusal` and neither of which this page currently puts on screen:
+   *
+   * - **400** for a project with no PRD and no PR/FAQ: there is nothing to score,
+   *   and the page already has words inviting one, so the silence is covered.
+   * - **409** for a project holding more documents than one read can compose a row
+   *   from. Nothing covers this one — the project simply does not appear in the
+   *   backlog, with nothing saying why. Rare by design (the bound behind it is
+   *   deliberately generous), and tracked for phase 2 on issue #339, which is
+   *   already adding row-level states to this page and can give an un-composable
+   *   project a visible one.
+   */
+  createPrioritizationRow: (projectId: string) =>
+    fetchApi<{ success: boolean; created?: boolean; row?: PrioritizationRow }>(
+      '/projects/prioritization/rows',
+      {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId }),
+      },
+    ),
   
   /**
    * Save only the changed scores (incremental/diff update).
@@ -507,7 +544,10 @@ export const api = {
    * and the endpoint now refuses that verb, so keeping the function would only
    * offer a future caller a guaranteed 400.
    *
-   * `updated_count` is BALLOTS WRITTEN, not documents sent: an entry that changed
+   * Keyed by ROW ID, and so is every entry's own `row_id`: a ballot is about a
+   * project's set of documents rather than about one of them.
+   *
+   * `updated_count` is BALLOTS WRITTEN, not rows sent: an entry that changed
    * no axis and no note is a legal no-op and is not counted, so the number can be
    * lower than the size of the map — and is 0 for a body that stored nothing.
    *

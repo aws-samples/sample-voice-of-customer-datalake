@@ -21,7 +21,7 @@ import {
 } from './prioritizationUtils'
 import ScoreSlider from './ScoreSlider'
 import type {
-  PRFAQWithProject, TeamView,
+  PrioritizationRowView, TeamView,
 } from './prioritizationUtils'
 import type { LinkedForm } from './formLinkUtils'
 import type {
@@ -188,15 +188,46 @@ function DisagreementBadge({ team }: { readonly team: TeamView }): ReactElement 
   )
 }
 
+/**
+ * One badge per document the row is scored on.
+ *
+ * A row holds a SET of documents, so the collapsed row says which — a reviewer
+ * scoring "Instant refunds" needs to know their one ballot covers its PR/FAQ and its
+ * PRD, which is precisely what having two rows for one idea used to hide.
+ */
+function RowDocumentBadges({
+  documents, t,
+}: {
+  readonly documents: readonly ProjectDocument[]
+  readonly t: TFunction
+}): ReactElement {
+  return (
+    <>
+      {documents.map((doc) => {
+        // Resolved here so DocumentTypeBadge is a pure presentational component
+        // (consistent with PrototypePanel's t-as-prop pattern).
+        const typeMeta = SCORABLE_TYPE_META[doc.document_type]
+        return (
+          <DocumentTypeBadge
+            key={doc.document_id}
+            label={typeMeta ? t(typeMeta.i18nKey) : doc.document_type}
+            color={typeMeta?.badgeColor ?? 'bg-gray-100 text-gray-600'}
+          />
+        )
+      })}
+    </>
+  )
+}
+
 function PRFAQRowHeader({
-  prfaq,
+  row,
   index,
   priority,
   team,
   isExpanded,
   onToggle,
 }: {
-  readonly prfaq: PRFAQWithProject
+  readonly row: PrioritizationRowView
   readonly index: number
   readonly priority: {
     label: string;
@@ -207,26 +238,40 @@ function PRFAQRowHeader({
   readonly onToggle: () => void
 }) {
   const { t } = useTranslation('prioritization')
-  // Resolve badge label and colour here so DocumentTypeBadge is a pure
-  // presentational component (consistent with PrototypePanel's t-as-prop pattern).
-  const typeMeta = SCORABLE_TYPE_META[prfaq.document_type]
-  const badgeLabel = typeMeta ? t(typeMeta.i18nKey) : prfaq.document_type
-  const badgeColor = typeMeta?.badgeColor ?? 'bg-gray-100 text-gray-600'
   return (
     <button type="button" className="w-full p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 cursor-pointer hover:bg-gray-50 text-left" onClick={onToggle}>
       <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
         <div className="text-gray-400 font-mono text-sm w-6 hidden sm:block">#{index + 1}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-medium text-gray-900 truncate text-sm sm:text-base">{prfaq.title}</h3>
-            <DocumentTypeBadge label={badgeLabel} color={badgeColor} />
+            <h3 className="font-medium text-gray-900 truncate text-sm sm:text-base">{row.title}</h3>
+            {/* One badge per document, because ONE ballot covers all of them. */}
+            <RowDocumentBadges documents={row.documents} t={t} />
             <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', priority.color)}>{priority.label}</span>
             <DisagreementBadge team={team} />
           </div>
           <div className="flex items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-gray-500">
-            <span className="truncate">{prfaq.project_name}</span>
+            <span className="truncate">{row.project_name}</span>
             <span>•</span>
-            <span className="whitespace-nowrap">{format(new Date(prfaq.created_at), 'MMM d, yyyy')}</span>
+            <span className="whitespace-nowrap">{format(new Date(row.created_at), 'MMM d, yyyy')}</span>
+            {/* Says plainly what one ballot covers, next to the badges that name
+                the documents. Without it, a row showing two badges leaves a reader
+                to guess whether they are scoring both or picking one.
+                Only for a row that HOLDS more than one: on a single-document row
+                there is nothing to clarify, and it lets the sentence be written in
+                the plural rather than through a `count` plural — whose forms differ
+                per locale, and a missing one renders the raw key path.
+                `documents`, not `count`: `count` is i18next's RESERVED option and
+                passing it switches the resolver into plural mode, looking for
+                `_one`/`_other` first. */}
+            {row.documents.length > 1 ? (
+              <>
+                <span className="hidden sm:inline">•</span>
+                <span className="hidden sm:inline whitespace-nowrap">
+                  {t('row.multiDocument', { documents: row.documents.length })}
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
@@ -313,13 +358,61 @@ function TeamScorePanel({ team }: { readonly team: TeamView }): ReactElement {
   )
 }
 
-function PRFAQRowExpanded({
-  prfaq, score, team, linkedForms, apiEndpoint, onUpdateScore,
+/**
+ * One document of the row, inside the expansion: its type, its text, and the
+ * customer evidence collected about IT.
+ *
+ * Per document rather than merged into the row, because the evidence belongs to the
+ * document a form validates — a PR/FAQ's ratings shown under its project's PRD is the
+ * confusion `formLinkUtils`' matching rules exist to prevent — and because a reviewer
+ * casting one ballot on a set is entitled to read each thing in it.
+ */
+function RowDocument({
+  document: doc, projectId, linkedForms, apiEndpoint, t,
 }: {
-  readonly prfaq: PRFAQWithProject
+  readonly document: ProjectDocument
+  readonly projectId: string
+  readonly linkedForms: readonly LinkedForm[]
+  readonly apiEndpoint: string
+  readonly t: TFunction
+}): ReactElement {
+  const typeMeta = SCORABLE_TYPE_META[doc.document_type]
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <DocumentTypeBadge
+            label={typeMeta ? t(typeMeta.i18nKey) : doc.document_type}
+            color={typeMeta?.badgeColor ?? 'bg-gray-100 text-gray-600'}
+          />
+          <span className="text-sm font-medium text-gray-900 truncate">{doc.title}</span>
+        </div>
+        {/* The project, not the document: the document route on this app is the
+            project page, and that is where the full text lives. */}
+        <a href={`/projects/${projectId}`} className="text-sm text-blue-600 hover:underline flex items-center gap-1 flex-shrink-0">
+          <span className="hidden sm:inline">{t('preview.viewFull')}</span>
+          <span className="sm:hidden">{t('preview.viewMobile')}</span>
+          <ExternalLink size={14} />
+        </a>
+      </div>
+      <div className="bg-white rounded-lg border p-3 sm:p-4 max-h-48 sm:max-h-64 overflow-y-auto prose prose-sm">
+        <ReactMarkdown>{doc.content.slice(0, 1500) + (doc.content.length > 1500 ? '...' : '')}</ReactMarkdown>
+      </div>
+      {/* Ratings already collected about THIS document. Mounted expand-only because
+          the stats read is expensive per form — see LinkedFormEvidence. */}
+      <LinkedFormEvidence forms={linkedForms} apiEndpoint={apiEndpoint} />
+    </div>
+  )
+}
+
+function PRFAQRowExpanded({
+  row, score, team, linkedFormsByDocument, apiEndpoint, onUpdateScore,
+}: {
+  readonly row: PrioritizationRowView
   readonly score: PrioritizationScore
   readonly team: TeamView
-  readonly linkedForms: readonly LinkedForm[]
+  /** Per DOCUMENT, not per row — see `RowDocument`. */
+  readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
   readonly apiEndpoint: string
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
 }) {
@@ -335,6 +428,16 @@ function PRFAQRowExpanded({
                 now, so the sliders need to name themselves as the reader's own
                 ballot — and to say that saving writes only that. */}
             <p className="text-xs text-gray-500 mt-1">{t('scores.yoursOnly')}</p>
+            {/* And WHAT they score: one ballot on this row's whole set of documents.
+                A reviewer who thought a slider scored only the document they were
+                reading is exactly who was scoring half an idea before rows. Shown
+                only for a row holding more than one, for the reason the header's
+                own count is. */}
+            {row.documents.length > 1 ? (
+              <p className="text-xs text-gray-500 mt-1">
+                {t('scores.wholeRow', { documents: row.documents.length })}
+              </p>
+            ) : null}
           </div>
           <ScoreSlider label={t('scores.impact')} value={score.impact === 0 ? 3 : score.impact} onChange={(v) => onUpdateScore('impact', v)} description={t('scores.impactDescription')} lowLabel={t('scores.low')} highLabel={t('scores.high')} />
           <ScoreSlider label={t('scores.timeToMarket')} value={score.time_to_market === 0 ? 3 : score.time_to_market} onChange={(v) => onUpdateScore('time_to_market', v)} description={t('scores.timeToMarketDescription')} lowLabel={t('scores.slow')} highLabel={t('scores.fast')} />
@@ -347,37 +450,37 @@ function PRFAQRowExpanded({
                 number that can be clamped. Without this the page could compose a
                 body the save would reject, and `fetchApi` discards the reason. A
                 note already over the bound in pre-ballot data is not shortened by
-                `maxLength`; `overLongNoteDocuments` blocks the save for it. */}
+                `maxLength`; `overLongNoteRows` blocks the save for it. */}
             <textarea value={score.notes} onChange={(e) => onUpdateScore('notes', e.target.value)} placeholder={t('notes.placeholder')} rows={2} maxLength={MAX_NOTE_LENGTH} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
           </div>
           {/* Get the ROOM's ballots, not just this reader's: a facilitator opens a
-              session for this document and the QR goes on the projector. Under the
-              caller's own sliders because it is the other way to put a score in,
-              and above the customer evidence because it is still internal scoring.
-              Mounted expand-only, like everything else in this column — it opens
-              nothing and reads nothing until a facilitator asks. */}
-          <RoomVotePanel documentId={prfaq.document_id} documentTitle={prfaq.title} />
-          {/* Ratings already collected about this document, beside the sliders
-              that score it. Mounted here (expand-only) because the stats read is
-              expensive per form — see LinkedFormEvidence. */}
-          <LinkedFormEvidence forms={linkedForms} apiEndpoint={apiEndpoint} />
+              session for this ROW and the QR goes on the projector, so a room scores
+              the whole proposal rather than whichever of its documents the code sat
+              on. Under the caller's own sliders because it is the other way to put a
+              score in, and above the customer evidence because it is still internal
+              scoring. Mounted expand-only, like everything else in this column — it
+              opens nothing and reads nothing until a facilitator asks. */}
+          <RoomVotePanel rowId={row.row_id} rowTitle={row.title} documentCount={row.documents.length} />
         </div>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="font-medium text-gray-900">{t('preview.title')}</h4>
-            <a href={`/projects/${prfaq.project_id}`} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-              <span className="hidden sm:inline">{t('preview.viewFull')}</span>
-              <span className="sm:hidden">{t('preview.viewMobile')}</span>
-              <ExternalLink size={14} />
-            </a>
-          </div>
-          <div className="bg-white rounded-lg border p-3 sm:p-4 max-h-48 sm:max-h-64 overflow-y-auto prose prose-sm">
-            <ReactMarkdown>{prfaq.content.slice(0, 1500) + (prfaq.content.length > 1500 ? '...' : '')}</ReactMarkdown>
-          </div>
-          {/* Prototype preview, embedded under the PR/FAQ text. HTML prototypes
-              render in a sandboxed iframe; legacy JSON specs render natively.
-              Hidden gracefully when no prototype exists for the project yet. */}
-          <PrototypePanel prototype={prfaq.prototype} t={t} />
+        <div className="space-y-4">
+          <h4 className="font-medium text-gray-900">{t('preview.title')}</h4>
+          {/* Every document the row is scored on, each with its own evidence. Newest
+              first, which is the order `collectRows` resolved them in and the order
+              the leading title came from. */}
+          {row.documents.map((doc) => (
+            <RowDocument
+              key={doc.document_id}
+              document={doc}
+              projectId={row.project_id}
+              linkedForms={linkedFormsByDocument.get(doc.document_id) ?? NO_LINKED_FORMS}
+              apiEndpoint={apiEndpoint}
+              t={t}
+            />
+          ))}
+          {/* Prototype preview, under the row's documents. HTML prototypes render in
+              a sandboxed iframe; legacy JSON specs render natively. Hidden gracefully
+              when the row names no prototype the project still has. */}
+          <PrototypePanel prototype={row.prototype} t={t} />
         </div>
       </div>
     </div>
@@ -466,10 +569,13 @@ function PrototypePanel({
   )
 }
 
+/** Shared empty list, so a row with no linked forms allocates nothing per render. */
+const NO_LINKED_FORMS: readonly LinkedForm[] = []
+
 export default function PRFAQRow({
-  prfaq, index, score, team, linkedForms, apiEndpoint, isExpanded, onToggle, onUpdateScore,
+  row, index, score, team, linkedFormsByDocument, apiEndpoint, isExpanded, onToggle, onUpdateScore,
 }: {
-  readonly prfaq: PRFAQWithProject
+  readonly row: PrioritizationRowView
   readonly index: number
   /**
    * The CALLER'S OWN ballot, behind the caller's own sliders in the expansion.
@@ -485,8 +591,15 @@ export default function PRFAQRow({
    * the union, and a pointer cannot drift from the type the way a number can.
    */
   readonly team: TeamView
-  /** Forms that validate this document — see formLinkUtils.selectLinkedForms. */
-  readonly linkedForms: readonly LinkedForm[]
+  /**
+   * Forms that validate each of the row's documents, keyed by document id — see
+   * `formLinkUtils.buildLinkedFormsByDocument`.
+   *
+   * Per document rather than per row, because a form validates a document and the
+   * ratings it collected are about that document. The row is how a reader reaches
+   * them.
+   */
+  readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
   /**
    * The configured API base, needed only to address a linked form's public page
    * in `LinkedFormEvidence`. Threaded rather than read from the store there, so
@@ -508,8 +621,8 @@ export default function PRFAQRow({
 
   return (
     <div className="bg-white rounded-lg border shadow-sm">
-      <PRFAQRowHeader prfaq={prfaq} index={index} priority={priority} team={team} isExpanded={isExpanded} onToggle={onToggle} />
-      {isExpanded ? <PRFAQRowExpanded prfaq={prfaq} score={score} team={team} linkedForms={linkedForms} apiEndpoint={apiEndpoint} onUpdateScore={onUpdateScore} /> : null}
+      <PRFAQRowHeader row={row} index={index} priority={priority} team={team} isExpanded={isExpanded} onToggle={onToggle} />
+      {isExpanded ? <PRFAQRowExpanded row={row} score={score} team={team} linkedFormsByDocument={linkedFormsByDocument} apiEndpoint={apiEndpoint} onUpdateScore={onUpdateScore} /> : null}
     </div>
   )
 }

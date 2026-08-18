@@ -25,10 +25,23 @@ import type {
   Project, ProjectDetail,
 } from '../../api/types'
 
-/** The row identity this module matches against. */
+/** One document of one project — what a form's link is matched against. */
 export interface DocumentRowIdentity {
   readonly project_id: string
   readonly document_id: string
+}
+
+/**
+ * A prioritization row, as far as form matching is concerned: its project and the
+ * documents it holds.
+ *
+ * Structurally a subset of `PrioritizationRowView`, declared here rather than
+ * imported so this module stays independent of the page's own view type — the same
+ * reason `DetailWithDocuments` is a `Pick` rather than the whole `ProjectDetail`.
+ */
+export interface RowIdentity {
+  readonly project_id: string
+  readonly documents: readonly { readonly document_id: string }[]
 }
 
 /**
@@ -130,7 +143,16 @@ export function selectLinkedForms(
 }
 
 /**
- * The linked forms for every row, keyed by `document_id`.
+ * The linked forms for every DOCUMENT of every row, keyed by `document_id`.
+ *
+ * Keyed by document even though a row is now a project's SET of documents, and
+ * deliberately: a form validates one document, the evidence it collected is about
+ * that document, and the expanded row shows each of its documents separately. So
+ * the linkage stays where it belongs and the row is merely how a reader reaches it
+ * — which is why this takes the rows and iterates their documents rather than
+ * collapsing a row's evidence into one bucket. A PR/FAQ's ratings appearing under
+ * its project's PRD is the confusion this whole module's matching rules exist to
+ * avoid.
  *
  * Resolved for the whole list up front because it is pure bookkeeping over data
  * already in hand — no request is made here. The expensive per-form stats read
@@ -138,21 +160,24 @@ export function selectLinkedForms(
  */
 export function buildLinkedFormsByDocument(
   forms: readonly LinkedForm[],
-  rows: readonly DocumentRowIdentity[],
+  rows: readonly RowIdentity[],
   documentIdsByProject: ReadonlyMap<string, ReadonlySet<string>>,
 ): Map<string, LinkedForm[]> {
   const byDocument = new Map<string, LinkedForm[]>()
   for (const row of rows) {
-    // Keyed by document_id alone even though the value was computed from
-    // (project_id, document_id): document ids are server-minted and globally
-    // unique, and this is already the key `scores`/`getScore` in
-    // prioritizationUtils.ts and `expandedId` in Prioritization.tsx are
-    // addressed by. A composite key here would have to be unpacked at every
-    // one of those read sites for no gain.
-    byDocument.set(
-      row.document_id,
-      selectLinkedForms(forms, row, documentIdsByProject.get(row.project_id)),
-    )
+    for (const { document_id: documentId } of row.documents) {
+      // Keyed by document_id alone: document ids are server-minted and globally
+      // unique, and one document can only belong to one project — so a row's
+      // project plus the document is all the matching needs, and no read site has
+      // to unpack a composite key.
+      byDocument.set(
+        documentId,
+        selectLinkedForms(forms, {
+          project_id: row.project_id,
+          document_id: documentId,
+        }, documentIdsByProject.get(row.project_id)),
+      )
+    }
   }
   return byDocument
 }

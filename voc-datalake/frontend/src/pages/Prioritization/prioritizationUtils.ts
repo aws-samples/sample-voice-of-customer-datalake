@@ -6,22 +6,48 @@
 import { z } from 'zod'
 import type {
   Project, ProjectDocument, PrioritizationScore, PrioritizationAggregate,
-  PrioritizationBallotEdit,
+  PrioritizationBallotEdit, PrioritizationRow,
 } from '../../api/types'
 
-export interface PRFAQWithProject extends ProjectDocument {
-  project_id: string
-  project_name: string
-  // Latest prototype (if any) for the same project. Surfaced under the PR/FAQ
-  // preview row so reviewers can see the demo without leaving the page.
-  prototype?: ProjectDocument
+/**
+ * ONE ROW OF THIS PAGE: a project, and the documents that row is scored on.
+ *
+ * The row used to be a DOCUMENT — every scorable document of every project became
+ * its own row — so a project whose PRD and PR/FAQ describe one idea appeared twice
+ * and a reviewer scored the same idea twice. On real data that was roughly one
+ * proposal in three, and once a room votes from their phones the QR on one of those
+ * two rows scored half the idea.
+ *
+ * `row_id` is what everything on this page is keyed by: the caller's own ballot,
+ * the team aggregate, the sort position, the expansion, and the ballot a room
+ * casts. `documents` are the row's own documents RESOLVED against the project read
+ * — concrete ids on the row, matched to the documents on screen — and each stays
+ * individually visible inside the expansion with its own collected form evidence.
+ *
+ * `title` and `created_at` describe the row for the list: they come from the
+ * leading document (see `collectRows`), because a row has no title of its own and
+ * a reviewer scanning the list is looking for the proposal's name.
+ */
+export interface PrioritizationRowView {
+  readonly row_id: string
+  readonly project_id: string
+  readonly project_name: string
+  /** The row's documents, newest first, as resolved against the project read. */
+  readonly documents: readonly ProjectDocument[]
+  /** What the list calls this row — the leading document's title. */
+  readonly title: string
+  /** When the leading document was created; the date sort reads this. */
+  readonly created_at: string
+  // The row's prototype (if any), resolved the same way. Surfaced under the
+  // document preview so reviewers can see the demo without leaving the page.
+  readonly prototype?: ProjectDocument
 }
 
 export type SortField = 'priority_score' | 'impact' | 'time_to_market' | 'created_at' | 'title'
 export type SortDirection = 'asc' | 'desc'
 
 export const DEFAULT_SCORE: PrioritizationScore = {
-  document_id: '',
+  row_id: '',
   impact: 0,
   time_to_market: 3,
   confidence: 0,
@@ -34,7 +60,7 @@ export const DEFAULT_SCORE: PrioritizationScore = {
  *
  * Declared for what the function USES rather than as `PrioritizationScore`,
  * because two different things are now composited through it: one reviewer's
- * ballot (`PrioritizationScore`, which also carries `document_id` and `notes`)
+ * ballot (`PrioritizationScore`, which also carries `row_id` and `notes`)
  * and the team's per-axis means (`PrioritizationAggregate`, which carries
  * `reviewer_count` and `score_spread` instead). Both are structurally assignable
  * to this, so neither call site needs a cast — which ESLint forbids here anyway —
@@ -459,8 +485,8 @@ export function normalizeAggregates(
   const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
   if (!asMap.success) return undefined
   return Object.fromEntries(
-    Object.entries(asMap.data).map(([documentId, value]): [string, TeamAggregateRow] => (
-      [documentId, parseAggregate(value) ?? UNREADABLE_ROW]
+    Object.entries(asMap.data).map(([rowId, value]): [string, TeamAggregateRow] => (
+      [rowId, parseAggregate(value) ?? UNREADABLE_ROW]
     )),
   )
 }
@@ -491,7 +517,7 @@ const OwnBallotSchema = z.object({
   strategic_fit: ownAxis(DEFAULT_SCORE.strategic_fit),
   // NOT bounded to `MAX_NOTE_LENGTH`. Notes longer than the API now accepts exist in
   // stored data — the bound arrived after them — and truncating one here would silently
-  // rewrite a reviewer's justification. `overLongNoteDocuments` is what refuses to SEND
+  // rewrite a reviewer's justification. `overLongNoteRows` is what refuses to SEND
   // one; reading it back is not the same act.
   notes: z.string().catch(''),
 })
@@ -566,8 +592,8 @@ export function ownBallotRead(read: {
  * put a value nobody stored into the map that `applyBallotEdits` merges and that any
  * "documents I have scored" count would read as a ballot.
  *
- * `document_id` is taken from the MAP KEY, not from the row: the key is what every
- * lookup on this page uses, so a row disagreeing with its own key would produce a
+ * `row_id` is taken from the MAP KEY, not from the entry: the key is what every
+ * lookup on this page uses, so an entry disagreeing with its own key would produce a
  * ballot that cannot be found. Never throws, for the same reason as
  * `normalizeAggregates` — a throw in a `select` turns a readable response into a failed
  * query.
@@ -576,14 +602,134 @@ export function normalizeScores(raw: unknown): Record<string, PrioritizationScor
   const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
   if (!asMap.success) return undefined
   return Object.fromEntries(
-    Object.entries(asMap.data).flatMap(([documentId, value]): [string, PrioritizationScore][] => {
+    Object.entries(asMap.data).flatMap(([rowId, value]): [string, PrioritizationScore][] => {
       const parsed = OwnBallotSchema.safeParse(value)
       return parsed.success && storedSomething(value)
-        ? [[documentId, { ...parsed.data, document_id: documentId }]]
+        ? [[rowId, { ...parsed.data, row_id: rowId }]]
         : []
     }),
   )
 }
+
+/**
+ * What each row IS, as the wire gave it: its project and its concrete document ids.
+ *
+ * Validated at the query boundary like both other halves of this response, and for
+ * the same reason: a declared type is a promise about the wire rather than a proof
+ * of it, and this map decides which documents a reviewer is shown inside a row.
+ *
+ * Absent answers an EMPTY MAP, not `undefined`: a deployment predating rows sends no
+ * `rows` field, and the honest reading there is "this response describes no rows".
+ * Unreadable answers `undefined`, because `{}` would be this parser asserting that the
+ * backlog holds no rows at all — the same distinction `normalizeAggregates` draws one
+ * field over, and it is the parser's to draw whether or not a given consumer acts on it.
+ *
+ * What the PAGE does with the two is deliberately the same, and stated at its call site:
+ * neither adds a row to the list, and the rows it can still vouch for are the ones the
+ * create route handed back. The difference is kept here because it is a fact about the
+ * response, and because the page is not the only possible reader of this function — the
+ * next one may well want to tell "no rows yet" apart from "we could not read them", and
+ * collapsing it here would leave nothing to tell it from.
+ *
+ * A row that cannot be READ is dropped rather than kept under a marker. Unlike an
+ * aggregate — where the difference between "nobody voted" and "we could not find
+ * out" is a claim about a document — a row nothing can read has no documents to
+ * show, no title to name it and nothing a reviewer could score, so there is no row
+ * to render. A ballot keyed to it is then ignored on read, exactly as the backend
+ * ignores one naming a row that no longer resolves.
+ *
+ * `row_id` is taken from the MAP KEY for the reason `normalizeScores` records: the
+ * key is what every lookup addresses.
+ */
+export function normalizeRows(raw: unknown): Record<string, PrioritizationRow> | undefined {
+  if (raw === undefined) return {}
+  const asMap = z.record(z.string(), z.unknown()).safeParse(raw)
+  if (!asMap.success) return undefined
+  return Object.fromEntries(
+    Object.entries(asMap.data).flatMap(([rowId, value]): [string, PrioritizationRow][] => {
+      const row = normalizeRow(value, rowId)
+      return row ? [[rowId, row]] : []
+    }),
+  )
+}
+
+/**
+ * ONE row, validated the same way — for the response that carries a row on its own.
+ *
+ * `POST /projects/prioritization/rows` answers `{row: ...}` rather than a map, and that
+ * answer is a row the page then RENDERS: the create route is idempotent and hands back
+ * the stored record, which is what lets the list survive a prioritization read that
+ * failed or has not landed. Reading `row.row_id` off an unvalidated body to decide that
+ * is the same mistake `normalizeRows` exists to prevent one field over — a declared
+ * response type is a promise about the wire, and `{success: true, row: {}}` satisfies
+ * the compiler while throwing at the first property access.
+ *
+ * `rowId` is optional because the two callers know the id from different places: the
+ * read has it as the MAP KEY (what every lookup addresses), while a lone row carries it
+ * only in its own body. Either way an EMPTY id answers `undefined` — a row the page
+ * cannot address is one no ballot, aggregate or expansion could ever be looked up
+ * against, which is the same reason `collectRows` drops a row that resolves to no
+ * document.
+ */
+export function normalizeRow(raw: unknown, rowId?: string): PrioritizationRow | undefined {
+  const parsed = RowSchema.safeParse(raw)
+  if (!parsed.success) return undefined
+  const id = rowId ?? parsed.data.row_id
+  return id.length > 0 ? { ...parsed.data, row_id: id } : undefined
+}
+
+/**
+ * The row record as this page accepts it.
+ *
+ * `project_id` and `document_ids` carry NO fallback, deliberately: they are what
+ * makes a row renderable. A row whose project cannot be read belongs to no project
+ * on screen, and one whose document ids cannot be read is a row with nothing to
+ * score — an invented `''` or `[]` would put an empty, unscorable row in the list
+ * under a project nobody can open. `document_ids` may legitimately be EMPTY on the
+ * wire only if a future phase allows it; `collectRows` drops such a row for the same
+ * reason, so the two agree.
+ *
+ * The rest degrades, because none of it decides whether the row exists: a missing
+ * `prototype_id` means "no prototype", and `is_default`/`created_at` are metadata the
+ * list does not depend on.
+ *
+ * `z.object`, not `looseObject`: this is the shape the page ACCEPTS, matching
+ * `OwnBallotSchema`'s reasoning — a boundary that keeps what it does not understand
+ * is not saying what it accepts.
+ */
+/**
+ * How many documents one row may hold.
+ *
+ * `MAX_ROW_DOCUMENT_IDS` in the backend's `projects_handler.py`, which TRUNCATES a
+ * composition at this length. Stated here so the two boundaries describe the same
+ * contract rather than the client accepting a row the API could never have written —
+ * a row longer than this is a response nothing on the server produced, which is
+ * exactly what a boundary that "says what it accepts" should refuse.
+ *
+ * The pair is pinned by `lambda/api/test/test_prioritization_row_bound_lockstep.py`,
+ * because a comment saying the two agree cannot fail CI.
+ *
+ * WHAT AN OVER-LONG ROW COSTS, and why that is acceptable HERE and not later. A row
+ * failing this bound is dropped by `normalizeRows` along with its ballots, with nothing
+ * on screen saying why. In phase 1 that state is unreachable from anything the product
+ * does — the API truncates every composition it writes, so a longer row is a response no
+ * server produced — which makes "drop it" the same answer as for any other unreadable
+ * row. Phase 2 adds composition EDITING, and then a row over the bound becomes something
+ * a person could have caused; at that point this belongs behind the `UNREADABLE_ROW`
+ * marker path (which exists to say "we could not read this" instead of "this is not
+ * there") rather than in the silent drop, and the API's answer to an over-long
+ * composition should be a 400 naming the bound rather than a truncation.
+ */
+export const MAX_ROW_DOCUMENT_IDS = 25
+
+const RowSchema = z.object({
+  row_id: z.string().catch(''),
+  project_id: z.string().min(1),
+  document_ids: z.array(z.string().min(1)).max(MAX_ROW_DOCUMENT_IDS),
+  prototype_id: z.string().catch(''),
+  is_default: z.boolean().catch(false),
+  created_at: z.string().catch(''),
+})
 
 /**
  * Did this row actually store anything, or would keeping it invent a ballot?
@@ -639,7 +785,7 @@ export interface TeamScore {
    * prints ONE (`.toFixed(1)`), so 4.25 and 4.34 are both ordinary backend output, both
    * print `4.3`, and ordering them by the raw value ranks two rows a reader sees as
    * identical — worse, it swaps them when the direction is toggled, which is the
-   * instability `sortPRFAQs` negates rather than reverses to avoid. Rounding here, once,
+   * instability `sortRows` negates rather than reverses to avoid. Rounding here, once,
    * makes the printed axis and the order it produces the same number.
    *
    * The RAW `impact` / `timeToMarket` are deliberately not carried alongside them. They
@@ -681,10 +827,10 @@ const roundToDisplay = (composite: number): number => Math.round(composite * 10)
  */
 export function getTeamScore(
   aggregates: Record<string, TeamAggregateRow>,
-  docId: string,
+  rowId: string,
 ): TeamScore | null {
-  if (!Object.hasOwn(aggregates, docId)) return null
-  const aggregate = aggregates[docId]
+  if (!Object.hasOwn(aggregates, rowId)) return null
+  const aggregate = aggregates[rowId]
   // A row the response named but nothing in it could be read has no number, so it has no
   // `TeamScore`. `null` here would read as "nobody voted", which is why `getTeamView` asks
   // about `UNREADABLE_ROW` before it asks this — the two absences are not the same claim.
@@ -707,14 +853,14 @@ export function getTeamScore(
  * missing key in a map that has not arrived says nothing, whether it never will or
  * merely has not yet.
  */
-export function getTeamView(aggregates: TeamAggregates, docId: string): TeamView {
+export function getTeamView(aggregates: TeamAggregates, rowId: string): TeamView {
   if (aggregates === 'unavailable') return { kind: 'unavailable' }
   if (aggregates === 'loading') return { kind: 'loading' }
   // Per-DOCUMENT unavailability, asked before the score lookup for the same reason the
   // whole-response check is: the server named this document and we could not read what it
   // said about it, which is "we could not find out" rather than "nobody voted".
-  if (aggregates[docId] === UNREADABLE_ROW) return { kind: 'unavailable' }
-  const team = getTeamScore(aggregates, docId)
+  if (aggregates[rowId] === UNREADABLE_ROW) return { kind: 'unavailable' }
+  const team = getTeamScore(aggregates, rowId)
   return team === null ? { kind: 'unscored' } : {
     kind: 'scored',
     team,
@@ -760,7 +906,7 @@ export const reviewersDisagreed = (
 export const MAX_NOTE_LENGTH = 2000
 
 /**
- * The documents among the caller's pending edits whose note the API will refuse.
+ * The rows among the caller's pending edits whose note the API will refuse.
  *
  * Only pending edits are examined, because those are what a save sends: a
  * pre-ballot note that ran long stays readable on an untouched row and blocks
@@ -780,12 +926,12 @@ export const MAX_NOTE_LENGTH = 2000
  * still assignable to this, so the call site is unaffected, and the tolerance is in
  * the signature instead of behind a cast in a test.
  */
-export function overLongNoteDocuments(
+export function overLongNoteRows(
   edits: Record<string, { readonly notes?: string | null }>,
 ): string[] {
   return Object.entries(edits)
     .filter(([, score]) => noteLength(score.notes) > MAX_NOTE_LENGTH)
-    .map(([documentId]) => documentId)
+    .map(([rowId]) => rowId)
 }
 
 /**
@@ -931,11 +1077,11 @@ export const getPriorityLabel = (view: TeamView, t: (key: string) => string): {
  * practice, but it was the only unguarded map lookup left on a page whose method is one
  * rule in one place, and its sibling is both documented and tested.
  */
-export function getScore(scores: Record<string, PrioritizationScore>, docId: string): PrioritizationScore {
-  const stored = Object.hasOwn(scores, docId) ? scores[docId] : undefined
+export function getScore(scores: Record<string, PrioritizationScore>, rowId: string): PrioritizationScore {
+  const stored = Object.hasOwn(scores, rowId) ? scores[rowId] : undefined
   return stored ?? {
     ...DEFAULT_SCORE,
-    document_id: docId,
+    row_id: rowId,
   }
 }
 
@@ -973,8 +1119,8 @@ export function withEditedField(
       ...edit,
       strategic_fit: Number(value),
     }
-    // `document_id` identifies the ballot rather than describing it; a row cannot
-    // edit which document it is.
+    // `row_id` identifies the ballot rather than describing it; a row cannot
+    // edit which row it is.
     default: return edit
   }
 }
@@ -995,10 +1141,10 @@ export function applyBallotEdits(
   saved: Record<string, PrioritizationScore>,
   edits: Record<string, PrioritizationBallotEdit>,
 ): Record<string, PrioritizationScore> {
-  const edited = Object.entries(edits).map(([docId, edit]): [string, PrioritizationScore] => {
-    const base = getScore(saved, docId)
-    return [docId, {
-      document_id: docId,
+  const edited = Object.entries(edits).map(([rowId, edit]): [string, PrioritizationScore] => {
+    const base = getScore(saved, rowId)
+    return [rowId, {
+      row_id: rowId,
       impact: edit.impact ?? base.impact,
       time_to_market: edit.time_to_market ?? base.time_to_market,
       confidence: edit.confidence ?? base.confidence,
@@ -1053,31 +1199,137 @@ export function isScorable(doc: ProjectDocument): boolean {
   return doc.document_type in SCORABLE_TYPE_META
 }
 
-export function collectPRFAQs(allProjectDetails: Array<{ documents?: ProjectDocument[] }> | undefined, projects: Project[] | undefined): PRFAQWithProject[] {
+/**
+ * Which projects have something to score, and so should have a row.
+ *
+ * The page asks the API to ensure a default row for each of these, which is
+ * idempotent server-side (`createPrioritizationRow`) — so this is a list of asks,
+ * not a decision about how many rows exist. A project with no scorable document is
+ * deliberately absent: the create route refuses one, and the page keeps its existing
+ * invitation to write a PRD or a PR/FAQ for it.
+ *
+ * Details are aligned with `projects` by INDEX, the same way `collectRows` and
+ * `collectProjectDocumentIds` align them.
+ */
+export function projectsNeedingARow(
+  allProjectDetails: readonly ({ documents?: ProjectDocument[] } | undefined)[] | undefined,
+  projects: readonly Project[] | undefined,
+): string[] {
   if (!allProjectDetails || !projects) return []
-
-  const result: PRFAQWithProject[] = []
-  for (const [index, detail] of allProjectDetails.entries()) {
-    if (!detail.documents) continue
+  return allProjectDetails.flatMap((detail, index) => {
     const project = projects[index]
-    const scorableDocs = detail.documents.filter(isScorable)
-    // Pick the most-recent prototype for this project — that's the one the
-    // user just generated from the latest PRD/PR-FAQ.
-    const prototypes = detail.documents
-      .filter((doc: ProjectDocument) => doc.document_type === 'prototype')
-      .slice()
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-    const latestPrototype = prototypes[0]
-    for (const doc of scorableDocs) {
-      result.push({
-        ...doc,
-        project_id: project.project_id,
-        project_name: project.name,
-        prototype: latestPrototype,
-      })
-    }
+    if (!project || !detail?.documents) return []
+    return detail.documents.some(isScorable) ? [project.project_id] : []
+  })
+}
+
+/**
+ * The rows the page renders: the server's rows, resolved against the documents on
+ * screen.
+ *
+ * ONE ROW PER PROJECT, because that is what a row now is. Which documents a row
+ * holds is the SERVER'S answer (`rows[].document_ids`, concrete ids frozen when the
+ * row was composed) rather than "every scorable document of this project" recomputed
+ * here — otherwise generating a new PRD would silently change what an existing row's
+ * ballots describe, which is the whole point of the row storing ids.
+ *
+ * A row is DROPPED when:
+ *   * its project is not in the list on screen — nothing can name or open it; or
+ *   * not one of its document ids resolves to a document that project still has.
+ *     Such a row has nothing to show and nothing to score, and its title would have
+ *     to be invented. It is not deleted server-side by this: the ballots stay, and
+ *     the row reappears the moment its documents do.
+ *
+ * Documents are ordered NEWEST FIRST, and the leading one names the row — a row has
+ * no title of its own, and a reviewer scanning the list is looking for the proposal's
+ * name. Every document stays in the list, because each remains individually visible
+ * inside the expanded row with its own collected form evidence.
+ *
+ * The prototype is resolved from the row's own `prototype_id` when the row names one,
+ * and otherwise falls back to the project's newest prototype — which is what a row
+ * created before this field existed, or one whose named prototype has since been
+ * deleted, would otherwise show nothing for. A prototype is context rather than
+ * something the row is scored on, so a stale pointer there costs a reader a demo, not
+ * the meaning of their ballot.
+ */
+export function collectRows(
+  rows: Record<string, PrioritizationRow>,
+  allProjectDetails: readonly ({ documents?: ProjectDocument[] } | undefined)[] | undefined,
+  projects: readonly Project[] | undefined,
+): PrioritizationRowView[] {
+  if (!allProjectDetails || !projects) return []
+  const byProject = new Map<string, {
+    name: string;
+    documents: ProjectDocument[]
+  }>()
+  for (const [index, detail] of allProjectDetails.entries()) {
+    const project = projects[index]
+    if (!project || !detail) continue
+    byProject.set(project.project_id, {
+      name: project.name,
+      documents: detail.documents ?? [],
+    })
   }
-  return result
+
+  return Object.values(rows).flatMap((row): PrioritizationRowView[] => {
+    const project = byProject.get(row.project_id)
+    if (!project) return []
+    const byId = new Map(project.documents.map((doc) => [doc.document_id, doc]))
+    const documents = row.document_ids
+      .flatMap((documentId) => {
+        const doc = byId.get(documentId)
+        return doc ? [doc] : []
+      })
+      .sort(byNewestFirst)
+    const leading = documents[0]
+    if (!leading) return []
+    return [{
+      row_id: row.row_id,
+      project_id: row.project_id,
+      project_name: project.name,
+      documents,
+      title: leading.title,
+      created_at: leading.created_at,
+      prototype: byId.get(row.prototype_id) ?? latestPrototypeOf(project.documents),
+    }]
+  })
+}
+
+/**
+ * The project's newest prototype, for a row that names none this project still has.
+ *
+ * The fallback rather than the rule: a row stores the prototype it was composed
+ * with, and this is what keeps a demo on screen for a row composed before the field
+ * existed, or one whose prototype has since been deleted.
+ */
+function latestPrototypeOf(documents: readonly ProjectDocument[]): ProjectDocument | undefined {
+  return documents
+    .filter((doc) => doc.document_type === 'prototype')
+    .slice()
+    .sort(byNewestFirst)[0]
+}
+
+/**
+ * Newest first, and EQUAL timestamps compare EQUAL.
+ *
+ * The equal arm is the whole of this, and it was missing at both call sites. Without it
+ * the comparator answers -1 for a tied pair in either order, which is not an ordering
+ * at all: two documents sharing a `created_at` come out in whichever order their
+ * positions in the array happen to produce, and three of them come out reversed.
+ *
+ * Not academic here. A PRD and a PR/FAQ generated from ONE request share a timestamp,
+ * which is the ordinary shape of a row holding both — and the LEADING document gives
+ * the row its `title` and its `created_at`, so the name the list shows and the value
+ * the date sort reads were both being decided by array position. Two reviewers looking
+ * at the same data could be shown the same row under different names.
+ *
+ * Returning 0 leaves a tied pair in the order the row itself lists them
+ * (`Array.prototype.sort` is stable), i.e. the stored `document_ids` order — a rule,
+ * and one the server controls.
+ */
+function byNewestFirst(a: ProjectDocument, b: ProjectDocument): number {
+  if (a.created_at === b.created_at) return 0
+  return a.created_at < b.created_at ? 1 : -1
 }
 
 /** Which number on the team view each score sort field orders by. */
@@ -1088,7 +1340,7 @@ const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (t
   // contradicts printed; what it does is order two rows the reader sees as equal by a
   // difference nobody can see, and 3.9999999999999996 vs 4.0 is exactly that
   // difference. Reading the printed value makes them tie, and a tie keeps arrival
-  // order in both directions (see `sortPRFAQs`).
+  // order in both directions (see `sortRows`).
   priority_score: (team) => team.displayComposite,
   // The axes are rounded here too, and NOT because of float dust: the backend rounds
   // each mean to two decimals and the row prints one, so 4.25 and 4.34 both print `4.3`
@@ -1105,7 +1357,7 @@ const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (t
  * Takes the RESOLVED team scores rather than the map and the ids, so the rule
  * "a row with no number cannot be ordered against one that has" is stated in the
  * signature: either side may be `null`, and a `null` on either side answers 0.
- * `sortPRFAQs` pins the unscored block itself, because whether a document has a
+ * `sortRows` pins the unscored block itself, because whether a document has a
  * number at all is not a question the sort direction can answer (see there).
  *
  * Reads the TEAM aggregate, not the caller's own ballot, because that is what the row
@@ -1114,7 +1366,7 @@ const TEAM_SORT_VALUE: Record<'priority_score' | 'impact' | 'time_to_market', (t
  * implied (a composite of 0.9, above anything scored genuinely low), so an untouched
  * proposal outranked one the team had looked at and rated poorly.
  *
- * The ONE comparator the page orders by, reached only through `sortPRFAQs`. It was
+ * The ONE comparator the page orders by, reached only through `sortRows`. It was
  * once shadowed by an exported `comparePRFAQs` wrapper that no production code
  * called, so a change here could break the shipped ordering with six test cases still
  * green against the wrapper. Tests reach the ordering where the page does.
@@ -1129,7 +1381,7 @@ function compareByTeamScore(
   return value(teamA) - value(teamB)
 }
 
-/** Does this sort field read a number only a scored document has? */
+/** Does this sort field read a number only a scored ROW has? */
 const ORDERS_BY_TEAM_SCORE: Record<SortField, boolean> = {
   priority_score: true,
   impact: true,
@@ -1145,7 +1397,7 @@ const ORDERS_BY_TEAM_SCORE: Record<SortField, boolean> = {
  * A `Record` over the kinds rather than conditionals in the comparator, for the
  * reason `READ_STATE_I18N_KEY` is one: a fifth state must be PLACED here to compile,
  * not silently fall into somebody's else branch. `unavailable` is reached here only
- * as the per-row marker — `sortPRFAQs` consults blocks once a map arrived, so the
+ * as the per-row marker — `sortRows` consults blocks once a map arrived, so the
  * container-level reading of that kind never gets this far. `loading` cannot reach it
  * at all for the same reason; its entry is the total function's answer, and `0` is
  * "no grouping", which is what the sort does for a whole loading backlog anyway.
@@ -1196,12 +1448,12 @@ const SORT_BLOCK: Record<TeamView['kind'], number> = {
  * calling it for both sides plus the grouping predicate did that `O(n log n)` times
  * for values constant across the whole sort.
  */
-export function sortPRFAQs(
-  prfaqs: readonly PRFAQWithProject[],
+export function sortRows(
+  rows: readonly PrioritizationRowView[],
   aggregates: TeamAggregates,
   sortField: SortField,
   sortDirection: SortDirection,
-): PRFAQWithProject[] {
+): PrioritizationRowView[] {
   const direction = sortDirection === 'desc' ? -1 : 1
   const arrived = teamReadDelivered(aggregates) ? aggregates : null
   const ordersByTeamScore = ORDERS_BY_TEAM_SCORE[sortField] && arrived !== null
@@ -1209,20 +1461,20 @@ export function sortPRFAQs(
   // resolved view, so the grouping and the ordering cannot disagree about what a row
   // is — `getTeamView` is where "a marked row is not an unscored one" already lives.
   const views = new Map<string, TeamView>(
-    arrived === null ? [] : prfaqs.map(
-      (prfaq) => [prfaq.document_id, getTeamView(arrived, prfaq.document_id)],
+    arrived === null ? [] : rows.map(
+      (row) => [row.row_id, getTeamView(arrived, row.row_id)],
     ),
   )
-  const teamOf = (prfaq: PRFAQWithProject): TeamScore | null => {
-    const view = views.get(prfaq.document_id)
+  const teamOf = (row: PrioritizationRowView): TeamScore | null => {
+    const view = views.get(row.row_id)
     return view === undefined ? null : teamScoreOf(view)
   }
-  const blockOf = (prfaq: PRFAQWithProject): number => {
+  const blockOf = (row: PrioritizationRowView): number => {
     if (!ordersByTeamScore) return 0
-    const view = views.get(prfaq.document_id)
+    const view = views.get(row.row_id)
     return view === undefined ? 0 : SORT_BLOCK[view.kind]
   }
-  return [...prfaqs].sort((a, b) => {
+  return [...rows].sort((a, b) => {
     const blockA = blockOf(a)
     const blockB = blockOf(b)
     // Ahead of the direction multiplier, so the blocks do not move when the
