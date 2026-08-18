@@ -1,8 +1,6 @@
 """Tests for circuit_breaker.py"""
 import os
-import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone, timedelta
 
 
 class TestCircuitBreakerInit:
@@ -221,3 +219,44 @@ class TestCircuitBreakerTripBreaker:
         
         # Verify DynamoDB was updated (audit event is a side effect)
         assert mock_table.put_item.called
+
+
+class TestCircuitBreakerScheduleRuleNameUnderAPrefix:
+    """Which EventBridge rule the breaker would disable.
+
+    The breaker derives its own schedule rule name from
+    DEPLOY_ACCOUNT_ID/DEPLOY_REGION, matching CDK's `{base}-{account}-{region}`.
+    That is right for an unprefixed deployment and silently wrong under
+    `-c deploymentPrefix=<p>`: DisableRule would target a name that does not
+    exist, so a repeatedly failing plugin would keep hammering the source — the
+    single thing this breaker exists to stop, failing quietly.
+
+    So CDK passes the resolved rule name down in INGEST_SCHEDULE_RULE_NAME, set
+    only where it would differ, and this code never learns prefixes exist. The
+    CDK half — one variable per scheduled plugin, each naming a rule that really
+    exists in the template — is pinned by lib/app-deployment-prefix.test.ts.
+    """
+
+    @patch.dict(os.environ, {
+        'INGEST_SCHEDULE_RULE_NAME': 'stg-voc-ingest-test_plugin-schedule-123456789012-us-east-1',
+    })
+    def test_uses_the_rule_name_cdk_resolved(self):
+        from _shared.circuit_breaker import CircuitBreaker
+
+        assert CircuitBreaker('test_plugin')._schedule_rule_name() == (
+            'stg-voc-ingest-test_plugin-schedule-123456789012-us-east-1'
+        )
+
+    @patch.dict(os.environ, {
+        'INGEST_SCHEDULE_RULE_NAME': '',
+        'DEPLOY_ACCOUNT_ID': '123456789012',
+        'DEPLOY_REGION': 'us-east-1',
+    })
+    def test_falls_back_to_its_own_derivation_when_no_rule_name_is_set(self):
+        # The unprefixed deployment gets no rule name, so this branch is the
+        # default path and must keep producing exactly today's name.
+        from _shared.circuit_breaker import CircuitBreaker
+
+        assert CircuitBreaker('test_plugin')._schedule_rule_name() == (
+            'voc-ingest-test_plugin-schedule-123456789012-us-east-1'
+        )

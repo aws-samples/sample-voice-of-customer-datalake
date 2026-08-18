@@ -17,8 +17,9 @@ import hashlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.http import fetch_with_retry
+from shared.http_utils import fetch_with_retry
 from shared.aws import (
+    clear_secret_cache,
     get_dynamodb_resource,
     get_s3_client,
     get_sqs_client,
@@ -26,6 +27,7 @@ from shared.aws import (
 )
 from .circuit_breaker import CircuitBreaker
 from .audit import emit_audit_event
+from .sqs_utils import send_messages_to_queue
 
 # Re-export for backwards compatibility with existing handlers
 __all__ = ["BaseIngestor", "logger", "tracer", "metrics", "fetch_with_retry"]
@@ -38,12 +40,25 @@ SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
 BRAND_HANDLES = json.loads(os.environ.get("BRAND_HANDLES", "[]"))
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
+AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 
 
 class BaseIngestor(ABC):
     """Base class for all data source ingestors."""
 
-    def __init__(self):
+    def __init__(self, execution_id: str | None = None):
+        """
+        Args:
+            execution_id: Present on manual ("Run now") invocations. Passing it
+                here — rather than assigning the attribute post-construction —
+                matters: manual runs clear the shared secret cache BEFORE the
+                secret is read below, so a warm container picks up credentials
+                saved moments ago (Save-then-Run-now, issues #141/#215).
+                Scheduled runs keep the warm cache.
+        """
+        self.execution_id: str | None = execution_id
+        if execution_id:
+            clear_secret_cache()
         self.source_platform = SOURCE_PLATFORM
         self.brand_name = BRAND_NAME
         self.brand_handles = BRAND_HANDLES
@@ -52,6 +67,7 @@ class BaseIngestor(ABC):
         self._s3 = get_s3_client()
         self._sqs = get_sqs_client()
         self.circuit_breaker = CircuitBreaker(self.source_platform)
+        self.aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
 
     def _load_secrets(self) -> dict:
         """
@@ -84,7 +100,9 @@ class BaseIngestor(ABC):
         """Get list of known plugin prefixes for secret filtering."""
         # This could be loaded from environment or manifest
         return [
-            "webscraper", "s3_import", "manual_import"
+            "webscraper", "s3_import", "manual_import",
+            "app_reviews_ios", "app_reviews_android",
+            "synthetic_reviews",
         ]
 
     def get_watermark(self, key: str, default: str = None) -> str:
@@ -221,24 +239,49 @@ class BaseIngestor(ABC):
             "raw_data": item if not s3_raw_uri else None,
         }
 
-    def send_to_queue(self, items: list[dict]):
-        """Send items to SQS processing queue."""
-        if not items:
-            return
+    def send_to_queue(self, items: list[dict]) -> int:
+        """Send items to SQS processing queue.
 
-        for i in range(0, len(items), 10):
-            batch = items[i : i + 10]
-            entries = [
-                {"Id": str(idx), "MessageBody": json.dumps(item, default=str)}
-                for idx, item in enumerate(batch)
-            ]
+        Delegates to the shared helper which checks the ``Failed`` list in every
+        batch response, retries transient errors, and raises ``RuntimeError`` if
+        any items cannot be enqueued — ensuring callers cannot silently lose
+        feedback.  The ``ItemsIngested`` metric reflects the actual enqueued
+        count, not the attempted count.
 
-            self._sqs.send_message_batch(QueueUrl=PROCESSING_QUEUE_URL, Entries=entries)
-
-        logger.info(f"Sent {len(items)} items to processing queue")
-        metrics.add_metric(name="ItemsIngested", unit="Count", value=len(items))
+        Returns:
+            The number of items that SQS confirmed as enqueued.
+        """
+        return send_messages_to_queue(
+            self._sqs,
+            PROCESSING_QUEUE_URL,
+            items,
+            metric_name="ItemsIngested",
+            log_label="ingestor",
+        )
 
     @tracer.capture_method
+    def _update_source_run_status(self, updates: dict):
+        """Update run status in DynamoDB for progress tracking."""
+        if not self.aggregates_table or not self.execution_id:
+            return
+        try:
+            expr_parts = []
+            expr_names = {}
+            expr_values = {}
+            for key, value in updates.items():
+                safe_key = f"#{key}"
+                expr_parts.append(f"{safe_key} = :{key}")
+                expr_names[safe_key] = key
+                expr_values[f":{key}"] = value
+            self.aggregates_table.update_item(
+                Key={'pk': f'SOURCE_RUN#{self.source_platform}', 'sk': self.execution_id},
+                UpdateExpression='SET ' + ', '.join(expr_parts),
+                ExpressionAttributeNames=expr_names,
+                ExpressionAttributeValues=expr_values,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update run status: {e}")
+
     def run(self) -> dict:
         """Main execution method with circuit breaker support."""
         # Check circuit breaker before running
@@ -248,6 +291,14 @@ class BaseIngestor(ABC):
 
         emit_audit_event("plugin.invoked", self.source_platform, True)
         
+        # Initialize run status tracking
+        if self.aggregates_table and self.execution_id:
+            self._update_source_run_status({
+                'status': 'running',
+                'items_found': 0,
+                'started_at': datetime.now(timezone.utc).isoformat(),
+            })
+
         items = []
         last_id = None
         total_processed = 0
@@ -264,14 +315,13 @@ class BaseIngestor(ABC):
 
                 # Batch send every 100 items
                 if len(items) >= 100:
-                    self.send_to_queue(items)
-                    total_processed += len(items)
+                    total_processed += self.send_to_queue(items)
                     items = []
+                    self._update_source_run_status({'items_found': total_processed})
 
             # Send remaining items
             if items:
-                self.send_to_queue(items)
-                total_processed += len(items)
+                total_processed += self.send_to_queue(items)
 
             # Update watermark
             if last_id:
@@ -280,6 +330,12 @@ class BaseIngestor(ABC):
             # Record success
             self.circuit_breaker.record_success()
             
+            self._update_source_run_status({
+                'status': 'completed',
+                'items_found': total_processed,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+            })
+
             emit_audit_event("plugin.completed", self.source_platform, True, {
                 "items_processed": total_processed,
             })
@@ -290,6 +346,13 @@ class BaseIngestor(ABC):
             logger.exception(f"Ingestion failed: {e}")
             metrics.add_metric(name="IngestionErrors", unit="Count", value=1)
             
+            self._update_source_run_status({
+                'status': 'error',
+                'items_found': total_processed,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'errors': [str(e)],
+            })
+
             # Record failure for circuit breaker
             self.circuit_breaker.record_failure(str(e))
             

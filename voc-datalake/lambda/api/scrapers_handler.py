@@ -17,13 +17,12 @@ from urllib.parse import urlparse
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_secrets_client, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.logging import logger, tracer
+from shared.aws import get_secrets_client
 from shared.api import create_api_resolver, api_handler
 from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
-from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Key
 import boto3
 
@@ -287,7 +286,9 @@ def analyze_url():
         from shared.converse import converse
         prompt = f"""Analyze this HTML and identify CSS selectors for extracting reviews:\n\n```html\n{html_sample}\n```\n\nReturn JSON with: container_selector, text_selector, rating_selector, author_selector, date_selector, confidence (high/medium/low), detected_reviews_count"""
 
-        response_text = converse(prompt=prompt, max_tokens=1000)
+        # 2048: strict-JSON output must fit ONE call (see the strict-JSON
+        # doctrine in shared/converse.py).
+        response_text = converse(prompt=prompt, max_tokens=2048, surface='utility')
         
         json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
         if not json_match:

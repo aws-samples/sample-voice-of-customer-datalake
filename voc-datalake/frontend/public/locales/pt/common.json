@@ -1,0 +1,131 @@
+{
+  "actions": {
+    "close": "Fechar"
+  },
+  "appDescription": "Plataforma unificada de inteligência de feedback do cliente",
+  "appName": "VoC Analítico",
+  "appTagline": "Análise da Voz do Cliente",
+  "breadcrumbs": {
+    "categories": "Categorias",
+    "chat": "Chat IA",
+    "dashboard": "Painel",
+    "dataExplorer": "Explorador de dados",
+    "feedbackForms": "Formulários de feedback",
+    "feedbackItem": "Item de feedback",
+    "home": "Início",
+    "prioritization": "Priorização",
+    "problems": "Análise de problemas",
+    "project": "Projeto",
+    "projects": "Projetos",
+    "scrapers": "Coletores web",
+    "settings": "Configurações"
+  },
+  "cancel": "Cancelar",
+  "configureBrand": "Configurar marca",
+  "dismiss": "Dispensar",
+  "exportCsvShort": "CSV",
+  "exportCsvTooltip": "Exportar como CSV",
+  "exportPdf": "Exportar PDF",
+  "exportPdfShort": "PDF",
+  "exportPdfTooltip": "Exportar como PDF",
+  "filters": {
+    "allCategories": "Todas as categorias",
+    "allSentiments": "Todos os sentimentos",
+    "allSources": "Todas as fontes",
+    "clearFilters": "Limpar filtros",
+    "mostRecent": "Mais recentes",
+    "searchFeedback": "Pesquisar feedback...",
+    "urgentOnly": "Apenas urgentes"
+  },
+  "forQuery": "para \"{{query}}\"",
+  "goToSettings": "Ir para Configurações",
+  "loading": "Carregando...",
+  "loadMore": "Carregar mais",
+  "logs": {
+    "daysAgo_one": "há {{count}} dia",
+    "daysAgo_many": "há {{count}} dias",
+    "daysAgo_other": "há {{count}} dias",
+    "hoursAgo_one": "há {{count}} hora",
+    "hoursAgo_many": "há {{count}} horas",
+    "hoursAgo_other": "há {{count}} horas",
+    "justNow": "Agora mesmo",
+    "minutesAgo_one": "há {{count}} minuto",
+    "minutesAgo_many": "há {{count}} minutos",
+    "minutesAgo_other": "há {{count}} minutos"
+  },
+  "metrics": {
+    "avgSentiment": "Sentimento médio",
+    "sourcesActive": "Fontes ativas",
+    "totalFeedback": "Feedback total",
+    "urgentIssues": "Problemas urgentes"
+  },
+  "nav": {
+    "aiChat": "Chat IA",
+    "categories": "Categorias",
+    "dashboard": "Painel",
+    "dataExplorer": "Explorador de dados",
+    "feedbackForms": "Formulários de feedback",
+    "home": "Início",
+    "prioritization": "Priorização",
+    "problemAnalysis": "Análise de problemas",
+    "projects": "Projetos",
+    "scrapers": "Coletores",
+    "section": {
+      "home": "Início",
+      "ideation": "Ideação",
+      "settings": "Configurações",
+      "signals": "Sinais",
+      "sources": "Fontes",
+      "validation": "Validação"
+    },
+    "settings": "Configurações"
+  },
+  "partialWindowHint": "refine os filtros para ver tudo",
+  "problemAnalysisPage": {
+    "emptyHint": "Tente ampliar o intervalo de tempo ou ajustar os filtros",
+    "emptyTitle": "Nenhum dado de análise de problemas encontrado para o período selecionado"
+  },
+  "problemResolution": {
+    "allResolvedHint": "Ative \"Mostrar resolvidos ({{total}})\" acima para revisá-los",
+    "allResolvedTitle": "Todos os problemas desta visualização estão marcados como resolvidos",
+    "markResolved": "Marcar como resolvido",
+    "markUnresolved": "Marcar como não resolvido",
+    "resolved": "Resolvido",
+    "saveFailed": "Não foi possível atualizar o status. Tente novamente.",
+    "showResolved": "Mostrar resolvidos ({{total}})"
+  },
+  "send": "Enviar",
+  "sentiment": {
+    "mixed": "Misto",
+    "negative": "Negativo",
+    "neutral": "Neutro",
+    "positive": "Positivo"
+  },
+  "showingOf_one": "Mostrando {{count}} de {{total}} resultado",
+  "showingOf_many": "Mostrando {{count}} de {{total}} resultados",
+  "showingOf_other": "Mostrando {{count}} de {{total}} resultados",
+  "sidebar": {
+    "closeMenu": "Fechar menu",
+    "collapseSidebar": "Recolher barra lateral",
+    "expandSidebar": "Expandir barra lateral",
+    "openMenu": "Abrir menu",
+    "signOut": "Sair"
+  },
+  "timeRange": {
+    "24h": "24h",
+    "24hFull": "24 Horas",
+    "30d": "30d",
+    "30dFull": "30 Dias",
+    "48h": "48h",
+    "48hFull": "48 Horas",
+    "7d": "7d",
+    "7dFull": "7 Dias",
+    "apply": "Aplicar",
+    "cancel": "Cancelar",
+    "clear": "Limpar",
+    "custom": "Personalizado",
+    "endDate": "Data final",
+    "selectDateRange": "Selecionar período",
+    "startDate": "Data inicial"
+  }
+}

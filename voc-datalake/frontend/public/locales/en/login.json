@@ -1,0 +1,47 @@
+{
+  "contactAdmin": "Contact your administrator if you need access.",
+  "enterPassword": "Enter your password",
+  "enterUsername": "Enter your username",
+  "errors": {
+    "failedNewPassword": "Failed to set new password",
+    "failedResetPassword": "Failed to reset password",
+    "failedSendCode": "Failed to send verification code",
+    "loginFailed": "Login failed",
+    "passwordResetSuccess": "Password reset successful. Please login.",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "sessionExpired": "Session expired. Please login again.",
+    "verificationCodeSent": "Verification code sent to your email"
+  },
+  "forgotPassword": "Forgot password?",
+  "newPassword": {
+    "confirmLabel": "Confirm Password",
+    "confirmPlaceholder": "Confirm new password",
+    "description": "You need to set a new password for your account.",
+    "label": "New Password",
+    "placeholder": "Enter new password",
+    "settingPassword": "Setting password...",
+    "showPassword": "Show password",
+    "submit": "Set Password",
+    "title": "Set New Password"
+  },
+  "password": "Password",
+  "resetPassword": {
+    "backToLogin": "Back to login",
+    "description": "Enter your username to receive a verification code.",
+    "sendCode": "Send Code",
+    "sendingCode": "Sending code...",
+    "title": "Reset Password"
+  },
+  "signIn": "Sign in",
+  "signingIn": "Signing in...",
+  "usernameOrEmail": "Username or Email",
+  "verifyCode": {
+    "description": "Check your email for the verification code.",
+    "label": "Verification Code",
+    "placeholder": "Enter code",
+    "resettingPassword": "Resetting password...",
+    "submit": "Reset Password",
+    "title": "Enter Verification Code"
+  }
+}

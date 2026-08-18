@@ -1,0 +1,189 @@
+{
+  "actions": {
+    "reset": "Redefinir",
+    "save": "Salvar Pontuações",
+    "saveMobile": "Salvar",
+    "saving": "Salvando...",
+    "savingMobile": "..."
+  },
+  "ballot": {
+    "anonymousNotice": "Seu voto é anônimo: ele conta para a pontuação da equipe deste documento, mas não é atribuído a você nem a mais ninguém.",
+    "axes": {
+      "confidence": "Confiança",
+      "confidenceHint": "Qual é a sua certeza sobre as duas estimativas acima?",
+      "impact": "Impacto",
+      "impactHint": "Valor de negócio e benefício para o cliente.",
+      "strategicFit": "Alinhamento Estratégico",
+      "strategicFitHint": "Alinhamento com os objetivos da empresa.",
+      "timeToMarket": "Tempo até o Mercado",
+      "timeToMarketHint": "Com que rapidez isso pode ser entregue? 5 é o mais rápido."
+    },
+    "closed": {
+      "capReached": "Esta votação já coletou todos os votos que aceita. Peça ao facilitador para abrir outra sessão.",
+      "closed": "O facilitador encerrou esta votação, portanto não são aceitos mais votos.",
+      "expired": "Esta votação expirou, portanto não são aceitos mais votos.",
+      "invalid": "Não foi possível ler este voto, portanto nada foi registrado. Verifique os números e a nota e envie novamente.",
+      "notFound": "Este link não abre nenhuma votação. Verifique se você escaneou o código que está na tela agora.",
+      "title": "Esta votação não está aberta",
+      "unknown": "Não foi possível registrar seu voto neste momento. Tente novamente em um instante."
+    },
+    "displayName": {
+      "hint": "Opcional. Os votos não são atribuídos a nenhuma pessoa, então você pode deixar em branco.",
+      "label": "Seu nome (opcional)"
+    },
+    "done": {
+      "description": "Seu voto conta para a pontuação da equipe deste documento. Você pode reabrir esta página no mesmo celular para alterá-lo enquanto a votação estiver aberta.",
+      "title": "Voto registrado"
+    },
+    "loading": "Carregando esta votação...",
+    "notes": {
+      "label": "Notas (opcional)",
+      "placeholder": "Aquilo que os números não dizem..."
+    },
+    "rejected": {
+      "title": "Seu voto não foi registrado"
+    },
+    "scopeNote": "Você está pontuando uma proposta completa: esta votação cobre o conjunto de documentos por trás dela, em uma única cédula.",
+    "submit": {
+      "label": "Enviar voto",
+      "pending": "Enviando..."
+    },
+    "title": "Pontue esta proposta",
+    "unavailable": {
+      "description": "Nada foi enviado. Recarregue a página para tentar novamente — a votação em si pode estar aberta.",
+      "title": "Não foi possível carregar esta votação"
+    }
+  },
+  "configureApiEndpoint": "Configure o endpoint da API em Configurações para visualizar a priorização.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
+  "empty": {
+    "description": "Crie um PRD ou PR/FAQ em seus projetos para começar a priorizar.",
+    "title": "Nenhum Documento Encontrado",
+    "wrongTypeDescription": "Seus projetos têm documentos, mas nenhum é PRD nem PR/FAQ. Abra um projeto e gere um PRD ou PR/FAQ para pontuá-lo aqui.",
+    "wrongTypeTitle": "Nenhum Documento Pontuável"
+  },
+  "evidence": {
+    "avgRating": "Avaliação Média",
+    "noLinkedForm": "Nenhum formulário de feedback está vinculado a este documento.",
+    "noRatings": "Nenhuma avaliação coletada",
+    "submissions": "Respostas",
+    "title": "Feedback Coletado",
+    "unavailable": "Avaliações indisponíveis"
+  },
+  "framework": {
+    "description": "Pontue cada documento em: <strong>Impacto</strong>, <strong>Tempo para o Mercado</strong>, <strong>Alinhamento Estratégico</strong> e <strong>Confiança</strong>.",
+    "title": "Framework de Priorização"
+  },
+  "loading": "Carregando documentos...",
+  "noteTooLong": {
+    "description": "As notas são limitadas a {{max}} caracteres, e uma nota mais longa é recusada em vez de encurtada. Reduza a nota da linha que você editou e salve novamente. Nada foi salvo ainda.",
+    "title": "Uma nota é longa demais para salvar"
+  },
+  "notes": {
+    "label": "Notas",
+    "placeholder": "Adicione notas sobre esta decisão de priorização..."
+  },
+  "preview": {
+    "prototypeTitle": "Protótipo",
+    "title": "Visualização do Documento",
+    "viewFull": "Visualizar Documento Completo",
+    "viewMobile": "Visualizar"
+  },
+  "priority": {
+    "high": "Alta Prioridade",
+    "low": "Baixa Prioridade",
+    "medium": "Média Prioridade",
+    "none": "Não Pontuado"
+  },
+  "roomVote": {
+    "anonymousNote": "Os votos registrados aqui contam para a pontuação da equipe acima e não são atribuídos a nenhuma pessoa.",
+    "ballotsIn": "{{received}} de {{cap}} votos recebidos",
+    "close": "Encerrar a votação",
+    "closeFailed": "Não foi possível encerrar a votação. Tente novamente — até que ela seja encerrada, os votos continuam sendo aceitos.",
+    "closed": "Esta votação está encerrada. Não são aceitos mais votos.",
+    "closing": "Encerrando...",
+    "description": "Coloque um código QR na tela e deixe que todos na sala enviem um voto anônimo pelo celular, sem conta.",
+    "expired": "Esta votação expirou. Não são aceitos mais votos.",
+    "open": "Abrir uma votação de sala",
+    "openAnother": "Abrir outra votação",
+    "openFailed": "Não foi possível abrir a votação. Tente novamente.",
+    "opening": "Abrindo...",
+    "qrAccessibleName": "Código QR que abre a página de voto anônimo de {{title}}",
+    "qrCaption": "Escaneie para pontuar esta proposta pelo celular",
+    "qrUnavailable": "O código QR está indisponível porque o endereço desta página não pode ser compartilhado.",
+    "scopeDocuments": "Uma cédula cobre todos os {{documents}} documentos por trás dela, então a sala pontua a proposta completa.",
+    "scopeNote": "Esta votação pontua uma proposta: {{title}}.",
+    "title": "Pontuar em sala"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documentos, uma cédula"
+  },
+  "scores": {
+    "confidence": "Confiança",
+    "confidenceDescription": "Certeza nas estimativas de impacto e TTM",
+    "fast": "Rápido",
+    "high": "Alto",
+    "impact": "Impacto",
+    "impactDescription": "Valor comercial e benefício ao cliente",
+    "low": "Baixo",
+    "notScored": "Sem pontuação",
+    "slow": "Lento",
+    "strategicFit": "Alinhamento Estratégico",
+    "strategicFitDescription": "Alinhamento com objetivos da empresa",
+    "timeToMarket": "Tempo para o Mercado",
+    "timeToMarketDescription": "Com que rapidez isso pode ser entregue?",
+    "title": "Pontuações de Priorização",
+    "wholeRow": "Uma única cédula para os {{documents}} documentos desta linha.",
+    "yoursOnly": "Sua própria pontuação. Ao salvar, apenas os seus valores são gravados."
+  },
+  "scoresUnavailable": {
+    "description": "Suas pontuações salvas estão indisponíveis neste momento, portanto os números abaixo são valores padrão e não o que alguém inseriu. Recarregue a página antes de salvar.",
+    "staleDescription": "A última atualização das pontuações salvas falhou, portanto os números exibidos são os últimos lidos com sucesso. A sua própria avaliação não foi afetada — não é necessário recarregar antes de salvar.",
+    "title": "Não foi possível carregar as pontuações"
+  },
+  "sort": {
+    "date": "Data",
+    "dateFull": "Data de Criação",
+    "impact": "Impacto",
+    "label": "Ordenar por:",
+    "priority": "Prioridade",
+    "priorityFull": "Pontuação de Prioridade",
+    "teamOrdered": "{{fields}} ordenam pelos números da equipe, os que cada linha mostra — não pela sua própria pontuação.",
+    "ttm": "TTM",
+    "ttmFull": "Tempo para o Mercado"
+  },
+  "stats": {
+    "highPriority": "Alta Prioridade",
+    "mediumPriority": "Média Prioridade",
+    "notScored": "Não Pontuado",
+    "totalRows": "Total de propostas",
+    "unreadable_one": "A pontuação da equipe de {{count}} proposta não pôde ser lida, portanto ela conta apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-la.",
+    "unreadable_other": "As pontuações da equipe de {{count}} propostas não puderam ser lidas, portanto elas contam apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-las."
+  },
+  "subtitle": "Pontue e priorize PRDs e PR/FAQs em todos os projetos",
+  "team": {
+    "disagreement": "Dispersão {{spread}}",
+    "disagreementDescription": "Os revisores divergem em {{spread}} nesta pontuação. As notas deles explicam por quê — esta página mostra apenas a sua própria nota.",
+    "loading": "Carregando pontuação da equipe",
+    "loadingDescription": "As pontuações da equipe ainda estão carregando, portanto esta linha ainda não mostra se alguém votou. Ela será preenchida sozinha.",
+    "noScores": "Ainda não pontuado",
+    "noScoresDescription": "Nenhum revisor pontuou isto ainda, portanto não está mal avaliado, e sim sem avaliação. Os controles abaixo registram o primeiro voto.",
+    "reviewers": "Revisores",
+    "score": "Pontuação da equipe",
+    "summary": "Média da equipe {{score}} de 5 · Votos de revisores: {{reviewers}}",
+    "title": "O que a equipe disse",
+    "unattributedNote": "Alguns votos podem ser votos anônimos de sala, que contam como um revisor cada e não são atribuídos a nenhuma pessoa.",
+    "unavailable": "Pontuação da equipe indisponível",
+    "unavailableDescription": "As pontuações da equipe não puderam ser lidas agora, portanto esta linha não mostra nada sobre elas — não que ninguém tenha votado. Recarregue a página para ver o que a equipe disse."
+  },
+  "title": "Priorização",
+  "unsavedChanges": {
+    "cancel": "Permanecer na Página",
+    "confirm": "Descartar Alterações",
+    "message": "Você tem pontuações de priorização não salvas. Deseja descartar suas alterações e sair desta página?",
+    "title": "Alterações Não Salvas"
+  }
+}

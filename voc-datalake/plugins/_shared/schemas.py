@@ -23,7 +23,8 @@ MAX_METADATA_VALUE_LENGTH = 1000
 
 # Known plugin IDs (for validation)
 KNOWN_SOURCES = {
-    "webscraper", "s3_import", "manual_import"
+    "webscraper", "s3_import", "manual_import",
+    "app_reviews_ios", "app_reviews_android",
 }
 
 

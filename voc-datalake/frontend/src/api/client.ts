@@ -1,7 +1,11 @@
-import { useConfigStore } from '../store/configStore'
 import { authService } from '../services/auth'
+import { endExpiredSession } from '../services/sessionExpiry'
+import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'
 import type {
+  DateBasis,
   FeedbackItem,
+  FeedbackListParams,
+  FeedbackListResponse,
   MetricsSummary,
   SentimentBreakdown,
   CategoryBreakdown,
@@ -13,20 +17,27 @@ import type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
+  PrioritizationBallotEdit,
+  PrioritizationRow,
   S3ImportSource,
   S3ImportFile,
-  FeedbackFormConfig,
   FeedbackForm,
   CognitoUser,
   ValidationLogEntry,
   ProcessingLogEntry,
   ScraperLogEntry,
   LogsSummary,
+  ApiToken,
+  CreateApiTokenResponse,
 } from './types'
 
 // Re-export all types for backward compatibility
 export type {
+  DateBasis,
   FeedbackItem,
+  FeedbackListParams,
+  FeedbackListResponse,
   MetricsSummary,
   SentimentBreakdown,
   CategoryBreakdown,
@@ -38,6 +49,9 @@ export type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
+  PrioritizationBallotEdit,
+  PrioritizationRow,
   S3ImportSource,
   S3ImportFile,
   FeedbackFormConfig,
@@ -47,40 +61,36 @@ export type {
   ProcessingLogEntry,
   ScraperLogEntry,
   LogsSummary,
+  ApiToken,
+  CreateApiTokenResponse,
+  WebSource,
 } from './types'
-export type { ProjectJob, ProjectDocument, ProjectDetail, ChatMessage, ChatConversation } from './types'
+export type { ProjectJob, ProjectDocument, ProjectDetail } from './types'
 
-const getBaseUrl = () => {
-  const { config } = useConfigStore.getState()
-  return config.apiEndpoint || '/api'
-}
+// Re-export shared time-range helper so existing consumers can keep importing from `./client`.
+export { getDaysFromRange, ALL_TIME_DAYS }
 
-const streamUrlCache: { value: string | null } = { value: null }
-
-function stripTrailingSlashes(url: string): string {
-  // Remove trailing slashes without regex backtracking
-  const trimmed = url.trimEnd()
-  const lastNonSlash = trimmed.length - [...trimmed].reverse().findIndex(c => c !== '/')
-  return trimmed.slice(0, lastNonSlash)
+/**
+ * Date-range query parameters sent to time-filtered analytics endpoints.
+ *
+ * All time ranges resolve to a single rolling lookback in `days` (presets,
+ * "All", and the "last N days" custom range). `date_basis` selects which date
+ * the window applies to ('review' = when the customer wrote the feedback);
+ * it is omitted for the default 'imported' basis so URLs stay unchanged for
+ * existing behavior. See {@link getDateRangeParams}.
+ */
+export interface DateRangeParams {
+  days?: number
+  date_basis?: DateBasis
 }
 
 function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : {}),
-  }
-  
-  if (authService.isConfigured()) {
-    const idToken = authService.getIdToken()
-    if (idToken) {
-      headers['Authorization'] = idToken
-    }
-  }
-  
-  return headers
+  const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
+  return getAuthHeaders(extra)
 }
 
 import { z } from 'zod'
+import { normalizeFeedbackItem, normalizeFeedbackItems } from './feedbackSchema'
 
 // API response parser using Zod for runtime validation
 // This satisfies the no-type-assertions rule
@@ -113,8 +123,8 @@ async function handleUnauthorized<T>(
   return parseJsonResponse<T>(retryResponse)
 }
 
-async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const baseUrl = stripTrailingSlashes(getBaseUrl())
+export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const baseUrl = getBaseUrl()
   const headers = buildHeaders(options?.headers)
   
   const response = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
@@ -127,8 +137,9 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     try {
       return await handleUnauthorized<T>(endpoint, options, headers, baseUrl)
     } catch {
-      authService.signOut()
-      window.location.href = '/login'
+      // Carries the reason to /login so the user is told the session ended,
+      // instead of meeting a bare login form after a working-looking app.
+      endExpiredSession()
       throw new Error('Session expired. Please login again.')
     }
   }
@@ -136,21 +147,10 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   throw new Error(`API Error: ${response.status}`)
 }
 
-async function getStreamUrl(): Promise<string> {
-  if (streamUrlCache.value !== null) return streamUrlCache.value
-  
-  try {
-    const config = await fetchApi<{ chat_stream_url: string }>('/projects/config')
-    streamUrlCache.value = config.chat_stream_url || ''
-    return streamUrlCache.value
-  } catch {
-    streamUrlCache.value = ''
-    return ''
-  }
-}
-
-// Helper to build URLSearchParams from an object, filtering out undefined/null values
-function buildSearchParams(params: Record<string, string | number | boolean | undefined | null>): URLSearchParams {
+// Helper to build URLSearchParams from an object, filtering out undefined/null values.
+// Accepts any object so domain interfaces (e.g. FeedbackListParams) can be passed
+// without requiring an index signature on the type.
+function buildSearchParams(params: object): URLSearchParams {
   const searchParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value != null) {
@@ -162,77 +162,111 @@ function buildSearchParams(params: Record<string, string | number | boolean | un
 
 export const api = {
   // Feedback
-  getFeedback: (params: { days?: number; source?: string; category?: string; sentiment?: string; limit?: number }) => {
+  getFeedback: async (params: FeedbackListParams) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback?${searchParams}`)
+    const res = await fetchApi<FeedbackListResponse>(`/feedback?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getFeedbackById: (id: string) => fetchApi<FeedbackItem>(`/feedback/${id}`),
+  getFeedbackById: async (id: string) => normalizeFeedbackItem(await fetchApi<FeedbackItem>(`/feedback/${id}`)),
   
-  getUrgentFeedback: (params: { days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  getUrgentFeedback: async (params: { days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
+    const res = await fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback/urgent?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  searchFeedback: (params: { q: string; days?: number; limit?: number; source?: string; sentiment?: string; category?: string }) => {
+  searchFeedback: async (params: { q: string; days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
-    return fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getSimilarFeedback: (id: string, limit?: number) => {
+  getSimilarFeedback: async (id: string, limit?: number) => {
     const searchParams = new URLSearchParams()
     if (limit) searchParams.set('limit', String(limit))
-    return fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
+    const res = await fetchApi<{ source_feedback_id: string; count: number; items: FeedbackItem[] }>(`/feedback/${id}/similar?${searchParams}`)
+    return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getEntities: (params: { days?: number; limit?: number; source?: string }) => {
+  getEntities: (params: { days?: number; date_basis?: DateBasis; limit?: number; source?: string }) => {
     const searchParams = buildSearchParams(params)
     return fetchApi<EntitiesResponse>(`/feedback/entities?${searchParams}`)
   },
   
   // Metrics
-  getSummary: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<MetricsSummary>(`/metrics/summary?${params}`)
+  getSummary: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<MetricsSummary>(`/metrics/summary?${searchParams}`)
   },
-  getSentiment: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<SentimentBreakdown>(`/metrics/sentiment?${params}`)
+  getSentiment: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<SentimentBreakdown>(`/metrics/sentiment?${searchParams}`)
   },
-  getCategories: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<CategoryBreakdown>(`/metrics/categories?${params}`)
+  getCategories: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<CategoryBreakdown>(`/metrics/categories?${searchParams}`)
   },
-  getSources: (days: number) => fetchApi<SourceBreakdown>(`/metrics/sources?days=${days}`),
-  getPersonas: (days: number, source?: string) => {
-    const params = new URLSearchParams({ days: String(days) })
-    if (source) params.set('source', source)
-    return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${params}`)
+  getSources: (range: DateRangeParams) => {
+    const searchParams = buildSearchParams({ ...range })
+    return fetchApi<SourceBreakdown>(`/metrics/sources?${searchParams}`)
+  },
+  getPersonas: (range: DateRangeParams, source?: string) => {
+    const searchParams = buildSearchParams({ ...range, source })
+    return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${searchParams}`)
   },
   
   // Chat
   chat: (message: string, context?: string) => fetchApi<{ response: string; sources?: FeedbackItem[] }>('/chat', {
     method: 'POST',
-    body: JSON.stringify({ message, context })
+    body: JSON.stringify({ message, context, ...getDateBasisBodyParams() })
   }),
 
-  // Chat with streaming (uses Lambda Function URL to bypass API Gateway timeout)
-  chatStream: async (message: string, context?: string, days?: number): Promise<{ response: string; sources?: FeedbackItem[]; metadata?: { total_feedback: number; days_analyzed: number; urgent_count: number } }> => {
-    const streamEndpoint = await getStreamUrl()
-    if (!streamEndpoint) return api.chat(message, context)
-    const { streamApi } = await import('./streamApi')
-    return streamApi.chatStream(streamEndpoint, message, context, days)
-  },
-
   // Data Source Schedules
-  getSourcesStatus: () => fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>('/sources/status'),
+  getSourcesStatus: (sources?: string[]) => {
+    const params = sources?.length == null ? '' : `?sources=${sources.join(',')}`
+    return fetchApi<{ sources: Record<string, { enabled: boolean; schedule?: string; rule_name?: string; exists?: boolean; error?: string }> }>(`/sources/status${params}`)
+  },
   
   enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, { method: 'PUT' }),
   
   disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, { method: 'PUT' }),
+
+  runSource: (source: string, appId?: string) => fetchApi<{
+    success: boolean;
+    message: string;
+    source: string;
+    execution_id?: string
+  }>(`/sources/${source}/run`, {
+    method: 'POST',
+    ...(appId != null && appId !== '' ? { body: JSON.stringify({ app_id: appId }) } : {}),
+  }),
+
+  getSourceRunStatus: (source: string) => fetchApi<{
+    source: string;
+    status: string;
+    execution_id?: string;
+    started_at?: string;
+    completed_at?: string;
+    items_found?: number;
+    errors?: string[]
+  }>(`/sources/status?run_status=${source}`),
+
+  // App Config CRUD (multi-instance plugins like iOS/Android app reviews)
+  getAppConfigs: (source: string) =>
+    fetchApi<{ apps: Array<Record<string, string>> }>(`/integrations/${source}/apps`),
+
+  saveAppConfig: (source: string, app: Record<string, string>) =>
+    fetchApi<{
+      success: boolean;
+      app: Record<string, string>
+    }>(`/integrations/${source}/apps`, {
+      method: 'POST',
+      body: JSON.stringify({ app }),
+    }),
+
+  deleteAppConfig: (source: string, appId: string) =>
+    fetchApi<{ success: boolean }>(`/integrations/${source}/apps/${appId}`, { method: 'DELETE' }),
 
   // Brand Settings (persisted to DynamoDB)
   getBrandSettings: () => fetchApi<{
@@ -252,6 +286,35 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify(settings)
   }),
+
+  // AI model selection — per-surface, curated allowlist, admin-only UI (issue #96).
+  // `surfaces` lists each pickable AI surface with its built-in default and the
+  // admin-selected override (null = Automatic). `model_id` is a legacy global
+  // override kept for backward compatibility.
+  getModelSettings: () => fetchApi<{
+    available_models: Array<{ key: string; id: string; label: string; description: string }>
+    surfaces: Array<{ key: string; default_id: string; selected: string | null }>
+    model_id: string | null
+  }>('/settings/model'),
+
+  // Set (modelId = allowlisted id) or clear (modelId = null) the model for one
+  // surface. Backend is admin-gated; the UI only shows this to admins.
+  saveModelSettings: (surface: string, modelId: string | null) =>
+    fetchApi<{ success: boolean; surface: string | null; model_id: string | null }>('/settings/model', {
+      method: 'PUT',
+      body: JSON.stringify({ surface, model_id: modelId }),
+    }),
+
+  // Problem resolution (Problem Analysis page; shared across users)
+  getResolvedProblems: () => fetchApi<{
+    resolved: Record<string, { resolved_at: string }>
+  }>('/settings/resolved-problems'),
+
+  setProblemResolved: (key: string, resolved: boolean) =>
+    fetchApi<{ success: boolean; key: string; resolved: boolean }>('/settings/resolved-problems', {
+      method: 'PUT',
+      body: JSON.stringify({ key, resolved })
+    }),
 
   // Categories Configuration
   getCategoriesConfig: () => fetchApi<{ 
@@ -298,6 +361,8 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(credentials)
     }),
+  getIntegrationCredentials: (source: string, keys: string[]) =>
+    fetchApi<Record<string, string>>(`/integrations/${source}/credentials?keys=${keys.join(',')}`),
   
   testIntegration: (source: string) => 
     fetchApi<{ success: boolean; message?: string; error?: string; details?: Record<string, unknown> }>(`/integrations/${source}/test`, {
@@ -398,16 +463,8 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.updatePersona(projectId, personaId, data)),
   deletePersona: (projectId: string, personaId: string) =>
     import('./projectsApi').then(m => m.projectsApi.deletePersona(projectId, personaId)),
-  importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
+  importPersona: (projectId: string, data: { input_type: 'image' | 'text'; content: string; media_type?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
-  projectChat: (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) =>
-    import('./projectsApi').then(m => m.projectsApi.projectChat(projectId, message, selectedPersonas, selectedDocuments)),
-  projectChatStream: async (projectId: string, message: string, selectedPersonas?: string[], selectedDocuments?: string[]) => {
-    const streamEndpoint = await getStreamUrl()
-    if (!streamEndpoint) return api.projectChat(projectId, message, selectedPersonas, selectedDocuments)
-    const { streamApi } = await import('./streamApi')
-    return streamApi.projectChatStream(streamEndpoint, projectId, message, selectedPersonas, selectedDocuments)
-  },
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
   generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
@@ -427,17 +484,87 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.deleteDocument(projectId, documentId)),
 
   // Prioritization
-  getPrioritizationScores: () => 
-    fetchApi<{ scores: Record<string, PrioritizationScore> }>('/projects/prioritization'),
-  
-  savePrioritizationScores: (scores: Record<string, PrioritizationScore>) =>
-    fetchApi<{ success: boolean }>('/projects/prioritization', {
-      method: 'PUT',
-      body: JSON.stringify({ scores })
-    }),
+  /**
+   * The rows, the caller's own ballots on them, and what every reviewer said.
+   *
+   * All three maps are keyed by ROW ID — a prioritization row is one project's set
+   * of documents, so a project whose PRD and PR/FAQ describe one idea is one row
+   * scored once. `rows` says what each row HOLDS, which is why the page needs no
+   * second request per row.
+   *
+   * `rows` and `aggregates` are optional in the TYPE but not on the wire: both are
+   * additive, and declaring either required would make a response from a
+   * deployment running an older handler fail to type-check against a client that
+   * only reads `scores`. See `PrioritizationAggregate` for what an entry means —
+   * notably that a row nobody scored is absent, and that an entry can outlive its
+   * row, so a consumer should intersect those keys with `rows`.
+   */
+  getPrioritizationScores: () =>
+    fetchApi<{
+      rows?: Record<string, PrioritizationRow>
+      scores: Record<string, PrioritizationScore>
+      aggregates?: Record<string, PrioritizationAggregate>
+    }>('/projects/prioritization'),
 
-  /** Save only the changed scores (incremental/diff update) */
-  patchPrioritizationScores: (changedScores: Record<string, PrioritizationScore>) =>
+  /**
+   * Ensure a project's DEFAULT prioritization row exists, and return it.
+   *
+   * IDEMPOTENT: asking twice yields the same row rather than a second one, decided
+   * by a conditional write on a row id derived from the project id — so two tabs
+   * opening the page at once cannot give one project two rows with two sets of
+   * ballots. `created` says which of the two happened, for a caller that cares.
+   *
+   * TWO settled refusals, both of which the caller reads through
+   * `isPermanentRefusal` and neither of which this page currently puts on screen:
+   *
+   * - **400** for a project with no PRD and no PR/FAQ: there is nothing to score,
+   *   and the page already has words inviting one, so the silence is covered.
+   * - **409** for a project holding more documents than one read can compose a row
+   *   from. Nothing covers this one — the project simply does not appear in the
+   *   backlog, with nothing saying why. Rare by design (the bound behind it is
+   *   deliberately generous), and tracked for phase 2 on issue #339, which is
+   *   already adding row-level states to this page and can give an un-composable
+   *   project a visible one.
+   */
+  createPrioritizationRow: (projectId: string) =>
+    fetchApi<{ success: boolean; created?: boolean; row?: PrioritizationRow }>(
+      '/projects/prioritization/rows',
+      {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId }),
+      },
+    ),
+  
+  /**
+   * Save only the changed scores (incremental/diff update).
+   *
+   * The only writer. A `savePrioritizationScores` sending PUT used to sit beside
+   * this; it PUT the caller's whole map as every reviewer's scores, which under
+   * per-reviewer ballots has no honest meaning. It had no caller in the product,
+   * and the endpoint now refuses that verb, so keeping the function would only
+   * offer a future caller a guaranteed 400.
+   *
+   * Keyed by ROW ID, and so is every entry's own `row_id`: a ballot is about a
+   * project's set of documents rather than about one of them.
+   *
+   * `updated_count` is BALLOTS WRITTEN, not rows sent: an entry that changed
+   * no axis and no note is a legal no-op and is not counted, so the number can be
+   * lower than the size of the map — and is 0 for a body that stored nothing.
+   *
+   * Entries are `PrioritizationBallotEdit`, i.e. PARTIAL: an axis the reviewer did
+   * not set is omitted, and the route reads an omitted axis as "leave it alone"
+   * (`_ballot_update_kwargs` assigns only the axes an entry carries). Sending a
+   * complete score instead wrote three axes the reviewer never chose whenever they
+   * moved one slider on a row with no stored ballot, and the backend counts an
+   * explicit value as a real vote — which then moves the TEAM means the
+   * prioritization page displays, bands, counts and sorts by.
+   *
+   * A note longer than `MAX_NOTE_LENGTH` is REFUSED (400), not truncated. This
+   * function does not check it, because `fetchApi` discards the response body and
+   * could not report why — the page blocks that save before calling
+   * (`overLongNoteDocuments`).
+   */
+  patchPrioritizationScores: (changedScores: Record<string, PrioritizationBallotEdit>) =>
     fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {
       method: 'PATCH',
       body: JSON.stringify({ scores: changedScores })
@@ -521,24 +648,6 @@ export const api = {
       method: 'DELETE'
     }),
 
-  // Feedback Form (Embeddable) - Legacy single form
-  getFeedbackFormConfig: () => fetchApi<{ success: boolean; config: FeedbackFormConfig }>('/feedback-form/config'),
-  
-  saveFeedbackFormConfig: (config: FeedbackFormConfig) =>
-    fetchApi<{ success: boolean; message: string }>('/feedback-form/config', {
-      method: 'PUT',
-      body: JSON.stringify(config)
-    }),
-  
-  submitFeedbackForm: (data: { text: string; rating?: number; email?: string; name?: string; page_url?: string; custom_fields?: Record<string, string> }) =>
-    fetchApi<{ success: boolean; feedback_id?: string; message: string }>('/feedback-form/submit', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  getFeedbackFormEmbed: (apiEndpoint: string) =>
-    fetchApi<{ success: boolean; script_embed: string; iframe_embed: string }>(`/feedback-form/embed?api_endpoint=${encodeURIComponent(apiEndpoint)}`),
-
   // Feedback Forms (Multiple forms management)
   getFeedbackForms: () => fetchApi<{ success: boolean; forms: FeedbackForm[] }>('/feedback-forms'),
   
@@ -585,7 +694,14 @@ export const api = {
   // User Administration (admin only)
   getUsers: () => fetchApi<{ success: boolean; users: CognitoUser[]; message?: string }>('/users'),
   
-  createUser: (data: { username: string; email: string; name?: string; group: 'admins' | 'users' }) =>
+  createUser: (data: {
+    username: string
+    email: string
+    name?: string
+    given_name?: string
+    family_name?: string
+    group: 'admins' | 'users'
+  }) =>
     fetchApi<{ success: boolean; message?: string; error?: string; user?: CognitoUser }>('/users', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -595,6 +711,19 @@ export const api = {
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}/group`, {
       method: 'PUT',
       body: JSON.stringify({ group })
+    }),
+
+  // Update user attributes (first/last name). Used by EditUserModal.
+  updateUser: (username: string, data: { given_name: string; family_name: string }) =>
+    fetchApi<{
+      success: boolean
+      message: string
+      given_name: string
+      family_name: string
+      name: string
+    }>(`/users/${encodeURIComponent(username)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
   
   resetUserPassword: (username: string) =>
@@ -616,6 +745,29 @@ export const api = {
     fetchApi<{ success: boolean; message: string }>(`/users/${encodeURIComponent(username)}`, {
       method: 'DELETE'
     }),
+
+  // Project API tokens (used by the McpAccessTab to gate MCP server access)
+  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write'; expires_in_days?: number }) =>
+    fetchApi<CreateApiTokenResponse>(`/projects/${projectId}/api-tokens`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  listApiTokens: (projectId: string) =>
+    fetchApi<{ success: boolean; tokens: ApiToken[] }>(`/projects/${projectId}/api-tokens`),
+
+  deleteApiToken: (projectId: string, tokenId: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/projects/${projectId}/api-tokens/${tokenId}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * GET /projects/{project_id}/autoseed — Cognito-session-authenticated, no
+   * API token required. Used by the Export card (Card 1) in the Export / MCP
+   * tab to copy context to clipboard.
+   */
+  autoseedProject: (projectId: string, params?: { personaIds?: string[]; documentIds?: string[] }) =>
+    import('./projectsApi').then(m => m.projectsApi.autoseedProject(projectId, params ?? {})),
 
   // Logs API
   getValidationLogs: (params?: { source?: string; days?: number; limit?: number }) => {
@@ -644,29 +796,25 @@ export const api = {
     }),
 }
 
-export function getDaysFromRange(range: string, customRange?: { start: string; end: string } | null): number {
-  if (range === 'custom' && customRange) {
-    const start = new Date(customRange.start)
-    const end = new Date(customRange.end)
-    const diffTime = Math.abs(end.getTime() - start.getTime())
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+/**
+ * Resolve a time range selection into the rolling `days` query parameter.
+ *
+ * Every range (presets, "All", and the "last N days" custom range) maps to a
+ * single bounded day count so the metrics backend never fans out into an
+ * unbounded scan. For 'custom', `customDays` carries the chosen lookback.
+ *
+ * `dateBasis` selects which date the window filters on. The default
+ * 'imported' basis omits the parameter entirely, keeping request URLs (and
+ * TanStack Query keys) identical to the pre-basis behavior.
+ */
+export function getDateRangeParams(
+  range: string,
+  customDays?: number | null,
+  dateBasis?: DateBasis
+): DateRangeParams {
+  const params: DateRangeParams = { days: getDaysFromRange(range, customDays) }
+  if (dateBasis === 'review') {
+    params.date_basis = dateBasis
   }
-  
-  switch (range) {
-    case '24h': return 1
-    case '48h': return 2
-    case '7d': return 7
-    case '30d': return 30
-    default: return 7
-  }
-}
-
-export function getDateRangeParams(range: string, customRange?: { start: string; end: string } | null): { days?: number; start_date?: string; end_date?: string } {
-  if (range === 'custom' && customRange) {
-    return {
-      start_date: customRange.start,
-      end_date: customRange.end,
-    }
-  }
-  return { days: getDaysFromRange(range) }
+  return params
 }

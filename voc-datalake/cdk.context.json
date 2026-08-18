@@ -6,11 +6,14 @@
   "brandName": "VoC Analytics",
   "pluginStatus": {
     "webscraper": true,
-    "s3_import": true
+    "app_reviews_ios": true,
+    "app_reviews_android": true,
+    "s3_import": true,
+    "synthetic_reviews": true
   },
   "menuStatus": {
+    "home": true,
     "dashboard": true,
-    "feedback": true,
     "categories": true,
     "problems": true,
     "chat": true,

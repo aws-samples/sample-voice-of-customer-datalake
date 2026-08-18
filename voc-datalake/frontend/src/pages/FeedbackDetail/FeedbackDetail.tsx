@@ -73,7 +73,7 @@ function FeedbackNotFound() {
   return (
     <div className="text-center py-12">
       <p className="text-gray-500">Feedback not found</p>
-      <Link to="/feedback" className="text-blue-600 hover:underline mt-2 inline-block">
+      <Link to="/categories" className="text-blue-600 hover:underline mt-2 inline-block">
         Back to feedback list
       </Link>
     </div>
@@ -281,7 +281,15 @@ function MetadataSection({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
     <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-gray-500 pt-3 sm:pt-4 border-t border-gray-100">
       <div className="flex items-center gap-1">
         <Clock size={14} className="flex-shrink-0" />
-        <span className="truncate">Created: {formatDateSafe(feedback.source_created_at)}</span>
+        <span className="truncate" title="When the customer wrote this feedback">
+          Review date: {formatDateSafe(feedback.source_created_at)}
+        </span>
+      </div>
+      <div className="flex items-center gap-1">
+        <Clock size={14} className="flex-shrink-0" />
+        <span className="truncate" title="When this feedback was imported into the platform">
+          Imported: {formatDateSafe(feedback.processed_at)}
+        </span>
       </div>
       <div className="flex items-center gap-1">
         <Globe size={14} className="flex-shrink-0" />
@@ -422,13 +430,15 @@ export default function FeedbackDetail() {
     enabled: !!config.apiEndpoint && !!id && activeTab === 'similar',
   })
 
+  // Tag clicks deep-link into the consolidated Categories page (issue #198),
+  // which reads these params via useCategoryFilters.
   const handleTagClick = (type: string, value: string) => {
     if (type === 'category') {
-      navigate(`/feedback?category=${encodeURIComponent(value)}`)
+      navigate(`/categories?category=${encodeURIComponent(value)}`)
     } else if (type === 'keyword') {
-      navigate(`/feedback?q=${encodeURIComponent(value)}`)
+      navigate(`/categories?q=${encodeURIComponent(value)}`)
     } else if (type === 'source') {
-      navigate(`/feedback?source=${encodeURIComponent(value)}`)
+      navigate(`/categories?source=${encodeURIComponent(value)}`)
     }
   }
 
@@ -449,7 +459,7 @@ export default function FeedbackDetail() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 px-1 sm:px-0">
-      <Link to="/feedback" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm sm:text-base">
+      <Link to="/categories" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm sm:text-base">
         <ArrowLeft size={18} />
         <span className="hidden xs:inline">Back to feedback</span>
         <span className="xs:hidden">Back</span>

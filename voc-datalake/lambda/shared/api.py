@@ -22,32 +22,36 @@ from shared.exceptions import (
     ConflictError,
 )
 
+# Date-basis values live in shared.feedback (the data layer) so job Lambdas
+# don't import API-resolver machinery for constants; re-exported here for
+# API handlers and backward compatibility.
+from shared.feedback import (  # noqa: F401 — re-export
+    DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, VALID_DATE_BASES, validate_date_basis,
+)
+
 
 class DecimalEncoder(json.JSONEncoder):
     """JSON encoder that handles Decimal types from DynamoDB."""
     def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
+        return decimal_default(obj)
 
 
 def decimal_default(obj):
     """JSON serializer for Decimal types.
     
     Use with json.dumps: json.dumps(data, default=decimal_default)
-    
-    Args:
-        obj: Object to serialize
-        
-    Returns:
-        float if obj is Decimal
-        
-    Raises:
-        TypeError: If obj is not a Decimal
     """
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+# The most personas one generation may produce. Lives here rather than beside
+# validate_persona_count because two other places size themselves against it: the avatar
+# fan-out's max_workers and the image-model client's connection pool. Those were
+# independent literals whose only link was a comment, and a comment cannot fail CI — so
+# raising this ceiling used to silently halve the fan-out benefit while every test passed.
+MAX_PERSONAS_PER_GENERATION = 10
 
 
 def validate_days(
@@ -56,12 +60,8 @@ def validate_days(
     min_val: int = 1,
     max_val: int = 365
 ) -> int:
-    """Validate and bound days parameter."""
-    try:
-        days = int(value) if value is not None else default
-        return max(min_val, min(days, max_val))
-    except (ValueError, TypeError):
-        return default
+    """Validate and bound days parameter. Convenience wrapper around validate_int."""
+    return validate_int(value, default=default, min_val=min_val, max_val=max_val)
 
 
 def validate_limit(
@@ -70,12 +70,8 @@ def validate_limit(
     min_val: int = 1,
     max_val: int = 100
 ) -> int:
-    """Validate and bound limit parameter."""
-    try:
-        limit = int(value) if value is not None else default
-        return max(min_val, min(limit, max_val))
-    except (ValueError, TypeError):
-        return default
+    """Validate and bound limit parameter. Convenience wrapper around validate_int."""
+    return validate_int(value, default=default, min_val=min_val, max_val=max_val)
 
 
 def validate_int(
@@ -84,12 +80,131 @@ def validate_int(
     min_val: int = 1,
     max_val: int = 100
 ) -> int:
-    """Generic integer validation with bounds."""
+    """Generic integer validation with bounds.
+
+    Returns ``default`` for ``None`` and for anything ``int()`` cannot read, and
+    otherwise clamps into ``[min_val, max_val]``. So the contract is "always a
+    bounded int, never a raise", which is what every caller relies on.
+
+    ``OverflowError`` is caught alongside ``ValueError``/``TypeError`` because
+    ``int(float('inf'))`` raises it, and a non-finite float is reachable wherever a
+    request body is parsed: ``json.loads`` is non-strict by default and accepts the
+    ``Infinity``/``-Infinity``/``NaN`` literals. Without it the fallback simply did
+    not happen for that one input — the exception propagated out of a validator
+    documented never to raise, which in a multi-write handler surfaced as a 500
+    part way through the work.
+
+    Two things a caller must know, because this cannot decide them here:
+
+    * A ``bool`` is COERCED, not refused: ``isinstance(True, int)`` is true and
+      ``int(True)`` is ``1``. Harmless where the result is a page size, wrong where
+      it is a value a human is said to have chosen — a flag is not a slider
+      position. A caller in the second case must refuse ``bool`` itself, before
+      calling this (``validate_bool`` makes the mirror argument). Named as a
+      requirement on callers rather than by pointing at one: a shared helper citing
+      a particular handler's PRIVATE predicate reads as a dependency it does not
+      have, and goes stale the moment that handler renames it.
+    * ``default`` is returned for input this could not read, so it is not merely a
+      value for "absent" — it is also the value for "unreadable". Where the two
+      must be distinguishable, or where the default would read as a deliberate
+      choice, check the value before calling rather than reading meaning into what
+      comes back.
+    """
     try:
         val = int(value) if value is not None else default
         return max(min_val, min(val, max_val))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
+
+
+def validate_bool(value: object, default: bool, field: str = 'value') -> bool:
+    """Validate a boolean request field, refusing anything that is not a real bool.
+
+    The other validators here clamp or fall back, which is right for a number whose
+    worst case is a bounded value. A boolean has no such middle: coercing an unexpected
+    value picks one of the two behaviours silently, and for a flag that gates billed work
+    the wrong pick costs money in the direction the caller did not ask for. ``"false"``
+    from a form post or an over-eager serialiser is the realistic case.
+
+    Absent (``None``) yields ``default`` — an omitted field must keep behaving as it did
+    before the field existed. Note this treats an explicit JSON ``null`` as absent, since
+    ``dict.get`` cannot distinguish the two; that is deliberate and harmless, because both
+    mean "the caller expressed no preference".
+
+    Raises:
+        ValidationError: for any non-boolean value, which the API resolver maps to a 400.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    # Type name only, not the value: the type is the diagnostic ("you sent a string"),
+    # while the value is unbounded caller input and echoing it into a response body buys
+    # nothing the caller does not already have.
+    raise ValidationError(
+        f'{field} must be true or false, got {type(value).__name__}'
+    )
+
+
+def get_caller_groups(event: dict) -> list[str]:
+    """Extract Cognito group memberships from the API Gateway authorizer claims.
+
+    Handles every format API Gateway emits for the ``cognito:groups`` claim:
+    a real list, and strings that are comma- or space-separated — including
+    the REST-authorizer serialization of the array claim as a
+    bracket-wrapped string (``"[admins]"`` / ``"[admins, users]"``).
+    """
+    try:
+        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+        groups = claims.get('cognito:groups', '')
+        if not groups:
+            return []
+        if isinstance(groups, list):
+            return groups
+        # REST API Gateway serializes array claims like "[admins, users]".
+        cleaned = groups.strip().removeprefix('[').removesuffix(']').strip()
+        if not cleaned:
+            return []
+        if ',' in cleaned:
+            return [g.strip() for g in cleaned.split(',')]
+        return cleaned.split(' ') if ' ' in cleaned else [cleaned]
+    except Exception:
+        return []
+
+
+def get_caller_subject(event: dict) -> str:
+    """Return the Cognito subject (``sub``) for the authenticated caller.
+
+    The ``sub`` claim is the stable, immutable identifier assigned by Cognito
+    at user-creation time.  Unlike a username (which can be reused) or an
+    email (which can change), it never refers to a different person.
+
+    The returned value identifies a person and must not be logged.
+
+    Raises:
+        AuthorizationError: If the ``sub`` claim is absent or empty.  These
+            routes are protected by the Cognito authorizer, so an absent claim
+            indicates misconfiguration rather than an anonymous request — the
+            handler must fail closed rather than fall back to a shared key.
+    """
+    request_context = event.get('requestContext')
+    authorizer = request_context.get('authorizer') if isinstance(request_context, dict) else None
+    claims = authorizer.get('claims', {}) if isinstance(authorizer, dict) else {}
+    raw_sub = claims.get('sub') if isinstance(claims, dict) else None
+    sub = raw_sub.strip() if isinstance(raw_sub, str) else ''
+    if sub:
+        return sub
+    raise AuthorizationError('Caller identity could not be determined')
+
+
+def require_admin(event: dict) -> None:
+    """Raise AuthorizationError (403) unless the caller is in the admins group.
+
+    The Cognito authorizer only proves authentication; org-wide mutations
+    (user administration, AI model selection) must also check the group.
+    """
+    if 'admins' not in get_caller_groups(event):
+        raise AuthorizationError('Admin access required')
 
 
 def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
@@ -237,57 +352,24 @@ def api_handler(func):
     return wrapper
 
 
-def json_response(data: dict, status_code: int = 200) -> dict:
-    """
-    Create a JSON response with proper headers.
-    
-    Args:
-        data: Response data dict
-        status_code: HTTP status code (default 200)
-    
-    Returns:
-        Lambda response dict
-    """
-    return {
-        'statusCode': status_code,
-        'headers': {'Content-Type': 'application/json'},
-        'body': json.dumps(data, cls=DecimalEncoder)
-    }
-
-
-def error_response(message: str, status_code: int = 400) -> dict:
-    """
-    Create an error response.
-    
-    Args:
-        message: Error message
-        status_code: HTTP status code (default 400)
-    
-    Returns:
-        Lambda response dict
-    
-    Note:
-        Prefer raising exceptions (ValidationError, NotFoundError, etc.)
-        over using this function directly. The exception handlers will
-        create consistent error responses automatically.
-    """
-    return json_response({'success': False, 'error': message}, status_code)
-
-
 # Re-export exceptions for convenience
 __all__ = [
     'DecimalEncoder',
     'validate_days',
     'validate_limit', 
     'validate_int',
+    'validate_bool',
+    'validate_date_basis',
+    'MAX_PERSONAS_PER_GENERATION',
+    'DATE_BASIS_IMPORTED',
+    'DATE_BASIS_REVIEW',
     'create_cors_config',
     'create_api_resolver',
     'api_handler',
-    'json_response',
-    'error_response',
+    'get_caller_groups',
+    'get_caller_subject',
+    'require_admin',
     'get_configured_categories',
-    'clear_categories_cache',
-    'sum_daily_metric',
     'DEFAULT_CATEGORIES',
     # Exceptions
     'ApiError',
@@ -312,43 +394,49 @@ _categories_cache_time: float | None = None
 CATEGORIES_CACHE_TTL = 300  # 5 minutes
 
 
-def get_configured_categories(aggregates_table) -> list:
+def get_raw_categories_config(aggregates_table) -> list[dict]:
     """
-    Fetch configured categories from DynamoDB settings with caching.
+    Fetch raw categories config objects from DynamoDB settings with caching.
     
-    Args:
-        aggregates_table: DynamoDB Table resource for aggregates
-    
-    Returns:
-        List of category names
+    Returns list of category dicts (with name, description, subcategories).
+    Returns empty list if not configured.
     """
     global _categories_cache, _categories_cache_time
-    
+
     if not aggregates_table:
-        logger.warning("Aggregates table not provided, using default categories")
-        return DEFAULT_CATEGORIES
-    
+        return []
+
     now = datetime.now(timezone.utc).timestamp()
-    
-    # Return cached if still valid
+
     if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
         return _categories_cache
-    
+
     try:
         response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
         item = response.get('Item')
         if item and item.get('categories'):
-            _categories_cache = [cat.get('name') for cat in item.get('categories', []) if cat.get('name')]
+            _categories_cache = item.get('categories', [])
             _categories_cache_time = now
             logger.info(f"Loaded {len(_categories_cache)} categories from settings")
             return _categories_cache
     except Exception as e:
         logger.warning(f"Could not fetch categories from settings: {e}")
-    
-    # Fallback to defaults
-    _categories_cache = DEFAULT_CATEGORIES
+
+    _categories_cache = []
     _categories_cache_time = now
     return _categories_cache
+
+
+def get_configured_categories(aggregates_table) -> list:
+    """
+    Fetch configured category names from DynamoDB settings with caching.
+    
+    Returns list of category name strings, falling back to DEFAULT_CATEGORIES.
+    """
+    raw = get_raw_categories_config(aggregates_table)
+    if raw:
+        return [cat.get('name') for cat in raw if cat.get('name')]
+    return DEFAULT_CATEGORIES
 
 
 def clear_categories_cache():
@@ -356,43 +444,3 @@ def clear_categories_cache():
     global _categories_cache, _categories_cache_time
     _categories_cache = None
     _categories_cache_time = None
-
-
-def sum_daily_metric(
-    aggregates_table,
-    metric_prefix: str,
-    days: int,
-    current_date=None
-) -> int:
-    """
-    Sum a daily metric over a date range from the aggregates table.
-    
-    Args:
-        aggregates_table: DynamoDB Table resource for aggregates
-        metric_prefix: The pk prefix (e.g., 'METRIC#daily_total', 'METRIC#daily_sentiment#positive')
-        days: Number of days to sum
-        current_date: Optional datetime, defaults to now (UTC)
-    
-    Returns:
-        Total count across the date range
-    """
-    from datetime import datetime, timezone, timedelta
-    
-    if not aggregates_table:
-        return 0
-    
-    if current_date is None:
-        current_date = datetime.now(timezone.utc)
-    
-    total = 0
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        try:
-            response = aggregates_table.get_item(Key={'pk': metric_prefix, 'sk': date})
-            item = response.get('Item')
-            if item:
-                total += int(item.get('count', 0))
-        except Exception as e:
-            logger.warning(f"Failed to fetch metric {metric_prefix} for {date}: {e}")
-    
-    return total

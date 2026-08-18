@@ -80,11 +80,71 @@ const mockSimilarFeedback = {
   ],
 }
 
+/**
+ * Wrapper with a /categories probe route so tests can assert where tag-click
+ * deep-links land (the Feedback list page was consolidated into Categories,
+ * issue #198).
+ */
+function createNavigationWrapper(feedbackId: string = 'test-123') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  function CategoriesProbe() {
+    return <div data-testid="categories-probe">{window.location.search}</div>
+  }
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/feedback/${feedbackId}`]}>
+        <Routes>
+          <Route path="/feedback/:id" element={children} />
+          <Route path="/categories" element={<CategoriesProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+
 describe('FeedbackDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetFeedbackById.mockResolvedValue(mockFeedback)
     mockGetSimilarFeedback.mockResolvedValue(mockSimilarFeedback)
+  })
+
+  describe('tag-click deep-links land on Categories (issue #198)', () => {
+    it('navigates to /categories with the category param when the category tag is clicked', async () => {
+      const user = userEvent.setup()
+      render(<FeedbackDetail />, { wrapper: createNavigationWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'product_quality' })).toBeInTheDocument()
+      })
+      await user.click(screen.getByRole('button', { name: 'product_quality' }))
+
+      expect(screen.getByTestId('categories-probe')).toBeInTheDocument()
+    })
+
+    it('navigates to /categories when the source tag is clicked', async () => {
+      const user = userEvent.setup()
+      render(<FeedbackDetail />, { wrapper: createNavigationWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'webscraper' })).toBeInTheDocument()
+      })
+      await user.click(screen.getByRole('button', { name: 'webscraper' }))
+
+      expect(screen.getByTestId('categories-probe')).toBeInTheDocument()
+    })
+
+    it('back link points to /categories', async () => {
+      render(<FeedbackDetail />, { wrapper: createNavigationWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText(/Back to feedback/)).toBeInTheDocument()
+      })
+      const backLink = screen.getByText(/Back to feedback/).closest('a')
+      expect(backLink).toHaveAttribute('href', '/categories')
+    })
   })
 
   describe('loading state', () => {

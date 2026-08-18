@@ -31,7 +31,8 @@ describe('configStore', () => {
         },
       },
       timeRange: '7d',
-      customDateRange: null,
+      customDays: null,
+      dateBasis: 'imported',
     })
   })
 
@@ -95,26 +96,62 @@ describe('configStore', () => {
     })
   })
 
-  describe('setCustomDateRange', () => {
-    it('sets custom date range correctly', () => {
-      const { setCustomDateRange, setTimeRange } = useConfigStore.getState()
+  describe('setCustomDays', () => {
+    it('sets the custom lookback in days correctly', () => {
+      const { setCustomDays, setTimeRange } = useConfigStore.getState()
 
       setTimeRange('custom')
-      setCustomDateRange({ start: '2025-01-01', end: '2025-01-31' })
+      setCustomDays(14)
 
-      const { customDateRange, timeRange } = useConfigStore.getState()
+      const { customDays, timeRange } = useConfigStore.getState()
       expect(timeRange).toBe('custom')
-      expect(customDateRange).toEqual({ start: '2025-01-01', end: '2025-01-31' })
+      expect(customDays).toBe(14)
     })
 
-    it('clears custom date range when set to null', () => {
-      const { setCustomDateRange } = useConfigStore.getState()
+    it('clears custom days when set to null', () => {
+      const { setCustomDays } = useConfigStore.getState()
 
-      setCustomDateRange({ start: '2025-01-01', end: '2025-01-31' })
-      setCustomDateRange(null)
+      setCustomDays(14)
+      setCustomDays(null)
 
-      const { customDateRange } = useConfigStore.getState()
-      expect(customDateRange).toBeNull()
+      const { customDays } = useConfigStore.getState()
+      expect(customDays).toBeNull()
+    })
+  })
+
+  describe('setDateBasis', () => {
+    it('defaults to the imported basis', () => {
+      const { dateBasis } = useConfigStore.getState()
+
+      expect(dateBasis).toBe('imported')
+    })
+
+    it('switches to the review basis', () => {
+      const { setDateBasis } = useConfigStore.getState()
+
+      setDateBasis('review')
+
+      expect(useConfigStore.getState().dateBasis).toBe('review')
+    })
+
+    it('switches back to the imported basis', () => {
+      const { setDateBasis } = useConfigStore.getState()
+
+      setDateBasis('review')
+      setDateBasis('imported')
+
+      expect(useConfigStore.getState().dateBasis).toBe('imported')
+    })
+
+    it('leaves the time range unchanged when the basis changes', () => {
+      const { setTimeRange, setDateBasis } = useConfigStore.getState()
+
+      setTimeRange('30d')
+      setDateBasis('review')
+
+      const state = useConfigStore.getState()
+      expect(state.timeRange).toBe('30d')
+      expect(state.dateBasis).toBe('review')
     })
   })
 

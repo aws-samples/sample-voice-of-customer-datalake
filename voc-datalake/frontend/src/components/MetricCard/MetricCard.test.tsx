@@ -114,4 +114,22 @@ describe('MetricCard', () => {
       expect(screen.queryByTestId('icon')).not.toBeInTheDocument()
     })
   })
+
+  describe('partial-data hint', () => {
+    it('exposes the hint as tooltip and accessible label on the value', () => {
+      render(<MetricCard title="Total Feedback" value="~1,234" hint="Approximate: counts are a lower bound" />)
+
+      const value = screen.getByText('~1,234')
+      expect(value).toHaveAttribute('title', 'Approximate: counts are a lower bound')
+      expect(value).toHaveAttribute('aria-label', '~1,234 — Approximate: counts are a lower bound')
+    })
+
+    it('adds no tooltip or aria-label without a hint', () => {
+      render(<MetricCard title="Total Feedback" value={1234} />)
+
+      const value = screen.getByText('1234')
+      expect(value).not.toHaveAttribute('title')
+      expect(value).not.toHaveAttribute('aria-label')
+    })
+  })
 })

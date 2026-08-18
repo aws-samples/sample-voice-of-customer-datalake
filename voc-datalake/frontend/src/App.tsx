@@ -1,29 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import Layout from './components/Layout'
-import ProtectedRoute from './components/ProtectedRoute'
-import AdminRoute from './components/AdminRoute'
 import PageLoader from './components/PageLoader'
-import Login from './pages/Login'
+import { routes } from './routes'
 import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
 import { useConfigStore } from './store/configStore'
 import { configureAmplify } from './lib/amplify-config'
-
-// Lazy load pages for better code splitting
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Feedback = lazy(() => import('./pages/Feedback'))
-const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail'))
-const Categories = lazy(() => import('./pages/Categories'))
-const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis'))
-const Settings = lazy(() => import('./pages/Settings'))
-const Scrapers = lazy(() => import('./pages/Scrapers'))
-const Chat = lazy(() => import('./pages/Chat'))
-const Projects = lazy(() => import('./pages/Projects'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
-const Prioritization = lazy(() => import('./pages/Prioritization'))
-const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
-const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,35 +16,7 @@ const queryClient = new QueryClient({
   },
 })
 
-const router = createBrowserRouter([
-  {
-    path: '/login',
-    element: <Login />,
-  },
-  {
-    path: '/',
-    element: (
-      <ProtectedRoute>
-        <Layout />
-      </ProtectedRoute>
-    ),
-    children: [
-      { index: true, element: <Suspense fallback={<PageLoader />}><Dashboard /></Suspense> },
-      { path: 'feedback', element: <Suspense fallback={<PageLoader />}><Feedback /></Suspense> },
-      { path: 'feedback/:id', element: <Suspense fallback={<PageLoader />}><FeedbackDetail /></Suspense> },
-      { path: 'categories', element: <Suspense fallback={<PageLoader />}><Categories /></Suspense> },
-      { path: 'problems', element: <Suspense fallback={<PageLoader />}><ProblemAnalysis /></Suspense> },
-      { path: 'chat', element: <Suspense fallback={<PageLoader />}><Chat /></Suspense> },
-      { path: 'projects', element: <Suspense fallback={<PageLoader />}><Projects /></Suspense> },
-      { path: 'projects/:id', element: <Suspense fallback={<PageLoader />}><ProjectDetail /></Suspense> },
-      { path: 'prioritization', element: <Suspense fallback={<PageLoader />}><Prioritization /></Suspense> },
-      { path: 'data-explorer', element: <Suspense fallback={<PageLoader />}><DataExplorer /></Suspense> },
-      { path: 'scrapers', element: <Suspense fallback={<PageLoader />}><Scrapers /></Suspense> },
-      { path: 'feedback-forms', element: <Suspense fallback={<PageLoader />}><FeedbackForms /></Suspense> },
-      { path: 'settings', element: <Suspense fallback={<PageLoader />}><AdminRoute><Settings /></AdminRoute></Suspense> },
-    ],
-  },
-])
+const router = createBrowserRouter(routes)
 
 /**
  * App wrapper that loads runtime config before rendering.

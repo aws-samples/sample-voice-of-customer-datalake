@@ -1,0 +1,189 @@
+{
+  "actions": {
+    "reset": "Zurücksetzen",
+    "save": "Bewertungen speichern",
+    "saveMobile": "Speichern",
+    "saving": "Speichern...",
+    "savingMobile": "..."
+  },
+  "ballot": {
+    "anonymousNotice": "Ihre Stimme ist anonym: Sie zählt für die Teambewertung dieses Dokuments, wird aber weder Ihnen noch jemand anderem zugeordnet.",
+    "axes": {
+      "confidence": "Zuversicht",
+      "confidenceHint": "Wie sicher sind Sie sich bei den beiden Schätzungen oben?",
+      "impact": "Wirkung",
+      "impactHint": "Geschäftlicher Wert und Kundennutzen.",
+      "strategicFit": "Strategische Passung",
+      "strategicFitHint": "Übereinstimmung mit den Unternehmenszielen.",
+      "timeToMarket": "Markteinführungszeit",
+      "timeToMarketHint": "Wie schnell lässt sich das umsetzen? 5 ist am schnellsten."
+    },
+    "closed": {
+      "capReached": "Diese Abstimmung hat bereits so viele Stimmen gesammelt, wie sie annimmt. Bitten Sie die Moderation, eine weitere Sitzung zu öffnen.",
+      "closed": "Die Moderation hat diese Abstimmung geschlossen, weitere Stimmen werden nicht angenommen.",
+      "expired": "Diese Abstimmung ist abgelaufen, weitere Stimmen werden nicht angenommen.",
+      "invalid": "Diese Stimme konnte nicht gelesen werden, daher wurde nichts erfasst. Prüfen Sie die Zahlen und die Notiz und senden Sie sie erneut.",
+      "notFound": "Dieser Link öffnet keine Abstimmung. Prüfen Sie, ob Sie den Code gescannt haben, der jetzt auf dem Bildschirm zu sehen ist.",
+      "title": "Diese Abstimmung ist nicht offen",
+      "unknown": "Ihre Stimme konnte gerade nicht erfasst werden. Versuchen Sie es in einem Moment erneut."
+    },
+    "displayName": {
+      "hint": "Optional. Stimmen werden keiner Person zugeordnet, Sie können das Feld also leer lassen.",
+      "label": "Ihr Name (optional)"
+    },
+    "done": {
+      "description": "Ihre Stimme zählt für die Teambewertung dieses Dokuments. Sie können diese Seite vom selben Telefon erneut öffnen und die Stimme ändern, solange die Abstimmung offen ist.",
+      "title": "Stimme erfasst"
+    },
+    "loading": "Diese Abstimmung wird geladen...",
+    "notes": {
+      "label": "Notizen (optional)",
+      "placeholder": "Was die Zahlen nicht sagen..."
+    },
+    "rejected": {
+      "title": "Ihre Stimme wurde nicht erfasst"
+    },
+    "scopeNote": "Sie bewerten einen ganzen Vorschlag: Diese Abstimmung umfasst die dahinterliegenden Dokumente in einem einzigen Stimmzettel.",
+    "submit": {
+      "label": "Stimme abgeben",
+      "pending": "Wird gesendet..."
+    },
+    "title": "Diesen Vorschlag bewerten",
+    "unavailable": {
+      "description": "Es wurde nichts gesendet. Laden Sie die Seite neu, um es erneut zu versuchen — die Abstimmung selbst kann durchaus offen sein.",
+      "title": "Diese Abstimmung konnte nicht geladen werden"
+    }
+  },
+  "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um die Priorisierung anzuzeigen.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
+  "empty": {
+    "description": "Erstellen Sie ein PRD oder PR/FAQ in Ihren Projekten, um mit der Priorisierung zu beginnen.",
+    "title": "Keine Dokumente gefunden",
+    "wrongTypeDescription": "Ihre Projekte haben Dokumente, aber keine PRDs oder PR/FAQs. Öffnen Sie ein Projekt und erstellen Sie ein PRD oder PR/FAQ, um es hier zu bewerten.",
+    "wrongTypeTitle": "Keine bewertbaren Dokumente"
+  },
+  "evidence": {
+    "avgRating": "Durchschnittliche Bewertung",
+    "noLinkedForm": "Mit diesem Dokument ist kein Feedback-Formular verknüpft.",
+    "noRatings": "Keine Bewertungen erfasst",
+    "submissions": "Einsendungen",
+    "title": "Erfasstes Feedback",
+    "unavailable": "Bewertungen nicht verfügbar"
+  },
+  "framework": {
+    "description": "Bewerten Sie jedes Dokument nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
+    "title": "Priorisierungsrahmen"
+  },
+  "loading": "Dokumente werden geladen...",
+  "noteTooLong": {
+    "description": "Notizen sind auf {{max}} Zeichen begrenzt, und eine längere Notiz wird nicht gekürzt, sondern abgelehnt. Kürzen Sie die Notiz in der bearbeiteten Zeile und speichern Sie dann erneut. Es wurde noch nichts gespeichert.",
+    "title": "Notiz ist zu lang zum Speichern"
+  },
+  "notes": {
+    "label": "Notizen",
+    "placeholder": "Notizen zu dieser Priorisierungsentscheidung hinzufügen..."
+  },
+  "preview": {
+    "prototypeTitle": "Prototyp",
+    "title": "Dokumentvorschau",
+    "viewFull": "Vollständiges Dokument anzeigen",
+    "viewMobile": "Anzeigen"
+  },
+  "priority": {
+    "high": "Hohe Priorität",
+    "low": "Niedrige Priorität",
+    "medium": "Mittlere Priorität",
+    "none": "Nicht bewertet"
+  },
+  "roomVote": {
+    "anonymousNote": "Hier abgegebene Stimmen zählen für die Teambewertung oben und werden keiner Person zugeordnet.",
+    "ballotsIn": "{{received}} von {{cap}} Stimmen eingegangen",
+    "close": "Abstimmung schließen",
+    "closeFailed": "Die Abstimmung konnte nicht geschlossen werden. Versuchen Sie es erneut — bis sie geschlossen ist, werden weiterhin Stimmen angenommen.",
+    "closed": "Diese Abstimmung ist geschlossen. Weitere Stimmen werden nicht angenommen.",
+    "closing": "Wird geschlossen...",
+    "description": "Zeigen Sie einen QR-Code auf dem Bildschirm und lassen Sie alle im Raum ohne Konto eine anonyme Stimme vom Telefon abgeben.",
+    "expired": "Diese Abstimmung ist abgelaufen. Weitere Stimmen werden nicht angenommen.",
+    "open": "Raumabstimmung öffnen",
+    "openAnother": "Weitere Abstimmung öffnen",
+    "openFailed": "Die Abstimmung konnte nicht geöffnet werden. Versuchen Sie es erneut.",
+    "opening": "Wird geöffnet...",
+    "qrAccessibleName": "QR-Code, der die anonyme Stimmabgabe für {{title}} öffnet",
+    "qrCaption": "Scannen, um diesen Vorschlag per Telefon zu bewerten",
+    "qrUnavailable": "Der QR-Code ist nicht verfügbar, weil die Adresse dieser Seite nicht geteilt werden kann.",
+    "scopeDocuments": "Ein Stimmzettel umfasst alle {{documents}} dahinterliegenden Dokumente, der Raum bewertet also den ganzen Vorschlag.",
+    "scopeNote": "Diese Abstimmung bewertet einen Vorschlag: {{title}}.",
+    "title": "Im Raum bewerten"
+  },
+  "row": {
+    "multiDocument": "{{documents}} Dokumente, ein Stimmzettel"
+  },
+  "scores": {
+    "confidence": "Konfidenz",
+    "confidenceDescription": "Sicherheit bei Auswirkungs- und MeZ-Schätzungen",
+    "fast": "Schnell",
+    "high": "Hoch",
+    "impact": "Auswirkung",
+    "impactDescription": "Geschäftswert und Kundennutzen",
+    "low": "Niedrig",
+    "notScored": "Nicht bewertet",
+    "slow": "Langsam",
+    "strategicFit": "Strategische Passung",
+    "strategicFitDescription": "Übereinstimmung mit Unternehmenszielen",
+    "timeToMarket": "Markteinführungszeit",
+    "timeToMarketDescription": "Wie schnell kann dies geliefert werden?",
+    "title": "Priorisierungsbewertungen",
+    "wholeRow": "Ein Stimmzettel für alle {{documents}} Dokumente dieser Zeile.",
+    "yoursOnly": "Ihre eigene Bewertung. Beim Speichern werden nur Ihre Werte geschrieben."
+  },
+  "scoresUnavailable": {
+    "description": "Ihre gespeicherten Bewertungen sind derzeit nicht verfügbar. Die unten angezeigten Zahlen sind daher Standardwerte und nicht die eingegebenen Werte. Laden Sie die Seite vor dem Speichern neu.",
+    "staleDescription": "Die letzte Aktualisierung der gespeicherten Bewertungen ist fehlgeschlagen. Angezeigt werden daher die zuletzt erfolgreich gelesenen Werte. Ihre eigene Bewertung ist davon nicht betroffen – ein Neuladen vor dem Speichern ist nicht nötig.",
+    "title": "Bewertungen konnten nicht geladen werden"
+  },
+  "sort": {
+    "date": "Datum",
+    "dateFull": "Erstellungsdatum",
+    "impact": "Auswirkung",
+    "label": "Sortieren nach:",
+    "priority": "Priorität",
+    "priorityFull": "Prioritätswert",
+    "teamOrdered": "{{fields}} sortieren nach den Zahlen des Teams, die in jeder Zeile angezeigt werden – nicht nach Ihrer eigenen Bewertung.",
+    "ttm": "MeZ",
+    "ttmFull": "Markteinführungszeit"
+  },
+  "stats": {
+    "highPriority": "Hohe Priorität",
+    "mediumPriority": "Mittlere Priorität",
+    "notScored": "Nicht bewertet",
+    "totalRows": "Vorschläge insgesamt",
+    "unreadable_one": "Die Teambewertung für {{count}} Vorschlag konnte nicht gelesen werden. Er zählt daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen.",
+    "unreadable_other": "Die Teambewertungen für {{count}} Vorschläge konnten nicht gelesen werden. Sie zählen daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen."
+  },
+  "subtitle": "PRDs und PR/FAQs über alle Projekte hinweg bewerten und priorisieren",
+  "team": {
+    "disagreement": "Abweichung {{spread}}",
+    "disagreementDescription": "Die Bewertenden liegen bei diesem Wert {{spread}} auseinander. Ihre Notizen erklären, warum — diese Seite zeigt nur Ihre eigene Notiz.",
+    "loading": "Teamwert wird geladen",
+    "loadingDescription": "Die Bewertungen des Teams werden noch geladen. Diese Zeile zeigt daher noch nicht an, ob jemand abgestimmt hat. Sie wird von selbst ergänzt.",
+    "noScores": "Noch nicht bewertet",
+    "noScoresDescription": "Noch niemand hat dies bewertet, es ist also nicht niedrig eingestuft, sondern unbewertet. Mit den Schiebereglern unten geben Sie die erste Stimme ab.",
+    "reviewers": "Bewertende",
+    "score": "Teamwert",
+    "summary": "Teamdurchschnitt {{score}} von 5 · Abgegebene Bewertungen: {{reviewers}}",
+    "title": "Was das Team gesagt hat",
+    "unattributedNote": "Einige Stimmen können anonyme Raumstimmen sein; jede zählt als ein Prüfer und wird keiner Person zugeordnet.",
+    "unavailable": "Teamwert nicht verfügbar",
+    "unavailableDescription": "Die Bewertungen des Teams konnten gerade nicht gelesen werden. Diese Zeile zeigt daher nichts darüber an — nicht, dass niemand abgestimmt hat. Laden Sie die Seite neu, um zu sehen, was das Team gesagt hat."
+  },
+  "title": "Priorisierung",
+  "unsavedChanges": {
+    "cancel": "Auf Seite bleiben",
+    "confirm": "Änderungen verwerfen",
+    "message": "Sie haben ungespeicherte Priorisierungsbewertungen. Möchten Sie Ihre Änderungen verwerfen und diese Seite verlassen?",
+    "title": "Ungespeicherte Änderungen"
+  }
+}

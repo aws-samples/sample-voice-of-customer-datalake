@@ -83,11 +83,22 @@ describe('ContextSummary', () => {
       expect(screen.getByText('delivery, pricing')).toBeInTheDocument()
     })
 
-    it('shows selected sentiments', () => {
+    // Translated via common:sentiment.*, the same lookup the filter buttons use —
+    // they previously disagreed, buttons showing "Positiv" while this line
+    // printed the raw slug "positive".
+    it('shows selected sentiments as labels, not stored slugs', () => {
       const config = createConfig({ useFeedback: true, sentiments: ['positive', 'negative'] })
       render(<ContextSummary config={config} personas={[]} documents={[]} />)
 
-      expect(screen.getByText('positive, negative')).toBeInTheDocument()
+      expect(screen.getByText('Positive, Negative')).toBeInTheDocument()
+      expect(screen.queryByText('positive, negative')).not.toBeInTheDocument()
+    })
+
+    it('passes through a sentiment slug that has no label', () => {
+      const config = createConfig({ useFeedback: true, sentiments: ['unheard-of'] })
+      render(<ContextSummary config={config} personas={[]} documents={[]} />)
+
+      expect(screen.getByText('unheard-of')).toBeInTheDocument()
     })
 
     it('does not show feedback section when useFeedback is false', () => {
@@ -105,6 +116,24 @@ describe('ContextSummary', () => {
 
       expect(screen.getByText('Personas:')).toBeInTheDocument()
       expect(screen.getByText('All 2 personas')).toBeInTheDocument()
+    })
+
+    // A one-item project is a common early state, and the first cut of these keys
+    // interpolated {{total}} with no plural family, rendering "All 1 personas".
+    // The singular also drops the quantifier — "All 1 persona" is awkward in
+    // English and outright ungrammatical once the article is plural-marked
+    // ("Todos los 1 documento"). These assertions fail if _one is dropped or
+    // reverts to carrying the quantifier.
+    it('uses the singular form, without the plural quantifier, for exactly one item', () => {
+      const onePersona = [mockPersonas[0]]
+      const oneDoc = [mockDocuments[0], mockDocuments[2]] // 1 other + 1 research
+      const config = createConfig({ usePersonas: true, useDocuments: true, useResearch: true })
+      render(<ContextSummary config={config} personas={onePersona} documents={oneDoc} />)
+
+      expect(screen.getByText('1 persona')).toBeInTheDocument()
+      expect(screen.getByText('1 document')).toBeInTheDocument()
+      expect(screen.getByText('1 research doc')).toBeInTheDocument()
+      expect(screen.queryByText('All 1 persona')).not.toBeInTheDocument()
     })
 
     it('shows selected persona names', () => {

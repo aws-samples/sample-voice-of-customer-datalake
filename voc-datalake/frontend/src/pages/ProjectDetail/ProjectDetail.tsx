@@ -2,44 +2,71 @@
  * @fileoverview Project detail page with personas, documents, and chat.
  * Split into multiple components for maintainability.
  */
-import { useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
-import { api } from '../../api/client'
+import {
+  useState, useCallback,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import {
+  useParams, useNavigate,
+} from 'react-router-dom'
+import { projectsApi } from '../../api/projectsApi'
+import { projectKey } from '../../api/projectQueryKeys'
 import { useConfigStore } from '../../store/configStore'
-
-// Local components
-import type { Tab } from './types'
-import { useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, useChatMutation } from './useProjectData'
-import { useWizardState } from './useWizardState'
-import { useSelectionState, useDocModalState, useImportModalState, useConfirmModalState } from './useModalState'
-import ProjectHeader from './ProjectHeader'
-import ProjectTabs from './ProjectTabs'
-import WizardSection from './WizardSection'
-import TabContent from './TabContent'
 import JobsSection from './JobsSection'
-import { PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper } from './ProjectModals'
+import ProjectHeader from './ProjectHeader'
+import {
+  PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper,
+} from './ProjectModals'
+import ProjectTabs from './ProjectTabs'
+import TabContent from './TabContent'
+import {
+  useSelectionState, useDocModalState, useImportModalState, useConfirmModalState,
+} from './useModalState'
+import {
+  useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, projectJobsKey,
+  productContextKey,
+} from './useProjectData'
+import { useProjectWizardState } from './useProjectWizardState'
+import WizardSection from './WizardSection'
+import type { Tab } from './types'
+import type { ProductContext } from '../../api/types'
+
+/** The product-context query's data shape, taken from the call that produces it. */
+type ProductContextResponse = Awaited<ReturnType<typeof projectsApi.getProductContext>>
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { config } = useConfigStore()
-  
+
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+  // When a long-running action last reported that it started a job. Keeps the
+  // jobs poll alive while the new row becomes readable — see
+  // JOB_START_POLL_WINDOW_MS in useProjectData.
+  const [jobStartedAt, setJobStartedAt] = useState<number | null>(null)
+  const { t } = useTranslation('projectDetail')
 
   // Custom hooks for state management
-  const wizard = useWizardState()
+  const wizard = useProjectWizardState()
   const selection = useSelectionState()
   const docModal = useDocModalState()
   const importModal = useImportModalState()
   const confirm = useConfirmModalState()
 
   // Data fetching
-  const { data, isLoading, jobsData, queryClient } = useProjectData({ id, apiEndpoint: config.apiEndpoint })
+  const {
+    data, isLoading, jobsData, productContext, productDocs, queryClient,
+  } = useProjectData({
+    id,
+    apiEndpoint: config.apiEndpoint,
+    jobStartedAt,
+  })
 
   // Mutations
-  const { personaMut, docMut, resMut, mergeMut, dismissJobMut } = useProjectMutations({
+  const {
+    personaMut, docMut, resMut, mergeMut, dismissJobMut,
+  } = useProjectMutations({
     id,
     contextConfig: wizard.contextConfig,
     personaConfig: wizard.personaConfig,
@@ -50,7 +77,9 @@ export default function ProjectDetail() {
     onError: () => wizard.setGenerating(null),
   })
 
-  const { updatePersonaMut, deletePersonaMut, importPersonaMut, saveNotes } = usePersonaMutations({
+  const {
+    updatePersonaMut, deletePersonaMut, importPersonaMut, saveNotes,
+  } = usePersonaMutations({
     id,
     selectedPersona: selection.selectedPersona,
     editingPersona: selection.editingPersona,
@@ -58,65 +87,113 @@ export default function ProjectDetail() {
     setSelectedPersona: selection.setSelectedPersona,
   })
 
-  const { createDocMut, deleteDocMut, updateDocMut } = useDocumentMutations({
+  const {
+    createDocMut, deleteDocMut, updateDocMut,
+  } = useDocumentMutations({
     id,
     selectedDoc: selection.selectedDoc,
     setSelectedDoc: selection.setSelectedDoc,
   })
 
-  const chatMut = useChatMutation({
-    id,
-    onSuccess: (response) => setChatMessages(p => [...p, { role: 'assistant', content: response }]),
-  })
-
   // Handlers
-  const handleSendChat = useCallback((message: string, personaIds: string[], documentIds: string[]) => {
-    setChatMessages(p => [...p, { role: 'user', content: message }])
-    chatMut.mutate({ message, personas: personaIds, documents: documentIds })
-  }, [chatMut])
-
   const handleImportPersona = useCallback(() => {
     importPersonaMut.mutate(
-      { input_type: importModal.importType, content: importModal.importContent, media_type: importModal.importMediaType },
-      { onSuccess: importModal.closeModal }
+      {
+        input_type: importModal.importType,
+        content: importModal.importContent,
+        media_type: importModal.importMediaType,
+      },
+      { onSuccess: importModal.closeModal },
     )
   }, [importPersonaMut, importModal])
 
+  /**
+   * Long-running actions (prototype build, prototype revision, product report)
+   * hand their wait to the Background Jobs panel instead of polling in local
+   * state. Invalidating is what makes the panel *see* the new job: its
+   * refetchInterval is 0 whenever nothing is already in flight (see
+   * useProjectData), so without this the panel would never start polling and a
+   * build started from an idle project would stay invisible.
+   *
+   * The timestamp matters as much as the invalidation. The invalidation buys one
+   * refetch, and the job row is read without ConsistentRead, so that one refetch
+   * can come back empty and leave the panel blind again. Recording the start
+   * keeps the poll alive until the row appears.
+   *
+   * The wizard mutations invalidate for themselves in useProjectMutations, and
+   * are unaffected: their jobs are created on the same synchronous path.
+   */
+  const handleJobStarted = useCallback(() => {
+    setJobStartedAt(Date.now())
+    void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
+  }, [queryClient, id])
+
+  /**
+   * The Product tab saved the context. It owns the record while editing, but the
+   * Overview card reads completeness from the shared query — and this page stays
+   * mounted across tab switches, so without this the card would keep reporting the
+   * count from page load.
+   *
+   * Seeding the cache rather than invalidating: the tab hands over the server's own
+   * response, so a refetch would ask for what we already have.
+   */
+  const handleContextSaved = useCallback((context: ProductContext) => {
+    // Typed from the API function itself rather than as a bare object literal:
+    // `setQueryData` cannot infer a plain key's data type, so an untyped write
+    // would silently truncate the cache entry if `getProductContext` ever returned
+    // more than `{ context }`. Deriving the type means the two cannot drift.
+    queryClient.setQueryData<ProductContextResponse>(productContextKey(id), { context })
+  }, [queryClient, id])
+
   const handleSaveKiroPrompt = useCallback((prompt: string) => {
     const project = data?.project
-    if (!project) return
-    void api.updateProject(project.project_id, { kiro_export_prompt: prompt })
-      .then(() => queryClient.invalidateQueries({ queryKey: ['project', id] }))
+    if (project == null) return
+    void projectsApi.updateProject(project.project_id, { kiro_export_prompt: prompt })
+      .then(() => {
+        return queryClient.invalidateQueries({ queryKey: projectKey(id) })
+      })
   }, [data, queryClient, id])
 
   const handleConfirmDelete = useCallback(() => {
-    const { type, id: itemId } = confirm.confirmModal
-    if (type === 'persona' && itemId) deletePersonaMut.mutate(itemId)
-    else if (type === 'document' && itemId) deleteDocMut.mutate(itemId)
+    const {
+      type, id: itemId,
+    } = confirm.confirmModal
+    if (type === 'persona' && itemId != null && itemId !== '') deletePersonaMut.mutate(itemId)
+    else if (type === 'document' && itemId != null && itemId !== '') deleteDocMut.mutate(itemId)
     confirm.closeConfirm()
   }, [confirm, deletePersonaMut, deleteDocMut])
 
   const handleSavePersona = useCallback(() => {
     const persona = selection.editingPersona
-    if (persona) updatePersonaMut.mutate({ personaId: persona.persona_id, updates: persona })
+    if (persona) updatePersonaMut.mutate({
+      personaId: persona.persona_id,
+      updates: persona,
+    })
   }, [selection.editingPersona, updatePersonaMut])
 
   const handleSaveDocument = useCallback(() => {
     if (docModal.editingDoc) {
       updateDocMut.mutate(
-        { docId: docModal.editingDoc.document_id, title: docModal.newDocTitle, content: docModal.newDocContent },
-        { onSuccess: docModal.resetAfterSave }
+        {
+          docId: docModal.editingDoc.document_id,
+          title: docModal.newDocTitle,
+          content: docModal.newDocContent,
+        },
+        { onSuccess: docModal.resetAfterSave },
       )
     } else {
       createDocMut.mutate(
-        { title: docModal.newDocTitle, content: docModal.newDocContent },
-        { onSuccess: () => docModal.setShowDocModal(false) }
+        {
+          title: docModal.newDocTitle,
+          content: docModal.newDocContent,
+        },
+        { onSuccess: () => docModal.setShowDocModal(false) },
       )
     }
   }, [docModal, updateDocMut, createDocMut])
 
   // Loading state
-  if (isLoading) {
+  if (Boolean(isLoading)) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="animate-spin text-blue-600" size={32} />
@@ -125,27 +202,46 @@ export default function ProjectDetail() {
   }
 
   // Not found state
-  if (!data?.project) {
+  if (data?.project == null) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">Project not found</p>
-        <button onClick={() => navigate('/projects')} className="mt-4 text-blue-600 hover:underline">
-          Back to Projects
+        <p className="text-gray-500">{t('notFound.message')}</p>
+        <button
+          onClick={() => {
+            void navigate('/projects')
+          }}
+          className="mt-4 text-blue-600 hover:underline"
+        >
+          {t('notFound.backToProjects')}
         </button>
       </div>
     )
   }
 
-  const { project, personas, documents } = data
+  const {
+    project, personas, documents,
+  } = data
   const jobs = jobsData?.jobs ?? []
 
   return (
     <div className="space-y-6">
-      <ProjectHeader name={project.name} description={project.description} onBack={() => navigate('/projects')} />
-      <ProjectTabs activeTab={activeTab} personasCount={personas.length} documentsCount={documents.length} onTabChange={setActiveTab} />
+      <ProjectHeader
+        name={project.name}
+        description={project.description}
+        onBack={() => {
+          void navigate('/projects')
+        }}
+      />
+      <ProjectTabs
+        activeTab={activeTab}
+        personasCount={personas.length}
+        documentsCount={documents.length}
+        onTabChange={setActiveTab}
+      />
 
       <WizardSection
         activeWizard={wizard.activeWizard}
+        projectId={project.project_id}
         personas={personas}
         documents={documents}
         contextConfig={wizard.contextConfig}
@@ -160,30 +256,39 @@ export default function ProjectDetail() {
         onDocConfigChange={wizard.setDocConfig}
         onMergeConfigChange={wizard.setMergeConfig}
         onClose={wizard.resetWizard}
-        onSubmitPersona={() => { wizard.setGenerating('personas'); personaMut.mutate() }}
-        onSubmitResearch={() => { wizard.setGenerating('research'); resMut.mutate() }}
-        onSubmitDoc={() => { wizard.setGenerating('doc'); docMut.mutate() }}
-        onSubmitMerge={() => { wizard.setGenerating('merge'); mergeMut.mutate() }}
+        onSubmitPersona={() => {
+          wizard.setGenerating('personas'); personaMut.mutate()
+        }}
+        onSubmitResearch={() => {
+          wizard.setGenerating('research'); resMut.mutate()
+        }}
+        onSubmitDoc={() => {
+          wizard.setGenerating('doc'); docMut.mutate()
+        }}
+        onSubmitMerge={() => {
+          wizard.setGenerating('merge'); mergeMut.mutate()
+        }}
       />
 
       {/* Background jobs are visible regardless of which tab is active */}
-      <JobsSection jobs={jobs} onDismiss={(jobId) => dismissJobMut.mutate(jobId)} />
+      <JobsSection jobs={jobs} onDismiss={(jobId: string) => dismissJobMut.mutate(jobId)} />
 
       <TabContent
         activeTab={activeTab}
         project={project}
         personas={personas}
         documents={documents}
+        productContext={productContext}
+        productDocs={productDocs}
         selectedPersona={selection.selectedPersona}
         selectedDoc={selection.selectedDoc}
-        chatMessages={chatMessages}
-        isChatPending={chatMut.isPending}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}
         isSavingNotes={updatePersonaMut.isPending}
         onGeneratePersonas={() => wizard.setActiveWizard('persona')}
         onGenerateDoc={() => wizard.setActiveWizard('doc')}
-        onRunResearch={() => wizard.setActiveWizard('research')}
+        onRunResearch={() => wizard.openResearchWizard(personas.map((p) => p.persona_id))}
         onRemixDocuments={wizard.openMergeWizard}
+        onOpenProductTool={() => setActiveTab('product')}
         onSaveKiroPrompt={handleSaveKiroPrompt}
         onSelectPersona={selection.setSelectedPersona}
         onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}
@@ -194,8 +299,12 @@ export default function ProjectDetail() {
         onEditDoc={() => selection.selectedDoc && docModal.openEditModal(selection.selectedDoc)}
         onDeleteDoc={() => selection.selectedDoc && confirm.openDocumentConfirm(selection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
-        onSendChat={handleSendChat}
         onSaveAsDocument={docModal.openSaveAsModal}
+        onContextSaved={handleContextSaved}
+        onDocumentChanged={() => {
+          void queryClient.invalidateQueries({ queryKey: projectKey(id) })
+        }}
+        onJobStarted={handleJobStarted}
       />
 
       <PersonaEditModalWrapper

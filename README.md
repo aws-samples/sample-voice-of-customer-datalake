@@ -10,6 +10,8 @@ A fully serverless AWS platform for ingesting, processing, and analyzing custome
 
 - **Plugin-Based Architecture**: Extensible data source plugins, easily create your own
 - **AI-Powered Analysis**: Amazon Bedrock (Claude) for sentiment, categorization, and insights
+- **Per-Surface Model Picker**: admins choose the Claude model per AI feature (chat, documents, prototypes, enrichment) over a curated allowlist
+- **Web Search**: AgentCore Gateway connector for chat and research — deployed by default, searches stay opt-in per request (opt out with `enableWebSearch: false`)
 - **Real-Time Processing**: Event-driven with SQS and DynamoDB Streams
 - **Multi-Language Support**: Auto-detection and translation
 - **React Dashboard**: Metrics, charts, AI chat, and project management
@@ -50,8 +52,8 @@ Each plugin is self-contained with a `manifest.json` that defines infrastructure
 
 ```bash
 # Clone and install
-git clone xxxxxx (repo url)
-cd voice-of-customer-datalake
+git clone https://github.com/aws-samples/sample-voice-of-customer-datalake.git
+cd sample-voice-of-customer-datalake
 npm run install:all
 
 # Build Lambda layers (requires Docker)
@@ -75,7 +77,7 @@ After deployment, an initial admin user is created automatically:
 | Username | `admin` |
 | Password | Check CloudFormation stack outputs for `InitialAdminPassword` |
 
-The password is randomly generated during deployment and stored as a CloudFormation output. Retrieve it with:
+The password is generated when the admin user is first created and stored as a CloudFormation output. Retrieve it with:
 
 ```bash
 aws cloudformation describe-stacks \
@@ -85,6 +87,8 @@ aws cloudformation describe-stacks \
 ```
 
 > 🔒 **Note**: You will be prompted to change this password on your first login.
+> On redeployments the admin user is left untouched — no new user is created, the
+> password is never reset, and the output shows a placeholder instead of a password.
 
 ## ⚙️ Configuration
 
@@ -109,6 +113,7 @@ After changes: `npm run generate:config && npm run deploy:frontend`
 | Category | Plugins |
 |----------|---------|
 | Scraping | Web Scraper (CSS selectors, JSON-LD extraction) |
+| App Reviews | iOS App Reviews (Apple App Store), Android App Reviews (Google Play) |
 | Direct Input | Feedback Forms (embeddable forms) |
 
 ## 🛠️ Create Your Own Plugin
@@ -139,6 +144,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Getting Started with Plugins](docs/getting-started-plugins.md) | Creating new data source plugins |
 | [Feedback Forms](docs/feedback-forms.md) | Embeddable feedback forms |
 | [Scrapers](docs/scrapers.md) | Web scraper configuration |
+| [Mobile App Reviews](docs/mobile-app-reviews.md) | iOS & Android app store review plugins |
 | [Data Lake Structure](docs/data-lake-structure.md) | S3 and DynamoDB organization |
 | [Processing Pipeline](docs/processing-pipeline.md) | How feedback is processed |
 

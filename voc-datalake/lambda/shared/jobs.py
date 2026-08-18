@@ -1,15 +1,16 @@
 """
 Shared job utilities for VoC Lambda functions.
-Provides centralized job creation and status management.
+Provides centralized job creation, status management, and job handler decorator.
 """
 
 import uuid
+from functools import wraps
 from datetime import datetime, timezone, timedelta
+from typing import Callable
 
 from shared.logging import logger
 from shared.tables import get_jobs_table
-
-
+from shared.exceptions import ServiceError
 def create_job(
     project_id: str,
     job_type: str,
@@ -57,8 +58,6 @@ def create_job(
     }
     jobs_table.put_item(Item=item)
     return job_id, now
-
-
 def update_job_status(
     project_id: str,
     job_id: str,
@@ -124,27 +123,74 @@ def update_job_status(
         )
     except Exception as e:
         logger.error(f"Failed to update job status: {e}")
-
-
-def get_job(project_id: str, job_id: str) -> dict | None:
-    """Get a job record by ID.
+class JobContext:
+    """Context object passed to job handlers for progress updates."""
+    
+    def __init__(self, project_id: str, job_id: str):
+        self.project_id = project_id
+        self.job_id = job_id
+    
+    def update_progress(self, progress: int, step: str):
+        """Update job progress.
+        
+        Args:
+            progress: Progress percentage (0-100)
+            step: Current step description
+        """
+        update_job_status(self.project_id, self.job_id, 'running', progress, step)
+def job_handler(error_message: str = 'Job execution failed'):
+    """Decorator for async job handlers that standardizes error handling and status updates.
+    
+    The decorated function receives a JobContext as its first argument, followed by
+    project_id, job_id, and the job config. It should return a result dict that will
+    be stored in the job record.
     
     Args:
-        project_id: Project ID
-        job_id: Job ID
+        error_message: Error message to use when the job fails
         
-    Returns:
-        Job item dict or None if not found
+    Example:
+        @job_handler(error_message='Persona generation failed')
+        def handle_generate_personas_job(ctx: JobContext, project_id: str, job_id: str, filters: dict) -> dict:
+            ctx.update_progress(10, 'starting')
+            result = generate_personas(project_id, filters)
+            return {'persona_count': len(result.get('personas', []))}
     """
-    jobs_table = get_jobs_table()
-    if not jobs_table:
-        return None
-    
-    try:
-        response = jobs_table.get_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'}
-        )
-        return response.get('Item')
-    except Exception as e:
-        logger.error(f"Failed to get job: {e}")
-        return None
+    def decorator(func: Callable[..., dict]) -> Callable[[dict], dict]:
+        @wraps(func)
+        def wrapper(event: dict) -> dict:
+            project_id = event['project_id']
+            job_id = event['job_id']
+            
+            # Create context for progress updates
+            ctx = JobContext(project_id, job_id)
+            
+            # Extract config - look for common config key patterns
+            config = None
+            for key in ['filters', 'doc_config', 'merge_config', 'import_config', 'research_config', 'config']:
+                if key in event:
+                    config = event[key]
+                    break
+            
+            try:
+                logger.info(f"[JOB] Starting {func.__name__} for project={project_id}, job={job_id}")
+                
+                # Call the handler with context, IDs, and config
+                if config is not None:
+                    result = func(ctx, project_id, job_id, config)
+                else:
+                    result = func(ctx, project_id, job_id)
+                
+                # Mark job as completed
+                update_job_status(project_id, job_id, 'completed', 100, 'complete', result=result)
+                logger.info(f"[JOB] Completed {func.__name__} for job={job_id}")
+                
+                return {'success': True, **result}
+                
+            except Exception as e:
+                logger.exception(f"[JOB] {func.__name__} failed for job={job_id}: {e}")
+                truncated_error = f'{error_message}: {str(e)[:200]}'
+                update_job_status(project_id, job_id, 'failed', 0, 'error', error=truncated_error)
+                raise ServiceError(error_message)
+        
+        return wrapper
+    return decorator

@@ -22,6 +22,7 @@ from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, DecimalEncoder
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from shared.indexes import FEEDBACK_BY_ID_INDEX
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -349,7 +350,7 @@ def save_feedback():
         else:
             # Need to find the item first
             response = table.query(
-                IndexName='feedback-id-index',
+                IndexName=FEEDBACK_BY_ID_INDEX,
                 KeyConditionExpression='feedback_id = :fid',
                 ExpressionAttributeValues={':fid': feedback_id},
                 Limit=1
@@ -412,7 +413,7 @@ def delete_feedback():
         
         # Find the item first using GSI
         response = table.query(
-            IndexName='feedback-id-index',
+            IndexName=FEEDBACK_BY_ID_INDEX,
             KeyConditionExpression='feedback_id = :fid',
             ExpressionAttributeValues={':fid': feedback_id},
             Limit=1

@@ -3,10 +3,10 @@ Tests for shared/api.py - API utilities for VoC Lambda functions.
 """
 
 import json
-import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
+
+import pytest
 
 
 class TestDecimalEncoder:
@@ -16,7 +16,7 @@ class TestDecimalEncoder:
         """Converts Decimal to float in JSON output."""
         from shared.api import DecimalEncoder
         
-        data = {'price': Decimal('19.99'), 'count': Decimal('5')}
+        data = {'price': Decimal('19.99'), 'count': Decimal(5)}
         result = json.dumps(data, cls=DecimalEncoder)
         
         assert result == '{"price": 19.99, "count": 5.0}'
@@ -97,6 +97,42 @@ class TestValidateDays:
         assert validate_days('7.5') == 7
 
 
+class TestValidateDateBasis:
+    """Tests for validate_date_basis function."""
+
+    def test_returns_imported_for_none(self):
+        """Defaults to 'imported' when the parameter is absent."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis(None) == 'imported'
+
+    def test_accepts_review(self):
+        """Returns 'review' for the review basis."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis('review') == 'review'
+
+    def test_accepts_imported(self):
+        """Returns 'imported' when passed explicitly."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis('imported') == 'imported'
+
+    def test_normalizes_case_and_whitespace(self):
+        """Accepts padded or upper-cased values."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis(' Review ') == 'review'
+        assert validate_date_basis('IMPORTED') == 'imported'
+
+    def test_falls_back_to_imported_for_unknown_values(self):
+        """Unknown values preserve historical behavior."""
+        from shared.api import validate_date_basis
+
+        assert validate_date_basis('bogus') == 'imported'
+        assert validate_date_basis('') == 'imported'
+
+
 class TestValidateLimit:
     """Tests for validate_limit function."""
 
@@ -154,8 +190,36 @@ class TestValidateInt:
     def test_returns_default_for_invalid_input(self):
         """Returns default for invalid input."""
         from shared.api import validate_int
-        
+
         assert validate_int('not_a_number', default=15) == 15
+
+    def test_returns_default_for_a_non_finite_float_instead_of_raising(self):
+        """A non-finite float falls back like any other unreadable value.
+
+        `int(float('inf'))` raises OverflowError, which is neither of the errors
+        the fallback originally caught — so this validator, documented never to
+        raise, raised. A body carrying `Infinity` is reachable because `json.loads`
+        is non-strict by default, and in a handler that writes as it validates the
+        escape surfaced as a 500 part way through the work.
+        """
+        from shared.api import validate_int
+
+        assert validate_int(float('inf'), default=15) == 15
+        assert validate_int(float('-inf'), default=15) == 15
+        assert validate_int(float('nan'), default=15) == 15
+
+    def test_a_bool_is_coerced_rather_than_refused(self):
+        """Pins the documented surprise: `isinstance(True, int)` is true.
+
+        Not a behaviour this test endorses — it exists so the contract is checked
+        rather than implied, because a caller whose value is a score a human chose
+        (rather than a page size) has to refuse `bool` itself, and cannot know to
+        do that unless the coercion is written down.
+        """
+        from shared.api import validate_int
+
+        assert validate_int(True, default=15) == 1
+        assert validate_int(False, default=15, min_val=0) == 0
 
 
 class TestCreateCorsConfig:
@@ -205,8 +269,9 @@ class TestCreateApiResolver:
 
     def test_returns_api_gateway_resolver(self):
         """Returns configured APIGatewayRestResolver."""
-        from shared.api import create_api_resolver
         from aws_lambda_powertools.event_handler import APIGatewayRestResolver
+
+        from shared.api import create_api_resolver
         
         resolver = create_api_resolver()
         
@@ -221,87 +286,12 @@ class TestCreateApiResolver:
         assert resolver._enable_validation is True
 
 
-class TestJsonResponse:
-    """Tests for json_response function."""
-
-    def test_returns_200_by_default(self):
-        """Returns 200 status code by default."""
-        from shared.api import json_response
-        
-        result = json_response({'message': 'success'})
-        
-        assert result['statusCode'] == 200
-
-    def test_returns_custom_status_code(self):
-        """Returns custom status code when provided."""
-        from shared.api import json_response
-        
-        result = json_response({'created': True}, status_code=201)
-        
-        assert result['statusCode'] == 201
-
-    def test_includes_content_type_header(self):
-        """Includes Content-Type header."""
-        from shared.api import json_response
-        
-        result = json_response({'data': 'test'})
-        
-        assert result['headers']['Content-Type'] == 'application/json'
-
-    def test_serializes_body_as_json(self):
-        """Serializes body as JSON string."""
-        from shared.api import json_response
-        
-        result = json_response({'key': 'value', 'count': 5})
-        body = json.loads(result['body'])
-        
-        assert body == {'key': 'value', 'count': 5}
-
-    def test_handles_decimal_values(self):
-        """Handles Decimal values in response."""
-        from shared.api import json_response
-        
-        result = json_response({'score': Decimal('0.95')})
-        body = json.loads(result['body'])
-        
-        assert body['score'] == 0.95
-
-
-class TestErrorResponse:
-    """Tests for error_response function."""
-
-    def test_returns_400_by_default(self):
-        """Returns 400 status code by default."""
-        from shared.api import error_response
-        
-        result = error_response('Bad request')
-        
-        assert result['statusCode'] == 400
-
-    def test_returns_custom_status_code(self):
-        """Returns custom status code when provided."""
-        from shared.api import error_response
-        
-        result = error_response('Not found', status_code=404)
-        
-        assert result['statusCode'] == 404
-
-    def test_includes_error_message(self):
-        """Includes error message in body."""
-        from shared.api import error_response
-        
-        result = error_response('Something went wrong')
-        body = json.loads(result['body'])
-        
-        assert body['error'] == 'Something went wrong'
-
-
 class TestGetConfiguredCategories:
     """Tests for get_configured_categories function."""
 
     def test_returns_categories_from_dynamodb(self):
         """Returns categories from DynamoDB settings."""
-        from shared.api import get_configured_categories, clear_categories_cache
+        from shared.api import clear_categories_cache, get_configured_categories
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -323,7 +313,11 @@ class TestGetConfiguredCategories:
 
     def test_returns_default_when_table_none(self):
         """Returns default categories when table is None."""
-        from shared.api import get_configured_categories, DEFAULT_CATEGORIES, clear_categories_cache
+        from shared.api import (
+            DEFAULT_CATEGORIES,
+            clear_categories_cache,
+            get_configured_categories,
+        )
         clear_categories_cache()
         
         result = get_configured_categories(None)
@@ -332,7 +326,11 @@ class TestGetConfiguredCategories:
 
     def test_returns_default_on_dynamodb_error(self):
         """Returns default categories on DynamoDB error."""
-        from shared.api import get_configured_categories, DEFAULT_CATEGORIES, clear_categories_cache
+        from shared.api import (
+            DEFAULT_CATEGORIES,
+            clear_categories_cache,
+            get_configured_categories,
+        )
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -344,7 +342,7 @@ class TestGetConfiguredCategories:
 
     def test_caches_categories(self):
         """Caches categories for subsequent calls."""
-        from shared.api import get_configured_categories, clear_categories_cache
+        from shared.api import clear_categories_cache, get_configured_categories
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -362,7 +360,11 @@ class TestGetConfiguredCategories:
 
     def test_returns_default_when_no_item(self):
         """Returns default when no settings item exists."""
-        from shared.api import get_configured_categories, DEFAULT_CATEGORIES, clear_categories_cache
+        from shared.api import (
+            DEFAULT_CATEGORIES,
+            clear_categories_cache,
+            get_configured_categories,
+        )
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -378,7 +380,7 @@ class TestClearCategoriesCache:
 
     def test_clears_cache(self):
         """Clears the categories cache."""
-        from shared.api import get_configured_categories, clear_categories_cache
+        from shared.api import clear_categories_cache, get_configured_categories
         clear_categories_cache()
         
         mock_table = MagicMock()
@@ -402,100 +404,6 @@ class TestClearCategoriesCache:
         
         assert result == ['new']
         assert mock_table.get_item.call_count == 2
-
-
-class TestSumDailyMetric:
-    """Tests for sum_daily_metric function."""
-
-    def test_sums_metrics_over_date_range(self):
-        """Sums metrics over specified date range."""
-        from shared.api import sum_daily_metric
-        from datetime import datetime, timezone
-        
-        mock_table = MagicMock()
-        mock_table.get_item.return_value = {'Item': {'count': 10}}
-        
-        current_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
-        result = sum_daily_metric(
-            mock_table,
-            'METRIC#daily_total',
-            days=3,
-            current_date=current_date
-        )
-        
-        assert result == 30  # 10 * 3 days
-        assert mock_table.get_item.call_count == 3
-
-    def test_returns_zero_when_table_none(self):
-        """Returns 0 when table is None."""
-        from shared.api import sum_daily_metric
-        
-        result = sum_daily_metric(None, 'METRIC#test', days=7)
-        
-        assert result == 0
-
-    def test_handles_missing_items(self):
-        """Handles missing items gracefully."""
-        from shared.api import sum_daily_metric
-        from datetime import datetime, timezone
-        
-        mock_table = MagicMock()
-        mock_table.get_item.side_effect = [
-            {'Item': {'count': 5}},
-            {},  # Missing item
-            {'Item': {'count': 3}}
-        ]
-        
-        current_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
-        result = sum_daily_metric(
-            mock_table,
-            'METRIC#daily_total',
-            days=3,
-            current_date=current_date
-        )
-        
-        assert result == 8  # 5 + 0 + 3
-
-    def test_handles_dynamodb_errors(self):
-        """Handles DynamoDB errors gracefully."""
-        from shared.api import sum_daily_metric
-        from datetime import datetime, timezone
-        
-        mock_table = MagicMock()
-        mock_table.get_item.side_effect = [
-            {'Item': {'count': 10}},
-            Exception('DynamoDB error'),
-            {'Item': {'count': 5}}
-        ]
-        
-        current_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
-        result = sum_daily_metric(
-            mock_table,
-            'METRIC#daily_total',
-            days=3,
-            current_date=current_date
-        )
-        
-        assert result == 15  # 10 + 0 (error) + 5
-
-    def test_uses_correct_date_format(self):
-        """Uses correct date format for DynamoDB keys."""
-        from shared.api import sum_daily_metric
-        from datetime import datetime, timezone
-        
-        mock_table = MagicMock()
-        mock_table.get_item.return_value = {'Item': {'count': 1}}
-        
-        current_date = datetime(2024, 3, 15, tzinfo=timezone.utc)
-        sum_daily_metric(
-            mock_table,
-            'METRIC#daily_total',
-            days=1,
-            current_date=current_date
-        )
-        
-        call_args = mock_table.get_item.call_args
-        assert call_args.kwargs['Key'] == {'pk': 'METRIC#daily_total', 'sk': '2024-03-15'}
 
 
 class TestApiHandlerDecorator:
@@ -548,3 +456,151 @@ class TestApiHandlerDecorator:
         
         assert len(call_tracker) == 1
         assert call_tracker[0][0] == event
+
+
+
+class TestGetCallerGroups:
+    """Tests for get_caller_groups (moved from test_users_handler when the
+    local users_handler copy was consolidated into shared.api)."""
+
+    def _event(self, groups):
+        claims = {} if groups is None else {'cognito:groups': groups}
+        return {'requestContext': {'authorizer': {'claims': claims}}}
+
+    def test_extracts_space_separated_groups(self):
+        from shared.api import get_caller_groups
+        groups = get_caller_groups(self._event('admins viewers'))
+        assert 'admins' in groups
+        assert 'viewers' in groups
+
+    def test_handles_comma_separated_groups(self):
+        from shared.api import get_caller_groups
+        groups = get_caller_groups(self._event('admins, viewers'))
+        assert 'admins' in groups
+        assert 'viewers' in groups
+
+    def test_handles_list_claim(self):
+        from shared.api import get_caller_groups
+        assert get_caller_groups(self._event(['admins'])) == ['admins']
+
+    def test_handles_bracket_wrapped_rest_serialization(self):
+        """REST API Gateway serializes the array claim as '[admins, users]' —
+        the format the old users_handler local copy mishandled."""
+        from shared.api import get_caller_groups
+        groups = get_caller_groups(self._event('[admins, users]'))
+        assert groups == ['admins', 'users']
+
+    def test_returns_empty_list_when_no_groups(self):
+        from shared.api import get_caller_groups
+        assert get_caller_groups(self._event(None)) == []
+
+    def test_handles_single_group(self):
+        from shared.api import get_caller_groups
+        assert get_caller_groups(self._event('admins')) == ['admins']
+
+
+class TestRequireAdmin:
+    """Tests for require_admin (the single shared implementation — all
+    handlers, including users_handler, gate through this)."""
+
+    def _event(self, groups):
+        claims = {} if groups is None else {'cognito:groups': groups}
+        return {'requestContext': {'authorizer': {'claims': claims}}}
+
+    def test_passes_for_admin_caller(self):
+        from shared.api import require_admin
+        require_admin(self._event('admins'))  # must not raise
+
+    def test_raises_authorization_error_for_non_admin(self):
+        from shared.api import require_admin
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            require_admin(self._event('users'))
+
+    def test_raises_authorization_error_when_groups_missing(self):
+        from shared.api import require_admin
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            require_admin(self._event(None))
+
+
+class TestGetCallerSubject:
+    """Tests for get_caller_subject — fail-closed identity extraction."""
+
+    def _event(self, sub):
+        claims = {} if sub is None else {'sub': sub}
+        return {'requestContext': {'authorizer': {'claims': claims}}}
+
+    def test_returns_sub_when_present(self):
+        from shared.api import get_caller_subject
+        assert get_caller_subject(self._event('abc-123')) == 'abc-123'
+
+    def test_raises_authorization_error_when_sub_missing(self):
+        """Fail closed: absent sub must raise, not return a fallback."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject(self._event(None))
+
+    def test_raises_authorization_error_when_sub_empty_string(self):
+        """An empty sub string must be treated as absent."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject(self._event(''))
+
+    def test_raises_authorization_error_when_claims_missing(self):
+        """No requestContext at all must raise, not crash."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({})
+
+    def test_raises_authorization_error_when_authorizer_missing(self):
+        """requestContext without authorizer must raise."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {}})
+
+    def test_raises_authorization_error_when_sub_whitespace_only(self):
+        """A whitespace-only sub must be treated as absent (fail closed)."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject(self._event('   '))
+
+    def test_raises_authorization_error_when_authorizer_is_none(self):
+        """requestContext.authorizer=null must raise, not crash with AttributeError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': None}})
+
+    def test_raises_authorization_error_when_claims_is_none(self):
+        """requestContext.authorizer.claims=null must raise, not crash."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': {'claims': None}}})
+
+    def test_two_different_subs_yield_different_values(self):
+        """Two callers with different subs must never collide."""
+        from shared.api import get_caller_subject
+        sub_a = get_caller_subject(self._event('user-a-111'))
+        sub_b = get_caller_subject(self._event('user-b-222'))
+        assert sub_a != sub_b
+
+    def test_raises_authorization_error_when_request_context_is_none(self):
+        """requestContext=null must raise AuthorizationError, not AttributeError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': None})
+
+    def test_raises_authorization_error_when_sub_is_non_string(self):
+        """A non-string sub (e.g. integer from custom authorizer) must raise AuthorizationError."""
+        from shared.api import get_caller_subject
+        from shared.exceptions import AuthorizationError
+        with pytest.raises(AuthorizationError):
+            get_caller_subject({'requestContext': {'authorizer': {'claims': {'sub': 123}}}})

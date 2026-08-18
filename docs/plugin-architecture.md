@@ -11,7 +11,7 @@ This document describes the plugin-based architecture for VoC data source connec
 1. **Tight coupling**: Data sources are hardcoded across multiple files:
    - `sourceConfig.ts` (frontend UI configuration)
    - `ingestion-stack.ts` (CDK infrastructure)
-   - `analytics-stack.ts` (webhook routes)
+   - `api-stack.ts` (webhook routes)
    - `cdk.context.json` (enabled sources list)
 
 2. **Difficult to contribute**: Adding a new connector requires changes in 4+ files across frontend and backend.
@@ -88,7 +88,7 @@ voc-datalake/
 │   ├── plugin-loader.ts              # Discovers and validates plugins
 │   └── stacks/
 │       ├── ingestion-stack.ts        # Uses plugin loader
-│       └── analytics-stack.ts        # Uses plugin loader for webhooks
+│       └── api-stack.ts              # Uses plugin loader for webhooks
 │
 └── frontend/src/
     ├── plugins/
@@ -647,11 +647,11 @@ export class VocIngestionStack extends cdk.Stack {
 ### Analytics Stack Changes (Webhooks)
 
 ```typescript
-// lib/stacks/analytics-stack.ts (key changes)
+// lib/stacks/api-stack.ts (key changes)
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook } from '../plugin-loader';
 
-export class VocAnalyticsStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: VocAnalyticsStackProps) {
+export class VocApiStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: VocApiStackProps) {
     super(scope, id, props);
     
     // Load plugins
@@ -1337,7 +1337,7 @@ For each existing connector:
 
 1. Create `lib/plugin-loader.ts`
 2. Update `ingestion-stack.ts` to use plugin loader
-3. Update `analytics-stack.ts` for dynamic webhook routes
+3. Update `api-stack.ts` for dynamic webhook routes
 4. Remove hardcoded source configs
 
 ### Phase 4: Update Frontend
@@ -1378,7 +1378,7 @@ For each existing connector:
 | File | Changes |
 |------|---------|
 | `lib/stacks/ingestion-stack.ts` | Use plugin loader instead of hardcoded configs |
-| `lib/stacks/analytics-stack.ts` | Dynamic webhook routes from plugins |
+| `lib/stacks/api-stack.ts` | Dynamic webhook routes from plugins |
 | `frontend/src/pages/Settings/Settings.tsx` | Import from plugins instead of sourceConfig |
 | `frontend/src/pages/Settings/SourceCard.tsx` | Accept manifest prop instead of sourceInfo |
 | `package.json` | Add generate:manifests script |

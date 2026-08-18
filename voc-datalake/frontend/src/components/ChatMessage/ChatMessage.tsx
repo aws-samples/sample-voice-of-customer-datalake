@@ -12,14 +12,67 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Bot, User, Copy, Check } from 'lucide-react'
+import { Bot, User, Copy, Check, Globe } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ChatMessage as ChatMessageType } from '../../store/chatStore'
+import type { WebSource } from '../../api/client'
 import FeedbackCarousel from '../FeedbackCarousel'
 import clsx from 'clsx'
 
 interface ChatMessageProps {
   message: ChatMessageType
+}
+
+/** Cited web sources (acceptable use of the web search tool requires the
+ * source links to reach the user, even if the model forgot inline cites). */
+function WebSourceList({ webSources }: Readonly<{ webSources: WebSource[] }>) {
+  const { t } = useTranslation('chat')
+  return (
+    <div className="mt-2 bg-sky-50/60 border border-sky-100 rounded-lg p-2.5">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-sky-700 mb-1.5">
+        <Globe size={12} />
+        <span>{t('webSearch.sourcesTitle')}</span>
+      </div>
+      <ul className="space-y-1">
+        {webSources.map((source) => (
+          <li key={source.url} className="text-xs truncate">
+            <a
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sky-700 hover:underline"
+              title={source.text.slice(0, 300)}
+            >
+              {source.title === '' ? source.url : source.title}
+            </a>
+            {source.published_date !== '' && (
+              <span className="text-gray-400 ml-1.5">({source.published_date})</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Feedback + web citations shown under an assistant message. */
+function MessageSources({ message }: Readonly<ChatMessageProps>) {
+  return (
+    <>
+      {/* Source feedback carousel - constrained to parent width */}
+      {message.sources && message.sources.length > 0 && (
+        <div className="w-full max-w-full overflow-hidden">
+          <FeedbackCarousel items={message.sources} title="Related feedback:" />
+        </div>
+      )}
+
+      {/* Cited public web sources */}
+      {message.webSources && message.webSources.length > 0 && (
+        <WebSourceList webSources={message.webSources} />
+      )}
+    </>
+  )
 }
 
 export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
@@ -119,12 +172,7 @@ export default function ChatMessage({ message }: Readonly<ChatMessageProps>) {
           </button>
         </div>
 
-        {/* Source feedback carousel - constrained to parent width */}
-        {message.sources && message.sources.length > 0 && (
-          <div className="w-full max-w-full overflow-hidden">
-            <FeedbackCarousel items={message.sources} title="Related feedback:" />
-          </div>
-        )}
+        <MessageSources message={message} />
 
         <p className="text-xs text-gray-400 mt-1">
           {formatTime(message.timestamp)}

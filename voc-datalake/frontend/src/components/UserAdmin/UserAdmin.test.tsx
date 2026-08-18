@@ -14,12 +14,14 @@ const mockResetUserPassword = vi.fn()
 const mockEnableUser = vi.fn()
 const mockDisableUser = vi.fn()
 const mockDeleteUser = vi.fn()
+const mockUpdateUser = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     getUsers: () => mockGetUsers(),
     createUser: (data: unknown) => mockCreateUser(data),
     updateUserGroup: (username: string, group: string) => mockUpdateUserGroup(username, group),
+    updateUser: (username: string, data: unknown) => mockUpdateUser(username, data),
     resetUserPassword: (username: string) => mockResetUserPassword(username),
     enableUser: (username: string) => mockEnableUser(username),
     disableUser: (username: string) => mockDisableUser(username),
@@ -44,6 +46,7 @@ describe('UserAdmin', () => {
     mockGetUsers.mockResolvedValue({ users: [] })
     mockCreateUser.mockResolvedValue({ success: true })
     mockUpdateUserGroup.mockResolvedValue({ success: true })
+    mockUpdateUser.mockResolvedValue({ success: true, message: 'User updated' })
     mockResetUserPassword.mockResolvedValue({ success: true })
     mockEnableUser.mockResolvedValue({ success: true })
     mockDisableUser.mockResolvedValue({ success: true })
@@ -56,6 +59,7 @@ describe('UserAdmin', () => {
       
       render(<UserAdmin />, { wrapper: createWrapper() })
       
+      // eslint-disable-next-line testing-library/no-node-access
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })
@@ -84,8 +88,8 @@ describe('UserAdmin', () => {
     it('displays user count', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'user1@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-          { username: 'user2', email: 'user2@example.com', status: 'CONFIRMED', enabled: true, groups: ['admins'] },
+          { username: 'user1', email: 'user1@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user2', email: 'user2@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['admins'] },
         ],
       })
       
@@ -123,7 +127,7 @@ describe('UserAdmin', () => {
     it('displays user email', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -139,7 +143,7 @@ describe('UserAdmin', () => {
     it('displays user name when available', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', name: 'John Doe', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: 'John Doe', given_name: 'John', family_name: 'Doe', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -157,7 +161,7 @@ describe('UserAdmin', () => {
     it('shows Active badge for confirmed enabled users', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -173,7 +177,7 @@ describe('UserAdmin', () => {
     it('shows Disabled badge for disabled users', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: false, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: false, groups: ['users'] },
         ],
       })
       
@@ -188,7 +192,7 @@ describe('UserAdmin', () => {
     it('shows Pending badge for users requiring password change', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'FORCE_CHANGE_PASSWORD', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'FORCE_CHANGE_PASSWORD', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -205,7 +209,7 @@ describe('UserAdmin', () => {
     it('displays role dropdown with current role selected', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['admins'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['admins'] },
         ],
       })
       
@@ -223,7 +227,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -305,14 +309,16 @@ describe('UserAdmin', () => {
       })
       
       await user.type(screen.getByPlaceholderText('user@example.com'), 'new@example.com')
-      await user.type(screen.getByPlaceholderText('John Doe'), 'New User')
+      await user.type(screen.getByPlaceholderText('Jane'), 'New')
+      await user.type(screen.getByPlaceholderText('Doe'), 'User')
       await user.click(screen.getByRole('button', { name: /send invite/i }))
       
       await waitFor(() => {
         expect(mockCreateUser).toHaveBeenCalledWith({
           username: 'new@example.com',
           email: 'new@example.com',
-          name: 'New User',
+          given_name: 'New',
+          family_name: 'User',
           group: 'users',
         })
       })
@@ -345,7 +351,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -368,7 +374,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -388,7 +394,7 @@ describe('UserAdmin', () => {
     it('shows enable button for disabled users', async () => {
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: false, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: false, groups: ['users'] },
         ],
       })
       
@@ -403,7 +409,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       
@@ -427,7 +433,7 @@ describe('UserAdmin', () => {
       const user = userEvent.setup()
       mockGetUsers.mockResolvedValue({
         users: [
-          { username: 'user1', email: 'test@example.com', status: 'CONFIRMED', enabled: true, groups: ['users'] },
+          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
         ],
       })
       

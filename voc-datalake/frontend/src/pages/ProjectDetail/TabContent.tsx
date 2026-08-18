@@ -1,28 +1,37 @@
 /**
  * TabContent - Renders the active tab content
  */
-import type { Project, ProjectPersona, ProjectDocument } from '../../api/client'
-import type { Tab, NoteItem } from './types'
+import ChatTab from './ChatTab'
+import DocumentsTab from './DocumentsTab'
+import McpAccessTab from './McpAccessTab'
 import OverviewTab from './OverviewTab'
 import PersonasTab from './PersonasTab'
-import DocumentsTab from './DocumentsTab'
-import ChatTab from './ChatTab'
+import ProductTab from './ProductTab'
+import type {
+  Tab, NoteItem,
+} from './types'
+import type {
+  Project, ProjectPersona, ProjectDocument, ProductContext, ProductDoc,
+} from '../../api/types'
 
 interface TabContentProps {
   readonly activeTab: Tab
   readonly project: Project
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
+  /** For the Overview card's completeness display; undefined until it loads. */
+  readonly productContext?: ProductContext
+  /** For the prototype card's visual picker; undefined until it loads, or if it failed. */
+  readonly productDocs?: ProductDoc[]
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
-  readonly chatMessages: Array<{ role: 'user' | 'assistant'; content: string }>
-  readonly isChatPending: boolean
   readonly isDeleting: boolean
   readonly isSavingNotes: boolean
   readonly onGeneratePersonas: () => void
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
+  readonly onOpenProductTool: () => void
   readonly onSaveKiroPrompt: (prompt: string) => void
   readonly onSelectPersona: (p: ProjectPersona | null) => void
   readonly onEditPersona: () => void
@@ -33,8 +42,12 @@ interface TabContentProps {
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
-  readonly onSendChat: (message: string, personaIds: string[], documentIds: string[]) => void
   readonly onSaveAsDocument: (content: string) => void
+  /** The Product tab saved the context; the Overview card's copy needs the new one. */
+  readonly onContextSaved?: (context: ProductContext) => void
+  readonly onDocumentChanged?: () => void
+  /** A long-running job was kicked off; the Background Jobs panel takes it from here. */
+  readonly onJobStarted?: () => void
 }
 
 export default function TabContent({
@@ -42,16 +55,17 @@ export default function TabContent({
   project,
   personas,
   documents,
+  productContext,
+  productDocs,
   selectedPersona,
   selectedDoc,
-  chatMessages,
-  isChatPending,
   isDeleting,
   isSavingNotes,
   onGeneratePersonas,
   onGenerateDoc,
   onRunResearch,
   onRemixDocuments,
+  onOpenProductTool,
   onSaveKiroPrompt,
   onSelectPersona,
   onEditPersona,
@@ -62,8 +76,10 @@ export default function TabContent({
   onEditDoc,
   onDeleteDoc,
   onCreateDoc,
-  onSendChat,
   onSaveAsDocument,
+  onContextSaved,
+  onDocumentChanged,
+  onJobStarted,
 }: TabContentProps) {
   if (activeTab === 'overview') {
     return (
@@ -71,11 +87,17 @@ export default function TabContent({
         project={project}
         personas={personas}
         documents={documents}
+        productContext={productContext}
+        productDocs={productDocs}
         onGeneratePersonas={onGeneratePersonas}
         onGenerateDoc={onGenerateDoc}
         onRunResearch={onRunResearch}
         onRemixDocuments={onRemixDocuments}
-        onSaveKiroPrompt={onSaveKiroPrompt}
+        onOpenProductTool={onOpenProductTool}
+        // Same callback DocumentsTab uses for prototype *revisions* — the build
+        // now starts from the Overview card, so both ends of the prototype
+        // lifecycle hand off to the one jobs panel.
+        onJobStarted={onJobStarted}
       />
     )
   }
@@ -97,16 +119,31 @@ export default function TabContent({
     )
   }
 
+  if (activeTab === 'product') {
+    return (
+      <ProductTab
+        projectId={project.project_id}
+        onContextSaved={onContextSaved}
+        onJobStarted={onJobStarted}
+      />
+    )
+  }
+
   if (activeTab === 'documents') {
     return (
       <DocumentsTab
         project={project}
         documents={documents}
+        // Only so a revision can drop a visual that has since been deleted —
+        // the API 404s on an id it cannot resolve, which would make a
+        // visually-grounded prototype unrevisable for good.
+        productDocs={productDocs}
         selectedDoc={selectedDoc}
         onSelectDoc={onSelectDoc}
         onEditDoc={onEditDoc}
         onDeleteDoc={onDeleteDoc}
         onCreateDoc={onCreateDoc}
+        onJobStarted={onJobStarted}
         isDeleting={isDeleting}
       />
     )
@@ -115,15 +152,22 @@ export default function TabContent({
   if (activeTab === 'chat') {
     return (
       <ChatTab
+        projectId={project.project_id}
         personas={personas}
         documents={documents}
-        messages={chatMessages}
-        isPending={isChatPending}
-        onSendMessage={onSendChat}
         onSaveAsDocument={onSaveAsDocument}
+        onDocumentChanged={onDocumentChanged}
       />
     )
   }
 
-  return null
+  return (
+    <McpAccessTab
+      projectId={project.project_id}
+      project={project}
+      personas={personas}
+      documents={documents}
+      onSaveKiroPrompt={onSaveKiroPrompt}
+    />
+  )
 }
