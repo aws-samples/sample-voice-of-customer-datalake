@@ -13,6 +13,7 @@ const mockGetProjects = vi.fn()
 const mockGetProject = vi.fn()
 const mockGetPrioritizationScores = vi.fn()
 const mockPatchPrioritizationScores = vi.fn()
+const mockCreatePrioritizationRow = vi.fn()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -25,6 +26,9 @@ vi.mock('../../api/client', () => ({
   api: {
     getPrioritizationScores: () => mockGetPrioritizationScores(),
     patchPrioritizationScores: (scores: unknown) => mockPatchPrioritizationScores(scores),
+    // The page ensures a default row per project on mount, so nobody performs a
+    // setup step. An absent stub is a TypeError that leaves the list empty.
+    createPrioritizationRow: (projectId: string) => mockCreatePrioritizationRow(projectId),
   },
 }))
 
@@ -49,7 +53,7 @@ const mockProjectDetails = [
   {
     project_id: 'p1',
     documents: [
-      { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '# Feature A\n\nThis is a great feature.', created_at: '2025-01-01' },
+      { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '# Feature A\n\nThis is a great feature.', created_at: '2025-01-02' },
       { document_id: 'd2', document_type: 'prd', title: 'Feature A PRD', content: 'PRD content', created_at: '2025-01-01' },
     ],
   },
@@ -61,20 +65,171 @@ const mockProjectDetails = [
   },
 ]
 
+/**
+ * The row id the backend derives for a project's default row.
+ *
+ * DERIVED, not minted — `_default_row_id` in `projects_handler.py` builds exactly
+ * this from the project id, which is what makes asking for a default row twice
+ * idempotent. Spelled here so a test can key a ballot or an aggregate the way the
+ * page will look it up.
+ */
+const rowId = (projectId: string) => `row_${projectId}_default`
+
+/**
+ * One row per project, holding every scorable document that project has.
+ *
+ * The default composition, as the page receives it. A ROW IS A PROJECT: a project
+ * whose PRD and PR/FAQ describe one idea gets ONE row here, which is the whole
+ * change these tests are about — so a test that wants N rows on screen supplies N
+ * projects (see `oneRowPerDocument`), not N documents in one project.
+ */
+const SCORABLE = ['prd', 'prfaq']
+
+function rowsFor(
+  details: readonly { project_id: string; documents?: readonly { document_id: string; document_type: string; created_at?: string }[] }[],
+): Record<string, unknown> {
+  const rows: Record<string, unknown> = {}
+  for (const detail of details) {
+    const documents = (detail.documents ?? []).filter((d) => SCORABLE.includes(d.document_type))
+    if (documents.length === 0) continue
+    const id = rowId(detail.project_id)
+    rows[id] = {
+      row_id: id,
+      project_id: detail.project_id,
+      document_ids: documents.map((d) => d.document_id),
+      prototype_id: (detail.documents ?? []).find((d) => d.document_type === 'prototype')?.document_id ?? '',
+      is_default: true,
+      created_at: '2025-01-01',
+    }
+  }
+  return rows
+}
+
+/**
+ * N documents as N rows — one project each.
+ *
+ * For the many cases that need several INDEPENDENTLY SCORED rows on screen (the
+ * sort, the stats cards, the save fan-out) and do not care which project each
+ * belongs to. Putting them in one project would now give one row, so the test
+ * would be asserting about a list of one.
+ *
+ * Returns the pieces every harness needs: the projects list, a `getProject`
+ * implementation, the rows map, and the row id per document so scores and
+ * aggregates can be keyed the way the page reads them.
+ */
+function oneRowPerDocument(
+  documents: readonly { document_id: string; document_type: string; title: string; content?: string; created_at: string }[],
+) {
+  const details = documents.map((document, index) => ({
+    project_id: `p${index + 1}`,
+    documents: [{ content: '', ...document }],
+  }))
+  const projects = details.map((detail, index) => ({
+    project_id: detail.project_id,
+    name: `Project ${index + 1}`,
+    status: 'active',
+    created_at: '2025-01-01',
+    updated_at: '2025-01-01',
+    persona_count: 0,
+    document_count: 1,
+  }))
+  const rowIdOf: Record<string, string> = {}
+  for (const detail of details) rowIdOf[detail.documents[0].document_id] = rowId(detail.project_id)
+  return {
+    projects,
+    getProject: (id: string) => Promise.resolve(
+      details.find((detail) => detail.project_id === id) ?? { documents: [] },
+    ),
+    rows: rowsFor(details),
+    rowIdOf,
+  }
+}
+
+/**
+ * The row each of the shared document names lands on, one document per project.
+ *
+ * `R.d1` is "the row holding d1". Written as a lookup rather than inlining
+ * `rowId('p1')` at every call site because what these tests are ABOUT is the score
+ * or the aggregate attached to a given document's row — the project each belongs to
+ * is bookkeeping that `oneRowPerDocument` owns.
+ */
+/**
+ * The row a given document lands on, under the CURRENT layout.
+ *
+ * A live lookup, not a constant: `oneRowPerDocument` hands each document its own
+ * project in the order given, so which project holds `d1` depends on how the test
+ * listed them. Resolving through the installed layout means a test can reorder its
+ * documents without silently keying its scores to the wrong row — the failure that
+ * would produce is a row that reads as unscored, which is easy to misread as a
+ * product bug.
+ *
+ * Falls back to the two-project default, where `d1`/`d2` are p1's one row and `d3`
+ * is p2's, for the cases that install no layout.
+ */
+const DEFAULT_ROW_OF: Record<string, string> = {
+  d1: rowId('p1'), d2: rowId('p1'), d3: rowId('p2'),
+}
+let currentRowOf: Record<string, string> | null = null
+const R = new Proxy({} as Record<string, string>, {
+  get: (_target, key) => (currentRowOf ?? DEFAULT_ROW_OF)[key as string],
+})
+
+/**
+ * The rows the CURRENT layout put on screen, for a response mock to echo back.
+ *
+ * A getter rather than a constant: `useLayout` runs per test and decides which
+ * projects exist, and a mock written before it would freeze the previous test's
+ * rows. Falling back to the two-project default covers the cases that install no
+ * layout of their own.
+ *
+ * Rows are what make a row exist on the page at all — a response omitting them says
+ * "this deployment has no rows yet", which renders the empty state rather than the
+ * list under test.
+ */
+let currentRows: Record<string, unknown> | null = null
+const DEFAULT_ROWS = new Proxy({} as Record<string, unknown>, {
+  get: (_target, key) => (currentRows ?? rowsFor(mockProjectDetails))[key as string],
+  ownKeys: () => Reflect.ownKeys(currentRows ?? rowsFor(mockProjectDetails)),
+  getOwnPropertyDescriptor: (_t, key) => Reflect.getOwnPropertyDescriptor(
+    currentRows ?? rowsFor(mockProjectDetails), key,
+  ),
+  has: (_t, key) => key in (currentRows ?? rowsFor(mockProjectDetails)),
+})
+
+/** Point the shared project mocks at a `oneRowPerDocument` layout. */
+function useLayout(layout: ReturnType<typeof oneRowPerDocument>) {
+  currentRows = layout.rows
+  currentRowOf = layout.rowIdOf
+  mockGetProjects.mockResolvedValue({ projects: layout.projects })
+  mockGetProject.mockImplementation(layout.getProject)
+  mockCreatePrioritizationRow.mockImplementation((projectId: string) => Promise.resolve({
+    success: true, created: false, row: layout.rows[rowId(projectId)],
+  }))
+  return layout
+}
+
 describe('Prioritization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    currentRows = null
+    currentRowOf = null
     mockGetProjects.mockResolvedValue({ projects: mockProjects })
     mockGetProject.mockImplementation((id) => {
       const detail = mockProjectDetails.find(d => d.project_id === id)
       return Promise.resolve(detail || { documents: [] })
     })
+    // Two projects, so two rows: p1's PRD and PR/FAQ are ONE row (named after the
+    // newer document, the PR/FAQ) and p2's PR/FAQ is another.
     mockGetPrioritizationScores.mockResolvedValue({
       scores: {
-        d1: { document_id: 'd1', impact: 0, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
-        d3: { document_id: 'd3', impact: 0, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
+        [rowId('p1')]: { row_id: rowId('p1'), impact: 0, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
+        [rowId('p2')]: { row_id: rowId('p2'), impact: 0, time_to_market: 3, confidence: 0, strategic_fit: 0, notes: '' },
       },
+      rows: rowsFor(mockProjectDetails),
     })
+    mockCreatePrioritizationRow.mockImplementation((projectId: string) => Promise.resolve({
+      success: true, created: false, row: rowsFor(mockProjectDetails)[rowId(projectId)],
+    }))
     mockPatchPrioritizationScores.mockResolvedValue({ success: true, updated_count: 1 })
   })
 
@@ -102,13 +257,14 @@ describe('Prioritization', () => {
       // the sibling case below, through the sliders it now lives behind.
       mockGetPrioritizationScores
         .mockResolvedValueOnce({
+          rows: DEFAULT_ROWS,
           scores: {},
           aggregates: {},
         })
         .mockResolvedValue({
           scores: {},
           aggregates: {
-            d1: {
+            [R.d1]: {
               impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5,
               reviewer_count: 3, score_spread: 0,
             },
@@ -145,13 +301,14 @@ describe('Prioritization', () => {
       // sliders too, not only the row's team headline.
       mockGetPrioritizationScores
         .mockResolvedValueOnce({
+          rows: DEFAULT_ROWS,
           scores: {
-            d1: { document_id: 'd1', impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
+            [R.d1]: { row_id: R.d1, impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
           },
         })
         .mockResolvedValue({
           scores: {
-            d1: { document_id: 'd1', impact: 4, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
+            [R.d1]: { row_id: R.d1, impact: 4, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
           },
         })
       const queryClient = new QueryClient({
@@ -192,21 +349,18 @@ describe('Prioritization', () => {
      * screen" would be satisfied by an axis that happens to match it.
      */
     function loadDisagreeingBallotAndAggregate() {
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         // The caller scored it top marks: composite 5.0.
         scores: {
-          d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: 'mine' },
+          [R.d1]: { row_id: R.d1, impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: 'mine' },
         },
         // The team: 1*0.4 + 3*0.3 + 2*0.2 + 4*0.1 = 2.1.
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 1, time_to_market: 3, confidence: 4, strategic_fit: 2,
             reviewer_count: 3, score_spread: 1.8,
           },
@@ -276,9 +430,10 @@ describe('Prioritization', () => {
       // The positive control for the badge: "spread 0.0" would say "look at the
       // disagreement here" about a row with none.
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
             reviewer_count: 3, score_spread: 0,
           },
@@ -332,7 +487,7 @@ describe('Prioritization', () => {
       // reader did not touch is how the save path was able to write scores nobody
       // chose (see the partial-first-ballot case below).
       expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
-        d1: { document_id: 'd1', impact: 1 },
+        [R.d1]: { row_id: R.d1, impact: 1 },
       })
     })
 
@@ -346,13 +501,9 @@ describe('Prioritization', () => {
       // cast one, so a reviewer who cared only about impact dragged the TEAM's
       // confidence and strategic-fit means toward zero for everybody — into the
       // number this row displays, bands, counts and sorts by.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       // Nobody has scored it: no ballot of the caller's own, and no team row.
       mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
       const user = userEvent.setup()
@@ -372,7 +523,7 @@ describe('Prioritization', () => {
       await user.click(screen.getByRole('button', { name: /save/i }))
 
       expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
-        d1: { document_id: 'd1', impact: 5 },
+        [R.d1]: { row_id: R.d1, impact: 5 },
       })
       // Asserted key by key as well: the equality above passes for an axis present as
       // `undefined`, and a regression that sends `0` — the value the backend counts as
@@ -387,13 +538,9 @@ describe('Prioritization', () => {
       // The defect this closes: DEFAULT_SCORE has time_to_market 3 and the old
       // summary substituted 3 for an unset axis, so an untouched proposal
       // presented as a mid-table score.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
 
       renderPrioritization()
@@ -417,32 +564,31 @@ describe('Prioritization', () => {
     })
 
     it('sorts by the team composite, grouping the unscored below a low score', async () => {
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
+      // Three ROWS, so three projects — one row per project is the rule now, and
+      // three documents in one project would be one row with nothing to order.
       // Listed in the order the expectation must NOT be: with no sort applied at
       // all, a stable sort leaves this order (reversed for `desc`) on screen, so
       // an assertion that agreed with it would pass without any ordering.
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
-          { document_id: 'd3', document_type: 'prfaq', title: 'Team Rated High', content: '', created_at: '2025-01-03' },
-          { document_id: 'd2', document_type: 'prfaq', title: 'Team Rated Low', content: '', created_at: '2025-01-02' },
-          { document_id: 'd1', document_type: 'prfaq', title: 'Nobody Scored', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      useLayout(oneRowPerDocument([
+        { document_id: 'd3', document_type: 'prfaq', title: 'Team Rated High', content: '', created_at: '2025-01-03' },
+        { document_id: 'd2', document_type: 'prfaq', title: 'Team Rated Low', content: '', created_at: '2025-01-02' },
+        { document_id: 'd1', document_type: 'prfaq', title: 'Nobody Scored', content: '', created_at: '2025-01-01' },
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         // The caller's own ballot ranks them in the OPPOSITE order, so a list still
         // sorting by the caller's map cannot pass this by coincidence.
         scores: {
-          d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' },
-          d2: { document_id: 'd2', impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, notes: '' },
-          d3: { document_id: 'd3', impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
+          [R.d1]: { row_id: R.d1, impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' },
+          [R.d2]: { row_id: R.d2, impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, notes: '' },
+          [R.d3]: { row_id: R.d3, impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
         },
         aggregates: {
-          d2: {
+          [R.d2]: {
             impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1,
             reviewer_count: 2, score_spread: 0,
           },
-          d3: {
+          [R.d3]: {
             impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5,
             reviewer_count: 2, score_spread: 0,
           },
@@ -466,8 +612,9 @@ describe('Prioritization', () => {
       // The field is additive: a deployment predating it answers `scores` alone,
       // and that must not throw or present the caller's own numbers as the team's.
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' },
+          [R.d1]: { row_id: R.d1, impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' },
         },
       })
 
@@ -483,22 +630,19 @@ describe('Prioritization', () => {
       // The cards sit directly above the rows and use the same headings the rows'
       // priority band does, so counting the reader's own opinion under them would
       // make the totals disagree with the list they summarise.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'High For Team', content: '', created_at: '2025-01-01' },
           { document_id: 'd2', document_type: 'prfaq', title: 'Unscored By Team', content: '', created_at: '2025-01-02' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         // Reading the caller's map would count d1 as neither high nor medium
         // (composite 1.0) and both rows as not-scored — the opposite of the truth.
         scores: {
-          d1: { document_id: 'd1', impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
+          [R.d1]: { row_id: R.d1, impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1, notes: '' },
         },
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5,
             reviewer_count: 2, score_spread: 0,
           },
@@ -529,18 +673,15 @@ describe('Prioritization', () => {
       // rated 1, one nobody has opened. The band used to read `composite ?? 0` and
       // called both "Not Scored", beside a live 1.0 and a reviewer count — the
       // issue's "distinguishable in the row" criterion failing in the row.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Team Rated Lowest', content: '', created_at: '2025-01-01' },
           { document_id: 'd2', document_type: 'prfaq', title: 'Nobody Opened It', content: '', created_at: '2025-01-02' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1,
             reviewer_count: 3, score_spread: 0,
           },
@@ -573,17 +714,14 @@ describe('Prioritization', () => {
       // 4 on every axis weighs to 3.9999999999999996. The row prints `4.0`; an
       // unrounded `>= 4` banded it Medium and counted it under Medium Priority, so
       // the card, the band and the number all disagreed on one document.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Unanimous Four', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
             reviewer_count: 2, score_spread: 0,
           },
@@ -614,22 +752,19 @@ describe('Prioritization', () => {
       // reviewers had scored rendered `0.0 / 0.0 / 0.0`, "Reviewers 3", banded "Low
       // Priority", with a "Spread 2.0" badge over numbers the parse had thrown away —
       // and it sorted BELOW a row the team genuinely rated 1 across the board.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Out Of Range', content: '', created_at: '2025-01-01' },
           { document_id: 'd2', document_type: 'prfaq', title: 'Genuinely Lowest', content: '', created_at: '2025-01-02' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 6, time_to_market: 6, confidence: 6, strategic_fit: 6,
             reviewer_count: 3, score_spread: 2,
           },
-          d2: {
+          [R.d2]: {
             impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1,
             reviewer_count: 3, score_spread: 0,
           },
@@ -660,17 +795,14 @@ describe('Prioritization', () => {
       // while ordering by the rounded one puts the row and the list back into
       // disagreement — the thing one shared rounding exists to prevent. The row must show
       // the value the sort uses.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 4.35, time_to_market: 1, confidence: 1, strategic_fit: 1,
             reviewer_count: 3, score_spread: 0,
           },
@@ -688,23 +820,20 @@ describe('Prioritization', () => {
       // Flipping the direction asks for the worst-RATED proposals. A block of rows
       // nobody has voted on is not an answer to that, so it stays at the bottom.
       const user = userEvent.setup()
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Nobody Scored', content: '', created_at: '2025-01-01' },
           { document_id: 'd2', document_type: 'prfaq', title: 'Team Rated Low', content: '', created_at: '2025-01-02' },
           { document_id: 'd3', document_type: 'prfaq', title: 'Team Rated High', content: '', created_at: '2025-01-03' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
-          d2: {
+          [R.d2]: {
             impact: 1, time_to_market: 1, confidence: 1, strategic_fit: 1,
             reviewer_count: 2, score_spread: 0,
           },
-          d3: {
+          [R.d3]: {
             impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5,
             reviewer_count: 2, score_spread: 0,
           },
@@ -890,14 +1019,10 @@ describe('Prioritization', () => {
     })
 
     it('displays PRD documents alongside PR/FAQ documents', async () => {
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
           { document_id: 'd2', document_type: 'prd', title: 'Feature A PRD', content: '', created_at: '2025-01-02' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
 
       renderPrioritization()
@@ -909,14 +1034,10 @@ describe('Prioritization', () => {
     })
 
     it('shows document type badge for each row', async () => {
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
           { document_id: 'd2', document_type: 'prd', title: 'Feature A PRD', content: '', created_at: '2025-01-02' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
 
       renderPrioritization()
@@ -1078,13 +1199,9 @@ describe('Prioritization', () => {
       // "1 Not Scored" over a one-document backlog is a claim about the document, and a
       // read that never arrived cannot support it. A dash says the count is unknown;
       // "Total Documents" is still a number because the PROJECT read succeeded.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
 
       renderPrioritization()
@@ -1148,21 +1265,18 @@ describe('Prioritization', () => {
       // team column — every row "Team score unavailable", the cards dashed, the score
       // sort stopped — while the previous response sat in the cache, unexpired and
       // still correct.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       // Second call onwards — the post-save refetch — rejects. The first resolves.
       mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
       mockGetPrioritizationScores.mockResolvedValueOnce({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: 'mine' },
+          [R.d1]: { row_id: R.d1, impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: 'mine' },
         },
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 1, time_to_market: 3, confidence: 4, strategic_fit: 2,
             reviewer_count: 3, score_spread: 1.8,
           },
@@ -1220,13 +1334,9 @@ describe('Prioritization', () => {
       // slider has moved, so only the guard can still be holding it — and it must,
       // because with no cached read the sliders are showing DEFAULT_SCORE and saving
       // would write this reviewer's edits over a ballot nobody has seen.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
       const user = userEvent.setup()
 
@@ -1258,13 +1368,9 @@ describe('Prioritization', () => {
       // there — so a response that omits it leaves every slider on DEFAULT_SCORE while a
       // response-level check reads as fine. That is the exact state the guard exists to
       // refuse: saving would write this reviewer's edits over numbers they never saw.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({ aggregates: {} })
       const user = userEvent.setup()
 
@@ -1286,13 +1392,9 @@ describe('Prioritization', () => {
       // the page as "present" while every slider sat on DEFAULT_SCORE. The select now
       // normalizes `scores` the way it already normalized `aggregates`, so anything that
       // is not a readable map answers `undefined` and the guard holds.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({ scores: null, aggregates: {} })
       const user = userEvent.setup()
 
@@ -1317,19 +1419,16 @@ describe('Prioritization', () => {
       // document rendered "Not scored yet" — a scored document presented as unscored, which
       // is the one claim this page exists to prevent — while the SAME row alone made the
       // whole page "unavailable". Per-row marking removes the dependency on its neighbours.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
           { document_id: 'd3', document_type: 'prfaq', title: 'Feature B PR/FAQ', content: '', created_at: '2025-01-02' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
           // Readable, and its sibling is not.
-          d1: {
+          [R.d1]: {
             impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
             reviewer_count: 3, score_spread: 0,
           },
@@ -1357,18 +1456,15 @@ describe('Prioritization', () => {
       // label refuses — so it is in "Total Documents" and in no other card, and the
       // counts stop adding up. That gap must not be silent: the total says 2, the
       // other cards account for 1, and the line under the grid is what says why.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
           { document_id: 'd3', document_type: 'prfaq', title: 'Feature B PR/FAQ', content: '', created_at: '2025-01-02' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
             reviewer_count: 3, score_spread: 0,
           },
@@ -1399,14 +1495,11 @@ describe('Prioritization', () => {
       // described, and left the sort hint attributing an ordering that was not
       // happening. (An EMPTY map still counts and keeps the hint: nobody voting is an
       // answer that fixes itself with the first ballot, not a failure.)
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {},
         aggregates: { d1: { reviewer_count: 0 } },
       })
@@ -1432,15 +1525,12 @@ describe('Prioritization', () => {
       // assertion that nobody has voted on any document. So a response whose ballots were
       // fine and whose team half was garbage showed every row "Not scored yet", counted the
       // whole backlog as unscored, and raised no alert at all.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
-        scores: { d1: { document_id: 'd1', impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' } },
+          rows: DEFAULT_ROWS,
+        scores: { [R.d1]: { row_id: R.d1, impact: 5, time_to_market: 5, confidence: 5, strategic_fit: 5, notes: '' } },
         aggregates: 'boom',
       })
 
@@ -1470,19 +1560,16 @@ describe('Prioritization', () => {
       // to reload before saving" beside a DISABLED Save. Both now ask the same question.
       // (No refetch is needed to reach it — under the fix the panel no longer waits for the
       // query to error, which is the second half of that finding.)
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       // First read: team numbers readable, ballots not. Then every refetch fails.
       mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
       mockGetPrioritizationScores.mockResolvedValueOnce({
+          rows: DEFAULT_ROWS,
         scores: 'not a map',
         aggregates: {
-          d1: {
+          [R.d1]: {
             impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4,
             reviewer_count: 3, score_spread: 0,
           },
@@ -1509,16 +1596,13 @@ describe('Prioritization', () => {
       // honest even though the team column has nothing to show. This is the case where
       // "did the response arrive" and "did a team map arrive" describe different things,
       // and the reason the predicate reads `savedScores` rather than the aggregate.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: { document_id: 'd1', impact: 5, time_to_market: 4, confidence: 2, strategic_fit: 3, notes: '' },
+          [R.d1]: { row_id: R.d1, impact: 5, time_to_market: 4, confidence: 2, strategic_fit: 3, notes: '' },
         },
       })
       const user = userEvent.setup()
@@ -1549,13 +1633,9 @@ describe('Prioritization', () => {
 
     /** Documents resolved, scores still reading — the window under test. */
     function loadDocumentsWithScoresStillReading() {
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockReturnValue(new Promise(() => {}))
     }
 
@@ -1628,13 +1708,9 @@ describe('Prioritization', () => {
       // The discriminating positive control: "do not claim it is unscored while
       // loading" must not become "never claim it is unscored". The same fixture, with
       // the promise allowed to resolve.
-      mockGetProjects.mockResolvedValue({ projects: [mockProjects[0]] })
-      mockGetProject.mockResolvedValue({
-        project_id: 'p1',
-        documents: [
+      useLayout(oneRowPerDocument([
           { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
-        ],
-      })
+      ]))
       mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
 
       renderPrioritization()
@@ -1669,9 +1745,10 @@ describe('Prioritization', () => {
      */
     async function editARowWhoseNoteIsTooLong() {
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: {
-            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+          [R.d1]: {
+            row_id: R.d1, impact: 3, time_to_market: 3, confidence: 3,
             strategic_fit: 3, notes: 'within the bound',
           },
         },
@@ -1741,9 +1818,10 @@ describe('Prioritization', () => {
       // A partial edit carries only the axis that moved, so the save is both legal and
       // honest: the over-long note stays exactly as stored, untouched by this write.
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: {
-            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+          [R.d1]: {
+            row_id: R.d1, impact: 3, time_to_market: 3, confidence: 3,
             strategic_fit: 3, notes: overLong,
           },
         },
@@ -1765,7 +1843,7 @@ describe('Prioritization', () => {
       await user.click(screen.getByRole('button', { name: /save/i }))
 
       expect(mockPatchPrioritizationScores).toHaveBeenCalledWith({
-        d1: { document_id: 'd1', impact: 5 },
+        [R.d1]: { row_id: R.d1, impact: 5 },
       })
     })
 
@@ -1774,9 +1852,10 @@ describe('Prioritization', () => {
       // nobody edited blocks nothing. Without this the panel would fire on load
       // and disable a page that has nothing wrong with it.
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: {
-            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+          [R.d1]: {
+            row_id: R.d1, impact: 3, time_to_market: 3, confidence: 3,
             strategic_fit: 3, notes: overLong,
           },
         },
@@ -1819,9 +1898,10 @@ describe('Prioritization', () => {
       // 1500 emoji is 3000 units and 1500 code points, so a code-unit count would
       // block a save the API accepts, quoting a limit the reviewer never reached.
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: {
-            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+          [R.d1]: {
+            row_id: R.d1, impact: 3, time_to_market: 3, confidence: 3,
             strategic_fit: 3, notes: '😀'.repeat(MAX_NOTE_LENGTH - 500),
           },
         },
@@ -1846,9 +1926,10 @@ describe('Prioritization', () => {
       // The positive control: the block must be the note's length and nothing
       // else, or "save is disabled" would be satisfied by a page that never saves.
       mockGetPrioritizationScores.mockResolvedValue({
+          rows: DEFAULT_ROWS,
         scores: {
-          d1: {
-            document_id: 'd1', impact: 3, time_to_market: 3, confidence: 3,
+          [R.d1]: {
+            row_id: R.d1, impact: 3, time_to_market: 3, confidence: 3,
             strategic_fit: 3, notes: 'x'.repeat(MAX_NOTE_LENGTH),
           },
         },
