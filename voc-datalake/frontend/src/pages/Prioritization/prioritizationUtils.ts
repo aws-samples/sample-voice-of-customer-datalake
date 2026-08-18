@@ -1280,7 +1280,7 @@ export function collectRows(
         const doc = byId.get(documentId)
         return doc ? [doc] : []
       })
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .sort(byNewestFirst)
     const leading = documents[0]
     if (!leading) return []
     return [{
@@ -1306,7 +1306,30 @@ function latestPrototypeOf(documents: readonly ProjectDocument[]): ProjectDocume
   return documents
     .filter((doc) => doc.document_type === 'prototype')
     .slice()
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0]
+    .sort(byNewestFirst)[0]
+}
+
+/**
+ * Newest first, and EQUAL timestamps compare EQUAL.
+ *
+ * The equal arm is the whole of this, and it was missing at both call sites. Without it
+ * the comparator answers -1 for a tied pair in either order, which is not an ordering
+ * at all: two documents sharing a `created_at` come out in whichever order their
+ * positions in the array happen to produce, and three of them come out reversed.
+ *
+ * Not academic here. A PRD and a PR/FAQ generated from ONE request share a timestamp,
+ * which is the ordinary shape of a row holding both — and the LEADING document gives
+ * the row its `title` and its `created_at`, so the name the list shows and the value
+ * the date sort reads were both being decided by array position. Two reviewers looking
+ * at the same data could be shown the same row under different names.
+ *
+ * Returning 0 leaves a tied pair in the order the row itself lists them
+ * (`Array.prototype.sort` is stable), i.e. the stored `document_ids` order — a rule,
+ * and one the server controls.
+ */
+function byNewestFirst(a: ProjectDocument, b: ProjectDocument): number {
+  if (a.created_at === b.created_at) return 0
+  return a.created_at < b.created_at ? 1 : -1
 }
 
 /** Which number on the team view each score sort field orders by. */

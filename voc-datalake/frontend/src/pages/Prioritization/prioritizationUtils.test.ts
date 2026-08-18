@@ -149,6 +149,83 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     ).map((row) => row.row_id)).toStrictEqual(['row-1'])
   })
 
+  it('names a row by its stored id order when its documents share a created_at', () => {
+    // A PRD and a PR/FAQ generated from ONE request carry the same timestamp, which is
+    // the ordinary shape of a row holding both. The LEADING document gives the row its
+    // title and its created_at — the name the list shows and the value the date sort
+    // reads — and the newest-first comparator had no equal arm, so it answered -1 for a
+    // tied pair in EITHER order. Not an ordering: the winner was decided by position in
+    // the array, so two reviewers on the same data could see the row under two names.
+    //
+    // Driven from both id orders, which must each be honoured. The project read lists
+    // the documents in the opposite order to the first case on purpose, so this cannot
+    // pass on the fixture's ordering.
+    const sameInstant = '2025-01-01T09:00:00Z'
+    const details = [{
+      documents: [
+        doc('prfaq-1', 'prfaq', 'Feature A PR/FAQ', sameInstant),
+        doc('prd-1', 'prd', 'Feature A PRD', sameInstant),
+      ],
+    }]
+
+    for (const documentIds of [['prd-1', 'prfaq-1'], ['prfaq-1', 'prd-1']]) {
+      const rows = collectRows(
+        { 'row-1': storedRow('row-1', 'p1', documentIds) },
+        details, [project('p1', 'P1')],
+      )
+
+      const label = documentIds.join(',')
+      expect(rows[0].documents.map((d) => d.document_id), label).toStrictEqual(documentIds)
+      expect(rows[0].title, label)
+        .toBe(documentIds[0] === 'prd-1' ? 'Feature A PRD' : 'Feature A PR/FAQ')
+    }
+  })
+
+  it('still leads with a genuinely newer document, whichever order the ids arrive in', () => {
+    // The positive control for the tie above: adding the equal arm must not flatten the
+    // ordering into "whatever the row listed".
+    const details = [{
+      documents: [
+        doc('prfaq-1', 'prfaq', 'Older', '2025-01-01'),
+        doc('prd-1', 'prd', 'Newer', '2025-02-01'),
+      ],
+    }]
+
+    for (const documentIds of [['prfaq-1', 'prd-1'], ['prd-1', 'prfaq-1']]) {
+      const rows = collectRows(
+        { 'row-1': storedRow('row-1', 'p1', documentIds) },
+        details, [project('p1', 'P1')],
+      )
+
+      expect(rows[0].documents.map((d) => d.document_id), documentIds.join(','))
+        .toStrictEqual(['prd-1', 'prfaq-1'])
+      expect(rows[0].title, documentIds.join(',')).toBe('Newer')
+    }
+  })
+
+  it('picks a stable prototype when a project has two of the same age', () => {
+    // The same comparator at its other call site — the fallback that keeps a demo on
+    // screen for a row naming no prototype. A tie decided by array position means two
+    // reviewers on identical data can be shown different prototypes.
+    const sameInstant = '2025-03-01T12:00:00Z'
+    const details = [{
+      documents: [
+        doc('prfaq-1', 'prfaq', 'Feature A PR/FAQ', '2025-01-01'),
+        doc('proto-a', 'prototype', 'Proto A', sameInstant),
+        doc('proto-b', 'prototype', 'Proto B', sameInstant),
+      ],
+    }]
+
+    const rows = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1']) },
+      details, [project('p1', 'P1')],
+    )
+
+    // The first of the tied pair as the project lists them, kept by the stable sort
+    // rather than swapped by a comparator that never answers equal.
+    expect(rows[0].prototype?.document_id).toBe('proto-a')
+  })
+
   it('a project whose PRD and PR/FAQ describe one idea is ONE row', () => {
     // The whole point of the change. Two scorable documents, one row, one ballot —
     // where the page previously listed the same idea twice and scored it twice.
