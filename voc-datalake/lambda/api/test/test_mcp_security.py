@@ -1742,3 +1742,188 @@ class TestTokenExpiry:
             mock_table.query.return_value = {"Items": [expired_other, self._row()]}
             mock_table.update_item.return_value = {}
             assert mcp_handler._authenticate(_make_event()) is not None
+
+
+# ===========================================================================
+# IAM lockstep: the handler's projects-table usage vs the narrowed CDK grant
+# ===========================================================================
+
+class TestProjectsTableUsageMatchesNarrowGrant:
+    """The CDK grant is exactly Query + UpdateItem; the code must not drift.
+
+    api-stack.test.ts pins the IAM side ('mcp Lambda IAM grants'), but every
+    backend test mocks projects_table, so a handler that started calling
+    get_item would pass the whole suite and then AccessDeniedException in
+    production — a runtime-only 500 on the token-authenticated path.  This is
+    the Python half of the lockstep: a mock whose non-granted methods raise,
+    driven through the full JSON-RPC path for every registered tool AND the
+    autoseed side-door (which reaches projects.get_project).
+    """
+
+    GRANTED = ("query", "update_item")
+
+    def _strict_table(self):
+        """A projects_table where any non-granted DynamoDB method raises."""
+        from shared.tokens import hash_token
+        table = MagicMock()
+        row = {
+            "sk": "TOKEN#1",
+            "token_id": "tok_1",
+            "token_hash": hash_token("voc_testtoken"),
+            "scope": "read-write",
+        }
+        table.query.return_value = {"Items": [row]}
+        table.update_item.return_value = {}
+        for method in (
+            "get_item", "put_item", "delete_item", "scan",
+            "batch_get_item", "batch_write_item", "batch_writer",
+            "transact_get_items", "transact_write_items",
+        ):
+            getattr(table, method).side_effect = AssertionError(
+                f"mcp_handler called projects_table.{method}, which the narrowed "
+                f"IAM grant (Query, UpdateItem) does not permit — widen the grant "
+                f"in api-stack.ts AND its 'mcp Lambda IAM grants' test, or fix the code"
+            )
+        return table
+
+    def _call_tool(self, name: str, arguments: dict, lambda_context):
+        import mcp_handler
+        event = {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": {
+                "authorization": "Bearer voc_testtoken",
+                "x-project-id": "proj-1",
+            },
+            "body": json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            }),
+        }
+        return mcp_handler.lambda_handler(event, lambda_context)
+
+    def test_every_tool_stays_within_the_granted_actions(self, lambda_context):
+        """Drive each registered tool end to end against the strict mock."""
+        import mcp_handler
+        args_for = {"get_feedback_detail": {"feedback_id": "fb-1"}}
+        with patch("mcp_handler.projects_table", self._strict_table()), \
+             patch("mcp_handler.feedback_table"), \
+             patch("mcp_handler.aggregates_table"), \
+             patch("mcp_handler.query_feedback_by_date", return_value=[]):
+            for tool_name in mcp_handler.TOOL_HANDLERS:
+                response = self._call_tool(
+                    tool_name, args_for.get(tool_name, {}), lambda_context
+                )
+                body = json.loads(response["body"])
+                # A strict-mock violation surfaces as the AssertionError text
+                # inside the tool-error content; fail loudly with the tool name.
+                assert "does not permit" not in response["body"], (
+                    f"{tool_name} used a non-granted DynamoDB action:\n{body}"
+                )
+
+    def test_autoseed_stays_within_the_granted_actions(self, lambda_context):
+        """The side-door reaches projects.get_project — pin its usage too."""
+        import mcp_handler
+        strict = self._strict_table()
+        with patch("mcp_handler.projects_table", strict), \
+             patch("mcp_handler.autoseed_project") as mock_seed:
+            # autoseed_project lives in projects.py and reads through the
+            # module-level table there; patching mcp_handler's reference and
+            # asserting it is CALLED keeps this test hermetic while the
+            # projects.get_project call sites are pinned by the grep half below.
+            mock_seed.return_value = {"success": True, "files": []}
+            response = mcp_handler.lambda_handler(
+                {
+                    "httpMethod": "GET",
+                    "path": "/v1/mcp/autoseed/proj-1",
+                    "headers": {"authorization": "Bearer voc_testtoken"},
+                },
+                lambda_context,
+            )
+        assert response["statusCode"] == 200
+        mock_seed.assert_called_once()
+
+    def test_no_reachable_call_site_uses_a_non_granted_action(self):
+        """Source-level half: the table operations reachable from this Lambda.
+
+        mcp_handler.py's own projects_table call sites, plus projects.py's
+        get_project (the only projects.py function the autoseed path reaches),
+        must use only the granted actions.  Scanning THOSE functions rather
+        than all of projects.py: the rest of that module runs on the projects
+        Lambda, whose role legitimately holds the write actions.
+        """
+        import inspect
+
+        import mcp_handler
+        import projects as projects_module
+
+        handler_src = inspect.getsource(mcp_handler)
+        get_project_src = inspect.getsource(projects_module.get_project)
+        autoseed_src = inspect.getsource(projects_module.autoseed_project)
+
+        forbidden = (
+            ".get_item(", ".put_item(", ".delete_item(", ".scan(",
+            ".batch_get_item(", ".batch_write_item(", ".batch_writer(",
+            ".transact_get_items(", ".transact_write_items(",
+        )
+        for src_name, src in (
+            ("mcp_handler", handler_src),
+            ("projects.get_project", get_project_src),
+            ("projects.autoseed_project", autoseed_src),
+        ):
+            for op in forbidden:
+                # projects_table is the module-level name in both files; a hit
+                # on any table variable in these functions is projects-table
+                # traffic on this Lambda.
+                hits = [
+                    line.strip() for line in src.splitlines()
+                    if op in line and "projects_table" in line
+                ]
+                assert hits == [], (
+                    f"{src_name} reaches projects_table via {op} which the "
+                    f"narrowed grant does not permit: {hits}"
+                )
+
+
+class TestOriginDefaultFailsClosed:
+    """With ALLOWED_ORIGIN unset (''), a present Origin is refused.
+
+    The stack always injects the env var, so '' only happens on a
+    misconfigured deployment — and the safe reading of that state is
+    fail-closed for browsers while non-browser clients (no Origin header)
+    stay unaffected.  Pinned so the default cannot silently flip to
+    fail-open in a refactor.
+    """
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "")
+    def test_present_origin_refused_when_unconfigured(self, lambda_context):
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "POST",
+                "path": "/v1/mcp",
+                "headers": {"Origin": "https://anything.example.com"},
+                "body": json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 403
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "")
+    def test_absent_origin_still_passes_when_unconfigured(self, lambda_context):
+        """Fail-closed for browsers must not mean broken for MCP clients."""
+        import mcp_handler
+        response = mcp_handler.lambda_handler(
+            {
+                "httpMethod": "POST",
+                "path": "/v1/mcp",
+                "headers": {},
+                "body": json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
+            },
+            lambda_context,
+        )
+        assert response["statusCode"] == 200

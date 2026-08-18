@@ -718,9 +718,13 @@ describe('mcp Lambda IAM grants', () => {
     // else. PutItem, DeleteItem, Scan and the batch APIs are the point of this
     // test: their absence is what makes the bearer-token surface read-only
     // against project artifacts.
+    const projectsStatements = mcpStatements().filter((s) => s.resource.includes('Projects'));
+    // Guard the filter itself: it string-matches the table's logical id, so a
+    // construct rename would make it match NOTHING and turn the exact-set
+    // assertion below vacuously green.
+    expect(projectsStatements.length, 'no statement names the Projects table').toBeGreaterThan(0);
     const granted = new Set(
-      mcpStatements()
-        .filter((s) => s.resource.includes('Projects'))
+      projectsStatements
         .flatMap((s) => s.actions)
         .filter((action) => action.startsWith('dynamodb:')),
     );

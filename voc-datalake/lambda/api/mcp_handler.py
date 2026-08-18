@@ -63,6 +63,9 @@ CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Project-Id',
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
+    # Without this a BROWSER-based MCP client can receive the 401 challenge but
+    # never read it: WWW-Authenticate is not a CORS-safelisted response header.
+    'Access-Control-Expose-Headers': 'WWW-Authenticate',
 }
 
 # RFC 6750 §3: a 401 for a protected resource carries a WWW-Authenticate
@@ -150,6 +153,11 @@ def _credential_expired(item: dict) -> bool:
     CLOSED (the credential is refused, and the row's token_id is logged so an
     operator can fix it): an unreadable expiry must not become an unlimited
     one. Only the token_id — never the token or its hash — reaches the log.
+
+    Log severities differ on purpose: an EXPIRED token is an expected lifecycle
+    event (info — the caller re-mints and moves on), while a MALFORMED value is
+    server-side data damage nobody can fix from the client (warning — it wants
+    an operator).
     """
     expires_at = item.get('expires_at')
     if not expires_at:
