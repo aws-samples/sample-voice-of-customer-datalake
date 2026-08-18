@@ -2015,14 +2015,11 @@ class TestTheResponseIsThreeMapsKeyedByRow:
         expendable, in preference to carrying a re-key nothing will need again.
 
         The distinction this pins is that the drop is TOTAL: absent from `scores`,
-        from `aggregates` and from `rows`, on a 200. That is the accepted behaviour,
-        and a future reader wondering whether it was noticed should find this test
-        rather than infer it from silence.
+        from `aggregates` and from `rows`, on a 200. A future reader wondering whether
+        the loss was noticed should find this test rather than infer it from silence.
 
-        It is NOT quiet, and this docstring said it was until the read started
-        reporting the discard — `test_discarding_a_ballot_is_reported_rather_than_done_in_silence`
-        below owns that half. The accepted part is losing the ballots; nobody accepted
-        losing them without a trace.
+        What was accepted is losing the ballots, not losing them without a trace: the
+        read reports the discard, and the sibling test below owns that half.
 
         NOT covered here on purpose: nothing deletes the orphaned items, so they
         remain in the partition counting against `MAX_PRIORITIZATION_PAGES`. Harmless

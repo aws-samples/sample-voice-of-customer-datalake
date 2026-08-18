@@ -589,25 +589,23 @@ MAX_PRIORITIZATION_PAGES = 20
 
 # How many document pages a row COMPOSITION will follow.
 #
-# 🔴 CORRECTED: an earlier version of this said 5, on the reasoning that the read
-# "is projected to three fields, so a project needing more than this has a document
-# count far outside anything the product produces". That reasoning is WRONG.
-# DynamoDB's 1MB page limit applies to the data read BEFORE a
-# `ProjectionExpression` is applied, so projecting cuts what crosses the wire and
-# does nothing to the page count. The bound is therefore about a project's total
-# STORED BYTES, not its document count — and documents keep their body inline, so a
-# handful of long ones can page past a tight bound.
+# This bounds a project's total STORED BYTES, not its document count. DynamoDB's 1MB
+# page limit applies to the data read BEFORE a `ProjectionExpression` is applied, so
+# the projection below cuts what crosses the wire and does nothing to the page count
+# — and documents keep their body inline, so a handful of long ones page further
+# than their number suggests.
 #
-# Generous on purpose, because of what the bound does when it binds: the refusal
-# below is a 409, which the page reads as settled and does not retry, so the
-# project simply gets no row. A tight bound would spend that outcome on projects
-# the product can legitimately produce. A generous one costs nothing in the normal
-# case, which is a single page, and every extra page is paid only by a project
-# already far outside the shape the wizard creates.
+# Generous on purpose, because of what happens when it binds: the refusal is a 409,
+# which the page reads as settled and does not retry, so the project gets no row at
+# all. A tight bound would spend that outcome on projects the product legitimately
+# produces. A generous one costs nothing in the normal case of a single page, and
+# further pages are paid only by a project already outside the shape the wizard
+# creates.
 #
-# Separate from the constant above rather than shared, because the two bound
-# different things and would drift into one meaningless number: that one bounds a
-# partition growing as rows x reviewers, this one bounds one project's stored bytes.
+# Its own constant rather than sharing the one above, because the two bound
+# different things: that one a partition growing as rows x reviewers, this one one
+# project's stored bytes. They happen to hold the same number today; a change to
+# either should be reasoned about on its own terms rather than kept in step.
 MAX_PROJECT_DOCUMENT_PAGES = 20
 
 

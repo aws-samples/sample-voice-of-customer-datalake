@@ -514,8 +514,15 @@ export const api = {
    * opening the page at once cannot give one project two rows with two sets of
    * ballots. `created` says which of the two happened, for a caller that cares.
    *
-   * Refused (400) for a project with no PRD and no PR/FAQ: there is nothing to
-   * score, and the page already has words inviting one.
+   * TWO settled refusals, both of which the caller reads through
+   * `isPermanentRefusal` and neither of which this page currently puts on screen:
+   *
+   * - **400** for a project with no PRD and no PR/FAQ: there is nothing to score,
+   *   and the page already has words inviting one, so the silence is covered.
+   * - **409** for a project holding more documents than one read can compose a row
+   *   from. Nothing covers this one — the project simply does not appear in the
+   *   backlog, with nothing saying why. Rare by design (the bound is deliberately
+   *   generous) but worth a visible state if it is ever seen in the field.
    */
   createPrioritizationRow: (projectId: string) =>
     fetchApi<{ success: boolean; created?: boolean; row?: PrioritizationRow }>(
