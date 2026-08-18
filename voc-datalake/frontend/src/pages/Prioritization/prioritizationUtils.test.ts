@@ -160,8 +160,14 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     // Driven from both id orders, which must each be honoured. The project read lists
     // the documents in the opposite order to the first case on purpose, so this cannot
     // pass on the fixture's ordering.
+    // One format throughout, and a full instant rather than a bare date: these three
+    // cases turn on timestamps comparing EQUAL or not, and mixing `'2025-01-01'` with
+    // `'2025-01-01T09:00:00Z'` in neighbouring fixtures gets the intended answer only
+    // because string comparison happens to agree. A fixture pinning "the same instant"
+    // should say so unambiguously.
     const sameInstant = '2025-01-01T09:00:00Z'
     const details = [{
+      project_id: 'p1',
       documents: [
         doc('prfaq-1', 'prfaq', 'Feature A PR/FAQ', sameInstant),
         doc('prd-1', 'prd', 'Feature A PRD', sameInstant),
@@ -185,9 +191,10 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     // The positive control for the tie above: adding the equal arm must not flatten the
     // ordering into "whatever the row listed".
     const details = [{
+      project_id: 'p1',
       documents: [
-        doc('prfaq-1', 'prfaq', 'Older', '2025-01-01'),
-        doc('prd-1', 'prd', 'Newer', '2025-02-01'),
+        doc('prfaq-1', 'prfaq', 'Older', '2025-01-01T09:00:00Z'),
+        doc('prd-1', 'prd', 'Newer', '2025-02-01T09:00:00Z'),
       ],
     }]
 
@@ -209,8 +216,9 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     // reviewers on identical data can be shown different prototypes.
     const sameInstant = '2025-03-01T12:00:00Z'
     const details = [{
+      project_id: 'p1',
       documents: [
-        doc('prfaq-1', 'prfaq', 'Feature A PR/FAQ', '2025-01-01'),
+        doc('prfaq-1', 'prfaq', 'Feature A PR/FAQ', '2025-01-01T09:00:00Z'),
         doc('proto-a', 'prototype', 'Proto A', sameInstant),
         doc('proto-b', 'prototype', 'Proto B', sameInstant),
       ],
