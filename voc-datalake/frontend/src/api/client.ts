@@ -521,8 +521,10 @@ export const api = {
    *   and the page already has words inviting one, so the silence is covered.
    * - **409** for a project holding more documents than one read can compose a row
    *   from. Nothing covers this one — the project simply does not appear in the
-   *   backlog, with nothing saying why. Rare by design (the bound is deliberately
-   *   generous) but worth a visible state if it is ever seen in the field.
+   *   backlog, with nothing saying why. Rare by design (the bound behind it is
+   *   deliberately generous), and tracked for phase 2 on issue #339, which is
+   *   already adding row-level states to this page and can give an un-composable
+   *   project a visible one.
    */
   createPrioritizationRow: (projectId: string) =>
     fetchApi<{ success: boolean; created?: boolean; row?: PrioritizationRow }>(
