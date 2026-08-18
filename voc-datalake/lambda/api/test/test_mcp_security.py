@@ -1947,11 +1947,15 @@ class TestProjectsTableUsageMatchesNarrowGrant:
             f"went blind (saw {get_project_calls})"
         )
 
-        # autoseed_project itself: no direct table call, AND every projects.py
-        # function it calls is on a pinned allowlist whose members are either
-        # scanned above or verified table-free here.  A new callee (say, a
-        # save/update helper) fails this closure instead of slipping past a
-        # comment that claimed get_project was the only route.
+        # autoseed_project itself: no direct table call, AND every DIRECT
+        # bare-name callee resolving to a projects.py callable is on a pinned
+        # allowlist whose members are either scanned above or verified
+        # table-free here.  Deliberately one level deep and name-form only —
+        # deeper indirection (an attribute-form call, or a helper growing its
+        # own callee) is the runtime strict-mock test's job, which executes
+        # the real path and cannot be fooled by call shape.  A new direct
+        # callee (say, a save/update helper) fails this closure instead of
+        # slipping past a comment that claimed get_project was the only route.
         autoseed_src = inspect.getsource(projects_module.autoseed_project)
         assert self._table_calls(autoseed_src) == set(), (
             "projects.autoseed_project now touches projects_table directly; "
@@ -1974,6 +1978,12 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         )
         assert "get_project" in callees  # positive control: the walker sees calls
         for helper in table_free_helpers:
+            # Legible failure over a bare AttributeError when a private
+            # helper is renamed/dropped: the allowlist above must move with it.
+            assert hasattr(projects_module, helper), (
+                f"projects.{helper} no longer exists — update "
+                f"table_free_helpers to match autoseed_project's helpers"
+            )
             helper_calls = self._table_calls(
                 inspect.getsource(getattr(projects_module, helper))
             )
