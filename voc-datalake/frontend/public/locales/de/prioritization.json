@@ -6,6 +6,53 @@
     "saving": "Speichern...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "Ihre Stimme ist anonym: Sie zählt für die Teambewertung dieses Dokuments, wird aber weder Ihnen noch jemand anderem zugeordnet.",
+    "axes": {
+      "confidence": "Zuversicht",
+      "confidenceHint": "Wie sicher sind Sie sich bei den beiden Schätzungen oben?",
+      "impact": "Wirkung",
+      "impactHint": "Geschäftlicher Wert und Kundennutzen.",
+      "strategicFit": "Strategische Passung",
+      "strategicFitHint": "Übereinstimmung mit den Unternehmenszielen.",
+      "timeToMarket": "Markteinführungszeit",
+      "timeToMarketHint": "Wie schnell lässt sich das umsetzen? 5 ist am schnellsten."
+    },
+    "closed": {
+      "capReached": "Diese Abstimmung hat bereits so viele Stimmen gesammelt, wie sie annimmt. Bitten Sie die Moderation, eine weitere Sitzung zu öffnen.",
+      "closed": "Die Moderation hat diese Abstimmung geschlossen, weitere Stimmen werden nicht angenommen.",
+      "expired": "Diese Abstimmung ist abgelaufen, weitere Stimmen werden nicht angenommen.",
+      "invalid": "Diese Stimme konnte nicht gelesen werden, daher wurde nichts erfasst. Prüfen Sie die Zahlen und die Notiz und senden Sie sie erneut.",
+      "notFound": "Dieser Link öffnet keine Abstimmung. Prüfen Sie, ob Sie den Code gescannt haben, der jetzt auf dem Bildschirm zu sehen ist.",
+      "title": "Diese Abstimmung ist nicht offen",
+      "unknown": "Ihre Stimme konnte gerade nicht erfasst werden. Versuchen Sie es in einem Moment erneut."
+    },
+    "displayName": {
+      "hint": "Optional. Stimmen werden keiner Person zugeordnet, Sie können das Feld also leer lassen.",
+      "label": "Ihr Name (optional)"
+    },
+    "done": {
+      "description": "Ihre Stimme zählt für die Teambewertung dieses Dokuments. Sie können diese Seite vom selben Telefon erneut öffnen und die Stimme ändern, solange die Abstimmung offen ist.",
+      "title": "Stimme erfasst"
+    },
+    "loading": "Diese Abstimmung wird geladen...",
+    "notes": {
+      "label": "Notizen (optional)",
+      "placeholder": "Was die Zahlen nicht sagen..."
+    },
+    "rejected": {
+      "title": "Ihre Stimme wurde nicht erfasst"
+    },
+    "submit": {
+      "label": "Stimme abgeben",
+      "pending": "Wird gesendet..."
+    },
+    "title": "Diesen Vorschlag bewerten",
+    "unavailable": {
+      "description": "Es wurde nichts gesendet. Laden Sie die Seite neu, um es erneut zu versuchen — die Abstimmung selbst kann durchaus offen sein.",
+      "title": "Diese Abstimmung konnte nicht geladen werden"
+    }
+  },
   "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um die Priorisierung anzuzeigen.",
   "docType": {
     "prd": "PRD",
@@ -49,6 +96,25 @@
     "low": "Niedrige Priorität",
     "medium": "Mittlere Priorität",
     "none": "Nicht bewertet"
+  },
+  "roomVote": {
+    "anonymousNote": "Hier abgegebene Stimmen zählen für die Teambewertung oben und werden keiner Person zugeordnet.",
+    "ballotsIn": "{{received}} von {{cap}} Stimmen eingegangen",
+    "close": "Abstimmung schließen",
+    "closeFailed": "Die Abstimmung konnte nicht geschlossen werden. Versuchen Sie es erneut — bis sie geschlossen ist, werden weiterhin Stimmen angenommen.",
+    "closed": "Diese Abstimmung ist geschlossen. Weitere Stimmen werden nicht angenommen.",
+    "closing": "Wird geschlossen...",
+    "description": "Zeigen Sie einen QR-Code auf dem Bildschirm und lassen Sie alle im Raum ohne Konto eine anonyme Stimme vom Telefon abgeben.",
+    "expired": "Diese Abstimmung ist abgelaufen. Weitere Stimmen werden nicht angenommen.",
+    "open": "Raumabstimmung öffnen",
+    "openAnother": "Weitere Abstimmung öffnen",
+    "openFailed": "Die Abstimmung konnte nicht geöffnet werden. Versuchen Sie es erneut.",
+    "opening": "Wird geöffnet...",
+    "qrAccessibleName": "QR-Code, der die anonyme Stimmabgabe für {{title}} öffnet",
+    "qrCaption": "Scannen, um diesen Vorschlag per Telefon zu bewerten",
+    "qrUnavailable": "Der QR-Code ist nicht verfügbar, weil die Adresse dieser Seite nicht geteilt werden kann.",
+    "scopeNote": "Diese Abstimmung bewertet genau ein Dokument: {{title}}. Ein Raum, der sie scannt, bewertet keine andere Fassung derselben Idee.",
+    "title": "Im Raum bewerten"
   },
   "scores": {
     "confidence": "Konfidenz",
@@ -102,6 +168,7 @@
     "score": "Teamwert",
     "summary": "Teamdurchschnitt {{score}} von 5 · Abgegebene Bewertungen: {{reviewers}}",
     "title": "Was das Team gesagt hat",
+    "unattributedNote": "Einige Stimmen können anonyme Raumstimmen sein; jede zählt als ein Prüfer und wird keiner Person zugeordnet.",
     "unavailable": "Teamwert nicht verfügbar",
     "unavailableDescription": "Die Bewertungen des Teams konnten gerade nicht gelesen werden. Diese Zeile zeigt daher nichts darüber an — nicht, dass niemand abgestimmt hat. Laden Sie die Seite neu, um zu sehen, was das Team gesagt hat."
   },

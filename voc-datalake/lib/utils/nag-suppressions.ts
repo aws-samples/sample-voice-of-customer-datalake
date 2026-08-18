@@ -277,3 +277,22 @@ export const publicFeedbackEndpointSuppressions: NagPackSuppression[] = [
     reason: 'Feedback form endpoints are intentionally public to allow anonymous customer feedback submission - Cognito authentication would prevent external users from submitting feedback',
   },
 ];
+
+// Public ballot endpoints (intentionally unauthenticated).
+//
+// Separate from the feedback-form list above, deliberately: the reason differs,
+// and one shared suppression would let a reviewer of a future public route read a
+// justification about customer feedback and think it had been assessed. The
+// control here is the voting session — a ballot is accepted only against a valid
+// unguessable session token, only while that session is open and unexpired, and
+// only up to its ballot cap, enforced by a conditional atomic increment.
+export const publicBallotEndpointSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-APIG4',
+    reason: 'Anonymous prioritization ballots are submitted by attendees from personal phones with no account; the unguessable voting-session token, its open/closed state, its expiry and its ballot cap are the authorization',
+  },
+  {
+    id: 'AwsSolutions-COG4',
+    reason: 'Cognito authentication would defeat the feature - a room scores a proposal without accounts; the session record authorizes each write and closing the session revokes it',
+  },
+];

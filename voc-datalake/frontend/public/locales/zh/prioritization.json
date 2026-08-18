@@ -6,6 +6,53 @@
     "saving": "保存中...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "你的投票是匿名的：它会计入该文档的团队评分，但不会归属于你或任何其他人。",
+    "axes": {
+      "confidence": "信心",
+      "confidenceHint": "你对以上两项估计有多大把握？",
+      "impact": "影响",
+      "impactHint": "业务价值与客户收益。",
+      "strategicFit": "战略契合度",
+      "strategicFitHint": "与公司目标的一致程度。",
+      "timeToMarket": "上市时间",
+      "timeToMarketHint": "多快能交付？5 表示最快。"
+    },
+    "closed": {
+      "capReached": "本次投票收集的票数已达上限。请主持人另开一场投票。",
+      "closed": "主持人已结束本次投票，不再接受新的选票。",
+      "expired": "本次投票已过期，不再接受新的选票。",
+      "invalid": "无法读取此投票，因此未记录任何内容。请检查评分和备注后重新提交。",
+      "notFound": "此链接无法打开任何投票。请确认你扫描的是当前屏幕上的二维码。",
+      "title": "该投票未开放",
+      "unknown": "暂时无法记录你的投票。请稍后再试。"
+    },
+    "displayName": {
+      "hint": "可选。选票不会归属于任何个人，因此可以留空。",
+      "label": "你的姓名（可选）"
+    },
+    "done": {
+      "description": "你的选票会计入该文档的团队评分。投票开放期间，你可以用同一部手机重新打开本页面修改。",
+      "title": "已记录选票"
+    },
+    "loading": "正在加载本次投票...",
+    "notes": {
+      "label": "备注（可选）",
+      "placeholder": "数字之外想补充的内容..."
+    },
+    "rejected": {
+      "title": "您的投票未被记录"
+    },
+    "submit": {
+      "label": "提交选票",
+      "pending": "正在提交..."
+    },
+    "title": "为该提案评分",
+    "unavailable": {
+      "description": "尚未提交任何内容。请重新加载页面再试——本次投票本身可能仍在进行。",
+      "title": "无法加载本次投票"
+    }
+  },
   "configureApiEndpoint": "在设置中配置 API 端点以查看优先级排序。",
   "docType": {
     "prd": "PRD",
@@ -49,6 +96,25 @@
     "low": "低优先级",
     "medium": "中优先级",
     "none": "未评分"
+  },
+  "roomVote": {
+    "anonymousNote": "在此投出的选票会计入上方的团队评分，且不会归属于任何个人。",
+    "ballotsIn": "已收到 {{received}} / {{cap}} 张选票",
+    "close": "结束投票",
+    "closeFailed": "无法结束投票。请重试——在结束之前仍会接受选票。",
+    "closed": "本次投票已结束，不再接受新的选票。",
+    "closing": "正在结束...",
+    "description": "在屏幕上展示二维码，让会议室中的每个人无需账号即可用手机提交一张匿名选票。",
+    "expired": "本次投票已过期，不再接受新的选票。",
+    "open": "开启会场投票",
+    "openAnother": "另开一场投票",
+    "openFailed": "无法开启投票。请重试。",
+    "opening": "正在开启...",
+    "qrAccessibleName": "打开 {{title}} 匿名投票页面的二维码",
+    "qrCaption": "扫码即可用手机为该提案评分",
+    "qrUnavailable": "因无法共享本页地址，二维码不可用。",
+    "scopeNote": "本次投票只为一份文档评分：{{title}}。扫码的参与者不会为同一想法的其他版本评分。",
+    "title": "在会场共同评分"
   },
   "scores": {
     "confidence": "置信度",
@@ -102,6 +168,7 @@
     "score": "团队评分",
     "summary": "团队平均分 {{score}} / 5 · 评审票数：{{reviewers}}",
     "title": "团队的评分",
+    "unattributedNote": "部分选票可能来自匿名的会场投票，每张各计为一位评审，且不归属于任何个人。",
     "unavailable": "无法获取团队评分",
     "unavailableDescription": "目前无法读取团队的评分，因此本行不显示相关信息——这并不表示没有人投票。请重新加载页面以查看团队的评分。"
   },

@@ -6,6 +6,53 @@
     "saving": "Saving...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "Your ballot is anonymous: it counts toward the team's score for this document, but it is not attributed to you or to anyone else.",
+    "axes": {
+      "confidence": "Confidence",
+      "confidenceHint": "How certain are you about the two estimates above?",
+      "impact": "Impact",
+      "impactHint": "Business value and customer benefit.",
+      "strategicFit": "Strategic Fit",
+      "strategicFitHint": "Alignment with company goals.",
+      "timeToMarket": "Time to Market",
+      "timeToMarketHint": "How quickly can this be delivered? 5 is fastest."
+    },
+    "closed": {
+      "capReached": "This vote has already collected as many ballots as it accepts. Ask the facilitator to open another session.",
+      "closed": "The facilitator has closed this vote, so no further ballots are accepted.",
+      "expired": "This vote has expired, so no further ballots are accepted.",
+      "invalid": "This ballot could not be read, so nothing was recorded. Check the numbers and the note, then submit again.",
+      "notFound": "This link does not open a vote. Check that you scanned the code that is on screen now.",
+      "title": "This vote is not open",
+      "unknown": "Your ballot could not be recorded just now. Try again in a moment."
+    },
+    "displayName": {
+      "hint": "Optional. Ballots are not attributed to a person, so you can leave this blank.",
+      "label": "Your name (optional)"
+    },
+    "done": {
+      "description": "Your ballot counts toward this document's team score. You can re-open this page from the same phone to change it while the vote is open.",
+      "title": "Ballot recorded"
+    },
+    "loading": "Loading this vote...",
+    "notes": {
+      "label": "Notes (optional)",
+      "placeholder": "Anything the numbers do not say..."
+    },
+    "rejected": {
+      "title": "Your ballot was not recorded"
+    },
+    "submit": {
+      "label": "Submit ballot",
+      "pending": "Submitting..."
+    },
+    "title": "Score this proposal",
+    "unavailable": {
+      "description": "Nothing was submitted. Reload the page to try again — the vote itself may well be open.",
+      "title": "This vote could not be loaded"
+    }
+  },
   "configureApiEndpoint": "Configure API endpoint in Settings to view prioritization.",
   "docType": {
     "prd": "PRD",
@@ -49,6 +96,25 @@
     "low": "Low Priority",
     "medium": "Medium Priority",
     "none": "Not Scored"
+  },
+  "roomVote": {
+    "anonymousNote": "Ballots cast here count toward the team score above and are not attributed to a person.",
+    "ballotsIn": "{{received}} of {{cap}} ballots in",
+    "close": "Close the vote",
+    "closeFailed": "The vote could not be closed. Try again — until it closes, ballots are still accepted.",
+    "closed": "This vote is closed. No further ballots are accepted.",
+    "closing": "Closing...",
+    "description": "Put a QR on screen and let everyone in the room submit one anonymous ballot from their phone, without an account.",
+    "expired": "This vote has expired. No further ballots are accepted.",
+    "open": "Open a room vote",
+    "openAnother": "Open another vote",
+    "openFailed": "The vote could not be opened. Try again.",
+    "opening": "Opening...",
+    "qrAccessibleName": "QR code opening the anonymous ballot page for {{title}}",
+    "qrCaption": "Scan to score this proposal from a phone",
+    "qrUnavailable": "The QR code is unavailable because this page's address cannot be shared.",
+    "scopeNote": "This vote scores one document: {{title}}. A room scanning it does not score any other version of the same idea.",
+    "title": "Score this as a room"
   },
   "scores": {
     "confidence": "Confidence",
@@ -102,6 +168,7 @@
     "score": "Team Score",
     "summary": "Team average {{score}} of 5 · Reviewer ballots: {{reviewers}}",
     "title": "What the Team Said",
+    "unattributedNote": "Some ballots may be anonymous room ballots, which count as one reviewer each and are not attributed to a person.",
     "unavailable": "Team score unavailable",
     "unavailableDescription": "The team's scores could not be read just now, so this row shows nothing about them — not that nobody has voted. Reload the page to see what the team said."
   },

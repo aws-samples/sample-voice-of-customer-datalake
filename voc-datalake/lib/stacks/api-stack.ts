@@ -17,7 +17,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
-import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, publicBallotEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
 import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
@@ -415,6 +415,59 @@ export class VocApiStack extends VocStack {
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, FEEDBACK_TABLE: feedbackTable.tableName, PROCESSING_QUEUE_URL: processingQueueUrl, BRAND_NAME: brandName, POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
       logGroup: this.createLogGroup('FeedbackFormApiLogs', this.uniqueName('voc-feedback-form-api')),
+    });
+
+    // Anonymous Ballots API (voting sessions)
+    //
+    // Its OWN Lambda, its own role and its own resource tree, because two of its
+    // routes are served without credentials. A public route carved out of the
+    // authenticated /projects proxy is the shape that once left form update,
+    // delete and submission reads anonymous (see api-stack.test.ts), and the
+    // feedback-form routes are public for a customer widget rather than for this.
+    //
+    // ONE TABLE, and only one: the aggregates table, which holds both the voting
+    // session records and the prioritization ballots. Deliberately NO feedback
+    // table and NO processing-queue grant — a ballot is a decision record, not
+    // customer voice, so it must never be enriched, given a sentiment or assigned
+    // a persona. The absent grants are what enforce that rather than remember it.
+    //
+    // THREE ACTIONS, not `grantReadWriteData`. That convenience method hands over
+    // Query, Scan, DeleteItem, BatchGetItem and BatchWriteItem across the WHOLE
+    // aggregates table, which also holds every feedback-form configuration and
+    // every signed-in reviewer's ballot — and this is the one function in the
+    // stack that two unauthenticated routes can reach. The handler reads one item
+    // at a time (`get_item`), creates a session (`put_item`) and upserts
+    // (`update_item`); it never lists, never deletes, never writes in bulk. So a
+    // caller who found a flaw in it still cannot enumerate the table or erase
+    // anybody's vote. `ballots Lambda IAM grants` in api-stack.test.ts pins both
+    // the three actions and the absence of the rest.
+    const ballotsRole = this.createLambdaRole('BallotsLambdaRole');
+    aggregatesTable.grant(ballotsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
+    kmsKey.grantEncryptDecrypt(ballotsRole);
+
+    const ballotsLambda = new lambda.Function(this, 'BallotsApi', {
+      functionName: this.uniqueName('voc-ballots-api'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'ballots_handler.lambda_handler',
+      code: createApiLambdaCode('ballots_handler.py'),
+      role: ballotsRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        // The SAME origin every other API Lambda gets, not '*'. A phone reaches
+        // the ballot page by opening `/vote/{id}` on this app's own CloudFront
+        // domain, so the browser sends that domain as its Origin exactly as it
+        // does for every other page — being unauthenticated changes nothing about
+        // where the page is served from. And '*' here would loosen the three
+        // FACILITATOR routes too, which live on this same function.
+        ALLOWED_ORIGIN: allowedOrigin,
+        POWERTOOLS_SERVICE_NAME: 'voc-ballots-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('BallotsApiLogs', this.uniqueName('voc-ballots-api')),
     });
 
     // Chat API
@@ -901,6 +954,26 @@ export class VocApiStack extends VocStack {
         stageName: 'v1',
         throttlingRateLimit: 100,
         throttlingBurstLimit: 200,
+        // Tighter limits on the two UNAUTHENTICATED ballot methods (see
+        // /voting-sessions/* below). Each request costs a DynamoDB read even for a
+        // session id that does not exist, and nothing in front of them asks who is
+        // calling — the session token is checked inside the handler, which means
+        // the cost is paid before the refusal.
+        //
+        // As STAGE METHOD SETTINGS rather than as a usage plan, which is what the
+        // /mcp route uses: a usage plan's throttle binds per API KEY, and these
+        // methods deliberately require none, so a plan attached to them would
+        // never apply to the requests that matter. Method settings are keyed by
+        // path and apply to every caller.
+        //
+        // 20/s with a burst of 40 is roughly 30x what the feature needs — a room
+        // is bounded by MAX_BALLOT_CAP (200) ballots and submits once each — while
+        // still cutting a scripted flood down to something a single small table
+        // absorbs.
+        methodOptions: {
+          '/voting-sessions/{session_id}/config/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          '/voting-sessions/{session_id}/submit/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+        },
         metricsEnabled: true,
         loggingLevel: apigateway.MethodLoggingLevel.INFO,
         dataTraceEnabled: false,
@@ -951,6 +1024,7 @@ export class VocApiStack extends VocStack {
     const logsIntegration = new apigateway.LambdaIntegration(logsLambda, { proxy: true });
     const s3ImportIntegration = new apigateway.LambdaIntegration(s3ImportLambda, { proxy: true });
     const dataExplorerIntegration = new apigateway.LambdaIntegration(dataExplorerLambda, { proxy: true });
+    const ballotsIntegration = new apigateway.LambdaIntegration(ballotsLambda, { proxy: true });
 
     // ============================================
     // API ROUTES
@@ -1124,6 +1198,47 @@ export class VocApiStack extends VocStack {
     projectsResource.addMethod('GET', projectsIntegration, authMethodOptions);
     projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
     projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+
+    // /voting-sessions/* — a room scores one document from their phones.
+    //
+    // NOT under /projects: that resource ends in a {proxy+} carrying the Cognito
+    // authorizer, and the two routes below that a phone reaches have no
+    // credentials at all. A public exception inside an authenticated proxy is the
+    // defect shape api-stack.test.ts exists to catch, so this gets its own tree.
+    //
+    // Every method is declared EXPLICITLY, with no {proxy+} anywhere: a proxy
+    // without `defaultMethodOptions` defaults to AuthorizationType.NONE, which is
+    // how three feedback-form routes became anonymous. Explicit methods fail
+    // closed — a route the handler registers is unreachable until it is wired
+    // here, which is the direction to fail in for a handler that accepts writes
+    // from anyone holding a link.
+    const votingSessionsResource = this.api.root.addResource('voting-sessions');
+    votingSessionsResource.addMethod('POST', ballotsIntegration, authMethodOptions);
+    const votingSessionItem = votingSessionsResource.addResource('{session_id}');
+    votingSessionItem.addMethod('GET', ballotsIntegration, authMethodOptions);
+    votingSessionItem.addResource('close').addMethod('POST', ballotsIntegration, authMethodOptions);
+
+    // Intentionally unauthenticated: the room votes from personal phones with no
+    // account. The SESSION is the control — a ballot is accepted only against a
+    // valid unguessable session token, only while that session is open and
+    // unexpired, and only up to its ballot cap (enforced by a conditional atomic
+    // increment on the session record). `config` is what lets the page say "this
+    // session is closed" instead of showing a blank form.
+    //
+    // These two are named in INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts.
+    // That list is the review gate: adding to it is a deliberate act, and the test
+    // failing until it is extended is the intended behaviour.
+    //
+    // Both are throttled below the stage default by `deployOptions.methodOptions`
+    // at the top of this stack — keyed by these exact paths, and pinned against
+    // them by a test, because a mistyped key throttles nothing and says nothing.
+    const publicBallotMethods = [
+      votingSessionItem.addResource('config').addMethod('GET', ballotsIntegration),
+      votingSessionItem.addResource('submit').addMethod('POST', ballotsIntegration),
+    ];
+    for (const publicMethod of publicBallotMethods) {
+      NagSuppressions.addResourceSuppressions(publicMethod, publicBallotEndpointSuppressions);
+    }
 
 
     // /webhooks/{pluginId}
