@@ -426,12 +426,17 @@ MAX_SOURCE_DOCUMENT_ID_LEN = 256
 # Prioritization Routes
 # ============================================
 #
-# One ballot per reviewer per document, not one shared score map.
+# A ROW is the thing that gets scored, and a row is a PROJECT'S SET OF DOCUMENTS.
+# One ballot per reviewer per row, not one shared score map, and not one row per
+# document — a project whose PRD and PR/FAQ describe one idea used to appear twice
+# and be scored twice, and a room voting from their phones scored whichever half
+# the QR happened to sit on.
 #
 # Storage lives in ONE partition, with the identity in the sort key:
 #
 #     pk = 'PRIORITIZATION'
-#     sk = 'BALLOT#{document_id}#user:{cognito_sub}'
+#     sk = 'ROW#{row_id}'                       — the row: which documents it holds
+#     sk = 'BALLOT#{row_id}#user:{cognito_sub}' — one reviewer's ballot ON that row
 #
 # Why this shape:
 #   * A reviewer's save is a single `update_item` on its OWN key, so two
@@ -439,26 +444,30 @@ MAX_SOURCE_DOCUMENT_ID_LEN = 256
 #     previous shape was a read-modify-write of one shared `scores` map, which
 #     silently dropped the slower writer's numbers and recorded nobody's name.
 #   * The page's read stays ONE paginated query on `pk = 'PRIORITIZATION'`,
-#     which also returns the legacy `SCORES` item in the same call. Partitioning
-#     per document would instead cost one read per document, on a page that
-#     already fans out per project.
-#   * The reviewer segment is namespaced by KIND ('user:' today) so that a later
-#     anonymous ballot ('anon:') can never land on a signed-in reviewer's key.
-#     Anonymous voting is deliberately NOT implemented here.
+#     which returns the ROWS, every ballot and the legacy `SCORES` item in the
+#     same call — so the page learns what each row holds without a second round
+#     trip per row. Partitioning per row would instead cost one read per row, on
+#     a page that already fans out per project.
+#   * The reviewer segment is namespaced by KIND ('user:' here, 'anon:' in
+#     `ballots_handler`) so an anonymous ballot can never land on a signed-in
+#     reviewer's key.
 #
-# Parsing assumption: document ids and Cognito subjects are both server-minted
-# and contain no '#', which is what makes `BALLOT#{id}#{kind}:{subject}` safely
+# Parsing assumption: row ids and Cognito subjects are both server-minted and
+# contain no '#', which is what makes `BALLOT#{id}#{kind}:{subject}` safely
 # splittable. BOTH halves are CHECKED against that assumption rather than trusted
-# — document ids in `_validated_ballot_document_id`, the reviewer subject in
+# — row ids in `_validated_ballot_row_id` (and, at the point one is minted, in
+# `_validated_row_project_id`), the reviewer subject in
 # `_caller_reviewer_subject`. A '#' in either half mis-splits the key silently:
-# the write succeeds, the ballot becomes unreadable, and a phantom document id
-# appears in `aggregates`.
+# the write succeeds, the ballot becomes unreadable, and a phantom row id appears
+# in `aggregates`.
 #
-# Scale ceiling: ballots grow as documents x reviewers inside a single partition.
-# That suits a team-sized backlog (tens of documents, tens of reviewers) and is
-# read in one paginated query. A much larger deployment would need re-keying —
-# e.g. a partition per period, or per document once the read is already fanned
-# out — not a bigger page size.
+# Scale ceiling: ballots grow as rows x reviewers inside a single partition. That
+# suits a team-sized backlog (tens of projects, tens of reviewers) and is read in
+# one paginated query. A much larger deployment would need re-keying — e.g. a
+# partition per period, or per row once the read is already fanned out — not a
+# bigger page size. Making a row a project rather than a document is itself a
+# reduction: the partition now grows with projects, not with every document of
+# every project.
 PRIORITIZATION_PK = 'PRIORITIZATION'
 
 # The pre-ballot item: one map of document_id -> score, written by every
@@ -469,12 +478,48 @@ LEGACY_SCORES_SK = 'SCORES'
 BALLOT_SK_PREFIX = 'BALLOT#'
 REVIEWER_KIND_USER = 'user'
 
-# The fields every ballot save stamps whatever the reviewer expressed: which
-# document it is for, whose it is, and when it was written. Everything else on a
-# ballot is a value the reviewer entered, which is what makes "did this save store
-# anything a reviewer expressed?" answerable from the write itself — see
+# The row record: which project a row belongs to and which of that project's
+# documents it holds.
+#
+#     sk = 'ROW#{row_id}'
+#
+# In the SAME partition as the ballots on purpose. The page reads the partition
+# whole already, so the rows arrive with the ballots in one query and nothing has
+# to be fetched per row; and a row and the ballots keyed to it stay in one place,
+# which is what a later phase's "delete a row with its ballots" needs.
+ROW_SK_PREFIX = 'ROW#'
+
+# The DEFAULT row of a project: the one every project with scorable documents gets
+# without anybody performing a setup step.
+#
+# DERIVED from the project id rather than minted at random, which is what makes
+# "ask for the default row twice and get the same row" true by construction rather
+# than by a read-then-write that two simultaneous callers would both lose. The
+# create is an idempotent conditional write on this exact key; a second caller's
+# condition fails and it is handed the row that already exists.
+#
+# Phase 2 adds rows for other combinations. Those get minted ids under the same
+# prefix; nothing here assumes a row id is derivable from its project, which is
+# why the row record carries `project_id` as a field and the read never parses it
+# back out of the id.
+DEFAULT_ROW_ID_PREFIX = 'row_'
+DEFAULT_ROW_ID_SUFFIX = '_default'
+
+# How many documents one row may hold. A row is a project's scorable documents
+# plus its latest prototype, and the composition is stored verbatim and read back
+# on every page load. Generous next to any real project (a handful of PRDs and
+# PR/FAQs) and small enough that a row stays one readable item.
+MAX_ROW_DOCUMENT_IDS = 25
+
+# The fields every ballot save stamps whatever the reviewer expressed: which ROW
+# it is for, whose it is, and when it was written. Everything else on a ballot is
+# a value the reviewer entered, which is what makes "did this save store anything
+# a reviewer expressed?" answerable from the write itself — see
 # `_writes_a_reviewer_value`, which subtracts these.
-BALLOT_STAMP_FIELDS = ('document_id', 'reviewer', 'updated_at')
+#
+# `row_id`, not `document_id`: a ballot is about a row now, and stamping the old
+# field name would leave the record claiming to be about a document it is not.
+BALLOT_STAMP_FIELDS = ('row_id', 'reviewer', 'updated_at')
 
 # The four axes a reviewer scores, and the weights the composite score uses.
 # The weights mirror `calculatePriorityScore` in the frontend's
@@ -513,17 +558,17 @@ MAX_AXIS_VALUE = 5
 # nothing.
 MAX_BALLOT_NOTE_LEN = 2000
 
-# How many documents one save may carry. Each one costs up to TWO writes (the
-# ballot, plus the conditional legacy removal when the entry actually scored
-# something), so an unbounded body turns a single
-# invocation into hundreds of sequential round trips — and a Lambda timeout part
-# way through leaves the save half-persisted behind a bare 500. The page scores a
-# team-sized backlog, so a body larger than this is a client defect, and a 400
-# naming the bound is a better answer than a partially-applied save.
+# How many ROWS one save may carry. Each one costs the ballot write plus, when the
+# entry actually scored something, one read of the row and one conditional legacy
+# removal per document it holds — so an unbounded body turns a single invocation
+# into hundreds of sequential round trips, and a Lambda timeout part way through
+# leaves the save half-persisted behind a bare 500. The page scores a team-sized
+# backlog, so a body larger than this is a client defect, and a 400 naming the
+# bound is a better answer than a partially-applied save.
 MAX_BALLOTS_PER_SAVE = 100
 
 # How many query pages the read will follow. The module comment above documents
-# the scale ceiling (documents x reviewers in one partition); this is what makes
+# the scale ceiling (rows x reviewers in one partition); this is what makes
 # crossing it an observable, diagnosable event rather than a slowly-worsening GET
 # that eventually times out on the page's primary read. Generous enough that the
 # documented team-sized deployment can never reach it.
@@ -589,54 +634,82 @@ def _reviewer_segment(subject: str) -> str:
     return f'{REVIEWER_KIND_USER}:{subject}'
 
 
-def _ballot_sk(document_id: str, subject: str) -> str:
-    return f'{BALLOT_SK_PREFIX}{document_id}#{_reviewer_segment(subject)}'
+def _ballot_sk(row_id: str, subject: str) -> str:
+    return f'{BALLOT_SK_PREFIX}{row_id}#{_reviewer_segment(subject)}'
+
+
+def _row_sk(row_id: str) -> str:
+    return f'{ROW_SK_PREFIX}{row_id}'
+
+
+def _default_row_id(project_id: str) -> str:
+    """The id of a project's default row.
+
+    Derived, never minted: see DEFAULT_ROW_ID_PREFIX. The project id is already
+    known to contain no '#' by the time this is called
+    (`_validated_row_project_id`), so the composed id is a legal first half of a
+    ballot sort key.
+    """
+    return f'{DEFAULT_ROW_ID_PREFIX}{project_id}{DEFAULT_ROW_ID_SUFFIX}'
 
 
 def _parse_ballot_sk(sk: str) -> tuple[str, str] | None:
-    """Split a ballot sort key into (document_id, reviewer_segment).
+    """Split a ballot sort key into (row_id, reviewer_segment).
 
     Returns None for anything that is not a ballot, so an unrelated item in the
-    partition (the legacy SCORES map, or a future sibling record) is skipped
-    rather than misread as a ballot. The `rpartition` is safe because neither half
-    contains '#' — an invariant the write path ENFORCES on both halves rather than
-    assuming (see the module comment above).
+    partition (a row record, the legacy SCORES map, or a future sibling) is
+    skipped rather than misread as a ballot. The `rpartition` is safe because
+    neither half contains '#' — an invariant the write path ENFORCES on both
+    halves rather than assuming (see the module comment above).
     """
     if not sk.startswith(BALLOT_SK_PREFIX):
         return None
     remainder = sk[len(BALLOT_SK_PREFIX):]
-    document_id, _, reviewer = remainder.rpartition('#')
-    if not document_id or not reviewer:
+    row_id, _, reviewer = remainder.rpartition('#')
+    if not row_id or not reviewer:
         return None
-    return document_id, reviewer
+    return row_id, reviewer
 
 
-def _validated_ballot_document_id(raw: Any) -> str:
+def _validated_ballot_row_id(raw: Any) -> str:
     """Check that a client-supplied score key can be a ballot sort key.
 
     '#' is refused rather than escaped: it is the sort-key delimiter, server-minted
-    document ids never contain it, and an id carrying one would make the key
-    ambiguous to `_parse_ballot_sk`. The length bound keeps an absurd id a 400
-    naming the field instead of a DynamoDB ValidationException surfacing as a 500
-    (a sort key is capped at 1024 bytes; MAX_SOURCE_DOCUMENT_ID_LEN is the same
-    bound the document-aiming fields in this module already use).
+    row ids never contain it, and an id carrying one would make the key ambiguous
+    to `_parse_ballot_sk`. The length bound keeps an absurd id a 400 naming the
+    field instead of a DynamoDB ValidationException surfacing as a 500 (a sort key
+    is capped at 1024 bytes; MAX_SOURCE_DOCUMENT_ID_LEN is the same bound the
+    document-aiming fields in this module already use, and a row id is derived
+    from a project id so it is bounded in the same order).
 
     Each branch names the RULE it failed rather than echoing the key: three
     distinct causes behind one message leaves a caller unable to tell a delimiter
     collision from an over-long id, while the value itself is unbounded caller
     input that a response body gains nothing by repeating (the same reasoning
     `validate_bool` in shared/api.py records).
+
+    WHAT THIS DELIBERATELY DOES NOT CHECK: that the row exists. A save against a
+    row that does not resolve writes a ballot nothing will read, which is the same
+    outcome the read already has to tolerate for a stored key naming a vanished
+    row — and requiring a keyed read per entry would put N round trips in front of
+    every save to refuse a body the shipped page cannot compose. That a row's
+    documents belong to its project is guaranteed one level up, where a row is
+    composed: `_default_row_composition` picks from the project's OWN partition
+    (`pk = PROJECT#{project_id}`), so an id from elsewhere cannot be selected, and
+    the caller never supplies one. Phase 2, which lets a caller name a set, is
+    where that becomes a check rather than a construction — and where
+    `_validated_source_id` in this module is the pattern to follow.
     """
     if not isinstance(raw, str) or not raw.strip():
-        raise ValidationError('scores keys must be non-empty document id strings')
-    document_id = raw.strip()
-    if '#' in document_id:
+        raise ValidationError('scores keys must be non-empty row id strings')
+    row_id = raw.strip()
+    if '#' in row_id:
         raise ValidationError("scores keys must not contain '#', the sort-key delimiter")
-    if len(document_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+    if len(row_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
         raise ValidationError(
             f'scores keys must be at most {MAX_SOURCE_DOCUMENT_ID_LEN} characters'
         )
-    return document_id
+    return row_id
 
 
 def _is_clampable_number(value: Any) -> bool:
@@ -663,7 +736,7 @@ def _is_clampable_number(value: Any) -> bool:
     * `int(float('inf'))` raises `OverflowError`, which is in NEITHER of the
       exception types `validate_int` catches. Left to `validate_int` it therefore
       does not fall back at all: it propagates out of the write loop and
-      half-persists a multi-document save behind a bare 500, defeating the whole
+      half-persists a multi-row save behind a bare 500, defeating the whole
       point of validating before the first write. `Infinity` is reachable over
       the wire because Powertools parses the body with non-strict `json.loads`.
     * `int(float('nan'))` raises `ValueError`, which IS swallowed, so a `NaN`
@@ -697,7 +770,7 @@ def _validated_ballot_entry(entry: Any) -> dict:
 
     The same argument applies to the FIELDS of an accepted entry, and refusing
     them here rather than at the write is what makes the up-front pass's promise
-    ("nothing malformed can leave a multi-document save half-persisted") true:
+    ("nothing malformed can leave a multi-row save half-persisted") true:
 
     * An axis must be null (absent, left alone) or a number `_is_clampable_number`
       will accept. An unparseable axis stored as a real 0 both invents a vote and
@@ -713,10 +786,10 @@ def _validated_ballot_entry(entry: Any) -> dict:
       content, not a number pushed to the nearest legal value, and a justification
       runs long exactly when it is doing the most work. Refusing HERE rather than
       at the write is also what lets the note inherit the up-front pass's promise:
-      an over-long note cannot leave a multi-document save half-persisted.
+      an over-long note cannot leave a multi-row save half-persisted.
 
     None of the messages echoes the value: it is unbounded caller input a response
-    body gains nothing by repeating (the reasoning `_validated_ballot_document_id`
+    body gains nothing by repeating (the reasoning `_validated_ballot_row_id`
     and `validate_bool` both record). The note's message names the bound instead,
     which is the part a caller can act on.
     """
@@ -876,7 +949,7 @@ def _expresses_something(entry: Any) -> bool:
 
     The consequence of being wider, stated because it looks like the two halves
     disagreeing: `{'notes': 'x', 'impact': 'high'}` is read through for the note, so
-    the caller sees `impact: 0.0` while `aggregates` omits the document. That 0.0 is
+    the caller sees `impact: 0.0` while `aggregates` omits the row. That 0.0 is
     `_axis_value` reporting an axis nobody expressed, which is the same thing the
     page already shows for a reviewer whose first save carried only a note — and
     seeding the frontend's default instead was rejected there for the reason that
@@ -913,16 +986,17 @@ def _composite(entry: Any) -> float:
     return sum(_axis_value(entry, axis) * weight for axis, weight in COMPOSITE_WEIGHTS.items())
 
 
-def _score_payload(document_id: str, entry: Any) -> dict:
-    """One entry of the `scores` map the deployed frontend consumes.
+def _score_payload(row_id: str, entry: Any) -> dict:
+    """One entry of the `scores` map the page consumes, keyed by ROW.
 
-    Deliberately unchanged in shape: the frontend is NOT changing in this
-    request, so the values it shows and edits are now the CALLER'S OWN ballot
-    under exactly the keys it already reads.
+    `row_id` rather than `document_id`, because that is what the ballot is about.
+    The field names the identity the map is keyed by, so a consumer that reads the
+    row out of the entry rather than out of the key cannot end up addressing a
+    document that the row merely contains.
     """
     notes = entry.get('notes') if isinstance(entry, dict) else None
     return {
-        'document_id': document_id,
+        'row_id': row_id,
         'impact': _axis_value(entry, 'impact'),
         'time_to_market': _axis_value(entry, 'time_to_market'),
         'confidence': _axis_value(entry, 'confidence'),
@@ -961,7 +1035,7 @@ def _read_prioritization_partition() -> list[dict]:
             return items
         query_kwargs['ExclusiveStartKey'] = last_key
     logger.error(
-        'Prioritization ballots exceed %d query pages. Ballots grow as documents '
+        'Prioritization ballots exceed %d query pages. Ballots grow as rows '
         'x reviewers in one partition; past this size the partition needs '
         're-keying, not a bigger page budget.',
         MAX_PRIORITIZATION_PAGES,
@@ -969,8 +1043,8 @@ def _read_prioritization_partition() -> list[dict]:
     raise ServiceError('Too many prioritization ballots to read in one request')
 
 
-def _superseded_documents(ballots_by_document: dict[str, list[dict]]) -> set[str]:
-    """Documents whose pre-ballot value a real ballot has replaced.
+def _superseded_rows(ballots_by_row: dict[str, list[dict]]) -> set[str]:
+    """Rows whose pre-ballot value a real ballot has replaced.
 
     THE one definition of "superseded", asked by both halves of the GET response —
     the read-through in `api_get_prioritization_scores` and the aggregate in
@@ -989,20 +1063,65 @@ def _superseded_documents(ballots_by_document: dict[str, list[dict]]) -> set[str
     own starting numbers (the read-through).
     """
     return {
-        document_id for document_id, ballots in ballots_by_document.items()
+        row_id for row_id, ballots in ballots_by_row.items()
         if any(_is_a_vote(ballot) for ballot in ballots)
     }
 
 
+def _legacy_scores_by_row(
+    legacy_scores: dict, rows_by_id: dict[str, dict]
+) -> dict[str, list[Any]]:
+    """The pre-ballot score map, re-keyed from documents onto rows.
+
+    The legacy item predates rows entirely: its keys are document ids. It is the
+    one thing in the deployed partition that has to be carried across, and the
+    carry is a READ-SIDE translation — the stored map is never rewritten in place,
+    so a deployment that rolls back reads exactly what it wrote.
+
+    A legacy value lands on the DEFAULT row of the project that owns its document,
+    which is the row a reviewer opening the page will actually see. Only the
+    default row: a phase-2 row for another combination may also contain that
+    document, and attaching an unattributed pre-ballot value to every row holding
+    the document would multiply one old score into several unattributed ballots.
+
+    An entry whose document belongs to no row this response knows about is left
+    out rather than invented onto some row. It is not lost — nothing deletes it,
+    and it surfaces the moment the owning project's default row exists — and the
+    alternative is a score appearing under a row that does not contain the
+    document it was cast on.
+
+    A LIST per row, not one entry, because two documents of one project can each
+    carry a pre-ballot value and each is a separate unattributed opinion. Sorted
+    by document id so the read-through's choice among them (see
+    `api_get_prioritization_scores`) is the same on every request rather than
+    dependent on map order. The deployed partition holds exactly one legacy entry,
+    so this is about being explainable rather than about a case in the field.
+    """
+    row_of_document: dict[str, str] = {}
+    for row_id, row in rows_by_id.items():
+        if not _is_default_row(row):
+            continue
+        for document_id in _row_document_ids(row):
+            row_of_document.setdefault(document_id, row_id)
+    by_row: dict[str, list[Any]] = {}
+    for document_id in sorted(legacy_scores or {}):
+        row_id = row_of_document.get(document_id)
+        if row_id is None:
+            continue
+        by_row.setdefault(row_id, []).append(legacy_scores[document_id])
+    return by_row
+
+
 def _aggregate_scores(
-    ballots_by_document: dict[str, list[dict]], legacy_scores: dict
+    ballots_by_row: dict[str, list[dict]], legacy_by_row: dict[str, list[Any]]
 ) -> dict:
-    """Per document: the mean of each axis, how many reviewers scored it, and the
+    """Per row: the mean of each axis, how many reviewers scored it, and the
     spread of the composite score.
 
-    A surviving legacy entry counts as exactly ONE unattributed ballot, and only
-    while NOTHING HAS SUPERSEDED IT: it is skipped as soon as any ballot for that
-    document is a vote. THE READ is what prevents the double count, not the write.
+    A surviving legacy entry counts as exactly ONE unattributed ballot on the row
+    it lands on (`_legacy_scores_by_row`), and only while NOTHING HAS SUPERSEDED
+    IT: it is skipped as soon as any ballot for that row is a vote. THE READ is
+    what prevents the double count, not the write.
     Resting it on the write was wrong, because `_drop_legacy_score` is deliberately
     best-effort — a throttle or a permissions gap leaves the legacy entry in place
     while the ballot is durably written and the reviewer is told 200 — so failing
@@ -1028,7 +1147,7 @@ def _aggregate_scores(
     reviewers who actually scored THAT axis, so a partially-scored ballot cannot
     depress the axes it says nothing about. An axis nobody scored reports 0.0,
     which is the same "no number here" the page already renders for an unscored
-    document; `reviewer_count` is the count of reviewers who scored something, not
+    row; `reviewer_count` is the count of reviewers who scored something, not
     of reviewers who scored every axis.
 
     `score_spread` compares only FULLY-scored ballots, and is 0.0 below two of
@@ -1044,22 +1163,21 @@ def _aggregate_scores(
     those who can be compared like for like, and zero spread still means the
     comparable reviewers agreed.
 
-    Response size: one row per document that anybody has scored — reviewers are
-    collapsed into a mean here rather than listed, so the response grows with
-    documents alone, not documents x reviewers the way storage does. Documents
-    deleted since they were scored keep a row (their ballots live in the
-    aggregates table and `delete_document` does not reach into it), so a consumer
-    should intersect these keys with the live document list rather than treat the
-    map as a document index.
+    Response size: one entry per ROW that anybody has scored — reviewers are
+    collapsed into a mean here rather than listed, so the response grows with rows
+    alone, not rows x reviewers the way storage does. A row deleted since it was
+    scored keeps an entry (its ballots live beside it and nothing removes them in
+    this phase), so a consumer should intersect these keys with the rows it can
+    resolve rather than treat the map as a row index.
     """
     aggregates: dict[str, dict] = {}
-    legacy = legacy_scores or {}
-    superseded = _superseded_documents(ballots_by_document)
-    for document_id in set(ballots_by_document) | set(legacy):
-        entries: list[Any] = list(ballots_by_document.get(document_id, []))
-        # The legacy value counts only until a real ballot supersedes it.
-        if document_id in legacy and document_id not in superseded:
-            entries.append(legacy[document_id])
+    legacy = legacy_by_row or {}
+    superseded = _superseded_rows(ballots_by_row)
+    for row_id in set(ballots_by_row) | set(legacy):
+        entries: list[Any] = list(ballots_by_row.get(row_id, []))
+        # A legacy value counts only until a real ballot on this row supersedes it.
+        if row_id not in superseded:
+            entries.extend(legacy.get(row_id, []))
         votes = [entry for entry in entries if _is_a_vote(entry)]
         if not votes:
             continue
@@ -1072,7 +1190,7 @@ def _aggregate_scores(
         # an absent axis at 0, so including a partial ballot would measure how
         # completely each reviewer scored instead of how much they disagreed.
         comparable = [_composite(entry) for entry in votes if _is_fully_scored(entry)]
-        aggregates[document_id] = {
+        aggregates[row_id] = {
             **means,
             'reviewer_count': len(votes),
             # Zero below two comparable ballots, which is the honest reading:
@@ -1098,7 +1216,15 @@ def _drop_legacy_score(table, document_id: str) -> None:
     entry: the alternative is trusting a client-supplied "please migrate" flag, or
     reading the shared map first — which is the read-modify-write this change
     exists to remove. The steady-state cost is one refused conditional write per
-    saved document, which is bounded by the documents in one save.
+    document of the saved row, which is bounded by MAX_ROW_DOCUMENT_IDS.
+
+    NOW CALLED PER DOCUMENT OF THE SAVED ROW, because the legacy map is keyed by
+    document while a ballot is keyed by row. A row's ballot supersedes the
+    pre-ballot value of every document that row holds — that is the same
+    translation the read performs (`_legacy_scores_by_row`), so the write's removal
+    and the read's suppression stay about the same values. Removing only some of
+    them would leave a value the read has already stopped counting sitting in the
+    map for a later, differently-composed row to pick up.
 
     ONLY CALLED FOR A SAVE THAT ACTUALLY SCORED SOMETHING (`_is_a_vote`). The
     justification below is "the reviewer who saved has just expressed the newer
@@ -1114,15 +1240,15 @@ def _drop_legacy_score(table, document_id: str) -> None:
     read-through's wider question, and a reviewer who typed a comment without
     touching a slider has expressed no newer SCORE.
 
-    Note what removal costs: once any reviewer VOTES on a document, its pre-ballot
-    value is gone, so a reviewer who has not saved stops seeing it read through
-    and it stops counting in the aggregate. That is the deliberate trade — a
-    value nobody's name is on is worth less than the guarantee that it can never
-    be double-counted against the ballot that replaced it, and the reviewer who
-    voted has just expressed the newer opinion.
+    Note what removal costs: once any reviewer VOTES on a row, the pre-ballot
+    value of every document that row holds is gone, so a reviewer who has not
+    saved stops seeing it read through and it stops counting in the aggregate.
+    That is the deliberate trade — a value nobody's name is on is worth less than
+    the guarantee that it can never be double-counted against the ballot that
+    replaced it, and the reviewer who voted has just expressed the newer opinion.
 
     The aggregate asks the SAME predicate on the read side (`_aggregate_scores`
-    counts the legacy value only while no ballot for that document is a vote), so
+    counts the legacy value only while no ballot for that row is a vote), so
     the write's trigger and the read's suppression cannot disagree — and the read
     is what makes the no-double-count guarantee hold even when this best-effort
     write does not land.
@@ -1158,15 +1284,295 @@ def _drop_legacy_score(table, document_id: str) -> None:
         logger.warning(f"Legacy prioritization score removal failed: {e}")
 
 
+def _drop_legacy_scores_for_row(table, row_id: str) -> None:
+    """Retire the pre-ballot value of every document the saved row holds.
+
+    The translation the write side owes the read side: the legacy map is keyed by
+    DOCUMENT and a ballot is keyed by ROW, so "this row's ballot supersedes that
+    value" means the documents the row holds — the same mapping
+    `_legacy_scores_by_row` performs on the read.
+
+    Costs one keyed read of the row. That read is the only way to learn what a row
+    holds from a row id alone, and it happens only for a save that actually SCORED
+    something (`_is_a_vote`), so an unscored no-op pays nothing.
+
+    BEST EFFORT THROUGHOUT, including the read: the caller's ballot is already
+    durably written, `_drop_legacy_score` is already documented as unable to
+    surface a failure, and the read's own suppression (`_superseded_rows`) is what
+    makes the no-double-count guarantee hold whether or not any of this lands. So a
+    row that cannot be read leaves the map alone and logs, rather than telling a
+    reviewer their vote failed.
+    """
+    try:
+        row = table.get_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)}
+        ).get('Item')
+    except Exception as e:  # noqa: BLE001 - a landed ballot must never be failed
+        logger.warning(f"Legacy prioritization score removal could not read its row: {e}")
+        return
+    for document_id in _row_document_ids(row):
+        _drop_legacy_score(table, document_id)
+
+
+# ============================================
+# Rows — a project's set of documents, scored once
+# ============================================
+
+
+def _row_document_ids(row: Any) -> list[str]:
+    """The document ids a stored row holds, defensively.
+
+    A row is written by this module and read straight back, but it is read on
+    every page load and the read must never take the page down over a malformed
+    item: a row whose `document_ids` is not a list of strings reads as holding
+    nothing rather than raising. That is the same "an unreadable stored value is
+    silence" reading `_readable_axis` takes one field over — on a read there is
+    nobody to tell, so the choice is between saying nothing and inventing
+    something.
+    """
+    if not isinstance(row, dict):
+        return []
+    stored = row.get('document_ids')
+    if not isinstance(stored, list):
+        return []
+    return [value for value in stored if isinstance(value, str) and value]
+
+
+def _is_default_row(row: Any) -> bool:
+    """Is this the project's default row?
+
+    Read off a stored FLAG rather than by re-deriving the id from the project id.
+    The derivation is how the id is minted, and the flag is what the read asks, so
+    a phase-2 row minted under a different scheme cannot accidentally answer yes
+    because of how its id happens to be spelled.
+    """
+    return isinstance(row, dict) and row.get('is_default') is True
+
+
+def _row_payload(row: dict) -> dict:
+    """One entry of the `rows` map the page consumes.
+
+    Explicitly projected rather than returned whole, the same reasoning
+    `item_to_widget_config` records in the feedback-form handler: `pk`/`sk` are
+    storage detail, and a field added to the record later must not reach the page
+    without somebody deciding it should.
+    """
+    return {
+        'row_id': row.get('row_id', ''),
+        'project_id': row.get('project_id', ''),
+        'document_ids': _row_document_ids(row),
+        'prototype_id': (
+            row['prototype_id'] if isinstance(row.get('prototype_id'), str) else ''
+        ),
+        'is_default': _is_default_row(row),
+        'created_at': row.get('created_at', ''),
+    }
+
+
+def _validated_row_project_id(raw: Any) -> str:
+    """Check that a client-supplied project id can name a row.
+
+    The project id reaches a SORT KEY through `_default_row_id`, so the same
+    no-'#' rule every other half of a ballot key is held to applies here — and it
+    is checked at the one place a row id is minted, which is what lets
+    `_validated_ballot_row_id` refuse a '#' without having to explain where one
+    could have come from.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValidationError('project_id is required')
+    project_id = raw.strip()
+    if '#' in project_id:
+        raise ValidationError("project_id must not contain '#', the sort-key delimiter")
+    if len(project_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+        raise ValidationError(
+            f'project_id must be at most {MAX_SOURCE_DOCUMENT_ID_LEN} characters'
+        )
+    return project_id
+
+
+def _project_documents(project_id: str) -> list[dict]:
+    """The project's documents, from the projects table.
+
+    One query on the project's own partition — the same read `get_project`
+    performs, minus the signing and the personas. Not `get_project` itself: that
+    signs every prototype URL through CloudFront, which is work a row composition
+    has no use for.
+    """
+    table = get_projects_table()
+    if not table:
+        raise ConfigurationError('Projects table not configured')
+    response = table.query(
+        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
+    )
+    return [item for item in response.get('Items', []) if isinstance(item, dict)]
+
+
+# Which sort-key prefixes hold a SCORABLE document, and which holds a prototype.
+#
+# The scorable set is the backend's half of the frontend's `SCORABLE_TYPE_META`,
+# which is "the single source of truth for which document types are scorable" on
+# the page. The two are pinned against each other by
+# `test_prioritization_scorable_types_lockstep.py`: a type scorable on one side
+# only means either a row composed without a document the page shows sliders for,
+# or a page refusing to show a document the row was scored on.
+SCORABLE_SK_PREFIXES = ('PRD#', 'PRFAQ#')
+PROTOTYPE_SK_PREFIX = 'PROTOTYPE#'
+
+
+def _default_row_composition(documents: list[dict]) -> tuple[list[str], str]:
+    """The concrete ids a project's default row is first composed of.
+
+    "Latest of each type" describes THIS FUNCTION and nothing else. What it
+    returns is a list of ids, and the row stores those ids; a row never holds a
+    selector, so generating a new PRD later changes no existing row. That is what
+    keeps a ballot describing the documents it was cast about.
+
+    Every scorable document of the project, newest first per type, plus the
+    project's latest prototype as a separate field — the prototype is context a
+    reviewer looks at rather than a document the row is scored on, which is why it
+    is not in `document_ids`.
+
+    Bounded at MAX_ROW_DOCUMENT_IDS, keeping the NEWEST: a row is one item read on
+    every page load, and a project with hundreds of generated PRDs would otherwise
+    compose a row nobody can read. Newest is the half a reviewer is scoring.
+    """
+    scorable = [
+        item for item in documents
+        if str(item.get('sk', '')).startswith(SCORABLE_SK_PREFIXES)
+    ]
+    scorable.sort(key=lambda item: str(item.get('created_at', '')), reverse=True)
+    document_ids: list[str] = []
+    for item in scorable[:MAX_ROW_DOCUMENT_IDS]:
+        document_id = item.get('document_id')
+        if isinstance(document_id, str) and document_id and document_id not in document_ids:
+            document_ids.append(document_id)
+
+    prototypes = [
+        item for item in documents
+        if str(item.get('sk', '')).startswith(PROTOTYPE_SK_PREFIX)
+    ]
+    prototypes.sort(key=lambda item: str(item.get('created_at', '')), reverse=True)
+    prototype_id = ''
+    for item in prototypes:
+        candidate = item.get('document_id')
+        if isinstance(candidate, str) and candidate:
+            prototype_id = candidate
+            break
+    return document_ids, prototype_id
+
+
+@app.post("/projects/prioritization/rows")
+@tracer.capture_method
+def api_create_prioritization_row():
+    """Ensure the default row of one project exists, and return it.
+
+    IDEMPOTENT, which is the whole contract: asking twice yields the SAME row
+    rather than a second one. The row id is derived from the project id
+    (`_default_row_id`) and the write is conditional on the key not already
+    existing, so two callers racing on a project that has never been prioritised
+    end with one row — the loser's condition fails and it reads back the row the
+    winner wrote. A minted id plus a read-then-write would lose that race silently
+    and give one project two default rows, each with its own ballots.
+
+    Composed from the project's own documents, and REFUSED for a project with no
+    scorable document: a row with nothing to score is not a row, and the page
+    already has words inviting a PRD or a PR/FAQ for that project. So "a project
+    with no scorable documents has no row" is enforced here rather than left to
+    whoever calls.
+
+    Authenticated exactly like every other prioritization route — it is under the
+    same `/projects` proxy — and deliberately open to any signed-in reviewer, per
+    the decision recorded on the issue: the freeze phase 2 adds is the protection,
+    not the identity of whoever created the row.
+    """
+    body = app.current_event.json_body or {}
+    project_id = _validated_row_project_id(body.get('project_id'))
+
+    documents = _project_documents(project_id)
+    if not any(item.get('sk') == 'META' for item in documents):
+        raise NotFoundError(f'Project {project_id} not found')
+    document_ids, prototype_id = _default_row_composition(documents)
+    if not document_ids:
+        raise ValidationError(
+            'This project has no PRD or PR/FAQ to score, so it has no prioritization row'
+        )
+
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+
+    row_id = _default_row_id(project_id)
+    now = datetime.now(timezone.utc).isoformat()
+    item = {
+        'pk': PRIORITIZATION_PK,
+        'sk': _row_sk(row_id),
+        'row_id': row_id,
+        'project_id': project_id,
+        # CONCRETE ids, never the selector that chose them. See
+        # `_default_row_composition`.
+        'document_ids': document_ids,
+        'prototype_id': prototype_id,
+        'is_default': True,
+        'created_at': now,
+        'updated_at': now,
+        # No `ttl`: the aggregates table expires anything carrying one, and a row
+        # is as durable as the ballots keyed to it.
+    }
+    try:
+        table.put_item(
+            Item=item,
+            # THE idempotence. Not a read-then-write: two simultaneous callers both
+            # read "no row" and both write, and one project ends up with two rows
+            # holding two disjoint sets of ballots.
+            ConditionExpression='attribute_not_exists(sk)',
+        )
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
+            logger.exception(f'Failed to create prioritization row for {project_id}: {e}')
+            raise ServiceError('Failed to create the prioritization row') from e
+        # Already there — which is a success for a route whose contract is "this
+        # row exists". Read it back rather than answering the item just composed:
+        # the stored row is the one the ballots are keyed to, and its composition
+        # is whatever it was created with, not what "latest of each type" would
+        # pick today.
+        existing = table.get_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)}
+        ).get('Item')
+        if not isinstance(existing, dict):
+            # The condition said the item exists and the read says it does not,
+            # which only a deletion between the two calls explains. Reported rather
+            # than papered over with the composed item, which would claim a
+            # composition nothing stored.
+            raise ServiceError('Failed to read the prioritization row back') from e
+        return {'success': True, 'created': False, 'row': _row_payload(existing)}
+    except Exception as e:
+        logger.exception(f'Failed to create prioritization row for {project_id}: {e}')
+        raise ServiceError('Failed to create the prioritization row') from e
+
+    return {'success': True, 'created': True, 'row': _row_payload(item)}
+
+
 @app.get("/projects/prioritization")
 @tracer.capture_method
 def api_get_prioritization_scores():
-    """Return the caller's own ballots plus the cross-reviewer aggregate.
+    """Return the rows, the caller's own ballots on them, and the team aggregate.
 
-    `scores` keeps the exact shape the deployed frontend consumes, holding the
-    CALLER'S values (or a legacy value where the caller has no ballot yet), so
-    the page keeps showing and editing the caller's own numbers with no frontend
-    change. `aggregates` is new and additive, for a later frontend change.
+    Three maps, ALL KEYED BY ROW ID, out of ONE query on the partition:
+
+      * `rows` — what each row is: its project and the concrete document ids it
+        holds. Returned with the scores rather than behind a route of its own, so
+        the page learns what every row contains without a second round trip per
+        row.
+      * `scores` — the CALLER'S own ballot per row (or a legacy pre-ballot value on
+        a row whose documents carry one and where the caller has none yet).
+      * `aggregates` — what every reviewer together said, per row.
+
+    A stored ballot naming a row that no longer resolves is IGNORED rather than
+    allowed to break the page: it contributes to nothing and appears in nothing.
+    That is the read behaving like the rest of this module does about unreadable
+    stored values — there is nobody to tell, so the choice is between silence and
+    inventing a row — and it is what makes a deleted row (phase 2) a non-event for
+    a reader here.
 
     A failed read RAISES. Returning an empty map made "the read failed" and
     "nobody has scored anything" indistinguishable, so a transient DynamoDB error
@@ -1184,8 +1590,8 @@ def api_get_prioritization_scores():
 
     caller_segment = _reviewer_segment(subject)
     legacy_scores: dict = {}
-    ballots_by_document: dict[str, list[dict]] = {}
-    caller_ballots: dict[str, dict] = {}
+    rows_by_id: dict[str, dict] = {}
+    all_ballots: list[tuple[str, str, dict]] = []
 
     for item in items:
         sk = item.get('sk') or ''
@@ -1193,26 +1599,44 @@ def api_get_prioritization_scores():
             stored = item.get('scores')
             legacy_scores = stored if isinstance(stored, dict) else {}
             continue
+        if sk.startswith(ROW_SK_PREFIX):
+            row_id = sk[len(ROW_SK_PREFIX):]
+            if row_id:
+                rows_by_id[row_id] = item
+            continue
         parsed = _parse_ballot_sk(sk)
         if not parsed:
             continue
-        document_id, reviewer = parsed
-        ballots_by_document.setdefault(document_id, []).append(item)
+        row_id, reviewer = parsed
+        all_ballots.append((row_id, reviewer, item))
+
+    # A ballot whose row does not resolve is dropped here, once, so that neither
+    # the caller's own map nor the aggregate can name a row the response does not
+    # describe. Filtering in only one of the two places is how `scores` came to
+    # disagree with `aggregates` about the legacy value, one field over.
+    ballots_by_row: dict[str, list[dict]] = {}
+    caller_ballots: dict[str, dict] = {}
+    for row_id, reviewer, item in all_ballots:
+        if row_id not in rows_by_id:
+            continue
+        ballots_by_row.setdefault(row_id, []).append(item)
         if reviewer == caller_segment:
-            caller_ballots[document_id] = item
+            caller_ballots[row_id] = item
 
     scores = {
-        document_id: _score_payload(document_id, ballot)
-        for document_id, ballot in caller_ballots.items()
+        row_id: _score_payload(row_id, ballot)
+        for row_id, ballot in caller_ballots.items()
     }
-    # Read-through: a document the caller has not scored, but which carries a
-    # pre-ballot value, still shows that value rather than looking unscored.
+    # Read-through: a row the caller has not scored, but one of whose documents
+    # carries a pre-ballot value, still shows that value rather than looking
+    # unscored. `_legacy_scores_by_row` is what decides which row a document-keyed
+    # legacy value lands on — the default row of the project owning the document.
     #
     # Only entries that EXPRESSED SOMETHING are read through. A value the write
     # path would refuse is not read through as if a reviewer had entered it: every
     # axis of an unreadable entry reads 0.0 out of `_axis_value`, so passing one to
     # `_score_payload` showed the caller an invented lowest score on all four axes
-    # for a document `_aggregate_scores` correctly omits — the two halves
+    # for a row `_aggregate_scores` correctly omits — the two halves
     # disagreeing about the same value.
     #
     # `_expresses_something` rather than `isinstance(entry, dict)`, because a type
@@ -1223,7 +1647,7 @@ def api_get_prioritization_scores():
     #
     # The legacy map predates this route's validation and was written by a handler
     # with no type discipline, so neither shape is ruled out by construction, and
-    # nothing migrates one away until the first save against that document.
+    # nothing migrates one away until the first save against that row.
     #
     # A SUPERSEDED value is not read through either, even to a caller who has no
     # ballot of their own: once somebody has voted, the unattributed value has been
@@ -1232,21 +1656,30 @@ def api_get_prioritization_scores():
     # nobody scored — and it would do so only when the best-effort
     # `_drop_legacy_score` happened to fail, so the page's starting numbers would
     # depend on whether a write nobody was told about landed.
-    superseded = _superseded_documents(ballots_by_document)
-    for document_id, entry in legacy_scores.items():
-        if document_id in scores or document_id in superseded:
+    legacy_by_row = _legacy_scores_by_row(legacy_scores, rows_by_id)
+    superseded = _superseded_rows(ballots_by_row)
+    for row_id, entries in legacy_by_row.items():
+        if row_id in scores or row_id in superseded:
             continue
-        if _expresses_something(entry):
-            scores[document_id] = _score_payload(document_id, entry)
+        # The FIRST entry that expressed something, in the document order
+        # `_legacy_scores_by_row` fixed. `scores` holds one ballot per row because
+        # a reviewer has one ballot per row, so two pre-ballot values on documents
+        # of one row cannot both be the caller's starting numbers — and the
+        # aggregate, which can hold several unattributed opinions, counts both.
+        for entry in entries:
+            if _expresses_something(entry):
+                scores[row_id] = _score_payload(row_id, entry)
+                break
 
     return {
+        'rows': {row_id: _row_payload(row) for row_id, row in rows_by_id.items()},
         'scores': scores,
-        'aggregates': _aggregate_scores(ballots_by_document, legacy_scores),
+        'aggregates': _aggregate_scores(ballots_by_row, legacy_by_row),
     }
 
 
-def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str) -> dict:
-    """The single `update_item` that persists one document's ballot for one reviewer.
+def _ballot_update_kwargs(row_id: str, subject: str, entry: dict, now: str) -> dict:
+    """The single `update_item` that persists one row's ballot for one reviewer.
 
     Only the axes the caller ACTUALLY SENT are assigned. Writing all four
     unconditionally with `validate_int(default=0)` meant a body carrying just
@@ -1268,14 +1701,14 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
     blanking it.
 
     Present axes still go through `validate_int`, so an out-of-range slider is
-    clamped to 0-5 rather than failing a whole multi-document save over one axis.
+    clamped to 0-5 rather than failing a whole multi-row save over one axis.
     Nothing here has to fall back, though: `_validated_ballot_entry` has already
     refused any axis that is not a clampable number, and any `notes` that is not a
     string or that exceeds MAX_BALLOT_NOTE_LEN — so `validate_int`'s `default` is
     unreachable and the note is written VERBATIM. It is not truncated here: a
     silently shortened note is a durable decision record losing its tail on a 200,
     which is the same loss refusing a non-string prevents. That ordering is
-    deliberate — a value refused up front cannot half-persist a multi-document
+    deliberate — a value refused up front cannot half-persist a multi-row
     save, and neither an invented 0 nor a shortened note can overwrite what a
     reviewer stored.
 
@@ -1287,7 +1720,7 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
     assignments = [f'#{field} = :{field}' for field in BALLOT_STAMP_FIELDS]
     names = {f'#{field}': field for field in BALLOT_STAMP_FIELDS}
     values: dict[str, Any] = {
-        ':document_id': document_id,
+        ':row_id': row_id,
         ':reviewer': _reviewer_segment(subject),
         ':updated_at': now,
     }
@@ -1316,7 +1749,7 @@ def _ballot_update_kwargs(document_id: str, subject: str, entry: dict, now: str)
         values[':notes'] = notes
 
     return {
-        'Key': {'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(document_id, subject)},
+        'Key': {'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, subject)},
         'UpdateExpression': 'SET ' + ', '.join(assignments),
         'ExpressionAttributeNames': names,
         'ExpressionAttributeValues': values,
@@ -1392,12 +1825,12 @@ def api_put_prioritization_scores():
 @app.patch("/projects/prioritization")
 @tracer.capture_method
 def api_patch_prioritization_scores():
-    """Persist the caller's own ballot for each document in the request.
+    """Persist the caller's own ballot for each ROW in the request.
 
-    Body shape is unchanged (`{'scores': {document_id: {...}}}`) because the
-    deployed frontend is unchanged; every entry is written as the CALLER'S ballot.
+    Body shape is `{'scores': {row_id: {...}}}`; every entry is written as the
+    CALLER'S ballot on that row.
 
-    Each document is one `update_item` on the caller's own key — never a
+    Each row is one `update_item` on the caller's own key — never a
     read-modify-write of a shared map — so concurrent reviewers cannot overwrite
     each other. Only the fields an entry carries are written, so a partial entry
     leaves the reviewer's other axes untouched. No `ttl` attribute is ever
@@ -1406,17 +1839,17 @@ def api_patch_prioritization_scores():
 
     PARTIAL FAILURE, and why RETRYING IS SAFE. This is NOT all-or-nothing. Nothing
     malformed can half-apply — every key and every value is refused before the
-    first write — but the documents are written sequentially, so a throttle or a
-    timeout on document 3 of 10 leaves the first two durably persisted and answers
+    first write — but the rows are written sequentially, so a throttle or a
+    timeout on row 3 of 10 leaves the first two durably persisted and answers
     a bare 500 that does not say so. Retrying the identical body is nonetheless
     safe: every write is an idempotent `update_item` on a deterministic key derived
-    from the document id and the caller's own subject, so replaying converges on
+    from the row id and the caller's own subject, so replaying converges on
     the same ballots rather than duplicating or compounding anything. A client that
     sees a 500 should re-send the whole body, not try to work out what landed.
 
     `updated_count` is returned only on success, where it is the number of BALLOTS
     WRITTEN — saves that stored a value the reviewer entered — which is at most the
-    number of documents in the body and is fewer when an entry changed nothing.
+    number of rows in the body and is fewer when an entry changed nothing.
     Counting keys received instead reported `updated_count: 3` for a body of three
     empty objects that stored no score, contradicting the very unit the
     duplicate-key refusal above is justified on ("ballots written, not keys
@@ -1431,85 +1864,85 @@ def api_patch_prioritization_scores():
     leaking. One number describes work done for the caller, the other describes work
     done by the Lambda.
 
-    On failure the count of documents written goes to the log and NOT to the
+    On failure the count of rows written goes to the log and NOT to the
     response — deliberately, because a partial
     count invites exactly the reasoning the idempotence makes unnecessary (working
-    out which documents to re-send) while being unreliable for it: the failing
+    out which rows to re-send) while being unreliable for it: the failing
     write may or may not have landed server-side, and the legacy migration for an
-    already-counted document may still be outstanding. One number the client can
+    already-counted row may still be outstanding. One number the client can
     act on ("retry the body") is better than a number it would have to interpret.
     """
     subject = _caller_reviewer_subject()
     body = app.current_event.json_body or {}
     changed_scores = body.get('scores') or {}
     if not isinstance(changed_scores, dict):
-        raise ValidationError('scores must be an object keyed by document id')
+        raise ValidationError('scores must be an object keyed by row id')
     if not changed_scores:
         return {'success': True, 'message': 'No changes to save'}
     if len(changed_scores) > MAX_BALLOTS_PER_SAVE:
         raise ValidationError(
-            f'scores may carry at most {MAX_BALLOTS_PER_SAVE} documents per save'
+            f'scores may carry at most {MAX_BALLOTS_PER_SAVE} rows per save'
         )
 
     # Validate every key AND value BEFORE the first write, so nothing malformed
-    # can leave a multi-document save half-persisted.
+    # can leave a multi-row save half-persisted.
     validated = [
-        (_validated_ballot_document_id(document_id), _validated_ballot_entry(entry))
-        for document_id, entry in changed_scores.items()
+        (_validated_ballot_row_id(row_id), _validated_ballot_entry(entry))
+        for row_id, entry in changed_scores.items()
     ]
     # Two keys differing only in surrounding whitespace address the SAME ballot
     # once stripped, so writing both silently let one entry overwrite the other —
     # with the winner decided by object order rather than by anything the caller
-    # said — and still reported `updated_count` as if two documents had been saved.
+    # said — and still reported `updated_count` as if two rows had been saved.
     # Refused rather than de-duplicated, for the same reason `_validated_ballot_entry`
-    # refuses a non-dict: the request states two different scores for one document
+    # refuses a non-dict: the request states two different scores for one row
     # and there is no way to know which was meant. Refusing also keeps
     # `updated_count` and MAX_BALLOTS_PER_SAVE counted in the unit they claim —
     # ballots written, not keys received.
     seen: set[str] = set()
-    for document_id, _ in validated:
-        if document_id in seen:
+    for row_id, _ in validated:
+        if row_id in seen:
             raise ValidationError(
-                'scores keys must be distinct document ids; two keys differing '
+                'scores keys must be distinct row ids; two keys differing '
                 'only in surrounding whitespace address the same ballot'
             )
-        seen.add(document_id)
+        seen.add(row_id)
 
     table = get_aggregates_table()
     if not table:
         raise ConfigurationError('Aggregates table not configured')
     now = datetime.now(timezone.utc).isoformat()
 
-    # Counted so a failure part way through a multi-document save is diagnosable.
+    # Counted so a failure part way through a multi-row save is diagnosable.
     # Validation cannot half-persist a save, but a throttle or a timeout on
-    # document 3 of 10 can, and a bare 500 says nothing about how far it got.
+    # row 3 of 10 can, and a bare 500 says nothing about how far it got.
     # TWO counters, because the two questions are asked in different units and
-    # only one of them is the caller's. `documents_written` is round trips issued,
+    # only one of them is the caller's. `rows_written` is round trips issued,
     # which is what a partial-failure log has to report — how far the loop got.
     # `ballots` is saves that stored something the reviewer entered, which is what
     # `updated_count` claims to be.
-    documents_written = 0
+    rows_written = 0
     ballots = 0
     try:
-        for document_id, entry in validated:
-            update_kwargs = _ballot_update_kwargs(document_id, subject, entry, now)
+        for row_id, entry in validated:
+            update_kwargs = _ballot_update_kwargs(row_id, subject, entry, now)
             table.update_item(**update_kwargs)
-            documents_written += 1
+            rows_written += 1
             if _writes_a_reviewer_value(update_kwargs):
                 ballots += 1
-            # Same save: the pre-ballot value for this document goes away — but
-            # ONLY when this ballot actually scored something, because that value
-            # is a score and nothing else supersedes it. An entry that expressed
-            # no axis would otherwise delete a value it did not replace.
+            # Same save: the pre-ballot value of every document this row holds goes
+            # away — but ONLY when this ballot actually scored something, because
+            # that value is a score and nothing else supersedes it. An entry that
+            # expressed no axis would otherwise delete a value it did not replace.
             if _is_a_vote(entry):
-                _drop_legacy_score(table, document_id)
+                _drop_legacy_scores_for_row(table, row_id)
         return {'success': True, 'updated_count': ballots}
     except ApiError:
         raise
     except Exception as e:
         logger.exception(
-            f"Failed to save prioritization ballot after {documents_written} of "
-            f"{len(validated)} documents: {e}"
+            f"Failed to save prioritization ballot after {rows_written} of "
+            f"{len(validated)} rows: {e}"
         )
         raise ServiceError('Failed to save prioritization scores') from e
 

@@ -172,8 +172,8 @@ def open_session(session_id=OPEN_SESSION_ID, **overrides):
         'pk': SESSION_PK,
         'sk': f'SESSION#{session_id}',
         'session_id': session_id,
-        'document_id': 'prfaq_20260817',
-        'document_title': 'Instant refunds',
+        'row_id': 'row_proj_20260817_default',
+        'row_title': 'Instant refunds',
         'status': 'open',
         'ballot_cap': 40,
         'ballot_count': 0,
@@ -383,7 +383,7 @@ class TestOneDeviceOneBallot:
         assert body['corrected'] is False
         assert body['ballot_id'] != mine['ballot_id']
         assert table.session()['ballot_count'] == 1
-        assert table.ballot(f"BALLOT#{before['document_id']}#anon:{mine['ballot_id']}") == before
+        assert table.ballot(f"BALLOT#{before['row_id']}#anon:{mine['ballot_id']}") == before
 
     def test_an_unrecognised_ballot_id_is_a_first_submission(
             self, api_gateway_event, lambda_context):
@@ -414,8 +414,10 @@ class TestOneDeviceOneBallot:
                           body={**AXES, 'ballot_id': chosen})
 
         assert body['ballot_id'] != chosen
-        assert table.ballot(f'BALLOT#prfaq_20260817#anon:{chosen}') is None
-        assert table.ballot_keys == [f"BALLOT#prfaq_20260817#anon:{body['ballot_id']}"]
+        assert table.ballot(f'BALLOT#row_proj_20260817_default#anon:{chosen}') is None
+        assert table.ballot_keys == [
+            f"BALLOT#row_proj_20260817_default#anon:{body['ballot_id']}"
+        ]
 
 
 class TestACorrectionIsRefusedByTheSameAuthority:
@@ -479,22 +481,36 @@ class TestWhatABallotIsAndIsNot:
         table = FakeAggregatesTable([])
 
         status, body = _create(table, api_gateway_event, lambda_context,
-                               body={'document_id': 'prd_1', 'document_title': 'Refunds'})
+                               body={'row_id': 'row_p1_default', 'row_title': 'Refunds'})
 
         assert status == 200
         stored = table.session(body['session']['session_id'])
         assert isinstance(stored['ttl'], int)
         assert stored['ballot_count'] == 0
 
-    def test_the_document_comes_from_the_session_not_from_the_body(
+    def test_the_row_comes_from_the_session_not_from_the_body(
             self, api_gateway_event, lambda_context):
         # A public caller does not get to choose which proposal it is scoring.
         table = FakeAggregatesTable([open_session()])
 
         _submit(table, api_gateway_event, lambda_context,
-                body={**AXES, 'document_id': 'prd_somebody_elses'})
+                body={**AXES, 'row_id': 'row_somebody_elses_default'})
 
-        assert table.ballot_keys[0].startswith('BALLOT#prfaq_20260817#anon:')
+        assert table.ballot_keys[0].startswith('BALLOT#row_proj_20260817_default#anon:')
+
+    def test_the_ballot_lands_on_the_session_s_row_so_a_room_scores_a_whole_proposal(
+            self, api_gateway_event, lambda_context):
+        # The unit, not merely the shape: a ballot keyed to a ROW is what makes a
+        # room's vote cover a project's PRD and its PR/FAQ together instead of
+        # whichever one the QR happened to sit on. The stored attribute matches the
+        # signed-in save path's `row_id` stamp, so one page reads both.
+        table = FakeAggregatesTable([open_session()])
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        stored = table.ballot(table.ballot_keys[0])
+        assert stored['row_id'] == 'row_proj_20260817_default'
+        assert 'document_id' not in stored
 
     def test_the_ballot_records_which_session_cast_it(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable([open_session()])
@@ -691,11 +707,11 @@ class TestTheSessionTokenNeverReachesALog:
 
         with patch('ballots_handler.logger', logger):
             _, body = _create(table, api_gateway_event, lambda_context,
-                              body={'document_id': 'prd_1'})
+                              body={'row_id': 'row_p1_default'})
         lines = self._logged(logger)
 
         assert body['session']['session_id'] not in lines
-        assert 'prd_1' in lines, 'an operator still needs the document'
+        assert 'row_p1_default' in lines, 'an operator still needs the row'
 
     def test_closing_a_session_logs_only_a_truncated_reference(
             self, api_gateway_event, lambda_context):
@@ -718,15 +734,18 @@ class TestTheSessionTokenNeverReachesALog:
 
 
 class TestThePublicConfigRouteIsANarrowProjection:
-    def test_an_open_session_names_the_document_and_nothing_else(
+    def test_an_open_session_names_the_row_and_nothing_else(
             self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable([open_session(ballot_count=11)])
 
         status, body = _config(table, api_gateway_event, lambda_context)
 
         assert status == 200
+        # `row_title`, because what is being scored is a project's set of documents
+        # rather than one document — the public page states plainly what a ballot
+        # covers, and a field named for a document would be the wrong claim.
         assert body['session'] == {
-            'open': True, 'reason': None, 'document_title': 'Instant refunds',
+            'open': True, 'reason': None, 'row_title': 'Instant refunds',
         }
 
     @pytest.mark.parametrize('overrides,reason', [
@@ -762,7 +781,7 @@ class TestTheFacilitatorHalf:
         table = FakeAggregatesTable([])
 
         _, body = _create(table, api_gateway_event, lambda_context,
-                          body={'document_id': 'prd_1'}, subject='alice')
+                          body={'row_id': 'row_p1_default'}, subject='alice')
 
         assert table.session(body['session']['session_id'])['created_by'] == 'alice'
         assert 'alice' not in json.dumps(body)
@@ -772,17 +791,17 @@ class TestTheFacilitatorHalf:
         table = FakeAggregatesTable([])
 
         status, _ = _create(table, api_gateway_event, lambda_context,
-                            body={'document_id': 'prd_1'}, subject=None)
+                            body={'row_id': 'row_p1_default'}, subject=None)
 
         assert status == 403
         assert table.put_item_calls == []
 
-    def test_a_document_id_carrying_the_key_delimiter_is_refused(
+    def test_a_row_id_carrying_the_key_delimiter_is_refused(
             self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable([])
 
         status, _ = _create(table, api_gateway_event, lambda_context,
-                            body={'document_id': 'prd#1'})
+                            body={'row_id': 'row_p1#default'})
 
         assert status == 400
         assert table.put_item_calls == []
@@ -791,8 +810,8 @@ class TestTheFacilitatorHalf:
             self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable([])
 
-        _, first = _create(table, api_gateway_event, lambda_context, body={'document_id': 'a'})
-        _, second = _create(table, api_gateway_event, lambda_context, body={'document_id': 'a'})
+        _, first = _create(table, api_gateway_event, lambda_context, body={'row_id': 'a'})
+        _, second = _create(table, api_gateway_event, lambda_context, body={'row_id': 'a'})
 
         assert re.fullmatch(r'vs_[0-9a-f]{32}', first['session']['session_id'])
         assert first['session']['session_id'] != second['session']['session_id']
@@ -802,7 +821,7 @@ class TestTheFacilitatorHalf:
         table = FakeAggregatesTable([])
 
         _, body = _create(table, api_gateway_event, lambda_context,
-                          body={'document_id': 'a', 'ballot_cap': 10_000,
+                          body={'row_id': 'a', 'ballot_cap': 10_000,
                                 'expires_in_minutes': 100_000})
 
         assert body['session']['ballot_cap'] == 200

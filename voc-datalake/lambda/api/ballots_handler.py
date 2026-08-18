@@ -1,6 +1,8 @@
 """
 VoC Anonymous Ballots API Lambda
-Handles: /voting-sessions/* — a room scoring ONE document from their phones.
+Handles: /voting-sessions/* — a room scoring ONE PRIORITIZATION ROW from their
+phones. A row is a project's set of documents, so the room scores a whole
+proposal rather than whichever of its documents a QR happened to sit on.
 
 WHY THIS IS ITS OWN HANDLER, AND ITS OWN API GATEWAY RESOURCE
 ------------------------------------------------------------
@@ -44,7 +46,7 @@ vote access. Every line in this module puts it through `_session_ref`.
 
 ONE DEVICE, ONE BALLOT
 ----------------------
-Every ballot lands on its own key, `BALLOT#{document_id}#anon:{ballot_id}`, where
+Every ballot lands on its own key, `BALLOT#{row_id}#anon:{ballot_id}`, where
 `ballot_id` is minted HERE (never accepted from the caller) and handed back to the
 device. Re-submitting with that id upserts the same record, so a phone correcting
 its vote replaces it rather than adding one, and no cap is consumed. Stuffing
@@ -163,6 +165,12 @@ MAX_BALLOT_CAP = 200
 # PINNED by `lambda/api/test/test_anon_ballot_key_lockstep.py`: a ballot written
 # under a drifted key is unreadable to the page and, worse, a drifted KIND
 # namespace could land on a signed-in reviewer's key and destroy their vote.
+#
+# The first half of the key is a ROW id — a prioritization row, which is one
+# project's set of documents. This handler never reads a row record: it has no
+# need to know what a row contains, only which one the facilitator opened the vote
+# for, and a row's composition is `projects_handler`'s business. What that buys is
+# that a room scores the whole proposal rather than one of its documents.
 PRIORITIZATION_PK = 'PRIORITIZATION'
 BALLOT_SK_PREFIX = 'BALLOT#'
 REVIEWER_KIND_ANON = 'anon'
@@ -190,11 +198,17 @@ MAX_DISPLAY_NAME_LEN = 60
 # scoring. Copied onto the session at creation rather than read live from the
 # projects table: this Lambda has no access to that table by design, and the
 # session is a record of what the facilitator put on screen.
-MAX_DOCUMENT_TITLE_LEN = 200
+#
+# It names the ROW now — a project's set of documents — so the sentence the room
+# reads is about the proposal it is scoring rather than about one document of it.
+# Still `row_title` on the record and in the payload, because what it titles is
+# what a ballot is keyed to; a field called `document_title` naming a row would
+# be the wrong claim in the one place a public reader looks.
+MAX_ROW_TITLE_LEN = 200
 
-# A DynamoDB sort key is capped at 1024 bytes; the same bound the document-aiming
-# fields in `projects_handler` use, so an absurd id is a 400 naming the field
-# rather than a ValidationException surfacing as a 500.
+# A DynamoDB sort key is capped at 1024 bytes; the same bound the row- and
+# document-aiming fields in `projects_handler` use, so an absurd id is a 400
+# naming the field rather than a ValidationException surfacing as a 500.
 MAX_SOURCE_DOCUMENT_ID_LEN = 256
 
 
@@ -332,15 +346,15 @@ def _session_ref(session_id: Any) -> str:
     return session_id[:len(SESSION_ID_PREFIX) + SESSION_LOG_REF_CHARS] + '...'
 
 
-def _ballot_sk(document_id: str, ballot_id: str) -> str:
+def _ballot_sk(row_id: str, ballot_id: str) -> str:
     """The ballot's sort key: kind-namespaced, so an anonymous ballot can never
     land on a signed-in reviewer's key.
 
-    Both halves are known not to contain '#': the document id is checked on the
-    way in (`_validated_document_id`) and the ballot id is minted here as hex.
+    Both halves are known not to contain '#': the row id is checked on the
+    way in (`_validated_row_id`) and the ballot id is minted here as hex.
     That is what keeps `BALLOT#{id}#{kind}:{subject}` splittable by the read.
     """
-    return f'{BALLOT_SK_PREFIX}{document_id}#{REVIEWER_KIND_ANON}:{ballot_id}'
+    return f'{BALLOT_SK_PREFIX}{row_id}#{REVIEWER_KIND_ANON}:{ballot_id}'
 
 
 def _minted_ballot_id() -> str:
@@ -371,25 +385,32 @@ def _validated_session_id(raw: Any) -> str | None:
     return session_id if _SESSION_ID_PATTERN.match(session_id) else None
 
 
-def _validated_document_id(raw: Any) -> str:
-    """Check that a facilitator-supplied document id can be a ballot sort key.
+def _validated_row_id(raw: Any) -> str:
+    """Check that a facilitator-supplied ROW id can be a ballot sort key.
 
-    The same three rules `projects_handler._validated_ballot_document_id` applies,
+    The same three rules `projects_handler._validated_ballot_row_id` applies,
     for the same reasons: '#' is the sort-key delimiter and would make the key
     ambiguous to the read, and an absurd length is a 400 naming the field rather
     than a DynamoDB ValidationException surfacing as a 500. Neither message echoes
     the value, which is unbounded caller input.
+
+    NOT a check that the row EXISTS: this Lambda's role grants it one item read at
+    a time on one table and it deliberately knows nothing about row records, so the
+    only thing it can honestly check is the shape of the key it is about to write.
+    A session opened for a row that does not resolve collects ballots the page
+    ignores on read — the same outcome as the signed-in save path, whose reasoning
+    `_validated_ballot_row_id` records.
     """
     if not isinstance(raw, str) or not raw.strip():
-        raise ValidationError('document_id is required')
-    document_id = raw.strip()
-    if '#' in document_id:
-        raise ValidationError("document_id must not contain '#', the sort-key delimiter")
-    if len(document_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
+        raise ValidationError('row_id is required')
+    row_id = raw.strip()
+    if '#' in row_id:
+        raise ValidationError("row_id must not contain '#', the sort-key delimiter")
+    if len(row_id) > MAX_SOURCE_DOCUMENT_ID_LEN:
         raise ValidationError(
-            f'document_id must be at most {MAX_SOURCE_DOCUMENT_ID_LEN} characters'
+            f'row_id must be at most {MAX_SOURCE_DOCUMENT_ID_LEN} characters'
         )
-    return document_id
+    return row_id
 
 
 def _sanitized_text(raw: Any, max_length: int) -> str:
@@ -551,8 +572,8 @@ def _session_payload(item: dict, now: datetime) -> dict:
     """
     return {
         'session_id': item.get('session_id', ''),
-        'document_id': item.get('document_id', ''),
-        'document_title': item.get('document_title', ''),
+        'row_id': item.get('row_id', ''),
+        'row_title': item.get('row_title', ''),
         'status': item.get('status', STATUS_CLOSED),
         'state': _session_state(item, now),
         'ballot_cap': int(item.get('ballot_cap', 0)),
@@ -571,20 +592,23 @@ def _session_payload(item: dict, now: datetime) -> dict:
 @app.post('/voting-sessions')
 @tracer.capture_method
 def create_voting_session():
-    """Open a voting session for ONE scorable document.
+    """Open a voting session for ONE PRIORITIZATION ROW.
 
     Authenticated: a session is a thing that authorizes anonymous writes, so only
     a signed-in facilitator may create one, and the creator is recorded.
 
-    ONE DOCUMENT, said plainly because it is a known limitation rather than an
-    oversight: a proposal that exists as both a PRD row and a PR/FAQ row is two
-    documents today, and a room scanning this QR scores the one document this
-    session names. Resolving the row unit is a separate change; the facilitator UI
-    names the document the session scores so the limitation is visible.
+    ONE ROW, which is one project's set of documents — so a room scanning this QR
+    scores a whole proposal, not whichever of its documents the QR sat on. That was
+    the known limitation this module's docstring used to name as a separate change;
+    it is this one, and what changed is a single slot in the key.
+
+    The row is named, not composed, here: this Lambda has no access to the projects
+    table by design and never reads a row record. `row_title` is copied onto the
+    session so the public page can say what is being scored without either.
     """
     body = _json_object_body()
-    document_id = _validated_document_id(body.get('document_id'))
-    document_title = _sanitized_text(body.get('document_title'), MAX_DOCUMENT_TITLE_LEN)
+    row_id = _validated_row_id(body.get('row_id'))
+    row_title = _sanitized_text(body.get('row_title'), MAX_ROW_TITLE_LEN)
     ballot_cap = validate_int(
         body.get('ballot_cap'),
         default=DEFAULT_BALLOT_CAP,
@@ -610,8 +634,8 @@ def create_voting_session():
         'pk': VOTING_SESSION_PK,
         'sk': _session_sk(session_id),
         'session_id': session_id,
-        'document_id': document_id,
-        'document_title': document_title,
+        'row_id': row_id,
+        'row_title': row_title,
         'status': STATUS_OPEN,
         'ballot_cap': ballot_cap,
         'ballot_count': 0,
@@ -630,16 +654,16 @@ def create_voting_session():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Failed to open voting session for {document_id}: {e}')
+        logger.exception(f'Failed to open voting session for {row_id}: {e}')
         raise ServiceError('Failed to open the voting session') from e
 
     # TRUNCATED, because the session id is the credential the QR carries and this
     # line would otherwise hand a vote to anyone who can read a log. What an
-    # operator actually needs is which document a session was opened against and
+    # operator actually needs is which row a session was opened against and
     # enough of the id to follow that session's other lines, which
     # `_session_ref` leaves intact. The creator's subject is not logged at all —
     # it identifies a person.
-    logger.info(f'Opened voting session {_session_ref(session_id)} for document {document_id}')
+    logger.info(f'Opened voting session {_session_ref(session_id)} for row {row_id}')
     return {'success': True, 'session': _session_payload(item, now)}
 
 
@@ -723,7 +747,7 @@ def get_ballot_config(session_id: str):
     if not item:
         return {
             'success': True,
-            'session': {'open': False, 'reason': REASON_NOT_FOUND, 'document_title': ''},
+            'session': {'open': False, 'reason': REASON_NOT_FOUND, 'row_title': ''},
         }
     state = _session_state(item, _now())
     return {
@@ -731,12 +755,15 @@ def get_ballot_config(session_id: str):
         'session': {
             'open': state == STATUS_OPEN,
             'reason': None if state == STATUS_OPEN else state,
-            'document_title': item.get('document_title', ''),
+            # Names the ROW — a project's set of documents — so the sentence a
+            # phone reads is about the proposal it is scoring. Copied off the
+            # session, which is what the facilitator put on screen.
+            'row_title': item.get('row_title', ''),
         },
     }
 
 
-def _existing_ballot(document_id: str, session_id: str, raw_ballot_id: Any) -> str | None:
+def _existing_ballot(row_id: str, session_id: str, raw_ballot_id: Any) -> str | None:
     """The ballot id this device already has ON THIS SESSION, or None.
 
     Two checks, and both matter:
@@ -745,7 +772,7 @@ def _existing_ballot(document_id: str, session_id: str, raw_ballot_id: Any) -> s
       is the single place a public caller could otherwise influence that key.
     * THE SESSION IT WAS CAST IN: a ballot id from another session must not act as
       a free pass here. Without this, one id obtained legitimately anywhere could
-      correct — that is, overwrite — a ballot on any document, without ever
+      correct — that is, overwrite — a ballot on any row, without ever
       consuming a cap slot.
 
     Anything that fails either check is not an error: it is simply not a
@@ -757,7 +784,7 @@ def _existing_ballot(document_id: str, session_id: str, raw_ballot_id: Any) -> s
     ballot_id = raw_ballot_id.strip()
     try:
         response = _table().get_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(document_id, ballot_id)}
+            Key={'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, ballot_id)}
         )
     except ApiError:
         raise
@@ -839,7 +866,7 @@ def _hold_open_session(session_id: str, now: datetime, *, claim_slot: bool) -> b
 
 
 def _write_ballot(
-    document_id: str,
+    row_id: str,
     ballot_id: str,
     session_id: str,
     axes: dict[str, int],
@@ -863,16 +890,19 @@ def _write_ballot(
     least record which room cast it. `display_name` is stored only when the
     submitter gave one, and no read exposes it today.
     """
-    assignments = ['#document_id = :document_id', '#reviewer = :reviewer',
+    # `row_id`, the same attribute name the signed-in save stamps
+    # (`BALLOT_STAMP_FIELDS` in `projects_handler`), because both write the same
+    # kind of record and it is read back by one page.
+    assignments = ['#row_id = :row_id', '#reviewer = :reviewer',
                    '#updated_at = :updated_at', '#voting_session = :voting_session']
     names = {
-        '#document_id': 'document_id',
+        '#row_id': 'row_id',
         '#reviewer': 'reviewer',
         '#updated_at': 'updated_at',
         '#voting_session': 'voting_session',
     }
     values: dict[str, Any] = {
-        ':document_id': document_id,
+        ':row_id': row_id,
         ':reviewer': f'{REVIEWER_KIND_ANON}:{ballot_id}',
         ':updated_at': now.isoformat(),
         ':voting_session': session_id,
@@ -892,7 +922,7 @@ def _write_ballot(
 
     try:
         _table().update_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(document_id, ballot_id)},
+            Key={'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, ballot_id)},
             UpdateExpression='SET ' + ', '.join(assignments),
             ExpressionAttributeNames=names,
             ExpressionAttributeValues=values,
@@ -909,7 +939,7 @@ def _write_ballot(
 @app.post('/voting-sessions/<session_id>/submit')
 @tracer.capture_method
 def submit_ballot(session_id: str):
-    """Record one anonymous ballot against the session's document. PUBLIC.
+    """Record one anonymous ballot against the session's ROW. PUBLIC.
 
     The order of work is the point:
 
@@ -929,7 +959,7 @@ def submit_ballot(session_id: str):
     A failure between 4 and 5 loses a slot without recording a ballot, and answers
     500. That is the honest direction: the alternative (write first, count after)
     would let a flood past the cap, which is the whole thing the cap exists for.
-    The document id comes from the SESSION, never from the body — a public caller
+    The row id comes from the SESSION, never from the body — a public caller
     does not get to choose which proposal it is scoring.
     """
     validated_session = _validated_session_id(session_id)
@@ -956,17 +986,17 @@ def submit_ballot(session_id: str):
     if state != STATUS_OPEN:
         return _refusal(state)
 
-    document_id = item.get('document_id')
-    if not isinstance(document_id, str) or not document_id or '#' in document_id:
+    row_id = item.get('row_id')
+    if not isinstance(row_id, str) or not row_id or '#' in row_id:
         # A session that cannot name a ballot key is not a session to write
         # against. Unreachable through `create_voting_session`, which validates
         # the id; refused rather than trusted because the write would otherwise
         # land on a mis-split key and appear in the aggregate as a phantom
-        # document.
-        logger.error(f'Voting session {_session_ref(validated_session)} has no usable document_id')
+        # row.
+        logger.error(f'Voting session {_session_ref(validated_session)} has no usable row_id')
         return _refusal(REASON_NOT_FOUND)
 
-    ballot_id = _existing_ballot(document_id, validated_session, body.get('ballot_id'))
+    ballot_id = _existing_ballot(row_id, validated_session, body.get('ballot_id'))
     corrected = ballot_id is not None
 
     # BOTH paths pass through the conditional write, and that is the point: a
@@ -994,7 +1024,7 @@ def submit_ballot(session_id: str):
     if ballot_id is None:
         ballot_id = _minted_ballot_id()
 
-    _write_ballot(document_id, ballot_id, validated_session, axes, note, display_name, now)
+    _write_ballot(row_id, ballot_id, validated_session, axes, note, display_name, now)
 
     # The ballot id is the device's own credential for correcting its vote, so it
     # is never logged; nor is the note or the display name.
@@ -1006,7 +1036,7 @@ def submit_ballot(session_id: str):
         'success': True,
         'ballot_id': ballot_id,
         'corrected': corrected,
-        'document_title': item.get('document_title', ''),
+        'row_title': item.get('row_title', ''),
     }
 
 
