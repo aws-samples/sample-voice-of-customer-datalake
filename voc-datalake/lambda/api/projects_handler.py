@@ -1741,14 +1741,49 @@ def api_get_prioritization_scores():
     # the caller's own map nor the aggregate can name a row the response does not
     # describe. Filtering in only one of the two places is how `scores` came to
     # disagree with `aggregates` about the legacy value, one field over.
+    #
+    # COUNTED AND LOGGED, not dropped in silence. A discarded ballot is somebody's
+    # opinion disappearing, and until this read the discard left no trace at all:
+    # no log, no count, a 200, and a row reading as never scored. That is the same
+    # class of fault this function refuses one screen up, where crossing the page
+    # bound RAISES rather than truncating because "a silently-short window is
+    # exactly how this codebase has been bitten before" — so it should not be
+    # silent here either.
+    #
+    # A warning rather than a raise, because a stale ballot must never take the
+    # page down, and aggregated rather than per-item so one poisoned partition
+    # cannot flood the log. Two shapes reach it: the one-time cost of this change
+    # (ballots keyed by a DOCUMENT id, written by the deployment before rows
+    # existed — abandoned deliberately, no migration), and any future ballot whose
+    # row has gone. Phase 2 introduces row deletion, which is when the second
+    # becomes ordinary and needs the delete-row-with-its-ballots path rather than
+    # this line; the count is what will show whether that is working.
     ballots_by_row: dict[str, list[dict]] = {}
     caller_ballots: dict[str, dict] = {}
+    unresolved_rows: set[str] = set()
+    unresolved_ballots = 0
     for row_id, reviewer, item in all_ballots:
         if row_id not in rows_by_id:
+            unresolved_rows.add(row_id)
+            unresolved_ballots += 1
             continue
         ballots_by_row.setdefault(row_id, []).append(item)
         if reviewer == caller_segment:
             caller_ballots[row_id] = item
+
+    if unresolved_ballots:
+        # The row ids are not logged: one of them is a document id from the old key
+        # shape, and this module's rule is not to echo stored identifiers into logs.
+        # The counts are what make the loss detectable and bound it.
+        logger.warning(
+            'Discarded %d prioritization ballot(s) across %d row id(s) that no '
+            'row record describes. Expected once per environment as ballots '
+            'written before rows existed are abandoned; a count that keeps '
+            'growing afterwards means ballots are being written against rows '
+            'that do not exist.',
+            unresolved_ballots,
+            len(unresolved_rows),
+        )
 
     scores = {
         row_id: _score_payload(row_id, ballot)

@@ -234,10 +234,14 @@ def _patch_scores(table, api_gateway_event, lambda_context, scores, subject='rev
     )
 
 
-def _get_scores(table, api_gateway_event, lambda_context, subject='reviewer-1'):
-    return _call(
-        table, _event(api_gateway_event, method='GET', subject=subject), lambda_context
-    )
+def _get_scores(table, api_gateway_event, lambda_context, subject='reviewer-1', logger=None):
+    """`logger` follows the pattern in test_ballots_handler: pass a double to assert
+    on what the read reported, rather than only on what it returned."""
+    event = _event(api_gateway_event, method='GET', subject=subject)
+    if logger is None:
+        return _call(table, event, lambda_context)
+    with patch('projects_handler.logger', logger):
+        return _call(table, event, lambda_context)
 
 
 AXES = {'impact': 4, 'time_to_market': 3, 'confidence': 2, 'strategic_fit': 5}
@@ -1995,6 +1999,131 @@ class TestTheResponseIsThreeMapsKeyedByRow:
         assert body['scores'] == {}
         assert body['aggregates'] == {}
         assert body['rows'] == {}
+
+    def test_a_ballot_keyed_by_a_DOCUMENT_is_abandoned_by_decision_not_by_accident(
+        self, api_gateway_event, lambda_context
+    ):
+        """A ballot written by the PREVIOUS deployment is dropped, and that is a
+        product decision rather than an oversight — which is why it has a test of
+        its own rather than riding on the vanished-row case above.
+
+        #333 keyed a signed-in ballot `BALLOT#{document_id}#user:{sub}` and #340
+        keyed a room ballot `BALLOT#{document_id}#anon:{ballot_id}`. Both were live
+        when this change was written, and the first key segment is now read as a ROW
+        id, so neither resolves. No migration is provided: the product owner decided
+        (2026-08-18) that the handful of ballots cast under the old key are
+        expendable, in preference to carrying a re-key nothing will need again.
+
+        The distinction this pins is that the drop is TOTAL and QUIET: absent from
+        `scores`, from `aggregates` and from `rows`, with a 200 and no warning. That
+        is the accepted behaviour, and a future reader wondering whether it was
+        noticed should find this test rather than infer it from silence.
+
+        NOT covered here on purpose: nothing deletes the orphaned items, so they
+        remain in the partition counting against `MAX_PRIORITIZATION_PAGES`. Harmless
+        at the two rows that existed; it becomes a cleanup task if a deployment ever
+        carries a large backlog across this change.
+        """
+        table = FakeAggregatesTable(items=[
+            # The two shapes the deployed code wrote, on a real-looking document id.
+            {
+                'pk': PARTITION, 'sk': 'BALLOT#prfaq_20260101120000#user:alice',
+                'document_id': 'prfaq_20260101120000', 'reviewer': 'user:alice', **AXES,
+            },
+            {
+                'pk': PARTITION, 'sk': 'BALLOT#prfaq_20260101120000#anon:ballot-1',
+                'document_id': 'prfaq_20260101120000', 'reviewer': 'anon:ballot-1',
+                'voting_session': 'vs_old', **AXES,
+            },
+        ]).seed_rows(
+            # A row that legitimately holds that very document. The ballots are still
+            # dropped: they are keyed by the DOCUMENT, and nothing maps one onto the
+            # row containing it. This is the assertion that makes the test about the
+            # decision rather than about an unresolvable id.
+            'row-1', project_id='proj-1', document_ids=['prfaq_20260101120000'],
+        )
+
+        status, body = _get_scores(table, api_gateway_event, lambda_context, subject='alice')
+
+        assert status == 200
+        assert body['scores'] == {}
+        assert body['aggregates'] == {}
+        # The row itself is unaffected and reads as never scored.
+        assert body['rows']['row-1']['document_ids'] == ['prfaq_20260101120000']
+
+    def test_discarding_a_ballot_is_reported_rather_than_done_in_silence(
+        self, api_gateway_event, lambda_context
+    ):
+        """A discarded ballot is somebody's opinion disappearing, so the read has to
+        say it happened.
+
+        The one-time cost of this change is accepted: ballots written before rows
+        existed were keyed `BALLOT#{document_id}#…` (#333 signed-in, #340 room), the
+        first segment is now read as a ROW id, and no migration is provided. What is
+        NOT accepted is that happening quietly — the drop used to be a bare
+        `continue` with no log, no count, a 200, and a row reading as never scored.
+        This asserts the counts, which are what make a future loss detectable and
+        tell the one-off from a leak: the number should be flat after the first read
+        of an environment, and a growing one means ballots are being written against
+        rows that do not exist.
+
+        The row ids must NOT be in the message — one of them is a document id from
+        the old key shape, and this module does not echo stored identifiers into
+        logs.
+        """
+        document_id = 'prfaq_20260101120000'
+        table = FakeAggregatesTable(items=[
+            {
+                'pk': PARTITION, 'sk': f'BALLOT#{document_id}#user:alice',
+                'reviewer': 'user:alice', **AXES,
+            },
+            {
+                'pk': PARTITION, 'sk': f'BALLOT#{document_id}#anon:ballot-1',
+                'reviewer': 'anon:ballot-1', **AXES,
+            },
+            {
+                'pk': PARTITION, 'sk': 'BALLOT#row-gone#user:alice',
+                'reviewer': 'user:alice', **AXES,
+            },
+        ]).seed_rows('row-1', project_id='proj-1', document_ids=[document_id])
+        logger = MagicMock()
+
+        status, body = _get_scores(
+            table, api_gateway_event, lambda_context, subject='alice', logger=logger,
+        )
+
+        # Dropped from both halves, and the surviving row is untouched.
+        assert status == 200
+        assert body['scores'] == {}
+        assert body['aggregates'] == {}
+        assert body['rows']['row-1']['document_ids'] == [document_id]
+        # Reported once, with both counts: three ballots across two unresolved ids.
+        assert logger.warning.call_count == 1
+        args = logger.warning.call_args[0]
+        assert args[1] == 3, f'ballot count, got {args[1]}'
+        assert args[2] == 2, f'distinct unresolved row ids, got {args[2]}'
+        # Neither identifier reaches the log line, in the template or the arguments.
+        assert document_id not in str(args)
+        assert 'row-gone' not in str(args)
+
+    def test_a_read_with_nothing_to_discard_says_nothing(
+        self, api_gateway_event, lambda_context
+    ):
+        """The positive control for the report above: a warning on every read would be
+        noise, and would make the growing-count signal unreadable."""
+        table = FakeAggregatesTable().seed_rows(
+            'row-1', project_id='proj-1', document_ids=['prd-1'],
+        )
+        _patch_scores(table, api_gateway_event, lambda_context,
+                      {'row-1': {**AXES}}, subject='alice')
+        logger = MagicMock()
+
+        status, _ = _get_scores(
+            table, api_gateway_event, lambda_context, subject='alice', logger=logger,
+        )
+
+        assert status == 200
+        assert logger.warning.call_count == 0
 
     def test_an_empty_backlog_still_returns_an_empty_score_map(
         self, api_gateway_event, lambda_context
