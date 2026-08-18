@@ -21,6 +21,10 @@ from shared.api import (
     api_handler,
     validate_date_basis,
     MAX_PERSONAS_PER_GENERATION,
+    # APPENDED rather than sorted into place: two open pull requests (#344, #330)
+    # also edit this import block, and re-sorting a list this change did not need
+    # to reorder is a conflict invented for tidiness.
+    require_admin,
 )
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
 from shared.jobs import create_job
@@ -515,6 +519,43 @@ ROW_SK_PREFIX = 'ROW#'
 DEFAULT_ROW_ID_PREFIX = 'row_'
 DEFAULT_ROW_ID_SUFFIX = '_default'
 
+# How many random bytes a NON-default row's id carries, and how one is spelled.
+#
+# Minted server-side, never accepted from a caller, for the reason
+# `_validated_ballot_row_id` records at length: the row id becomes the FIRST SEGMENT
+# of every ballot sort key on that row, so a caller-chosen id puts the shape of that
+# key under a caller's control. Hex under the same DEFAULT_ROW_ID_PREFIX namespace,
+# so every row id in the partition reads alike and none of them can contain the '#'
+# the key is split on.
+#
+# The DEFAULT suffix is deliberately NOT appended: a minted id must never be able to
+# collide with the derived default id of any project, and `_default_row_id` is the
+# only thing that composes that spelling.
+ROW_ID_BYTES = 16
+
+# The mark a row carries once a ballot has landed on it, and what the composition
+# change asserts about.
+#
+# THIS ATTRIBUTE IS THE FREEZE. A composition change is one conditional
+# `update_item` carrying `attribute_not_exists(first_ballot_at)`, so the DATABASE is
+# what refuses a change to a row somebody has voted on — a read of a ballot count
+# followed by a write would lose the race against the first ballot and leave a row
+# whose documents nobody balloting on it ever saw. Written by the ballot save in the
+# SAME transaction as the ballot itself (`_ballot_transact_items`), which is what
+# makes "the first ballot froze it" true at the instant the ballot lands rather than
+# on a later reconciliation.
+#
+# `if_not_exists`, so it records the FIRST ballot and every later one leaves it
+# alone: it is the freeze instant, not a last-modified stamp.
+ROW_FROZEN_AT_FIELD = 'first_ballot_at'
+
+# How many ballot writes a row has taken. Not a reviewer count and not shown to
+# anybody — it exists so a DELETE can be fenced on the row not having changed
+# between the read that enumerated its ballots and the write that removes them (see
+# `api_delete_prioritization_row`). Incremented with `ADD` in the ballot
+# transaction, so two concurrent ballots each move it.
+ROW_BALLOT_WRITES_FIELD = 'ballot_writes'
+
 # How many documents one row may hold. A row is a project's scorable documents
 # plus its latest prototype, and the composition is stored verbatim and read back
 # on every page load. Generous next to any real project (a handful of PRDs and
@@ -586,6 +627,20 @@ MAX_BALLOTS_PER_SAVE = 100
 # that eventually times out on the page's primary read. Generous enough that the
 # documented team-sized deployment can never reach it.
 MAX_PRIORITIZATION_PAGES = 20
+
+# How many ballots one row may hold and still be deletable together with them.
+#
+# DynamoDB caps a transaction at 100 items, and the delete spends items on the row
+# record and, for a default row, one `ConditionCheck` on a sibling — so this is that
+# ceiling minus the two the transaction reserves for itself. Not a product bound: a
+# row is one project's set of documents, and a reviewer count that reaches this is a
+# deployment far past the team-sized shape the partition itself is scaled for.
+#
+# Crossing it REFUSES rather than deleting in batches, which is the whole argument
+# for the transaction: several writes would leave the ballots that did not fit in the
+# first one orphaned between them, and an orphaned ballot is precisely what this path
+# exists to make impossible.
+MAX_ROW_BALLOTS_PER_DELETE = 98
 
 # How many document pages a row COMPOSITION will follow.
 #
@@ -779,6 +834,32 @@ def _validated_ballot_row_id(raw: Any) -> str:
     if len(row_id) > MAX_KEY_SEGMENT_ID_LEN:
         raise ValidationError(
             f'scores keys must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
+        )
+    return row_id
+
+
+def _validated_path_row_id(raw: Any) -> str:
+    """Check that a row id taken from the URL PATH can be a sort key.
+
+    The same three rules `_validated_ballot_row_id` applies, for the same reasons
+    recorded there, with messages that name `row_id` rather than "scores keys": a
+    caller who addressed `PATCH /projects/prioritization/rows/{row_id}` and was told
+    their "scores keys" were wrong would be reading about a field their request does
+    not have.
+
+    A path segment reaches the same sort key as a body key does, so the no-'#' rule
+    is not merely inherited — a '%23' that arrives decoded would compose
+    `ROW#a#b`, and the row a later ballot's `BALLOT#a#b#user:x` key parses to is then
+    not the row that was written.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValidationError('row_id is required')
+    row_id = raw.strip()
+    if '#' in row_id:
+        raise ValidationError("row_id must not contain '#', the sort-key delimiter")
+    if len(row_id) > MAX_KEY_SEGMENT_ID_LEN:
+        raise ValidationError(
+            f'row_id must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
         )
     return row_id
 
@@ -1567,6 +1648,25 @@ def _fetched_ballot_rows(table, row_ids: list[str]) -> dict[str, dict]:
     return fetched
 
 
+def _fetched_row(table, row_id: str) -> dict | None:
+    """One row record, or None — the DELETE's read.
+
+    Separate from `_fetched_ballot_rows` for one reason: that helper's failed-read
+    message says a SAVE failed, and a delete that reported "Failed to save
+    prioritization scores" would send an operator reading the wrong route's logs. The
+    consistency argument is the same and stated there.
+    """
+    try:
+        item = table.get_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)},
+            ConsistentRead=True,
+        ).get('Item')
+    except Exception as e:
+        logger.exception(f'Failed to read a prioritization row before a delete: {e}')
+        raise ServiceError('Failed to delete the prioritization row') from e
+    return item if isinstance(item, dict) else None
+
+
 def _is_default_row(row: Any) -> bool:
     """Is this the project's default row?
 
@@ -1578,6 +1678,21 @@ def _is_default_row(row: Any) -> bool:
     return isinstance(row, dict) and row.get('is_default') is True
 
 
+def _is_frozen_row(row: Any) -> bool:
+    """Has a ballot landed on this row, so its composition is settled?
+
+    Read off the presence of ROW_FROZEN_AT_FIELD, which is the SAME attribute the
+    composition change's condition names. One fact, asked one way: a predicate that
+    counted ballots instead could answer "not frozen" for a row the database will
+    nonetheless refuse to recompose, which is a page saying the opposite of what the
+    save does.
+    """
+    if not isinstance(row, dict):
+        return False
+    frozen_at = row.get(ROW_FROZEN_AT_FIELD)
+    return isinstance(frozen_at, str) and bool(frozen_at)
+
+
 def _row_payload(row: dict) -> dict:
     """One entry of the `rows` map the page consumes.
 
@@ -1585,6 +1700,15 @@ def _row_payload(row: dict) -> dict:
     `item_to_widget_config` records in the feedback-form handler: `pk`/`sk` are
     storage detail, and a field added to the record later must not reach the page
     without somebody deciding it should.
+
+    `is_frozen` is ADDITIVE and every existing field keeps its name and meaning, so
+    the shipped page keeps working unchanged. It is a boolean rather than the stored
+    instant because what a consumer can act on is whether the composition may still
+    change; the instant itself is storage detail nothing on the page renders, and
+    publishing it would invite a client to compute the freeze itself and disagree
+    with the condition that actually enforces it. `ballot_writes` is not published
+    for the same reason and a stronger one — it counts writes, not reviewers, and a
+    number that looks like a reviewer count but is not is worse than no number.
     """
     return {
         'row_id': row.get('row_id', ''),
@@ -1595,6 +1719,7 @@ def _row_payload(row: dict) -> dict:
         ),
         'is_default': _is_default_row(row),
         'created_at': row.get('created_at', ''),
+        'is_frozen': _is_frozen_row(row),
     }
 
 
@@ -1776,6 +1901,522 @@ def _default_row_composition(documents: list[dict]) -> tuple[list[str], str]:
             prototype_id = candidate
             break
     return document_ids, prototype_id
+
+
+def _minted_row_id() -> str:
+    """A new NON-default row's id.
+
+    Always minted here, never taken from the request, for the reason
+    `_validated_ballot_row_id` records: the id becomes the first segment of every
+    ballot sort key on the row, so a caller-chosen id would put that key's shape
+    under a caller's control. Hex, so it cannot carry the '#' the key is split on,
+    and prefixed like the derived default ids so every row id in the partition reads
+    alike.
+    """
+    return f'{DEFAULT_ROW_ID_PREFIX}{secrets.token_hex(ROW_ID_BYTES)}'
+
+
+def _scorable_document_ids(documents: list[dict]) -> dict[str, str]:
+    """Every SCORABLE document of the project, as document_id -> sort-key prefix.
+
+    The candidate set a caller may compose a row from. Built from the project's own
+    partition and keyed by the sort-key prefix, so "this project owns it" and "this
+    type is scorable" are one lookup rather than two checks that could disagree —
+    `pk` is the project and `sk` carries the type, which is the same reasoning
+    `_validated_source_id` records for the generation routes' trust boundary.
+
+    A prototype is deliberately absent: it is context a reviewer looks at rather
+    than a document a row is scored on (see `_default_row_composition`), so offering
+    one as a row member would put an unscorable id in `document_ids`.
+    """
+    owned: dict[str, str] = {}
+    for item in documents:
+        sk = str(item.get('sk', ''))
+        prefix = next((p for p in SCORABLE_SK_PREFIXES if sk.startswith(p)), None)
+        if prefix is None:
+            continue
+        document_id = item.get('document_id')
+        if isinstance(document_id, str) and document_id:
+            owned.setdefault(document_id, prefix)
+    return owned
+
+
+def _validated_row_document_ids(raw: Any, documents: list[dict]) -> list[str]:
+    """The concrete document ids a caller asked a row to hold, or a refusal.
+
+    STORED VERBATIM by the caller's choosing — this is what makes a row mean the
+    same set forever. Nothing here re-derives "latest of each type": that rule
+    composes a DEFAULT row once (`_default_row_composition`) and has no business
+    reinterpreting a set somebody picked.
+
+    Every refusal happens BEFORE anything is written, and each names the rule it
+    failed rather than echoing the id, which is unbounded caller input a response
+    body gains nothing by repeating (the reasoning `_validated_ballot_row_id` and
+    `validate_bool` both record). Five rules, and the reason each one is a refusal
+    rather than a repair:
+
+    * NOT A LIST OF STRINGS — there is no set to store, and coercing one would
+      invent a composition nobody chose.
+    * EMPTY — a row with nothing to score is not a row. The same refusal the default
+      row's create already makes for a project with no scorable document, in the
+      same words the page already has an answer for.
+    * AN ID THIS PROJECT DOES NOT OWN — the trust boundary. A row is a PROJECT'S set
+      of documents, and a ballot's aggregate is read per project, so an id from
+      elsewhere would put another project's document inside this project's team
+      score. Checked against the project's own partition rather than against a
+      caller-supplied project field.
+    * AN ID THAT IS NOT SCORABLE — a prototype or a research report has no sliders
+      on the page, so a row holding one would show a member nobody can score and
+      the row's own copy would miscount what it holds.
+    * A DUPLICATE — the same document twice says nothing new about the row, and it
+      spends the bound twice; refused rather than de-duplicated for the reason the
+      duplicate-key refusal in the save path records, that the request states
+      something contradictory and there is nothing to prefer.
+
+    Ownership and type share one message on purpose, and it is the one exception to
+    "name the rule that failed": distinguishing them would tell a caller whether a
+    document id exists in a project they may not have named, which is the same
+    reason `_validated_source_id` answers one 404 for both.
+    """
+    if not isinstance(raw, list):
+        raise ValidationError('document_ids must be a list of document id strings')
+    if not raw:
+        raise ValidationError(
+            'document_ids must name at least one document, so the row has '
+            'something to score'
+        )
+    if len(raw) > MAX_ROW_DOCUMENT_IDS:
+        raise ValidationError(
+            f'document_ids must name at most {MAX_ROW_DOCUMENT_IDS} documents'
+        )
+    owned = _scorable_document_ids(documents)
+    document_ids: list[str] = []
+    for entry in raw:
+        if not isinstance(entry, str) or not entry.strip():
+            raise ValidationError('document_ids must be non-empty document id strings')
+        document_id = entry.strip()
+        if document_id not in owned:
+            raise NotFoundError(
+                'document_ids name a document this project does not hold, or one '
+                'that is not a PRD or a PR/FAQ'
+            )
+        if document_id in document_ids:
+            raise ValidationError('document_ids must name distinct documents')
+        document_ids.append(document_id)
+    return document_ids
+
+
+@app.post("/projects/prioritization/rows/compose")
+@tracer.capture_method
+def api_compose_prioritization_row():
+    """Create a row for another combination of one project's documents.
+
+    A ROW IS WHAT THE CALLER NAMED. The request carries the project and the concrete
+    document ids, and those ids are stored verbatim — nothing here re-derives them,
+    so the row means the same set forever and generating a newer PR/FAQ later leaves
+    it composed exactly as it was. That is the same guarantee the default row has
+    (`_default_row_composition`), stated for a set somebody picked.
+
+    Open to any signed-in reviewer, per the decision recorded on #339: the identity
+    of whoever composed a row is not the protection — the freeze is, and deletion is
+    the one action that is admin-gated.
+
+    Never a DEFAULT row. `is_default` is stamped false and the id is minted
+    (`_minted_row_id`) rather than derived, so `POST .../rows` keeps its idempotence
+    on a key nothing here can occupy: two calls to this route deliberately produce
+    two rows, because "score another combination" is a request to add one.
+
+    A minted id makes the conditional put a formality rather than an idempotence —
+    it is kept anyway, because a put with no condition is an upsert, and the one
+    thing worse than a failed create is a create that silently replaced a row whose
+    ballots already exist.
+    """
+    body = _json_object_body()
+    project_id = _validated_row_project_id(body.get('project_id'))
+
+    documents = _project_documents(project_id)
+    if not any(item.get('sk') == 'META' for item in documents):
+        raise NotFoundError(f'Project {project_id} not found')
+    document_ids = _validated_row_document_ids(body.get('document_ids'), documents)
+    _, prototype_id = _default_row_composition(documents)
+
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+
+    row_id = _minted_row_id()
+    now = datetime.now(timezone.utc).isoformat()
+    item = {
+        'pk': PRIORITIZATION_PK,
+        'sk': _row_sk(row_id),
+        'row_id': row_id,
+        'project_id': project_id,
+        'document_ids': document_ids,
+        # The project's latest prototype, as context, exactly as the default row
+        # carries it. Not composable per row: a prototype is not scored, so a
+        # separate selector for it would be a second dimension of choice over
+        # something no ballot is about.
+        'prototype_id': prototype_id,
+        'is_default': False,
+        'created_at': now,
+        'updated_at': now,
+        # No `ttl`: the aggregates table expires anything carrying one, and a row is
+        # as durable as the ballots keyed to it.
+    }
+    try:
+        table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
+    except Exception as e:
+        logger.exception(f'Failed to compose a prioritization row for {project_id}: {e}')
+        raise ServiceError('Failed to create the prioritization row') from e
+
+    return {'success': True, 'created': True, 'row': _row_payload(item)}
+
+
+@app.patch("/projects/prioritization/rows/<row_id>")
+@tracer.capture_method
+def api_recompose_prioritization_row(row_id: str):
+    """Change which documents an UN-BALLOTED row holds.
+
+    THE DATABASE REFUSES A FROZEN ROW, not this function. The write is one
+    conditional `update_item` whose condition asserts the row exists and carries no
+    ROW_FROZEN_AT_FIELD, and the ballot save writes that attribute in the same
+    transaction as the ballot itself — so a composition change racing the first
+    ballot LOSES TO IT rather than being sorted out afterwards. Reading a ballot
+    count first and then writing would land the change in the gap between the two
+    calls, leaving a row whose documents nobody who balloted on it ever saw; that is
+    the race #339 records as the reason the condition has to be the rule and
+    disabled controls only a courtesy.
+
+    A refusal answers 409 and writes nothing. 409 rather than 403, because the row's
+    state is what refuses — the caller was permitted, and what they asked for
+    conflicts with a fact about the world that a reload will show them.
+
+    `project_id` is asserted in the same condition rather than trusted from the
+    row's stored value, so a recompose can only ever hold documents of the project
+    the caller validated the ids against. Without it, naming another project's row
+    id would install this project's documents on it.
+
+    Open to any signed-in reviewer, for the same reason the create is.
+    """
+    validated_row_id = _validated_path_row_id(row_id)
+    body = _json_object_body()
+    project_id = _validated_row_project_id(body.get('project_id'))
+
+    documents = _project_documents(project_id)
+    if not any(item.get('sk') == 'META' for item in documents):
+        raise NotFoundError(f'Project {project_id} not found')
+    document_ids = _validated_row_document_ids(body.get('document_ids'), documents)
+
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        response = table.update_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(validated_row_id)},
+            UpdateExpression=(
+                'SET #document_ids = :document_ids, #updated_at = :updated_at'
+            ),
+            # THE FREEZE. All three conjuncts matter: `attribute_exists` because
+            # `update_item` is an upsert and would otherwise create a bare row
+            # record for an id that never existed; the frozen mark because that is
+            # what the first ballot writes; the project because the ids were
+            # validated against THAT project's documents and no other.
+            ConditionExpression=(
+                f'attribute_exists(sk) AND attribute_not_exists({ROW_FROZEN_AT_FIELD}) '
+                'AND #project_id = :project_id'
+            ),
+            ExpressionAttributeNames={
+                '#document_ids': 'document_ids',
+                '#updated_at': 'updated_at',
+                '#project_id': 'project_id',
+            },
+            ExpressionAttributeValues={
+                ':document_ids': document_ids,
+                ':updated_at': now,
+                ':project_id': project_id,
+            },
+            ReturnValues='ALL_NEW',
+        )
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
+            logger.exception(f'Failed to recompose prioritization row: {e}')
+            raise ServiceError('Failed to change the row composition') from e
+        # ONE answer for all three ways the condition fails, and it is a 409 rather
+        # than three statuses. Telling them apart would need a read the condition
+        # exists to avoid, and the read could disagree with the write it is
+        # explaining; what a caller can act on is the same in every case — reload
+        # and see the current rows.
+        raise ConflictError(
+            'This row cannot be recomposed: it does not exist, it belongs to '
+            'another project, or a ballot has already frozen its composition'
+        ) from e
+    except Exception as e:
+        logger.exception(f'Failed to recompose prioritization row: {e}')
+        raise ServiceError('Failed to change the row composition') from e
+
+    stored = response.get('Attributes')
+    if not isinstance(stored, dict):
+        # `ALL_NEW` on a landed update always carries the item; answering the
+        # composed request instead would claim a stored state nothing read.
+        raise ServiceError('Failed to read the recomposed row back')
+    return {'success': True, 'row': _row_payload(stored)}
+
+
+def _project_row_records(table, project_id: str) -> list[dict]:
+    """Every ROW record of one project, from the prioritization partition.
+
+    A bounded, strongly-consistent query over the row keys only
+    (`begins_with(sk, 'ROW#')`), so the ballots — which outnumber the rows — are not
+    read to answer a question about rows. Strongly consistent because it GATES a
+    delete, and the case that matters is "composed moments ago".
+
+    Filtered on the stored `project_id` field rather than by parsing the row id: a
+    minted id says nothing about its project, which is exactly why the record carries
+    the field (see DEFAULT_ROW_ID_PREFIX).
+    """
+    query_kwargs: dict[str, Any] = {
+        'KeyConditionExpression': (
+            Key('pk').eq(PRIORITIZATION_PK) & Key('sk').begins_with(ROW_SK_PREFIX)
+        ),
+        'ConsistentRead': True,
+    }
+    rows: list[dict] = []
+    for _ in range(MAX_PRIORITIZATION_PAGES):
+        response = table.query(**query_kwargs)
+        rows.extend(
+            item for item in response.get('Items', [])
+            if isinstance(item, dict) and item.get('project_id') == project_id
+        )
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            return rows
+        query_kwargs['ExclusiveStartKey'] = last_key
+    logger.error(
+        'Prioritization rows exceed %d query pages while deciding whether a '
+        "project's default row is its only row.",
+        MAX_PRIORITIZATION_PAGES,
+    )
+    raise ServiceError('Too many prioritization rows to read in one request')
+
+
+def _sibling_row_sk(table, row: dict, row_id: str) -> str | None:
+    """The sort key of one OTHER row of this row's project, if there is one.
+
+    Returned rather than a bare "has siblings" verdict, because the delete FENCES on
+    it: the sibling's key goes into the transaction as a `ConditionCheck`, so a
+    concurrent delete of the last sibling cancels this one instead of leaving the
+    project with no row at all. A read that merely counted would let two admins each
+    see two rows and each delete one.
+
+    Deterministic (the lowest sort key) so the same delete fences on the same
+    sibling on a retry.
+    """
+    project_id = row.get('project_id')
+    if not isinstance(project_id, str) or not project_id:
+        # A row whose project cannot be read has no siblings that can be found.
+        # Treated as "no sibling", which only ever makes the delete of a DEFAULT row
+        # stricter — it refuses. A non-default row is unaffected.
+        return None
+    siblings = sorted(
+        str(item.get('sk', ''))
+        for item in _project_row_records(table, project_id)
+        if str(item.get('sk', '')) not in ('', _row_sk(row_id))
+    )
+    return siblings[0] if siblings else None
+
+
+def _row_ballot_sort_keys(table, row_id: str) -> list[str]:
+    """The sort key of every ballot keyed to one row.
+
+    `begins_with(sk, 'BALLOT#{row_id}#')` — the trailing '#' is what keeps the prefix
+    from also matching a row id this one is a prefix of, which minted ids make
+    possible in principle and a hand-created one makes possible in practice.
+    Strongly consistent, because a ballot missed here is a ballot the delete leaves
+    behind.
+
+    PROJECTED to the key. Nothing about a ballot's contents decides whether it is
+    deleted — it is deleted because the row it describes is going — and the ballots
+    of a heavily-reviewed row carry notes this would otherwise pull across the wire.
+
+    Bounded at MAX_ROW_BALLOTS_PER_DELETE and then REFUSED rather than truncated: a
+    short read here would delete the row and leave the ballots that did not fit,
+    which is exactly the orphan the whole path exists to prevent.
+    """
+    query_kwargs: dict[str, Any] = {
+        'KeyConditionExpression': (
+            Key('pk').eq(PRIORITIZATION_PK)
+            & Key('sk').begins_with(f'{BALLOT_SK_PREFIX}{row_id}#')
+        ),
+        'ProjectionExpression': 'sk',
+        'ConsistentRead': True,
+    }
+    sort_keys: list[str] = []
+    for _ in range(MAX_PRIORITIZATION_PAGES):
+        response = table.query(**query_kwargs)
+        sort_keys.extend(
+            str(item['sk']) for item in response.get('Items', [])
+            if isinstance(item, dict) and item.get('sk')
+        )
+        if len(sort_keys) > MAX_ROW_BALLOTS_PER_DELETE:
+            break
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            return sort_keys
+        query_kwargs['ExclusiveStartKey'] = last_key
+    logger.error(
+        'A prioritization row holds more than the %d ballots one atomic delete can '
+        'remove. Deleting it in several writes would leave orphaned ballots between '
+        'them, which is the fault this path exists to prevent.',
+        MAX_ROW_BALLOTS_PER_DELETE,
+    )
+    raise ConflictError(
+        f'This row holds more than the {MAX_ROW_BALLOTS_PER_DELETE} ballots that '
+        'can be removed together with it in one atomic write'
+    )
+
+
+def _transact_delete_row(
+    table, row: dict, row_id: str, ballot_sks: list[str], sibling_sk: str | None
+) -> None:
+    """Remove the row record and every listed ballot in ONE transaction.
+
+    The row's delete carries the fence: it must still exist, and its
+    ROW_BALLOT_WRITES_FIELD must read exactly what it read when the ballots were
+    enumerated — which the ballot transaction increments, so a ballot landing in
+    between cancels this write rather than being orphaned by it. A row that had
+    never taken a ballot fences on the attribute being ABSENT, which is the same
+    assertion for the same reason.
+
+    `sibling_sk`, when present, is a `ConditionCheck` asserting that another row of
+    the project still exists. It is what makes "the default row is not deleted while
+    it is the project's only row" survive two admins acting at once.
+
+    A cancelled transaction is a 409 naming the state that moved, and nothing is
+    written — a transaction either applies whole or not at all, which is the property
+    this path is built on.
+    """
+    items: list[dict] = []
+    if sibling_sk:
+        items.append({
+            'ConditionCheck': {
+                'TableName': table.name,
+                'Key': {'pk': PRIORITIZATION_PK, 'sk': sibling_sk},
+                'ConditionExpression': 'attribute_exists(sk)',
+            },
+        })
+    seen_writes = row.get(ROW_BALLOT_WRITES_FIELD)
+    row_delete: dict[str, Any] = {
+        'TableName': table.name,
+        'Key': {'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)},
+        'ExpressionAttributeNames': {'#ballot_writes': ROW_BALLOT_WRITES_FIELD},
+    }
+    if seen_writes is None:
+        row_delete['ConditionExpression'] = (
+            'attribute_exists(sk) AND attribute_not_exists(#ballot_writes)'
+        )
+    else:
+        row_delete['ConditionExpression'] = (
+            'attribute_exists(sk) AND #ballot_writes = :seen_writes'
+        )
+        row_delete['ExpressionAttributeValues'] = {':seen_writes': seen_writes}
+    items.append({'Delete': row_delete})
+    items.extend(
+        {'Delete': {
+            'TableName': table.name,
+            'Key': {'pk': PRIORITIZATION_PK, 'sk': sort_key},
+        }}
+        for sort_key in ballot_sks
+    )
+
+    try:
+        table.meta.client.transact_write_items(TransactItems=items)
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
+            logger.exception(f'Failed to delete a prioritization row: {e}')
+            raise ServiceError('Failed to delete the prioritization row') from e
+        logger.warning(
+            'A prioritization row delete was cancelled; the row changed between '
+            'reading its ballots and removing them, or its last sibling row was '
+            'deleted concurrently. Nothing was written.'
+        )
+        raise ConflictError(
+            'This row changed while it was being deleted; reload the page and '
+            'try again'
+        ) from e
+    except Exception as e:
+        logger.exception(f'Failed to delete a prioritization row: {e}')
+        raise ServiceError('Failed to delete the prioritization row') from e
+
+
+@app.delete("/projects/prioritization/rows/<row_id>")
+@tracer.capture_method
+def api_delete_prioritization_row(row_id: str):
+    """Delete one row TOGETHER WITH ITS BALLOTS. Admin only.
+
+    ONE ATOMIC WRITE, so no ballot outlives the row it describes. A row and its
+    ballots share a partition precisely so this is possible: the ballots are read
+    with `begins_with(sk, 'BALLOT#{row_id}#')`, and the row record plus every ballot
+    found go into a single `transact_write_items`. Deleting the row first and its
+    ballots afterwards would leave, on any failure between the two, exactly the
+    orphaned ballots the page read counts and warns about — the warning whose rising
+    count is the signal that this path is NOT working (#342).
+
+    FENCED on the row not having changed since the ballots were enumerated.
+    ROW_BALLOT_WRITES_FIELD is what the ballot transaction increments, so a ballot
+    landing between the read and the delete moves it and the transaction is
+    cancelled rather than committing a delete that would leave that ballot behind.
+    The caller is answered 409 and retries against the current state. A transaction
+    cannot both enumerate and delete, so the fence is what closes the gap the
+    enumeration opens.
+
+    `ballots_deleted` IS THE EVIDENCE the deletion was complete. It is the only
+    thing the caller has: the row is gone, so nothing can be re-read to check, and a
+    bare `{'success': True}` would be identical whether the ballots went with the
+    row or were left orphaned in the partition.
+
+    ADMIN ONLY, through the shared `require_admin` — the one destructive action on a
+    row, per the decision recorded on #339, and the reason a frozen row is never
+    edited but may be deleted. A non-admin caller is refused BEFORE anything is
+    read, so a 403 costs no round trip and, more importantly, cannot be a 403 that
+    deleted something first.
+
+    THE DEFAULT ROW IS NOT DELETABLE WHILE IT IS THE PROJECT'S ONLY ROW. The page
+    invites a PRD or a PR/FAQ for a project with no scorable document, so a project
+    whose only row was deleted would show that invitation beside documents it still
+    holds — and the create route is idempotent on a derived key, which makes the
+    resulting state one nothing in the product can repair by asking again.
+    """
+    require_admin(app.current_event.raw_event)
+    validated_row_id = _validated_path_row_id(row_id)
+
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+
+    row = _fetched_row(table, validated_row_id)
+    if row is None:
+        raise NotFoundError('That prioritization row does not exist')
+
+    # Only a DEFAULT row needs a sibling, and only a default row pays the query that
+    # looks for one: a row somebody composed is never the reason a project has a row
+    # at all, so deleting it can never leave the page inviting a PRD for a project
+    # that has one.
+    sibling_sk = _sibling_row_sk(table, row, validated_row_id) if _is_default_row(row) else None
+    if _is_default_row(row) and sibling_sk is None:
+        raise ConflictError(
+            "A project's default row cannot be deleted while it is the project's "
+            'only row'
+        )
+
+    ballot_sks = _row_ballot_sort_keys(table, validated_row_id)
+    _transact_delete_row(table, row, validated_row_id, ballot_sks, sibling_sk)
+    return {
+        'success': True,
+        'row_id': validated_row_id,
+        'ballots_deleted': len(ballot_sks),
+    }
 
 
 @app.post("/projects/prioritization/rows")
@@ -2135,6 +2776,69 @@ def _writes_a_reviewer_value(update_kwargs: dict) -> bool:
     return bool(assigned - set(BALLOT_STAMP_FIELDS))
 
 
+def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) -> list[dict]:
+    """One reviewer's ballot and its row's freeze mark, as ONE transaction.
+
+    TWO WRITES THAT MUST NOT BE SEPARABLE, for two reasons that arrive from opposite
+    directions:
+
+    * THE ROW MUST STILL EXIST (#342, and the criterion that issue keeps open). The
+      route already reads every named row before the first write, but a keyed read
+      followed by a write is complete only while nothing can delete a row. Deletion
+      now exists, so the read and the write race: the row's `attribute_exists(sk)`
+      moves onto the WRITE, in the same transaction as the ballot, and a delete
+      landing between the two cancels the ballot instead of orphaning it.
+    * THE BALLOT MUST FREEZE THE COMPOSITION. ROW_FROZEN_AT_FIELD is what a
+      composition change asserts the absence of, so it has to be written at the
+      instant the ballot lands — not afterwards, where a recompose could slip in
+      between and leave a row whose documents nobody balloting on it ever saw.
+
+    FREEZING FOLLOWS `_writes_a_reviewer_value`, NOT `_is_a_vote`. A ballot carrying
+    only a note freezes exactly as a scored one does: the note is a durable decision
+    record about the set of documents the row held when it was written, and
+    recomposing the row afterwards would leave that record describing documents its
+    author never saw. The module already distinguishes the two questions — "expressed
+    a score" gates the legacy migration and the aggregate, "changed something" counts
+    a ballot written — and this is the second reading. #339 records it as a
+    deliberately stricter predicate than the vote-supersession helper, and says not
+    to reuse that helper here.
+
+    A stamp-only save — `{}`, an all-null entry — writes no reviewer value and so
+    freezes nothing. It still takes this path, though, and that is not an oversight:
+    the row's `attribute_exists(sk)` still has to hold, because such a save does
+    write a ballot record and an orphan is an orphan whether or not a reviewer
+    expressed anything in it.
+
+    `ADD` on ROW_BALLOT_WRITES_FIELD rather than `if_not_exists(...) + 1`, so two
+    concurrent ballots each move it and neither reads it first. It is what the delete
+    fences on.
+    """
+    row_update: dict[str, Any] = {
+        'TableName': table.name,
+        'Key': {'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)},
+        # `attribute_exists(sk)` is on the ROW's write rather than the ballot's,
+        # because `update_item` is an upsert: without it this would CREATE a bare row
+        # record for a row somebody deleted, resurrecting a deleted proposal as a
+        # side effect of scoring it — the outcome #342 rules out by name.
+        'ConditionExpression': 'attribute_exists(sk)',
+        'ExpressionAttributeNames': {'#ballot_writes': ROW_BALLOT_WRITES_FIELD},
+        'ExpressionAttributeValues': {':one': 1},
+    }
+    assignments: list[str] = []
+    if _writes_a_reviewer_value(update_kwargs):
+        assignments.append('#frozen_at = if_not_exists(#frozen_at, :now)')
+        row_update['ExpressionAttributeNames']['#frozen_at'] = ROW_FROZEN_AT_FIELD
+        row_update['ExpressionAttributeValues'][':now'] = now
+    row_update['UpdateExpression'] = (
+        (('SET ' + ', '.join(assignments) + ' ') if assignments else '')
+        + 'ADD #ballot_writes :one'
+    )
+    return [
+        {'Update': {'TableName': table.name, **update_kwargs}},
+        {'Update': row_update},
+    ]
+
+
 @app.put("/projects/prioritization")
 @tracer.capture_method
 def api_put_prioritization_scores():
@@ -2279,11 +2983,17 @@ def api_patch_prioritization_scores():
     # fetched records are then what the legacy migration reads, so the same key
     # is never read twice in one save.
     #
-    # A read-then-write, not a condition on the write itself — honest about the
-    # race: a row deleted between this check and the write below would still
-    # orphan its ballot. Nothing can delete a row today, so the gap is
-    # unreachable; phase 2 of #339, which introduces deletion, owes the
-    # DB-enforced condition (a transaction), and this check is where it goes.
+    # NO LONGER THE WHOLE STORY, and the difference is the point. This read used to
+    # be the only existence check, which was honest only while nothing could delete a
+    # row; deletion now exists, so the SAME assertion also rides on the write, inside
+    # the transaction `_ballot_transact_items` builds. A delete landing between this
+    # read and that write cancels the ballot rather than orphaning it.
+    #
+    # The read is kept for two things the condition cannot do: it refuses a body
+    # naming one vanished row among five BEFORE the first write, so such a body
+    # persists nothing rather than persisting the rows before the phantom; and it
+    # returns the row records the legacy migration reads, so the same key is never
+    # read twice in one save.
     rows_by_id = _fetched_ballot_rows(table, [row_id for row_id, _ in validated])
     if any(row_id not in rows_by_id for row_id, _ in validated):
         raise NotFoundError(
@@ -2309,7 +3019,27 @@ def api_patch_prioritization_scores():
     try:
         for row_id, entry in validated:
             update_kwargs = _ballot_update_kwargs(row_id, subject, entry, now)
-            table.update_item(**update_kwargs)
+            # ONE TRANSACTION per row, not one `update_item`: the ballot, the row's
+            # continued existence and the freeze mark land together or not at all.
+            # See `_ballot_transact_items` for why each of the three has to be in the
+            # same write as the others.
+            try:
+                table.meta.client.transact_write_items(
+                    TransactItems=_ballot_transact_items(table, update_kwargs, row_id, now)
+                )
+            except ClientError as e:
+                if e.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
+                    raise
+                # The only condition in the transaction is the row's existence, so a
+                # cancellation means the row went away between the pass above and
+                # this write — the delete-racing-a-ballot case (#342). 404, the same
+                # answer the up-front pass gives, because it is the same fact about
+                # the world; and nothing of this row's ballot was written, because a
+                # transaction applies whole or not at all.
+                raise NotFoundError(
+                    'scores name a row that does not exist; reload the page to get '
+                    'the current rows'
+                ) from e
             rows_written += 1
             if _writes_a_reviewer_value(update_kwargs):
                 ballots += 1

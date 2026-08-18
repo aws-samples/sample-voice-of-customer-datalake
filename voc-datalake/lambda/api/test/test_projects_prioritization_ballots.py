@@ -22,6 +22,7 @@ not a general DynamoDB — it implements exactly the expressions this route
 writes, so that a change to those expressions has to be reflected here.
 """
 import json
+from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
@@ -58,14 +59,115 @@ def row_item(row_id, *, project_id=None, document_ids=None, is_default=True, **o
     }
 
 
+def _split_top_level(text, separator=','):
+    """Split on `separator` outside parentheses.
+
+    `if_not_exists(#frozen_at, :now)` carries a comma of its own, so a naive split
+    of a `SET` clause tears that call in half — and a fake that mis-parsed it would
+    report an update the route never made.
+    """
+    parts, depth, current = [], 0, ''
+    for char in text:
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+        if char == separator and depth == 0:
+            parts.append(current)
+            current = ''
+            continue
+        current += char
+    parts.append(current)
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _resolved_path(path, names):
+    """One attribute path, with `#alias` segments resolved. `sk` stays `sk`."""
+    return [names.get(segment, segment) for segment in path.strip().split('.')]
+
+
+def _attribute_present(item, path, names):
+    cursor = item
+    for segment in _resolved_path(path, names):
+        if not isinstance(cursor, dict) or segment not in cursor:
+            return False
+        cursor = cursor[segment]
+    return True
+
+
+def _condition_holds(condition, item, names, values):
+    """Evaluate the condition expressions THIS MODULE writes, and no others.
+
+    `attribute_exists`, `attribute_not_exists` and `path = :value`, joined by AND.
+    Deliberately narrow: the conditions here are the freeze, the create's
+    idempotence and the delete's fence, so a fake that waved one through would let
+    a test pass against code that had lost it. Anything unrecognised raises rather
+    than being assumed true, which is what keeps that true as the module grows.
+    """
+    for conjunct in (part.strip() for part in (condition or '').split(' AND ')):
+        if not conjunct:
+            continue
+        if conjunct.startswith('attribute_exists(') and conjunct.endswith(')'):
+            if not _attribute_present(item or {}, conjunct[17:-1], names):
+                return False
+        elif conjunct.startswith('attribute_not_exists(') and conjunct.endswith(')'):
+            if _attribute_present(item or {}, conjunct[21:-1], names):
+                return False
+        elif '=' in conjunct:
+            path, _, value_alias = (part.strip() for part in conjunct.partition('='))
+            segments = _resolved_path(path, names)
+            cursor = item or {}
+            for segment in segments:
+                cursor = cursor.get(segment) if isinstance(cursor, dict) else None
+            if cursor != values[value_alias]:
+                return False
+        else:
+            raise AssertionError(f'unsupported condition: {conjunct!r}')
+    return True
+
+
+def _key_condition(expression):
+    """`(pk, sk_prefix)` out of a boto3 key-condition tree.
+
+    Read back rather than accepted wholesale, so a read of the WRONG partition — or
+    a ballot enumeration whose prefix stopped naming one row — fails here instead of
+    passing against a permissive fake.
+    """
+    pk, prefix = None, None
+
+    def walk(node):
+        nonlocal pk, prefix
+        parsed = node.get_expression()
+        operator = parsed['operator']
+        if operator == 'AND':
+            for value in parsed['values']:
+                walk(value)
+        elif operator == '=':
+            pk = parsed['values'][1]
+        elif operator == 'begins_with':
+            prefix = parsed['values'][1]
+        else:
+            raise AssertionError(f'unsupported key condition: {operator}')
+
+    walk(expression)
+    return pk, prefix
+
+
 class FakeAggregatesTable:
     """An in-memory stand-in for the aggregates table.
 
     Supports the single-key `SET` update a ballot save issues, the conditional
-    `REMOVE #scores.#document` the legacy migration issues, and a paginated query
-    of one partition. Every call is recorded so a test can assert HOW the write
-    was made, not just what it left behind — "one update_item on its own key"
-    is the invariant, and a put_item of a merged map would leave the same state.
+    `REMOVE #scores.#document` the legacy migration issues, the conditional
+    `transact_write_items` the ballot save and the row delete issue, and a
+    paginated query of one partition. Every call is recorded so a test can assert
+    HOW the write was made, not just what it left behind — "the ballot and its
+    row's freeze mark in ONE transaction" is the invariant, and two separate
+    writes would leave the same state.
+
+    CONDITIONS ARE ENFORCED, never ignored. They are the whole contract of this
+    change: the freeze, the create's idempotence and the delete's fence are all
+    conditions, and a fake that accepted every write would let every one of those
+    tests pass against code that had lost them.
     """
 
     def __init__(self, items=None, page_size=None):
@@ -75,6 +177,14 @@ class FakeAggregatesTable:
         self.put_item_calls = []
         self.get_item_calls = []
         self.query_calls = []
+        self.transact_calls = []
+        # `table.name` and `table.meta.client` are what a transaction needs: it is
+        # issued on the resource's underlying CLIENT, which takes the table name per
+        # item rather than being bound to one table.
+        self.name = 'test-aggregates'
+        self.meta = SimpleNamespace(client=SimpleNamespace(
+            transact_write_items=self._transact_write_items,
+        ))
 
     # -- writes ------------------------------------------------------------
     def put_item(self, **kwargs):
@@ -98,9 +208,8 @@ class FakeAggregatesTable:
         self.items[key] = dict(item)
         return {}
 
-    def update_item(self, **kwargs):
-        self.update_item_calls.append(kwargs)
-        key = (kwargs['Key']['pk'], kwargs['Key']['sk'])
+    def _apply_update(self, key, kwargs):
+        """The `SET` / `ADD` / `REMOVE` clauses this module writes."""
         expression = kwargs['UpdateExpression'].strip()
         names = kwargs.get('ExpressionAttributeNames', {})
         values = kwargs.get('ExpressionAttributeValues', {})
@@ -111,22 +220,95 @@ class FakeAggregatesTable:
             attr = names[attr_alias]
             member = names[member_alias]
             item = self.items.get(key)
-            present = isinstance(item, dict) and member in (item.get(attr) or {})
-            if kwargs.get('ConditionExpression') and not present:
-                raise ClientError(
-                    {'Error': {'Code': 'ConditionalCheckFailedException',
-                               'Message': 'The conditional request failed'}},
-                    'UpdateItem',
-                )
-            if present:
+            if isinstance(item, dict) and member in (item.get(attr) or {}):
                 del item[attr][member]
-            return {}
+            return None
 
-        assert expression.upper().startswith('SET'), expression
         item = self.items.setdefault(key, {'pk': key[0], 'sk': key[1]})
-        for assignment in expression[len('SET'):].split(','):
-            name_alias, _, value_alias = (part.strip() for part in assignment.partition('='))
-            item[names[name_alias]] = values[value_alias]
+        # One expression may carry both clauses: the row half of a ballot
+        # transaction is `SET #frozen_at = if_not_exists(...) ADD #ballot_writes :one`.
+        set_clause, add_clause = expression, ''
+        if ' ADD ' in expression:
+            set_clause, _, add_clause = expression.partition(' ADD ')
+        elif expression.upper().startswith('ADD'):
+            set_clause, add_clause = '', expression[len('ADD'):]
+        if set_clause:
+            assert set_clause.strip().upper().startswith('SET'), expression
+            for assignment in _split_top_level(set_clause.strip()[len('SET'):]):
+                name_alias, _, value_expression = (
+                    part.strip() for part in assignment.partition('=')
+                )
+                attribute = names[name_alias]
+                if value_expression.startswith('if_not_exists('):
+                    existing_alias, fallback_alias = _split_top_level(
+                        value_expression[len('if_not_exists('):-1]
+                    )
+                    existing = names[existing_alias]
+                    if existing in item:
+                        continue
+                    item[attribute] = values[fallback_alias]
+                    continue
+                item[attribute] = values[value_expression]
+        if add_clause:
+            name_alias, value_alias = add_clause.split()
+            attribute = names[name_alias]
+            item[attribute] = (item.get(attribute) or 0) + values[value_alias]
+        return dict(item)
+
+    def update_item(self, **kwargs):
+        self.update_item_calls.append(kwargs)
+        key = (kwargs['Key']['pk'], kwargs['Key']['sk'])
+        condition = kwargs.get('ConditionExpression')
+        if condition and not _condition_holds(
+            condition, self.items.get(key),
+            kwargs.get('ExpressionAttributeNames', {}),
+            kwargs.get('ExpressionAttributeValues', {}),
+        ):
+            raise ClientError(
+                {'Error': {'Code': 'ConditionalCheckFailedException',
+                           'Message': 'The conditional request failed'}},
+                'UpdateItem',
+            )
+        stored = self._apply_update(key, kwargs)
+        if kwargs.get('ReturnValues') == 'ALL_NEW' and stored is not None:
+            return {'Attributes': stored}
+        return {}
+
+    def _transact_write_items(self, TransactItems):
+        """All-or-nothing, which is the property every caller of this depends on.
+
+        The capitalised parameter is boto3's own spelling of it, kept so the fake
+        accepts exactly the call the route makes.
+
+        Every condition is evaluated BEFORE any item is applied, and a single
+        failure cancels the whole transaction with nothing written. A fake that
+        applied items as it walked them would let a test about atomicity pass
+        against code that wrote the ballot and then failed to freeze its row.
+        """
+        self.transact_calls.append(TransactItems)
+        for entry in TransactItems:
+            (operation, request), = entry.items()
+            assert request['TableName'] == self.name, request['TableName']
+            key = (request['Key']['pk'], request['Key']['sk'])
+            if not _condition_holds(
+                request.get('ConditionExpression'), self.items.get(key),
+                request.get('ExpressionAttributeNames', {}),
+                request.get('ExpressionAttributeValues', {}),
+            ):
+                raise ClientError(
+                    {'Error': {'Code': 'TransactionCanceledException',
+                               'Message': 'Transaction cancelled'},
+                     'CancellationReasons': [{'Code': 'ConditionalCheckFailed'}]},
+                    'TransactWriteItems',
+                )
+            assert operation in ('Update', 'Delete', 'ConditionCheck'), operation
+        for entry in TransactItems:
+            (operation, request), = entry.items()
+            key = (request['Key']['pk'], request['Key']['sk'])
+            if operation == 'Update':
+                self._apply_update(key, request)
+            elif operation == 'Delete':
+                self.items.pop(key, None)
         return {}
 
     # -- reads -------------------------------------------------------------
@@ -141,14 +323,18 @@ class FakeAggregatesTable:
 
     def query(self, **kwargs):
         self.query_calls.append(kwargs)
-        rows = [dict(i) for (pk, _), i in sorted(self.items.items()) if pk == PARTITION]
+        wanted, prefix = _key_condition(kwargs['KeyConditionExpression'])
+        rows = [
+            dict(i) for (pk, sk), i in sorted(self.items.items())
+            if pk == wanted and (prefix is None or sk.startswith(prefix))
+        ]
         start = kwargs.get('ExclusiveStartKey')
         if start:
             skips = [r['sk'] for r in rows]
             rows = rows[skips.index(start['sk']) + 1:]
         if self.page_size and len(rows) > self.page_size:
             page = rows[:self.page_size]
-            return {'Items': page, 'LastEvaluatedKey': {'pk': PARTITION, 'sk': page[-1]['sk']}}
+            return {'Items': page, 'LastEvaluatedKey': {'pk': wanted, 'sk': page[-1]['sk']}}
         return {'Items': rows}
 
     # -- helpers -----------------------------------------------------------
@@ -158,6 +344,48 @@ class FakeAggregatesTable:
     @property
     def ballot_keys(self):
         return sorted(sk for (_, sk) in self.items if sk.startswith('BALLOT#'))
+
+    @property
+    def row_keys(self):
+        return sorted(sk for (_, sk) in self.items if sk.startswith('ROW#'))
+
+    @property
+    def writes(self):
+        """Every mutating call this table took, whatever shape it arrived in.
+
+        The unit "was anything written at all?" is asked in, and it has to span all
+        three paths: a ballot arrives as a transaction, the legacy migration as an
+        `update_item`, a row create as a `put_item`. Counting only one of them would
+        make "the refusal wrote nothing" vacuously true for the others — which is
+        exactly what happened to every such assertion the moment the ballot write
+        became a transaction.
+        """
+        return (
+            self.put_item_calls
+            + self.update_item_calls
+            + [request for items in self.transact_calls for entry in items
+               for operation, request in entry.items() if operation != 'ConditionCheck']
+        )
+
+    @property
+    def ballot_writes(self):
+        """The update kwargs of every write aimed at a BALLOT key.
+
+        Spans the transaction and a bare `update_item` on purpose: a change that
+        stopped using a transaction would still be found here, so the tests about
+        what a ballot STORES keep testing that, and the tests about atomicity are the
+        ones that fail.
+        """
+        direct = [
+            call for call in self.update_item_calls
+            if str(call['Key']['sk']).startswith('BALLOT#')
+        ]
+        transacted = [
+            request for items in self.transact_calls for entry in items
+            for operation, request in entry.items()
+            if operation == 'Update' and str(request['Key']['sk']).startswith('BALLOT#')
+        ]
+        return direct + transacted
 
     def seed_rows(self, *row_ids, **kwargs):
         """Put a row record in place for each id, WITHOUT going through put_item.
@@ -333,15 +561,15 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 200
         assert body == {'success': True, 'updated_count': 1}
-        ballot_writes = [
-            call for call in table.update_item_calls
-            if call['Key']['sk'].startswith('BALLOT#')
-        ]
-        assert len(ballot_writes) == 1
-        assert ballot_writes[0]['Key'] == {
+        # One update AIMED AT THE BALLOT KEY, wherever it was issued from. The write
+        # is now inside a transaction beside its row's freeze mark (#339 phase 2);
+        # what this class is about is that a reviewer's numbers land on their own key
+        # by an update rather than by a merged whole-map put, and that is unchanged.
+        assert len(table.ballot_writes) == 1
+        assert table.ballot_writes[0]['Key'] == {
             'pk': PARTITION, 'sk': 'BALLOT#row-1#user:alice',
         }
-        assert ballot_writes[0]['UpdateExpression'].strip().upper().startswith('SET')
+        assert table.ballot_writes[0]['UpdateExpression'].strip().upper().startswith('SET')
 
     def test_a_save_never_put_items_a_merged_map(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable(items=[{
@@ -377,8 +605,8 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         _patch_scores(table, api_gateway_event, lambda_context, {'row-1': AXES}, subject='alice')
 
         assert 'ttl' not in table.ballot('row-1', 'alice')
-        for call in table.update_item_calls:
-            assert 'ttl' not in call['UpdateExpression']
+        for call in table.writes:
+            assert 'ttl' not in call.get('UpdateExpression', '')
 
     def test_an_empty_body_writes_nothing(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable()
@@ -387,7 +615,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 200
         assert body['success'] is True
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     @pytest.mark.parametrize('bad_key,expected', [
         ('', 'non-empty'),
@@ -413,7 +641,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 400
         assert expected in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     @pytest.mark.parametrize('bad_entry', ['nonsense', None, [1, 2], 7, True])
     def test_a_non_object_score_entry_is_refused_before_any_write(
@@ -433,7 +661,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 400
         assert 'must be objects' in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     def test_a_row_with_no_record_is_refused_and_nothing_is_stored(
@@ -459,7 +687,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         assert status == 404
         assert 'does not exist' in body['error']
         assert 'row-ghost' not in body['error'], 'no echo of caller input'
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     def test_one_phantom_row_in_a_multi_row_save_persists_nothing(
@@ -478,7 +706,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         )
 
         assert status == 404
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot('row-real', 'reviewer-1') is None
 
     def test_a_failed_existence_read_is_a_server_fault_not_a_refusal(
@@ -507,7 +735,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         )
 
         assert status == 500
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     def test_a_save_larger_than_the_bound_is_refused(self, api_gateway_event, lambda_context):
         """Each row costs the ballot write plus, when it scored, a read of the row
@@ -522,7 +750,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 400
         assert 'at most 100 rows' in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     def test_a_save_at_the_bound_is_accepted(self, api_gateway_event, lambda_context):
         """The bound is a ceiling on absurdity, not a limit the product can hit —
@@ -544,22 +772,24 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         cause that, only a write failure can, so the request is a 500 and the count
         of rows that DID persist is logged rather than silently lost."""
         table = FakeAggregatesTable()
-        real_update = table.update_item
+        real_transact = table.meta.client.transact_write_items
         # Counts only BALLOT writes, so the legacy-migration removals a scoring save
         # also issues cannot absorb the injected failure and leave the request a 200.
         ballot_calls = {'n': 0}
 
-        def failing_update(**kwargs):
-            if kwargs['Key']['sk'].startswith('BALLOT#'):
-                ballot_calls['n'] += 1
-                if ballot_calls['n'] > 1:
-                    raise ClientError(
-                        {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
-                        'UpdateItem',
-                    )
-            return real_update(**kwargs)
+        def failing_transact(TransactItems):
+            ballot_calls['n'] += 1
+            if ballot_calls['n'] > 1:
+                # NOT a TransactionCanceledException: a cancellation means the row
+                # went away and is a 404. This is a throttle — the class that leaves
+                # the earlier rows durably written and answers 500.
+                raise ClientError(
+                    {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
+                    'TransactWriteItems',
+                )
+            return real_transact(TransactItems)
 
-        table.update_item = failing_update
+        table.meta.client.transact_write_items = failing_transact
 
         status, body = _patch_scores(
             table, api_gateway_event, lambda_context,
@@ -615,7 +845,7 @@ class TestAPartialEntryLeavesTheOtherAxesAlone:
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'impact': 5}}, subject='alice')
 
-        expression = table.update_item_calls[0]['UpdateExpression']
+        expression = table.ballot_writes[0]['UpdateExpression']
         assert 'impact' in expression
         for axis in ('time_to_market', 'confidence', 'strategic_fit', 'notes'):
             assert axis not in expression
@@ -768,10 +998,10 @@ class TestANonNumberIsRefusedRatherThanFlooredAtZero:
         if existing:
             _patch_scores(table, api_gateway_event, lambda_context,
                           {'row-1': existing}, subject='alice')
-        writes_before = len(table.update_item_calls)
+        writes_before = len(table.writes)
         status, body = _patch_scores(table, api_gateway_event, lambda_context,
                                      {'row-1': entry}, subject='alice')
-        return status, body, table, len(table.update_item_calls) - writes_before
+        return status, body, table, len(table.writes) - writes_before
 
     @pytest.mark.parametrize('value', ['high', [1, 2], {'a': 1}, True, False,
                                        float('inf'), float('-inf'), float('nan')])
@@ -862,7 +1092,7 @@ class TestANonNumberIsRefusedRatherThanFlooredAtZero:
         assert status == 400
         assert 'impact' in body['error']
         assert table.ballot_keys == []
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     @pytest.mark.parametrize('value', [99, -4, 2.7, '3', 0, 5])
     def test_a_number_still_clamps_rather_than_being_refused(
@@ -913,7 +1143,7 @@ class TestANonStringNoteCannotDestroyTheStoredNote:
         table = FakeAggregatesTable()
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'notes': 'ship this in Q3'}}, subject='alice')
-        writes_before = len(table.update_item_calls)
+        writes_before = len(table.writes)
 
         status, body = _patch_scores(table, api_gateway_event, lambda_context,
                                      {'row-1': {'notes': value}}, subject='alice')
@@ -921,7 +1151,7 @@ class TestANonStringNoteCannotDestroyTheStoredNote:
         assert status == 400
         assert 'notes' in body['error']
         assert table.ballot('row-1', 'alice')['notes'] == 'ship this in Q3'
-        assert len(table.update_item_calls) == writes_before
+        assert len(table.writes) == writes_before
 
     def test_the_caller_still_reads_back_the_note_they_saved(
         self, api_gateway_event, lambda_context
@@ -965,7 +1195,7 @@ class TestReviewerIdentityFailsClosed:
 
         assert status == 403
         assert body['success'] is False
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     @pytest.mark.parametrize('subject', [None, '', '   '])
@@ -1018,7 +1248,7 @@ class TestAReviewerSubjectCannotCorruptTheBallotKey:
         assert status == 403
         assert body['success'] is False
         assert "'#'" in body['error']
-        assert table.update_item_calls == [], 'nothing may be written under a bad key'
+        assert table.writes == [], 'nothing may be written under a bad key'
         assert table.ballot_keys == []
 
     @pytest.mark.parametrize('subject', ['has#hash', '#leading', 'trailing#'])
@@ -1915,7 +2145,7 @@ class TestAnExplicitNullAxisMeansLeaveItAlone:
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'impact': 3, 'confidence': None}}, subject='alice')
 
-        expression = table.update_item_calls[0]['UpdateExpression']
+        expression = table.ballot_writes[0]['UpdateExpression']
         assert 'impact' in expression
         assert 'confidence' not in expression
 
@@ -1996,7 +2226,7 @@ class TestDuplicateRowKeysAreRefused:
             subject='alice',
         )
 
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     def test_distinct_keys_are_still_accepted(self, api_gateway_event, lambda_context):
@@ -2318,7 +2548,7 @@ class TestWholeMapOverwriteRouteIsGone:
         )
 
         assert table.put_item_calls == []
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     def test_the_old_whole_map_handler_no_longer_exists(self):
         import projects_handler
@@ -2810,12 +3040,12 @@ class TestAnOverLongNoteIsRefusedRatherThanTruncated:
         table = FakeAggregatesTable()
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'notes': 'ship this in Q3'}}, subject='alice')
-        writes_before = len(table.update_item_calls)
+        writes_before = len(table.writes)
 
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'notes': self._over_long()}}, subject='alice')
 
-        assert len(table.update_item_calls) == writes_before
+        assert len(table.writes) == writes_before
 
     def test_an_over_long_note_cannot_half_persist_a_multi_document_save(
         self, api_gateway_event, lambda_context
@@ -2971,7 +3201,7 @@ class TestUpdatedCountCountsBallotsNotKeys:
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {}}, subject='alice')
 
-        assigned = set(table.update_item_calls[0]['ExpressionAttributeNames'].values())
+        assigned = set(table.ballot_writes[0]['ExpressionAttributeNames'].values())
         assert assigned == set(BALLOT_STAMP_FIELDS)
 
     def test_the_save_bound_still_counts_keys(self, api_gateway_event, lambda_context):
@@ -3723,7 +3953,7 @@ class TestABodyThatIsNotAJsonObjectIsTheCallersMistake:
 
         assert status == 400
         assert 'JSON' in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     @pytest.mark.parametrize('raw_body', NON_OBJECT_BODIES)
