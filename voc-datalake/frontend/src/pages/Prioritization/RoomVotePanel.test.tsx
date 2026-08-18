@@ -41,6 +41,7 @@ const mockGetProjects = vi.fn()
 const mockGetProject = vi.fn()
 const mockGetPrioritizationScores = vi.fn()
 const mockGetFeedbackForms = vi.fn()
+const mockCreatePrioritizationRow = vi.fn()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -58,6 +59,13 @@ vi.mock('../../api/client', async (importOriginal) => ({
   api: {
     getPrioritizationScores: () => mockGetPrioritizationScores(),
     patchPrioritizationScores: () => Promise.resolve({ success: true }),
+    // The page asks for a default row per project on mount, so a project with
+    // something to score has a row without anybody performing a setup step. Stubbed
+    // rather than omitted: the effect fires before the list first renders, and an
+    // absent function is a TypeError that leaves the page with no rows at all.
+    // Answering with the row the read already carries is what the real route does
+    // for a project that has one — the create is idempotent.
+    createPrioritizationRow: (projectId: string) => mockCreatePrioritizationRow(projectId),
     getFeedbackForms: () => mockGetFeedbackForms(),
     getFeedbackFormStats: () => Promise.resolve({ success: true, stats: {} }),
   },
@@ -74,14 +82,18 @@ import { ballotCountRefetchInterval } from './roomVotePolling'
 import Prioritization from './Prioritization'
 
 const { t } = i18n
-const DOCUMENT_ID = 'doc_prfaq'
-const DOCUMENT_TITLE = 'Feature A PR/FAQ'
+// A ROW id, not a document id: the session names the row, and every ballot's key
+// derives from it server-side. The title is the row's — what the room reads.
+const ROW_ID = 'row_p1_default'
+const ROW_TITLE = 'Feature A PR/FAQ'
+/** How many documents the row holds; drives the "one ballot covers N" copy. */
+const ROW_DOCUMENT_COUNT = 2
 
 function session(overrides: Partial<VotingSession> = {}): VotingSession {
   return {
     session_id: 'vs_' + '1a'.repeat(16),
-    document_id: DOCUMENT_ID,
-    document_title: DOCUMENT_TITLE,
+    row_id: ROW_ID,
+    row_title: ROW_TITLE,
     status: 'open',
     state: 'open',
     ballot_cap: 40,
@@ -94,7 +106,7 @@ function renderPanel() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <RoomVotePanel documentId={DOCUMENT_ID} documentTitle={DOCUMENT_TITLE} />
+      <RoomVotePanel rowId={ROW_ID} rowTitle={ROW_TITLE} documentCount={ROW_DOCUMENT_COUNT} />
     </QueryClientProvider>,
   )
 }
@@ -112,7 +124,7 @@ async function openVote() {
 
 /** The QR, named for assistive technology — it carries no text of its own. */
 const qr = () => screen.queryByRole('img', {
-  name: t('prioritization:roomVote.qrAccessibleName', { title: DOCUMENT_TITLE }),
+  name: t('prioritization:roomVote.qrAccessibleName', { title: ROW_TITLE }),
 })
 
 /**
@@ -153,7 +165,7 @@ describe('a room vote a facilitator opens', () => {
       expect(qr()).toBeInTheDocument()
     })
     expect(mockCreateVotingSession).toHaveBeenCalledWith({
-      document_id: DOCUMENT_ID, document_title: DOCUMENT_TITLE,
+      row_id: ROW_ID, row_title: ROW_TITLE,
     })
   })
 
@@ -175,7 +187,7 @@ describe('a room vote a facilitator opens', () => {
     renderPanel()
 
     expect(screen.getByText(
-      t('prioritization:roomVote.scopeNote', { title: DOCUMENT_TITLE }),
+      t('prioritization:roomVote.scopeNote', { title: ROW_TITLE }),
     )).toBeInTheDocument()
   })
 })
@@ -306,47 +318,105 @@ describe('when the ballot count is read again', () => {
   })
 })
 
-describe('which rows can open a room vote', () => {
+describe('a room vote opens on the ROW, covering every document it holds', () => {
   const project = {
     project_id: 'p1', name: 'Project 1', status: 'active',
     created_at: '2025-01-01', updated_at: '2025-01-01', persona_count: 0, document_count: 2,
   }
   const prfaq = {
-    document_id: 'doc_prfaq', document_type: 'prfaq', title: DOCUMENT_TITLE,
+    document_id: 'doc_prfaq', document_type: 'prfaq', title: ROW_TITLE,
     content: '# Feature A', created_at: '2025-01-01',
   }
   const prd = {
     document_id: 'doc_prd', document_type: 'prd', title: 'Feature A PRD',
     content: 'PRD content', created_at: '2025-01-02',
   }
+  /** The project's one row, holding both of its scorable documents. */
+  const row = {
+    row_id: ROW_ID,
+    project_id: 'p1',
+    document_ids: ['doc_prd', 'doc_prfaq'],
+    prototype_id: '',
+    is_default: true,
+    created_at: '2025-01-02',
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetProjects.mockResolvedValue({ projects: [project] })
     mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, prd] })
-    mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+    mockGetPrioritizationScores.mockResolvedValue({ scores: {}, rows: { [ROW_ID]: row } })
+    mockCreatePrioritizationRow.mockResolvedValue({ success: true, created: false, row })
     mockGetFeedbackForms.mockResolvedValue({ forms: [] })
   })
 
-  it.each([DOCUMENT_TITLE, 'Feature A PRD'])('every scorable row can: %s', async (title) => {
-    // Ballots are keyed by document id alone, so a row that cannot open a session
-    // is a document the room simply cannot score. Both scorable document types —
-    // PRD and PR/FAQ — render through PRFAQRow, and this is what says so.
-    const user = userEvent.setup()
+  const renderPage = () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={createMemoryRouter([{ path: '/', element: <Prioritization /> }])} />
       </QueryClientProvider>,
     )
+  }
+
+  it('a project whose PRD and PR/FAQ describe one idea offers ONE room vote', async () => {
+    // The defect this change removes, at the facilitator's end: two rows meant two
+    // QR codes for one proposal, and whichever the room scanned scored half the
+    // idea. The row is named after its newest document — the PRD here — and there
+    // is no second row to open a competing session on.
+    const user = userEvent.setup()
+    renderPage()
     await waitFor(() => {
-      expect(screen.getByText(title)).toBeInTheDocument()
+      expect(screen.getByText('Feature A PRD')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', {
+      name: t('prioritization:roomVote.open'),
+    })).not.toBeInTheDocument()
+
+    await user.click(screen.getByText('Feature A PRD'))
+
+    expect(await screen.findAllByRole('button', {
+      name: t('prioritization:roomVote.open'),
+    })).toHaveLength(1)
+  })
+
+  it('opens the session on the ROW id, so the room scores the whole proposal', async () => {
+    // What the ballots are keyed to. Sending a document id here is how a room ends
+    // up scoring one half of a proposal from their phones.
+    mockCreateVotingSession.mockResolvedValue(session())
+    mockGetVotingSession.mockResolvedValue(session())
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByText('Feature A PRD')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('Feature A PRD'))
+
+    await user.click(await screen.findByRole('button', {
+      name: t('prioritization:roomVote.open'),
+    }))
+
+    await waitFor(() => {
+      expect(mockCreateVotingSession).toHaveBeenCalledWith({
+        row_id: ROW_ID, row_title: 'Feature A PRD',
+      })
+    })
+  })
+
+  it('tells the facilitator how many documents that one ballot covers', async () => {
+    // The public page states plainly what is being scored, and so does this half:
+    // "one ballot covers all N documents behind it" is what makes a room's single
+    // vote on a two-document proposal legible rather than surprising.
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByText('Feature A PRD')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText(title))
+    await user.click(screen.getByText('Feature A PRD'))
 
-    expect(await screen.findByRole('button', {
-      name: t('prioritization:roomVote.open'),
-    })).toBeInTheDocument()
+    expect(await screen.findByText(
+      t('prioritization:roomVote.scopeDocuments', { documents: 2 }),
+    )).toBeInTheDocument()
   })
 })
