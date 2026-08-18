@@ -749,7 +749,13 @@ describe('mcp endpoint throttling', () => {
   // and a mistyped key throttles nothing silently, hence the lockstep test.
   const MCP_METHOD_KEYS = [
     '/mcp/POST',
-    '/mcp/{proxy+}/*',
+    // Concrete verbs, not a wildcard: a live deploy established that API
+    // Gateway rejects both '/{path}/*' and 'ANY' as method-setting keys
+    // (per-path wildcards do not exist; '*/*' is stage-wide only). POST is
+    // JSON-RPC on subpaths, GET is the autoseed side-door — the two verbs
+    // the proxy serves that reach DynamoDB.
+    '/mcp/{proxy+}/POST',
+    '/mcp/{proxy+}/GET',
   ];
   const StageSchema = z.object({
     Properties: z.object({
@@ -781,15 +787,18 @@ describe('mcp endpoint throttling', () => {
     }
   });
   it('spells those keys the way the wired routes are spelled', () => {
-    // `/mcp/POST` must name a real method exactly. The proxy key ends in the
-    // method-settings wildcard `*` (its wired method is ANY, which is a routing
-    // construct, not a settings key), so for it the assertion is that the PATH
-    // it names carries a wired method.
+    // Every key must name a wired resource path, and its concrete verb must
+    // be servable there: `/mcp/POST` is an exact method, and the proxy keys'
+    // verbs are covered by the proxy's ANY method. A mistyped key is escaped
+    // happily and throttles nothing, silently — this is the guard.
     const wired = apiMethods(apiTemplate());
     const wiredKeys = new Set(wired.map((m) => `${m.path}/${m.httpMethod}`));
-    const wiredPaths = new Set(wired.map((m) => m.path));
-    expect(wiredKeys.has('/mcp/POST'), '/mcp/POST names no wired method').toBe(true);
-    expect(wiredPaths.has('/mcp/{proxy+}'), '/mcp/{proxy+} names no wired resource').toBe(true);
+    for (const key of MCP_METHOD_KEYS) {
+      const path = key.slice(0, key.lastIndexOf('/'));
+      const verb = key.slice(key.lastIndexOf('/') + 1);
+      const servable = wiredKeys.has(`${path}/${verb}`) || wiredKeys.has(`${path}/ANY`);
+      expect(servable, `${key} names no wired method (nor an ANY on its path)`).toBe(true);
+    }
   });
   it('has no usage plan anywhere in the stack', () => {
     // A usage plan that "throttles" a keyless endpoint is worse than absent:

@@ -72,6 +72,13 @@ CORS_HEADERS = {
 # challenge. MCP clients read it to learn the auth scheme; its absence is a
 # spec-conformance gap, not merely a nicety. `resource_metadata` is added when
 # the well-known route lands (plan §4.4 Track A).
+#
+# ⚠️ Delivery caveat, verified live 2026-08-18: REST API Gateway
+# unconditionally renames this header to `x-amzn-remapped-www-authenticate`
+# on Lambda proxy responses (documented, no opt-out). Keep sending it — the
+# value reaches clients under the remapped name, and gateway-GENERATED 401s
+# (the token authorizer's shape rejections) carry the true header via the
+# Unauthorized gateway response in api-stack.ts.
 _WWW_AUTHENTICATE_401 = 'Bearer error="invalid_token"'
 
 
