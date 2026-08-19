@@ -30,13 +30,26 @@ import { MCP_SCOPES } from '../api/mcpTokenSchema'
 
 const LOCALES_DIR = join(process.cwd(), 'public', 'locales')
 
-/** Every leaf key path in an object, dot-joined. */
-function keyPaths(value: unknown, prefix = ''): string[] {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return [prefix]
-  }
-  return Object.entries(value as Record<string, unknown>)
-    .flatMap(([k, v]) => keyPaths(v, prefix ? `${prefix}.${k}` : k))
+/**
+ * Every leaf of a parsed locale file, as dot-joined path + value.
+ *
+ * Returns values as well as paths so both tests below can share one walker: the
+ * colon check needs only paths, the scope-coverage check also needs to know the
+ * entry is non-empty. That is what lets this file hold **no type assertion** —
+ * `isRecord` narrows `unknown` instead, matching the rule the rest of this PR
+ * follows (see the copy-and-delete note in api/mcpTokenSchema.ts). ESLint does
+ * not enforce it here — `eslint.config.js` ignores test files — so it is a
+ * choice rather than a constraint, and a walker that returns both is smaller
+ * than a walker plus a cast.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function leafEntries(value: unknown, prefix = ''): { path: string; value: unknown }[] {
+  if (!isRecord(value)) return [{ path: prefix, value }]
+  return Object.entries(value)
+    .flatMap(([k, v]) => leafEntries(v, prefix ? `${prefix}.${k}` : k))
 }
 
 function localeFiles(): { locale: string; file: string; path: string }[] {
@@ -65,7 +78,7 @@ describe('locale key structure', () => {
     const offenders: string[] = []
     for (const { locale, file, path } of localeFiles()) {
       const json: unknown = JSON.parse(readFileSync(path, 'utf-8'))
-      for (const key of keyPaths(json)) {
+      for (const { path: key } of leafEntries(json)) {
         if (key.includes(':')) offenders.push(`${locale}/${file}: ${key}`)
       }
     }
@@ -101,14 +114,17 @@ describe('locale key structure', () => {
     for (const { locale, file, path } of localeFiles()) {
       if (file !== 'projectDetail.json') continue
       const json: unknown = JSON.parse(readFileSync(path, 'utf-8'))
-      const descs = (json as { mcp?: { scopeDesc?: Record<string, unknown> } })
-        .mcp?.scopeDesc
+      // Looked up in the FLATTENED leaf list, so no cast is needed to reach
+      // into mcp.scopeDesc — the walker has already resolved the shape.
+      const byPath = new Map(leafEntries(json).map((e) => [e.path, e.value]))
       for (const scope of MCP_SCOPES) {
-        const key = scope.replace(':', '_')
-        const value = descs?.[key]
-        if (value === undefined) missing.push(`${locale}: mcp.scopeDesc.${key}`)
-        else if (typeof value !== 'string' || value.trim() === '') {
-          blank.push(`${locale}: mcp.scopeDesc.${key}`)
+        const key = `mcp.scopeDesc.${scope.replace(':', '_')}`
+        if (!byPath.has(key)) missing.push(`${locale}: ${key}`)
+        else {
+          const value = byPath.get(key)
+          if (typeof value !== 'string' || value.trim() === '') {
+            blank.push(`${locale}: ${key}`)
+          }
         }
       }
     }
