@@ -103,18 +103,27 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
  * even if a bad value reaches the config store — e.g. a stale persisted value
  * written by an older build — no bearer token is sent to an untrusted host.
  *
- * `targetUrl` comes first, and is required rather than optional, so that
- * omitting it is a compile error instead of a silent grant. An earlier
- * signature took it last and optional, defaulting to "trusted" when absent;
- * every caller did pass it, but a new call site could have opted out of the
- * check by accident and nothing would have failed.
+ * `targetUrl` comes first, and is required rather than optional, because an
+ * earlier signature took it last and optional and defaulted to "trusted" when
+ * absent; every caller did pass it, but a new call site could have opted out of
+ * the check by accident and nothing would have failed.
  *
- * What enforces that is the `isTrustedOrigin(targetUrl)` call below, not a test:
- * `isTrustedOrigin` takes a required `string`, so widening this parameter to
- * `string | undefined` fails `npm run typecheck` *in this file*
- * (`TS2345` at the call site). That matters because a type-level assertion in a
- * test file would be INERT — `tsconfig.app.json` excludes the `.test.ts` and
- * `.test.tsx` globs, and `typecheck:tests` is not part of `npm run check`.
+ * The required TYPE is the declared contract, not the enforcement — do not read
+ * it as one. Two reasons, both measured rather than assumed:
+ *
+ *  - It never covered the shape that matters. `targetUrl?: string` together
+ *    with `isTrustedOrigin(targetUrl ?? '')` type-checks cleanly and restores
+ *    the permissive default, because `''` resolves same-origin.
+ *  - And it is no longer checkable at all: the `hasTarget` guard below narrows
+ *    `targetUrl`, which satisfies the compiler, so making the parameter
+ *    optional now compiles.
+ *
+ * The enforcement is the runtime precondition below, which refuses an absent or
+ * empty target instead of resolving it. That is strictly stronger: it fails
+ * CLOSED for both shapes, where the type could only ever reject one of them.
+ * A type-level assertion in a test could not have helped either —
+ * `tsconfig.app.json` excludes the test globs and `typecheck:tests` is not part
+ * of `npm run check`, so no test file is type-checked by any gate.
  */
 export function getAuthHeaders(
   targetUrl: string,
@@ -125,7 +134,22 @@ export function getAuthHeaders(
     ...extraHeaders,
   }
 
-  if (isTrustedOrigin(targetUrl) && authService.isConfigured()) {
+  // An absent or empty target is refused rather than resolved. Both would
+  // otherwise be TRUSTED: `''` resolves to the current origin, and so does the
+  // string `'undefined'` that a missing argument turns into. That is what makes
+  // the type signature alone an incomplete guard — `targetUrl?: string` with
+  // `isTrustedOrigin(targetUrl ?? '')` compiles and restores the permissive
+  // default silently. This check is on the ARGUMENT, so that shape fails here
+  // instead. Pinned by tests: "does NOT attach Authorization when the target URL
+  // is empty" / "…is missing entirely".
+  //
+  // Note this is a precondition, not a classification: `isTrustedOrigin` still
+  // decides trust purely by where a URL resolves. "Is there a target at all?"
+  // is a different question from "where does this target point?", and only the
+  // second one may be answered by resolution.
+  const hasTarget = typeof targetUrl === 'string' && targetUrl !== ''
+
+  if (hasTarget && isTrustedOrigin(targetUrl) && authService.isConfigured()) {
     const idToken = authService.getIdToken()
     if (idToken != null && idToken !== '') {
       headers['Authorization'] = idToken

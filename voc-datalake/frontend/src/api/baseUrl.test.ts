@@ -179,11 +179,12 @@ describe('getAuthHeaders — trusted origin', () => {
    * `Parameters<>` assertion written here would read as a guard and enforce
    * nothing.
    *
-   * The requirement is enforced where the gate does look: `getAuthHeaders` passes
-   * `targetUrl` straight into `isTrustedOrigin(requestUrl: string)`, so widening
-   * it to `string | undefined` fails `npm run typecheck` inside `baseUrl.ts`
-   * itself with TS2345. Verified by mutation: making the parameter optional
-   * reports `src/api/baseUrl.ts(123,23)` and the gate goes red.
+   * The requirement is enforced at RUNTIME instead, by the `hasTarget`
+   * precondition in `getAuthHeaders`, and pinned by the two "empty" / "missing
+   * entirely" cases at the end of this file. That is stronger than a type could
+   * be: `targetUrl?: string` with `isTrustedOrigin(targetUrl ?? '')` compiles
+   * and would have restored the permissive default, since `''` resolves
+   * same-origin.
    */
 })
 
@@ -236,5 +237,34 @@ describe('getAuthHeaders — untrusted origin', () => {
     const headers = getAuthHeaders(TRUSTED_API)
     // With no config loaded, the allowlist is empty → not trusted → no token.
     expect(headers['Authorization']).toBeUndefined()
+  })
+
+  /*
+   * The next two pin the ARGUMENT precondition, and they are the reason the
+   * required-parameter type is not the whole guard.
+   *
+   * Both of these values resolve SAME-ORIGIN if handed to the URL parser — `''`
+   * resolves to the current origin, and a missing argument stringifies to
+   * `'undefined'`, which resolves to a path on it. So without an explicit check
+   * they are "trusted" and the header is attached.
+   *
+   * That is exactly how the permissive default could come back without any gate
+   * noticing: `targetUrl?: string` plus `isTrustedOrigin(targetUrl ?? '')`
+   * type-checks cleanly. Measured before this guard existed — that shape
+   * compiled and all 161 tests in the origin-gating suites still passed.
+   */
+  it('does NOT attach Authorization when the target URL is empty', () => {
+    // Vacuity guard: the same call with a real trusted URL does attach it.
+    expect(getAuthHeaders(TRUSTED_API)['Authorization']).toBe('mock-cognito-id-token')
+    expect(getAuthHeaders('')['Authorization']).toBeUndefined()
+  })
+
+  it('does NOT attach Authorization when the target URL is missing entirely', () => {
+    // A caller reaching this at RUNTIME is possible even though the signature
+    // forbids it: vitest transpiles without type-checking, and `*.test.ts` is
+    // excluded from every typecheck gate — so this is a reachable state, not a
+    // hypothetical one.
+    const noTarget = undefined as unknown as string
+    expect(getAuthHeaders(noTarget)['Authorization']).toBeUndefined()
   })
 })
