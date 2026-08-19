@@ -70,6 +70,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import mcp_handler
+from shared.mcp_delegate import DelegationUnavailable
 from shared.mcp_tokens import ALL_READ_SCOPES, REACH_WORKSPACE, mint_token
 
 # REAL-SHAPED ids throughout, not `proj-1` / `f1`.
@@ -669,6 +670,15 @@ class TestPathParameterConfinement:
     }
 
     def _static_siblings(self, prefix: str, handler: str) -> set[str]:
+        """Static route segments at the parameter's position, from ONE file.
+
+        ⚠️ Single-file by design and only sound while these handlers register
+        every route inline. Powertools also supports `Router` objects in other
+        modules included into an app; a route registered that way would be
+        invisible here, and the reserved set would be quietly incomplete. That is
+        not documented and left to trust — `test_no_route_is_registered_outside_
+        the_scanned_file` asserts the pattern is absent.
+        """
         source = (Path(__file__).resolve().parents[1] / handler).read_text()
         depth = len(prefix.strip("/").split("/"))
         siblings = set()
@@ -697,6 +707,25 @@ class TestPathParameterConfinement:
         # And a specific one, so "found something" cannot pass on an unrelated match.
         assert "prioritization" in self._static_siblings("/projects", "projects_handler.py")
         assert "search" in self._static_siblings("/feedback", "metrics_handler.py")
+
+    def test_no_route_is_registered_outside_the_scanned_file(self):
+        """The sibling scan reads one file per prefix, so nothing may hide.
+
+        Powertools supports `Router` objects declared in another module and
+        included into an app. Neither owning handler uses that today, and the
+        reserved-segment argument depends on it staying that way — a routed module
+        would be invisible to the scan and the set would be quietly incomplete.
+        Asserted rather than trusted, because "we don't use Routers" is exactly
+        the kind of claim that stops being true without anyone revisiting this.
+        """
+        for handler in self.OWNERS.values():
+            source = (Path(__file__).resolve().parents[1] / handler).read_text()
+            assert "Router" not in source, (
+                f"{handler} now references a Router; _static_siblings reads only "
+                f"this file, so routes registered elsewhere would be missed and "
+                f"the reserved-segment sets could be incomplete"
+            )
+            assert "include_router" not in source
 
     def test_reserved_segments_cover_every_static_sibling(self):
         """Lockstep: the reserved sets are derived from the handlers, not guessed.
@@ -743,12 +772,28 @@ class TestPathParameterConfinement:
             f"{sorted(declared - interpolated)}"
         )
 
-    def test_an_undeclared_prefix_fails_closed(self):
-        """A templated route whose prefix has no entry is refused, not allowed."""
+    def test_an_undeclared_prefix_fails_closed_as_a_server_error(self):
+        """A templated route whose prefix has no entry is refused, not allowed.
+
+        And refused as a SERVER fault (-32603 via DelegationUnavailable), not as
+        `-32602 Invalid params`: a missing declaration is a misconfiguration, and
+        blaming the caller's arguments would send it looking for a different id
+        when nothing it could send would work.
+        """
         future = {"future": (mcp_handler.DOMAIN_PROJECTS, "GET", "/whatever/{project_id}")}
         with patch.dict(mcp_handler.DOMAIN_ROUTES, future), \
-             pytest.raises(mcp_handler.InvalidToolArgument, match="reserved-segment"):
+             pytest.raises(DelegationUnavailable, match="reserved-segment"):
             mcp_handler._validated_path_parameters("future", {"project_id": _PROJECT})
+
+    def test_that_server_error_is_not_reported_as_a_bad_argument(self):
+        """End to end: the caller sees -32603, never -32602."""
+        future = {"project_get": (mcp_handler.DOMAIN_PROJECTS, "GET", "/whatever/{project_id}")}
+        fake = _FakeLambda({})
+        with patch.dict(mcp_handler.DOMAIN_ROUTES, future):
+            result = _call("get_project", {"project_id": _PROJECT}, fake)
+
+        assert result["error"]["code"] == -32603, result
+        assert fake.calls == []
 
     def test_a_parameter_the_template_does_not_use_is_refused(self):
         with pytest.raises(mcp_handler.InvalidToolArgument):

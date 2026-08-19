@@ -179,9 +179,13 @@ def _reserved_for(template: str, name: str) -> frozenset[str]:
     position = segments.index(f'{{{name}}}')
     prefix = '/' + '/'.join(segments[:position])
     if prefix not in _RESERVED_PATH_SEGMENTS:
-        raise InvalidToolArgument(
-            f'{name} cannot be validated: no reserved-segment set declared for {prefix}'
-        )
+        # DelegationUnavailable, not InvalidToolArgument: this is a SERVER
+        # misconfiguration, and -32602 "Invalid params" would tell the caller its
+        # arguments are wrong when nothing it could send would work. The state is
+        # unreachable in a deployed build — the prefix lockstep fails first — so
+        # this is about not lying if it ever is reached.
+        logger.error('No reserved-segment set declared', extra={'prefix': prefix})
+        raise DelegationUnavailable(f'no reserved-segment set declared for {prefix}')
     return _RESERVED_PATH_SEGMENTS[prefix]
 
 
@@ -196,8 +200,13 @@ def _validated_path_parameters(route_key: str, params: dict[str, str]) -> dict[s
         # Distinct messages per condition: the caller can act on each of these
         # differently, and "must be a single path segment" for a stray space sends
         # them looking for a slash they never sent.
-        if not isinstance(value, str) or not value or value.strip() != value:
+        if not isinstance(value, str) or not value:
             raise InvalidToolArgument(f'{name} must be a non-empty identifier')
+        if value.strip() != value:
+            # Split from the emptiness check on purpose: bundling them reported
+            # "must be a non-empty identifier" for a value that plainly was not
+            # empty, which is the same misdirection the messages below avoid.
+            raise InvalidToolArgument(f'{name} must not be surrounded by whitespace')
         offending = sorted(_FORBIDDEN_PATH_CHARS & set(value))
         if offending:
             raise InvalidToolArgument(
