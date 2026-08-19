@@ -328,6 +328,31 @@ class TestProjections:
         assert item["direct_quote"] == "never again"
         assert item["keywords"] == ["late", "delivery"]
 
+    def test_the_reported_id_is_the_one_the_detail_tool_needs(self):
+        """search_feedback must report an id get_feedback_detail can look up.
+
+        Both tools read `item.get('id')` before this change, and the processor
+        never writes a plain `id` — the identifier is `feedback_id`, which is what
+        the detail route keys its GSI on. So every search result carried
+        `"id": ""` and there was no way for an agent to reach a single item: the
+        only source of a feedback id is a search, and search reported none.
+        Caught against the deployed API, not by a unit test, because every
+        fixture in the suite happened to set both fields.
+        """
+        row = _feedback_row(feedback_id="fb-42")
+        row.pop("id", None)
+        fake = _FakeLambda({"/feedback/search": {"items": [row]}})
+        item = _call("search_feedback", {"query": "late"}, fake)["result"]["structuredContent"]["items"][0]
+
+        assert item["id"] == "fb-42"
+
+    def test_a_row_carrying_only_a_plain_id_still_reports_it(self):
+        """The fallback, so the fix does not break a row shaped the old way."""
+        fake = _FakeLambda({"/feedback/f1": {"id": "legacy-1", "original_text": "t"}})
+        item = _call("get_feedback_detail", {"feedback_id": "f1"}, fake)["result"]["structuredContent"]
+
+        assert item["id"] == "legacy-1"
+
     def test_the_renames_the_tools_have_always_reported(self):
         fake = _FakeLambda({"/feedback/f1": _feedback_row()})
         item = _call("get_feedback_detail", {"feedback_id": "f1"}, fake)["result"]["structuredContent"]

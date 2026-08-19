@@ -848,7 +848,20 @@ def _project_feedback(item: dict, *, summary: bool) -> dict:
     `"rating": "N/A"` for an unrated item still sees it.
     """
     projected = {
-        "id": item.get('id', ''),
+        # `feedback_id` FIRST, and this is a bug fix rather than a rename.
+        #
+        # Both feedback tools reported `item.get('id')`, and the processor that
+        # writes these rows never sets a plain `id` — the identifier is
+        # `feedback_id`, which is also the key `GET /feedback/{id}` looks up on
+        # its GSI. So `search_feedback` advertised an `id` field and filled it
+        # with `""` for every item in the corpus, which made
+        # `get_feedback_detail` unreachable for an agent: the only way to learn a
+        # feedback id is to search, and search reported none. Verified live
+        # against the deployed API before fixing.
+        #
+        # `item.get('id')` is kept as the fallback rather than dropped, because a
+        # row that does carry one is not worth breaking to make a point.
+        "id": item.get('feedback_id') or item.get('id', ''),
         "source": item.get('source_platform', ''),
         "date": item.get('source_created_at', '') or '',
         "sentiment": item.get('sentiment_label', ''),
