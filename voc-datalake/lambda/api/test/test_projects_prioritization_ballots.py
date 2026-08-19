@@ -22,6 +22,8 @@ not a general DynamoDB — it implements exactly the expressions this route
 writes, so that a change to those expressions has to be reflected here.
 """
 import json
+import re
+from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
@@ -6073,6 +6075,59 @@ class TestOnlyAFailedConditionMeansTheRowIsGone:
             'ConditionExpression' not in request
             for item in others for request in item.values()
         ), 'a second condition would make one index too little to tell them apart'
+
+    def test_a_key_a_transaction_cannot_carry_is_refused_rather_than_asserted(
+        self, api_gateway_event, lambda_context
+    ):
+        """A `TransactItems[].Update` accepts a NARROWER set of keys than `update_item`
+        does, so a resource-only one reaching the builder has DynamoDB reject the whole
+        transaction — a ballot failing on something the ballot is not about.
+
+        REFUSED WITH A RAISE, not a bare `assert`. An `assert` is stripped under
+        `python -O`/`PYTHONOPTIMIZE`, which would let exactly the malformed key it
+        names through to DynamoDB, and an `AssertionError` in a request path is an
+        unhandled 500 that bypasses this module's logging. Pinned as a `ServiceError`
+        so the mechanism cannot quietly regress to one."""
+        import projects_handler
+        from shared.exceptions import ServiceError
+
+        table = FakeAggregatesTable()
+        kwargs = projects_handler._ballot_update_kwargs('row-1', 'alice', AXES, 'now')
+        kwargs['ReturnValues'] = 'ALL_NEW'
+
+        with pytest.raises(ServiceError) as refused:
+            projects_handler._ballot_transact_items(table, kwargs, 'row-1', 'now')
+
+        assert 'ReturnValues' in str(refused.value), 'it names the key that failed'
+
+    def test_no_check_in_the_production_lambda_tree_is_a_bare_assert(self):
+        """WHY the check above is a raise, pinned where it can actually regress.
+
+        `assert` is stripped under `python -O`/`PYTHONOPTIMIZE`, so a guard written
+        that way silently is not there — and an `AssertionError` in a request path is
+        an unhandled 500 with a bare message, bypassing the logging every failure in
+        these modules routes through. Every invariant in this tree is a raise, and
+        this is what keeps that true: a reviewer's comment cannot fail CI.
+
+        Read as SOURCE TEXT over the whole production tree rather than by re-executing
+        one module under `optimize=2`, because the property is a convention about all
+        of it, and the failure names the file and line to fix."""
+        tree = Path(__file__).resolve().parents[1]
+        offenders = [
+            f'{path.relative_to(tree.parent)}:{number}'
+            for path in sorted(tree.rglob('*.py'))
+            if 'test' not in path.parts
+            for number, line in enumerate(
+                path.read_text(encoding='utf-8').splitlines(), start=1
+            )
+            if re.match(r'^\s*assert\s', line)
+        ]
+
+        assert offenders == [], (
+            f'bare `assert` in the production Lambda tree: {offenders}. Stripped '
+            f'under `python -O`, so the invariant it states would not be checked at '
+            f'all, and an AssertionError bypasses this tree\'s logging. Raise instead.'
+        )
 
     def test_a_delete_cancelled_by_contention_is_a_500_not_a_409(
         self, api_gateway_event, lambda_context

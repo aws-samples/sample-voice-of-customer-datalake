@@ -46,7 +46,14 @@ def _declared_fields() -> set[str]:
         # A backend test reaching into the frontend tree. Where only the lambda
         # sources are present (packaging, a partial checkout) there is nothing to
         # compare, and skipping beats a failure that says nothing about the code
-        # under test — the same reasoning as the other prioritization locksteps.
+        # under test — the same reasoning as the other locksteps that cross this
+        # boundary (`test_prioritization_row_bound_lockstep.py`,
+        # `test_prioritization_scorable_types_lockstep.py`).
+        #
+        # The ones comparing two BACKEND sources assert instead
+        # (`test_anon_row_mark_lockstep.py`), and correctly: those files ship together
+        # with the test, so an absent one means the file moved rather than that this
+        # checkout never had it.
         pytest.skip(f'{FRONTEND_SOURCE} not present in this tree')
     match = _SCHEMA.search(path.read_text(encoding='utf-8'))
     assert match, (

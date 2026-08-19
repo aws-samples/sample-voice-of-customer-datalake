@@ -569,9 +569,10 @@ BALLOT_TRANSACT_ROW_INDEX = 1
 # `update_item` takes, which is why it is stated. `_ballot_transact_items` spreads the
 # kwargs `_ballot_update_kwargs` built for `update_item` into one of these, so a
 # resource-only key added there later (`ReturnValues`, `ReturnConsumedCapacity`) would
-# have DynamoDB reject the whole transaction. Asserted against rather than filtered:
+# have DynamoDB reject the whole transaction. CHECKED against rather than filtered:
 # dropping such a key silently would discard part of what that function decided to
-# write while still answering 200.
+# write while still answering 200. Checked with a raise rather than an `assert`, so it
+# survives `python -O` and logs like every other failure here.
 #
 # `TableName` is supplied by the caller of this list rather than by the kwargs.
 TRANSACT_UPDATE_KEYS = frozenset({
@@ -2126,6 +2127,21 @@ def api_compose_prioritization_row():
 
     # Read no further than the bound: what this asks is "are there already this
     # many", and the keys past that answer nothing.
+    #
+    # THE `limit` DOES NOT BOUND THE READ, and that cost is accepted rather than
+    # accidental. `_project_row_sort_keys` walks the whole `ROW#` keyspace of the
+    # partition and filters on `project_id` in Python, so the early stop only fires
+    # once it has seen this many rows OF THIS PROJECT — a deployment with many
+    # projects holding few rows each pays a full keyspace walk on every compose, and
+    # this is the more frequent of that helper's two callers.
+    #
+    # Kept because the alternative today is worse than the cost: with no count, the
+    # partition the page reads WHOLE grows without limit under ordinary authorized
+    # requests, and that read raises past its page budget rather than truncating — so
+    # enough composed rows takes the page down for everybody. A GSI on `project_id` is
+    # the follow-up that makes this a bounded `Select='COUNT'` query; until it lands
+    # the walk is at least cheap per item, since the keys are projected
+    # (`sk, project_id`) rather than read whole.
     existing = _project_row_sort_keys(table, project_id, limit=MAX_ROWS_PER_PROJECT)
     if len(existing) >= MAX_ROWS_PER_PROJECT:
         raise ConflictError(
@@ -3078,23 +3094,42 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
     # something the ballot itself is not about. Rebuilding the item here instead would
     # SILENTLY DROP such a key, which is worse: it would discard part of what
     # `_ballot_update_kwargs` decided to write while answering 200. So the mismatch is
-    # asserted, which turns a future addition there into a failure that names the
+    # REFUSED, which turns a future addition there into a failure that names the
     # cause. (`test_projects_prioritization_row_lifecycle_moto.py` executes the shape
     # against a real implementation; the suite's fake accepts any `dict`.)
+    #
+    # RAISED RATHER THAN `assert`ed, though the reasoning above is why it is checked
+    # at all. A bare `assert` is stripped under `python -O`/`PYTHONOPTIMIZE`, which
+    # would leave the malformed key reaching DynamoDB — the exact outcome this exists
+    # to name — and an `AssertionError` in a request path is an unhandled 500 with a
+    # bare message, bypassing the logging every other failure in this module routes
+    # through. These were the only two bare asserts in the production Lambda tree.
     unsupported = set(update_kwargs) - TRANSACT_UPDATE_KEYS
-    assert not unsupported, (
-        f'_ballot_update_kwargs returned {sorted(unsupported)}, which a transaction '
-        'Update does not accept'
-    )
-    items = [
+    if unsupported:
+        logger.error(
+            '_ballot_update_kwargs returned %s, which a transaction Update does not '
+            'accept. The ballot was not written: DynamoDB would reject the whole '
+            'transaction for a key the ballot itself is not about.',
+            sorted(unsupported),
+        )
+        raise ServiceError(
+            f'_ballot_update_kwargs returned {sorted(unsupported)}, which a '
+            'transaction Update does not accept'
+        )
+    # The row's write is the ONE this transaction carries a condition on, and the save
+    # reads the cancellation reason at BALLOT_TRANSACT_ROW_INDEX to tell a vanished row
+    # from contention — so that constant is only meaningful while the row's write sits
+    # at that position, carrying that condition.
+    #
+    # Pinned by a TEST rather than by a runtime check
+    # (`test_the_row_index_the_reason_is_read_at_is_where_the_condition_actually_is`
+    # builds this list and asserts both). It is a self-check over a literal built three
+    # lines up and cannot fail from any input, so a runtime copy adds nothing the suite
+    # does not already give — and would inherit the same `-O` caveat as the check above.
+    return [
         {'Update': {'TableName': table.name, **update_kwargs}},
         {'Update': row_update},
     ]
-    # The row's write is the ONE this transaction carries a condition on, and the
-    # save reads the cancellation reason at its index to tell a vanished row from
-    # contention. Asserted rather than commented, so the two cannot drift.
-    assert 'ConditionExpression' in items[BALLOT_TRANSACT_ROW_INDEX]['Update']
-    return items
 
 
 @app.put("/projects/prioritization")

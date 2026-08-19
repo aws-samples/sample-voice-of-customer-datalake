@@ -51,6 +51,39 @@ def _table(name):
     )
 
 
+class _RacingTable:
+    """The real table, with ONE read hooked to land a concurrent write in the gap.
+
+    Delegating rather than a `MagicMock`, and the difference is the whole point of
+    this file. A `MagicMock` answers ANY attribute — so a future refactor having the
+    delete path read something else off the table would get a mock back, and these
+    tests would keep passing while exercising a call that returned no data. That is
+    precisely the property these tests exist NOT to have: the module docstring's
+    argument is that the fast suite's fake "accepts whatever `dict` it is handed", and
+    a `MagicMock` is a strictly looser fake than the one being escaped.
+
+    So everything except the hooked method reaches the real moto table, and an
+    unanticipated call behaves — or fails — exactly as it would in production.
+    """
+
+    def __init__(self, table, *, get_item=None, query=None):
+        self._table = table
+        self._get_item = get_item
+        self._query = query
+
+    def __getattr__(self, attribute):
+        # Reached only for what is not defined on this class, so `name`, `meta` and
+        # every other member — including ones no test anticipated — come from the real
+        # table rather than from a mock.
+        return getattr(self._table, attribute)
+
+    def get_item(self, **kwargs):
+        return (self._get_item or self._table.get_item)(**kwargs)
+
+    def query(self, **kwargs):
+        return (self._query or self._table.query)(**kwargs)
+
+
 def _seeded_project(projects):
     """One project holding a PRD and a PR/FAQ, which is enough to compose a row."""
     projects.put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1',
@@ -266,11 +299,7 @@ class TestTheRowLifecycleAgainstARealTable:
                 )
             return response
 
-        racing = MagicMock()
-        racing.name = aggregates.name
-        racing.meta = aggregates.meta
-        racing.get_item.side_effect = advance_the_fence_after_reading
-        racing.query.side_effect = aggregates.query
+        racing = _RacingTable(aggregates, get_item=advance_the_fence_after_reading)
 
         status, body = _call(racing, projects, lambda_context, 'DELETE',
                              f'/projects/prioritization/rows/{row_id}')
@@ -437,11 +466,7 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
                 assert _room_ballot(aggregates, lambda_context, row_id)[0] == 200
             return response
 
-        racing = MagicMock()
-        racing.name = aggregates.name
-        racing.meta = aggregates.meta
-        racing.get_item.side_effect = aggregates.get_item
-        racing.query.side_effect = ballot_mid_enumeration
+        racing = _RacingTable(aggregates, query=ballot_mid_enumeration)
 
         status, body = _call(racing, projects, lambda_context, 'DELETE',
                              f'/projects/prioritization/rows/{row_id}')

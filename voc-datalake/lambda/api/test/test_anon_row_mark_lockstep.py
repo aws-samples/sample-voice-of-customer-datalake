@@ -49,6 +49,17 @@ PROJECTS_SOURCE = 'lambda/api/projects_handler.py'
 def _read(relative: str) -> str:
     # lambda/api/test/ -> voc-datalake/
     path = Path(__file__).resolve().parents[3] / relative
+    # ASSERTED, not skipped, and the difference from
+    # `test_prioritization_row_payload_lockstep.py` is deliberate. BOTH files this
+    # reads are backend sources in this same tree, packaged and checked out together
+    # with the test — so an absent one means the file MOVED, which is a real drift
+    # this test should report rather than step around.
+    #
+    # The locksteps that skip reach ACROSS into the frontend tree, which can
+    # legitimately be absent (packaging a lambda bundle, a partial checkout): there is
+    # nothing to compare, and skipping beats a failure that says nothing about the code
+    # under test. Neither policy is the general rule; which one is right follows from
+    # whether a missing file is possible without anything having gone wrong.
     assert path.is_file(), (
         f'{relative} not found — did the file move? '
         f'If so, update the path constant in this test file.'
