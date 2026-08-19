@@ -2382,6 +2382,21 @@ def _row_holds_a_value_bearing_ballot(table, row_id: str) -> bool:
     — and this read must not be stricter than the write it stands in for, or a
     page that PATCHes an empty entry on load would freeze every row it touched.
 
+    A LEGACY `SCORES`-MAP VALUE DOES NOT FREEZE EITHER, and that is a decision,
+    not a further gap of the same kind. A ballot's claim is "I scored THIS SET of
+    documents", which is what a recompose would falsify; a pre-ballot value's
+    claim is "somebody once scored THIS DOCUMENT", unattributed — and the
+    read-through honours that claim through any recomposition, because
+    `_legacy_scores_by_row` surfaces a value only on a row that still HOLDS its
+    document. Drop the document and the value stops appearing; it is never left
+    describing a set its author never saw, because it never described a set at
+    all. Freezing on it would also freeze every default row of every pre-ballot
+    deployment permanently — refusing this route's primary use (narrowing a
+    default composition before anyone votes) for exactly the deployments
+    upgrading, on values the module elsewhere treats as superseded by any real
+    ballot. Pinned by
+    `test_a_row_holding_only_a_legacy_scores_value_is_not_frozen`.
+
     Strongly consistent and projected to the value fields, for the same reasons
     `_row_ballot_sort_keys` states: this read GATES a write, and a ballot's note
     is content this question has no use for beyond its presence. Short-circuits on
@@ -2396,10 +2411,11 @@ def _row_holds_a_value_bearing_ballot(table, row_id: str) -> bool:
         ),
         # Aliased wholesale rather than checked one by one against the reserved-word
         # list: the axes are config (SCORE_AXES), and an axis added later must not
-        # break this read by colliding with a word DynamoDB reserves.
+        # break this read by colliding with a word DynamoDB reserves. ONE join over
+        # all the aliases, so no shape of that config can produce a stray comma.
         'ProjectionExpression': ', '.join(
-            f'#axis_{i}' for i in range(len(SCORE_AXES))
-        ) + ', #notes',
+            [f'#axis_{i}' for i in range(len(SCORE_AXES))] + ['#notes']
+        ),
         'ExpressionAttributeNames': {
             **{f'#axis_{i}': axis for i, axis in enumerate(SCORE_AXES)},
             '#notes': 'notes',
@@ -2422,7 +2438,13 @@ def _row_holds_a_value_bearing_ballot(table, row_id: str) -> bool:
         'recompose a row that may hold real votes.',
         MAX_PRIORITIZATION_PAGES,
     )
-    raise ServiceError('Too many ballots on this row to read in one request')
+    # Its own words, not `_row_ballot_sort_keys`' — that helper's docstring states
+    # the rule this follows: the messages differ because the remedies would. Its
+    # 500 is about a delete that cannot enumerate; this one is about a composition
+    # change refused on unreadable history.
+    raise ServiceError(
+        'Too many ballots on this row to tell whether its composition is frozen'
+    )
 
 
 def _project_row_sort_keys(table, project_id: str, *, limit: int | None = None) -> list[str]:

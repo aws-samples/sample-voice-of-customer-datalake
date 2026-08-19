@@ -5324,6 +5324,33 @@ class TestARowBallotedBeforeTheMarkExistedIsStillFrozen:
 
         assert status == 409
 
+    def test_a_row_holding_only_a_legacy_scores_value_is_not_frozen(
+        self, api_gateway_event, lambda_context
+    ):
+        """ONE EPOCH FURTHER BACK, and the answer flips — deliberately. A ballot
+        claims "I scored this SET", which a recompose falsifies; a pre-ballot
+        `SCORES` value claims "somebody once scored this DOCUMENT", and the
+        read-through honours that claim through any recomposition (the value
+        surfaces only on a row still holding its document). Freezing on it would
+        permanently freeze every pre-ballot deployment's default rows — refusing
+        this route's primary use for exactly the deployments upgrading."""
+        aggregates = FakeAggregatesTable([{
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'row-1-doc': {'impact': 4}},
+        }]).seed_rows('row-1', project_id='p1', document_ids=['row-1-doc'])
+
+        _, page = _get_scores(aggregates, api_gateway_event, lambda_context)
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert page['scores']['row-1']['impact'] == 4.0, (
+            'the fixture must read through, or this proves nothing about legacy values'
+        )
+        assert page['rows']['row-1']['is_frozen'] is False
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-2']
+
     def test_a_stamp_only_ballot_record_does_not_freeze_without_the_mark(
         self, api_gateway_event, lambda_context
     ):
