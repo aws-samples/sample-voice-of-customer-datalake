@@ -4777,6 +4777,71 @@ class TestAnUnBallotedRowsCompositionCanStillChange:
             'prd-2', 'prfaq-2',
         ]
 
+    def test_a_default_row_can_be_narrowed_before_anybody_votes(
+        self, api_gateway_event, lambda_context
+    ):
+        """DELIBERATE, and the ordinary case this route exists for. "Latest of each
+        type" is how a default row is FIRST composed, not a property it keeps: a
+        reviewer who wants to score two of the four documents they were handed is
+        editing the row they got, not replacing it.
+
+        Refusing here would force compose-then-delete for that — and the delete is
+        admin-gated, so an ordinary reviewer could not complete it, while the project's
+        derived key would go on holding the row nobody wanted."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row_p1_default', body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-1']
+        assert body['row']['is_default'] is True, (
+            'it is still the row the project got without a setup step, which is what '
+            'keeps it undeletable as the only one'
+        )
+
+    def test_the_create_hands_back_the_recomposed_default_row_rather_than_re_deriving(
+        self, api_gateway_event, lambda_context
+    ):
+        """The consequence of the above, asserted so it is a decision rather than a
+        surprise. `POST .../rows` is idempotent and answers with what is STORED — a
+        create that re-derived "latest of each type" would silently discard the choice
+        the recompose recorded, on a row somebody may be about to ballot on."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+        projects = _project_with(*FOUR_SCORABLE)
+        _recompose_row(aggregates, projects, api_gateway_event, lambda_context,
+                       'row_p1_default', body={'project_id': 'p1',
+                                               'document_ids': ['prd-1']})
+
+        status, body = _create_row(aggregates, projects, api_gateway_event,
+                                   lambda_context, body={'project_id': 'p1'})
+
+        assert status == 200
+        assert body['created'] is False
+        assert body['row']['document_ids'] == ['prd-1']
+
+    def test_a_default_row_frozen_by_a_ballot_is_refused_like_any_other(
+        self, api_gateway_event, lambda_context
+    ):
+        """Being the default row buys no exemption in either direction: the freeze is
+        about ballots, not about which row it is."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row_p1_default': AXES}, subject='alice', seed_rows=False)
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row_p1_default', body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 409
+        assert 'frozen' in body['error']
+
     def test_the_recomposed_row_reads_back_as_un_frozen(
         self, api_gateway_event, lambda_context
     ):

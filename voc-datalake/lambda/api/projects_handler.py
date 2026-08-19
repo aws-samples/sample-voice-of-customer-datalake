@@ -565,6 +565,25 @@ ROW_BALLOT_WRITES_FIELD = 'ballot_writes'
 # than about the exception.
 BALLOT_TRANSACT_ROW_INDEX = 1
 
+# What a `TransactItems[].Update` accepts, per the DynamoDB API — a NARROWER set than
+# `update_item` takes, which is why it is stated. `_ballot_transact_items` spreads the
+# kwargs `_ballot_update_kwargs` built for `update_item` into one of these, so a
+# resource-only key added there later (`ReturnValues`, `ReturnConsumedCapacity`) would
+# have DynamoDB reject the whole transaction. Asserted against rather than filtered:
+# dropping such a key silently would discard part of what that function decided to
+# write while still answering 200.
+#
+# `TableName` is supplied by the caller of this list rather than by the kwargs.
+TRANSACT_UPDATE_KEYS = frozenset({
+    'TableName',
+    'Key',
+    'UpdateExpression',
+    'ConditionExpression',
+    'ExpressionAttributeNames',
+    'ExpressionAttributeValues',
+    'ReturnValuesOnConditionCheckFailure',
+})
+
 # How many documents one row may hold. A row is a project's scorable documents
 # plus its latest prototype, and the composition is stored verbatim and read back
 # on every page load. Generous next to any real project (a handful of PRDs and
@@ -1804,12 +1823,16 @@ def _project_documents(project_id: str) -> list[dict]:
       * truncation later composes a row from a superseded PRD, or refuses with "no
         PRD or PR/FAQ to score" for a project that has one.
 
-    And a composition is FROZEN: the create is idempotent on the row id and there is
-    no recompose route, so a row built from a short read cannot be corrected through
-    the product, and every ballot on it then describes documents nobody chose. That
-    asymmetry is why this refuses instead of returning what it has — the same reading
-    `_read_prioritization_partition` takes one screen up, where "a silently-short
-    window is exactly how this codebase has been bitten before".
+    And a composition BECOMES FROZEN at the first ballot. The create is idempotent on
+    the row id, so it never rewrites a row it finds; a recompose route exists, but the
+    database refuses it once anybody has balloted (ROW_FROZEN_AT_FIELD), and a row
+    composed from a short read is not marked as suspect in any way that would prompt
+    somebody to correct it before that happens. So the repair window is real but
+    closes on its own, unannounced — and after it closes every ballot on the row
+    describes documents nobody chose. That asymmetry is why this refuses instead of
+    returning what it has — the same reading `_read_prioritization_partition` takes one
+    screen up, where "a silently-short window is exactly how this codebase has been
+    bitten before".
     """
     table = get_projects_table()
     if not table:
@@ -2157,6 +2180,24 @@ def api_recompose_prioritization_row(row_id: str):
     state is what refuses — the caller was permitted, and what they asked for
     conflicts with a fact about the world that a reload will show them.
 
+    A DEFAULT ROW MAY BE RECOMPOSED, and the condition deliberately says nothing about
+    `is_default`. "Latest of each type" is how a default row is FIRST COMPOSED, not a
+    property it keeps: `_default_row_composition` is a starting point for a project
+    nobody has set up, and narrowing it before anyone votes is the ordinary case this
+    route exists for — a project holding four PRDs gets all four in one row, and the
+    reviewer who wants to score two of them is editing the row they were handed, not
+    replacing it. Refusing here would force compose-then-delete for that, which needs
+    an admin (the delete is admin-gated) and leaves the project's derived key holding
+    the row nobody wanted.
+
+    The consequence is that after a recompose, `POST .../rows` answers `created: false`
+    with a composition that is no longer what `_default_row_composition` would derive.
+    That is the honest reading rather than a gap: the create's contract is "this
+    project's row, whatever it now holds", and a create that re-derived would silently
+    discard a choice somebody made. `is_default` continues to mean what it has always
+    meant — the row a project got without a setup step, which is what makes it the one
+    that cannot be deleted while it is the project's only row.
+
     `project_id` is asserted in the same condition rather than trusted from the
     row's stored value, so a recompose can only ever hold documents of the project
     the caller validated the ids against. Without it, naming another project's row
@@ -2449,12 +2490,15 @@ def _transact_delete_row(
     on the attribute being ABSENT, which is the same assertion for the same reason.
 
     The fence value is passed through UNCONVERTED. It was read at the resource layer
-    (a `Decimal`) and goes back as `:seen_writes` through `table.meta.client`, which
-    is the resource's client and so carries the resource's type serializer — a
-    `Decimal('1')` serialises to `{'N': '1'}` and the comparison holds. Coercing it
-    to `int` here, or issuing this transaction on a bare `boto3.client('dynamodb')`,
-    would break that: this is the one place in the module where a value read at the
-    resource layer is fed back through a client-layer call.
+    (a `Decimal`) and goes back as `:seen_writes` through `table.meta.client` — the
+    RESOURCE'S client, which carries the resource's type serializer, so the `Decimal`
+    becomes `{'N': '1'}` and the comparison holds. This is the one place in the module
+    where a value read at the resource layer is fed back through a client-layer call,
+    which is why it is written down: issuing this transaction on a bare
+    `boto3.client('dynamodb')` instead would reject every native value in it outright.
+    `test_projects_prioritization_row_lifecycle_moto.py` executes this against a real
+    implementation for exactly that reason — the suite's fake accepts whatever `dict`
+    it is handed, so it cannot tell a legal request from an illegal one.
 
     `sibling_sk`, when present, is a `ConditionCheck` asserting that another row of
     the project still exists. It is what makes "the default row is not deleted while
@@ -3026,6 +3070,21 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
     row_update['UpdateExpression'] = (
         (('SET ' + ', '.join(assignments) + ' ') if assignments else '')
         + 'ADD #ballot_writes :one'
+    )
+    # SPREAD rather than rebuilt field by field, and checked rather than trusted. A
+    # `TransactItems[].Update` accepts a narrower set of keys than `update_item` does,
+    # so a resource-only one (`ReturnValues`, `ReturnConsumedCapacity`) reaching here
+    # is rejected by DynamoDB for the whole transaction — a ballot save failing on
+    # something the ballot itself is not about. Rebuilding the item here instead would
+    # SILENTLY DROP such a key, which is worse: it would discard part of what
+    # `_ballot_update_kwargs` decided to write while answering 200. So the mismatch is
+    # asserted, which turns a future addition there into a failure that names the
+    # cause. (`test_projects_prioritization_row_lifecycle_moto.py` executes the shape
+    # against a real implementation; the suite's fake accepts any `dict`.)
+    unsupported = set(update_kwargs) - TRANSACT_UPDATE_KEYS
+    assert not unsupported, (
+        f'_ballot_update_kwargs returned {sorted(unsupported)}, which a transaction '
+        'Update does not accept'
     )
     items = [
         {'Update': {'TableName': table.name, **update_kwargs}},
