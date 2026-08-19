@@ -59,6 +59,7 @@ removed. The revert map:
 import io
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -582,8 +583,12 @@ class TestPathParameterConfinement:
         "proj_1/api-tokens",         # segment injection
         "proj_1/jobs",
         "../metrics/summary",        # traversal
+        "..",
+        ".",
         "proj_1?x=1",
         "proj_1#frag",
+        "proj%2F1",                  # percent-encoded separator
+        "proj 1",                    # internal whitespace
         "",
     ])
     def test_a_hostile_project_id_never_becomes_a_route(self, hostile):
@@ -618,40 +623,85 @@ class TestPathParameterConfinement:
 
         assert result["result"]["isError"] is False
 
-    def test_the_patterns_accept_what_the_writers_produce(self):
-        """Lockstep against the id GENERATORS, so the guard cannot drift from them.
+    def test_a_padded_project_id_is_normalized_rather_than_refused(self):
+        """Surrounding whitespace is stripped upstream, so it never reaches here.
 
-        A pattern tightened past what the product mints would refuse real data,
-        and the refusal would look like a missing project rather than a bad guard.
-        Read from source because both generators are one expression.
+        `_resolve_project_id` strips an explicit argument before authorization, so
+        `' proj_1'` and `'proj_1'` are the same request — which is why the guard's
+        own no-whitespace rule sees an already-clean value. Pinned so a change to
+        either side is a deliberate one: if the strip were removed, the guard
+        would start refusing a padded id that used to work.
         """
-        projects_src = (Path(__file__).resolve().parents[1] / "projects.py").read_text()
-        assert 'f"proj_{datetime.now().strftime(\'%Y%m%d%H%M%S\')}"' in projects_src, (
-            "the project-id generator changed shape; re-check _PATH_PARAM_PATTERNS"
-        )
-        # What that expression produces, matched against the live guard.
-        assert mcp_handler._PATH_PARAM_PATTERNS["project_id"].match("proj_20260819143000")
-        # 32-char lowercase hex, as generate_deterministic_id produces.
-        assert mcp_handler._PATH_PARAM_PATTERNS["feedback_id"].match("0" * 32)
-        assert not mcp_handler._PATH_PARAM_PATTERNS["feedback_id"].match("0" * 31)
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {"project": {"name": "P"}}})
+        result = _call("get_project", {"project_id": f"  {_PROJECT}  "}, fake)
 
-    def test_every_templated_route_declares_a_pattern_for_its_parameters(self):
-        """Fail-closed, checked across the whole table rather than per tool.
+        assert result["result"]["isError"] is False
+        assert fake.paths == [f"/projects/{_PROJECT}"]
 
-        A future route whose author forgets a pattern is refused at call time, and
-        this test says so at build time instead.
+    def test_the_guard_does_not_bet_on_where_an_id_came_from(self):
+        """An id of an unexpected SHAPE is delegated, not refused.
+
+        The first version of this guard was a format allowlist (`proj_` + a
+        timestamp, 32 hex). It stopped both attacks, and it also bet on id
+        PROVENANCE: a project seeded, imported, or minted by an older generator
+        would be permanently unreachable through MCP and reported as a malformed
+        argument rather than a missing project. That trades an availability
+        property for a security one that the shape rule already provides.
         """
-        for key, (_domain, _method, template) in mcp_handler.DOMAIN_ROUTES.items():
-            for segment in template.split("/"):
+        legacy = "legacy-project-42"
+        fake = _FakeLambda({f"/projects/{legacy}": {"project": {"name": "Old"}}})
+        result = _call("get_project", {"project_id": legacy}, fake)
+
+        assert result["result"]["isError"] is False
+        assert fake.paths == [f"/projects/{legacy}"]
+
+    def test_reserved_segments_cover_every_static_sibling(self):
+        """Lockstep: the reserved sets are derived from the handlers, not guessed.
+
+        This is what replaces the provenance bet. A static route added to one of
+        those handlers at the same position as a templated parameter would
+        otherwise become quietly reachable through the tool that interpolates
+        there; adding it now fails this test until it is reserved.
+        """
+        owners = {"/projects": "projects_handler.py", "/feedback": "metrics_handler.py"}
+        for prefix, handler in owners.items():
+            source = (Path(__file__).resolve().parents[1] / handler).read_text()
+            depth = len(prefix.strip("/").split("/"))
+            siblings = set()
+            for match in re.finditer(r'@app\.(?:get|post|put|delete)\(\s*[\'"]([^\'"]+)[\'"]', source):
+                parts = match.group(1).strip("/").split("/")
+                if (len(parts) > depth
+                        and "/".join(parts[:depth]) == prefix.strip("/")
+                        and not parts[depth].startswith("<")):
+                    siblings.add(parts[depth])
+            declared = mcp_handler._RESERVED_PATH_SEGMENTS[prefix]
+            assert siblings <= declared, (
+                f"{handler} has static routes under {prefix} that are not reserved: "
+                f"{sorted(siblings - declared)} — a tool interpolating a parameter "
+                f"there could reach them"
+            )
+
+    def test_every_reserved_prefix_is_one_a_declared_route_interpolates(self):
+        """The reverse direction: no reserved set for a prefix nothing uses.
+
+        A stale entry is harmless at runtime but it is a claim about the routes
+        that is no longer true, and it makes the test above pass for a prefix
+        nobody checks.
+        """
+        interpolated = set()
+        for _domain, _method, template in mcp_handler.DOMAIN_ROUTES.values():
+            segments = template.strip("/").split("/")
+            for index, segment in enumerate(segments):
                 if segment.startswith("{"):
-                    name = segment.strip("{}")
-                    assert name in mcp_handler._PATH_PARAM_PATTERNS, (
-                        f"{key} interpolates '{name}' with no declared pattern"
-                    )
+                    interpolated.add("/" + "/".join(segments[:index]))
+        assert set(mcp_handler._RESERVED_PATH_SEGMENTS) <= interpolated, (
+            f"reserved segments declared for prefixes no route interpolates: "
+            f"{sorted(set(mcp_handler._RESERVED_PATH_SEGMENTS) - interpolated)}"
+        )
 
-    def test_an_undeclared_parameter_is_refused_rather_than_interpolated(self):
+    def test_a_parameter_the_template_does_not_use_is_refused(self):
         with pytest.raises(mcp_handler.InvalidToolArgument):
-            mcp_handler._validated_path_parameters("some_route", {"surprise": "value"})
+            mcp_handler._validated_path_parameters("project_get", {"surprise": "value"})
 
     def test_autoseed_refuses_a_hostile_project_id_with_a_400(self):
         """Autoseed takes its id straight from the URL, so it needs the same guard.

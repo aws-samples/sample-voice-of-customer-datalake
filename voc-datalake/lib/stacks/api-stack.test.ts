@@ -21,7 +21,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -945,8 +945,11 @@ describe('lambda role policies stay under the IAM size limit', () => {
     }),
   });
 
-  /** Non-whitespace characters, which is how IAM counts a policy. */
-  const size = (document: unknown) => JSON.stringify(document).replace(/\s/g, '').length;
+  // `JSON.stringify` emits no structural whitespace, so a `replace(/\s/g,'')`
+  // here could only ever strip whitespace INSIDE string values — Sids, condition
+  // values, ARNs with spaces — which IAM does count. Measuring the serialized
+  // length directly is both simpler and closer to the quota.
+  const size = (document: unknown) => JSON.stringify(document).length;
 
   function policies(): { id: string; kind: string; chars: number; limit: number }[] {
     const template = apiTemplate();
@@ -978,23 +981,69 @@ describe('lambda role policies stay under the IAM size limit', () => {
     return measured;
   }
 
+  // Measured once: each call walks the whole synthesized template.
+  let measured: ReturnType<typeof policies>;
+  beforeAll(() => { measured = policies(); });
+
   it('measures every policy shape the stack can produce', () => {
     // Vacuity guard, and it names the shapes so a future one is a deliberate add.
-    const kinds = new Set(policies().map((p) => p.kind));
-    expect(policies().length).toBeGreaterThan(0);
-    expect(kinds.has('inline'), 'no AWS::IAM::Policy measured — has the filter drifted?').toBe(true);
+    expect(measured.length).toBeGreaterThan(0);
+    expect(new Set(measured.map((p) => p.kind)).has('inline'),
+      'no AWS::IAM::Policy measured — has the filter drifted?').toBe(true);
   });
 
   it('keeps every policy under its IAM quota', () => {
-    const over = policies().filter((p) => p.chars >= p.limit);
-    expect(over, 'policies at or over their IAM character quota').toEqual([]);
+    expect(measured.filter((p) => p.chars >= p.limit),
+      'policies at or over their IAM character quota').toEqual([]);
   });
 
   it('keeps every policy under 70% of its quota', () => {
     // If this fails, the answer is a new domain Lambda, not a bigger threshold.
     // Raising the fraction here is how the ceiling gets hit for real.
-    const near = policies().filter((p) => p.chars >= p.limit * WARN_FRACTION);
-    expect(near, 'policies past 70% of their IAM quota — split the domain instead').toEqual([]);
+    expect(measured.filter((p) => p.chars >= p.limit * WARN_FRACTION),
+      'policies past 70% of their IAM quota — split the domain instead').toEqual([]);
+  });
+});
+
+describe('the delegation timeout budget', () => {
+  // The adapter gives up on a domain call before its OWN Lambda timeout, so a
+  // slow route produces a -32603 rather than a Lambda timeout with no JSON-RPC
+  // envelope at all. That ordering is the invariant worth pinning, and nothing
+  // else notices if it inverts.
+  const readTimeout = () => {
+    const source = readRepoFile('lambda', 'shared', 'mcp_delegate.py');
+    const seconds = source.match(/_DELEGATE_READ_TIMEOUT_SECONDS:\s*Final\s*=\s*(\d+)/)?.[1];
+    expect(seconds, 'could not read _DELEGATE_READ_TIMEOUT_SECONDS').toBeDefined();
+    return Number(seconds);
+  };
+
+  const FunctionSchema = z.object({
+    Properties: z.object({ Handler: z.string().optional(), Timeout: z.number().optional() }),
+  });
+  const functionByHandler = (handler: string) =>
+    Object.values(apiTemplate().findResources('AWS::Lambda::Function'))
+      .map((fn) => FunctionSchema.parse(fn).Properties)
+      .find((p) => p.Handler === handler);
+
+  it('gives the adapter time to answer after it stops waiting', () => {
+    const adapter = functionByHandler('mcp_handler.lambda_handler');
+    expect(adapter, 'no Lambda with the mcp_handler entry point').toBeDefined();
+    expect(readTimeout()).toBeLessThan(adapter?.Timeout ?? 0);
+  });
+
+  it('does not require the callees to finish sooner than the adapter waits', () => {
+    // Deliberately NOT asserted the other way round, which a review suggested.
+    // The metrics and projects functions serve the browser too, where 30 s is the
+    // right budget, and API Gateway caps the OUTER request at 29 s regardless —
+    // so a delegated call that ran longer than the adapter's patience was never
+    // going to be delivered. The callee may still be running when the adapter
+    // gives up; that is inherent to a timeout, and it is why retries are off.
+    // This test records the relationship so the asymmetry reads as chosen.
+    for (const handler of ['metrics_handler.lambda_handler', 'projects_handler.lambda_handler']) {
+      const fn = functionByHandler(handler);
+      expect(fn, `${handler} is not in the template`).toBeDefined();
+      expect(fn?.Timeout, `${handler} timeout`).toBeGreaterThanOrEqual(readTimeout());
+    }
   });
 });
 

@@ -118,49 +118,80 @@ DOMAIN_ROUTES: dict[str, tuple[str, str, str]] = {
 }
 
 
-# What each path parameter must look like before it is allowed into a route path.
+# ---------------------------------------------------------------------------
+# Path-parameter confinement
+# ---------------------------------------------------------------------------
 #
-# 🔑 This is a ROUTE-CONFUSION guard, not input tidiness. The delegated path is
-# what the Powertools resolver matches on, so a parameter value is not data — it
-# is part of the routing key. Two ways an unvalidated value changes which route
-# answers:
+# 🔑 A ROUTE-CONFUSION guard, not input tidiness. The delegated path is what the
+# Powertools resolver matches on — `pathParameters` is never consulted — so a
+# parameter value is not data, it is part of the routing key. Two ways an
+# unvalidated value changes which route answers:
 #
-#   • extra segments: project_id='p/api-tokens' builds '/projects/p/api-tokens'
-#     and lands on the token-list route instead of the project route;
-#   • a value that collides with a STATIC sibling: project_id='prioritization'
-#     builds '/projects/prioritization', and Powertools checks static routes
-#     BEFORE dynamic ones, so it lands on api_get_prioritization_scores — the
-#     surface deliberately excluded from MCP entirely. Segment counting does not
-#     catch this one, which is why these are format checks rather than a
-#     "no slashes" rule. The same trick reaches /feedback/search, /feedback/urgent
-#     and /feedback/entities through get_feedback_detail.
+#   • EXTRA SEGMENTS. `project_id='p/api-tokens'` builds `/projects/p/api-tokens`
+#     and lands on the token-list route instead of the project route.
+#   • A COLLISION WITH A STATIC SIBLING. `project_id='prioritization'` builds
+#     `/projects/prioritization`, and Powertools resolves static routes BEFORE
+#     dynamic ones, so it lands on `api_get_prioritization_scores` — the surface
+#     deliberately excluded from MCP altogether. Segment counting does not catch
+#     this: it is a well-formed single segment.
 #
-# Both formats are what the writers actually produce: `proj_` + a timestamp
-# (projects.py) and a 32-character hex digest (processor/handler.py). Anything
-# else fails CLOSED with a -32602, which is the right direction for a component
-# that decides both the route and the scope that applies to it. Pinned by
-# TestPathParameterConfinement, including a lockstep against the id generators.
-_PATH_PARAM_PATTERNS: dict[str, re.Pattern[str]] = {
-    'project_id': re.compile(r'^proj_[A-Za-z0-9_-]+$'),
-    'feedback_id': re.compile(r'^[0-9a-f]{32}$'),
+# The guard is a SHAPE rule plus a reserved-segment set, deliberately NOT a
+# format allowlist per id. An allowlist (`proj_…`, 32 hex) was the first
+# implementation and it bet on id PROVENANCE: any project seeded, imported or
+# minted by an older generator becomes permanently unreachable through MCP, and
+# reported as a malformed argument rather than as a missing project. That trades
+# a security property for an availability one, and it is avoidable — the shape
+# rule stops segment injection, and the reserved set stops sibling collisions,
+# without either caring where an id came from.
+#
+# The reserved sets are DERIVED from the owning handlers' static routes by
+# `test_reserved_segments_cover_every_static_sibling`, so a new static sibling
+# added to one of those handlers fails the suite instead of quietly becoming
+# reachable. That is the same lockstep shape as the route and throttle tests.
+_RESERVED_PATH_SEGMENTS: dict[str, frozenset[str]] = {
+    '/projects': frozenset({'config', 'prioritization'}),
+    '/feedback': frozenset({'search', 'urgent', 'entities'}),
 }
+
+# Characters that would let a value escape its segment or its path entirely.
+# `/` is the injection above; `?` and `#` would graft a query or fragment onto
+# the routing key; `%` would let a percent-encoded `/` arrive decoded at a
+# resolver that has already matched.
+_FORBIDDEN_PATH_CHARS = frozenset('/?#%\\')
+
+
+def _reserved_for(template: str, name: str) -> frozenset[str]:
+    """The static sibling segments a parameter must not impersonate.
+
+    Keyed on the path PREFIX above the parameter, so `/projects/{project_id}` and
+    `/projects/{project_id}/autoseed` share one set — both put the value in the
+    same position, which is what decides which siblings it can collide with.
+    """
+    segments = template.strip('/').split('/')
+    position = segments.index(f'{{{name}}}')
+    return _RESERVED_PATH_SEGMENTS.get('/' + '/'.join(segments[:position]), frozenset())
 
 
 def _validated_path_parameters(route_key: str, params: dict[str, str]) -> dict[str, str]:
     """Refuse any path parameter that could change which route answers."""
+    _domain, _method, template = DOMAIN_ROUTES[route_key]
     for name, value in params.items():
-        pattern = _PATH_PARAM_PATTERNS.get(name)
-        if pattern is None:
-            # Fail closed on an UNDECLARED parameter rather than passing it
-            # through: a future route whose author forgets to add a pattern
-            # would otherwise reopen exactly this hole, silently.
+        if f'{{{name}}}' not in template:
+            # Fail closed rather than ignoring it: a parameter the template does
+            # not interpolate means caller and route disagree about the call.
+            raise InvalidToolArgument(f"{route_key}: unexpected path parameter '{name}'")
+        if not isinstance(value, str) or not value or value.strip() != value:
+            raise InvalidToolArgument(f'{name} must be a non-empty identifier')
+        if _FORBIDDEN_PATH_CHARS & set(value):
+            raise InvalidToolArgument(f'{name} must be a single path segment')
+        if value in {'.', '..'} or any(c.isspace() or ord(c) < 0x20 for c in value):
+            raise InvalidToolArgument(f'{name} must be a single path segment')
+        if value in _reserved_for(template, name):
+            # Named explicitly, because "not found" would be a lie and the caller
+            # cannot otherwise tell why a plausible-looking id was refused.
             raise InvalidToolArgument(
-                f"{route_key}: no validation declared for path parameter '{name}'"
+                f"{name} may not be '{value}': that names a different route"
             )
-        if not isinstance(value, str) or not pattern.match(value):
-            # The expected SHAPE is not echoed back: it is a storage detail, and
-            # a caller who guessed wrong is better served by the parameter name.
-            raise InvalidToolArgument(f'{name} is not a valid identifier')
     return params
 
 
