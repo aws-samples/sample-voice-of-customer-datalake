@@ -4382,6 +4382,24 @@ class TestASecondRowCanBeComposedForAnotherCombination:
 
         assert response['statusCode'] == 200
 
+    def test_the_composed_row_carries_the_projects_latest_prototype_as_context(
+        self, api_gateway_event, lambda_context
+    ):
+        """A prototype is context a reviewer looks at rather than a document the row
+        is scored on, so it rides in its own field exactly as it does on the default
+        row — and it is not composable, because a second dimension of choice over
+        something no ballot is about would mean nothing."""
+        aggregates = FakeAggregatesTable()
+        projects = _project_with(
+            *TWO_SCORABLE, ('PROTOTYPE#', 'proto-old'), ('PROTOTYPE#', 'proto-new'),
+        )
+
+        _, body = _compose_row(aggregates, projects, api_gateway_event, lambda_context,
+                               body={'project_id': 'p1', 'document_ids': ['prd-1']})
+
+        assert body['row']['prototype_id'] == 'proto-new'
+        assert body['row']['document_ids'] == ['prd-1']
+
     def test_the_composed_row_never_carries_an_expiry(
         self, api_gateway_event, lambda_context
     ):
@@ -5616,3 +5634,68 @@ class TestABallotAndItsRowsExistenceAreSettledTogether:
         assert status == 404
         assert aggregates.ballot_keys == []
         assert aggregates.transact_calls == []
+
+
+class TestARowWithMoreBallotsThanOneWriteCanRemoveIsRefused:
+    """DynamoDB caps a transaction at 100 items. A row past that bound is refused
+    rather than deleted in batches, which is the whole argument for the transaction:
+    several writes would leave the ballots that did not fit in the first one orphaned
+    between them.
+
+    Far outside the team-sized shape the partition itself is scaled for, and asserted
+    anyway, because what happens at the edge is the difference between a refusal and
+    the silent orphaning this path exists to prevent.
+    """
+
+    @staticmethod
+    def _row_with(count):
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+        for index in range(count):
+            sort_key = f'BALLOT#row-1#user:reviewer-{index:03d}'
+            aggregates.items[(PARTITION, sort_key)] = {
+                'pk': PARTITION, 'sk': sort_key, 'row_id': 'row-1', **AXES,
+            }
+        return aggregates, MAX_ROW_BALLOTS_PER_DELETE
+
+    def test_a_row_at_the_bound_is_still_deleted_whole(
+        self, api_gateway_event, lambda_context
+    ):
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        aggregates, bound = self._row_with(MAX_ROW_BALLOTS_PER_DELETE)
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 200
+        assert body['ballots_deleted'] == bound
+        assert aggregates.ballot_keys == []
+        assert aggregates.row_keys == []
+
+    def test_a_row_past_the_bound_is_refused_and_nothing_is_removed(
+        self, api_gateway_event, lambda_context
+    ):
+        """A partial delete would be strictly worse than this refusal: the row would
+        be gone and the ballots that did not fit would remain, which is the orphan
+        the page's read counts and warns about."""
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        aggregates, bound = self._row_with(MAX_ROW_BALLOTS_PER_DELETE + 1)
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 409
+        assert str(bound) in body['error']
+        assert aggregates.transact_calls == []
+        assert aggregates.row_keys == ['ROW#row-1']
+        assert len(aggregates.ballot_keys) == bound + 1
+
+    def test_the_bound_leaves_room_for_the_items_the_transaction_reserves(self):
+        """The row's own delete, and a `ConditionCheck` on a sibling when the row is a
+        default one. A bound of 100 would make a full row's delete exceed the
+        transaction cap and fail as a server error instead of as this refusal."""
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        assert MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100

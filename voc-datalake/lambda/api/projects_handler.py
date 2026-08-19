@@ -1888,19 +1888,28 @@ def _default_row_composition(documents: list[dict]) -> tuple[list[str], str]:
         if document_id not in document_ids:
             document_ids.append(document_id)
     document_ids = document_ids[:MAX_ROW_DOCUMENT_IDS]
+    return document_ids, _latest_prototype_id(documents)
 
+
+def _latest_prototype_id(documents: list[dict]) -> str:
+    """The project's newest prototype id, or ''.
+
+    Its own function because BOTH row-creating routes carry it and only one of them
+    composes `document_ids`: the compose route takes the caller's document set and
+    this prototype, so calling `_default_row_composition` for the prototype alone
+    would have it deriving "latest of each type" for a set it then discards — a
+    derivation sitting inside the one route whose whole contract is not to derive.
+    """
     prototypes = [
         item for item in documents
         if str(item.get('sk', '')).startswith(PROTOTYPE_SK_PREFIX)
     ]
     prototypes.sort(key=lambda item: str(item.get('created_at', '')), reverse=True)
-    prototype_id = ''
     for item in prototypes:
         candidate = item.get('document_id')
         if isinstance(candidate, str) and candidate:
-            prototype_id = candidate
-            break
-    return document_ids, prototype_id
+            return candidate
+    return ''
 
 
 def _minted_row_id() -> str:
@@ -2038,7 +2047,7 @@ def api_compose_prioritization_row():
     if not any(item.get('sk') == 'META' for item in documents):
         raise NotFoundError(f'Project {project_id} not found')
     document_ids = _validated_row_document_ids(body.get('document_ids'), documents)
-    _, prototype_id = _default_row_composition(documents)
+    prototype_id = _latest_prototype_id(documents)
 
     table = get_aggregates_table()
     if not table:
@@ -2242,7 +2251,11 @@ def _row_ballot_sort_keys(table, row_id: str) -> list[str]:
 
     Bounded at MAX_ROW_BALLOTS_PER_DELETE and then REFUSED rather than truncated: a
     short read here would delete the row and leave the ballots that did not fit,
-    which is exactly the orphan the whole path exists to prevent.
+    which is exactly the orphan the whole path exists to prevent. Page exhaustion
+    raises SEPARATELY, and the two messages differ because the remedies do: one is a
+    row too heavily balloted for one transaction, the other a partition that has
+    outgrown the read this module performs everywhere. A single message covering both
+    would name the wrong cause for whichever case it was not written about.
     """
     query_kwargs: dict[str, Any] = {
         'KeyConditionExpression': (
@@ -2260,21 +2273,28 @@ def _row_ballot_sort_keys(table, row_id: str) -> list[str]:
             if isinstance(item, dict) and item.get('sk')
         )
         if len(sort_keys) > MAX_ROW_BALLOTS_PER_DELETE:
-            break
+            logger.error(
+                'A prioritization row holds more than the %d ballots one atomic '
+                'delete can remove. Deleting it in several writes would leave '
+                'orphaned ballots between them, which is the fault this path exists '
+                'to prevent.',
+                MAX_ROW_BALLOTS_PER_DELETE,
+            )
+            raise ConflictError(
+                f'This row holds more than the {MAX_ROW_BALLOTS_PER_DELETE} ballots '
+                'that can be removed together with it in one atomic write'
+            )
         last_key = response.get('LastEvaluatedKey')
         if not last_key:
             return sort_keys
         query_kwargs['ExclusiveStartKey'] = last_key
     logger.error(
-        'A prioritization row holds more than the %d ballots one atomic delete can '
-        'remove. Deleting it in several writes would leave orphaned ballots between '
-        'them, which is the fault this path exists to prevent.',
-        MAX_ROW_BALLOTS_PER_DELETE,
+        "A prioritization row's ballots exceed %d query pages, so the delete cannot "
+        'enumerate them all. Deleting the row on a short read would orphan the '
+        'ballots it did not see.',
+        MAX_PRIORITIZATION_PAGES,
     )
-    raise ConflictError(
-        f'This row holds more than the {MAX_ROW_BALLOTS_PER_DELETE} ballots that '
-        'can be removed together with it in one atomic write'
-    )
+    raise ServiceError('Too many ballots on this row to read in one request')
 
 
 def _transact_delete_row(
