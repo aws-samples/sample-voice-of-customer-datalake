@@ -3,14 +3,54 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+/**
+ * Mock defaults, shared between the `vi.mock` factories below and the
+ * `beforeEach` that restores them.
+ *
+ * `vi.hoisted` is what makes the sharing possible: the factories are hoisted
+ * above the imports, so a plain module-level `const` would still be in its
+ * temporal dead zone when a factory first runs.
+ *
+ * They have to be restored per-test, not just declared once, because neither
+ * hook in this suite puts back the implementation of a `vi.fn(impl)` created
+ * inside a `vi.mock` factory: `vi.clearAllMocks()` only drops call history, and
+ * `vi.restoreAllMocks()` only reverts `vi.spyOn` spies. So a test calling
+ * `mockReturnValue` on `getRuntimeConfig` changed the trusted-origin allowlist
+ * for every test after it in this file. Confirmed under vitest 4.1.11: an
+ * override set in one test was still in force in the next.
+ *
+ * Nothing was failing because of it — the one test that asserts on the
+ * Authorization header runs before the override, and none after it look at the
+ * header. That ordering was the only thing keeping the file green, which is the
+ * reason to fix it rather than leave it.
+ */
+const {
+  DEFAULT_ENDPOINT, DEFAULT_ID_TOKEN, DEFAULT_RUNTIME_CONFIG, DEFAULT_STORE_STATE,
+} = vi.hoisted(() => {
+  const endpoint = 'https://api.example.com'
+  return {
+    DEFAULT_ENDPOINT: endpoint,
+    DEFAULT_ID_TOKEN: 'mock-id-token',
+    DEFAULT_RUNTIME_CONFIG: {
+      apiEndpoint: endpoint,
+      cognito: {
+        userPoolId: 'pool-1',
+        clientId: 'client-1',
+        region: 'us-east-1',
+        identityPoolId: 'id-pool',
+      },
+    },
+    DEFAULT_STORE_STATE: {
+      config: { apiEndpoint: endpoint },
+      dateBasis: 'imported',
+    },
+  }
+})
+
 // Mock stores and auth before importing client
 vi.mock('../store/configStore', () => ({
   useConfigStore: {
-    getState: vi.fn(() => ({
-      config: {
-        apiEndpoint: 'https://api.example.com'
-      },
-    })),
+    getState: vi.fn(() => DEFAULT_STORE_STATE),
   },
 }))
 
@@ -20,16 +60,13 @@ vi.mock('../store/configStore', () => ({
 // breaking every test that asserts the header is present.
 vi.mock('../runtimeConfig', () => ({
   isConfigLoaded: vi.fn(() => true),
-  getRuntimeConfig: vi.fn(() => ({
-    apiEndpoint: 'https://api.example.com',
-    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
-  })),
+  getRuntimeConfig: vi.fn(() => DEFAULT_RUNTIME_CONFIG),
 }))
 
 vi.mock('../services/auth', () => ({
   authService: {
     isConfigured: vi.fn(() => true),
-    getIdToken: vi.fn(() => 'mock-id-token'),
+    getIdToken: vi.fn(() => DEFAULT_ID_TOKEN),
     getAccessToken: vi.fn(() => Promise.resolve('mock-access-token')),
     refreshSession: vi.fn().mockResolvedValue(undefined),
     signOut: vi.fn(),
@@ -39,11 +76,25 @@ vi.mock('../services/auth', () => ({
 import { api, getDaysFromRange, getDateRangeParams, ALL_TIME_DAYS } from './client'
 import { authService } from '../services/auth'
 import * as runtimeConfig from '../runtimeConfig'
+import { useConfigStore } from '../store/configStore'
 import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
 
 describe('API Client', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Re-establish the mock implementations, which clearAllMocks does not.
+    // See the note on DEFAULT_RUNTIME_CONFIG: without this, a test that
+    // overrides the runtime config leaks a foreign trusted-origin allowlist
+    // into every test after it.
+    vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+    vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue(DEFAULT_RUNTIME_CONFIG)
+    vi.mocked(useConfigStore.getState).mockReturnValue(DEFAULT_STORE_STATE)
+    // The 401-retry tests reach inside `refreshSession` to re-point
+    // `getIdToken` at a fresh token; both overrides survive the hooks the same
+    // way, so both are restored here. Found by the regression guard below, not
+    // by inspection — it failed on `getIdToken` still returning 'fresh-token'.
+    vi.mocked(authService.getIdToken).mockReturnValue(DEFAULT_ID_TOKEN)
+    vi.mocked(authService.refreshSession).mockResolvedValue(undefined)
     global.fetch = vi.fn()
   })
 
@@ -178,16 +229,15 @@ describe('API Client', () => {
 
     it('does NOT attach Authorization on the retry when the origin is untrusted', async () => {
       // The deployment's real endpoint is elsewhere, so the configured base URL
-      // (https://api.example.com — e.g. a stale persisted value) is foreign.
+      // (DEFAULT_ENDPOINT — e.g. a stale persisted value) is foreign.
+      // This override is undone by the suite's beforeEach, which re-applies
+      // DEFAULT_RUNTIME_CONFIG; `vi.clearAllMocks()` alone would leave it in
+      // place for every later test in this file.
       vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        ...DEFAULT_RUNTIME_CONFIG,
         apiEndpoint: 'https://deployment.example.com/v1',
-        cognito: {
-          userPoolId: 'pool-1',
-          clientId: 'client-1',
-          region: 'us-east-1',
-          identityPoolId: 'id-pool',
-        },
       })
+      expect(DEFAULT_ENDPOINT).not.toContain('deployment.example.com')
       ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockImplementation(() => {
         ;(authService.getIdToken as ReturnType<typeof vi.fn>).mockReturnValue('fresh-token')
         return Promise.resolve(undefined)
@@ -206,6 +256,28 @@ describe('API Client', () => {
       // …and still withheld after the refresh, which is the property the
       // rebuilt headers exist to guarantee.
       expect(retryInit.headers['Authorization']).toBeUndefined()
+    })
+
+    /**
+     * Regression guard for the override in the test above.
+     *
+     * Order-dependent: it only means anything while it runs after the untrusted
+     * -origin test, which is why it lives here rather than in a tidier place.
+     * If the `beforeEach` stops re-applying `DEFAULT_RUNTIME_CONFIG`, the
+     * previous test's foreign endpoint is still the allowlist when this runs,
+     * the origin check refuses `DEFAULT_ENDPOINT`, and this fails.
+     */
+    it('starts from the default trusted allowlist, not the previous test override', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ count: 0, items: [] }),
+      })
+
+      await api.getFeedback({ days: 7 })
+
+      const [calledUrl, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(calledUrl).toContain(DEFAULT_ENDPOINT)
+      expect(init.headers['Authorization']).toBe(DEFAULT_ID_TOKEN)
     })
 
     it('signs out and redirects with a reason when refresh fails', async () => {
@@ -405,9 +477,8 @@ describe('API Client', () => {
     })
 
     it('threads the review date basis into the body (issue #150)', async () => {
-      const { useConfigStore } = await import('../store/configStore')
-      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
-        config: { apiEndpoint: 'https://api.example.com' },
+      vi.mocked(useConfigStore.getState).mockReturnValue({
+        ...DEFAULT_STORE_STATE,
         dateBasis: 'review',
       })
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -422,11 +493,9 @@ describe('API Client', () => {
     })
 
     it('omits date_basis on the default imported basis', async () => {
-      const { useConfigStore } = await import('../store/configStore')
-      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
-        config: { apiEndpoint: 'https://api.example.com' },
-        dateBasis: 'imported',
-      })
+      // No override needed: 'imported' is the default the beforeEach restores.
+      // Asserting it from the restored default is the point — if the previous
+      // test's 'review' leaked, this would fail.
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ response: 'Response' }),

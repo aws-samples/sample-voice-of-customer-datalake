@@ -47,7 +47,7 @@ export interface StreamEvent {
 }
 
 function getStreamHeaders(targetUrl: string): Record<string, string> {
-  return getAuthHeaders({ Accept: 'text/event-stream' }, targetUrl)
+  return getAuthHeaders(targetUrl, { Accept: 'text/event-stream' })
 }
 
 const VALID_EVENT_TYPES = new Set(['text', 'thinking', 'tool_use', 'tool_result', 'done', 'error', 'metadata', 'document_changed', 'persona_turn', 'persona_error'])

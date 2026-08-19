@@ -4,15 +4,14 @@
  *
  * The trusted-origin check (issue #262) resolves relative URLs against
  * `window.location.origin`, so any suite exercising it needs the origin to be a
- * known quantity rather than whatever the previously-run file left behind.
- * Vitest shares one jsdom environment across files
- * (`poolOptions.forks.singleFork`), and several suites replace
- * `window.location` with partial stubs.
+ * known quantity rather than whatever ran before it left behind. Several suites
+ * replace `window.location` with partial stubs, including some in the same file
+ * as the origin assertions.
  *
  * `src/test/setup.ts` restores `window.location` after every test as a global
  * safety net; this helper is the positive half — it sets the origin a suite
- * needs. Keeping it here rather than copied per-file means the two suites that
- * use it cannot drift apart.
+ * needs. Keeping it here rather than copied per-file means the suites that use
+ * it cannot drift apart.
  */
 import { beforeEach } from 'vitest'
 

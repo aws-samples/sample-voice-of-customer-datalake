@@ -157,19 +157,33 @@ describe('getAuthHeaders — trusted origin', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('attaches Authorization when a token exists and the origin is trusted', () => {
-    const headers = getAuthHeaders(undefined, `${TRUSTED_API}/feedback`)
+    const headers = getAuthHeaders(`${TRUSTED_API}/feedback`)
     // Positive assertion first — proves the mechanism fires for a good origin.
     expect(headers['Authorization']).toBe('mock-cognito-id-token')
   })
 
   it('attaches Authorization for a relative URL (same-origin, always safe)', () => {
-    const headers = getAuthHeaders(undefined, '/api/feedback')
+    const headers = getAuthHeaders('/api/feedback')
     expect(headers['Authorization']).toBe('mock-cognito-id-token')
   })
 
-  it('attaches Authorization when no targetUrl is given (backward compat)', () => {
-    const headers = getAuthHeaders()
-    expect(headers['Authorization']).toBe('mock-cognito-id-token')
+  it('requires the target URL, so the origin check cannot be skipped', () => {
+    // This replaced a test asserting the opposite — that `getAuthHeaders()`
+    // with no target attached the header anyway ("backward compat"). That
+    // default made the origin check opt-OUT: every caller did pass a URL, but
+    // a new call site could skip the check silently and no test would fail.
+    //
+    // The guard against that returning is checked by `tsc`, not by vitest:
+    // `targetUrl` is the required first parameter, so if it were made optional
+    // again its type would widen to `string | undefined` and the `required`
+    // assignment below would stop compiling under `npx tsc -b --noEmit`.
+    type TargetUrlParam = Parameters<typeof getAuthHeaders>[0]
+    const targetUrl: TargetUrlParam = `${TRUSTED_API}/feedback`
+    const required: string = targetUrl
+
+    // …and the argument really is what gates the header, rather than being
+    // accepted and ignored.
+    expect(getAuthHeaders(required)['Authorization']).toBe('mock-cognito-id-token')
   })
 })
 
@@ -186,40 +200,40 @@ describe('getAuthHeaders — untrusted origin', () => {
     // This positive case proves the token IS present and the header mechanism
     // works — without it, the absence assertion below would pass trivially if
     // the token were simply missing or getAuthHeaders were broken.
-    const headers = getAuthHeaders(undefined, `${TRUSTED_API}/feedback`)
+    const headers = getAuthHeaders(`${TRUSTED_API}/feedback`)
     expect(headers['Authorization']).toBe('mock-cognito-id-token')
   })
 
   it('does NOT attach Authorization to a foreign-origin URL', () => {
-    const headers = getAuthHeaders(undefined, 'https://attacker.example.com/collect')
+    const headers = getAuthHeaders('https://attacker.example.com/collect')
     expect(headers['Authorization']).toBeUndefined()
   })
 
   it('does NOT attach Authorization even if a token exists (stale persisted value scenario)', () => {
     // Simulate a stale localStorage value: the store has a foreign endpoint,
     // but the header must still not be attached.
-    const headers = getAuthHeaders(undefined, 'https://evil.example.com/steal-tokens')
+    const headers = getAuthHeaders('https://evil.example.com/steal-tokens')
     expect(headers['Authorization']).toBeUndefined()
   })
 
   it('still includes Content-Type even when Authorization is withheld', () => {
-    const headers = getAuthHeaders(undefined, 'https://attacker.example.com/collect')
+    const headers = getAuthHeaders('https://attacker.example.com/collect')
     expect(headers['Content-Type']).toBe('application/json')
   })
 
   it('does NOT attach Authorization when the URL has no host (fail closed)', () => {
-    const headers = getAuthHeaders(undefined, 'http://')
+    const headers = getAuthHeaders('http://')
     expect(headers['Authorization']).toBeUndefined()
   })
 
   it('does NOT attach Authorization to a backslash-separator foreign URL', () => {
-    const headers = getAuthHeaders(undefined, '/\\evil.example.com/collect')
+    const headers = getAuthHeaders('/\\evil.example.com/collect')
     expect(headers['Authorization']).toBeUndefined()
   })
 
   it('does NOT attach Authorization when config is not loaded', () => {
     vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValueOnce(false)
-    const headers = getAuthHeaders(undefined, TRUSTED_API)
+    const headers = getAuthHeaders(TRUSTED_API)
     // With no config loaded, the allowlist is empty → not trusted → no token.
     expect(headers['Authorization']).toBeUndefined()
   })

@@ -97,28 +97,30 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
  * Build auth headers with Cognito ID token.
  * Shared by client.ts (REST) and streamClient.ts (SSE).
  *
- * The `targetUrl` parameter is used to enforce an origin check: the
- * Authorization header is only attached when the resolved origin of
- * `targetUrl` is in the trusted API origin allowlist. Passing no
- * `targetUrl` (or a relative URL) is always safe and attaches the header.
+ * `targetUrl` is the URL the headers are about to be sent to, and it is
+ * **required**: the Authorization header is attached only when that URL's
+ * resolved origin is trusted (see {@link isTrustedOrigin}). This ensures that
+ * even if a bad value reaches the config store — e.g. a stale persisted value
+ * written by an older build — no bearer token is sent to an untrusted host.
  *
- * This ensures that even if a bad value reaches the config store (e.g. from a
- * stale persisted value written by an older build), no bearer token is sent to
- * an untrusted host.
+ * `targetUrl` comes first, and is required rather than optional, so that
+ * omitting it is a compile error instead of a silent grant. An earlier
+ * signature took it last and optional, defaulting to "trusted" when absent;
+ * every caller did pass it, but a new call site could have opted out of the
+ * check by accident and nothing would have failed. Pinned by test:
+ * "requires the target URL, so the origin check cannot be skipped", which
+ * stops compiling if the parameter goes back to being optional.
  */
 export function getAuthHeaders(
+  targetUrl: string,
   extraHeaders?: Record<string, string>,
-  targetUrl?: string,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...extraHeaders,
   }
 
-  // Default to safe when no target is provided (relative URL paths, tests).
-  const originIsTrusted = targetUrl === undefined || isTrustedOrigin(targetUrl)
-
-  if (originIsTrusted && authService.isConfigured()) {
+  if (isTrustedOrigin(targetUrl) && authService.isConfigured()) {
     const idToken = authService.getIdToken()
     if (idToken != null && idToken !== '') {
       headers['Authorization'] = idToken

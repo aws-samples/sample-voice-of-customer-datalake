@@ -32,7 +32,7 @@ vi.mock('../runtimeConfig', () => ({
 
 import { buildTrustedApiOrigins, isTrustedOrigin, isTrustedApiEndpoint } from './trustedOrigins'
 import * as runtimeConfigModule from '../runtimeConfig'
-import { APP_ORIGIN, useAppOrigin } from '@test/location'
+import { APP_ORIGIN, setLocationOrigin, useAppOrigin } from '@test/location'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -162,12 +162,17 @@ describe('isTrustedOrigin', () => {
   it('resolves every separator form to the origin fetch would use', () => {
     // Documents *why* the cases above must be false: this is the classification
     // the implementation performs, and it matches what fetch does.
+    // Every spelling asserted false above appears here, so the two lists cannot
+    // drift: a case rejected up there without a resolution shown down here
+    // would be rejected for an unexamined reason.
     for (const spelling of [
       '//evil.example.com/collect',
       '/\\evil.example.com/collect',
       '/\\/evil.example.com',
+      '/\\\\evil.example.com/collect',
       '//\\evil.example.com/collect',
       '\\\\evil.example.com/collect',
+      '\\/evil.example.com/collect',
     ]) {
       expect(new URL(spelling, APP_ORIGIN).origin).toBe('http://evil.example.com')
     }
@@ -245,8 +250,50 @@ describe('isTrustedOrigin', () => {
     expect(isTrustedOrigin(TRUSTED_API)).toBe(true)
   })
 
-  it('returns false when config is not loaded (empty allowlist → fail closed)', () => {
+  it('refuses everything when the document origin is opaque ("null")', () => {
+    // A sandboxed iframe without allow-same-origin, and a document loaded from
+    // a `data:` URL, both report `location.origin === 'null'` — the STRING
+    // 'null', not the value. That is a different branch from the case above:
+    // `getCurrentOrigin()` sees a non-empty string and returns it, so the
+    // same-origin comparison `parsed.origin === currentOrigin` is reachable in
+    // principle, and 'null' === 'null' would trust anything.
+    //
+    // It fails closed instead, because of *where* it fails: the WHATWG URL
+    // constructor parses the base first and throws TypeError if the base is
+    // itself unparseable — which 'null' is. So the throw happens before the
+    // comparison, for absolute inputs as much as relative ones, and the
+    // `catch` returns false. Verified against Node's URL implementation:
+    // `new URL(x, 'null')` throws for every x, including absolute URLs.
+    //
+    // This is currently a property of the URL parser rather than of an
+    // explicit guard, which is exactly why it is pinned here: an "optimisation"
+    // that reordered the same-origin comparison ahead of the parse, or that
+    // resolved only relative-looking inputs against the base, would turn an
+    // opaque document into one that trusts every origin.
+    setLocationOrigin('null')
+
+    expect(isTrustedOrigin('/api/feedback')).toBe(false)
+    expect(isTrustedOrigin(TRUSTED_API)).toBe(false)
+    expect(isTrustedOrigin('https://attacker.example.com/collect')).toBe(false)
+    // Including a request URL whose own origin is also the string 'null', which
+    // is the pairing that a naive equality check would wave through.
+    expect(isTrustedOrigin('data:text/html,steal')).toBe(false)
+  })
+
+  it('trusts the allowlist again once the origin is a real one (vacuity check)', () => {
+    // Guards the test above: it must fail closed because the origin is opaque,
+    // not because these suites refuse everything regardless.
+    setLocationOrigin(APP_ORIGIN)
+    expect(isTrustedOrigin('/api/feedback')).toBe(true)
+    expect(isTrustedOrigin(TRUSTED_API)).toBe(true)
+  })
+
+  it('trusts the runtime-config origin while config IS loaded (vacuity check)', () => {
     // Positive case, with its own explicit mock state: config loaded → trusted.
+    // Named for what it asserts — it previously carried the *next* test's name
+    // ("returns false when config is not loaded"), which described the opposite
+    // of its single `toBe(true)` assertion and so read as a passing test for a
+    // property it never checked.
     vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(true)
     expect(isTrustedOrigin(TRUSTED_API)).toBe(true)
   })

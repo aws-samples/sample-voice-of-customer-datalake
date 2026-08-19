@@ -63,6 +63,23 @@ export function buildTrustedApiOrigins(): string[] {
  *   - In dev builds: any URL whose hostname is `localhost` or `127.0.0.1`.
  *
  * Parsing failures are treated as unsafe (return false).
+ *
+ * The name is about the ORIGIN, not the string, and one consequence surprises
+ * people often enough to belong here rather than only in a test: a string that
+ * is not a URL at all — `'not a url at all'` — is TRUSTED. It has no scheme and
+ * no authority, so it resolves as a path against the current origin, which is
+ * where `fetch` would send it too. Trusting it therefore leaks the token
+ * nowhere: the request goes to our own origin. What this function must never do
+ * is trust a string that *resolves somewhere else*, and that is what every
+ * separator spelling in the list above is about. Judging "is this well-formed?"
+ * instead of "where does this resolve?" would reject harmless junk while still
+ * missing `/\evil.example.com`.
+ *
+ * When the document's own origin is opaque — a sandboxed iframe or a `data:`
+ * document, where `location.origin` is the string `'null'` — nothing is
+ * trusted, including allowlisted absolute URLs. That falls out of the URL
+ * constructor rejecting `'null'` as a base, before any comparison happens.
+ * Pinned by test: "refuses everything when the document origin is opaque".
  */
 export function isTrustedOrigin(requestUrl: string): boolean {
   const currentOrigin = getCurrentOrigin()
