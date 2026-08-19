@@ -284,24 +284,33 @@ class FakeAggregatesTable:
         failure cancels the whole transaction with nothing written. A fake that
         applied items as it walked them would let a test about atomicity pass
         against code that wrote the ballot and then failed to freeze its row.
+
+        `CancellationReasons` is ONE ENTRY PER ITEM, POSITIONALLY, with `'None'` for
+        the items that did not fail — DynamoDB's own shape, verified against moto.
+        A single-element list would let a route that reads the reason at a specific
+        item's index (the ballot save does, so a lost write-conflict is not reported
+        as a vanished row) pass here while reading the wrong position in production.
         """
         self.transact_calls.append(TransactItems)
+        reasons = []
         for entry in TransactItems:
             (operation, request), = entry.items()
             assert request['TableName'] == self.name, request['TableName']
+            assert operation in ('Update', 'Delete', 'ConditionCheck'), operation
             key = (request['Key']['pk'], request['Key']['sk'])
-            if not _condition_holds(
+            reasons.append({'Code': 'None'} if _condition_holds(
                 request.get('ConditionExpression'), self.items.get(key),
                 request.get('ExpressionAttributeNames', {}),
                 request.get('ExpressionAttributeValues', {}),
-            ):
-                raise ClientError(
-                    {'Error': {'Code': 'TransactionCanceledException',
-                               'Message': 'Transaction cancelled'},
-                     'CancellationReasons': [{'Code': 'ConditionalCheckFailed'}]},
-                    'TransactWriteItems',
-                )
-            assert operation in ('Update', 'Delete', 'ConditionCheck'), operation
+            ) else {'Code': 'ConditionalCheckFailed',
+                    'Message': 'The conditional request failed'})
+        if any(reason['Code'] != 'None' for reason in reasons):
+            raise ClientError(
+                {'Error': {'Code': 'TransactionCanceledException',
+                           'Message': 'Transaction cancelled'},
+                 'CancellationReasons': reasons},
+                'TransactWriteItems',
+            )
         for entry in TransactItems:
             (operation, request), = entry.items()
             key = (request['Key']['pk'], request['Key']['sk'])
@@ -5634,6 +5643,177 @@ class TestABallotAndItsRowsExistenceAreSettledTogether:
         assert status == 404
         assert aggregates.ballot_keys == []
         assert aggregates.transact_calls == []
+
+
+def _cancelled_transaction(reasons):
+    """A `TransactionCanceledException` carrying the given per-item reasons.
+
+    Positional and one entry per item, with `'None'` for the items that did not
+    fail, which is DynamoDB's own shape — verified against moto, whose reasons for a
+    two-item transaction failing on the second read
+    `[{'Code': 'None'}, {'Code': 'ConditionalCheckFailed', ...}]`.
+    """
+    return ClientError(
+        {'Error': {'Code': 'TransactionCanceledException',
+                   'Message': 'Transaction cancelled'},
+         'CancellationReasons': list(reasons)},
+        'TransactWriteItems',
+    )
+
+
+class TestOnlyAFailedConditionMeansTheRowIsGone:
+    """A cancelled transaction is not only a failed condition.
+
+    DynamoDB cancels with the same exception for `TransactionConflict`,
+    `ThrottlingError` and `ProvisionedThroughputExceeded`, and botocore does not
+    auto-retry it. `TransactionConflict` is reachable on the ordinary path: every
+    ballot on a row `ADD`s to the SAME row record, so two reviewers scoring one row
+    at the same moment contend on one item.
+
+    The direction of the mistake is what matters. The page treats a 4xx as a
+    refusal that retrying cannot fix, so answering 404 to a lost write-conflict
+    costs the reviewer their ballot AND tells them to reload a row that is still
+    there. A 500 is released for a retry, so the save survives.
+    """
+
+    @staticmethod
+    def _save_cancelled_with(reasons, api_gateway_event, lambda_context):
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+
+        def cancel(**kwargs):
+            raise _cancelled_transaction(reasons)
+
+        aggregates.meta.client.transact_write_items = cancel
+        return _patch_scores(aggregates, api_gateway_event, lambda_context,
+                             {'row-1': AXES}, subject='alice', seed_rows=False)
+
+    def test_a_write_conflict_is_a_retryable_500_not_a_404(
+        self, api_gateway_event, lambda_context
+    ):
+        """Two reviewers saving on one row at the same instant. A 404 here would tell
+        one of them the row does not exist, which is false and unretryable."""
+        status, body = self._save_cancelled_with(
+            [{'Code': 'None'}, {'Code': 'TransactionConflict'}],
+            api_gateway_event, lambda_context,
+        )
+
+        assert status == 500
+        assert 'does not exist' not in body['error']
+
+    def test_throttling_is_a_retryable_500_too(self, api_gateway_event, lambda_context):
+        """The same reading for the other transient codes: nothing about the row
+        changed, so nothing a reload would show the reviewer is different."""
+        for code in ('ThrottlingError', 'ProvisionedThroughputExceeded',
+                     'ItemCollectionSizeLimitExceeded', 'ValidationError'):
+            status, _ = self._save_cancelled_with(
+                [{'Code': 'None'}, {'Code': code}], api_gateway_event, lambda_context,
+            )
+            assert status == 500, code
+
+    def test_a_failed_condition_on_the_row_is_still_a_404(
+        self, api_gateway_event, lambda_context
+    ):
+        """The case the discrimination must not break: the row's own condition is its
+        existence, so a condition failure there really is a vanished row."""
+        status, body = self._save_cancelled_with(
+            [{'Code': 'None'}, {'Code': 'ConditionalCheckFailed'}],
+            api_gateway_event, lambda_context,
+        )
+
+        assert status == 404
+        assert 'does not exist' in body['error']
+
+    def test_a_condition_failure_on_the_BALLOTs_half_is_not_read_as_a_missing_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """The reason is read at the ROW's index, not "any reason in the list". The
+        ballot's own write carries no condition today, so a failure reported against
+        it is not a fact about the row and must not be answered as one."""
+        status, body = self._save_cancelled_with(
+            [{'Code': 'ConditionalCheckFailed'}, {'Code': 'None'}],
+            api_gateway_event, lambda_context,
+        )
+
+        assert status == 500
+        assert 'does not exist' not in body['error']
+
+    def test_an_unreadable_cancellation_is_treated_as_transient(
+        self, api_gateway_event, lambda_context
+    ):
+        """A missing or short `CancellationReasons` cannot establish that the row
+        went away, and the safe direction is the retryable one: a 500 costs a retry,
+        a wrong 404 costs a ballot."""
+        for reasons in ([], [{'Code': 'None'}], [{}, {}], 'not-a-list'):
+            status, _ = self._save_cancelled_with(
+                reasons, api_gateway_event, lambda_context,
+            )
+            assert status == 500, reasons
+
+    def test_the_row_index_the_reason_is_read_at_is_where_the_condition_actually_is(
+        self, api_gateway_event, lambda_context
+    ):
+        """The index is only meaningful while the transaction is built in that order.
+        Pinned against the real builder rather than restated, so reordering the two
+        items fails here instead of silently reading the wrong reason."""
+        import projects_handler
+
+        index_read = projects_handler.BALLOT_TRANSACT_ROW_INDEX
+        table = FakeAggregatesTable()
+        items = projects_handler._ballot_transact_items(
+            table,
+            projects_handler._ballot_update_kwargs('row-1', 'alice', AXES, 'now'),
+            'row-1', 'now',
+        )
+
+        assert len(items) == 2
+        row_write = items[index_read]['Update']
+        assert row_write['Key']['sk'] == 'ROW#row-1'
+        assert row_write['ConditionExpression'] == 'attribute_exists(sk)'
+        others = [
+            item for index, item in enumerate(items) if index != index_read
+        ]
+        assert all(
+            'ConditionExpression' not in request
+            for item in others for request in item.values()
+        ), 'a second condition would make one index too little to tell them apart'
+
+    def test_a_delete_cancelled_by_contention_is_a_500_not_a_409(
+        self, api_gateway_event, lambda_context
+    ):
+        """The delete's 409 says "this row changed while it was being deleted", which
+        is a claim about the world. Contention did not change the row, and the page
+        does not retry a 4xx, so the admin's delete would simply not happen."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+
+        def cancel(**kwargs):
+            raise _cancelled_transaction([{'Code': 'TransactionConflict'}])
+
+        aggregates.meta.client.transact_write_items = cancel
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 500
+        assert 'changed while it was being deleted' not in body['error']
+        assert aggregates.row_keys == ['ROW#row-1'], 'nothing was written'
+
+    def test_a_delete_cancelled_by_its_fence_is_still_a_409(
+        self, api_gateway_event, lambda_context
+    ):
+        """The actionable case, unchanged: a ballot landed in the gap, the fence
+        caught it, and reloading really does show the admin something different."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+
+        def cancel(**kwargs):
+            raise _cancelled_transaction([{'Code': 'ConditionalCheckFailed'}])
+
+        aggregates.meta.client.transact_write_items = cancel
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 409
+        assert 'changed while it was being deleted' in body['error']
 
 
 class TestARowWithMoreBallotsThanOneWriteCanRemoveIsRefused:

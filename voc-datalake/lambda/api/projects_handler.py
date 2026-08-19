@@ -21,9 +21,8 @@ from shared.api import (
     api_handler,
     validate_date_basis,
     MAX_PERSONAS_PER_GENERATION,
-    # APPENDED rather than sorted into place: two open pull requests (#344, #330)
-    # also edit this import block, and re-sorting a list this change did not need
-    # to reorder is a conflict invented for tidiness.
+    # Appended rather than sorted in, to avoid a conflict with #344 and #330 while
+    # they are open; sort this block once both have landed.
     require_admin,
 )
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
@@ -555,6 +554,16 @@ ROW_FROZEN_AT_FIELD = 'first_ballot_at'
 # `api_delete_prioritization_row`). Incremented with `ADD` in the ballot
 # transaction, so two concurrent ballots each move it.
 ROW_BALLOT_WRITES_FIELD = 'ballot_writes'
+
+# Where the ROW's write sits in the ballot transaction `_ballot_transact_items`
+# builds — the ballot's own write is first, the row's second.
+#
+# Named because the save READS THE CANCELLATION REASON AT THIS INDEX. A
+# `TransactionCanceledException` does not mean a condition failed (see
+# `_cancelled_by_condition`), and the only condition in that transaction is on the
+# row, so "the row went away" is a claim about this position specifically rather
+# than about the exception.
+BALLOT_TRANSACT_ROW_INDEX = 1
 
 # How many documents one row may hold. A row is a project's scorable documents
 # plus its latest prototype, and the composition is stored verbatim and read back
@@ -2297,25 +2306,82 @@ def _row_ballot_sort_keys(table, row_id: str) -> list[str]:
     raise ServiceError('Too many ballots on this row to read in one request')
 
 
+def _cancelled_by_condition(e: ClientError, index: int | None = None) -> bool:
+    """Did a CONDITION cancel this transaction, or did contention?
+
+    A `TransactionCanceledException` IS NOT ONLY A FAILED CONDITION. DynamoDB
+    cancels a transaction with the same exception for `TransactionConflict`
+    (another in-flight transaction touching one of the same items),
+    `ThrottlingError`, `ProvisionedThroughputExceeded`,
+    `ItemCollectionSizeLimitExceeded` and `ValidationError` — and botocore does not
+    auto-retry it, so every one of those arrives at the caller's `except`. Reading
+    the exception as "the condition failed" therefore reports a TRANSIENT failure
+    as a settled fact about the world, which is the worst direction to be wrong in:
+    the page treats a 4xx as a refusal retrying cannot fix, so the reviewer is told
+    to reload a row that is still there and their ballot is simply gone, where a
+    500 would have been released for a retry and saved.
+
+    `TransactionConflict` is not theoretical on these writes. Every ballot on a row
+    `ADD`s to the SAME row record, so two reviewers scoring one row at the same
+    moment — the ordinary case — contend on one item, and an admin's delete of that
+    row is a third contender.
+
+    `index`, when given, is the position in the `TransactItems` list whose condition
+    the caller is asking about, so a condition failure somewhere else in the same
+    transaction cannot be mistaken for this one. `None` asks "did any condition
+    fail", which is what a caller answers the same way whichever of its conditions
+    it was.
+
+    A MISSING or SHORT `CancellationReasons` answers False, so an unreadable
+    cancellation is handled as the transient failure it might be rather than as the
+    condition it might not be.
+    """
+    reasons = e.response.get('CancellationReasons')
+    if not isinstance(reasons, list):
+        return False
+    if index is not None:
+        if index >= len(reasons):
+            return False
+        reasons = [reasons[index]]
+    return any(
+        isinstance(reason, dict) and reason.get('Code') == 'ConditionalCheckFailed'
+        for reason in reasons
+    )
+
+
 def _transact_delete_row(
     table, row: dict, row_id: str, ballot_sks: list[str], sibling_sk: str | None
 ) -> None:
     """Remove the row record and every listed ballot in ONE transaction.
 
     The row's delete carries the fence: it must still exist, and its
-    ROW_BALLOT_WRITES_FIELD must read exactly what it read when the ballots were
-    enumerated — which the ballot transaction increments, so a ballot landing in
-    between cancels this write rather than being orphaned by it. A row that had
-    never taken a ballot fences on the attribute being ABSENT, which is the same
-    assertion for the same reason.
+    ROW_BALLOT_WRITES_FIELD must read exactly what it read when the row was fetched
+    — which the ballot transaction increments, so a ballot landing at any point
+    after that fetch cancels this write rather than being orphaned by it. The
+    snapshot is taken BEFORE the ballots are enumerated, so a ballot arriving during
+    the enumeration also cancels the delete even though the enumeration saw it: the
+    fence is deliberately conservative, because a spurious 409 costs a retry and a
+    missed one costs an orphaned ballot. A row that had never taken a ballot fences
+    on the attribute being ABSENT, which is the same assertion for the same reason.
+
+    The fence value is passed through UNCONVERTED. It was read at the resource layer
+    (a `Decimal`) and goes back as `:seen_writes` through `table.meta.client`, which
+    is the resource's client and so carries the resource's type serializer — a
+    `Decimal('1')` serialises to `{'N': '1'}` and the comparison holds. Coercing it
+    to `int` here, or issuing this transaction on a bare `boto3.client('dynamodb')`,
+    would break that: this is the one place in the module where a value read at the
+    resource layer is fed back through a client-layer call.
 
     `sibling_sk`, when present, is a `ConditionCheck` asserting that another row of
     the project still exists. It is what makes "the default row is not deleted while
     it is the project's only row" survive two admins acting at once.
 
-    A cancelled transaction is a 409 naming the state that moved, and nothing is
-    written — a transaction either applies whole or not at all, which is the property
-    this path is built on.
+    A transaction cancelled BY A CONDITION is a 409 naming the state that moved, and
+    nothing is written — a transaction either applies whole or not at all, which is
+    the property this path is built on. A cancellation for any other reason
+    (contention, throttling) is a 500, because "reload the page and try again" is
+    advice about a state that did not actually change; see
+    `_cancelled_by_condition`.
     """
     items: list[dict] = []
     if sibling_sk:
@@ -2353,7 +2419,15 @@ def _transact_delete_row(
     try:
         table.meta.client.transact_write_items(TransactItems=items)
     except ClientError as e:
-        if e.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
+        if (
+            e.response.get('Error', {}).get('Code') != 'TransactionCanceledException'
+            # Any condition in this transaction: the row's fence and the sibling's
+            # existence are both states the caller reloads to see, so which one it
+            # was does not change the answer. What DOES change it is a cancellation
+            # that no condition caused — that is contention, and it is a 500 the page
+            # will retry rather than a 409 it will not.
+            or not _cancelled_by_condition(e)
+        ):
             logger.exception(f'Failed to delete a prioritization row: {e}')
             raise ServiceError('Failed to delete the prioritization row') from e
         logger.warning(
@@ -2853,10 +2927,15 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
         (('SET ' + ', '.join(assignments) + ' ') if assignments else '')
         + 'ADD #ballot_writes :one'
     )
-    return [
+    items = [
         {'Update': {'TableName': table.name, **update_kwargs}},
         {'Update': row_update},
     ]
+    # The row's write is the ONE this transaction carries a condition on, and the
+    # save reads the cancellation reason at its index to tell a vanished row from
+    # contention. Asserted rather than commented, so the two cannot drift.
+    assert 'ConditionExpression' in items[BALLOT_TRANSACT_ROW_INDEX]['Update']
+    return items
 
 
 @app.put("/projects/prioritization")
@@ -3048,14 +3127,26 @@ def api_patch_prioritization_scores():
                     TransactItems=_ballot_transact_items(table, update_kwargs, row_id, now)
                 )
             except ClientError as e:
-                if e.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
+                if (
+                    e.response.get('Error', {}).get('Code')
+                    != 'TransactionCanceledException'
+                    # ONLY a failed condition on the ROW's half means the row went
+                    # away. A cancellation for any other reason — above all
+                    # `TransactionConflict`, which two reviewers scoring one row at
+                    # the same moment reach because both `ADD` to the same record —
+                    # is re-raised into the 500 below, so the page releases it for a
+                    # retry. Answering 404 there told a reviewer whose save merely
+                    # lost a race to reload a row that is still there, and dropped
+                    # their ballot on advice that could never work.
+                    or not _cancelled_by_condition(e, BALLOT_TRANSACT_ROW_INDEX)
+                ):
                     raise
-                # The only condition in the transaction is the row's existence, so a
-                # cancellation means the row went away between the pass above and
-                # this write — the delete-racing-a-ballot case (#342). 404, the same
-                # answer the up-front pass gives, because it is the same fact about
-                # the world; and nothing of this row's ballot was written, because a
-                # transaction applies whole or not at all.
+                # The row's own condition failed, and the only thing it asserts is
+                # that the row exists — so the row went away between the pass above
+                # and this write, the delete-racing-a-ballot case (#342). 404, the
+                # same answer the up-front pass gives, because it is the same fact
+                # about the world; and nothing of this row's ballot was written,
+                # because a transaction applies whole or not at all.
                 raise NotFoundError(
                     'scores name a row that does not exist; reload the page to get '
                     'the current rows'
