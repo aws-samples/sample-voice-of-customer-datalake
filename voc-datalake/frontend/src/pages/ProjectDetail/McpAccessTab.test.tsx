@@ -120,9 +120,26 @@ const mockToken: ApiToken = {
   last_used_at: '2026-03-21T15:00:00Z',
 }
 
-/** The payload the form sends when nothing is customised. */
+const ALL_SCOPES = ['feedback:read', 'metrics:read', 'projects:read'] as const
+
+/**
+ * Tick scope checkboxes. The form starts with NONE checked on purpose — the
+ * mint route requires `scopes` so the laziest request cannot mint the widest
+ * credential, and a pre-checked form would defeat that — so every test that
+ * submits has to choose explicitly, exactly as a user does.
+ */
+async function selectScopes(
+  user: ReturnType<typeof userEvent.setup>,
+  scopes: readonly string[] = ALL_SCOPES,
+) {
+  for (const scope of scopes) {
+    await user.click(screen.getByRole('checkbox', { name: new RegExp(scope) }))
+  }
+}
+
+/** The payload the form sends when every scope is ticked and reach is left alone. */
 const DEFAULT_MINT_BODY = {
-  scopes: ['feedback:read', 'metrics:read', 'projects:read'],
+  scopes: [...ALL_SCOPES],
   read_reach: 'workspace',
 }
 
@@ -181,11 +198,12 @@ describe('McpAccessTab', () => {
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
   })
 
-  it('enables Generate button when name is provided', async () => {
+  it('needs both a name and a scope before Generate enables', async () => {
     const user = userEvent.setup()
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Test token')
+    await selectScopes(user)
     expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled()
   })
 
@@ -200,6 +218,7 @@ describe('McpAccessTab', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Test token')
+    await selectScopes(user)
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
     await waitFor(() => {
@@ -272,6 +291,7 @@ describe('McpAccessTab', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Test')
+    await selectScopes(user)
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
     await waitFor(() => {
@@ -301,6 +321,7 @@ describe('McpAccessTab', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Test')
+    await selectScopes(user)
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
     await waitFor(() => {
@@ -321,9 +342,9 @@ describe('McpAccessTab', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Narrow')
-    // Dropping projects:read is the point of per-domain scopes: a credential
-    // that reads feedback without reading anybody's product strategy.
-    await user.click(screen.getByRole('checkbox', { name: /projects:read/ }))
+    // Ticking only two is the point of per-domain scopes: a credential that
+    // reads feedback without reading anybody's product strategy.
+    await selectScopes(user, ['feedback:read', 'metrics:read'])
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
     await waitFor(() => {
@@ -345,6 +366,7 @@ describe('McpAccessTab', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Sealed')
+    await selectScopes(user)
     await user.selectOptions(screen.getByLabelText('Read reach'), 'project-set')
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
@@ -355,17 +377,23 @@ describe('McpAccessTab', () => {
     })
   })
 
-  it('cannot submit with every scope unchecked', async () => {
+  it('starts with no scope checked and cannot submit until one is', async () => {
     const user = userEvent.setup()
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Empty')
-    for (const scope of ['feedback:read', 'metrics:read', 'projects:read']) {
-      await user.click(screen.getByRole('checkbox', { name: new RegExp(scope) }))
+
+    // No scope is pre-selected: the backend requires `scopes` precisely so the
+    // laziest request cannot mint the widest credential, and a pre-checked form
+    // would hand that default back, making the requirement enforcement-only.
+    for (const scope of ALL_SCOPES) {
+      expect(screen.getByRole('checkbox', { name: new RegExp(scope) })).not.toBeChecked()
     }
-    // The backend refuses an empty scope set (a credential granting nothing is
-    // not worth minting), so the form must not send one to fail.
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+
+    // One tick is enough to proceed — the friction is a choice, not a wall.
+    await selectScopes(user, ['feedback:read'])
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled()
     expect(mockCreateApiToken).not.toHaveBeenCalled()
   })
 
@@ -543,6 +571,7 @@ describe('token expiry', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 'Expiring token')
+    await selectScopes(user)
     await user.selectOptions(screen.getByLabelText('Expiration'), '30')
     await user.click(screen.getByRole('button', { name: 'Generate' }))
     await waitFor(() => {
@@ -567,6 +596,7 @@ describe('token expiry', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     await user.type(screen.getByLabelText('Token name'), 't')
+    await selectScopes(user)
     await user.selectOptions(screen.getByLabelText('Expiration'), '90')
     await user.click(screen.getByRole('button', { name: 'Generate' }))
     await waitFor(() => {

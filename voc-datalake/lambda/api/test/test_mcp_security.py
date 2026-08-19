@@ -708,6 +708,49 @@ class TestScopeEnforcement:
         )
         handler.assert_not_called()
 
+    @pytest.mark.parametrize("arguments", [
+        ["project_id"], "project_id", 42, 3.5, True, None,
+    ])
+    def test_non_object_arguments_are_a_protocol_error_not_a_500(
+        self, arguments, lambda_context
+    ):
+        """`arguments` is caller-controlled JSON and need not be an object.
+
+        A list, string or number reaches the project resolution, where both
+        `'project_id' in args` and `args['project_id']` raise TypeError — and
+        that resolution runs OUTSIDE the try/except around the handler, so it
+        escaped as a 502 with no JSON-RPC envelope and no CORS headers. Driven
+        through the FULL lambda_handler path, because the envelope and the status
+        code are the part that was broken.
+
+        Revert story: deleting the isinstance(arguments, dict) guard in
+        _handle_tools_call fails this with a raised TypeError.
+        """
+        import mcp_handler
+        event = {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
+            "body": json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "get_project", "arguments": arguments},
+            }),
+        }
+        with patch("mcp_handler.projects_table") as mock_table:
+            mock_table.query.return_value = {"Items": [_token_row()]}
+            mock_table.update_item.return_value = {}
+            response = mcp_handler.lambda_handler(event, lambda_context)
+
+        # None is the one benign case: `params.get('arguments', {})` yields None
+        # only if the key is present-but-null, which the guard also refuses.
+        assert response["statusCode"] == 200, response
+        body = json.loads(response["body"])
+        assert body["error"]["code"] == -32602, body
+        assert "arguments" in body["error"]["message"], body
+        assert "Access-Control-Allow-Origin" in response["headers"], (
+            "a protocol error must still carry CORS headers"
+        )
+
     def test_scope_allows_helper(self):
         """Unit-test _scope_allows: exact membership, no hierarchy, list required."""
         from mcp_handler import _scope_allows

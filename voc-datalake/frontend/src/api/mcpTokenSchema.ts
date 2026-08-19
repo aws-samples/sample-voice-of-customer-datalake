@@ -54,7 +54,13 @@ export function isReadReach(value: string): value is ReadReach {
 export const MCP_SCOPES = ['feedback:read', 'metrics:read', 'projects:read'] as const
 export type McpScope = (typeof MCP_SCOPES)[number]
 
-export const DEFAULT_SCOPES: readonly McpScope[] = MCP_SCOPES
+// Deliberately NO exported default scope set, mirroring `ALL_READ_SCOPES` in
+// shared/mcp_tokens.py, which documents itself as "not a fallback". The mint
+// route REQUIRES `scopes` so that the laziest request cannot produce the widest
+// credential — and a form that pre-checks everything would hand that default
+// straight back, making the requirement enforcement-only. The mint form starts
+// with nothing checked and its submit button stays disabled until a choice is
+// made.
 
 export function isMcpScope(value: string): value is McpScope {
   return MCP_SCOPES.some((scope) => scope === value)

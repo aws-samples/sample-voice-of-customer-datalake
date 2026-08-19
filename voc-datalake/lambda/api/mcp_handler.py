@@ -958,6 +958,20 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     tool_name = params.get('name', '')
     arguments = params.get('arguments', {})
 
+    # `arguments` is caller-controlled JSON and is NOT guaranteed to be an
+    # object. A list, string or number reaches the project resolution below,
+    # where both `'project_id' in args` and `args['project_id']` raise
+    # TypeError — and that resolution runs OUTSIDE the try/except around the
+    # handler, so it escapes as a 502 with no JSON-RPC envelope and no CORS
+    # headers. Refused here at the boundary, which is the same lesson the
+    # BotoCoreError clause in _authenticate records: an unhandled type is a
+    # protocol-level 400, not a server crash.
+    if not isinstance(arguments, dict):
+        return _jsonrpc_error(
+            req_id, -32602,
+            f"'arguments' must be an object, got {type(arguments).__name__}",
+        )
+
     handler = TOOL_HANDLERS.get(tool_name)
     if not handler:
         return _jsonrpc_error(req_id, -32602, f"Unknown tool: {tool_name}")
@@ -1009,9 +1023,12 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         # The refusals read differently because they need different fixes: one
         # wants an argument, the other wants a differently-scoped token.
         #
-        # Reach is checked FIRST. A `none`-reach token can never call anything,
-        # so telling it to supply a project_id would send the caller after an
-        # argument that cannot help — the ordering here is the whole point.
+        # Ordering, precisely — a MALFORMED argument is reported earlier, by
+        # _resolve_project_id, because an ill-formed request is ill-formed
+        # whatever the token's reach (syntax before authorization, as everywhere
+        # else). What is checked reach-first is the MISSING-argument case below:
+        # a `none`-reach token can never call anything, so asking it for a
+        # project_id would send the caller after an argument that cannot help.
         reach_covers_nothing = (
             read_reach == REACH_NONE
             or (read_reach == REACH_PROJECT_SET and tool_reach_kind == REACH_KIND_WORKSPACE)

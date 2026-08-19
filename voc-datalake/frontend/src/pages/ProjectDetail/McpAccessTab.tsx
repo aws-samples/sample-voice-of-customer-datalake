@@ -47,7 +47,7 @@ import {
 } from './McpAccessComponents'
 import type { TokenExpiryChoice } from './tokenExpiry'
 import {
-  DEFAULT_READ_REACH, DEFAULT_SCOPES, MCP_SCOPES,
+  DEFAULT_READ_REACH, MCP_SCOPES,
   type McpScope, type ReadReach,
 } from '../../api/mcpTokenSchema'
 import {
@@ -548,7 +548,11 @@ export default function McpAccessTab({
 
   // ── MCP token state ───────────────────────────────────────────────────────
   const [tokenName, setTokenName] = useState('')
-  const [tokenScopes, setTokenScopes] = useState<McpScope[]>([...DEFAULT_SCOPES])
+  // Starts EMPTY, not pre-checked. The mint route requires `scopes` so that
+  // omitting them cannot yield the widest credential; pre-checking everything
+  // here would hand that default straight back and make the requirement
+  // enforcement-only. Generate stays disabled until a scope is chosen.
+  const [tokenScopes, setTokenScopes] = useState<McpScope[]>([])
   const [tokenReach, setTokenReach] = useState<ReadReach>(DEFAULT_READ_REACH)
   const [tokenExpiry, setTokenExpiry] = useState<TokenExpiryChoice>('never')
   const {
@@ -566,7 +570,7 @@ export default function McpAccessTab({
     showToken, setShowToken, showCreateForm, setShowCreateForm,
   } = useTokenMutations(projectId, tokenName, tokenScopes, tokenReach, tokenExpiry, () => {
     setTokenName('')
-    setTokenScopes([...DEFAULT_SCOPES])
+    setTokenScopes([])
     setTokenReach(DEFAULT_READ_REACH)
     setTokenExpiry('never')
   })
