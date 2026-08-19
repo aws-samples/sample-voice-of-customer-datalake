@@ -958,14 +958,23 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     tool_name = params.get('name', '')
     arguments = params.get('arguments', {})
 
-    # `arguments` is caller-controlled JSON and is NOT guaranteed to be an
-    # object. A list, string or number reaches the project resolution below,
-    # where both `'project_id' in args` and `args['project_id']` raise
-    # TypeError — and that resolution runs OUTSIDE the try/except around the
-    # handler, so it escapes as a 502 with no JSON-RPC envelope and no CORS
-    # headers. Refused here at the boundary, which is the same lesson the
-    # BotoCoreError clause in _authenticate records: an unhandled type is a
-    # protocol-level 400, not a server crash.
+    # An explicit `"arguments": null` means "no arguments", not "bad request".
+    # `params.get('arguments', {})` cannot supply the default for it, because the
+    # KEY IS PRESENT — and some JSON-RPC/MCP clients serialize an omitted
+    # optional object as null rather than dropping it. Every tool here has only
+    # optional arguments, so `{}` is exactly what such a caller meant; refusing
+    # it would be a compatibility edge invented by this guard rather than a real
+    # protocol error.
+    if arguments is None:
+        arguments = {}
+
+    # Anything else non-object is genuinely malformed. A list, string or number
+    # reaches the project resolution below, where both `'project_id' in args` and
+    # `args['project_id']` raise TypeError — and that resolution runs OUTSIDE the
+    # try/except around the handler, so it escapes as a 502 with no JSON-RPC
+    # envelope and no CORS headers. Refused here at the boundary, which is the
+    # same lesson the BotoCoreError clause in _authenticate records: an unhandled
+    # type is a protocol-level error, not a server crash.
     if not isinstance(arguments, dict):
         return _jsonrpc_error(
             req_id, -32602,

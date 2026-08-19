@@ -708,8 +708,48 @@ class TestScopeEnforcement:
         )
         handler.assert_not_called()
 
+    def _tools_call_response(self, arguments, lambda_context, tool="get_project"):
+        import mcp_handler
+        event = {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
+            "body": json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": tool, "arguments": arguments},
+            }),
+        }
+        with patch("mcp_handler.projects_table") as mock_table, \
+             patch("mcp_handler.TOOL_HANDLERS", {
+                 **mcp_handler.TOOL_HANDLERS,
+                 tool: MagicMock(return_value=[{"type": "text", "text": "ok"}]),
+             }):
+            mock_table.query.return_value = {"Items": [_token_row()]}
+            mock_table.update_item.return_value = {}
+            return mcp_handler.lambda_handler(event, lambda_context)
+
+    def test_null_arguments_means_no_arguments_not_a_bad_request(self, lambda_context):
+        """An explicit `"arguments": null` is "no arguments", not malformed.
+
+        `params.get('arguments', {})` cannot default it, because the KEY IS
+        PRESENT — and some clients serialize an omitted optional object as null.
+        Every tool here has only optional arguments, so refusing null would be a
+        compatibility edge invented by the type guard rather than a real protocol
+        error.
+
+        Revert story: deleting the `arguments is None` coercion fails this with
+        -32602.
+        """
+        response = self._tools_call_response(None, lambda_context)
+        assert response["statusCode"] == 200, response
+        body = json.loads(response["body"])
+        assert "error" not in body, (
+            f'"arguments": null must be treated as {{}}, got {body}'
+        )
+        assert body["result"]["isError"] is False, body
+
     @pytest.mark.parametrize("arguments", [
-        ["project_id"], "project_id", 42, 3.5, True, None,
+        ["project_id"], "project_id", 42, 3.5, True,
     ])
     def test_non_object_arguments_are_a_protocol_error_not_a_500(
         self, arguments, lambda_context
@@ -723,26 +763,13 @@ class TestScopeEnforcement:
         through the FULL lambda_handler path, because the envelope and the status
         code are the part that was broken.
 
+        `null` is deliberately NOT in this list — it means "no arguments" and is
+        covered by test_null_arguments_means_no_arguments_not_a_bad_request.
+
         Revert story: deleting the isinstance(arguments, dict) guard in
         _handle_tools_call fails this with a raised TypeError.
         """
-        import mcp_handler
-        event = {
-            "httpMethod": "POST",
-            "path": "/v1/mcp",
-            "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
-            "body": json.dumps({
-                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                "params": {"name": "get_project", "arguments": arguments},
-            }),
-        }
-        with patch("mcp_handler.projects_table") as mock_table:
-            mock_table.query.return_value = {"Items": [_token_row()]}
-            mock_table.update_item.return_value = {}
-            response = mcp_handler.lambda_handler(event, lambda_context)
-
-        # None is the one benign case: `params.get('arguments', {})` yields None
-        # only if the key is present-but-null, which the guard also refuses.
+        response = self._tools_call_response(arguments, lambda_context)
         assert response["statusCode"] == 200, response
         body = json.loads(response["body"])
         assert body["error"]["code"] == -32602, body
