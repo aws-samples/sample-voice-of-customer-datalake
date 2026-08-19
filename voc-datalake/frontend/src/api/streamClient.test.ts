@@ -16,6 +16,17 @@ vi.mock('../store/configStore', () => ({
   },
 }))
 
+// The origin-check in baseUrl.ts reads the runtime config for the trusted
+// allowlist. Without this mock the allowlist is empty and no Authorization
+// header is ever attached, breaking the retry/token-refresh assertions.
+vi.mock('../runtimeConfig', () => ({
+  isConfigLoaded: vi.fn(() => true),
+  getRuntimeConfig: vi.fn(() => ({
+    apiEndpoint: 'https://api.example.com',
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+  })),
+}))
+
 vi.mock('../services/auth', () => ({
   authService: {
     isConfigured: () => true,

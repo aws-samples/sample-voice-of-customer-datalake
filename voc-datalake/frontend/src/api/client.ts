@@ -84,9 +84,17 @@ export interface DateRangeParams {
   date_basis?: DateBasis
 }
 
-function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
+/**
+ * Build request headers for `targetUrl`, including Authorization when its
+ * origin is trusted.
+ *
+ * `targetUrl` is required and comes first for the same reason it does in
+ * {@link getAuthHeaders}: the origin check is the point of this function, so a
+ * call site that forgets the URL must not compile.
+ */
+function buildHeaders(targetUrl: string, existingHeaders?: HeadersInit): Record<string, string> {
   const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
-  return getAuthHeaders(extra)
+  return getAuthHeaders(targetUrl, extra)
 }
 
 import { z } from 'zod'
@@ -110,17 +118,16 @@ export async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function handleUnauthorized<T>(
-  endpoint: string,
+  fullUrl: string,
   options: RequestInit | undefined,
-  headers: Record<string, string>,
-  baseUrl: string
 ): Promise<T> {
   await authService.refreshSession()
-  const newIdToken = authService.getIdToken()
-  if (newIdToken) {
-    headers['Authorization'] = newIdToken
-  }
-  const retryResponse = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  // Rebuild headers through buildHeaders so the origin check fires on the
+  // retry path too — this prevents an attacker-controlled server from
+  // receiving the refreshed token by responding 401 to the first request.
+  // The stream client (streamClient.ts) already does the same via postStream.
+  const retryHeaders = buildHeaders(fullUrl, options?.headers)
+  const retryResponse = await fetch(fullUrl, { ...options, headers: retryHeaders })
   if (!retryResponse.ok) {
     throw new Error(`API Error: ${retryResponse.status}`)
   }
@@ -129,9 +136,10 @@ async function handleUnauthorized<T>(
 
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl()
-  const headers = buildHeaders(options?.headers)
-  
-  const response = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  const fullUrl = `${baseUrl}${endpoint}`
+  const headers = buildHeaders(fullUrl, options?.headers)
+
+  const response = await fetch(fullUrl, { ...options, headers })
   
   if (response.ok) {
     return parseJsonResponse<T>(response)
@@ -139,7 +147,7 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   
   if (response.status === 401) {
     try {
-      return await handleUnauthorized<T>(endpoint, options, headers, baseUrl)
+      return await handleUnauthorized<T>(fullUrl, options)
     } catch {
       // Carries the reason to /login so the user is told the session ended,
       // instead of meeting a bare login form after a working-looking app.
