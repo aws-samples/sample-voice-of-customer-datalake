@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { MCP_SCOPES } from '../api/mcpTokenSchema'
 
 const LOCALES_DIR = join(process.cwd(), 'public', 'locales')
 
@@ -51,9 +52,13 @@ describe('locale key structure', () => {
   it('finds locale files to check', () => {
     // Positive control: a glob that silently matched nothing would make every
     // assertion below vacuously green.
+    //
+    // Bounds, not equality: pinning the locale count here would make ADDING a
+    // 9th language fail a test about colon keys — an unrelated failure that
+    // teaches the next person nothing. The count belongs to i18n-check, not here.
     const files = localeFiles()
     expect(files.length).toBeGreaterThan(20)
-    expect(new Set(files.map((f) => f.locale)).size).toBe(8)
+    expect(new Set(files.map((f) => f.locale)).size).toBeGreaterThanOrEqual(8)
   })
 
   it('has no key containing a colon, i18next\'s namespace separator', () => {
@@ -78,5 +83,46 @@ describe('locale key structure', () => {
       'Key the entry without a colon (e.g. `feedback_read`) and derive it at the',
       'call site from the identifier.',
     ].join('\n')).toEqual([])
+  })
+
+  it('has a scopeDesc entry for every MCP scope, in every locale', () => {
+    // Closes the gap that DERIVING the key opens. The component renders
+    // `mcp.scopeDesc.${scope.replace(':', '_')}`, so the link between the scope
+    // constants and the locale entries is implicit — adding a scope (Phase 3
+    // adds a write scope) without adding the key to all 8 locales renders a raw
+    // key path in the mint form.
+    //
+    // Less severe than the original defect, because a visible `mcp.scopeDesc.x`
+    // is obviously broken where the literal "read" looked like real copy. But
+    // Phase 3 WILL add scopes, so the cheap loop is worth having now, and it
+    // covers every locale rather than the `en` a component test would exercise.
+    const missing: string[] = []
+    const blank: string[] = []
+    for (const { locale, file, path } of localeFiles()) {
+      if (file !== 'projectDetail.json') continue
+      const json: unknown = JSON.parse(readFileSync(path, 'utf-8'))
+      const descs = (json as { mcp?: { scopeDesc?: Record<string, unknown> } })
+        .mcp?.scopeDesc
+      for (const scope of MCP_SCOPES) {
+        const key = scope.replace(':', '_')
+        const value = descs?.[key]
+        if (value === undefined) missing.push(`${locale}: mcp.scopeDesc.${key}`)
+        else if (typeof value !== 'string' || value.trim() === '') {
+          blank.push(`${locale}: mcp.scopeDesc.${key}`)
+        }
+      }
+    }
+    expect(missing, [
+      'A scope in MCP_SCOPES has no description key in some locale, so the mint',
+      'form will render the raw key path for it. The key is the scope with its',
+      'colon replaced by an underscore (`feedback:read` -> `feedback_read`).',
+    ].join('\n')).toEqual([])
+    expect(blank, 'a scopeDesc entry exists but is empty').toEqual([])
+
+    // Positive control: the loop must actually have compared something, or an
+    // empty MCP_SCOPES / a renamed file would make the assertions vacuous.
+    expect(MCP_SCOPES.length).toBeGreaterThan(0)
+    expect(localeFiles().filter((f) => f.file === 'projectDetail.json').length)
+      .toBeGreaterThanOrEqual(8)
   })
 })
