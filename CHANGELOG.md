@@ -144,5 +144,8 @@ customer feedback on AWS.
 - Encryption at rest with a customer-managed KMS key, and cdk-nag suppressions recorded where AWS
   services do not support resource-level permissions.
 
-[0.2.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/releases/tag/v0.2.0
-[0.1.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/releases/tag/v0.1.0
+<!-- These point at commit ranges rather than release tags, because no version tags exist yet.
+     Re-point them at /releases/tag/vX.Y.Z once releases are cut. -->
+
+[0.2.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/compare/0b785a87...main
+[0.1.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/commit/0b785a87
