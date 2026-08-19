@@ -698,8 +698,9 @@ describe('mcp Lambda IAM grants', () => {
   const StatementSchema = z.object({
     Action: z.union([z.string(), z.array(z.string())]),
     Resource: z.unknown(),
+    Condition: z.unknown().optional(),
   });
-  function mcpStatements(): { actions: string[]; resource: string }[] {
+  function mcpStatements(): { actions: string[]; resource: string; condition: unknown }[] {
     const policies = apiTemplate().findResources('AWS::IAM::Policy');
     const policy = Object.entries(policies).find(([id]) => id.includes('McpLambdaRole'));
     expect(policy, 'no IAM policy found for McpLambdaRole').toBeDefined();
@@ -709,15 +710,15 @@ describe('mcp Lambda IAM grants', () => {
       .map((s) => ({
         actions: Array.isArray(s.Action) ? s.Action : [s.Action],
         resource: JSON.stringify(s.Resource),
+        condition: s.Condition,
       }));
   }
   it('holds exactly Query and UpdateItem on the projects table', () => {
     // Asserted as an exact SET rather than an absence list, so an action nobody
-    // considered cannot arrive unremarked. Query is the token lookup plus the
-    // get_project/list_personas tools; UpdateItem is last_used_at and nothing
-    // else. PutItem, DeleteItem, Scan and the batch APIs are the point of this
-    // test: their absence is what makes the bearer-token surface read-only
-    // against project artifacts.
+    // considered cannot arrive unremarked. Query is the token lookup;
+    // UpdateItem is last_used_at and nothing else. PutItem, DeleteItem, Scan and
+    // the batch APIs are the point of this test: their absence is what makes the
+    // bearer-token surface read-only against project artifacts.
     const projectsStatements = mcpStatements().filter((s) => s.resource.includes('Projects'));
     // Guard the filter itself: it string-matches the table's logical id, so a
     // construct rename would make it match NOTHING and turn the exact-set
@@ -730,6 +731,59 @@ describe('mcp Lambda IAM grants', () => {
     );
     expect([...granted].sort()).toEqual(['dynamodb:Query', 'dynamodb:UpdateItem']);
   });
+  it('confines those two actions to the token partition', () => {
+    // The adapter reads DynamoDB for exactly one reason — to look up the
+    // credential — so the grant says so with a condition rather than trusting the
+    // code to stay well behaved. Without it, Query on the table is Query on every
+    // PROJECT#... row, i.e. every persona, PRD, PR/FAQ and prototype, from the one
+    // function reachable with a bearer token instead of a Cognito session.
+    //
+    // `ForAllValues:` is load-bearing, not stylistic: LeadingKeys is multi-valued,
+    // and plain StringEquals does not constrain a request presenting several keys.
+    const partitionValue = readRepoFile('lambda', 'shared', 'mcp_tokens.py')
+      .match(/MCP_TOKEN_PK:\s*Final\s*=\s*'([^']+)'/)?.[1];
+    expect(partitionValue, 'could not read MCP_TOKEN_PK from mcp_tokens.py').toBeDefined();
+
+    const dynamoStatements = mcpStatements()
+      .filter((s) => s.actions.some((a) => a.startsWith('dynamodb:')));
+    expect(dynamoStatements.length, 'no DynamoDB statement on the MCP role').toBeGreaterThan(0);
+    for (const statement of dynamoStatements) {
+      expect(statement.condition, `unconditional DynamoDB grant: ${statement.actions}`).toEqual({
+        'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [partitionValue] },
+      });
+    }
+  });
+  it('holds no grant at all on the feedback or aggregates tables', () => {
+    // The adapter delegates every tool to the function that already owns the
+    // route, so it has no business reading the corpus or the aggregates. These
+    // grants existed for the in-process tools; leaving them behind would keep the
+    // permission alive after the code that needed it was deleted.
+    const reachable = mcpStatements()
+      .filter((s) => s.actions.some((a) => a.startsWith('dynamodb:')))
+      .map((s) => s.resource);
+    expect(reachable.filter((r) => r.includes('Feedback'))).toEqual([]);
+    expect(reachable.filter((r) => r.includes('Aggregates'))).toEqual([]);
+  });
+  it('may invoke exactly the domain functions it delegates to', () => {
+    // An exact set again: `lambda:InvokeFunction` is how this role now reaches
+    // data, so the list of what it may invoke IS its data-access surface. A
+    // wildcard here would hand the bearer-token surface every function in the
+    // account, including the job runners that spend money.
+    const invokeStatements = mcpStatements()
+      .filter((s) => s.actions.includes('lambda:InvokeFunction'));
+    expect(invokeStatements.length, 'the MCP role cannot invoke anything').toBe(1);
+
+    const resource = invokeStatements[0].resource;
+    expect(resource).toContain('MetricsApi');
+    expect(resource).toContain('ProjectsApi');
+    // No version/alias wildcard: the adapter invokes unqualified names, so `:*`
+    // would be a grant nothing uses and a cdk-nag IAM5 suppression to carry.
+    expect(resource, 'invoke grant carries a wildcard').not.toContain(':*');
+    // And nothing else. Counted on the serialized resource list so a third
+    // function added silently fails here rather than at review time.
+    const named = (resource.match(/Api[0-9A-F]{8}/g) ?? []).length;
+    expect(named, `expected 2 invoke targets, resource was ${resource}`).toBe(2);
+  });
   it('can still encrypt against the KMS key, which the UpdateItem write needs', () => {
     // The former grantReadWriteData brought KMS Encrypt along implicitly; the
     // narrow table grant does not, so the role needs it explicitly or the
@@ -739,6 +793,164 @@ describe('mcp Lambda IAM grants', () => {
       .filter((a) => a.startsWith('kms:'));
     expect(kmsActions).toContain('kms:Encrypt');
     expect(kmsActions).toContain('kms:Decrypt');
+  });
+});
+
+describe('mcp delegation stays in step with the stack', () => {
+  // The MCP handler registers no @app routes, so the decorator oracle the
+  // feedback-form and ballots checks use finds nothing here. Its equivalent is
+  // DOMAIN_ROUTES: a table of (domain, method, path) that every tool call is
+  // built from. Three things must agree, and nothing at synth time notices when
+  // they stop:
+  //
+  //   1. the route exists in the handler that owns it,
+  //   2. the route is wired in API Gateway (the browser needs it too),
+  //   3. the owning function is one the MCP role may invoke.
+  //
+  // A break in any of them is invisible until a client calls that tool and gets
+  // a 403, an AccessDenied or a silent empty answer.
+  const handlerSource = () => readRepoFile('lambda', 'api', 'mcp_handler.py');
+
+  /** DOMAIN_ROUTES, read from the handler source rather than re-listed here. */
+  function declaredRoutes(): { key: string; domain: string; method: string; path: string }[] {
+    const table = handlerSource().match(/DOMAIN_ROUTES:[^=]*=\s*\{([\s\S]*?)\n\}/)?.[1];
+    expect(table, 'could not find DOMAIN_ROUTES in mcp_handler.py').toBeDefined();
+    const rows = [...(table ?? '').matchAll(
+      /'([a-z_]+)':\s*\(\s*DOMAIN_([A-Z]+),\s*'([A-Z]+)',\s*'([^']+)'\s*\)/g,
+    )];
+    expect(rows.length, 'DOMAIN_ROUTES parsed to nothing').toBeGreaterThan(0);
+    return rows.map(([, key, domain, method, path]) => ({
+      key, domain: domain.toLowerCase(), method, path,
+    }));
+  }
+
+  /** Which Python handler owns each domain, per _DOMAIN_FUNCTION_ENV. */
+  const HANDLER_FOR_DOMAIN: Record<string, string> = {
+    metrics: 'metrics_handler.py',
+    projects: 'projects_handler.py',
+  };
+
+  it('names a domain whose handler file this test knows', () => {
+    // Guards the map above: a new domain added to the handler without a line
+    // here would make the two tests below skip it silently.
+    for (const { key, domain } of declaredRoutes()) {
+      expect(HANDLER_FOR_DOMAIN[domain], `${key} names domain '${domain}', unknown to this test`)
+        .toBeDefined();
+    }
+  });
+
+  it('delegates only to routes the owning handler actually registers', () => {
+    for (const { key, domain, method, path } of declaredRoutes()) {
+      const owner = readRepoFile('lambda', 'api', HANDLER_FOR_DOMAIN[domain]);
+      // Powertools spells path parameters <like_this>; DOMAIN_ROUTES uses
+      // {like_this} because that is what API Gateway and str.format want.
+      const registered = [...owner.matchAll(/@app\.(get|post|put|delete)\(\s*['"]([^'"]+)['"]/g)]
+        .map(([, verb, p]) => `${verb.toUpperCase()} ${p.replace(/<(\w+)>/g, '{$1}')}`);
+      expect(registered, `${key}: ${method} ${path} is not registered in ${HANDLER_FOR_DOMAIN[domain]}`)
+        .toContain(`${method} ${path}`);
+    }
+  });
+
+  it('delegates only to routes API Gateway wires', () => {
+    // A route the handler registers but nobody wires answers 403 Missing
+    // Authentication Token — and via delegation that surfaces as a tool error
+    // with no obvious cause. Proxy resources count: /metrics/{proxy+} serves the
+    // four breakdown paths.
+    //
+    // 🪤 Path-parameter NAMES are normalized away before comparing, and this test
+    // is how that was discovered: the gateway wires `/feedback/{id}` while the
+    // handler registers `<feedback_id>`. Production is fine — Powertools matches
+    // the concrete path positionally and never consults `pathParameters` — so the
+    // shape is the real contract and the names are two independent local choices.
+    // Comparing them literally reports a defect that is not there.
+    const shape = (path: string) => path.replace(/\{[^}]+\}/g, '{}');
+
+    const wired = apiMethods(apiTemplate());
+    const exact = new Set(wired.map((m) => `${m.httpMethod} ${shape(m.path)}`));
+    const proxyPrefixes = wired
+      .filter((m) => m.path.endsWith('/{proxy+}'))
+      .map((m) => m.path.slice(0, -'/{proxy+}'.length));
+
+    for (const { key, method, path } of declaredRoutes()) {
+      const servedExactly = exact.has(`${method} ${shape(path)}`);
+      const servedByProxy = proxyPrefixes.some((prefix) => path.startsWith(`${prefix}/`));
+      expect(servedExactly || servedByProxy, `${key}: ${method} ${path} is wired nowhere`).toBe(true);
+    }
+  });
+
+  it('hands down a function name for every domain it delegates to', () => {
+    // The env keys the handler reads must be the env keys the stack sets.
+    // Rebuilding a function name in Python from account/region would, under a
+    // deploymentPrefix, name a function that does not exist.
+    const envKeys = [...handlerSource().matchAll(/DOMAIN_(?:METRICS|PROJECTS):\s*'([A-Z_]+)'/g)]
+      .map(([, key]) => key);
+    expect(envKeys.length, 'no _DOMAIN_FUNCTION_ENV entries parsed').toBeGreaterThan(0);
+
+    const mcpFn = Object.values(apiTemplate().findResources('AWS::Lambda::Function'))
+      .map((fn) => z.object({
+        Properties: z.object({
+          Handler: z.string().optional(),
+          Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }).optional(),
+        }),
+      }).parse(fn).Properties)
+      .find((p) => p.Handler === 'mcp_handler.lambda_handler');
+    expect(mcpFn, 'no Lambda with the mcp_handler entry point').toBeDefined();
+
+    const variables = mcpFn?.Environment?.Variables ?? {};
+    for (const key of envKeys) {
+      expect(variables, `mcp_handler reads ${key}, which the stack does not set`).toHaveProperty(key);
+    }
+    // The tables the tools no longer read must not be advertised either.
+    expect(variables).not.toHaveProperty('FEEDBACK_TABLE');
+    expect(variables).not.toHaveProperty('AGGREGATES_TABLE');
+  });
+});
+
+describe('lambda role policies stay under the IAM size limit', () => {
+  // AWS caps a managed/inline role policy at 20 KB, and the repo's whole
+  // domain-split Lambda architecture exists because of it — yet nothing measured
+  // it. The failure mode is a deploy-time rejection with no synth warning, which
+  // is exactly the class of fault this suite exists to convert into a test.
+  //
+  // Measured per role on the serialized PolicyDocument. The threshold is a
+  // warning line well under the hard limit: a role at 16 KB is not broken, but it
+  // is one feature away from being, and finding that out at deploy is the thing
+  // worth avoiding. Largest policy in the stack today is ~2 KB, so this is a
+  // guard for the future rather than a live constraint.
+  //
+  // ⚠️ It is an APPROXIMATION, stated so nobody reads it as exact: the template
+  // carries `{"Fn::GetAtt": [...]}` and `{"Fn::ImportValue": ...}` where the
+  // deployed policy carries resolved ARNs, so the two byte counts differ per
+  // statement in both directions. It is the right order of magnitude and it
+  // tracks the thing that actually grows — statement count — which is what makes
+  // it useful as a trend alarm even though it is not the number IAM checks.
+  const HARD_LIMIT_BYTES = 20_480;
+  const WARN_AT_BYTES = 16_384;
+
+  function policySizes(): { id: string; bytes: number }[] {
+    return Object.entries(apiTemplate().findResources('AWS::IAM::Policy')).map(([id, resource]) => ({
+      id,
+      bytes: Buffer.byteLength(JSON.stringify(
+        z.object({ Properties: z.object({ PolicyDocument: z.unknown() }) })
+          .parse(resource).Properties.PolicyDocument,
+      ), 'utf8'),
+    }));
+  }
+
+  it('measures at least one policy, so the assertions below are not vacuous', () => {
+    expect(policySizes().length).toBeGreaterThan(0);
+  });
+
+  it('keeps every role policy under the 20 KB IAM limit', () => {
+    const over = policySizes().filter((p) => p.bytes >= HARD_LIMIT_BYTES);
+    expect(over, `policies at or over the ${HARD_LIMIT_BYTES}-byte IAM limit`).toEqual([]);
+  });
+
+  it('keeps every role policy under the warning threshold', () => {
+    // If this fails, the answer is a new domain Lambda, not a bigger threshold.
+    // Raising the number here is how the ceiling gets hit for real.
+    const near = policySizes().filter((p) => p.bytes >= WARN_AT_BYTES);
+    expect(near, `policies within 4 KB of the IAM limit — split the domain instead`).toEqual([]);
   });
 });
 
