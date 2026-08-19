@@ -264,9 +264,9 @@
     "tokenPasteHint": "Cole este token no header <code>Authorization</code> do seu mcp.json ou comando curl autoseed.",
     "scopes": "Escopos",
     "scopeDesc": {
-      "feedback:read": "Pesquisar e ler feedback de clientes",
-      "metrics:read": "Ler painéis e detalhamento de métricas",
-      "projects:read": "Ler projetos, personas e documentos"
+      "feedback_read": "Pesquisar e ler feedback de clientes",
+      "metrics_read": "Ler painéis e detalhamento de métricas",
+      "projects_read": "Ler projetos, personas e documentos"
     },
     "noScopes": "sem escopos",
     "readReach": "Alcance de leitura",

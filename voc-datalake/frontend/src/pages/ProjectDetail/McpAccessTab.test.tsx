@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import McpAccessTab from './McpAccessTab'
@@ -392,8 +392,13 @@ describe('McpAccessTab', () => {
     expect(screen.getByText('Read dashboards and metric breakdowns')).toBeInTheDocument()
     expect(screen.getByText('Read projects, personas and documents')).toBeInTheDocument()
 
-    // And the fallback string must not appear on its own anywhere.
-    expect(screen.queryAllByText('read')).toHaveLength(0)
+    // The fallback fragment must not appear WITHIN THE SCOPE FIELDSET. Scoped
+    // deliberately: an unscoped `queryAllByText('read')` is an exact full-text
+    // match over the whole page, so any unrelated element that ever normalizes
+    // to "read" would fail this test for a reason that has nothing to do with
+    // it — a false alarm is worse than no alarm.
+    const fieldset = screen.getByRole('group', { name: /Scopes/i })
+    expect(within(fieldset).queryAllByText('read')).toHaveLength(0)
   })
 
   it('starts with no scope checked and cannot submit until one is', async () => {

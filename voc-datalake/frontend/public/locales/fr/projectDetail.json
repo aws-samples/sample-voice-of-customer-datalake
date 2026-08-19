@@ -264,9 +264,9 @@
     "tokenPasteHint": "Collez ce token dans l'en-tête <code>Authorization</code> de votre mcp.json ou commande curl autoseed.",
     "scopes": "Portées",
     "scopeDesc": {
-      "feedback:read": "Rechercher et lire les retours clients",
-      "metrics:read": "Lire les tableaux de bord et les métriques",
-      "projects:read": "Lire les projets, personas et documents"
+      "feedback_read": "Rechercher et lire les retours clients",
+      "metrics_read": "Lire les tableaux de bord et les métriques",
+      "projects_read": "Lire les projets, personas et documents"
     },
     "noScopes": "aucune portée",
     "readReach": "Portée de lecture",

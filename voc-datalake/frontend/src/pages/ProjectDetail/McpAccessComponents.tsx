@@ -145,14 +145,24 @@ export function CreateTokenForm({
                 />
                 <span>
                   <span className="font-mono text-xs">{scope}</span>
-                  {/* nsSeparator: false is REQUIRED, not decorative. Scope names
-                      contain a colon, which is i18next's default namespace
-                      separator, so `mcp.scopeDesc.feedback:read` is otherwise
-                      parsed as namespace `mcp.scopeDesc.feedback` + key `read`,
-                      resolves to nothing, and renders the literal "read".
-                      Found in a browser — a mocked-i18n unit test cannot see it. */}
+                  {/* The locale key is the UNDERSCORE form of the scope, because
+                      a colon is i18next's namespace separator: keyed as
+                      `feedback:read`, the lookup was parsed as namespace
+                      `mcp.scopeDesc.feedback` + key `read` and rendered the
+                      literal word "read" under every checkbox (found in a
+                      browser; the API battery cannot see render-time faults).
+
+                      Fixed on the KEY side rather than with `nsSeparator: false`
+                      — globally or per call — because this app DEPENDS on that
+                      separator: `SCORABLE_TYPE_META` resolves
+                      `prioritization:docType.prd`, and disabling it would make
+                      the Prioritization badge and the Feedback Forms document
+                      picker render raw key paths (see i18n/options.ts). A
+                      per-call option would also leave the next colon key to
+                      rediscover this. `i18nKeys.test.ts` now fails on ANY locale
+                      key containing a colon, so the class cannot come back. */}
                   <span className="text-gray-500 block text-xs">
-                    {t(`mcp.scopeDesc.${scope}`, { nsSeparator: false })}
+                    {t(`mcp.scopeDesc.${scope.replace(':', '_')}`)}
                   </span>
                 </span>
               </label>

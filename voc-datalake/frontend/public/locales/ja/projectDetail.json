@@ -261,9 +261,9 @@
     "tokenPasteHint": "このトークンを mcp.json または autoseed curl コマンドの <code>Authorization</code> ヘッダーに貼り付けてください。",
     "scopes": "スコープ",
     "scopeDesc": {
-      "feedback:read": "顧客フィードバックの検索と閲覧",
-      "metrics:read": "ダッシュボードと指標の内訳の閲覧",
-      "projects:read": "プロジェクト、ペルソナ、ドキュメントの閲覧"
+      "feedback_read": "顧客フィードバックの検索と閲覧",
+      "metrics_read": "ダッシュボードと指標の内訳の閲覧",
+      "projects_read": "プロジェクト、ペルソナ、ドキュメントの閲覧"
     },
     "noScopes": "スコープなし",
     "readReach": "読み取り範囲",

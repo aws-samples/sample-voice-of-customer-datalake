@@ -261,9 +261,9 @@
     "tokenPasteHint": "이 토큰을 mcp.json 또는 autoseed curl 명령의 <code>Authorization</code> 헤더에 붙여넣으세요.",
     "scopes": "범위",
     "scopeDesc": {
-      "feedback:read": "고객 피드백 검색 및 읽기",
-      "metrics:read": "대시보드 및 지표 분석 읽기",
-      "projects:read": "프로젝트, 페르소나, 문서 읽기"
+      "feedback_read": "고객 피드백 검색 및 읽기",
+      "metrics_read": "대시보드 및 지표 분석 읽기",
+      "projects_read": "프로젝트, 페르소나, 문서 읽기"
     },
     "noScopes": "범위 없음",
     "readReach": "읽기 범위",

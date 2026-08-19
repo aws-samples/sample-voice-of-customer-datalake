@@ -261,9 +261,9 @@
     "tokenPasteHint": "将此令牌粘贴到 mcp.json 或 autoseed curl 命令的 <code>Authorization</code> 标头中。",
     "scopes": "权限范围",
     "scopeDesc": {
-      "feedback:read": "搜索和查看客户反馈",
-      "metrics:read": "查看仪表板和指标细分",
-      "projects:read": "查看项目、用户画像和文档"
+      "feedback_read": "搜索和查看客户反馈",
+      "metrics_read": "查看仪表板和指标细分",
+      "projects_read": "查看项目、用户画像和文档"
     },
     "noScopes": "无权限范围",
     "readReach": "读取范围",
