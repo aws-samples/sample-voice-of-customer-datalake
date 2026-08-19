@@ -5350,6 +5350,16 @@ class TestARowBallotedBeforeTheMarkExistedIsStillFrozen:
         assert page['rows']['row-1']['is_frozen'] is False
         assert status == 200
         assert body['row']['document_ids'] == ['prd-2']
+        # THE CONSEQUENCE the decision rests on, not only its premise: once the row
+        # no longer holds the value's document, the value stops surfacing rather
+        # than being re-attributed to a set its author never scored. A change to
+        # `_legacy_scores_by_row` that broke this would break the "it never
+        # described a set at all" argument, and this is what would catch it.
+        _, reread = _get_scores(aggregates, api_gateway_event, lambda_context)
+        assert 'row-1' not in reread['scores'], (
+            'a legacy value must follow its document out of the row, not migrate '
+            'onto documents nobody scored'
+        )
 
     def test_a_stamp_only_ballot_record_does_not_freeze_without_the_mark(
         self, api_gateway_event, lambda_context
