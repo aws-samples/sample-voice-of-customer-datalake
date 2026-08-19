@@ -7,6 +7,7 @@ import json
 import math
 import os
 import secrets
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -535,14 +536,21 @@ ROW_ID_BYTES = 16
 # The mark a row carries once a ballot has landed on it, and what the composition
 # change asserts about.
 #
-# THIS ATTRIBUTE IS THE FREEZE. A composition change is one conditional
+# THIS ATTRIBUTE IS THE FREEZE'S RACE HALF. A composition change is one conditional
 # `update_item` carrying `attribute_not_exists(first_ballot_at)`, so the DATABASE is
-# what refuses a change to a row somebody has voted on — a read of a ballot count
-# followed by a write would lose the race against the first ballot and leave a row
-# whose documents nobody balloting on it ever saw. Written by the ballot save in the
-# SAME transaction as the ballot itself (`_ballot_transact_items`), which is what
-# makes "the first ballot froze it" true at the instant the ballot lands rather than
-# on a later reconciliation.
+# what refuses a change racing the first ballot — a read of a ballot count followed
+# by a write would land in the gap and leave a row whose documents nobody balloting
+# on it ever saw. Written by the ballot save in the SAME transaction as the ballot
+# itself (`_ballot_transact_items`), which is what makes "the first ballot froze it"
+# true at the instant the ballot lands rather than on a later reconciliation.
+#
+# IT IS NOT THE WHOLE FREEZE, because it has an epoch: ballots written by the code
+# deployed before this attribute existed stamped nothing, and nothing migrates a
+# mark in until the next save against that row. So "is this row frozen?" is the
+# mark OR a stored value-bearing ballot (`_is_frozen_row`,
+# `_row_holds_a_value_bearing_ballot`) — the recompose asks the ballots before its
+# conditional write, and the page read answers off the ballots it already holds.
+# Asking the mark alone recomposes exactly the rows that already carry real votes.
 #
 # `if_not_exists`, so it records the FIRST ballot and every later one leaves it
 # alone: it is the freeze instant, not a last-modified stamp.
@@ -1731,22 +1739,53 @@ def _is_default_row(row: Any) -> bool:
     return isinstance(row, dict) and row.get('is_default') is True
 
 
-def _is_frozen_row(row: Any) -> bool:
+def _ballot_expressed_a_value(ballot: Any) -> bool:
+    """Whether a STORED ballot carries anything a reviewer expressed.
+
+    The stored-record mirror of `_writes_a_reviewer_value`, which asks the same
+    question of a write about to happen. The save assigns an axis only when the
+    entry carried a readable one and `notes` only when the caller sent a string, so
+    presence on the record is exactly "was assigned" — a stamp-only save leaves a
+    ballot holding nothing but BALLOT_STAMP_FIELDS, and that record must not freeze
+    a row any more than the write that produced it did.
+
+    `'notes' in ballot` rather than `_expresses_something`, deliberately: a
+    reviewer who CLEARED their note (`{'notes': ''}`) wrote a real change and froze
+    the row at save time, and this predicate exists to agree with that write. The
+    read-through helper strips whitespace because its question is "is there
+    anything to show", which is a different question from "did somebody decide".
+
+    Anonymous ballots also store `voting_session` and sometimes `display_name`;
+    neither is a value ABOUT the row's documents, and neither needs asking — an
+    anonymous ballot always scores at least one axis, so the axes answer for it.
+    """
+    if not isinstance(ballot, dict):
+        return False
+    return 'notes' in ballot or any(axis in ballot for axis in SCORE_AXES)
+
+
+def _is_frozen_row(row: Any, row_ballots: Iterable[Any] = ()) -> bool:
     """Has a ballot landed on this row, so its composition is settled?
 
-    Read off the presence of ROW_FROZEN_AT_FIELD, which is the SAME attribute the
-    composition change's condition names. One fact, asked one way: a predicate that
-    counted ballots instead could answer "not frozen" for a row the database will
-    nonetheless refuse to recompose, which is a page saying the opposite of what the
-    save does.
+    TWO halves, because the mark alone has an upgrade-path hole. The presence of
+    ROW_FROZEN_AT_FIELD is the write-side authority — the SAME attribute the
+    composition change's condition names, so the page and the save cannot disagree
+    about a marked row. But the attribute did not always exist: ballots written by
+    the code deployed before it carry real reviewer values on rows that hold NO
+    mark, and nothing migrates one in until the next save against that row. So a
+    caller that has the row's ballots in hand passes them, and any that stored a
+    reviewer value freezes the row exactly as it would have at write time — a
+    stamp-only record does not, agreeing with `_writes_a_reviewer_value`.
     """
     if not isinstance(row, dict):
         return False
     frozen_at = row.get(ROW_FROZEN_AT_FIELD)
-    return isinstance(frozen_at, str) and bool(frozen_at)
+    if isinstance(frozen_at, str) and bool(frozen_at):
+        return True
+    return any(_ballot_expressed_a_value(ballot) for ballot in row_ballots)
 
 
-def _row_payload(row: dict) -> dict:
+def _row_payload(row: dict, row_ballots: Iterable[Any] = ()) -> dict:
     """One entry of the `rows` map the page consumes.
 
     Explicitly projected rather than returned whole, the same reasoning
@@ -1762,6 +1801,19 @@ def _row_payload(row: dict) -> dict:
     with the condition that actually enforces it. `ballot_writes` is not published
     for the same reason and a stronger one — it counts writes, not reviewers, and a
     number that looks like a reviewer count but is not is worse than no number.
+
+    `row_ballots` is the legacy half of `is_frozen` (see `_is_frozen_row`) and is
+    passed only where the caller already holds the row's ballots — the page read,
+    which reads the partition whole. The write-shaped callers pass nothing: a row
+    both creates just wrote has no ballots, and a recompose that landed has just
+    proven its row holds no value-bearing one. The default create's `created:
+    false` branch also passes nothing, and THAT one is a decision rather than a
+    fact: a row that pre-dates the freeze mark could hold unmarked ballots this
+    payload would then miss — but the page only asks to create rows its own read
+    did not return, and a legacy row is in every read, so reaching that branch
+    with one takes a hand-made call. Paying a ballot query on the page's per-
+    project load path to perfect an unreachable payload is the wrong trade; the
+    write itself stays guarded either way.
     """
     return {
         'row_id': row.get('row_id', ''),
@@ -1772,7 +1824,7 @@ def _row_payload(row: dict) -> dict:
         ),
         'is_default': _is_default_row(row),
         'created_at': row.get('created_at', ''),
-        'is_frozen': _is_frozen_row(row),
+        'is_frozen': _is_frozen_row(row, row_ballots),
     }
 
 
@@ -2187,10 +2239,20 @@ def api_recompose_prioritization_row(row_id: str):
     ROW_FROZEN_AT_FIELD, and the ballot save writes that attribute in the same
     transaction as the ballot itself — so a composition change racing the first
     ballot LOSES TO IT rather than being sorted out afterwards. Reading a ballot
-    count first and then writing would land the change in the gap between the two
-    calls, leaving a row whose documents nobody who balloted on it ever saw; that is
-    the race #339 records as the reason the condition has to be the rule and
-    disabled controls only a courtesy.
+    count first and then writing INSTEAD OF the condition would land the change in
+    the gap between the two calls, leaving a row whose documents nobody who
+    balloted on it ever saw; that is the race #339 records as the reason the
+    condition has to be the rule and disabled controls only a courtesy.
+
+    ONE READ STANDS IN FRONT OF THE CONDITION ANYWAY, for the ballots the condition
+    cannot see: rows balloted before ROW_FROZEN_AT_FIELD existed carry no mark, so
+    the condition alone recomposes exactly the rows that already hold real votes —
+    the ones hardest to reconstruct, because they were cast against a composition
+    this write would replace. `_row_holds_a_value_bearing_ballot` closes that
+    half, and read-then-write is sound FOR IT because a stored reviewer value
+    cannot un-exist; the condition stays on the write because only the database
+    can settle the race against a first ballot landing NOW. Two mechanisms, two
+    failure modes, each covered by the one that can cover it.
 
     A refusal answers 409 and writes nothing. 409 rather than 403, because the row's
     state is what refuses — the caller was permitted, and what they asked for
@@ -2233,6 +2295,16 @@ def api_recompose_prioritization_row(row_id: str):
     table = get_aggregates_table()
     if not table:
         raise ConfigurationError('Aggregates table not configured')
+
+    # The LEGACY half of the freeze — see the docstring. A row balloted before the
+    # mark existed satisfies the write's condition, so it has to be refused here,
+    # with the same 409 the condition produces: which mechanism refused is plumbing,
+    # and the caller's remedy (reload, see the current rows) is identical.
+    if _row_holds_a_value_bearing_ballot(table, validated_row_id):
+        raise ConflictError(
+            'This row cannot be recomposed: a ballot has already frozen its '
+            'composition'
+        )
 
     now = datetime.now(timezone.utc).isoformat()
     try:
@@ -2287,6 +2359,72 @@ def api_recompose_prioritization_row(row_id: str):
     return {'success': True, 'row': _row_payload(stored)}
 
 
+def _row_holds_a_value_bearing_ballot(table, row_id: str) -> bool:
+    """Does any stored ballot on this row carry a reviewer value?
+
+    THE LEGACY HALF OF THE FREEZE, asked only by the recompose. The condition on
+    the write (`attribute_not_exists(ROW_FROZEN_AT_FIELD)`) is the enforcement for
+    every ballot written since that attribute existed — but ballots written by the
+    code deployed BEFORE it carry no mark, and nothing migrates one in until the
+    next save against that row. Asking the mark alone therefore recomposes exactly
+    the rows that already hold real votes, which is the outcome the condition
+    exists to rule out. This read closes that half; the condition keeps settling
+    the race against a CONCURRENT first ballot, which a read can never do.
+
+    Read-then-write is SOUND for this half where it is unsound for the race: a
+    ballot that expressed a value cannot un-express it (a correction only assigns,
+    never removes, and deleting ballots deletes their row with them), so "held one
+    at the read" cannot go stale in the direction that matters.
+
+    A VALUE-BEARING ballot, not any ballot record. A stamp-only save (`{}`, an
+    all-null entry) writes a ballot record and deliberately does NOT freeze —
+    `_ballot_transact_items` stamps the mark only when `_writes_a_reviewer_value`
+    — and this read must not be stricter than the write it stands in for, or a
+    page that PATCHes an empty entry on load would freeze every row it touched.
+
+    Strongly consistent and projected to the value fields, for the same reasons
+    `_row_ballot_sort_keys` states: this read GATES a write, and a ballot's note
+    is content this question has no use for beyond its presence. Short-circuits on
+    the first value found; past the page budget it RAISES like every bounded read
+    here, because "could not enumerate the ballots" must not be read as "there are
+    none" by a route about to recompose the row.
+    """
+    query_kwargs: dict[str, Any] = {
+        'KeyConditionExpression': (
+            Key('pk').eq(PRIORITIZATION_PK)
+            & Key('sk').begins_with(f'{BALLOT_SK_PREFIX}{row_id}#')
+        ),
+        # Aliased wholesale rather than checked one by one against the reserved-word
+        # list: the axes are config (SCORE_AXES), and an axis added later must not
+        # break this read by colliding with a word DynamoDB reserves.
+        'ProjectionExpression': ', '.join(
+            f'#axis_{i}' for i in range(len(SCORE_AXES))
+        ) + ', #notes',
+        'ExpressionAttributeNames': {
+            **{f'#axis_{i}': axis for i, axis in enumerate(SCORE_AXES)},
+            '#notes': 'notes',
+        },
+        'ConsistentRead': True,
+    }
+    for _ in range(MAX_PRIORITIZATION_PAGES):
+        response = table.query(**query_kwargs)
+        if any(
+            _ballot_expressed_a_value(item) for item in response.get('Items', [])
+        ):
+            return True
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            return False
+        query_kwargs['ExclusiveStartKey'] = last_key
+    logger.error(
+        "A prioritization row's ballots exceed %d query pages, so the recompose "
+        'cannot tell whether one of them holds a reviewer value. Proceeding would '
+        'recompose a row that may hold real votes.',
+        MAX_PRIORITIZATION_PAGES,
+    )
+    raise ServiceError('Too many ballots on this row to read in one request')
+
+
 def _project_row_sort_keys(table, project_id: str, *, limit: int | None = None) -> list[str]:
     """The sort key of every ROW of one project, in ascending key order.
 
@@ -2313,6 +2451,22 @@ def _project_row_sort_keys(table, project_id: str, *, limit: int | None = None) 
     row. Ascending key order is preserved, so "the lowest-keyed sibling" is still
     deterministic: the first qualifying key of the first page is the lowest one there
     is.
+
+    WHERE THE PAGE BUDGET ACTUALLY BINDS, in the style of the 98/20 arithmetic on
+    `_row_ballot_sort_keys` — reachable there was ruled out; here it is NOT. The 1MB
+    page is spent on items as STORED, before the projection: a row record is its
+    keys, flags and timestamps (~0.3KB) plus up to MAX_ROW_DOCUMENT_IDS document
+    ids, so call it 0.5KB typically and ~4KB adversarially. That is ~2,000 rows per
+    page typically (40,000 across 20 pages ≈ 800 projects at the 50-row cap) but
+    only ~250 adversarial rows per page — 5,000 across the budget, ≈ 100 maxed-out
+    projects. A deployment CAN reach that, and because the walk is over the WHOLE
+    `ROW#` keyspace, crossing it raises for every project at once, on BOTH callers:
+    the compose's count and the delete's sibling lookup share this read, so the two
+    remedies for an over-large keyspace — stop adding rows, remove some — go down
+    together, and only an operator deleting items directly can shrink it. That
+    simultaneous lock-out is the concrete case for the `project_id` GSI follow-up
+    the compose call site names: a GSI turns both callers into bounded queries on
+    one project's rows and retires this walk entirely.
     """
     query_kwargs: dict[str, Any] = {
         'KeyConditionExpression': (
@@ -2923,7 +3077,13 @@ def api_get_prioritization_scores():
         scores[row_id] = _score_payload(row_id, entry)
 
     return {
-        'rows': {row_id: _row_payload(row) for row_id, row in rows_by_id.items()},
+        # The ballots ride along so `is_frozen` covers rows balloted before the
+        # freeze mark existed (see `_is_frozen_row`) — this read already holds the
+        # partition whole, so the legacy half costs nothing here.
+        'rows': {
+            row_id: _row_payload(row, ballots_by_row.get(row_id, ()))
+            for row_id, row in rows_by_id.items()
+        },
         'scores': scores,
         'aggregates': _aggregate_scores(ballots_by_row, legacy_by_row),
     }
@@ -3106,16 +3266,17 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
     # through. These were the only two bare asserts in the production Lambda tree.
     unsupported = set(update_kwargs) - TRANSACT_UPDATE_KEYS
     if unsupported:
+        # The offending key is NAMED HERE AND ONLY HERE. A ServiceError's message
+        # goes to the client verbatim (`handle_service_error`), and a reviewer
+        # saving scores has no use for an internal function's kwargs — the log is
+        # where the person who can act on the name will read it.
         logger.error(
             '_ballot_update_kwargs returned %s, which a transaction Update does not '
             'accept. The ballot was not written: DynamoDB would reject the whole '
             'transaction for a key the ballot itself is not about.',
             sorted(unsupported),
         )
-        raise ServiceError(
-            f'_ballot_update_kwargs returned {sorted(unsupported)}, which a '
-            'transaction Update does not accept'
-        )
+        raise ServiceError('Failed to save prioritization scores')
     # The row's write is the ONE this transaction carries a condition on, and the save
     # reads the cancellation reason at BALLOT_TRANSACT_ROW_INDEX to tell a vanished row
     # from contention — so that constant is only meaningful while the row's write sits

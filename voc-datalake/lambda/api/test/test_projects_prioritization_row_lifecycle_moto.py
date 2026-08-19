@@ -290,6 +290,48 @@ class TestTheRowLifecycleAgainstARealTable:
         assert row['document_ids'] == ['d1'], 'the refusal wrote nothing'
 
     @mock_aws
+    def test_a_row_balloted_before_the_mark_existed_is_refused_too(self, lambda_context):
+        """THE UPGRADE PATH, against the real implementation — the exact reproduction
+        review round 3 ran: a row and a reviewer ballot in the shape the previously
+        deployed code wrote (real values, no `first_ballot_at`, no `ballot_writes`),
+        which recomposed with a 200 before the guard existed.
+
+        In THIS file rather than only the fast suite because the guard is a new WIRE
+        SHAPE: a query whose projection aliases every attribute it names. The fake
+        ignores `ProjectionExpression` entirely, so a malformed one — an unaliased
+        reserved word, a syntax error in the alias list — passes every fast test and
+        fails on the first real call. Moto parses it the way DynamoDB does."""
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        aggregates.put_item(Item={
+            'pk': PARTITION, 'sk': 'ROW#row-legacy', 'row_id': 'row-legacy',
+            'project_id': 'p1', 'document_ids': ['d1', 'd2'], 'prototype_id': '',
+            'is_default': True, 'created_at': '2026-07-01T10:00:00+00:00',
+        })
+        aggregates.put_item(Item={
+            'pk': PARTITION, 'sk': 'BALLOT#row-legacy#user:alice',
+            'row_id': 'row-legacy', 'reviewer': 'user:alice',
+            'updated_at': '2026-07-01T11:00:00+00:00',
+            'impact': Decimal(5), 'notes': 'we must ship both',
+        })
+
+        status, body = _call(aggregates, projects, lambda_context, 'PATCH',
+                             '/projects/prioritization/rows/row-legacy',
+                             {'project_id': 'p1', 'document_ids': ['d1']})
+
+        assert status == 409
+        assert 'frozen' in body['error']
+        row = aggregates.get_item(
+            Key={'pk': PARTITION, 'sk': 'ROW#row-legacy'})['Item']
+        assert row['document_ids'] == ['d1', 'd2'], (
+            "alice's ballot still describes the documents she saw"
+        )
+        _, page = _call(aggregates, projects, lambda_context, 'GET',
+                        '/projects/prioritization')
+        assert page['rows']['row-legacy']['is_frozen'] is True, (
+            'and the page must not offer the control the write refuses'
+        )
+
+    @mock_aws
     def test_a_row_and_its_ballots_go_in_one_real_transaction(self, lambda_context):
         """The delete's transaction, including the part only a real table exercises:
         the fence value is a `Decimal` read through the RESOURCE and passed back

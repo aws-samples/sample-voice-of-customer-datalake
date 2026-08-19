@@ -5261,6 +5261,163 @@ class TestTheFirstBallotFreezesTheComposition:
         assert 'prd-2' not in body['rows']['row-1']['document_ids']
 
 
+class TestARowBallotedBeforeTheMarkExistedIsStillFrozen:
+    """THE UPGRADE PATH. ROW_FROZEN_AT_FIELD was introduced by this change, so every
+    ballot already in a deployed table was written WITHOUT it — and those rows are
+    precisely the ones that already carry real votes. A freeze that asked only the
+    mark recomposed exactly them, with a 200, leaving each ballot describing
+    documents its author never saw.
+
+    EVERY TEST HERE SEEDS ITS BALLOT DIRECTLY, which is the one thing the class
+    above must never do: the route stamps the mark, so no route-seeded fixture can
+    reproduce a pre-mark row. The two classes are the two halves of one predicate —
+    "a ballot has landed", enforced by the condition where the mark exists and by
+    `_row_holds_a_value_bearing_ballot` where it cannot.
+    """
+
+    @staticmethod
+    def _legacy_balloted(entry, reviewer='user:alice'):
+        """A row holding a ballot the PREVIOUSLY DEPLOYED code wrote: real reviewer
+        values, no freeze mark on the row, no `ballot_writes` — the stored shape a
+        phase-1 save left behind."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        sk = f'BALLOT#row-1#{reviewer}'
+        aggregates.items[(PARTITION, sk)] = {
+            'pk': PARTITION, 'sk': sk, 'row_id': 'row-1', 'reviewer': reviewer,
+            'updated_at': '2026-08-01T10:00:00+00:00', **entry,
+        }
+        return aggregates
+
+    def test_a_recompose_of_a_pre_mark_balloted_row_is_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        """The reviewer's reproduction, closed: before this guard the recompose
+        answered 200 and alice's surviving ballot described documents she never
+        saw."""
+        aggregates = self._legacy_balloted(AXES)
+        assert 'first_ballot_at' not in aggregates.items[(PARTITION, 'ROW#row-1')], (
+            'the fixture must hold no mark, or this tests the condition instead'
+        )
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 409
+        assert 'frozen' in body['error']
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ], 'the refusal must write nothing'
+
+    def test_a_pre_mark_note_only_ballot_freezes_too(
+        self, api_gateway_event, lambda_context
+    ):
+        """The same reading the write side has: a note is a durable decision record
+        about the row's documents, whichever deployment stored it."""
+        aggregates = self._legacy_balloted({'notes': 'this pair is the wrong scope'})
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 409
+
+    def test_a_stamp_only_ballot_record_does_not_freeze_without_the_mark(
+        self, api_gateway_event, lambda_context
+    ):
+        """The guard must not be STRICTER than the write it stands in for. A
+        stamp-only save writes a ballot record and deliberately does not freeze
+        (`_writes_a_reviewer_value`), so its stored record must not freeze either —
+        refusing on "any ballot record exists" would fail this and re-open the
+        page-that-PATCHes-on-load hazard the write side already closed."""
+        aggregates = self._legacy_balloted({})
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-2']
+
+    def test_the_page_reports_a_pre_mark_balloted_row_as_frozen(
+        self, api_gateway_event, lambda_context
+    ):
+        """The read half. `_is_frozen_row` answers off the ballots the page read
+        already holds, so the page offers no edit control on a row the recompose
+        would refuse — the two halves saying the same thing about the same row."""
+        aggregates = self._legacy_balloted(AXES)
+        aggregates.seed_rows('row-untouched', project_id='p1')
+
+        _, body = _get_scores(aggregates, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['rows']['row-1']['is_frozen'] is True
+        assert body['rows']['row-untouched']['is_frozen'] is False
+
+    def test_a_first_ballot_landing_after_the_legacy_read_still_loses_the_race(
+        self, api_gateway_event, lambda_context
+    ):
+        """The guard READS, so it re-opens the exact window the condition exists to
+        close — a first ballot landing between the ballot query and the write. The
+        condition, kept on the write, is what settles it: this test lands alice's
+        ballot through the real route the moment the guard's query has answered
+        "no value-bearing ballot", and the recompose must still lose."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        real_query = aggregates.query
+        raced = {'done': False}
+
+        def ballot_after_the_guard_read(**kwargs):
+            response = real_query(**kwargs)
+            _, prefix = _key_condition(kwargs['KeyConditionExpression'])
+            if not raced['done'] and prefix == 'BALLOT#row-1#':
+                raced['done'] = True
+                _patch_scores(aggregates, api_gateway_event, lambda_context,
+                              {'row-1': AXES}, subject='alice', seed_rows=False)
+            return response
+
+        aggregates.query = ballot_after_the_guard_read
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert raced['done'], 'the race never happened, so this asserts nothing'
+        assert status == 409
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ]
+
+    def test_ballots_the_guard_cannot_enumerate_refuse_the_recompose(
+        self, api_gateway_event, lambda_context
+    ):
+        """Past the page budget the guard RAISES, like every bounded read in the
+        module: "could not read the ballots" must not be read as "there are none"
+        by a route about to recompose the row. A 500 rather than a silent
+        proceed-on-partial-knowledge."""
+        aggregates = FakeAggregatesTable(page_size=1).seed_rows('row-1', project_id='p1')
+        from projects_handler import MAX_PRIORITIZATION_PAGES
+        for count in range(MAX_PRIORITIZATION_PAGES + 1):
+            sk = f'BALLOT#row-1#user:reviewer-{count:03d}'
+            aggregates.items[(PARTITION, sk)] = {
+                'pk': PARTITION, 'sk': sk, 'row_id': 'row-1',
+                'reviewer': f'user:reviewer-{count:03d}',
+                'updated_at': '2026-08-01T10:00:00+00:00',
+            }
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 500
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ], 'and nothing was recomposed on partial knowledge'
+
+
 class TestAFrozenRowIsDeletedTogetherWithItsBallots:
     """The one destructive action, and the reason a frozen row is never edited: the
     escape hatch is adding a row, and the way out is removing one whole.
@@ -6087,18 +6244,31 @@ class TestOnlyAFailedConditionMeansTheRowIsGone:
         `python -O`/`PYTHONOPTIMIZE`, which would let exactly the malformed key it
         names through to DynamoDB, and an `AssertionError` in a request path is an
         unhandled 500 that bypasses this module's logging. Pinned as a `ServiceError`
-        so the mechanism cannot quietly regress to one."""
+        so the mechanism cannot quietly regress to one.
+
+        The offending key is named in the LOG, not the raise: a ServiceError's
+        message reaches the client verbatim, and an internal function's kwargs are
+        for whoever reads the log, not for a reviewer saving scores."""
         import projects_handler
         from shared.exceptions import ServiceError
 
         table = FakeAggregatesTable()
         kwargs = projects_handler._ballot_update_kwargs('row-1', 'alice', AXES, 'now')
         kwargs['ReturnValues'] = 'ALL_NEW'
+        log = MagicMock()
 
-        with pytest.raises(ServiceError) as refused:
+        with (
+            patch('projects_handler.logger', log),
+            pytest.raises(ServiceError) as refused,
+        ):
             projects_handler._ballot_transact_items(table, kwargs, 'row-1', 'now')
 
-        assert 'ReturnValues' in str(refused.value), 'it names the key that failed'
+        assert 'ReturnValues' not in str(refused.value), (
+            'internal kwargs must not reach the client'
+        )
+        assert any(
+            'ReturnValues' in str(call) for call in log.error.call_args_list
+        ), 'the log names the key that failed'
 
     def test_no_check_in_the_production_lambda_tree_is_a_bare_assert(self):
         """WHY the check above is a raise, pinned where it can actually regress.
@@ -6111,12 +6281,31 @@ class TestOnlyAFailedConditionMeansTheRowIsGone:
 
         Read as SOURCE TEXT over the whole production tree rather than by re-executing
         one module under `optimize=2`, because the property is a convention about all
-        of it, and the failure names the file and line to fix."""
-        tree = Path(__file__).resolve().parents[1]
+        of it, and the failure names the file and line to fix.
+
+        "The whole production tree" MEANS ALL OF IT: `lambda/` — including `shared/`,
+        which is bundled into every API Lambda and is where the exception handlers
+        this finding was originally about live — and `plugins/`. A scan of
+        `lambda/api` alone would not fail on a bare `assert` reintroduced one
+        directory up, which is the same "guard narrower than the property it states"
+        shape this test exists to close. `layers/` is excluded as vendored
+        third-party (ruff's `extend-exclude` draws the same line), and test files by
+        both path component and name — `test` as a component alone would keep a
+        `test_helpers.py` in scope and drop a production package that happened to be
+        called `contest`."""
+        lambda_tree = Path(__file__).resolve().parents[2]
+        production_trees = (lambda_tree, lambda_tree.parent / 'plugins')
+
+        def _is_production(path):
+            if any(part in ('test', 'tests', 'layers') for part in path.parts):
+                return False
+            return not (path.name.startswith('test_') or path.name == 'conftest.py')
+
         offenders = [
-            f'{path.relative_to(tree.parent)}:{number}'
+            f'{path.relative_to(lambda_tree.parent)}:{number}'
+            for tree in production_trees
             for path in sorted(tree.rglob('*.py'))
-            if 'test' not in path.parts
+            if _is_production(path.relative_to(tree))
             for number, line in enumerate(
                 path.read_text(encoding='utf-8').splitlines(), start=1
             )
