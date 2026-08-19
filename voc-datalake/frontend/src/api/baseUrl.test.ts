@@ -168,23 +168,12 @@ describe('getAuthHeaders — trusted origin', () => {
   })
 
   /*
-   * There is deliberately NO test here for "omitting targetUrl does not compile",
-   * replacing the old "attaches Authorization when no targetUrl is given
-   * (backward compat)" case that pinned the permissive default.
-   *
-   * A type-level assertion in this file could not enforce it: `tsconfig.app.json`
-   * excludes the test globs, and `typecheck:tests` is not part of
-   * `npm run check`, so a test file is never type-checked by any gate — and
-   * vitest transpiles without type-checking. A `@ts-expect-error` or a
-   * `Parameters<>` assertion written here would read as a guard and enforce
-   * nothing.
-   *
-   * The requirement is enforced at RUNTIME instead, by the `hasTarget`
-   * precondition in `getAuthHeaders`, and pinned by the two "empty" / "missing
-   * entirely" cases at the end of this file. That is stronger than a type could
-   * be: `targetUrl?: string` with `isTrustedOrigin(targetUrl ?? '')` compiles
-   * and would have restored the permissive default, since `''` resolves
-   * same-origin.
+   * No "omitting targetUrl does not compile" test here, replacing the old
+   * "backward compat" case that pinned the permissive default. A type-level
+   * assertion in a test file enforces nothing: the test globs are excluded from
+   * every typecheck gate and vitest transpiles without type-checking. The
+   * requirement is enforced at runtime instead — see the "empty" / "missing
+   * entirely" cases in the untrusted-origin block below.
    */
 })
 
@@ -240,18 +229,12 @@ describe('getAuthHeaders — untrusted origin', () => {
   })
 
   /*
-   * The next two pin the ARGUMENT precondition, and they are the reason the
-   * required-parameter type is not the whole guard.
-   *
-   * Both of these values resolve SAME-ORIGIN if handed to the URL parser — `''`
-   * resolves to the current origin, and a missing argument stringifies to
-   * `'undefined'`, which resolves to a path on it. So without an explicit check
-   * they are "trusted" and the header is attached.
-   *
-   * That is exactly how the permissive default could come back without any gate
-   * noticing: `targetUrl?: string` plus `isTrustedOrigin(targetUrl ?? '')`
-   * type-checks cleanly. Measured before this guard existed — that shape
-   * compiled and all 161 tests in the origin-gating suites still passed.
+   * The next two pin the argument precondition. Both values resolve SAME-ORIGIN
+   * if handed to the URL parser (`''` to the current origin, a missing argument
+   * via the string `'undefined'`), so without the check they are trusted and the
+   * header is attached — which is how the permissive default could return with
+   * nothing failing: `targetUrl?: string` plus `isTrustedOrigin(targetUrl ?? '')`
+   * compiled and passed all 161 tests here before the precondition existed.
    */
   it('does NOT attach Authorization when the target URL is empty', () => {
     // Vacuity guard: the same call with a real trusted URL does attach it.
@@ -260,10 +243,9 @@ describe('getAuthHeaders — untrusted origin', () => {
   })
 
   it('does NOT attach Authorization when the target URL is missing entirely', () => {
-    // A caller reaching this at RUNTIME is possible even though the signature
-    // forbids it: vitest transpiles without type-checking, and `*.test.ts` is
-    // excluded from every typecheck gate — so this is a reachable state, not a
-    // hypothetical one.
+    // The double assertion is the point: it constructs an off-contract call that
+    // the signature forbids but that is reachable at runtime, since test files
+    // are never type-checked.
     const noTarget = undefined as unknown as string
     expect(getAuthHeaders(noTarget)['Authorization']).toBeUndefined()
   })
