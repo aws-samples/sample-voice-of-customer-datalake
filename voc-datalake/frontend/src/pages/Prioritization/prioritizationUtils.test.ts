@@ -503,6 +503,29 @@ describe('normalizeRow validates the ONE row a create answers with', () => {
     expect(normalizeRow(storedRow('r', 'p1', ids(MAX_ROW_DOCUMENT_IDS)))?.row_id).toBe('r')
     expect(normalizeRow(storedRow('r', 'p1', ids(MAX_ROW_DOCUMENT_IDS + 1)))).toBeUndefined()
   })
+
+  it('keeps the frozen flag the API sends', () => {
+    // The schema is a `z.object`, which STRIPS what it does not declare — so an
+    // undeclared `is_frozen` parses fine and is silently discarded, and the page could
+    // never learn a row was frozen with nothing failing to say so. That is the whole
+    // reason the field has to be declared rather than left to arrive.
+    expect(normalizeRow({ ...storedRow('r', 'p1', ['prd-1']), is_frozen: true })?.is_frozen)
+      .toBe(true)
+    expect(normalizeRow({ ...storedRow('r', 'p1', ['prd-1']), is_frozen: false })?.is_frozen)
+      .toBe(false)
+  })
+
+  it('reads an unstated or unreadable frozen flag as NOT frozen', () => {
+    // The direction matters. `is_frozen` only decides whether a control is OFFERED —
+    // the freeze itself is a condition on the write, which answers 409 whatever this
+    // said. Defaulting to `true` would hide a control on a row that is perfectly
+    // editable with nothing explaining why; defaulting to `false` offers one whose
+    // request the server refuses with a reason the page can state.
+    for (const value of [undefined, null, 'yes', 1, {}]) {
+      expect(normalizeRow({ ...storedRow('r', 'p1', ['prd-1']), is_frozen: value })?.is_frozen)
+        .toBe(false)
+    }
+  })
 })
 
 /**

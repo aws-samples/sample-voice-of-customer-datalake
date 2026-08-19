@@ -2332,11 +2332,23 @@ def _row_ballot_sort_keys(table, row_id: str) -> list[str]:
 
     Bounded at MAX_ROW_BALLOTS_PER_DELETE and then REFUSED rather than truncated: a
     short read here would delete the row and leave the ballots that did not fit,
-    which is exactly the orphan the whole path exists to prevent. Page exhaustion
-    raises SEPARATELY, and the two messages differ because the remedies do: one is a
-    row too heavily balloted for one transaction, the other a partition that has
-    outgrown the read this module performs everywhere. A single message covering both
-    would name the wrong cause for whichever case it was not written about.
+    which is exactly the orphan the whole path exists to prevent.
+
+    THE PAGE-EXHAUSTION BRANCH IS UNREACHABLE TODAY, and kept as a guard rather than
+    dropped. A page of key-only projected items holds far more than the 98/20 ≈ 5
+    ballots that would be needed to spend the page budget before the ballot bound, so
+    the ballot bound always binds first. It is retained because the two limits are
+    independent — MAX_ROW_BALLOTS_PER_DELETE follows DynamoDB's transaction cap and
+    MAX_PRIORITIZATION_PAGES the read this module performs everywhere — so raising
+    either without the other makes it live, and a loop with no terminating case is
+    not something to leave behind on the strength of an arithmetic coincidence.
+    Stated here rather than left to a reader, because a distinct, carefully-worded
+    message reads as a live path.
+
+    The two messages differ because the remedies would: one is a row too heavily
+    balloted for one transaction, the other a partition that has outgrown the read. A
+    single message covering both would name the wrong cause for whichever case it was
+    not written about.
     """
     query_kwargs: dict[str, Any] = {
         'KeyConditionExpression': (
@@ -2569,8 +2581,9 @@ def api_delete_prioritization_row(row_id: str):
     # looks for one: a row somebody composed is never the reason a project has a row
     # at all, so deleting it can never leave the page inviting a PRD for a project
     # that has one.
-    sibling_sk = _sibling_row_sk(table, row, validated_row_id) if _is_default_row(row) else None
-    if _is_default_row(row) and sibling_sk is None:
+    is_default = _is_default_row(row)
+    sibling_sk = _sibling_row_sk(table, row, validated_row_id) if is_default else None
+    if is_default and sibling_sk is None:
         raise ConflictError(
             "A project's default row cannot be deleted while it is the project's "
             'only row'
@@ -2578,6 +2591,21 @@ def api_delete_prioritization_row(row_id: str):
 
     ballot_sks = _row_ballot_sort_keys(table, validated_row_id)
     _transact_delete_row(table, row, validated_row_id, ballot_sks, sibling_sk)
+    # THE ONLY TRACE A COMPLETED DELETE LEAVES. `ballots_deleted` is evidence only in
+    # the caller's own response body, and every ballot removed here is a durable
+    # decision record — so an operator asked "where did the team's score go?" has
+    # nothing to read without this, and the page read's discard-warning count cannot
+    # tell a legitimate delete from the orphaning it is watching for. The cancelled
+    # case already logs; leaving the successful one silent made the delete that
+    # actually removed data the one with no record of it.
+    #
+    # No caller identity and no ballot content, per the module's standing rule: the
+    # row id and the counts are what an investigation needs, and a reviewer's subject
+    # is not.
+    logger.info(
+        'Deleted prioritization row %s (default: %s) with %d ballot(s)',
+        validated_row_id, is_default, len(ballot_sks),
+    )
     return {
         'success': True,
         'row_id': validated_row_id,

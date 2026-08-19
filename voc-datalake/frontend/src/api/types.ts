@@ -476,6 +476,14 @@ export interface PrioritizationScore {
  * it was cast about. `prototype_id` is context a reviewer looks at rather than a
  * document the row is scored on, which is why it is its own field; it is `''` when
  * the project has no prototype.
+ *
+ * `is_frozen` says a ballot has landed, so the composition can no longer change. A
+ * fact the page DISPLAYS, never one it enforces: the freeze is a condition on the
+ * write itself, so a composition change racing the first ballot loses to it in the
+ * database and answers 409 whatever this field said a moment earlier. The timestamp
+ * behind it, and the write count the delete fences on, are deliberately NOT published
+ * — a client computing the freeze itself would eventually disagree with the condition
+ * that enforces it.
  */
 export interface PrioritizationRow {
   row_id: string
@@ -484,6 +492,7 @@ export interface PrioritizationRow {
   prototype_id: string
   is_default: boolean
   created_at: string
+  is_frozen: boolean
 }
 
 /**

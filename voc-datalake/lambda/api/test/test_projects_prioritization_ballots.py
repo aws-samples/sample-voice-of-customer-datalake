@@ -4236,12 +4236,16 @@ def _recompose_row(aggregates, projects, api_gateway_event, lambda_context, row_
 
 
 def _delete_row(aggregates, api_gateway_event, lambda_context, row_id,
-                subject='admin-1', groups='admins'):
+                subject='admin-1', groups='admins', logger=None):
     """DELETE one row. `groups` is what the admin gate reads.
 
     The projects table is deliberately NOT patched: a delete that reached for a
     project's documents would fail here rather than passing against a fake that
     happened to be in scope, and the route has no business reading them.
+
+    `logger` follows the pattern `_get_scores` uses: pass a double to assert on what
+    the delete REPORTED, which for the one destructive action on this data is part of
+    what it is supposed to do rather than incidental.
     """
     from projects_handler import lambda_handler
 
@@ -4255,7 +4259,11 @@ def _delete_row(aggregates, api_gateway_event, lambda_context, row_id,
     else:
         claims['cognito:groups'] = groups
     with patch('projects_handler.get_aggregates_table', return_value=aggregates):
-        response = lambda_handler(event, lambda_context)
+        if logger is None:
+            response = lambda_handler(event, lambda_context)
+        else:
+            with patch('projects_handler.logger', logger):
+                response = lambda_handler(event, lambda_context)
     return response['statusCode'], json.loads(response['body'])
 
 
@@ -5250,6 +5258,66 @@ class TestAFrozenRowIsDeletedTogetherWithItsBallots:
 
         assert body['ballots_deleted'] == 3
         assert body['row_id'] == 'row-1'
+
+    def test_a_completed_delete_leaves_a_record_of_what_it_removed(
+        self, api_gateway_event, lambda_context
+    ):
+        """`ballots_deleted` is evidence only in the caller's own response body. An
+        operator asked "where did the team's score go?" reads CloudWatch, and the
+        cancelled case already logs — so leaving the successful one silent made the
+        delete that actually removed data the one with no record of it."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context,
+                                            'alice', 'bob')
+        logger = MagicMock()
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1',
+                                logger=logger)
+
+        assert status == 200
+        # `lambda_handler` logs its own "Returning response" through the same logger,
+        # so the delete's line is picked out rather than counted.
+        deletions = [
+            call.args for call in logger.info.call_args_list
+            if 'Deleted prioritization row' in str(call.args[0])
+        ]
+        assert len(deletions) == 1
+        assert 'row-1' in deletions[0]
+        assert 2 in deletions[0], 'the ballot count is the whole point of the line'
+        assert False in deletions[0], 'whether it was the default row'
+
+    def test_the_delete_log_names_no_reviewer(self, api_gateway_event, lambda_context):
+        """The module's standing rule. A row id and a count are what an investigation
+        needs; whose ballots they were is not, and a note never is."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context, 'alice')
+        logger = MagicMock()
+
+        _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1',
+                    logger=logger)
+
+        emitted = ' '.join(
+            str(part) for call in logger.info.call_args_list for part in call.args
+        )
+        assert 'alice' not in emitted
+        assert 'admin-1' not in emitted
+
+    def test_a_refused_delete_reports_no_completed_delete(
+        self, api_gateway_event, lambda_context
+    ):
+        """The line has to mean "this row is gone". A delete refused for its only-row
+        rule writes nothing, so logging it would put a deletion in the record that
+        never happened."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+        logger = MagicMock()
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default', logger=logger)
+
+        assert status == 409
+        assert not [
+            call for call in logger.info.call_args_list
+            if 'Deleted prioritization row' in str(call.args[0])
+        ]
 
     def test_a_row_nobody_balloted_on_reports_no_ballots_deleted(
         self, api_gateway_event, lambda_context
