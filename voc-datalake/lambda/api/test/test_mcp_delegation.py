@@ -672,12 +672,12 @@ class TestPathParameterConfinement:
     def _static_siblings(self, prefix: str, handler: str) -> set[str]:
         """Static route segments at the parameter's position, from ONE file.
 
-        ⚠️ Single-file by design and only sound while these handlers register
+        ⚠️ Single-file by design, and only sound while these handlers register
         every route inline. Powertools also supports `Router` objects in other
         modules included into an app; a route registered that way would be
-        invisible here, and the reserved set would be quietly incomplete. That is
-        not documented and left to trust — `test_no_route_is_registered_outside_
-        the_scanned_file` asserts the pattern is absent.
+        invisible here and the reserved set would be quietly incomplete. Neither
+        handler does that today, and it is asserted rather than assumed — see
+        `test_no_route_is_registered_outside_the_scanned_file`.
         """
         source = (Path(__file__).resolve().parents[1] / handler).read_text()
         depth = len(prefix.strip("/").split("/"))
@@ -798,6 +798,40 @@ class TestPathParameterConfinement:
     def test_a_parameter_the_template_does_not_use_is_refused(self):
         with pytest.raises(mcp_handler.InvalidToolArgument):
             mcp_handler._validated_path_parameters("project_get", {"surprise": "value"})
+
+    def test_autoseed_reports_a_missing_declaration_as_a_server_fault(self):
+        """The autoseed path answers 502, not 400, for a misconfiguration.
+
+        `_domain_call` can raise EITHER kind — `InvalidToolArgument` for a
+        malformed path parameter, `DelegationUnavailable` for a missing
+        reserved-segment declaration — so both are caught around the same step. A
+        `try` that caught only the first let the second escape to the outer
+        catch-all and answer something other than the 502 this route establishes.
+        Unreachable in a deployed build; asserted so the two paths cannot diverge.
+        """
+        minted = mint_token()
+        client = MagicMock()
+        future = {"project_autoseed": (mcp_handler.DOMAIN_PROJECTS, "GET",
+                                       "/whatever/{project_id}/autoseed")}
+        with patch("mcp_handler.projects_table") as table, \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=client), \
+             patch.dict(mcp_handler.DOMAIN_ROUTES, future), \
+             patch.dict(os.environ, {"PROJECTS_FUNCTION": "p"}):
+            table.query.return_value = {"Items": [{
+                "pk": "MCPTOKEN", "sk": f"TOKEN#{minted.token_id}",
+                "token_id": minted.token_id, "secret_hash": minted.secret_hash,
+                "scopes": list(ALL_READ_SCOPES), "projects": [_PROJECT],
+                "read_reach": REACH_WORKSPACE,
+            }]}
+            table.update_item.return_value = {}
+            response = mcp_handler.lambda_handler({
+                "httpMethod": "GET",
+                "path": f"/v1/mcp/autoseed/{_PROJECT}",
+                "headers": {"authorization": f"Bearer {minted.raw}"},
+            }, MagicMock())
+
+        assert response["statusCode"] == 502, response["body"]
+        client.invoke.assert_not_called()
 
     def test_autoseed_refuses_a_hostile_project_id_with_a_400(self):
         """Autoseed takes its id straight from the URL, so it needs the same guard.

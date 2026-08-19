@@ -1633,19 +1633,20 @@ def _handle_autoseed(event: dict) -> dict:
     # through as the route's own query string rather than re-parsed here — the
     # comma-splitting used to be duplicated in both places.
     query_params = event.get('queryStringParameters') or {}
+    # ONE try around both steps, because both can raise both kinds. Building the
+    # call can fail on a malformed path parameter (400 — the credential is fine
+    # and the path is not) OR on a missing reserved-segment declaration, which is
+    # a server fault and belongs with the delegation failure below. Two separate
+    # try blocks let the second kind escape from the first step to the outer
+    # catch-all, answering something other than the 502 this route establishes.
     try:
         call = _domain_call('project_autoseed', path_parameters={'project_id': project_id}, query={
             'persona_ids': query_params.get('persona_ids'),
             'document_ids': query_params.get('document_ids'),
         })
-    except InvalidToolArgument as exc:
-        # This route takes its project id straight from the URL, so the
-        # route-confusion guard matters here as much as on a tool call — and it
-        # is a 400 rather than a 403, because the credential is fine and the
-        # path is not.
-        return _cors_response({'message': str(exc)}, status_code=400)
-    try:
         result = call_domain(call, claims=synthetic_claims(token_info))
+    except InvalidToolArgument as exc:
+        return _cors_response({'message': str(exc)}, status_code=400)
     except DelegationUnavailable:
         logger.error('Autoseed delegation failed', extra={'project_id': project_id})
         return _cors_response({'message': 'Upstream service unavailable'}, status_code=502)
