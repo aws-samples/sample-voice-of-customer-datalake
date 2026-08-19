@@ -256,15 +256,33 @@
     "noTokensYet": "Nenhum token API ainda",
     "revealToken": "Revelar token",
     "revokeToken": "Revogar token",
-    "scope": "Escopo",
-    "scopeRead": "Somente leitura — pesquisar feedback, visualizar métricas",
-    "scopeReadWrite": "Leitura e escrita — inclui chat e geração de documentos",
     "title": "Acesso MCP",
     "tokenCreated": "Token criado com sucesso",
     "tokenExpiresOn": "Este token expira em {{date}}.",
     "tokenName": "Nome do token",
     "tokenNamePlaceholder": "ex: Meu token Kiro",
-    "tokenPasteHint": "Cole este token no header <code>Authorization</code> do seu mcp.json ou comando curl autoseed."
+    "tokenPasteHint": "Cole este token no header <code>Authorization</code> do seu mcp.json ou comando curl autoseed.",
+    "scopes": "Escopos",
+    "scopeDesc": {
+      "feedback:read": "Pesquisar e ler feedback de clientes",
+      "metrics:read": "Ler painéis e detalhamento de métricas",
+      "projects:read": "Ler projetos, personas e documentos"
+    },
+    "noScopes": "sem escopos",
+    "readReach": "Alcance de leitura",
+    "reachOption": {
+      "workspace": "Todo o workspace (padrão)",
+      "project-set": "Apenas este projeto"
+    },
+    "reachHint": {
+      "workspace": "Alcança todos os projetos do workspace — incluindo documentos não publicados de outros projetos — e todo o feedback de clientes.",
+      "project-set": "Limitado a este projeto. Não pode ler o corpus de feedback nem as métricas do workspace, que não são por projeto."
+    },
+    "reachBadge": {
+      "workspace": "Todo o workspace",
+      "project-set": "Este projeto",
+      "none": "Sem leitura"
+    }
   },
   "notFound": {
     "backToProjects": "Voltar para Projetos",

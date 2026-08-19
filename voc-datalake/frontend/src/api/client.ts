@@ -91,6 +91,10 @@ function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
 
 import { z } from 'zod'
 import { normalizeFeedbackItem, normalizeFeedbackItems } from './feedbackSchema'
+import {
+  CreateApiTokenResponseSchema, normalizeApiTokens,
+  type McpScope, type ReadReach,
+} from './mcpTokenSchema'
 
 // API response parser using Zod for runtime validation
 // This satisfies the no-type-assertions rule
@@ -746,15 +750,15 @@ export const api = {
       method: 'DELETE'
     }),
 
-  // Project API tokens (used by the McpAccessTab to gate MCP server access)
-  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write'; expires_in_days?: number }) =>
-    fetchApi<CreateApiTokenResponse>(`/projects/${projectId}/api-tokens`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+  // Project API tokens (McpAccessTab). Both responses pass through the lenient
+  // Zod normalizers rather than being trusted to match the declared types: a
+  // token row states what a credential may DO, so a drifted field would make
+  // the UI describe a credential's reach differently from how it is enforced.
+  createApiToken: (projectId: string, data: { name: string; scopes?: McpScope[]; read_reach?: ReadReach; expires_in_days?: number }): Promise<CreateApiTokenResponse> =>
+    fetchApi<unknown>(`/projects/${projectId}/api-tokens`, { method: 'POST', body: JSON.stringify(data) }).then((raw) => CreateApiTokenResponseSchema.parse(raw)),
 
-  listApiTokens: (projectId: string) =>
-    fetchApi<{ success: boolean; tokens: ApiToken[] }>(`/projects/${projectId}/api-tokens`),
+  listApiTokens: (projectId: string): Promise<{ tokens: ApiToken[] }> =>
+    fetchApi<{ tokens?: unknown }>(`/projects/${projectId}/api-tokens`).then((raw) => ({ tokens: normalizeApiTokens(raw?.tokens) })),
 
   deleteApiToken: (projectId: string, tokenId: string) =>
     fetchApi<{ success: boolean; message: string }>(`/projects/${projectId}/api-tokens/${tokenId}`, {

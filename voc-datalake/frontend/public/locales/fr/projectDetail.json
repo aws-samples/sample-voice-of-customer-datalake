@@ -256,15 +256,33 @@
     "noTokensYet": "Aucun token API pour le moment",
     "revealToken": "Afficher le token",
     "revokeToken": "Révoquer le token",
-    "scope": "Portée",
-    "scopeRead": "Lecture seule — rechercher des retours, consulter les métriques",
-    "scopeReadWrite": "Lecture & écriture — inclut le chat et la génération de documents",
     "title": "Accès MCP",
     "tokenCreated": "Token créé avec succès",
     "tokenExpiresOn": "Ce jeton expire le {{date}}.",
     "tokenName": "Nom du token",
     "tokenNamePlaceholder": "ex. Mon token Kiro",
-    "tokenPasteHint": "Collez ce token dans l'en-tête <code>Authorization</code> de votre mcp.json ou commande curl autoseed."
+    "tokenPasteHint": "Collez ce token dans l'en-tête <code>Authorization</code> de votre mcp.json ou commande curl autoseed.",
+    "scopes": "Portées",
+    "scopeDesc": {
+      "feedback:read": "Rechercher et lire les retours clients",
+      "metrics:read": "Lire les tableaux de bord et les métriques",
+      "projects:read": "Lire les projets, personas et documents"
+    },
+    "noScopes": "aucune portée",
+    "readReach": "Portée de lecture",
+    "reachOption": {
+      "workspace": "Tout l’espace de travail (par défaut)",
+      "project-set": "Ce projet uniquement"
+    },
+    "reachHint": {
+      "workspace": "Atteint tous les projets de l’espace de travail — y compris les documents non publiés des autres projets — et tous les retours clients.",
+      "project-set": "Limité à ce projet. Ne peut pas lire le corpus de retours ni les métriques de l’espace, qui ne sont pas liés à un projet."
+    },
+    "reachBadge": {
+      "workspace": "Tout l’espace",
+      "project-set": "Ce projet",
+      "none": "Aucune lecture"
+    }
   },
   "notFound": {
     "backToProjects": "Retour aux projets",

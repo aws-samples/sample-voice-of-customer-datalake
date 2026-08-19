@@ -47,6 +47,10 @@ import {
 } from './McpAccessComponents'
 import type { TokenExpiryChoice } from './tokenExpiry'
 import {
+  DEFAULT_READ_REACH, DEFAULT_SCOPES, MCP_SCOPES,
+  type McpScope, type ReadReach,
+} from '../../api/mcpTokenSchema'
+import {
   PickerSection, CheckboxItem,
 } from './PickerComponents'
 import type {
@@ -69,15 +73,21 @@ interface McpAccessTabProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Always uses a placeholder — the real token is never embedded. */
-function buildMcpConfig(baseUrl: string, projectId: string): string {
+/**
+ * Always uses a placeholder — the real token is never embedded.
+ *
+ * No `X-Project-Id` header any more: the credential carries its own id, so the
+ * server resolves it with one keyed read and the project comes from the
+ * credential's own reach (or a tool argument). Leaving the header in the
+ * snippet would have people paste a contract the server ignores.
+ */
+function buildMcpConfig(baseUrl: string): string {
   return JSON.stringify({
     mcpServers: {
       'voc-datalake': {
         url: `${baseUrl}/mcp`,
         headers: {
           Authorization: 'Bearer <YOUR_API_TOKEN>',
-          'X-Project-Id': projectId,
         },
       },
     },
@@ -123,7 +133,7 @@ function groupDocumentsByType(documents: ProjectDocument[]): Record<KiroExportab
 // Hooks
 // ---------------------------------------------------------------------------
 
-function useTokenMutations(projectId: string, tokenName: string, tokenScope: 'read' | 'read-write', tokenExpiry: TokenExpiryChoice, onCreateSuccess: () => void) {
+function useTokenMutations(projectId: string, tokenName: string, tokenScopes: McpScope[], tokenReach: ReadReach, tokenExpiry: TokenExpiryChoice, onCreateSuccess: () => void) {
   const queryClient = useQueryClient()
   const [newlyCreatedToken, setNewlyCreatedToken] = useState<string | null>(null)
   // Deadline echoed by the create response, shown on the one-time banner.
@@ -136,7 +146,8 @@ function useTokenMutations(projectId: string, tokenName: string, tokenScope: 're
   const createMut = useMutation({
     mutationFn: () => api.createApiToken(projectId, {
       name: tokenName,
-      scope: tokenScope,
+      scopes: tokenScopes,
+      read_reach: tokenReach,
       // 'never' omits the field entirely — the backend reads absence as a
       // non-expiring token, and sending null would be refused (strict 400).
       ...(tokenExpiry === 'never' ? {} : { expires_in_days: Number(tokenExpiry) }),
@@ -537,7 +548,8 @@ export default function McpAccessTab({
 
   // ── MCP token state ───────────────────────────────────────────────────────
   const [tokenName, setTokenName] = useState('')
-  const [tokenScope, setTokenScope] = useState<'read' | 'read-write'>('read')
+  const [tokenScopes, setTokenScopes] = useState<McpScope[]>([...DEFAULT_SCOPES])
+  const [tokenReach, setTokenReach] = useState<ReadReach>(DEFAULT_READ_REACH)
   const [tokenExpiry, setTokenExpiry] = useState<TokenExpiryChoice>('never')
   const {
     copy, copiedKey: copiedId,
@@ -552,11 +564,21 @@ export default function McpAccessTab({
     createMut, deleteMut, newlyCreatedToken, setNewlyCreatedToken,
     newTokenExpiresAt, setNewTokenExpiresAt,
     showToken, setShowToken, showCreateForm, setShowCreateForm,
-  } = useTokenMutations(projectId, tokenName, tokenScope, tokenExpiry, () => {
+  } = useTokenMutations(projectId, tokenName, tokenScopes, tokenReach, tokenExpiry, () => {
     setTokenName('')
-    setTokenScope('read')
+    setTokenScopes([...DEFAULT_SCOPES])
+    setTokenReach(DEFAULT_READ_REACH)
     setTokenExpiry('never')
   })
+
+  /** Toggle one scope, keeping the vocabulary's order so the row reads stably. */
+  const toggleScope = useCallback((scope: McpScope) => {
+    setTokenScopes((prev) => (
+      prev.includes(scope)
+        ? prev.filter((s) => s !== scope)
+        : MCP_SCOPES.filter((s) => s === scope || prev.includes(s))
+    ))
+  }, [])
 
   const {
     data, isLoading, isError,
@@ -571,7 +593,7 @@ export default function McpAccessTab({
 
   const baseUrl = (config.apiEndpoint === '' ? 'https://<api-gateway-url>' : config.apiEndpoint).replace(/\/$/, '')
   const tokens = data?.tokens ?? []
-  const mcpConfig = buildMcpConfig(baseUrl, projectId)
+  const mcpConfig = buildMcpConfig(baseUrl)
 
   // Whether the user has at least one persona or document selected
   // The SAME rule as the Export card, not an OR over the two sections: the curl
@@ -673,12 +695,14 @@ export default function McpAccessTab({
 
         {showCreateForm ? <CreateTokenForm
           tokenName={tokenName}
-          tokenScope={tokenScope}
+          tokenScopes={tokenScopes}
+          tokenReach={tokenReach}
           tokenExpiry={tokenExpiry}
           isCreating={createMut.isPending}
           error={createMut.error?.message}
           onNameChange={setTokenName}
-          onScopeChange={setTokenScope}
+          onToggleScope={toggleScope}
+          onReachChange={setTokenReach}
           onExpiryChange={setTokenExpiry}
           onSubmit={() => createMut.mutate()}
           onCancel={() => {

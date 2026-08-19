@@ -6,7 +6,6 @@ Separate Lambda to handle projects endpoints and avoid policy size limits.
 import json
 import math
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -34,7 +33,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.persona_import import validate_import_config
-from shared.tokens import hash_token
+from shared import mcp_tokens
 
 from aws_lambda_powertools.event_handler import Response, content_types
 from boto3.dynamodb.conditions import Key
@@ -2334,41 +2333,129 @@ def api_patch_prioritization_scores():
 # ============================================
 # API Token Routes (MCP Access)
 # ============================================
+#
+# The credential format, storage keys and reach vocabulary all live in
+# shared/mcp_tokens.py — this module only handles HTTP concerns (validation,
+# status codes) so the format has exactly one definition.
+#
+# Token rows are NOT in the minting project's partition any more: a credential
+# is workspace-level, and `read_reach` decides how far it sees. The route stays
+# project-shaped because that is where the UI lives, and because a token minted
+# from a project should be visible and revocable there.
 
-TOKEN_PREFIX = 'voc_'
-TOKEN_BYTE_LENGTH = 32
 # Ceiling for an OPTIONAL expires_in_days at mint time. A year, matching the
 # repo's outermost `days` bound (validate_days max_val=365). Omitting the field
-# still mints a non-expiring token — expiry is opt-in until the plan's Phase 1
-# credential model revisits the default.
+# still mints a non-expiring token.
 MAX_TOKEN_LIFETIME_DAYS = 365
+
+
+def _validate_expires_in_days(value: Any) -> str | None:
+    """Turn an optional ``expires_in_days`` into an ISO deadline, or None.
+
+    Absent (or JSON null) = a non-expiring token. When PRESENT it is validated
+    strictly rather than clamped: this is a credential lifetime a human chose,
+    so `validate_int`'s fall-back-to-default contract is wrong here — an
+    unreadable value would silently mint a credential with a lifetime nobody
+    picked. Bools are excluded before int() because isinstance(True, int) is
+    True, and fractional values are refused rather than truncated.
+    """
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not (1 <= value <= MAX_TOKEN_LIFETIME_DAYS)
+    ):
+        raise ValidationError(
+            f'expires_in_days must be an integer between 1 and {MAX_TOKEN_LIFETIME_DAYS}'
+        )
+    return (datetime.now(timezone.utc) + timedelta(days=value)).isoformat()
+
+
+def _validate_scopes(value: Any) -> list[str]:
+    """Validate a requested scope set, defaulting to every read scope.
+
+    No escalation gate is needed *yet* and this is deliberately not pretending
+    to be one: every scope in the current vocabulary is a read, and a read
+    token grants nothing its minter did not already have through the Cognito
+    API (there is no per-project authorization — #241). The gate becomes real
+    in the same change that adds the first write scope, which is why
+    `created_by` is recorded below.
+    """
+    if value is None:
+        return list(mcp_tokens.DEFAULT_SCOPES)
+    if not isinstance(value, list) or not value:
+        raise ValidationError('scopes must be a non-empty array')
+    if not all(isinstance(s, str) for s in value):
+        raise ValidationError('scopes must be an array of strings')
+    unknown = sorted(set(value) - mcp_tokens.VALID_SCOPES)
+    if unknown:
+        raise ValidationError(
+            f'Unknown scope(s): {", ".join(unknown)}. '
+            f'Valid scopes: {", ".join(sorted(mcp_tokens.VALID_SCOPES))}'
+        )
+    # De-duplicated but order-stable, so the stored row reads the way it was asked for.
+    return list(dict.fromkeys(value))
+
+
+def _validate_read_reach(value: Any) -> str:
+    """Validate the read-reach axis, defaulting to workspace.
+
+    ``workspace`` is the default by owner decision — see DEFAULT_READ_REACH for
+    why the platform's read surface is genuinely workspace-shaped. It is not
+    the harmless option, and the UI is responsible for saying so.
+    """
+    if value is None:
+        return mcp_tokens.DEFAULT_READ_REACH
+    if value not in mcp_tokens.VALID_READ_REACHES:
+        raise ValidationError(
+            f'read_reach must be one of: {", ".join(mcp_tokens.VALID_READ_REACHES)}'
+        )
+    return value
+
+
+def _token_response(item: dict) -> dict:
+    """Project a stored token row into the API shape. Never returns the hash."""
+    return {
+        'token_id': item['token_id'],
+        'name': item['name'],
+        'scopes': item.get('scopes', []),
+        'projects': item.get('projects', []),
+        'read_reach': item.get('read_reach', mcp_tokens.DEFAULT_READ_REACH),
+        'created_at': item['created_at'],
+        'last_used_at': item.get('last_used_at'),
+        # Absent on a non-expiring token; surfaced as null and displayed as
+        # "never expires", which is also how mcp_handler enforces it.
+        'expires_at': item.get('expires_at'),
+    }
+
+
+def _query_all_tokens(table) -> list[dict]:
+    """Every token row. One partition, so one Query — see MCP_TOKEN_PK."""
+    response = table.query(
+        KeyConditionExpression=Key('pk').eq(mcp_tokens.MCP_TOKEN_PK)
+    )
+    return response.get('Items', [])
 
 
 @app.get("/projects/<project_id>/api-tokens")
 @tracer.capture_method
 def api_list_tokens(project_id: str):
-    """List all API tokens for a project."""
+    """List the API tokens whose project set includes this project."""
     table = get_projects_table()
     if not table:
         raise ServiceError('Projects table not configured')
 
-    response = table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
-    )
-
-    tokens = []
-    for item in response.get('Items', []):
-        tokens.append({
-            'token_id': item['token_id'],
-            'name': item['name'],
-            'scope': item.get('scope', 'read'),
-            'created_at': item['created_at'],
-            'last_used_at': item.get('last_used_at'),
-            # None for rows minted before expiry existed — displayed as
-            # "never expires", which is also how mcp_handler enforces it.
-            'expires_at': item.get('expires_at'),
-            'project_id': project_id,
-        })
+    # Filtered in Python rather than by a key condition: tokens live in one
+    # partition keyed by token id (so authentication is a single keyed read),
+    # which means "tokens for project X" is a membership test, not a range.
+    # The row count here is human-scale — a handful per project.
+    tokens = [
+        _token_response(item)
+        for item in _query_all_tokens(table)
+        if project_id in item.get('projects', [])
+    ]
+    tokens.sort(key=lambda t: t['created_at'], reverse=True)
 
     return {'success': True, 'tokens': tokens}
 
@@ -2376,75 +2463,68 @@ def api_list_tokens(project_id: str):
 @app.post("/projects/<project_id>/api-tokens")
 @tracer.capture_method
 def api_create_token(project_id: str):
-    """Create a new API token for a project."""
+    """Mint a new MCP credential, scoped to this project for write reach."""
     body = app.current_event.json_body or {}
     name = body.get('name', '').strip()
-    scope = body.get('scope', 'read')
-
     if not name:
         raise ValidationError('Token name is required')
-    if scope not in ('read', 'read-write'):
-        raise ValidationError('Scope must be "read" or "read-write"')
 
-    # Optional expiry. Absent (or JSON null) = a non-expiring token, exactly
-    # what every existing caller gets today. When PRESENT it is validated
-    # strictly rather than clamped: this is a credential lifetime a human
-    # chose, so `validate_int`'s fall-back-to-default contract is wrong here —
-    # an unreadable value would silently mint a credential with a lifetime
-    # nobody picked. Bools are excluded before int() because isinstance(True,
-    # int) is True, and fractional values are refused rather than truncated.
-    expires_in_days = body.get('expires_in_days')
-    expires_at = None
-    if expires_in_days is not None:
-        if (
-            isinstance(expires_in_days, bool)
-            or not isinstance(expires_in_days, int)
-            or not (1 <= expires_in_days <= MAX_TOKEN_LIFETIME_DAYS)
-        ):
-            raise ValidationError(
-                f'expires_in_days must be an integer between 1 and {MAX_TOKEN_LIFETIME_DAYS}'
-            )
-        expires_at = (
-            datetime.now(timezone.utc) + timedelta(days=expires_in_days)
-        ).isoformat()
+    scopes = _validate_scopes(body.get('scopes'))
+    read_reach = _validate_read_reach(body.get('read_reach'))
+    expires_at = _validate_expires_in_days(body.get('expires_in_days'))
+
+    # The project set is always exactly the minting project in this phase. A
+    # multi-project token has no consumer yet: there are no write tools, and
+    # cross-project READING is what `read_reach: workspace` already provides.
+    # Keeping it derived also guarantees every token is visible in the tab it
+    # was minted from, so no credential can become unlistable and therefore
+    # unrevocable through the UI.
+    projects = [project_id]
 
     table = get_projects_table()
     if not table:
         raise ServiceError('Projects table not configured')
 
-    # Verify project exists
     project_resp = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
     if 'Item' not in project_resp:
         raise NotFoundError(f'Project {project_id} not found')
 
-    # Generate secure token
-    raw_token = TOKEN_PREFIX + secrets.token_hex(TOKEN_BYTE_LENGTH)
-    token_id = f'tok_{secrets.token_hex(8)}'
-    now = datetime.now(timezone.utc).isoformat()
-
+    minted = mcp_tokens.mint_token()
     item = {
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'TOKEN#{token_id}',
-        'token_id': token_id,
+        'pk': mcp_tokens.MCP_TOKEN_PK,
+        'sk': mcp_tokens.token_sk(minted.token_id),
+        'token_id': minted.token_id,
         'name': name,
-        'scope': scope,
-        'token_hash': hash_token(raw_token),
-        'created_at': now,
-        'project_id': project_id,
+        # Only the SECRET half is hashed, so token_id stays safe to log.
+        'secret_hash': minted.secret_hash,
+        'scopes': scopes,
+        'projects': projects,
+        'read_reach': read_reach,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        # Audit provenance only. With prioritization excluded from MCP, no tool
+        # keys data or authorization by this value — but it is what a Phase 3
+        # escalation gate and audit trail will need, and it cannot be
+        # reconstructed after the fact.
+        'created_by': get_caller_subject(app.current_event.raw_event),
     }
     if expires_at is not None:
-        # The attribute is simply absent on a non-expiring token — the same
-        # shape as every pre-expiry row, so mcp_handler needs no special case.
+        # Absent attribute on a non-expiring token, so mcp_handler's falsy
+        # check needs no special case.
         item['expires_at'] = expires_at
     table.put_item(Item=item)
 
-    logger.info(f"Created API token {token_id} for project {project_id}")
+    # token_id, never the credential.
+    logger.info(f"Minted MCP token {minted.token_id} for project {project_id}")
 
     return {
         'success': True,
-        'token': raw_token,
-        'token_id': token_id,
+        # The one and only time the raw credential leaves this function.
+        'token': minted.raw,
+        'token_id': minted.token_id,
         'name': name,
+        'scopes': scopes,
+        'projects': projects,
+        'read_reach': read_reach,
         'expires_at': expires_at,
     }
 
@@ -2457,14 +2537,18 @@ def api_delete_token(project_id: str, token_id: str):
     if not table:
         raise ServiceError('Projects table not configured')
 
-    # Verify token exists
-    resp = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'TOKEN#{token_id}'})
-    if 'Item' not in resp:
+    key = {'pk': mcp_tokens.MCP_TOKEN_PK, 'sk': mcp_tokens.token_sk(token_id)}
+    resp = table.get_item(Key=key)
+    item = resp.get('Item')
+    # A token outside this project's set is not revocable through this
+    # project's route — the route stays coherent even though every signed-in
+    # user can reach every project today (#241).
+    if not item or project_id not in item.get('projects', []):
         raise NotFoundError(f'Token {token_id} not found')
 
-    table.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'TOKEN#{token_id}'})
+    table.delete_item(Key=key)
 
-    logger.info(f"Deleted API token {token_id} from project {project_id}")
+    logger.info(f"Revoked MCP token {token_id} from project {project_id}")
 
     return {'success': True, 'message': f'Token {token_id} revoked'}
 

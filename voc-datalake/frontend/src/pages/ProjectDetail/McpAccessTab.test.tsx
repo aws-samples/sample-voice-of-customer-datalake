@@ -110,13 +110,20 @@ async function deselectEverySection(user: ReturnType<typeof userEvent.setup>) {
   throw new Error('Deselect all never stopped appearing — the bulk control is not flipping state')
 }
 
-const mockToken = {
+const mockToken: ApiToken = {
   token_id: 'tok-1',
   name: 'My Kiro token',
-  scope: 'read' as const,
+  scopes: ['feedback:read', 'metrics:read', 'projects:read'],
+  projects: ['proj-123'],
+  read_reach: 'workspace',
   created_at: '2026-03-20T10:00:00Z',
   last_used_at: '2026-03-21T15:00:00Z',
-  project_id: 'proj-123',
+}
+
+/** The payload the form sends when nothing is customised. */
+const DEFAULT_MINT_BODY = {
+  scopes: ['feedback:read', 'metrics:read', 'projects:read'],
+  read_reach: 'workspace',
 }
 
 describe('McpAccessTab', () => {
@@ -152,7 +159,7 @@ describe('McpAccessTab', () => {
     // Expand the collapsible list
     await user.click(screen.getByText('Active Tokens (1)'))
     expect(screen.getByText('My Kiro token')).toBeInTheDocument()
-    expect(screen.getByText('read')).toBeInTheDocument()
+    expect(screen.getByText('Whole workspace')).toBeInTheDocument()
   })
 
   it('shows create form when Generate Token is clicked', async () => {
@@ -160,7 +167,10 @@ describe('McpAccessTab', () => {
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
     expect(screen.getByLabelText('Token name')).toBeInTheDocument()
-    expect(screen.getByLabelText('Scope')).toBeInTheDocument()
+    // Two independent axes, so two controls: scopes (which data) and reach
+    // (how far). One select could not express "write here, read everywhere".
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3)
+    expect(screen.getByLabelText('Read reach')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Generate' })).toBeInTheDocument()
   })
 
@@ -195,7 +205,9 @@ describe('McpAccessTab', () => {
     await waitFor(() => {
       expect(screen.getByText('Token created successfully')).toBeInTheDocument()
     })
-    expect(mockCreateApiToken).toHaveBeenCalledWith('proj-123', { name: 'Test token', scope: 'read' })
+    expect(mockCreateApiToken).toHaveBeenCalledWith('proj-123', {
+      name: 'Test token', ...DEFAULT_MINT_BODY,
+    })
   })
 
   it('hides create form on cancel', async () => {
@@ -222,14 +234,17 @@ describe('McpAccessTab', () => {
     expect(mockDeleteApiToken).toHaveBeenCalledWith('proj-123', 'tok-1')
   })
 
-  it('renders MCP config snippet with project ID', async () => {
+  it('renders an MCP config snippet with no X-Project-Id header', async () => {
     const user = userEvent.setup()
     renderTab()
     expect(screen.getByText('MCP Client Configuration')).toBeInTheDocument()
     // Expand the MCP Client Configuration section
     await user.click(screen.getByText('MCP Client Configuration'))
-    const pre = screen.getByText(/X-Project-Id/)
-    expect(pre).toBeInTheDocument()
+    // The credential resolves itself now, so the snippet carries only the
+    // Authorization header. Leaving X-Project-Id in would have people paste a
+    // contract the server ignores.
+    expect(screen.getByText(/Bearer <YOUR_API_TOKEN>/)).toBeInTheDocument()
+    expect(screen.queryByText(/X-Project-Id/)).not.toBeInTheDocument()
   })
 
   it('copies MCP config to clipboard', async () => {
@@ -296,23 +311,87 @@ describe('McpAccessTab', () => {
     expect(screen.queryByText('Token created successfully')).not.toBeInTheDocument()
   })
 
-  it('allows selecting read-write scope', async () => {
+  it('mints a narrower credential when a scope is unchecked', async () => {
     const user = userEvent.setup()
     mockCreateApiToken.mockResolvedValue({
-      success: true,
-      token: 'voc_rw',
-      token_id: 'tok-rw',
-      name: 'RW token',
+      token: 'voc_tok_aaaaaaaaaaaaaaaa_narrow', token_id: 'tok-narrow', name: 'Narrow',
+      scopes: ['feedback:read', 'metrics:read'], projects: ['proj-123'],
+      read_reach: 'workspace',
     })
     renderTab()
     await user.click(screen.getByRole('button', { name: /Generate Token/i }))
-    await user.type(screen.getByLabelText('Token name'), 'RW token')
-    await user.selectOptions(screen.getByLabelText('Scope'), 'read-write')
+    await user.type(screen.getByLabelText('Token name'), 'Narrow')
+    // Dropping projects:read is the point of per-domain scopes: a credential
+    // that reads feedback without reading anybody's product strategy.
+    await user.click(screen.getByRole('checkbox', { name: /projects:read/ }))
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
     await waitFor(() => {
-      expect(mockCreateApiToken).toHaveBeenCalledWith('proj-123', { name: 'RW token', scope: 'read-write' })
+      expect(mockCreateApiToken).toHaveBeenCalledWith('proj-123', {
+        name: 'Narrow',
+        scopes: ['feedback:read', 'metrics:read'],
+        read_reach: 'workspace',
+      })
     })
+  })
+
+  it('mints a sealed credential when the reach is narrowed', async () => {
+    const user = userEvent.setup()
+    mockCreateApiToken.mockResolvedValue({
+      token: 'voc_tok_bbbbbbbbbbbbbbbb_sealed', token_id: 'tok-sealed', name: 'Sealed',
+      scopes: ['feedback:read', 'metrics:read', 'projects:read'],
+      projects: ['proj-123'], read_reach: 'project-set',
+    })
+    renderTab()
+    await user.click(screen.getByRole('button', { name: /Generate Token/i }))
+    await user.type(screen.getByLabelText('Token name'), 'Sealed')
+    await user.selectOptions(screen.getByLabelText('Read reach'), 'project-set')
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+
+    await waitFor(() => {
+      expect(mockCreateApiToken).toHaveBeenCalledWith('proj-123', {
+        name: 'Sealed', ...DEFAULT_MINT_BODY, read_reach: 'project-set',
+      })
+    })
+  })
+
+  it('cannot submit with every scope unchecked', async () => {
+    const user = userEvent.setup()
+    renderTab()
+    await user.click(screen.getByRole('button', { name: /Generate Token/i }))
+    await user.type(screen.getByLabelText('Token name'), 'Empty')
+    for (const scope of ['feedback:read', 'metrics:read', 'projects:read']) {
+      await user.click(screen.getByRole('checkbox', { name: new RegExp(scope) }))
+    }
+    // The backend refuses an empty scope set (a credential granting nothing is
+    // not worth minting), so the form must not send one to fail.
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+    expect(mockCreateApiToken).not.toHaveBeenCalled()
+  })
+
+  it('says out loud that the default reach is workspace-wide', async () => {
+    const user = userEvent.setup()
+    renderTab()
+    await user.click(screen.getByRole('button', { name: /Generate Token/i }))
+    // The default is the WIDEST option, so the form has to say so rather than
+    // presenting the choices as equivalent. This is the UI half of the owner's
+    // read-reach decision.
+    expect(screen.getByLabelText('Read reach')).toHaveValue('workspace')
+    expect(screen.getByText(/every project/i)).toBeInTheDocument()
+  })
+
+  it('badges a workspace-reach token in the list', async () => {
+    const user = userEvent.setup()
+    mockListApiTokens.mockResolvedValue({ tokens: [mockToken] })
+    renderTab()
+    await waitFor(() => {
+      expect(screen.getByText('Active Tokens (1)')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('Active Tokens (1)'))
+    // The list is where someone notices a credential reaches further than they
+    // assumed, so the reach is shown per row, not only at mint time.
+    expect(screen.getByText('Whole workspace')).toBeInTheDocument()
+    expect(screen.getByText(/feedback:read/)).toBeInTheDocument()
   })
 
   it('shows last used date when available', async () => {
@@ -471,7 +550,7 @@ describe('token expiry', () => {
     })
     expect(mockCreateApiToken).toHaveBeenCalledWith('proj-123', {
       name: 'Expiring token',
-      scope: 'read',
+      ...DEFAULT_MINT_BODY,
       expires_in_days: 30,
     })
     // The banner names the deadline of THE credential just minted.

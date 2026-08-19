@@ -253,15 +253,33 @@
     "noTokensYet": "No API tokens yet",
     "revealToken": "Reveal token",
     "revokeToken": "Revoke token",
-    "scope": "Scope",
-    "scopeRead": "Read only — search feedback, view metrics",
-    "scopeReadWrite": "Read & write — includes chat and document generation",
     "title": "MCP Access",
     "tokenCreated": "Token created successfully",
     "tokenExpiresOn": "This token expires on {{date}}.",
     "tokenName": "Token name",
     "tokenNamePlaceholder": "e.g. My Kiro token",
-    "tokenPasteHint": "Paste this token into the <code>Authorization</code> header of your mcp.json or autoseed curl command."
+    "tokenPasteHint": "Paste this token into the <code>Authorization</code> header of your mcp.json or autoseed curl command.",
+    "scopes": "Scopes",
+    "scopeDesc": {
+      "feedback:read": "Search and read customer feedback",
+      "metrics:read": "Read dashboards and metric breakdowns",
+      "projects:read": "Read projects, personas and documents"
+    },
+    "noScopes": "no scopes",
+    "readReach": "Read reach",
+    "reachOption": {
+      "workspace": "Whole workspace (default)",
+      "project-set": "This project only"
+    },
+    "reachHint": {
+      "workspace": "Reaches every project in the workspace — including other projects’ unreleased documents — and all customer feedback.",
+      "project-set": "Limited to this project. Cannot read the feedback corpus or workspace metrics, which are not project-scoped."
+    },
+    "reachBadge": {
+      "workspace": "Whole workspace",
+      "project-set": "This project",
+      "none": "No read access"
+    }
   },
   "notFound": {
     "backToProjects": "Back to Projects",

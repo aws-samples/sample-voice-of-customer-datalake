@@ -253,15 +253,33 @@
     "noTokensYet": "暂无 API 令牌",
     "revealToken": "显示令牌",
     "revokeToken": "撤销令牌",
-    "scope": "权限范围",
-    "scopeRead": "仅读取 — 搜索反馈、查看指标",
-    "scopeReadWrite": "读写 — 包括聊天和文档生成",
     "title": "MCP 访问",
     "tokenCreated": "令牌创建成功",
     "tokenExpiresOn": "此令牌将于 {{date}} 到期。",
     "tokenName": "令牌名称",
     "tokenNamePlaceholder": "例如 My Kiro token",
-    "tokenPasteHint": "将此令牌粘贴到 mcp.json 或 autoseed curl 命令的 <code>Authorization</code> 标头中。"
+    "tokenPasteHint": "将此令牌粘贴到 mcp.json 或 autoseed curl 命令的 <code>Authorization</code> 标头中。",
+    "scopes": "权限范围",
+    "scopeDesc": {
+      "feedback:read": "搜索和查看客户反馈",
+      "metrics:read": "查看仪表板和指标细分",
+      "projects:read": "查看项目、用户画像和文档"
+    },
+    "noScopes": "无权限范围",
+    "readReach": "读取范围",
+    "reachOption": {
+      "workspace": "整个工作区（默认）",
+      "project-set": "仅此项目"
+    },
+    "reachHint": {
+      "workspace": "可访问工作区中的所有项目（包括其他项目未发布的文档）以及全部客户反馈。",
+      "project-set": "仅限此项目。无法读取并非按项目划分的反馈全集和工作区指标。"
+    },
+    "reachBadge": {
+      "workspace": "整个工作区",
+      "project-set": "此项目",
+      "none": "无读取权限"
+    }
   },
   "notFound": {
     "backToProjects": "返回项目",
