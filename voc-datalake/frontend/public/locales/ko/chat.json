@@ -4,6 +4,7 @@
   "configureEndpoint": "AI 채팅을 사용하려면 설정에서 API 엔드포인트를 구성해 주세요",
   "copyMessage": "메시지 복사",
   "emptyState": "고객 피드백에 대한 대화를 시작하세요",
+  "errorPrefix": "오류: {{message}}",
   "export": {
     "copied": "복사됨!",
     "copyConversation": "대화 복사",
@@ -24,6 +25,7 @@
     "reasoning": "추론",
     "relatedFeedback": "관련 피드백:"
   },
+  "messageTooLong": "메시지가 너무 깁니다. {{max}}자 이내로 줄여 주세요.",
   "showHistory": "기록 보기",
   "sidebar": {
     "clearAll": "모든 대화 삭제",

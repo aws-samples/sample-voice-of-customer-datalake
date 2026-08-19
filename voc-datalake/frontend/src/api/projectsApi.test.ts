@@ -155,7 +155,8 @@ describe('projectsApi', () => {
 
   describe('generatePersonas', () => {
     it('sends POST request to generate personas', async () => {
-      const mockResponse = { success: true, personas: [{ persona_id: 'per1', name: 'Power User' }] }
+      // The route is async: it answers with a job id, not with personas.
+      const mockResponse = { success: true, job_id: 'job1', status: 'running', message: 'Persona generation started.' }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
@@ -184,7 +185,7 @@ describe('projectsApi', () => {
       }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ success: true, personas: [] }),
+        json: () => Promise.resolve({ success: true, job_id: 'job1', status: 'running', message: '' }),
       })
 
       await projectsApi.generatePersonas('p1', filters)
@@ -262,8 +263,11 @@ describe('projectsApi', () => {
   })
 
   describe('importPersona', () => {
-    it('sends POST request with PDF import data', async () => {
-      const data = { input_type: 'pdf' as const, content: 'base64content', media_type: 'application/pdf' }
+    // Was a PDF import. PDF is no longer an accepted input_type — the API refuses
+    // it because nothing extracts PDF text — so this exercises the same
+    // file-plus-media_type shape with the type that IS supported.
+    it('sends POST request with image import data', async () => {
+      const data = { input_type: 'image' as const, content: 'base64content', media_type: 'image/png' }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ success: true, job_id: 'job1', status: 'processing' }),

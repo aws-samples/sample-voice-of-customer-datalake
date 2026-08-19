@@ -4,6 +4,7 @@
   "configureEndpoint": "AIチャットを使用するには、設定でAPIエンドポイントを構成してください",
   "copyMessage": "メッセージをコピー",
   "emptyState": "カスタマーフィードバックについての会話を始めましょう",
+  "errorPrefix": "エラー: {{message}}",
   "export": {
     "copied": "コピーしました！",
     "copyConversation": "会話をコピー",
@@ -24,6 +25,7 @@
     "reasoning": "推論",
     "relatedFeedback": "関連フィードバック:"
   },
+  "messageTooLong": "メッセージが長すぎます。{{max}} 文字以内に短くしてください。",
   "showHistory": "履歴を表示",
   "sidebar": {
     "clearAll": "すべての会話をクリア",

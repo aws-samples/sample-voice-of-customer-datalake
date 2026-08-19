@@ -584,7 +584,7 @@ class TestQueryFeedbackByDate:
 
     def test_days_capped_at_max_lookback(self):
         """Days parameter is capped at MAX_LOOKBACK_DAYS."""
-        from shared.feedback import query_feedback_by_date, MAX_LOOKBACK_DAYS
+        from shared.feedback import MAX_LOOKBACK_DAYS, query_feedback_by_date
 
         mock_table = MagicMock()
         mock_table.query.return_value = {'Items': []}
@@ -595,8 +595,9 @@ class TestQueryFeedbackByDate:
 
     def test_gsi2_category_query_filters_by_date_range(self):
         """GSI2 category queries filter out items outside the date range."""
-        from shared.feedback import query_feedback_by_date
         from datetime import datetime, timezone
+
+        from shared.feedback import query_feedback_by_date
 
         mock_table = MagicMock()
         today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -810,6 +811,7 @@ class TestWindowHelpers:
 
     def test_window_cutoff_is_days_long_ending_today(self):
         from datetime import datetime, timedelta, timezone
+
         from shared.feedback import window_cutoff
 
         now = datetime.now(timezone.utc)
@@ -828,3 +830,262 @@ class TestWindowHelpers:
 
         item = {'date': '2026-07-14', 'source_created_at': '2025-01-02T10:00:00Z'}
         assert basis_date(item, 'review') == '2025-01-02'
+
+
+def _item(idx, text_len=600):
+    """Feedback item whose original_text is text_len chars."""
+    prefix = f'Review {idx}: '
+    return {
+        'feedback_id': f'fb-{idx}',
+        'source_platform': 'test',
+        'original_text': prefix + 'x' * (text_len - len(prefix)),
+        'sentiment_label': 'positive',
+        'sentiment_score': 0.5,
+        'source_created_at': '2025-01-01T00:00:00',
+    }
+
+
+class TestTruncateFeedbackContext:
+    """The context budget helpers (issue #231).
+
+    These are the shared definition of "how much corpus fits and how much of it
+    survived", so the persona path, the prompt builder, and any future caller
+    cannot disagree. Before this, three independent caps each sliced the corpus
+    and none reported doing it.
+    """
+
+    def test_a_context_within_budget_is_returned_untouched(self):
+        from shared.feedback import format_feedback_for_llm, truncate_feedback_context
+
+        context = format_feedback_for_llm([_item(i) for i in range(5)])
+        result, used, truncated = truncate_feedback_context(context, len(context) + 1)
+        assert result == context
+        assert used == 5
+        assert truncated is False
+
+    def test_truncation_cuts_on_a_record_boundary(self):
+        """A partial record is data the model may treat as real.
+
+        Slicing at an arbitrary offset can leave an unterminated
+        `- Full Text: "…` or a label with no value, so cut back to the last
+        complete record instead.
+        """
+        from shared.feedback import format_feedback_for_llm, truncate_feedback_context
+
+        context = format_feedback_for_llm([_item(i) for i in range(20)])
+        # A budget deliberately landing mid-record: verify the fixture really
+        # does split a record, so a passing test means the cutback worked rather
+        # than that the boundary happened to align.
+        budget = len(context) // 2 + 37
+        assert not context[:budget].endswith('\n'), 'fixture must cut mid-line'
+
+        result, used, truncated = truncate_feedback_context(context, budget)
+
+        assert truncated is True
+        assert 0 < used < 20
+
+        body = result.split('\n\n[... additional feedback truncated ...]')[0]
+        # The exact property: what survives is a PREFIX of the original ending
+        # on a record boundary, so the next thing in the original is a new
+        # record header rather than the middle of the one we kept.
+        assert context.startswith(body), 'truncation must not alter the kept text'
+        assert context[len(body):].startswith('\n### Review '), (
+            'context does not end on a record boundary — the model would '
+            'receive a partial review'
+        )
+        # Whole records only, so the reported count is exact rather than an
+        # estimate that includes a fragment.
+        assert body.count('### Review ') == used
+
+    def test_reported_count_matches_what_survived(self):
+        from shared.feedback import (
+            count_feedback_records,
+            format_feedback_for_llm,
+            truncate_feedback_context,
+        )
+
+        context = format_feedback_for_llm([_item(i) for i in range(30)])
+        result, used, _ = truncate_feedback_context(context, len(context) // 3)
+        assert count_feedback_records(result) == used
+
+    def test_a_non_positive_budget_means_no_limit(self):
+        from shared.feedback import format_feedback_for_llm, truncate_feedback_context
+
+        context = format_feedback_for_llm([_item(i) for i in range(3)])
+        for budget in (0, -1):
+            result, used, truncated = truncate_feedback_context(context, budget)
+            assert result == context
+            assert used == 3
+            assert truncated is False
+
+    def test_a_budget_below_one_record_keeps_the_partial_head(self):
+        """Degenerate but must not return an empty context.
+
+        With no boundary to fall back to there is nothing whole to keep, so the
+        head survives — and `truncated` still reports the loss.
+        """
+        from shared.feedback import format_feedback_for_llm, truncate_feedback_context
+
+        context = format_feedback_for_llm([_item(i) for i in range(4)])
+        result, _, truncated = truncate_feedback_context(context, 100)
+        assert truncated is True
+        assert len(result) > 0
+
+
+class TestFeedbackBudgetDerivation:
+    """The item limit and the char budget must be derived from one measurement.
+
+    Chosen independently they drift: a 500-item limit against a 200 000-char cap
+    meant any corpus past ~245 items truncated on the DEFAULT path, discarding
+    more than half of what had just been read, while reporting nothing.
+    """
+
+    def test_a_full_corpus_at_the_derived_limit_fits_the_budget(self):
+        from shared.feedback import (
+            feedback_char_budget,
+            feedback_item_limit,
+            format_feedback_for_llm,
+        )
+
+        budget = feedback_char_budget()
+        limit = feedback_item_limit(budget)
+        corpus = [_item(i) for i in range(limit)]
+        assert len(format_feedback_for_llm(corpus)) <= budget
+
+    def test_the_per_item_estimate_bounds_the_richest_record(self):
+        """Every optional field present is the worst case the limit must cover."""
+        from shared.feedback import FEEDBACK_CHARS_PER_ITEM_MAX, format_feedback_for_llm
+
+        richest = {
+            **_item(0),
+            'direct_customer_quote': 'q' * 500,
+            'problem_summary': 's' * 500,
+            'problem_root_cause_hypothesis': 'r' * 500,
+            'persona_type': 'power_user',
+            'journey_stage': 'usage',
+        }
+        assert len(format_feedback_for_llm([richest])) <= FEEDBACK_CHARS_PER_ITEM_MAX
+
+    def test_budget_scales_with_the_context_window(self):
+        """Derived from the model, so a smaller-window model gets less."""
+        from shared.feedback import feedback_char_budget
+
+        assert feedback_char_budget(window_tokens=400_000) > feedback_char_budget()
+        assert feedback_char_budget(window_tokens=100_000) < feedback_char_budget()
+
+    def test_a_window_smaller_than_the_overhead_yields_no_budget(self):
+        """Never returns a negative budget, which would slice to nothing."""
+        from shared.feedback import CONTEXT_OVERHEAD_TOKENS, feedback_char_budget
+
+        assert feedback_char_budget(window_tokens=CONTEXT_OVERHEAD_TOKENS // 2) == 0
+
+    def test_the_item_limit_is_never_zero(self):
+        """A tiny budget still fetches one item rather than none."""
+        from shared.feedback import feedback_item_limit
+
+        assert feedback_item_limit(0) == 1
+        assert feedback_item_limit(10) == 1
+
+
+class TestPerFieldClippingIsReported:
+    """A cap that fires without saying so is the defect #231 is about.
+
+    ``format_feedback_for_llm`` clips the LLM-generated enrichment fields so
+    ``FEEDBACK_CHARS_PER_ITEM_MAX`` is a real bound and the item limit can be
+    derived from the character budget. But this formatter is shared — the
+    research step handler and every helper in projects.py call it — and those
+    callers get no ``context_truncated`` equivalent. The warning is their signal,
+    so it is asserted here rather than assumed.
+    """
+
+    @staticmethod
+    def _clip_warnings(caplog):
+        return [
+            r for r in caplog.records
+            if 'clipped text out of the LLM context' in r.getMessage()
+        ]
+
+    def test_a_clipped_enrichment_field_is_reported_with_its_name_and_count(self, caplog):
+        import logging
+
+        from shared.feedback import MAX_ENRICHMENT_FIELD_CHARS, format_feedback_for_llm
+
+        items = [
+            {**_item(i), 'problem_summary': 's' * (MAX_ENRICHMENT_FIELD_CHARS + 1)}
+            for i in range(3)
+        ]
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm(items)
+
+        warnings = self._clip_warnings(caplog)
+        assert warnings, 'clipping happened and nothing reported it'
+        assert warnings[0].clipped_fields == {'problem_summary': 3}, (
+            'the report must name the field and how many records it clipped, so '
+            'a caller can tell one verbose record from a systematic cap'
+        )
+
+    def test_nothing_is_reported_when_nothing_was_clipped(self, caplog):
+        """The control. Without it the assertion above could pass on a warning
+        this formatter always emits, rather than on the cap under test."""
+        import logging
+
+        from shared.feedback import format_feedback_for_llm
+
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm([{**_item(i), 'problem_summary': 'short'}
+                                     for i in range(3)])
+
+        assert self._clip_warnings(caplog) == []
+
+    def test_a_field_exactly_at_the_cap_is_not_reported(self, caplog):
+        """Off-by-one: at the cap nothing is lost, so nothing should be claimed."""
+        import logging
+
+        from shared.feedback import MAX_ENRICHMENT_FIELD_CHARS, format_feedback_for_llm
+
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm(
+                [{**_item(0), 'problem_summary': 's' * MAX_ENRICHMENT_FIELD_CHARS}]
+            )
+
+        assert self._clip_warnings(caplog) == []
+
+    def test_the_original_text_cap_is_reported_too(self, caplog):
+        """It predates this change and is the largest per-record loss.
+
+        Counted but deliberately not altered: adding an ellipsis there would
+        change what the model receives, while counting only makes the existing
+        loss visible.
+        """
+        import logging
+
+        from shared.feedback import MAX_ORIGINAL_TEXT_CHARS, format_feedback_for_llm
+
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm([_item(0, text_len=MAX_ORIGINAL_TEXT_CHARS + 50)])
+
+        warnings = self._clip_warnings(caplog)
+        assert warnings, 'the original_text cap fired and nothing reported it'
+        assert warnings[0].clipped_fields == {'original_text': 1}
+
+    def test_every_clipped_field_appears_in_one_report(self, caplog):
+        import logging
+
+        from shared.feedback import MAX_ENRICHMENT_FIELD_CHARS, format_feedback_for_llm
+
+        long = 'x' * (MAX_ENRICHMENT_FIELD_CHARS + 1)
+        with caplog.at_level(logging.WARNING, logger='shared.feedback'):
+            format_feedback_for_llm([{
+                **_item(0),
+                'problem_summary': long,
+                'direct_customer_quote': long,
+                'problem_root_cause_hypothesis': long,
+            }])
+
+        warnings = self._clip_warnings(caplog)
+        assert len(warnings) == 1, 'one report per call, not one per field'
+        assert warnings[0].clipped_fields == {
+            'direct_customer_quote': 1,
+            'problem_summary': 1,
+            'problem_root_cause_hypothesis': 1,
+        }

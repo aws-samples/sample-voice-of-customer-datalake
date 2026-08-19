@@ -60,6 +60,13 @@ MODEL_SETTINGS_SK = "config"
 #                       separate set below: keeping both capability flags as
 #                       data on the same row is what stops a newly added model
 #                       from landing in one set and not the other.
+#   context_window    — input context window in tokens. Read by
+#                       context_window_tokens() so callers that assemble large
+#                       prompts can derive a character budget from the model
+#                       actually resolved for their surface instead of assuming
+#                       one (issue #231). A literal budget tuned for 200 K
+#                       tokens overflows a smaller-window model as a hard
+#                       Bedrock ValidationException.
 ALLOWED_MODELS = [
     {
         "key": "sonnet5",
@@ -68,6 +75,7 @@ ALLOWED_MODELS = [
         "description": "Latest, highest-quality Sonnet — best for analysis and generation",
         "omit_temperature": True,
         "adaptive_thinking": True,
+        "context_window": 200_000,
     },
     {
         "key": "sonnet46",
@@ -78,6 +86,7 @@ ALLOWED_MODELS = [
         # Manual extended thinking is deprecated here but still accepted; only
         # Opus 4.7+ and Sonnet 5 hard-reject it.
         "adaptive_thinking": False,
+        "context_window": 200_000,
     },
     {
         "key": "opus5",
@@ -86,6 +95,7 @@ ALLOWED_MODELS = [
         "description": "Deepest reasoning — best for prototypes and complex documents",
         "omit_temperature": True,
         "adaptive_thinking": True,
+        "context_window": 200_000,
     },
     {
         "key": "opus48",
@@ -94,6 +104,7 @@ ALLOWED_MODELS = [
         "description": "Previous-generation Opus — also the automatic fallback when Opus 5 declines a request",
         "omit_temperature": True,
         "adaptive_thinking": True,
+        "context_window": 200_000,
     },
     {
         "key": "haiku45",
@@ -102,6 +113,7 @@ ALLOWED_MODELS = [
         "description": "Fastest and cheapest — good for high-volume enrichment",
         "omit_temperature": False,
         "adaptive_thinking": False,
+        "context_window": 200_000,
     },
 ]
 ALLOWED_MODEL_IDS = {m["id"] for m in ALLOWED_MODELS}
@@ -110,6 +122,13 @@ ALLOWED_MODEL_IDS = {m["id"] for m in ALLOWED_MODELS}
 # to one and forgotten in the other.
 _OMIT_TEMPERATURE_IDS = {m["id"] for m in ALLOWED_MODELS if m["omit_temperature"]}
 _ADAPTIVE_THINKING_IDS = {m["id"] for m in ALLOWED_MODELS if m["adaptive_thinking"]}
+_CONTEXT_WINDOWS = {m["id"]: m["context_window"] for m in ALLOWED_MODELS}
+
+# Window assumed for a model ID that is not in the allowlist — i.e. a legacy
+# BEDROCK_MODEL_ID value, or an override written before an allowlist change.
+# The smallest window any allowlisted model has, so an unknown model is assumed
+# no roomier than the narrowest known one rather than the widest.
+FALLBACK_CONTEXT_WINDOW_TOKENS = min(_CONTEXT_WINDOWS.values())
 
 # Short aliases for the surface-default table below.
 _SONNET5 = "global.anthropic.claude-sonnet-5"
@@ -153,6 +172,31 @@ def uses_adaptive_thinking(model_id: str) -> bool:
     """True when the model runs adaptive thinking always-on and rejects an
     explicit extended-thinking budget (skip the `thinking` request field)."""
     return model_id in _ADAPTIVE_THINKING_IDS
+
+
+def context_window_tokens(model_id: str) -> int:
+    """Input context window, in tokens, for a model ID. Never raises.
+
+    Unknown IDs get FALLBACK_CONTEXT_WINDOW_TOKENS — the narrowest allowlisted
+    window — so a caller sizing a prompt against an unrecognised model
+    under-fills rather than overflowing it.
+    """
+    return _CONTEXT_WINDOWS.get(model_id, FALLBACK_CONTEXT_WINDOW_TOKENS)
+
+
+def surface_context_window_tokens(surface: str) -> int:
+    """Context window of the model currently resolved for ``surface``.
+
+    Wraps get_active_model_id so a prompt-assembling caller gets a budget that
+    follows the admin's runtime model choice. Falls back to the narrowest
+    allowlisted window if resolution fails for any reason — sizing a prompt
+    must never be the thing that breaks an inference path.
+    """
+    try:
+        return context_window_tokens(get_active_model_id(surface))
+    except Exception as e:  # noqa: BLE001 - budget sizing must never raise
+        logger.warning(f"Could not resolve model for surface '{surface}': {e}")
+        return FALLBACK_CONTEXT_WINDOW_TOKENS
 
 
 # --- Per-container cache -----------------------------------------------------

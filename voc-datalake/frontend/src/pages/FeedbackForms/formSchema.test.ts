@@ -91,6 +91,35 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     expect(form).toMatchObject({ brand_name: 'Acme', future_field: { nested: true } })
   })
 
+  it('defaults the validation link to unlinked on a record that predates it', () => {
+    // The schema declares project_id/document_id rather than leaving them to
+    // the loose object's passthrough, so a form persisted before the link
+    // existed reads as deliberately unlinked instead of undefined — which is
+    // what the editor's controlled selects need.
+    const form = normalizeFeedbackForm(sparseForm)
+
+    expect(form.project_id).toBe('')
+    expect(form.document_id).toBe('')
+  })
+
+  it('preserves a stored validation link so the editor can round-trip it', () => {
+    const form = normalizeFeedbackForm({
+      ...sparseForm,
+      project_id: 'proj_1',
+      document_id: 'doc_prfaq',
+    })
+
+    expect(form.project_id).toBe('proj_1')
+    expect(form.document_id).toBe('doc_prfaq')
+  })
+
+  it('degrades a wrong-typed validation link to unlinked, not to a crash', () => {
+    const form = normalizeFeedbackForm({ ...sparseForm, project_id: 7, document_id: null })
+
+    expect(form.project_id).toBe('')
+    expect(form.document_id).toBe('')
+  })
+
   it('keeps a complete record unchanged', () => {
     const complete: FeedbackForm = {
       ...defaultFormConfig,
@@ -99,6 +128,10 @@ describe('normalizeFeedbackForm (issue #171)', () => {
       enabled: true,
       category: 'delivery',
       subcategory: 'late',
+      // Complete means complete: the schema fills these in when absent, so a
+      // record omitting them is not what this test claims to cover.
+      project_id: 'proj_1',
+      document_id: 'doc_1',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-02-01T00:00:00Z',
       theme: { primary_color: '#111111', background_color: '#222222', text_color: '#333333', border_radius: '4px' },

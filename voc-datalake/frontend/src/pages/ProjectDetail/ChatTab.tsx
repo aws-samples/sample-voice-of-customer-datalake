@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStreamChat } from '../../hooks/useStreamChat'
+import { resolvePersonaSelection } from './personaSelection'
 import { useProjectChatStore } from '../../store/projectChatStore'
 import {
   ChatMessageBubble,
@@ -24,6 +25,7 @@ import {
   buildApiAttachments,
   ACCEPTED_TYPES,
 } from './chatTabHooks'
+import { buildHistory } from '../../constants/chat'
 import type {
   ChatMessage, ActivePersonaInfo,
 } from './ChatBubbles'
@@ -150,6 +152,8 @@ function ChatInputSection({
             onClick={handleSend}
             disabled={!hasInput}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700"
+            title={t('chat.send')}
+            aria-label={t('chat.send')}
           >
             <Send size={18} />
           </button>
@@ -162,6 +166,56 @@ function ChatInputSection({
 // ── Main component ──
 
 const EMPTY_MESSAGES: ChatMessage[] = []
+
+/**
+ * Turn a stored message into a history entry, keeping persona attribution.
+ *
+ * Roundtable mode stores one assistant message *per persona*, and
+ * `buildHistory` merges that run into the single logical turn it represents.
+ * Merging the bodies alone would hand the model one turn in which several
+ * personas speak with one voice: a roundtable exists to surface disagreement,
+ * so "raise the price" and "keep it flat" merged unattributed reads as a single
+ * speaker contradicting itself, and a follow-up like "what did Priya think?"
+ * has nothing to work from.
+ *
+ * The store already holds the name (`buildRoundtableMessages` sets
+ * `activePersona`), so prefixing it here makes the merged turn read as a
+ * transcript. This is deliberately done at the call site rather than inside
+ * `buildHistory`: the builder stays concerned only with *shape*, and knows
+ * nothing about personas.
+ *
+ * Only assistant messages are prefixed — a user turn has no persona. What is
+ * left unchanged is a reply with *no* persona: a VOC-style answer, or any stored
+ * message from before attribution existed. A reply attributed to a *single*
+ * persona IS prefixed, and that is intended — an ordinary `@Priya …` mention
+ * takes the non-roundtable branch, where `handleSend` still calls
+ * `resolveActivePersona` and `chatFinalize` stores the result, so the name is
+ * present and reaches the model on the next send.
+ *
+ * Known residue, pre-existing and not fixed here: two personas mentioned
+ * individually (rather than via `@all`) is still non-roundtable, and
+ * `resolveActivePersona` keeps only `selectedPersonaIds[0]`, so both replies end
+ * up attributed to the first persona.
+ *
+ * The prefix costs `name.length + 2` characters against *both* server budgets —
+ * the per-turn ceiling (`MAX_HISTORY_CONTENT_LENGTH`, enforced by
+ * `truncateEntry`) and the aggregate one (`MAX_HISTORY_TOTAL_LENGTH`), where it
+ * can shift which turns survive the walk. It is also NOT idempotent: a second
+ * pass yields `Priya, CFO: Priya, CFO: …`. Both are why this must stay a
+ * send-time transform on a local copy and must never be written back to the
+ * store.
+ */
+function toHistoryEntry(message: ChatMessage): {
+  role: 'user' | 'assistant';
+  content: string
+} {
+  const personaName = message.activePersona?.name
+  const attribute = message.role === 'assistant' && personaName != null && personaName !== ''
+  return {
+    role: message.role,
+    content: attribute ? `${personaName}: ${message.content}` : message.content,
+  }
+}
 
 export default function ChatTab({
   projectId, personas, documents, onSaveAsDocument, onDocumentChanged,
@@ -212,17 +266,15 @@ export default function ChatTab({
     onDocumentChanged,
   })
 
-  const resolvePersonaIds = useCallback((input: string) => {
-    const hasAtAll = /(?:^|\s)@all(?:\s|$)/i.test(input)
-    const roundtable = mentions.isRoundtable || (hasAtAll && personas.length >= 2)
-    const ids = roundtable && mentions.selectedPersonaIds.length === 0
-      ? personas.map((p) => p.persona_id)
-      : mentions.selectedPersonaIds
-    return {
-      isRoundtable: roundtable,
-      selectedPersonaIds: ids,
-    }
-  }, [mentions.isRoundtable, mentions.selectedPersonaIds, personas])
+  // The `@all` expansion is clamped to what the stream Lambda accepts — see
+  // resolvePersonaSelection. Known residue: when it clamps, the UI does not say
+  // so, because MentionContextBar renders nothing for the @all case.
+  const resolvePersonaIds = useCallback((input: string) => resolvePersonaSelection(
+    input,
+    personas.map((p) => p.persona_id),
+    mentions.selectedPersonaIds,
+    mentions.isRoundtable,
+  ), [mentions.isRoundtable, mentions.selectedPersonaIds, personas])
 
   const handleSend = useCallback(() => {
     if (chatInput.trim() === '' || isStreaming) return
@@ -246,10 +298,12 @@ export default function ChatTab({
     })
     setCurrentActivePersona(isRoundtable ? undefined : resolveActivePersona(personas, selectedPersonaIds))
 
-    const history = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }))
+    // buildHistory caps the payload to the server-side window and repairs the
+    // shape Bedrock requires.  Roundtable mode stores one assistant message per
+    // persona, so the assistant-run merge matters here — and `toHistoryEntry`
+    // keeps each persona's name on its contribution so the merged turn reads as
+    // a transcript rather than one self-contradicting voice.
+    const history = buildHistory(messages.map(toHistoryEntry))
     void sendStreamMessage(chatInput, {
       projectId,
       selectedPersonas: selectedPersonaIds,

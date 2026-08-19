@@ -10,13 +10,13 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
-import { uniqueName } from '../utils/naming';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
 import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
 
-export interface VocProcessingStackProps extends cdk.StackProps {
+export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
   projectsTable: dynamodb.Table;
@@ -48,7 +48,7 @@ export interface VocProcessingStackProps extends cdk.StackProps {
  * - Research Step Functions workflow
  * - Research step Lambda
  */
-export class VocProcessingStack extends cdk.Stack {
+export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
   public readonly aggregationLambda: lambda.Function;
   public readonly researchStateMachine: sfn.StateMachine;
@@ -120,7 +120,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
-      functionName: uniqueName('voc-feedback-processor'),
+      functionName: this.uniqueName('voc-feedback-processor'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -143,7 +143,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ProcessorLogs', {
-        logGroupName: uniqueName('/aws/lambda/voc-feedback-processor'),
+        logGroupName: this.uniqueName('/aws/lambda/voc-feedback-processor'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -170,7 +170,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
-      functionName: uniqueName('voc-aggregation-processor'),
+      functionName: this.uniqueName('voc-aggregation-processor'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -185,7 +185,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'AggregatorLogs', {
-        logGroupName: uniqueName('/aws/lambda/voc-aggregation-processor'),
+        logGroupName: this.uniqueName('/aws/lambda/voc-aggregation-processor'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -251,7 +251,7 @@ export class VocProcessingStack extends cdk.Stack {
     });
 
     const researchStepLambda = new lambda.Function(this, 'ResearchStepLambda', {
-      functionName: uniqueName('voc-research-step'),
+      functionName: this.uniqueName('voc-research-step'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'research_step_handler.lambda_handler',
@@ -271,7 +271,7 @@ export class VocProcessingStack extends cdk.Stack {
       },
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ResearchStepLogs', {
-        logGroupName: uniqueName('/aws/lambda/voc-research-step'),
+        logGroupName: this.uniqueName('/aws/lambda/voc-research-step'),
         retention: logs.RetentionDays.TWO_WEEKS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -279,7 +279,7 @@ export class VocProcessingStack extends cdk.Stack {
 
     // Step Functions workflow
     this.researchStateMachine = this.createResearchStateMachine(researchStepLambda);
-    NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions, true);
+    NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions(this.deploymentPrefix), true);
 
     // ============================================
     // WEB SEARCH (AgentCore Gateway — see VocWebSearchStack)
@@ -335,6 +335,13 @@ export class VocProcessingStack extends cdk.Stack {
         'web_search_queries.$': '$.Payload.web_search_queries',
         // Always returned by step_initialize ('' when unused) — see #157.
         'documents_context.$': '$.Payload.documents_context',
+        // What the report was built from (reference documents actually used,
+        // how many were selected, feedback count, persona ids). step_initialize
+        // is the only step that reads those inputs, and step_save is what
+        // persists them, so it rides the state like web_search_queries does.
+        // ALWAYS returned by step_initialize (empty when nothing was selected)
+        // — an absent key here would fail the state outright.
+        'derivation.$': '$.Payload.derivation',
       },
     });
     initializeStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
@@ -400,6 +407,8 @@ export class VocProcessingStack extends cdk.Stack {
         'feedback_count.$': '$.initialize_result.feedback_count',
         // Executed web-search queries for the report disclosure (#207).
         'web_search_queries.$': '$.initialize_result.web_search_queries',
+        // Provenance decided at initialize, persisted on the document here.
+        'derivation.$': '$.initialize_result.derivation',
         'analysis.$': '$.analysis_result.analysis',
         'synthesis.$': '$.synthesis_result.synthesis',
         'validation.$': '$.validate_result.validation',
@@ -435,13 +444,13 @@ export class VocProcessingStack extends cdk.Stack {
     handleError.next(failState);
 
     return new sfn.StateMachine(this, 'ResearchStateMachine', {
-      stateMachineName: uniqueName('voc-research-workflow'),
+      stateMachineName: this.uniqueName('voc-research-workflow'),
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       timeout: cdk.Duration.hours(1),
       tracingEnabled: true,
       logs: {
         destination: new logs.LogGroup(this, 'ResearchStateMachineLogs', {
-          logGroupName: uniqueName('/aws/stepfunctions/voc-research-workflow'),
+          logGroupName: this.uniqueName('/aws/stepfunctions/voc-research-workflow'),
           retention: logs.RetentionDays.TWO_WEEKS,
           removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),

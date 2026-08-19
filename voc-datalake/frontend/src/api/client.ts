@@ -17,6 +17,9 @@ import type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
+  PrioritizationBallotEdit,
+  PrioritizationRow,
   S3ImportSource,
   S3ImportFile,
   FeedbackForm,
@@ -46,6 +49,9 @@ export type {
   ProjectPersona,
   Project,
   PrioritizationScore,
+  PrioritizationAggregate,
+  PrioritizationBallotEdit,
+  PrioritizationRow,
   S3ImportSource,
   S3ImportFile,
   FeedbackFormConfig,
@@ -457,7 +463,7 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.updatePersona(projectId, personaId, data)),
   deletePersona: (projectId: string, personaId: string) =>
     import('./projectsApi').then(m => m.projectsApi.deletePersona(projectId, personaId)),
-  importPersona: (projectId: string, data: { input_type: 'pdf' | 'image' | 'text'; content: string; media_type?: string }) =>
+  importPersona: (projectId: string, data: { input_type: 'image' | 'text'; content: string; media_type?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
@@ -478,17 +484,87 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.deleteDocument(projectId, documentId)),
 
   // Prioritization
-  getPrioritizationScores: () => 
-    fetchApi<{ scores: Record<string, PrioritizationScore> }>('/projects/prioritization'),
-  
-  savePrioritizationScores: (scores: Record<string, PrioritizationScore>) =>
-    fetchApi<{ success: boolean }>('/projects/prioritization', {
-      method: 'PUT',
-      body: JSON.stringify({ scores })
-    }),
+  /**
+   * The rows, the caller's own ballots on them, and what every reviewer said.
+   *
+   * All three maps are keyed by ROW ID — a prioritization row is one project's set
+   * of documents, so a project whose PRD and PR/FAQ describe one idea is one row
+   * scored once. `rows` says what each row HOLDS, which is why the page needs no
+   * second request per row.
+   *
+   * `rows` and `aggregates` are optional in the TYPE but not on the wire: both are
+   * additive, and declaring either required would make a response from a
+   * deployment running an older handler fail to type-check against a client that
+   * only reads `scores`. See `PrioritizationAggregate` for what an entry means —
+   * notably that a row nobody scored is absent, and that an entry can outlive its
+   * row, so a consumer should intersect those keys with `rows`.
+   */
+  getPrioritizationScores: () =>
+    fetchApi<{
+      rows?: Record<string, PrioritizationRow>
+      scores: Record<string, PrioritizationScore>
+      aggregates?: Record<string, PrioritizationAggregate>
+    }>('/projects/prioritization'),
 
-  /** Save only the changed scores (incremental/diff update) */
-  patchPrioritizationScores: (changedScores: Record<string, PrioritizationScore>) =>
+  /**
+   * Ensure a project's DEFAULT prioritization row exists, and return it.
+   *
+   * IDEMPOTENT: asking twice yields the same row rather than a second one, decided
+   * by a conditional write on a row id derived from the project id — so two tabs
+   * opening the page at once cannot give one project two rows with two sets of
+   * ballots. `created` says which of the two happened, for a caller that cares.
+   *
+   * TWO settled refusals, both of which the caller reads through
+   * `isPermanentRefusal` and neither of which this page currently puts on screen:
+   *
+   * - **400** for a project with no PRD and no PR/FAQ: there is nothing to score,
+   *   and the page already has words inviting one, so the silence is covered.
+   * - **409** for a project holding more documents than one read can compose a row
+   *   from. Nothing covers this one — the project simply does not appear in the
+   *   backlog, with nothing saying why. Rare by design (the bound behind it is
+   *   deliberately generous), and tracked for phase 2 on issue #339, which is
+   *   already adding row-level states to this page and can give an un-composable
+   *   project a visible one.
+   */
+  createPrioritizationRow: (projectId: string) =>
+    fetchApi<{ success: boolean; created?: boolean; row?: PrioritizationRow }>(
+      '/projects/prioritization/rows',
+      {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId }),
+      },
+    ),
+  
+  /**
+   * Save only the changed scores (incremental/diff update).
+   *
+   * The only writer. A `savePrioritizationScores` sending PUT used to sit beside
+   * this; it PUT the caller's whole map as every reviewer's scores, which under
+   * per-reviewer ballots has no honest meaning. It had no caller in the product,
+   * and the endpoint now refuses that verb, so keeping the function would only
+   * offer a future caller a guaranteed 400.
+   *
+   * Keyed by ROW ID, and so is every entry's own `row_id`: a ballot is about a
+   * project's set of documents rather than about one of them.
+   *
+   * `updated_count` is BALLOTS WRITTEN, not rows sent: an entry that changed
+   * no axis and no note is a legal no-op and is not counted, so the number can be
+   * lower than the size of the map — and is 0 for a body that stored nothing.
+   *
+   * Entries are `PrioritizationBallotEdit`, i.e. PARTIAL: an axis the reviewer did
+   * not set is omitted, and the route reads an omitted axis as "leave it alone"
+   * (`_ballot_update_kwargs` assigns only the axes an entry carries). Sending a
+   * complete score instead wrote three axes the reviewer never chose whenever they
+   * moved one slider on a row with no stored ballot, and the backend counts an
+   * explicit value as a real vote — which then moves the TEAM means the
+   * prioritization page displays, bands, counts and sorts by.
+   *
+   * A note longer than `MAX_NOTE_LENGTH` is REFUSED (400), not truncated. This
+   * function does not check it, because `fetchApi` discards the response body and
+   * could not report why — the page blocks that save before calling
+   * (`overLongNoteDocuments`).
+   */
+  patchPrioritizationScores: (changedScores: Record<string, PrioritizationBallotEdit>) =>
     fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {
       method: 'PATCH',
       body: JSON.stringify({ scores: changedScores })
@@ -671,7 +747,7 @@ export const api = {
     }),
 
   // Project API tokens (used by the McpAccessTab to gate MCP server access)
-  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write' }) =>
+  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write'; expires_in_days?: number }) =>
     fetchApi<CreateApiTokenResponse>(`/projects/${projectId}/api-tokens`, {
       method: 'POST',
       body: JSON.stringify(data),

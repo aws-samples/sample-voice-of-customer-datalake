@@ -18,6 +18,12 @@ from shared.jobs import job_handler, JobContext
 from shared.aws import get_dynamodb_resource
 from shared.converse import converse
 from shared.feedback import query_feedback_by_date
+from shared.derivation import (
+    DERIVATION_FIELD,
+    ROLE_MERGE_INPUT,
+    build_derivation,
+    derivation_source,
+)
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -62,10 +68,19 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     ctx.update_progress(20, 'preparing_context')
     
     doc_context = "## SOURCE DOCUMENTS TO MERGE\n\n"
+    # Built from THIS loop, so it lists the documents that actually reached the
+    # model. selected_doc_ids can name a document that no longer exists — it is
+    # filtered out above, and only selected_document_count below still counts it.
+    used_sources = []
     for i, doc in enumerate(selected_docs, 1):
         doc_context += f"### Document {i}: {doc.get('title', 'Untitled')} ({doc.get('document_type', 'unknown').upper()})\n\n{doc.get('content', '')[:8000]}\n\n---\n\n"
+        source = derivation_source(doc.get('document_id'), ROLE_MERGE_INPUT)
+        if source:
+            used_sources.append(source)
     
     context_parts = [doc_context]
+    used_persona_ids = []
+    used_feedback_count = 0
     
     if selected_persona_ids:
         ctx.update_progress(30, 'fetching_personas')
@@ -75,6 +90,8 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
             persona_text = "## USER PERSONAS FOR CONTEXT\n\n"
             for p in selected_personas:
                 persona_text += f"**{p.get('name')}**: {p.get('tagline', '')}\n- Goals: {', '.join(p.get('goals', [])[:3])}\n- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n\n"
+                if p.get('persona_id'):
+                    used_persona_ids.append(p['persona_id'])
             context_parts.append(persona_text)
     
     if use_feedback:
@@ -95,6 +112,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
             feedback_text = "## ADDITIONAL CUSTOMER FEEDBACK\n\n"
             for i, item in enumerate(feedback_items[:20], 1):
                 feedback_text += f"**Review {i}** ({item.get('source_platform', 'unknown')}, {item.get('sentiment_label', 'unknown')}): {item.get('original_text', '')[:250]}\n\n"
+                used_feedback_count += 1
             context_parts.append(feedback_text)
     
     ctx.update_progress(50, 'generating_merged_document')
@@ -130,8 +148,17 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
         'title': title,
         'content': content,
         'job_id': job_id,
+        # Unchanged: the requested ids, in the merger's own long-standing shape.
         'source_documents': selected_doc_ids,
         'merge_instructions': instructions,
+        # The same relation in the one shape every document type uses — and
+        # unlike source_documents above, the documents that were actually merged.
+        DERIVATION_FIELD: build_derivation(
+            sources=used_sources,
+            selected_document_count=len(selected_doc_ids),
+            feedback_count=used_feedback_count,
+            persona_ids=used_persona_ids,
+        ),
         'created_at': now,
     })
     projects_table.update_item(

@@ -67,9 +67,25 @@
       "categoryRouting": "Routage par catégorie",
       "formSettings": "Paramètres du formulaire",
       "settings": "Paramètres",
-      "theme": "Thème"
+      "theme": "Thème",
+      "validates": "Valide",
+      "validatesShort": "Valide"
     },
-    "textColor": "Couleur du texte"
+    "textColor": "Couleur du texte",
+    "validationDescription": "Indiquez éventuellement à quel projet — et à quel PRD ou PR/FAQ — se rapportent les retours de ce formulaire. Les notes recueillies apparaîtront alors à côté de ce document sur la page Priorisation. Laissez les deux champs vides pour un formulaire autonome, comme une enquête sur un site web.",
+    "validationDocumentHint": "Laissez sur l'ensemble du projet pour conserver le lien lorsqu'un document est régénéré.",
+    "validationDocumentLabel": "Document (facultatif)",
+    "validationDocumentOption": "{{title}} ({{type}})",
+    "validationLoadingLink": "Chargement du lien…",
+    "validationNoProject": "-- Non lié --",
+    "validationProjectHint": "Effacer le projet délie ce formulaire.",
+    "validationProjectLabel": "Projet",
+    "validationTitle": "Ce que ce formulaire valide",
+    "validationUnknownDocument": "Document lié (plus disponible)",
+    "validationUnknownProject": "Projet lié (plus disponible)",
+    "validationUnverifiedDocument": "Document lié (vérification impossible)",
+    "validationUnverifiedProject": "Projet lié (vérification impossible)",
+    "validationWholeProject": "-- Tout le projet --"
   },
   "empty": {
     "createButton": "Créer votre premier formulaire",

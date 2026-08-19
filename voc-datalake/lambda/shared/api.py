@@ -46,6 +46,14 @@ def decimal_default(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
+# The most personas one generation may produce. Lives here rather than beside
+# validate_persona_count because two other places size themselves against it: the avatar
+# fan-out's max_workers and the image-model client's connection pool. Those were
+# independent literals whose only link was a comment, and a comment cannot fail CI — so
+# raising this ceiling used to silently halve the fan-out benefit while every test passed.
+MAX_PERSONAS_PER_GENERATION = 10
+
+
 def validate_days(
     value: str | int | None,
     default: int = 7,
@@ -72,12 +80,70 @@ def validate_int(
     min_val: int = 1,
     max_val: int = 100
 ) -> int:
-    """Generic integer validation with bounds."""
+    """Generic integer validation with bounds.
+
+    Returns ``default`` for ``None`` and for anything ``int()`` cannot read, and
+    otherwise clamps into ``[min_val, max_val]``. So the contract is "always a
+    bounded int, never a raise", which is what every caller relies on.
+
+    ``OverflowError`` is caught alongside ``ValueError``/``TypeError`` because
+    ``int(float('inf'))`` raises it, and a non-finite float is reachable wherever a
+    request body is parsed: ``json.loads`` is non-strict by default and accepts the
+    ``Infinity``/``-Infinity``/``NaN`` literals. Without it the fallback simply did
+    not happen for that one input — the exception propagated out of a validator
+    documented never to raise, which in a multi-write handler surfaced as a 500
+    part way through the work.
+
+    Two things a caller must know, because this cannot decide them here:
+
+    * A ``bool`` is COERCED, not refused: ``isinstance(True, int)`` is true and
+      ``int(True)`` is ``1``. Harmless where the result is a page size, wrong where
+      it is a value a human is said to have chosen — a flag is not a slider
+      position. A caller in the second case must refuse ``bool`` itself, before
+      calling this (``validate_bool`` makes the mirror argument). Named as a
+      requirement on callers rather than by pointing at one: a shared helper citing
+      a particular handler's PRIVATE predicate reads as a dependency it does not
+      have, and goes stale the moment that handler renames it.
+    * ``default`` is returned for input this could not read, so it is not merely a
+      value for "absent" — it is also the value for "unreadable". Where the two
+      must be distinguishable, or where the default would read as a deliberate
+      choice, check the value before calling rather than reading meaning into what
+      comes back.
+    """
     try:
         val = int(value) if value is not None else default
         return max(min_val, min(val, max_val))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
+
+
+def validate_bool(value: object, default: bool, field: str = 'value') -> bool:
+    """Validate a boolean request field, refusing anything that is not a real bool.
+
+    The other validators here clamp or fall back, which is right for a number whose
+    worst case is a bounded value. A boolean has no such middle: coercing an unexpected
+    value picks one of the two behaviours silently, and for a flag that gates billed work
+    the wrong pick costs money in the direction the caller did not ask for. ``"false"``
+    from a form post or an over-eager serialiser is the realistic case.
+
+    Absent (``None``) yields ``default`` — an omitted field must keep behaving as it did
+    before the field existed. Note this treats an explicit JSON ``null`` as absent, since
+    ``dict.get`` cannot distinguish the two; that is deliberate and harmless, because both
+    mean "the caller expressed no preference".
+
+    Raises:
+        ValidationError: for any non-boolean value, which the API resolver maps to a 400.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    # Type name only, not the value: the type is the diagnostic ("you sent a string"),
+    # while the value is unbounded caller input and echoing it into a response body buys
+    # nothing the caller does not already have.
+    raise ValidationError(
+        f'{field} must be true or false, got {type(value).__name__}'
+    )
 
 
 def get_caller_groups(event: dict) -> list[str]:
@@ -104,6 +170,31 @@ def get_caller_groups(event: dict) -> list[str]:
         return cleaned.split(' ') if ' ' in cleaned else [cleaned]
     except Exception:
         return []
+
+
+def get_caller_subject(event: dict) -> str:
+    """Return the Cognito subject (``sub``) for the authenticated caller.
+
+    The ``sub`` claim is the stable, immutable identifier assigned by Cognito
+    at user-creation time.  Unlike a username (which can be reused) or an
+    email (which can change), it never refers to a different person.
+
+    The returned value identifies a person and must not be logged.
+
+    Raises:
+        AuthorizationError: If the ``sub`` claim is absent or empty.  These
+            routes are protected by the Cognito authorizer, so an absent claim
+            indicates misconfiguration rather than an anonymous request — the
+            handler must fail closed rather than fall back to a shared key.
+    """
+    request_context = event.get('requestContext')
+    authorizer = request_context.get('authorizer') if isinstance(request_context, dict) else None
+    claims = authorizer.get('claims', {}) if isinstance(authorizer, dict) else {}
+    raw_sub = claims.get('sub') if isinstance(claims, dict) else None
+    sub = raw_sub.strip() if isinstance(raw_sub, str) else ''
+    if sub:
+        return sub
+    raise AuthorizationError('Caller identity could not be determined')
 
 
 def require_admin(event: dict) -> None:
@@ -267,13 +358,16 @@ __all__ = [
     'validate_days',
     'validate_limit', 
     'validate_int',
+    'validate_bool',
     'validate_date_basis',
+    'MAX_PERSONAS_PER_GENERATION',
     'DATE_BASIS_IMPORTED',
     'DATE_BASIS_REVIEW',
     'create_cors_config',
     'create_api_resolver',
     'api_handler',
     'get_caller_groups',
+    'get_caller_subject',
     'require_admin',
     'get_configured_categories',
     'DEFAULT_CATEGORIES',

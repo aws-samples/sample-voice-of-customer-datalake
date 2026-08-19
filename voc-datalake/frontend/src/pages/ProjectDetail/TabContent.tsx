@@ -11,7 +11,7 @@ import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  Project, ProjectPersona, ProjectDocument, ProductContext,
+  Project, ProjectPersona, ProjectDocument, ProductContext, ProductDoc,
 } from '../../api/types'
 
 interface TabContentProps {
@@ -21,6 +21,8 @@ interface TabContentProps {
   readonly documents: ProjectDocument[]
   /** For the Overview card's completeness display; undefined until it loads. */
   readonly productContext?: ProductContext
+  /** For the prototype card's visual picker; undefined until it loads, or if it failed. */
+  readonly productDocs?: ProductDoc[]
   readonly selectedPersona: ProjectPersona | null
   readonly selectedDoc: ProjectDocument | null
   readonly isDeleting: boolean
@@ -54,6 +56,7 @@ export default function TabContent({
   personas,
   documents,
   productContext,
+  productDocs,
   selectedPersona,
   selectedDoc,
   isDeleting,
@@ -85,6 +88,7 @@ export default function TabContent({
         personas={personas}
         documents={documents}
         productContext={productContext}
+        productDocs={productDocs}
         onGeneratePersonas={onGeneratePersonas}
         onGenerateDoc={onGenerateDoc}
         onRunResearch={onRunResearch}
@@ -130,6 +134,10 @@ export default function TabContent({
       <DocumentsTab
         project={project}
         documents={documents}
+        // Only so a revision can drop a visual that has since been deleted —
+        // the API 404s on an id it cannot resolve, which would make a
+        // visually-grounded prototype unrevisable for good.
+        productDocs={productDocs}
         selectedDoc={selectedDoc}
         onSelectDoc={onSelectDoc}
         onEditDoc={onEditDoc}

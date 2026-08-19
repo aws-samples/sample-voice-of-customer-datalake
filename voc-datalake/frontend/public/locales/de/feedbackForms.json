@@ -67,9 +67,25 @@
       "categoryRouting": "Kategorie-Routing",
       "formSettings": "Formulareinstellungen",
       "settings": "Einstellungen",
-      "theme": "Design"
+      "theme": "Design",
+      "validates": "Validiert",
+      "validatesShort": "Validiert"
     },
-    "textColor": "Textfarbe"
+    "textColor": "Textfarbe",
+    "validationDescription": "Erfassen Sie optional, zu welchem Projekt — und zu welchem PRD oder PR/FAQ — dieses Formular Feedback sammelt. Die erfassten Bewertungen erscheinen dann neben diesem Dokument auf der Priorisierungsseite. Lassen Sie beide Felder leer für ein eigenständiges Formular, etwa eine Website-Umfrage.",
+    "validationDocumentHint": "Belassen Sie es beim gesamten Projekt, damit die Verknüpfung erhalten bleibt, wenn ein Dokument neu erzeugt wird.",
+    "validationDocumentLabel": "Dokument (optional)",
+    "validationDocumentOption": "{{title}} ({{type}})",
+    "validationLoadingLink": "Verknüpfung wird geladen …",
+    "validationNoProject": "-- Nicht verknüpft --",
+    "validationProjectHint": "Wird das Projekt geleert, ist dieses Formular nicht mehr verknüpft.",
+    "validationProjectLabel": "Projekt",
+    "validationTitle": "Was dieses Formular validiert",
+    "validationUnknownDocument": "Verknüpftes Dokument (nicht mehr verfügbar)",
+    "validationUnknownProject": "Verknüpftes Projekt (nicht mehr verfügbar)",
+    "validationUnverifiedDocument": "Verknüpftes Dokument (nicht überprüfbar)",
+    "validationUnverifiedProject": "Verknüpftes Projekt (nicht überprüfbar)",
+    "validationWholeProject": "-- Gesamtes Projekt --"
   },
   "empty": {
     "createButton": "Erstes Formular erstellen",

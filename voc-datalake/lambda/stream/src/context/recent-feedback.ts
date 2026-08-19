@@ -10,6 +10,7 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { FEEDBACK_BY_DATE_INDEX } from '../indexes.js';
+import { PERSISTENT_QUERY_ERRORS } from './query-errors.js';
 
 export interface FeedbackSummary {
   count: number;
@@ -39,15 +40,6 @@ const RECENT_FEEDBACK_PROMPT_LINES = 15;
 // little read amplification to bound latency. Don't "optimize" this back to
 // sequential-with-early-exit without re-reading the round-trip math above.
 const DAY_QUERY_BATCH_SIZE = 7;
-
-// Error names that will fail identically for every partition of the same
-// index — retrying the remaining days would just repeat the failure 30x
-// and silently reproduce the empty-section symptom this fix removes.
-const PERSISTENT_QUERY_ERRORS = new Set([
-  'AccessDeniedException',
-  'ResourceNotFoundException',
-  'ValidationException',
-]);
 
 /** Parse and append one page of rows, capped at the collection target.
  * Per-row safeParse: one malformed item must not discard the rest. Note this

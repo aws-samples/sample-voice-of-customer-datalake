@@ -8,7 +8,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
-import { earliestPrototypeExpiry, refreshDelayMs } from '../../components/prototypeLinkLifetime'
+import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem,
 } from './types'
@@ -37,6 +37,16 @@ export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] a
  * this is the key it should share.
  */
 export const productContextKey = (id: string | undefined) => ['product-context', id] as const
+
+/**
+ * Query key for a project's uploaded product docs.
+ *
+ * Exported for the same reason as the two keys above: more than one place will
+ * need it. The Product tab still lists the docs itself, because it uploads,
+ * deletes and polls them and owns that local state; if it ever moves onto React
+ * Query this is the key it should share.
+ */
+export const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
 
 /**
  * How long to keep polling the jobs list after an action reports that it started
@@ -147,6 +157,28 @@ export function useProjectData({
     retry: false,
   })
 
+  /**
+   * The project's uploaded product docs, for the prototype card's visual picker.
+   *
+   * Fetched here rather than in the card so the Overview tab stays a pure function
+   * of its props, exactly as the product context above is — and so a project with
+   * no uploads pays one small request instead of the card holding its own loading
+   * state.
+   *
+   * `retry: false` and nothing else: a failure reaches the card as `undefined`,
+   * which offers no visuals — the build then reads none, which is what it did
+   * before this feature. No `staleTime`, unlike the context: uploads happen in the
+   * Product tab, which does NOT hand its list back to this cache, so the default
+   * refetch on mount and focus is the only thing that lets a screenshot uploaded a
+   * minute ago appear in the picker.
+   */
+  const { data: productDocsData } = useQuery({
+    queryKey: productDocsKey(id),
+    queryFn: () => projectsApi.listProductDocs(id ?? ''),
+    enabled: isEnabled,
+    retry: false,
+  })
+
   // When a job completes, refresh project data
   useEffect(() => {
     const jobs = jobsData?.jobs ?? []
@@ -163,37 +195,29 @@ export function useProjectData({
   /**
    * Replace the prototype links before their signatures lapse.
    *
-   * A prototype URL is a signed, session-scoped credential (see
-   * `prototypeLinkLifetime`), and refetching the project is the re-sign
-   * mechanism: the API mints a fresh signature on every read and never trusts a
-   * stored one. So the whole job here is knowing *when* to ask again.
-   *
-   * It has to happen ahead of expiry rather than in response to a 403, because the
-   * prototype's "Open in new tab" and "Download .html" are plain anchors — a click
-   * navigates immediately and nothing can fetch a replacement first.
-   *
-   * Re-arms whenever the documents change, which includes the refetch this timer
-   * causes: the new URL carries a later deadline, so the next delay is computed
-   * from it and the cycle continues for as long as the page is open. It is not the
-   * only protection — the project query sets no `staleTime`, so it inherits
-   * refetch-on-window-focus and a user who tabs away and back re-signs that way.
-   * This covers the case that has no user interaction to hook: a tab left focused
-   * and untouched past the hour.
+   * Refetching the project IS the re-sign mechanism: the API mints a fresh
+   * signature on every read and never trusts a stored one, so all this page has to
+   * do is ask again in time. The when — the lead, the floor, and re-arming off the
+   * replacement so the cycle continues — lives in `usePrototypeLinkRefresh`, which
+   * the Prioritization page shares.
    */
-  useEffect(() => {
-    const delay = refreshDelayMs(earliestPrototypeExpiry(data?.documents ?? []), Date.now())
-    if (delay == null) return
-    const timer = setTimeout(() => {
+  usePrototypeLinkRefresh(
+    data?.documents,
+    () => {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-    }, delay)
-    return () => clearTimeout(timer)
-  }, [data?.documents, id, queryClient])
+    },
+    // `id` is what this refresh is scoped to, and passing it keeps the guarantee the
+    // inlined version had: a timer cannot outlive the project it was armed for, not
+    // even when the next project's deadline happens to match to the second.
+    id,
+  )
 
   return {
     data,
     isLoading,
     jobsData,
     productContext: productContextData?.context,
+    productDocs: productDocsData?.docs,
     queryClient,
   }
 }
@@ -368,7 +392,7 @@ export function usePersonaMutations({
 
   const importPersonaMut = useMutation({
     mutationFn: (data: {
-      input_type: 'pdf' | 'image' | 'text';
+      input_type: 'image' | 'text';
       content: string;
       media_type?: string
     }) =>

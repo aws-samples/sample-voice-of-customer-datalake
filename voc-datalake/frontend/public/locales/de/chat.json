@@ -4,6 +4,7 @@
   "configureEndpoint": "Bitte konfigurieren Sie Ihren API-Endpunkt in den Einstellungen, um den KI-Chat zu nutzen",
   "copyMessage": "Nachricht kopieren",
   "emptyState": "Starten Sie ein Gespräch über Ihr Kundenfeedback",
+  "errorPrefix": "Fehler: {{message}}",
   "export": {
     "copied": "Kopiert!",
     "copyConversation": "Unterhaltung kopieren",
@@ -24,6 +25,7 @@
     "reasoning": "Begründung",
     "relatedFeedback": "Zugehöriges Feedback:"
   },
+  "messageTooLong": "Die Nachricht ist zu lang. Bitte auf höchstens {{max}} Zeichen kürzen.",
   "showHistory": "Verlauf anzeigen",
   "sidebar": {
     "clearAll": "Alle Unterhaltungen löschen",

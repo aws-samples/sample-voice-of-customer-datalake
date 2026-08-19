@@ -165,16 +165,27 @@ export const bedrockModelSuppressions: NagPackSuppression[] = [
 ];
 
 // Dynamic plugin system - Lambda and EventBridge wildcards
-export const pluginSystemSuppressions: NagPackSuppression[] = [
+//
+// A FUNCTION of the deployment prefix, not a constant: the findings these
+// suppress quote the concrete resource ARN, so under `-c deploymentPrefix=stg`
+// the ARN reads `function:stg-voc-ingestor-*` and a hardcoded `voc-ingestor-`
+// regex silently stops matching — leaving a fresh AwsSolutions-IAM5 warning on
+// every prefixed synth. With no prefix the strings are unchanged.
+export function pluginSystemSuppressions(deploymentPrefix?: string): NagPackSuppression[] {
+  // Safe to interpolate into a regex: validateDeploymentPrefix() admits a
+  // leading lowercase letter followed by lowercase letters, digits and inner
+  // hyphens — none of which are regex metacharacters.
+  const p = deploymentPrefix ? `${deploymentPrefix}-` : '';
+  return [
   {
     id: 'AwsSolutions-IAM5',
     reason: 'Plugin system requires wildcards for dynamic Lambda function names and EventBridge rules created at runtime',
     appliesTo: [
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-ingestor-webscraper-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-manual-import-processor-\*/' },
-      { regex: '/Resource::arn:aws:lambda:.*:.*:function:voc-projects-api-\*/' },
-      { regex: '/Resource::arn:aws:events:.*:.*:rule.voc-ingest-.*-schedule/' },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-webscraper-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-manual-import-processor-\*/` },
+      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-projects-api-\*/` },
+      { regex: `/Resource::arn:aws:events:.*:.*:rule.${p}voc-ingest-.*-schedule/` },
     ],
   },
   {
@@ -189,7 +200,8 @@ export const pluginSystemSuppressions: NagPackSuppression[] = [
       { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
     ],
   },
-];
+  ];
+}
 
 // CDK deployment assets
 export const cdkAssetsSuppressions: NagPackSuppression[] = [
@@ -263,5 +275,24 @@ export const publicFeedbackEndpointSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-COG4',
     reason: 'Feedback form endpoints are intentionally public to allow anonymous customer feedback submission - Cognito authentication would prevent external users from submitting feedback',
+  },
+];
+
+// Public ballot endpoints (intentionally unauthenticated).
+//
+// Separate from the feedback-form list above, deliberately: the reason differs,
+// and one shared suppression would let a reviewer of a future public route read a
+// justification about customer feedback and think it had been assessed. The
+// control here is the voting session — a ballot is accepted only against a valid
+// unguessable session token, only while that session is open and unexpired, and
+// only up to its ballot cap, enforced by a conditional atomic increment.
+export const publicBallotEndpointSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-APIG4',
+    reason: 'Anonymous prioritization ballots are submitted by attendees from personal phones with no account; the unguessable voting-session token, its open/closed state, its expiry and its ballot cap are the authorization',
+  },
+  {
+    id: 'AwsSolutions-COG4',
+    reason: 'Cognito authentication would defeat the feature - a room scores a proposal without accounts; the session record authorizes each write and closing the session revokes it',
   },
 ];

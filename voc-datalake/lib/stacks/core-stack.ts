@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
@@ -13,12 +14,12 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { uniqueName } from '../utils/naming';
-import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
+import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, allowlistedModelArns } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
-import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions } from '../utils/nag-suppressions';
+import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { VocStack, VocStackProps } from '../utils/voc-stack';
 
-export interface VocCoreStackProps extends cdk.StackProps {
+export interface VocCoreStackProps extends VocStackProps {
   brandName: string;
 }
 
@@ -34,7 +35,7 @@ export interface VocCoreStackProps extends cdk.StackProps {
  * - CloudFront distributions (avatars CDN, frontend hosting)
  * - Cognito User Pool + Client
  */
-export class VocCoreStack extends cdk.Stack {
+export class VocCoreStack extends VocStack {
   // Storage exports
   public readonly feedbackTable: dynamodb.Table;
   public readonly aggregatesTable: dynamodb.Table;
@@ -86,7 +87,7 @@ export class VocCoreStack extends cdk.Stack {
     // KMS KEY
     // ============================================
     this.kmsKey = new kms.Key(this, 'VocKmsKey', {
-      alias: uniqueName('voc-datalake-key'),
+      alias: this.uniqueName('voc-datalake-key'),
       description: 'KMS key for VoC Data Lake encryption',
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -96,7 +97,7 @@ export class VocCoreStack extends cdk.Stack {
     // S3 BUCKETS
     // ============================================
     this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
-      bucketName: uniqueName('voc-access-logs'),
+      bucketName: this.uniqueDnsName('voc-access-logs'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -108,7 +109,7 @@ export class VocCoreStack extends cdk.Stack {
     });
 
     this.rawDataBucket = new s3.Bucket(this, 'RawDataBucket', {
-      bucketName: uniqueName('voc-raw-data'),
+      bucketName: this.uniqueDnsName('voc-raw-data'),
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: this.kmsKey,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -133,7 +134,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Frontend hosting bucket
     this.websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
-      bucketName: uniqueName('voc-frontend'),
+      bucketName: this.uniqueDnsName('voc-frontend'),
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -255,14 +256,14 @@ export class VocCoreStack extends cdk.Stack {
     // RSA-SHA1. CloudFormation still owns the PublicKey and KeyGroup below, so
     // their create/update/delete ordering is not hand-rolled.
     const cdnSigningSecret = new secretsmanager.Secret(this, 'CdnSigningKeySecret', {
-      secretName: uniqueName('voc-cdn-signing-key'),
+      secretName: this.uniqueName('voc-cdn-signing-key'),
       description: 'RSA private key that signs CloudFront URLs for /avatars/* and /prototypes/*',
       encryptionKey: this.kmsKey,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     const cdnSigningKeysLambda = new lambda.Function(this, 'CdnSigningKeysLambda', {
-      functionName: uniqueName('voc-cdn-signing-keys'),
+      functionName: this.uniqueName('voc-cdn-signing-keys'),
       runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       handler: 'cdn_signing_keys.handler',
@@ -418,7 +419,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Feedback Table
     this.feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
-      tableName: uniqueName('voc-feedback'),
+      tableName: this.uniqueName('voc-feedback'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -460,7 +461,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Aggregates Table
     this.aggregatesTable = new dynamodb.Table(this, 'AggregatesTable', {
-      tableName: uniqueName('voc-aggregates'),
+      tableName: this.uniqueName('voc-aggregates'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -480,7 +481,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Watermarks Table
     this.watermarksTable = new dynamodb.Table(this, 'WatermarksTable', {
-      tableName: uniqueName('voc-watermarks'),
+      tableName: this.uniqueName('voc-watermarks'),
       partitionKey: { name: 'source', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -491,7 +492,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Projects Table
     this.projectsTable = new dynamodb.Table(this, 'ProjectsTable', {
-      tableName: uniqueName('voc-projects'),
+      tableName: this.uniqueName('voc-projects'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -510,7 +511,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Jobs Table
     this.jobsTable = new dynamodb.Table(this, 'JobsTable', {
-      tableName: uniqueName('voc-jobs'),
+      tableName: this.uniqueName('voc-jobs'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -530,7 +531,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Conversations Table
     this.conversationsTable = new dynamodb.Table(this, 'ConversationsTable', {
-      tableName: uniqueName('voc-conversations'),
+      tableName: this.uniqueName('voc-conversations'),
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -543,7 +544,7 @@ export class VocCoreStack extends cdk.Stack {
 
     // Idempotency Table
     this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
-      tableName: uniqueName('voc-idempotency'),
+      tableName: this.uniqueName('voc-idempotency'),
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
@@ -552,6 +553,163 @@ export class VocCoreStack extends cdk.Stack {
       timeToLiveAttribute: 'expiration',
     });
     NagSuppressions.addResourceSuppressions(this.idempotencyTable, idempotencyTableSuppressions);
+
+
+    // ============================================
+    // PRODUCT DOC EXTRACTOR (S3-triggered)
+    // ============================================
+    // Turns an uploaded product document (image or .md/.txt) into the plain text
+    // that build_product_context_block injects into PRD/PR-FAQ/prototype prompts,
+    // and moves the DynamoDB record out of `pending` into `ready` or `failed`.
+    //
+    // WHY IT LIVES IN CORE-STACK RATHER THAN PROCESSING: CDK parents the
+    // notification resource under the BUCKET's construct scope, so calling
+    // rawDataBucket.addEventNotification() from the processing stack would put a
+    // Custom::S3BucketNotifications in VocCoreStack that references a
+    // VocProcessingStack Lambda — while processing already depends on core.
+    // CloudFormation rejects that cycle. Keeping the function beside the bucket
+    // it is triggered by is the only placement that has no cycle.
+    //
+    // The `documents` surface default from SURFACE_DEFAULTS in
+    // lambda/shared/model_config.py. Declared here rather than imported because
+    // the model-allowlist module carries the allowlist, not the per-surface
+    // defaults; lambda/product_doc_extractor/test/test_default_model_lockstep.py
+    // reads this line as source text and fails if the two ever disagree.
+    const documentsSurfaceDefaultModelId = 'global.anthropic.claude-sonnet-5';
+
+    const productDocExtractor = new lambda.Function(this, 'ProductDocExtractorLambda', {
+      functionName: this.uniqueName('voc-product-doc-extractor'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      // NO `bundling` block, mirroring CdnSigningKeysLambda: the handler is
+      // stdlib + boto3 only, so there is nothing to pip-install and CoreStack
+      // stays container-free. Depending on lambda/shared/ would need a
+      // LayerVersion, and building that layer would drag Docker/finch bundling
+      // into this stack — see the handler's module docstring.
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/product_doc_extractor'), {
+        exclude: ['test', '__pycache__'],
+      }),
+      // Must stay well under product_context.py's EXTRACTION_STALL_SECONDS (300),
+      // which fails a record that never got extracted: a healthy extraction has
+      // to finish inside that window or the API marks it failed on read.
+      timeout: cdk.Duration.seconds(120),
+      // A Bedrock image description holds one image (<= 3.75MB) plus the reply in
+      // memory; 512MB also buys proportionally more CPU for the wait-heavy call.
+      memorySize: 512,
+      description: 'Extracts text from uploaded project product documents (images via Bedrock)',
+      environment: {
+        RAW_DATA_BUCKET: this.rawDataBucket.bucketName,
+        PROJECTS_TABLE: this.projectsTable.tableName,
+        // Read-only: the model picker's per-surface overrides live here.
+        AGGREGATES_TABLE: this.aggregatesTable.tableName,
+        // Rendered from the one allowlist in lib/utils/model-allowlist.ts, so the
+        // handler validates configured models against the same list the IAM
+        // grants below are built from — no second copy to rot.
+        MODEL_ALLOWLIST: JSON.stringify(ALLOWED_MODEL_IDS),
+        DEFAULT_MODEL_ID: documentsSurfaceDefaultModelId,
+        MAX_IMAGE_BYTES: String(MAX_IMAGE_BYTES),
+        MAX_IMAGE_DIMENSION_PX: String(MAX_IMAGE_DIMENSION_PX),
+        // The handler emits structured JSON from a stdlib Formatter (it cannot
+        // import powertools — see its module docstring), so these are NOT the
+        // POWERTOOLS_* names used by every other function here: a
+        // POWERTOOLS_SERVICE_NAME on a function with no powertools would promise
+        // a library that is absent. The emitted FIELD is still `service`, so an
+        // operator's CloudWatch query is unchanged across functions.
+        //
+        // A LITERAL, not `uniqueName()`: this is a log label, not a physical
+        // resource name, so it must not carry the account/region suffix — every
+        // POWERTOOLS_SERVICE_NAME in this app is a bare literal for the same
+        // reason. Namespacing it also made the value a CloudFormation token,
+        // which is not a string a runtime field can be compared against.
+        SERVICE_NAME: 'voc-product-doc-extractor',
+        // Hardcoded, matching every other function in this app: LOG_LEVEL is a
+        // literal 'INFO' at all 24 definitions across the four stacks, so there is
+        // no context key or stack parameter to follow here. Raising verbosity
+        // during a diagnosis is an environment-variable change on the deployed
+        // function — the handler reads LOG_LEVEL at import (see _log_level), so it
+        // needs no stack edit and no code change.
+        LOG_LEVEL: 'INFO',
+      },
+      logGroup: new logs.LogGroup(this, 'ProductDocExtractorLambdaLogs', {
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    // Prefix-scoped both ways, and asymmetrically: it reads only what users
+    // upload and writes only where its own output goes. Without the narrower
+    // write scope this role could overwrite any raw upload in the bucket.
+    this.rawDataBucket.grantRead(productDocExtractor, 'projects/*/product_docs/raw/*');
+    this.rawDataBucket.grantWrite(productDocExtractor, 'projects/*/product_docs/extracted/*');
+    this.projectsTable.grantReadWriteData(productDocExtractor);
+    this.aggregatesTable.grantReadData(productDocExtractor);
+    this.kmsKey.grantEncryptDecrypt(productDocExtractor);
+    productDocExtractor.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: allowlistedModelArns(this.region, this.account),
+    }));
+
+    // ONE notification rule, filtered on the broad `projects/` prefix. S3 allows
+    // only one prefix per rule and rejects overlapping rules on the same event
+    // type, so narrowing this to `product_docs/raw/` would mean a rule per
+    // project — impossible, the ids are runtime values. The handler's
+    // RAW_KEY_PATTERN guard is what makes the broad prefix safe: it also drops
+    // this function's OWN output under `product_docs/extracted/`, which would
+    // otherwise re-trigger it in a loop.
+    //
+    // First use of a `prefix` filter in this repo — the existing notifications
+    // (S3 import in the ingestion stack) filter by suffix only.
+    this.rawDataBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(productDocExtractor),
+      { prefix: 'projects/' },
+    );
+
+    // bin/voc-datalake.ts gives this stack only the basic-execution and
+    // cdk-assets suppressions, so everything the grants above generate has to be
+    // suppressed HERE rather than by widening the stack-level set: prefix-scoped
+    // S3 object ARNs, the DynamoDB index/* wildcards, the KMS grant wildcards
+    // and the Bedrock cross-region foundation-model ARNs.
+    NagSuppressions.addResourceSuppressions(
+      productDocExtractor,
+      [
+        ...lambdaBasicExecutionRoleSuppressions,
+        ...s3BucketSuppressions,
+        ...dynamoDbGsiSuppressions,
+        ...kmsEncryptionSuppressions,
+        ...bedrockModelSuppressions,
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes; the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
+          appliesTo: [
+            { regex: '/Resource::<.*RawDataBucket.*\\.Arn>/projects/\\*/product_docs/.*/' },
+          ],
+        },
+      ],
+      true,
+    );
+    // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
+    // configures the bucket notification. Same treatment as the cr.Provider
+    // frameworks above: CDK owns its runtime and its PutBucketNotification
+    // grant, neither of which this repo can narrow.
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834`,
+      [
+        ...cdkCustomResourceSuppressions,
+        ...lambdaBasicExecutionRoleSuppressions,
+        {
+          id: 'AwsSolutions-IAM4',
+          reason: 'CDK-managed bucket-notifications handler attaches the AWS-managed Lambda basic execution policy; the construct is not configurable.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'CDK-managed bucket-notifications handler needs s3:PutBucketNotification on the buckets it configures; the construct emits a wildcard resource and is not configurable.',
+        },
+      ],
+      true,
+    );
 
 
     // ============================================
@@ -592,7 +750,7 @@ export class VocCoreStack extends cdk.Stack {
     const omitUsernameConfigRaw = this.node.tryGetContext('omitUserPoolUsernameConfiguration');
     const omitUsernameConfig = omitUsernameConfigRaw === true || omitUsernameConfigRaw === 'true';
     this.userPool = new cognito.UserPool(this, 'VocUserPool', {
-      userPoolName: uniqueName('voc-user-pool'),
+      userPoolName: this.uniqueName('voc-user-pool'),
       selfSignUpEnabled: false,
       signInAliases: { email: true, username: true },
       ...(omitUsernameConfig ? {} : { signInCaseSensitive: false }),
@@ -646,10 +804,18 @@ export class VocCoreStack extends cdk.Stack {
 
     // User Pool Client
     this.userPoolClient = this.userPool.addClient('VocWebClient', {
-      userPoolClientName: uniqueName('voc-web-client'),
+      userPoolClientName: this.uniqueName('voc-web-client'),
       authFlows: { userPassword: true, userSrp: true },
       oAuth: {
-        flows: { authorizationCodeGrant: true, implicitCodeGrant: true },
+        flows: {
+          authorizationCodeGrant: true,
+          // implicitCodeGrant is disabled: it is deprecated in OAuth 2.1, returns
+          // tokens in the URL fragment (browser history / Referer leakage), and
+          // cannot be protected by PKCE. The app signs in via SRP
+          // (amazon-cognito-identity-js) and never uses the hosted-UI redirect
+          // flow, so nothing here depends on it.
+          implicitCodeGrant: false,
+        },
         scopes: [cognito.OAuthScope.EMAIL, cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
         callbackUrls,
         logoutUrls,
@@ -661,8 +827,9 @@ export class VocCoreStack extends cdk.Stack {
       refreshTokenValidity: cdk.Duration.days(30),
     });
 
-    // User Pool Domain
-    const domainPrefix = uniqueName('voc');
+    // User Pool Domain. A hosted-UI domain prefix is a DNS label, so it is held
+    // to 63 characters rather than the 64 most names get.
+    const domainPrefix = this.uniqueDnsName('voc');
     this.userPoolDomain = this.userPool.addDomain('VocUserPoolDomain', {
       cognitoDomain: { domainPrefix },
     });
@@ -693,7 +860,7 @@ export class VocCoreStack extends cdk.Stack {
     //    creation, no password reset, no fresh password minted. All resource
     //    properties are deterministic, so the template no longer churns.
     const adminBootstrapLambda = new lambda.Function(this, 'AdminBootstrapLambda', {
-      functionName: uniqueName('voc-admin-bootstrap'),
+      functionName: this.uniqueName('voc-admin-bootstrap'),
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
@@ -789,7 +956,7 @@ export class VocCoreStack extends cdk.Stack {
       }
 
       const modelPinLambda = new lambda.Function(this, 'ModelPinLambda', {
-        functionName: uniqueName('voc-model-pin'),
+        functionName: this.uniqueName('voc-model-pin'),
         runtime: lambda.Runtime.PYTHON_3_14,
         architecture: lambda.Architecture.ARM_64,
         handler: 'index.handler',
@@ -855,7 +1022,7 @@ export class VocCoreStack extends cdk.Stack {
     // COGNITO IDENTITY POOL (for AWS IAM authentication)
     // ============================================
     this.identityPool = new cognito.CfnIdentityPool(this, 'VocIdentityPool', {
-      identityPoolName: uniqueName('voc-identity-pool'),
+      identityPoolName: this.uniqueName('voc-identity-pool'),
       allowUnauthenticatedIdentities: false,
       cognitoIdentityProviders: [{
         clientId: this.userPoolClient.userPoolClientId,
@@ -884,10 +1051,17 @@ export class VocCoreStack extends cdk.Stack {
     // Use wildcard to avoid circular dependency (specific Lambda is in ApiStack)
     this.authenticatedRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunctionUrl', 'lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*voc-chat-stream*`],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*${this.prefixed('voc-chat-stream')}*`],
     }));
 
-    // Suppress wildcard warning - necessary to avoid circular dependency
+    // Suppress wildcard warning - necessary to avoid circular dependency.
+    //
+    // No `appliesTo`, so it is blanket over this role and stays matching whatever
+    // the ARN above resolves to — including the prefixed form. That is why it
+    // needs no prefix threading, unlike pluginSystemSuppressions(), whose
+    // `appliesTo` regexes quote the concrete ARN and therefore must be a function
+    // of the prefix. Were that to change here, the zero-warnings assertion over
+    // the PREFIXED synth in lib/app-deployment-prefix.test.ts would catch it.
     NagSuppressions.addResourceSuppressions(
       this.authenticatedRole,
       [
@@ -955,7 +1129,13 @@ export class VocCoreStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'WebsiteURL', { value: `https://${this.frontendDomainName}`, description: 'CloudFront Distribution URL' });
     new cdk.CfnOutput(this, 'WebsiteBucketName', { value: this.websiteBucket.bucketName, description: 'S3 Bucket Name' });
     new cdk.CfnOutput(this, 'DistributionId', { value: this.frontendDistribution.distributionId, description: 'CloudFront Distribution ID' });
-    new cdk.CfnOutput(this, 'DistributionDomainName', { value: this.frontendDomainName, description: 'CloudFront Distribution Domain Name', exportName: 'VocFrontendDomainName' });
+    // The app's ONLY hand-written export name, and therefore the only one the
+    // deployment prefix has to namespace by hand: CloudFormation export names
+    // are unique per account and region, so an unprefixed literal collides
+    // between two copies before any resource name does. (CDK's automatic
+    // cross-stack exports are already namespaced, because it derives them from
+    // the stack name, which the prefix covers.)
+    new cdk.CfnOutput(this, 'DistributionDomainName', { value: this.frontendDomainName, description: 'CloudFront Distribution Domain Name', exportName: this.prefixed('VocFrontendDomainName') });
 
     // Auth outputs
     new cdk.CfnOutput(this, 'UserPoolId', { value: this.userPool.userPoolId, description: 'Cognito User Pool ID' });

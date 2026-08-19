@@ -22,3 +22,13 @@
 
 /** The project detail record — `projectsApi.getProject`. */
 export const projectKey = (id: string | undefined) => ['project', id] as const
+
+/**
+ * The project list — `projectsApi.getProjects`.
+ *
+ * Earned its place here by the rule above: three features read it (Projects,
+ * Prioritization, and the feedback-form editor's validation-link picker), and
+ * Projects invalidates it on every mutation — so every reader is coupled to an
+ * invalidation it had better be able to name.
+ */
+export const projectsKey = () => ['projects'] as const

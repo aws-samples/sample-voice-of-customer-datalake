@@ -39,6 +39,7 @@ const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const Prioritization = lazy(() => import('./pages/Prioritization'))
 const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
 const DataExplorer = lazy(() => import('./pages/DataExplorer'))
+const Vote = lazy(() => import('./pages/Vote'))
 
 // Lazy pages share the same suspense fallback and, per issue #173, a
 // route-scoped error boundary: a render error in one page replaces only
@@ -53,6 +54,31 @@ export const routes: RouteObject[] = [
     path: '/login',
     element: <Login />,
     errorElement: <RouteErrorBoundary />,
+  },
+  {
+    /**
+     * The anonymous ballot page, DELIBERATELY OUTSIDE `ProtectedRoute` (issue
+     * #337).
+     *
+     * A room scores a proposal from their own phones with no account, so this is
+     * the one page in the app besides `/login` that a signed-out visitor may
+     * render. Its placement here — a sibling of `/login`, not a child of the
+     * protected layout — is the whole of that decision, and
+     * `routes.publicBallot.test.tsx` pins it so a later "tidy the routes into the
+     * layout" cannot quietly take the feature down (or, worse, leave a copy of it
+     * inside the protected tree that only signed-in users can reach).
+     *
+     * No `Layout` either: the sidebar and header are navigation for an
+     * authenticated product, and a stranger holding a QR link has nothing to
+     * navigate. The page renders its own full-height shell.
+     *
+     * The session token in `:sessionId` is what authorizes the write. It is
+     * unguessable, the API checks it against a session that must be open and
+     * unexpired and under its ballot cap, and closing the session revokes it —
+     * being a public ROUTE grants nothing on its own.
+     */
+    path: '/vote/:sessionId',
+    ...page(<Vote />),
   },
   {
     path: '/',

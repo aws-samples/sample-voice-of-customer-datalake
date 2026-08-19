@@ -7,6 +7,9 @@ import {
   Clock, Shield, AlertCircle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import {
+  TOKEN_EXPIRY_CHOICES, isTokenExpiryChoice, tokenExpiryState, type TokenExpiryChoice,
+} from './tokenExpiry'
 import type { ApiToken } from '../../api/types'
 
 // ---------------------------------------------------------------------------
@@ -41,6 +44,8 @@ export function McpAccessErrorState() {
 
 interface NewTokenBannerProps {
   readonly token: string
+  /** ISO deadline echoed by the create response; null/absent = never expires. */
+  readonly expiresAt?: string | null
   readonly showToken: boolean
   readonly copiedId: string | null
   readonly onToggleShow: () => void
@@ -49,7 +54,7 @@ interface NewTokenBannerProps {
 }
 
 export function NewTokenBanner({
-  token, showToken, copiedId, onToggleShow, onCopy, onDismiss,
+  token, expiresAt, showToken, copiedId, onToggleShow, onCopy, onDismiss,
 }: NewTokenBannerProps) {
   const { t } = useTranslation('projectDetail')
   return (
@@ -71,6 +76,15 @@ export function NewTokenBanner({
             </button>
           </div>
           <p className="text-xs text-green-600 mt-2">{t('mcp.tokenPasteHint')}</p>
+          {/* Gated on tokenExpiryState, not on presence: a malformed echo
+              would otherwise render "Invalid Date" on the one-time banner.
+              Same fail-quiet rule as the row badge. */}
+          {expiresAt != null && tokenExpiryState(expiresAt) !== 'none' ? (
+            <p className="text-xs text-green-700 mt-1 flex items-center gap-1">
+              <Clock size={12} />
+              {t('mcp.tokenExpiresOn', { date: new Date(expiresAt).toLocaleDateString() })}
+            </p>
+          ) : null}
         </div>
         <button onClick={onDismiss} className="text-green-600 hover:text-green-800 text-sm font-medium">{t('mcp.dismiss')}</button>
       </div>
@@ -85,16 +99,19 @@ export function NewTokenBanner({
 interface CreateTokenFormProps {
   readonly tokenName: string
   readonly tokenScope: 'read' | 'read-write'
+  readonly tokenExpiry: TokenExpiryChoice
   readonly isCreating: boolean
   readonly error?: string
   readonly onNameChange: (name: string) => void
   readonly onScopeChange: (scope: 'read' | 'read-write') => void
+  readonly onExpiryChange: (expiry: TokenExpiryChoice) => void
   readonly onSubmit: () => void
   readonly onCancel: () => void
 }
 
 export function CreateTokenForm({
-  tokenName, tokenScope, isCreating, error, onNameChange, onScopeChange, onSubmit, onCancel,
+  tokenName, tokenScope, tokenExpiry, isCreating, error,
+  onNameChange, onScopeChange, onExpiryChange, onSubmit, onCancel,
 }: CreateTokenFormProps) {
   const { t } = useTranslation('projectDetail')
   return (
@@ -112,6 +129,18 @@ export function CreateTokenForm({
           }} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
             <option value="read">{t('mcp.scopeRead')}</option>
             <option value="read-write">{t('mcp.scopeReadWrite')}</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="token-expiry" className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.expiry')}</label>
+          <select id="token-expiry" value={tokenExpiry} onChange={(e) => {
+            const val = e.target.value; if (isTokenExpiryChoice(val)) onExpiryChange(val)
+          }} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            {TOKEN_EXPIRY_CHOICES.map((choice) => (
+              <option key={choice} value={choice}>
+                {choice === 'never' ? t('mcp.expiryNever') : t('mcp.expiryDays', { count: Number(choice) })}
+              </option>
+            ))}
           </select>
         </div>
         {error != null && error !== '' ? <div className="flex items-center gap-2 text-sm text-red-600"><AlertCircle size={14} />{error}</div> : null}
@@ -160,6 +189,31 @@ export function McpConfigSnippetContent({
 // Token row
 // ---------------------------------------------------------------------------
 
+/**
+ * Expiry indicator on a token row. Derived per render so a token crossing its
+ * deadline while the page is open reads as expired on the next refetch —
+ * matching what the backend now enforces at auth time. Tokens without an
+ * expiry render nothing, exactly as every row did before the field existed.
+ */
+function TokenExpiryBadge({ expiresAt }: { readonly expiresAt: string | null | undefined }) {
+  const { t } = useTranslation('projectDetail')
+  const state = tokenExpiryState(expiresAt)
+  if (state === 'none' || expiresAt == null) return null
+  const date = new Date(expiresAt).toLocaleDateString()
+  if (state === 'expired') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">
+        {t('mcp.expiredDate', { date })}
+      </span>
+    )
+  }
+  return (
+    <span className={clsx('flex items-center gap-1', state === 'soon' ? 'text-amber-600 font-medium' : 'text-gray-400')}>
+      {t('mcp.expiresDate', { date })}
+    </span>
+  )
+}
+
 interface TokenRowProps {
   readonly token: ApiToken
   readonly isDeleting: boolean
@@ -182,6 +236,7 @@ export function TokenRow({
             </span>
             <span className="flex items-center gap-1"><Clock size={10} />{t('mcp.createdDate', { date: new Date(token.created_at).toLocaleDateString() })}</span>
             {token.last_used_at != null && token.last_used_at !== '' ? <span className="text-gray-400">{t('mcp.lastUsed', { date: new Date(token.last_used_at).toLocaleDateString() })}</span> : null}
+            <TokenExpiryBadge expiresAt={token.expires_at} />
           </div>
         </div>
       </div>

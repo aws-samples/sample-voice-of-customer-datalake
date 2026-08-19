@@ -249,9 +249,12 @@ function applyPersonaErrorEvent(prev: StreamChatState, event: StreamEvent): Stre
 }
 
 function applyErrorEvent(prev: StreamChatState, event: StreamEvent): StreamChatState {
+  // The server sends the reason in `error`; `content` is the fallback field
+  // for transports that only carry content.  The persona path already does
+  // this correctly — keep the two paths in sync.
   return {
     ...prev,
-    error: event.content ?? 'Unknown error',
+    error: event.error ?? event.content ?? 'Unknown error',
   }
 }
 
