@@ -189,7 +189,11 @@ def _client_error(code: str, operation: str = "Query") -> ClientError:
 # parse, and mint_token is what decides whether it does.
 _MINTED = mint_token()
 _VALID_TOKEN = _MINTED.raw
-_TOKEN_PROJECT = "proj-1"
+# Shaped like an id the product actually mints (`proj_` + a timestamp), because
+# the path-parameter guard in _domain_call refuses anything else — any test that
+# reaches a delegated call needs a realistic one. The reach tests, which stub the
+# tool handler, are unaffected either way.
+_TOKEN_PROJECT = "proj_20260819143000"
 
 
 def _token_row(**extra) -> dict:
@@ -1403,7 +1407,7 @@ class TestUnconfiguredTableIsAServerFault:
         response = mcp_handler.lambda_handler(
             {
                 "httpMethod": "GET",
-                "path": "/v1/mcp/autoseed/proj-1",
+                "path": f"/v1/mcp/autoseed/{_TOKEN_PROJECT}",
                 "headers": {
                     "authorization": f"Bearer {_VALID_TOKEN}",
                     "x-project-id": "proj-1",
@@ -1538,7 +1542,7 @@ class TestWwwAuthenticateChallenge:
         response = mcp_handler.lambda_handler(
             {
                 "httpMethod": "GET",
-                "path": "/v1/mcp/autoseed/proj-1",
+                "path": f"/v1/mcp/autoseed/{_TOKEN_PROJECT}",
                 "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
             },
             lambda_context,
@@ -1759,7 +1763,7 @@ class TestProjectsTableUsageMatchesNarrowGrant:
             "get_metrics_breakdown": {"dimension": "categories"},
         }
         with patch("mcp_handler.projects_table", strict), \
-             patch("shared.mcp_delegate.get_lambda_client", return_value=_stub_domain_client()), \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=_stub_domain_client()), \
              patch.dict(os.environ, {"METRICS_FUNCTION": "m", "PROJECTS_FUNCTION": "p"}):
             for tool_name in mcp_handler.TOOL_HANDLERS:
                 before = strict.query.call_count
@@ -1795,12 +1799,12 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         )
         with patch("mcp_handler.projects_table", strict_auth), \
              patch.object(projects_module, "projects_table", strict_data), \
-             patch("shared.mcp_delegate.get_lambda_client", return_value=_stub_domain_client()), \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=_stub_domain_client()), \
              patch.dict(os.environ, {"PROJECTS_FUNCTION": "voc-projects-api"}):
             response = mcp_handler.lambda_handler(
                 {
                     "httpMethod": "GET",
-                    "path": "/v1/mcp/autoseed/proj-1",
+                    "path": f"/v1/mcp/autoseed/{_TOKEN_PROJECT}",
                     "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
                 },
                 lambda_context,
@@ -2202,7 +2206,7 @@ class TestAutoseedAuthorization:
         client = MagicMock()
         client.invoke = seed
         with patch("mcp_handler.projects_table") as mock_table, \
-             patch("shared.mcp_delegate.get_lambda_client", return_value=client), \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=client), \
              patch.dict(os.environ, {"PROJECTS_FUNCTION": "voc-projects-api"}):
             mock_table.query.return_value = {"Items": [row]}
             mock_table.update_item.return_value = {}
@@ -2217,7 +2221,7 @@ class TestAutoseedAuthorization:
         return response, seed
 
     def test_workspace_token_may_autoseed_any_project(self, lambda_context):
-        response, seed = self._get("another-project", _token_row(), lambda_context)
+        response, seed = self._get("proj_20260603094346", _token_row(), lambda_context)
         assert response["statusCode"] == 200, response["body"]
         seed.assert_called_once()
 
@@ -2229,7 +2233,7 @@ class TestAutoseedAuthorization:
 
     def test_project_set_token_refused_outside_its_set(self, lambda_context):
         row = _token_row(read_reach=REACH_PROJECT_SET)
-        response, seed = self._get("another-project", row, lambda_context)
+        response, seed = self._get("proj_20260603094346", row, lambda_context)
         assert response["statusCode"] == 403, response["body"]
         seed.assert_not_called()
 
@@ -2293,7 +2297,7 @@ class TestClaimSynthesis:
         client = _stub_domain_client({"project": {"name": "P"}, "personas": [],
                                       "documents": []})
         with patch("mcp_handler.projects_table") as table, \
-             patch("shared.mcp_delegate.get_lambda_client", return_value=client), \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=client), \
              patch.dict(os.environ, {"METRICS_FUNCTION": "m", "PROJECTS_FUNCTION": "p"}):
             table.query.return_value = {"Items": [row or _token_row()]}
             table.update_item.return_value = {}

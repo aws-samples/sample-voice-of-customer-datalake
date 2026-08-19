@@ -58,18 +58,28 @@ removed. The revert map:
 
 import io
 import json
+import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import mcp_handler
-from shared.mcp_tokens import ALL_READ_SCOPES, REACH_WORKSPACE
+from shared.mcp_tokens import ALL_READ_SCOPES, REACH_WORKSPACE, mint_token
 
-_PROJECT = "proj-1"
+# REAL-SHAPED ids throughout, not `proj-1` / `f1`.
+#
+# The path-parameter guard refuses anything that is not shaped like an id the
+# product actually mints, so a convenient-looking fixture would fail — and that
+# is the right way round. Unrealistic fixtures are what let the `feedback_id`
+# bug survive a full suite: every fixture set both `id` and `feedback_id`, so no
+# test could notice that real rows carry only one.
+_PROJECT = "proj_20260819143000"
+_FEEDBACK_ID = "1ae1eb6abcd7d3a2e364f46139f98466"
+_OTHER_FEEDBACK_ID = "78be6bbfbbfa701284c9491d2cec4e1a"
 
 
 def _token(**extra) -> dict:
@@ -127,13 +137,13 @@ def _functions_configured(monkeypatch):
 
 
 def _call(tool: str, arguments: dict, fake: _FakeLambda) -> dict:
-    with patch("shared.mcp_delegate.get_lambda_client", return_value=fake):
+    with patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=fake):
         return mcp_handler._handle_tools_call(1, {"name": tool, "arguments": arguments}, _token())
 
 
 def _feedback_row(**extra) -> dict:
     return {
-        "id": "f1",
+        "id": "1ae1eb6abcd7d3a2e364f46139f98466",
         "source_platform": "webscraper",
         "source_created_at": "2026-08-01T10:11:12Z",
         "sentiment_label": "negative",
@@ -226,9 +236,17 @@ class TestRouteSelection:
         domain raises KeyError on the first client that touches that tool rather
         than at import.
         """
+        # Real-shaped values per parameter: the path guard refuses placeholders,
+        # which is the point of it.
+        sample = {"project_id": _PROJECT, "feedback_id": _FEEDBACK_ID}
         for key, (domain, method, template) in mcp_handler.DOMAIN_ROUTES.items():
             assert domain in mcp_handler._DOMAIN_FUNCTION_ENV, f"{key} names an unknown domain"
-            params = {name.strip("{}"): "x" for name in template.split("/") if name.startswith("{")}
+            params = {}
+            for segment in template.split("/"):
+                if segment.startswith("{"):
+                    name = segment.strip("{}")
+                    assert name in sample, f"{key} interpolates '{name}'; add a sample value here"
+                    params[name] = sample[name]
             call = mcp_handler._domain_call(key, path_parameters=params)
             assert call.function_name, f"{key} resolved to no function name"
             assert call.method == method
@@ -241,8 +259,8 @@ class TestRouteSelection:
 
 class TestErrorMapping:
     def test_a_route_refusal_is_a_tool_error_not_a_protocol_error(self):
-        fake = _FakeLambda({"/feedback/f-missing": {"message": "Feedback not found"}}, status=404)
-        result = _call("get_feedback_detail", {"feedback_id": "f-missing"}, fake)
+        fake = _FakeLambda({"/feedback/00000000000000000000000000000000": {"message": "Feedback not found"}}, status=404)
+        result = _call("get_feedback_detail", {"feedback_id": "00000000000000000000000000000000"}, fake)
 
         assert "error" not in result, "a 404 is a tool outcome, not a protocol fault"
         assert result["result"]["isError"] is True
@@ -251,8 +269,8 @@ class TestErrorMapping:
     def test_a_tool_error_carries_no_structured_content(self):
         """structuredContent must validate against outputSchema, and a refusal
         has no payload to validate — so it is absent rather than empty."""
-        fake = _FakeLambda({"/feedback/f-missing": {"message": "nope"}}, status=404)
-        result = _call("get_feedback_detail", {"feedback_id": "f-missing"}, fake)
+        fake = _FakeLambda({"/feedback/00000000000000000000000000000000": {"message": "nope"}}, status=404)
+        result = _call("get_feedback_detail", {"feedback_id": "00000000000000000000000000000000"}, fake)
 
         assert "structuredContent" not in result["result"]
 
@@ -318,8 +336,8 @@ class TestProjections:
         assert item["date"] == "2026-08-01", "a list answer carries the day, not the timestamp"
 
     def test_detail_keeps_the_whole_verbatim(self):
-        fake = _FakeLambda({"/feedback/f1": _feedback_row()})
-        result = _call("get_feedback_detail", {"feedback_id": "f1"}, fake)
+        fake = _FakeLambda({"/feedback/1ae1eb6abcd7d3a2e364f46139f98466": _feedback_row()})
+        result = _call("get_feedback_detail", {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"}, fake)
         item = result["result"]["structuredContent"]
 
         assert len(item["text"]) == 900
@@ -339,23 +357,23 @@ class TestProjections:
         Caught against the deployed API, not by a unit test, because every
         fixture in the suite happened to set both fields.
         """
-        row = _feedback_row(feedback_id="fb-42")
+        row = _feedback_row(feedback_id="78be6bbfbbfa701284c9491d2cec4e1a")
         row.pop("id", None)
         fake = _FakeLambda({"/feedback/search": {"items": [row]}})
         item = _call("search_feedback", {"query": "late"}, fake)["result"]["structuredContent"]["items"][0]
 
-        assert item["id"] == "fb-42"
+        assert item["id"] == "78be6bbfbbfa701284c9491d2cec4e1a"
 
     def test_a_row_carrying_only_a_plain_id_still_reports_it(self):
         """The fallback, so the fix does not break a row shaped the old way."""
-        fake = _FakeLambda({"/feedback/f1": {"id": "legacy-1", "original_text": "t"}})
-        item = _call("get_feedback_detail", {"feedback_id": "f1"}, fake)["result"]["structuredContent"]
+        fake = _FakeLambda({"/feedback/1ae1eb6abcd7d3a2e364f46139f98466": {"id": "legacy-1", "original_text": "t"}})
+        item = _call("get_feedback_detail", {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"}, fake)["result"]["structuredContent"]
 
         assert item["id"] == "legacy-1"
 
     def test_the_renames_the_tools_have_always_reported(self):
-        fake = _FakeLambda({"/feedback/f1": _feedback_row()})
-        item = _call("get_feedback_detail", {"feedback_id": "f1"}, fake)["result"]["structuredContent"]
+        fake = _FakeLambda({"/feedback/1ae1eb6abcd7d3a2e364f46139f98466": _feedback_row()})
+        item = _call("get_feedback_detail", {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"}, fake)["result"]["structuredContent"]
 
         assert item["source"] == "webscraper"
         assert item["sentiment"] == "negative"
@@ -364,8 +382,8 @@ class TestProjections:
     def test_an_unrated_item_still_reads_as_not_applicable(self):
         row = _feedback_row()
         del row["rating"]
-        fake = _FakeLambda({"/feedback/f1": row})
-        item = _call("get_feedback_detail", {"feedback_id": "f1"}, fake)["result"]["structuredContent"]
+        fake = _FakeLambda({"/feedback/1ae1eb6abcd7d3a2e364f46139f98466": row})
+        item = _call("get_feedback_detail", {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"}, fake)["result"]["structuredContent"]
 
         assert item["rating"] == "N/A"
 
@@ -415,6 +433,20 @@ class TestProjections:
         assert payload["count"] == 1
         assert payload["personas"][0]["goals"] == ["g"]
         assert payload["personas"][0]["age_range"] == "", "absent fields get typed defaults"
+
+    def test_count_never_exceeds_the_items_it_describes(self):
+        """`count` describes what the CALLER received, not what the route sent.
+
+        The projection skips a non-dict entry, so counting the route's list
+        instead would report a count larger than `len(items)` in the same
+        payload — a client trusting `count` would then read past the end.
+        """
+        fake = _FakeLambda({"/feedback/search": {
+            "items": [_feedback_row(), "not-a-record", None],
+        }})
+        payload = _call("search_feedback", {"query": "late"}, fake)["result"]["structuredContent"]
+
+        assert payload["count"] == len(payload["items"]) == 1
 
     def test_a_pass_through_tool_does_not_reshape_the_route_payload(self):
         """The metrics tools forward the route's answer verbatim. Reshaping here
@@ -518,3 +550,172 @@ class TestStructuredOutput:
         tell."""
         major = mcp_handler.MCP_SERVER_VERSION.split(".")[0]
         assert int(major) >= 2
+
+
+# ===========================================================================
+# Path-parameter confinement — the adapter's route choice is not the caller's
+# ===========================================================================
+
+class TestPathParameterConfinement:
+    """A path parameter is part of the routing key, so it is validated as one.
+
+    The delegated path is what the Powertools resolver matches on, and
+    `pathParameters` is never consulted, so an unvalidated value does not just
+    reach the wrong record — it reaches the wrong ROUTE. Two ways, both real and
+    both found in review:
+
+      • extra segments — `project_id='p/api-tokens'` builds
+        `/projects/p/api-tokens` and lands on the token-list route;
+      • a collision with a STATIC sibling — `project_id='prioritization'` builds
+        `/projects/prioritization`, and Powertools checks static routes BEFORE
+        dynamic ones, so it lands on `api_get_prioritization_scores`: the
+        prioritization surface that is deliberately excluded from MCP entirely.
+        Segment counting does not catch this, which is why the guard is a format
+        check.
+
+    Reverting `_validated_path_parameters` fails every test here.
+    """
+
+    @pytest.mark.parametrize("hostile", [
+        "prioritization",            # a static sibling — the excluded surface
+        "config",                    # another static sibling
+        "proj_1/api-tokens",         # segment injection
+        "proj_1/jobs",
+        "../metrics/summary",        # traversal
+        "proj_1?x=1",
+        "proj_1#frag",
+        "",
+    ])
+    def test_a_hostile_project_id_never_becomes_a_route(self, hostile):
+        fake = _FakeLambda({})
+        result = _call("get_project", {"project_id": hostile}, fake)
+
+        assert result.get("error", {}).get("code") == -32602, result
+        assert fake.calls == [], f"{hostile!r} reached a domain function"
+
+    @pytest.mark.parametrize("hostile", ["search", "urgent", "entities", "f1/similar", "../urgent"])
+    def test_a_hostile_feedback_id_never_becomes_a_route(self, hostile):
+        """`/feedback/search`, `/feedback/urgent` and `/feedback/entities` are
+        static siblings of `/feedback/<feedback_id>`."""
+        fake = _FakeLambda({})
+        result = _call("get_feedback_detail", {"feedback_id": hostile}, fake)
+
+        assert result.get("error", {}).get("code") == -32602, result
+        assert fake.calls == [], f"{hostile!r} reached a domain function"
+
+    def test_a_real_project_id_is_still_accepted(self):
+        """The guard must not refuse the ids the product actually mints."""
+        fake = _FakeLambda({"/projects/proj_20260717165917": {"project": {"name": "P"}}})
+        result = _call("get_project", {"project_id": "proj_20260717165917"}, fake)
+
+        assert result["result"]["isError"] is False
+        assert fake.paths == ["/projects/proj_20260717165917"]
+
+    def test_a_real_feedback_id_is_still_accepted(self):
+        fid = "1ae1eb6abcd7d3a2e364f46139f98466"
+        fake = _FakeLambda({f"/feedback/{fid}": {"feedback_id": fid, "original_text": "t"}})
+        result = _call("get_feedback_detail", {"feedback_id": fid}, fake)
+
+        assert result["result"]["isError"] is False
+
+    def test_the_patterns_accept_what_the_writers_produce(self):
+        """Lockstep against the id GENERATORS, so the guard cannot drift from them.
+
+        A pattern tightened past what the product mints would refuse real data,
+        and the refusal would look like a missing project rather than a bad guard.
+        Read from source because both generators are one expression.
+        """
+        projects_src = (Path(__file__).resolve().parents[1] / "projects.py").read_text()
+        assert 'f"proj_{datetime.now().strftime(\'%Y%m%d%H%M%S\')}"' in projects_src, (
+            "the project-id generator changed shape; re-check _PATH_PARAM_PATTERNS"
+        )
+        # What that expression produces, matched against the live guard.
+        assert mcp_handler._PATH_PARAM_PATTERNS["project_id"].match("proj_20260819143000")
+        # 32-char lowercase hex, as generate_deterministic_id produces.
+        assert mcp_handler._PATH_PARAM_PATTERNS["feedback_id"].match("0" * 32)
+        assert not mcp_handler._PATH_PARAM_PATTERNS["feedback_id"].match("0" * 31)
+
+    def test_every_templated_route_declares_a_pattern_for_its_parameters(self):
+        """Fail-closed, checked across the whole table rather than per tool.
+
+        A future route whose author forgets a pattern is refused at call time, and
+        this test says so at build time instead.
+        """
+        for key, (_domain, _method, template) in mcp_handler.DOMAIN_ROUTES.items():
+            for segment in template.split("/"):
+                if segment.startswith("{"):
+                    name = segment.strip("{}")
+                    assert name in mcp_handler._PATH_PARAM_PATTERNS, (
+                        f"{key} interpolates '{name}' with no declared pattern"
+                    )
+
+    def test_an_undeclared_parameter_is_refused_rather_than_interpolated(self):
+        with pytest.raises(mcp_handler.InvalidToolArgument):
+            mcp_handler._validated_path_parameters("some_route", {"surprise": "value"})
+
+    def test_autoseed_refuses_a_hostile_project_id_with_a_400(self):
+        """Autoseed takes its id straight from the URL, so it needs the same guard.
+
+        A 400 rather than a 403: the credential is fine and the path is not.
+        """
+        import json as _json
+
+        # Minted through the production helper: parse_token requires the secret
+        # half to be 64 lowercase HEX characters, so a hand-written 's' * 64
+        # never reaches the token store and the route answers 401 instead of the
+        # 400 under test.
+        minted = mint_token()
+        client = MagicMock()
+        with patch("mcp_handler.projects_table") as table, \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=client), \
+             patch.dict(os.environ, {"PROJECTS_FUNCTION": "p"}):
+            table.query.return_value = {"Items": [{
+                "pk": "MCPTOKEN", "sk": f"TOKEN#{minted.token_id}",
+                "token_id": minted.token_id, "secret_hash": minted.secret_hash,
+                "scopes": list(ALL_READ_SCOPES), "projects": [_PROJECT],
+                "read_reach": REACH_WORKSPACE,
+            }]}
+            table.update_item.return_value = {}
+            response = mcp_handler.lambda_handler({
+                "httpMethod": "GET",
+                "path": "/v1/mcp/autoseed/prioritization",
+                "headers": {"authorization": f"Bearer {minted.raw}"},
+            }, MagicMock())
+
+        assert response["statusCode"] == 400, response["body"]
+        assert _json.loads(response["body"])["message"]
+        client.invoke.assert_not_called()
+
+
+class TestDocumentKindLockstep:
+    """`_document_kind` reads `sk`, so the route must keep returning it.
+
+    Raised in review as the same trap the `feedback_id` bug fell into: the unit
+    test supplies `sk` itself, so it cannot notice the route dropping it. If
+    `GET /projects/{project_id}` ever projects its documents, every kind silently
+    becomes `""` — and the outputSchema enum permits `""`, so nothing fails.
+
+    Pinned against the real `projects.get_project`, not a fixture of it.
+    """
+
+    def test_the_project_route_returns_the_sort_key_on_documents(self):
+        import projects as projects_module
+
+        table = MagicMock()
+        table.query.return_value = {"Items": [
+            {"pk": "PROJECT#p1", "sk": "META", "name": "P"},
+            {"pk": "PROJECT#p1", "sk": "PROTOTYPE#1", "document_id": "d1", "title": "T"},
+        ]}
+        with patch.object(projects_module, "projects_table", table):
+            payload = projects_module.get_project("p1")
+
+        documents = payload["documents"]
+        assert documents, "the route returned no documents to check"
+        assert "sk" in documents[0], (
+            "projects.get_project no longer returns `sk` on documents, so "
+            "_document_kind in mcp_handler will report '' for every document"
+        )
+        assert mcp_handler._document_kind(documents[0]) == "prototype"
+
+    def test_a_document_without_a_sort_key_reports_no_kind_rather_than_guessing(self):
+        assert mcp_handler._document_kind({"document_id": "d1"}) == ""

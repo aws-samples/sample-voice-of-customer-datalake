@@ -29,10 +29,46 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+import boto3
 from botocore import exceptions as botocore_exceptions
+from botocore.config import Config
 
-from shared.aws import get_lambda_client
 from shared.logging import logger
+
+# A DEDICATED Lambda client, not shared.aws.get_lambda_client().
+#
+# That shared client exists for fire-and-forget `InvocationType='Event'` calls
+# and carries botocore's defaults: a 60-second read timeout and up to three
+# attempts. Both are wrong for a nested synchronous invoke:
+#
+#   • the MCP adapter's own Lambda timeout is 30 s, so a 60-second read timeout
+#     can never fire first — a slow domain call ends as the ADAPTER timing out,
+#     which returns no JSON-RPC envelope at all instead of the -32603 this
+#     module's error taxonomy promises;
+#   • retries on RequestResponse re-run the work. Harmless for today's GETs, and
+#     not harmless at all for the write tools Phase 3 adds — an idempotency key
+#     is the fix for that, and until it exists, not retrying is the honest
+#     default.
+#
+# 20 s leaves the adapter ~10 s to serialize a refusal and answer, and sits
+# under API Gateway's 29 s ceiling on the outer request either way.
+_DELEGATE_READ_TIMEOUT_SECONDS: Final = 20
+_DELEGATE_CONNECT_TIMEOUT_SECONDS: Final = 3
+
+_lambda_client = None
+
+
+def get_delegate_lambda_client():
+    """The Lambda client used for delegated invokes, created once per container."""
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client('lambda', config=Config(
+            read_timeout=_DELEGATE_READ_TIMEOUT_SECONDS,
+            connect_timeout=_DELEGATE_CONNECT_TIMEOUT_SECONDS,
+            retries={'max_attempts': 1, 'mode': 'standard'},
+        ))
+    return _lambda_client
+
 
 # The synthetic subject namespace. A service credential's subject can never
 # collide with a Cognito `sub` (a UUID) because of this prefix — the same
@@ -121,10 +157,16 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
     return {
         'sub': f'{SYNTHETIC_SUBJECT_PREFIX}{token_id}',
         'cognito:groups': '',
-        # Not a mailbox. The routes that read an email use it as a display
-        # label, and a service credential has no human address — so it names the
-        # credential instead of borrowing its minter's identity, which would
-        # attribute the agent's actions to a person who did not perform them.
+        # Not a mailbox, and deliberately not the minter's. The routes that read
+        # an email use it as a display label, and a service credential has no
+        # human address — borrowing its minter's would attribute the agent's
+        # actions to a person who did not perform them.
+        #
+        # ⚠️ Phase 3 hazard: this value is not RFC-5322 shaped, so any route that
+        # VALIDATES the claim as an email (rather than displaying it) will refuse
+        # a delegated call. No route does today. The fix when one appears is a
+        # routable no-reply address that still names the credential, e.g.
+        # `mcp+{token_id}@<domain>`, not relaxing the validation.
         'email': f'{SYNTHETIC_SUBJECT_PREFIX}{token_id}',
     }
 
@@ -196,7 +238,7 @@ def call_domain(call: DomainCall, *, claims: Mapping[str, str]) -> DomainResult:
 
     event = build_proxy_event(call, claims)
     try:
-        response = get_lambda_client().invoke(
+        response = get_delegate_lambda_client().invoke(
             FunctionName=call.function_name,
             InvocationType='RequestResponse',
             Payload=json.dumps(event),

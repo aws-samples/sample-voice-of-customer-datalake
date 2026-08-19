@@ -59,6 +59,20 @@ metrics = Metrics(namespace="VoC-MCP")
 projects_table = get_projects_table()
 
 # MCP Protocol version
+#
+# ⚠️ KNOWN SKEW, and it is temporary by plan rather than by oversight.
+# `structuredContent` and `outputSchema` (below) arrived in the 2025-06-18
+# revision, while this still advertises 2024-11-05 and `initialize` declares no
+# capability for them. The version range — negotiating 2026-07-28 / 2025-11-25 /
+# 2025-06-18 and answering `server/discover` — is the next phase of the plan, and
+# bumping the number here without that negotiation would claim conformance this
+# handler does not yet have (no `resultType`, no header validation).
+#
+# Shipping the structured fields early is safe in the meantime because both are
+# ADDITIVE: a 2024-11-05 client reads `content[0].text`, which still carries the
+# same payload serialized, and JSON-RPC clients ignore result fields they do not
+# know. The reverse order — negotiate first, add the fields later — would have
+# meant two breaking output changes instead of one.
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
 # Semver on the SERVER, independent of the protocol revision above. 2.0.0
@@ -104,6 +118,52 @@ DOMAIN_ROUTES: dict[str, tuple[str, str, str]] = {
 }
 
 
+# What each path parameter must look like before it is allowed into a route path.
+#
+# 🔑 This is a ROUTE-CONFUSION guard, not input tidiness. The delegated path is
+# what the Powertools resolver matches on, so a parameter value is not data — it
+# is part of the routing key. Two ways an unvalidated value changes which route
+# answers:
+#
+#   • extra segments: project_id='p/api-tokens' builds '/projects/p/api-tokens'
+#     and lands on the token-list route instead of the project route;
+#   • a value that collides with a STATIC sibling: project_id='prioritization'
+#     builds '/projects/prioritization', and Powertools checks static routes
+#     BEFORE dynamic ones, so it lands on api_get_prioritization_scores — the
+#     surface deliberately excluded from MCP entirely. Segment counting does not
+#     catch this one, which is why these are format checks rather than a
+#     "no slashes" rule. The same trick reaches /feedback/search, /feedback/urgent
+#     and /feedback/entities through get_feedback_detail.
+#
+# Both formats are what the writers actually produce: `proj_` + a timestamp
+# (projects.py) and a 32-character hex digest (processor/handler.py). Anything
+# else fails CLOSED with a -32602, which is the right direction for a component
+# that decides both the route and the scope that applies to it. Pinned by
+# TestPathParameterConfinement, including a lockstep against the id generators.
+_PATH_PARAM_PATTERNS: dict[str, re.Pattern[str]] = {
+    'project_id': re.compile(r'^proj_[A-Za-z0-9_-]+$'),
+    'feedback_id': re.compile(r'^[0-9a-f]{32}$'),
+}
+
+
+def _validated_path_parameters(route_key: str, params: dict[str, str]) -> dict[str, str]:
+    """Refuse any path parameter that could change which route answers."""
+    for name, value in params.items():
+        pattern = _PATH_PARAM_PATTERNS.get(name)
+        if pattern is None:
+            # Fail closed on an UNDECLARED parameter rather than passing it
+            # through: a future route whose author forgets to add a pattern
+            # would otherwise reopen exactly this hole, silently.
+            raise InvalidToolArgument(
+                f"{route_key}: no validation declared for path parameter '{name}'"
+            )
+        if not isinstance(value, str) or not pattern.match(value):
+            # The expected SHAPE is not echoed back: it is a storage detail, and
+            # a caller who guessed wrong is better served by the parameter name.
+            raise InvalidToolArgument(f'{name} is not a valid identifier')
+    return params
+
+
 def _domain_call(
     route_key: str,
     *,
@@ -115,9 +175,12 @@ def _domain_call(
     The env var is read per call rather than captured at import so a test can
     set it, and so a missing one surfaces as this route being unconfigured
     rather than as the whole module failing to load.
+
+    Every delegated call is built here — tools and the autoseed route alike — so
+    this is the one place path parameters have to be confined.
     """
     domain, method, template = DOMAIN_ROUTES[route_key]
-    params = dict(path_parameters or {})
+    params = _validated_path_parameters(route_key, dict(path_parameters or {}))
     return DomainCall(
         function_name=os.environ.get(_DOMAIN_FUNCTION_ENV[domain], ''),
         method=method,
@@ -819,6 +882,9 @@ MCP_TOOLS = [
         "outputSchema": {
             "type": "object",
             "properties": _FEEDBACK_DETAIL_PROPERTIES,
+            # Every key is always emitted (the projection uses typed defaults),
+            # so declaring them costs nothing and lets a client rely on them.
+            "required": sorted(_FEEDBACK_DETAIL_PROPERTIES),
             "additionalProperties": False,
         },
     },
@@ -916,12 +982,16 @@ def _tool_search_feedback(args: dict, token_info: dict) -> ToolResult:
         call = _domain_call('feedback_list', query=shared_filters)
 
     body = _delegate(call, token_info).payload
-    items = body.get('items', []) if isinstance(body, dict) else []
+    raw_items = body.get('items', []) if isinstance(body, dict) else []
+    # Projected FIRST, then counted, so `count` describes what the caller
+    # received. Counting the route's list instead would let a non-dict entry make
+    # `count` exceed `len(items)` in the same payload.
+    items = [_project_feedback(item, summary=True) for item in raw_items
+             if isinstance(item, dict)]
     return ToolResult({
         "count": len(items),
         "query": query,
-        "items": [_project_feedback(item, summary=True) for item in items
-                  if isinstance(item, dict)],
+        "items": items,
     })
 
 
@@ -1502,10 +1572,17 @@ def _handle_autoseed(event: dict) -> dict:
     # through as the route's own query string rather than re-parsed here — the
     # comma-splitting used to be duplicated in both places.
     query_params = event.get('queryStringParameters') or {}
-    call = _domain_call('project_autoseed', path_parameters={'project_id': project_id}, query={
-        'persona_ids': query_params.get('persona_ids'),
-        'document_ids': query_params.get('document_ids'),
-    })
+    try:
+        call = _domain_call('project_autoseed', path_parameters={'project_id': project_id}, query={
+            'persona_ids': query_params.get('persona_ids'),
+            'document_ids': query_params.get('document_ids'),
+        })
+    except InvalidToolArgument as exc:
+        # This route takes its project id straight from the URL, so the
+        # route-confusion guard matters here as much as on a tool call — and it
+        # is a 400 rather than a 403, because the credential is fine and the
+        # path is not.
+        return _cors_response({'message': str(exc)}, status_code=400)
     try:
         result = call_domain(call, claims=synthetic_claims(token_info))
     except DelegationUnavailable:
@@ -1513,7 +1590,12 @@ def _handle_autoseed(event: dict) -> dict:
         return _cors_response({'message': 'Upstream service unavailable'}, status_code=502)
     # The route's own status travels with its body: a 404 for an unknown project
     # stays a 404 here instead of becoming the 500 this used to answer for it.
-    return _cors_response(result.payload, status_code=result.status_code)
+    #
+    # An empty upstream body becomes `{}` rather than `null`: this route's clients
+    # read fields off the response, and `null` makes that a TypeError where `{}`
+    # makes it a missing key.
+    return _cors_response(result.payload if result.payload is not None else {},
+                          status_code=result.status_code)
 
 
 # ============================================

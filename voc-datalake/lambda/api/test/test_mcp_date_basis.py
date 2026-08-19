@@ -37,7 +37,7 @@ def _search(args: dict) -> dict:
     """Run search_feedback and return the query string the route received."""
     import mcp_handler
     client = _stub_client()
-    with patch("shared.mcp_delegate.get_lambda_client", return_value=client), \
+    with patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=client), \
          patch.dict(os.environ, {"METRICS_FUNCTION": "voc-metrics-api"}):
         mcp_handler._tool_search_feedback(args, {"token_id": "tok_1"})
     event = json.loads(client.invoke.call_args.kwargs["Payload"])

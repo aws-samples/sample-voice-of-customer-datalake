@@ -907,50 +907,94 @@ describe('mcp delegation stays in step with the stack', () => {
 });
 
 describe('lambda role policies stay under the IAM size limit', () => {
-  // AWS caps a managed/inline role policy at 20 KB, and the repo's whole
-  // domain-split Lambda architecture exists because of it — yet nothing measured
-  // it. The failure mode is a deploy-time rejection with no synth warning, which
-  // is exactly the class of fault this suite exists to convert into a test.
+  // The repo's whole domain-split Lambda architecture exists because of this
+  // limit, yet nothing measured it. The failure mode is a deploy-time rejection
+  // with no synth warning — exactly the class of fault this suite converts into
+  // a test.
   //
-  // Measured per role on the serialized PolicyDocument. The threshold is a
-  // warning line well under the hard limit: a role at 16 KB is not broken, but it
-  // is one feature away from being, and finding that out at deploy is the thing
-  // worth avoiding. Largest policy in the stack today is ~2 KB, so this is a
-  // guard for the future rather than a live constraint.
+  // ⚠️ THE NUMBERS, because the repo's docs round them to "20 KB" and that is
+  // above the real ceiling, so a guard set there could never fire:
+  //   • an INLINE policy on a role (what AWS::IAM::Policy creates, and what
+  //     every grant* call in this stack produces) — 10,240 characters;
+  //   • a MANAGED policy (AWS::IAM::ManagedPolicy) — 6,144 characters.
+  // IAM does not count whitespace toward either, so the measurement below
+  // strips it, which is also what makes the count comparable to the quota
+  // rather than to `JSON.stringify`'s output.
+  //   https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html
   //
-  // ⚠️ It is an APPROXIMATION, stated so nobody reads it as exact: the template
-  // carries `{"Fn::GetAtt": [...]}` and `{"Fn::ImportValue": ...}` where the
-  // deployed policy carries resolved ARNs, so the two byte counts differ per
-  // statement in both directions. It is the right order of magnitude and it
-  // tracks the thing that actually grows — statement count — which is what makes
-  // it useful as a trend alarm even though it is not the number IAM checks.
-  const HARD_LIMIT_BYTES = 20_480;
-  const WARN_AT_BYTES = 16_384;
+  // All three shapes are measured — AWS::IAM::Policy, AWS::IAM::ManagedPolicy,
+  // and inline `Policies` on AWS::IAM::Role — because measuring only the first
+  // would let a role exceed its quota with this test green.
+  //
+  // Still an APPROXIMATION, stated so nobody reads it as exact: the template
+  // carries `{"Fn::GetAtt": …}` and `{"Fn::ImportValue": …}` where the deployed
+  // policy carries resolved ARNs, so per-statement counts differ in both
+  // directions. It tracks the thing that actually grows — statement count — so
+  // it works as a trend alarm even though it is not byte-for-byte the number IAM
+  // checks. Largest policy today is ~2 KB against a 10,240 ceiling.
+  const INLINE_LIMIT = 10_240;
+  const MANAGED_LIMIT = 6_144;
+  // Fire at 70% so there is room to land a feature and then split a domain,
+  // rather than discovering the ceiling in the middle of a deploy.
+  const WARN_FRACTION = 0.7;
 
-  function policySizes(): { id: string; bytes: number }[] {
-    return Object.entries(apiTemplate().findResources('AWS::IAM::Policy')).map(([id, resource]) => ({
-      id,
-      bytes: Buffer.byteLength(JSON.stringify(
-        z.object({ Properties: z.object({ PolicyDocument: z.unknown() }) })
-          .parse(resource).Properties.PolicyDocument,
-      ), 'utf8'),
-    }));
+  const DocumentSchema = z.object({ Properties: z.object({ PolicyDocument: z.unknown() }) });
+  const RoleSchema = z.object({
+    Properties: z.object({
+      Policies: z.array(z.object({ PolicyName: z.unknown(), PolicyDocument: z.unknown() })).optional(),
+    }),
+  });
+
+  /** Non-whitespace characters, which is how IAM counts a policy. */
+  const size = (document: unknown) => JSON.stringify(document).replace(/\s/g, '').length;
+
+  function policies(): { id: string; kind: string; chars: number; limit: number }[] {
+    const template = apiTemplate();
+    const measured: { id: string; kind: string; chars: number; limit: number }[] = [];
+
+    for (const [id, resource] of Object.entries(template.findResources('AWS::IAM::Policy'))) {
+      measured.push({
+        id, kind: 'inline', limit: INLINE_LIMIT,
+        chars: size(DocumentSchema.parse(resource).Properties.PolicyDocument),
+      });
+    }
+    for (const [id, resource] of Object.entries(template.findResources('AWS::IAM::ManagedPolicy'))) {
+      measured.push({
+        id, kind: 'managed', limit: MANAGED_LIMIT,
+        chars: size(DocumentSchema.parse(resource).Properties.PolicyDocument),
+      });
+    }
+    // Inline policies declared ON the role rather than as a separate resource.
+    // None today, which is exactly why they need measuring: the first one added
+    // would otherwise arrive unmeasured.
+    for (const [id, resource] of Object.entries(template.findResources('AWS::IAM::Role'))) {
+      for (const policy of RoleSchema.parse(resource).Properties.Policies ?? []) {
+        measured.push({
+          id: `${id}/${JSON.stringify(policy.PolicyName)}`, kind: 'inline-on-role',
+          limit: INLINE_LIMIT, chars: size(policy.PolicyDocument),
+        });
+      }
+    }
+    return measured;
   }
 
-  it('measures at least one policy, so the assertions below are not vacuous', () => {
-    expect(policySizes().length).toBeGreaterThan(0);
+  it('measures every policy shape the stack can produce', () => {
+    // Vacuity guard, and it names the shapes so a future one is a deliberate add.
+    const kinds = new Set(policies().map((p) => p.kind));
+    expect(policies().length).toBeGreaterThan(0);
+    expect(kinds.has('inline'), 'no AWS::IAM::Policy measured — has the filter drifted?').toBe(true);
   });
 
-  it('keeps every role policy under the 20 KB IAM limit', () => {
-    const over = policySizes().filter((p) => p.bytes >= HARD_LIMIT_BYTES);
-    expect(over, `policies at or over the ${HARD_LIMIT_BYTES}-byte IAM limit`).toEqual([]);
+  it('keeps every policy under its IAM quota', () => {
+    const over = policies().filter((p) => p.chars >= p.limit);
+    expect(over, 'policies at or over their IAM character quota').toEqual([]);
   });
 
-  it('keeps every role policy under the warning threshold', () => {
+  it('keeps every policy under 70% of its quota', () => {
     // If this fails, the answer is a new domain Lambda, not a bigger threshold.
-    // Raising the number here is how the ceiling gets hit for real.
-    const near = policySizes().filter((p) => p.bytes >= WARN_AT_BYTES);
-    expect(near, `policies within 4 KB of the IAM limit — split the domain instead`).toEqual([]);
+    // Raising the fraction here is how the ceiling gets hit for real.
+    const near = policies().filter((p) => p.chars >= p.limit * WARN_FRACTION);
+    expect(near, 'policies past 70% of their IAM quota — split the domain instead').toEqual([]);
   });
 });
 
