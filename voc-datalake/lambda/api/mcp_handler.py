@@ -9,7 +9,6 @@ Public endpoint — no Cognito auth. Auth is handled by validating the Bearer to
 from the Authorization header against SHA-256 hashes in the projects table.
 """
 
-import hmac
 import json
 import os
 import re
@@ -24,7 +23,21 @@ from botocore import exceptions as botocore_exceptions
 from shared.aws import get_dynamodb_resource
 from shared.api import DecimalEncoder, validate_date_basis
 from shared.feedback import query_feedback_by_date
-from shared.tokens import hash_token
+from shared.mcp_tokens import (
+    MCP_TOKEN_PK,
+    REACH_KIND_PROJECT,
+    REACH_KIND_WORKSPACE,
+    REACH_NONE,
+    REACH_PROJECT_SET,
+    SCOPE_FEEDBACK_READ,
+    SCOPE_METRICS_READ,
+    SCOPE_PROJECTS_READ,
+    DEFAULT_READ_REACH,
+    parse_token,
+    reach_allows,
+    secret_matches,
+    token_sk,
+)
 from shared.tables import get_projects_table, get_feedback_table, get_aggregates_table
 from shared.indexes import FEEDBACK_BY_ID_INDEX
 from projects import autoseed_project
@@ -44,8 +57,9 @@ aggregates_table = get_aggregates_table()
 # MCP Protocol version
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
-# Token prefix used during generation
-TOKEN_PREFIX = 'voc_'
+# The credential format lives in shared/mcp_tokens.py — this module does not
+# spell the prefix. It used to, as did projects_handler and an inline authorizer
+# in api-stack.ts, three copies of one rule.
 
 # The one origin a BROWSER may present. Not a CORS setting (see CORS_HEADERS
 # below) — it is the allowlist for the MCP spec's DNS-rebinding guard, which
@@ -61,7 +75,10 @@ ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '')
 
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Project-Id',
+    # X-Project-Id is gone: the credential carries its own project reach, so a
+    # client has no reason to send it and allowing it would keep a dead contract
+    # looking alive.
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
     # Without this a BROWSER-based MCP client can receive the 401 challenge but
     # never read it: WWW-Authenticate is not a CORS-safelisted response header.
@@ -212,16 +229,19 @@ def _authenticate(event: dict) -> dict | None:
     headers = event.get('headers', {})
     # API Gateway lowercases header names in proxy mode
     auth_header = headers.get('authorization') or headers.get('Authorization') or ''
-    project_id = headers.get('x-project-id') or headers.get('X-Project-Id') or ''
 
-    if not auth_header.startswith('Bearer ') or not project_id:
+    if not auth_header.startswith('Bearer '):
         return None
 
-    raw_token = auth_header[7:]  # strip "Bearer "
-    if not raw_token.startswith(TOKEN_PREFIX):
+    # NO X-Project-Id. The credential carries its own id, so the lookup is one
+    # keyed read instead of "Query a project's token rows and hash each one" —
+    # which is what required the header, and what made a workspace-wide tool
+    # such as list_projects unimplementable. Parsing is strict, so malformed
+    # caller text never becomes a key lookup.
+    parsed = parse_token(auth_header[7:])  # strip "Bearer "
+    if not parsed:
         return None
-
-    token_hash = hash_token(raw_token)
+    token_id, presented_secret = parsed
 
     if not projects_table:
         # An unset PROJECTS_TABLE is the same class of fault as a missing table
@@ -232,11 +252,15 @@ def _authenticate(event: dict) -> dict | None:
         logger.error("Projects table not configured")
         raise AuthBackendUnavailable('projects table not configured')
 
-    # Query all tokens for this project and find matching hash
+    # ONE item, addressed by the id inside the credential. A Query with an
+    # exact sort key rather than get_item on purpose: it is the same single-item
+    # read, and it keeps the IAM grant at exactly Query + UpdateItem — the
+    # narrowed grant that makes this bearer-token-reachable function unable to
+    # write project artifacts. Adding GetItem would widen it for no gain.
     try:
         response = projects_table.query(
             KeyConditionExpression=(
-                Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
+                Key('pk').eq(MCP_TOKEN_PK) & Key('sk').eq(token_sk(token_id))
             ),
         )
     except botocore_exceptions.ClientError as exc:
@@ -289,44 +313,60 @@ def _authenticate(event: dict) -> dict | None:
         )
         raise AuthBackendUnavailable(error_type) from exc
 
-    for item in response.get('Items', []):
-        stored_hash = item.get('token_hash', '')
-        # Guard against malformed/migrated rows where token_hash is stored as
-        # a non-string type (Binary, Decimal, …).  Calling .encode() on such a
-        # value would raise AttributeError and turn one bad row into a 500 for
-        # every request in that project.  Skip the row and log so an operator
-        # can clean it up, but do not expose the value itself.
-        if not isinstance(stored_hash, str):
-            logger.warning(
-                'Unexpected token_hash type in DynamoDB item; skipping row',
-                extra={'type': type(stored_hash).__name__},
-            )
-            continue
-        # Constant-time comparison prevents timing-based hash enumeration.
-        # Both operands must be the same type (str); encode to bytes so
-        # compare_digest can work even if one value is unexpectedly empty.
-        if hmac.compare_digest(stored_hash.encode(), token_hash.encode()):
-            # Checked AFTER the hash match — only the matching row's expiry
-            # matters, and non-matching rows must not influence timing.
-            if _credential_expired(item):
-                return None
-            # Update last_used_at
-            try:
-                projects_table.update_item(
-                    Key={'pk': f'PROJECT#{project_id}', 'sk': item['sk']},
-                    UpdateExpression='SET last_used_at = :now',
-                    ExpressionAttributeValues={':now': datetime.now(timezone.utc).isoformat()},
-                )
-            except Exception as e:
-                logger.warning(f"Failed to update last_used_at: {e}")
-            return {**item, 'project_id': project_id}
+    items = response.get('Items', [])
+    if not items:
+        # No such token id. Indistinguishable to the caller from a wrong
+        # secret: both are a plain 401.
+        return None
+    item = items[0]
 
-    return None
+    stored_hash = item.get('secret_hash', '')
+    # Guard against a malformed row where secret_hash is stored as a non-string
+    # type (Binary, Decimal, …). Calling .encode() on such a value would raise
+    # AttributeError and turn one bad row into a 500 instead of a 401. Log the
+    # type so an operator can clean it up, never the value.
+    if not isinstance(stored_hash, str):
+        logger.warning(
+            'Unexpected secret_hash type in DynamoDB item; refusing credential',
+            extra={'type': type(stored_hash).__name__, 'token_id': item.get('token_id', '')},
+        )
+        return None
+
+    # Constant-time, to deny timing-based enumeration of the stored digest.
+    if not secret_matches(presented_secret=presented_secret, stored_hash=stored_hash):
+        return None
+
+    # Checked AFTER the secret matches, so a wrong secret and an expired
+    # credential cost the same work.
+    if _credential_expired(item):
+        return None
+
+    try:
+        projects_table.update_item(
+            Key={'pk': MCP_TOKEN_PK, 'sk': item['sk']},
+            UpdateExpression='SET last_used_at = :now',
+            ExpressionAttributeValues={':now': datetime.now(timezone.utc).isoformat()},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to update last_used_at: {e}")
+
+    return item
 
 
 # ============================================
 # MCP Tool definitions
 # ============================================
+
+# The project argument shared by the project-shaped tools. One definition so
+# the two schemas cannot drift, and so the "optional when unambiguous" rule is
+# stated to clients exactly once.
+_PROJECT_ID_ARG = {
+    "type": "string",
+    "description": (
+        "Which project to read. Optional when this credential names exactly one "
+        "project, in which case that one is used; required otherwise."
+    ),
+}
 
 MCP_TOOLS = [
     {
@@ -400,24 +440,28 @@ MCP_TOOLS = [
     {
         "name": "get_project",
         "description": (
-            "Get details of the current project including personas, documents (PRDs, PR/FAQs), "
-            "and project metadata. The project is determined by the X-Project-Id header."
+            "Get details of a project including personas, documents (PRDs, PR/FAQs), "
+            "and project metadata."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "project_id": _PROJECT_ID_ARG,
+            },
             "additionalProperties": False,
         },
     },
     {
         "name": "list_personas",
         "description": (
-            "List all personas for the current project with their demographics, "
+            "List all personas for a project with their demographics, "
             "pain points, goals, and behavioral traits."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "project_id": _PROJECT_ID_ARG,
+            },
             "additionalProperties": False,
         },
     },
@@ -623,7 +667,13 @@ def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
 
 @tracer.capture_method
 def _tool_get_project(args: dict, token_info: dict) -> list[dict]:
-    """Get project details including personas and documents."""
+    """Get project details including personas and documents.
+
+    `project_id` is the project _handle_tools_call resolved from the arguments
+    (or the token's single project) AND authorized against the token's read
+    reach. It is not "the token's project" any more — a credential can reach
+    several — so this must not be re-derived here.
+    """
     project_id = token_info['project_id']
 
     if not projects_table:
@@ -673,7 +723,11 @@ def _tool_get_project(args: dict, token_info: dict) -> list[dict]:
 
 @tracer.capture_method
 def _tool_list_personas(args: dict, token_info: dict) -> list[dict]:
-    """List personas with full details."""
+    """List personas with full details.
+
+    `project_id` is resolved and authorized by _handle_tools_call — see
+    _tool_get_project.
+    """
     project_id = token_info['project_id']
 
     if not projects_table:
@@ -758,42 +812,48 @@ TOOL_HANDLERS = {
     "get_feedback_detail": _tool_get_feedback_detail,
 }
 
-# Minimum scope required for each registered tool.
-# "read" — any valid token may call this tool.
-# "read-write" — only tokens with read-write scope may call this tool.
+# The scope each registered tool requires, from the vocabulary in
+# shared/mcp_tokens.py.
 #
-# Every entry in TOOL_HANDLERS MUST appear here.  The dispatch in
-# _handle_tools_call is fail-closed: a tool with no declared scope is
-# rejected rather than defaulting to allowed, so an author who adds a
-# handler without updating this table gets an immediate error at call
-# time rather than an accidentally-public endpoint.
+# Every entry in TOOL_HANDLERS MUST appear here. The dispatch in
+# _handle_tools_call is fail-closed: a tool with no declared scope is rejected
+# rather than defaulting to allowed, so an author who adds a handler without
+# updating this table gets an immediate error at call time rather than an
+# accidentally-public endpoint.
+#
+# Scopes are now per-domain (`feedback:read`, not `read`), so a token can be
+# minted that reads feedback without reading anybody's product strategy. The
+# previous single `read`/`read-write` pair could not express that, and its
+# `read-write` half was a phantom — mintable, stored and badged in the UI while
+# no tool ever required it.
 TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
-    "search_feedback": "read",
-    "get_metrics_summary": "read",
-    "get_project": "read",
-    "list_personas": "read",
-    "get_feedback_detail": "read",
+    "search_feedback": SCOPE_FEEDBACK_READ,
+    "get_feedback_detail": SCOPE_FEEDBACK_READ,
+    "get_metrics_summary": SCOPE_METRICS_READ,
+    "get_project": SCOPE_PROJECTS_READ,
+    "list_personas": SCOPE_PROJECTS_READ,
 }
 
-# The complete set of valid required-scope values.  Both _scope_allows and
-# _handle_tools_call reference this constant so adding a new scope means one
-# change instead of three.
-_VALID_REQUIRED_SCOPES: frozenset[str] = frozenset({"read", "read-write"})
-
-# Scope assumed for a token row with no usable ``scope`` — the attribute absent,
-# or present but falsy ('', None).
+# How each tool's data is SHAPED, which decides how the token's read_reach
+# applies to it (shared.mcp_tokens.reach_allows).
 #
-# ``scope`` has been validated to be exactly "read" or "read-write" at mint
-# time (projects_handler.api_create_token) but that only constrains *newly*
-# minted rows; it says nothing about rows already sitting in a deployed table.
-# The token *list* path (projects_handler.api_list_tokens) already resolves a
-# missing scope to "read", so the MCP Access tab displays such a row as a
-# working read token.  Defaulting to "read" here as well keeps enforcement and
-# presentation in agreement: a scope-less row behaves exactly as the UI says
-# it does, instead of being shown as usable and then refused on every call.
-# "read" is also the least-privilege choice — it grants nothing beyond what
-# every valid token already has.
-DEFAULT_TOKEN_SCOPE = "read"
+# `workspace` — the data has no project dimension at all. The feedback corpus
+#   is keyed `SOURCE#{platform}` with no project_id, and metrics are workspace
+#   aggregates. A token whose reach is `project-set` therefore cannot call
+#   these: there is nothing to narrow, so allowing them would hand a supposedly
+#   sealed credential the entire verbatim history.
+# `project` — the tool addresses exactly one project, named by a `project_id`
+#   argument (or defaulted from the token's project set when unambiguous), and
+#   that project must be within reach.
+#
+# Also fail-closed: a tool with no declared reach kind is rejected.
+TOOL_REACH_KINDS: dict[str, str] = {
+    "search_feedback": REACH_KIND_WORKSPACE,
+    "get_feedback_detail": REACH_KIND_WORKSPACE,
+    "get_metrics_summary": REACH_KIND_WORKSPACE,
+    "get_project": REACH_KIND_PROJECT,
+    "list_personas": REACH_KIND_PROJECT,
+}
 
 
 # ============================================
@@ -837,28 +897,89 @@ def _handle_tools_list(req_id: Any, _params: dict) -> dict:
     return _jsonrpc_result(req_id, {"tools": MCP_TOOLS})
 
 
-def _scope_allows(token_scope: str, required_scope: str) -> bool:
-    """Return True when *token_scope* satisfies *required_scope*.
+def _scope_allows(token_scopes: Any, required_scope: str) -> bool:
+    """Return True when the token's scope set contains *required_scope*.
 
-    Pure predicate — no side effects.  Callers are responsible for logging
-    when this returns False.
+    Pure predicate — no side effects. Callers are responsible for logging when
+    this returns False.
 
-    "read-write" satisfies both "read" and "read-write".
-    "read" satisfies only "read".
-    Any value not in _VALID_REQUIRED_SCOPES is treated as insufficient.
+    Exact membership, with no hierarchy: scopes are per-domain, so nothing
+    "includes" anything else and there is no ordering to get wrong. A row whose
+    `scopes` is missing or not a list of strings grants NOTHING rather than
+    falling back to a default — the old code defaulted a missing scope to
+    "read" because deployed rows predated the field, but the format change
+    means every row now carries an explicit set, so a row without one is data
+    damage and must not be guessed at.
     """
-    if required_scope not in _VALID_REQUIRED_SCOPES:
+    if not required_scope:
         return False
-    if required_scope == "read":
-        return token_scope in ("read", "read-write")
-    # required_scope == "read-write"
-    return token_scope == "read-write"
+    if not isinstance(token_scopes, (list, tuple, set, frozenset)):
+        return False
+    return required_scope in token_scopes
+
+
+class InvalidProjectArgument(Exception):
+    """`project_id` was supplied but is not a usable project id."""
+
+
+def _resolve_project_id(args: dict, token_info: dict) -> str | None:
+    """Which project a project-shaped tool is addressing, or None.
+
+    Explicit argument wins. Absent, it defaults to the token's project set when
+    that set names exactly one project — the common case, since a token is
+    minted from a project — so single-project clients need not pass it. An
+    ambiguous default (a set with several projects) resolves to None rather
+    than picking one, which the caller sees as a request to name the project.
+
+    🔑 A PRESENT but unusable argument (`123`, `["p"]`, `"  "`) RAISES rather
+    than falling back to the token's project. Falling back would read a
+    *different* project than the client named and report success, which is worse
+    than an error: the caller gets someone else's data believing it is the
+    project they asked for. Absence and garbage are different intents and get
+    different answers.
+    """
+    if 'project_id' in args:
+        explicit = args['project_id']
+        if not isinstance(explicit, str) or not explicit.strip():
+            raise InvalidProjectArgument(
+                f'project_id must be a non-empty string, got '
+                f'{type(explicit).__name__}'
+            )
+        return explicit.strip()
+    token_projects = token_info.get('projects')
+    if isinstance(token_projects, (list, tuple)) and len(token_projects) == 1:
+        only = token_projects[0]
+        return only if isinstance(only, str) and only else None
+    return None
 
 
 def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     """Handle MCP tools/call request."""
     tool_name = params.get('name', '')
     arguments = params.get('arguments', {})
+
+    # An explicit `"arguments": null` means "no arguments", not "bad request".
+    # `params.get('arguments', {})` cannot supply the default for it, because the
+    # KEY IS PRESENT — and some JSON-RPC/MCP clients serialize an omitted
+    # optional object as null rather than dropping it. Every tool here has only
+    # optional arguments, so `{}` is exactly what such a caller meant; refusing
+    # it would be a compatibility edge invented by this guard rather than a real
+    # protocol error.
+    if arguments is None:
+        arguments = {}
+
+    # Anything else non-object is genuinely malformed. A list, string or number
+    # reaches the project resolution below, where both `'project_id' in args` and
+    # `args['project_id']` raise TypeError — and that resolution runs OUTSIDE the
+    # try/except around the handler, so it escapes as a 502 with no JSON-RPC
+    # envelope and no CORS headers. Refused here at the boundary, which is the
+    # same lesson the BotoCoreError clause in _authenticate records: an unhandled
+    # type is a protocol-level error, not a server crash.
+    if not isinstance(arguments, dict):
+        return _jsonrpc_error(
+            req_id, -32602,
+            f"'arguments' must be an object, got {type(arguments).__name__}",
+        )
 
     handler = TOOL_HANDLERS.get(tool_name)
     if not handler:
@@ -871,34 +992,78 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         logger.error("Tool has no declared scope requirement", extra={"tool": tool_name})
         return _jsonrpc_error(req_id, -32603, f"Tool {tool_name} has no declared scope requirement")
 
-    # A token row with no usable `scope` — the attribute absent (it predates the
-    # field) or present but empty/falsy (a partial write, a migration that wrote
-    # '') — is resolved to DEFAULT_TOKEN_SCOPE.  `or` rather than a two-argument
-    # .get() is deliberate: both cases are the same server-side data problem, and
-    # only the absent one would be covered by .get('scope', DEFAULT_TOKEN_SCOPE).
-    # An empty string would otherwise fall through to a "Forbidden: token scope
-    # ''" that blames the caller for a row it cannot see or fix.  The fallback is
-    # least-privilege, so a falsy value can never grant more than `read`.
-    # See DEFAULT_TOKEN_SCOPE for why `read` specifically.
-    token_scope = token_info.get('scope') or DEFAULT_TOKEN_SCOPE
-    if not _scope_allows(token_scope, required_scope):
-        # An unrecognised required_scope is a server-side misconfiguration in
-        # TOOL_SCOPE_REQUIREMENTS, not a client permission problem: report it
-        # as an internal error (like the missing-declaration case above) so the
-        # caller is not told that its most-privileged token is insufficient.
-        if required_scope not in _VALID_REQUIRED_SCOPES:
-            logger.error(
-                "Unrecognised required_scope value in TOOL_SCOPE_REQUIREMENTS",
-                extra={"tool": tool_name, "required_scope": required_scope},
-            )
-            return _jsonrpc_error(
-                req_id, -32603, f"Tool {tool_name} has an invalid scope requirement"
-            )
+    # Same fail-closed treatment for the reach kind: without it there is no way
+    # to know whether read_reach even applies to this tool, and guessing would
+    # mean guessing in the permissive direction.
+    tool_reach_kind = TOOL_REACH_KINDS.get(tool_name)
+    if tool_reach_kind is None:
+        logger.error("Tool has no declared reach kind", extra={"tool": tool_name})
+        return _jsonrpc_error(req_id, -32603, f"Tool {tool_name} has no declared reach kind")
+
+    token_scopes = token_info.get('scopes')
+    if not _scope_allows(token_scopes, required_scope):
         logger.warning(
             "Scope insufficient for tool",
-            extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
+            extra={"tool": tool_name, "required": required_scope},
         )
-        return _jsonrpc_error(req_id, -32003, f"Forbidden: token scope '{token_scope}' cannot call '{tool_name}'")
+        return _jsonrpc_error(
+            req_id, -32003,
+            f"Forbidden: token lacks the '{required_scope}' scope required by '{tool_name}'",
+        )
+
+    # Reach enforcement. Separate from scope on purpose: scope says WHICH KIND
+    # of data a token may read, reach says HOW FAR. A token can hold
+    # `projects:read` and still be refused a particular project.
+    read_reach = token_info.get('read_reach') or DEFAULT_READ_REACH
+    token_projects = token_info.get('projects') or []
+    project_id = None
+    if tool_reach_kind == REACH_KIND_PROJECT:
+        try:
+            project_id = _resolve_project_id(arguments, token_info)
+        except InvalidProjectArgument as exc:
+            return _jsonrpc_error(req_id, -32602, str(exc))
+
+    if not reach_allows(
+        read_reach=read_reach,
+        token_projects=token_projects,
+        tool_reach_kind=tool_reach_kind,
+        project_id=project_id,
+    ):
+        # The refusals read differently because they need different fixes: one
+        # wants an argument, the other wants a differently-scoped token.
+        #
+        # Ordering, precisely — a MALFORMED argument is reported earlier, by
+        # _resolve_project_id, because an ill-formed request is ill-formed
+        # whatever the token's reach (syntax before authorization, as everywhere
+        # else). What is checked reach-first is the MISSING-argument case below:
+        # a `none`-reach token can never call anything, so asking it for a
+        # project_id would send the caller after an argument that cannot help.
+        reach_covers_nothing = (
+            read_reach == REACH_NONE
+            or (read_reach == REACH_PROJECT_SET and tool_reach_kind == REACH_KIND_WORKSPACE)
+        )
+        if tool_reach_kind == REACH_KIND_PROJECT and not project_id and not reach_covers_nothing:
+            return _jsonrpc_error(
+                req_id, -32602,
+                f"'{tool_name}' needs a project_id argument: this token's project "
+                f"set does not name exactly one project",
+            )
+        logger.warning(
+            "Read reach does not cover this call",
+            extra={"tool": tool_name, "read_reach": read_reach, "kind": tool_reach_kind},
+        )
+        return _jsonrpc_error(
+            req_id, -32003,
+            f"Forbidden: this token's read reach ('{read_reach}') does not cover "
+            f"'{tool_name}'",
+        )
+
+    if tool_reach_kind == REACH_KIND_PROJECT:
+        # The AUTHORIZED project for this one call, which is what the
+        # project-shaped tools read. Injected rather than passed as a new
+        # parameter so resolution and authorization stay in this one place
+        # instead of being repeated per tool.
+        token_info = {**token_info, 'project_id': project_id}
 
     try:
         content = handler(arguments, token_info)
@@ -934,20 +1099,14 @@ MCP_AUTH_METHODS = {
 @tracer.capture_method
 def _handle_autoseed(event: dict) -> dict:
     """Handle GET /mcp/autoseed/{project_id} with Bearer token auth.
-    
-    The project_id is extracted from the URL path (injected into pathParameters
-    by the router). We also inject it as the X-Project-Id header so _authenticate
-    can find it without requiring the caller to pass the header explicitly.
+
+    The project_id comes from the URL path (injected into pathParameters by the
+    router). It no longer has to be echoed into an X-Project-Id header: the
+    credential resolves on its own, so the path is simply the project being
+    asked for, and the token's reach decides whether that is allowed.
     """
     path_params = event.get('pathParameters', {}) or {}
     project_id = path_params.get('project_id', '')
-
-    # Inject project_id into headers so _authenticate can find it
-    if project_id:
-        headers = event.get('headers', {}) or {}
-        if not headers.get('x-project-id') and not headers.get('X-Project-Id'):
-            headers['x-project-id'] = project_id
-            event['headers'] = headers
 
     try:
         token_info = _authenticate(event)
@@ -959,9 +1118,25 @@ def _handle_autoseed(event: dict) -> dict:
     if not token_info:
         return _cors_response({'message': 'Unauthorized'}, status_code=401)
 
-    # Ensure the token's project matches the requested project
-    if project_id != token_info.get('project_id'):
-        return _cors_response({'message': 'Forbidden: token does not match project'}, status_code=403)
+    # Autoseed hands back the project's personas and documents, so it is a
+    # project-shaped read of exactly the kind get_project performs, and it goes
+    # through the same gate — including the scope check, which the old
+    # equality-against-the-token's-project test did not perform at all.
+    if not _scope_allows(token_info.get('scopes'), SCOPE_PROJECTS_READ):
+        return _cors_response(
+            {'message': f"Forbidden: token lacks the '{SCOPE_PROJECTS_READ}' scope"},
+            status_code=403,
+        )
+    if not reach_allows(
+        read_reach=token_info.get('read_reach') or DEFAULT_READ_REACH,
+        token_projects=token_info.get('projects') or [],
+        tool_reach_kind=REACH_KIND_PROJECT,
+        project_id=project_id,
+    ):
+        return _cors_response(
+            {'message': 'Forbidden: project is outside this token\'s read reach'},
+            status_code=403,
+        )
 
     query_params = event.get('queryStringParameters', {}) or {}
     persona_ids = query_params.get('persona_ids', '').split(',') if query_params.get('persona_ids') else None

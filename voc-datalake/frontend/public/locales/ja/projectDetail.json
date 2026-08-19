@@ -253,15 +253,33 @@
     "noTokensYet": "API トークンがまだありません",
     "revealToken": "トークンを表示",
     "revokeToken": "トークンを無効化",
-    "scope": "スコープ",
-    "scopeRead": "読み取り専用 — フィードバック検索、メトリクス表示",
-    "scopeReadWrite": "読み取り・書き込み — チャットとドキュメント生成を含む",
     "title": "MCP アクセス",
     "tokenCreated": "トークンが正常に作成されました",
     "tokenExpiresOn": "このトークンの有効期限は{{date}}です。",
     "tokenName": "トークン名",
     "tokenNamePlaceholder": "例：My Kiro token",
-    "tokenPasteHint": "このトークンを mcp.json または autoseed curl コマンドの <code>Authorization</code> ヘッダーに貼り付けてください。"
+    "tokenPasteHint": "このトークンを mcp.json または autoseed curl コマンドの <code>Authorization</code> ヘッダーに貼り付けてください。",
+    "scopes": "スコープ",
+    "scopeDesc": {
+      "feedback_read": "顧客フィードバックの検索と閲覧",
+      "metrics_read": "ダッシュボードと指標の内訳の閲覧",
+      "projects_read": "プロジェクト、ペルソナ、ドキュメントの閲覧"
+    },
+    "noScopes": "スコープなし",
+    "readReach": "読み取り範囲",
+    "reachOption": {
+      "workspace": "ワークスペース全体（既定）",
+      "project-set": "このプロジェクトのみ"
+    },
+    "reachHint": {
+      "workspace": "ワークスペース内のすべてのプロジェクト（他プロジェクトの未公開ドキュメントを含む）とすべての顧客フィードバックに到達します。",
+      "project-set": "このプロジェクトに限定されます。プロジェクト単位ではないフィードバック全体とワークスペース指標は読み取れません。"
+    },
+    "reachBadge": {
+      "workspace": "ワークスペース全体",
+      "project-set": "このプロジェクト",
+      "none": "読み取り不可"
+    }
   },
   "notFound": {
     "backToProjects": "プロジェクトに戻る",
