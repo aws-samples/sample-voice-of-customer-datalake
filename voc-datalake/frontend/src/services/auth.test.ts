@@ -9,23 +9,31 @@ const mockConfirmPassword = vi.fn()
 const mockCompleteNewPasswordChallenge = vi.fn()
 const mockSignOut = vi.fn()
 
+// The implementations MUST be `function`, not arrow, expressions: the source calls
+// `new CognitoUserPool(...)` / `new CognitoUser(...)`, and vitest 4 honours `new` with real
+// construct semantics, which an arrow function does not support. Vitest 3 invoked the
+// implementation as a plain call even under `new`, so an arrow worked there by accident.
 vi.mock('amazon-cognito-identity-js', () => ({
-  CognitoUserPool: vi.fn().mockImplementation(() => ({
-    getCurrentUser: vi.fn().mockReturnValue({
+  CognitoUserPool: vi.fn().mockImplementation(function () {
+    return {
+      getCurrentUser: vi.fn().mockReturnValue({
+        getSession: mockGetSession,
+        refreshSession: mockRefreshSession,
+        signOut: mockSignOut,
+      }),
+    }
+  }),
+  CognitoUser: vi.fn().mockImplementation(function () {
+    return {
+      authenticateUser: mockAuthenticateUser,
+      forgotPassword: mockForgotPassword,
+      confirmPassword: mockConfirmPassword,
+      completeNewPasswordChallenge: mockCompleteNewPasswordChallenge,
       getSession: mockGetSession,
       refreshSession: mockRefreshSession,
       signOut: mockSignOut,
-    }),
-  })),
-  CognitoUser: vi.fn().mockImplementation(() => ({
-    authenticateUser: mockAuthenticateUser,
-    forgotPassword: mockForgotPassword,
-    confirmPassword: mockConfirmPassword,
-    completeNewPasswordChallenge: mockCompleteNewPasswordChallenge,
-    getSession: mockGetSession,
-    refreshSession: mockRefreshSession,
-    signOut: mockSignOut,
-  })),
+    }
+  }),
   AuthenticationDetails: vi.fn(),
   CognitoRefreshToken: vi.fn(),
 }))
