@@ -17,7 +17,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
-import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, publicBallotEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
 import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
@@ -415,6 +415,59 @@ export class VocApiStack extends VocStack {
       environment: { AGGREGATES_TABLE: aggregatesTable.tableName, FEEDBACK_TABLE: feedbackTable.tableName, PROCESSING_QUEUE_URL: processingQueueUrl, BRAND_NAME: brandName, POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api', LOG_LEVEL: 'INFO' },
       layers: [apiLayer],
       logGroup: this.createLogGroup('FeedbackFormApiLogs', this.uniqueName('voc-feedback-form-api')),
+    });
+
+    // Anonymous Ballots API (voting sessions)
+    //
+    // Its OWN Lambda, its own role and its own resource tree, because two of its
+    // routes are served without credentials. A public route carved out of the
+    // authenticated /projects proxy is the shape that once left form update,
+    // delete and submission reads anonymous (see api-stack.test.ts), and the
+    // feedback-form routes are public for a customer widget rather than for this.
+    //
+    // ONE TABLE, and only one: the aggregates table, which holds both the voting
+    // session records and the prioritization ballots. Deliberately NO feedback
+    // table and NO processing-queue grant — a ballot is a decision record, not
+    // customer voice, so it must never be enriched, given a sentiment or assigned
+    // a persona. The absent grants are what enforce that rather than remember it.
+    //
+    // THREE ACTIONS, not `grantReadWriteData`. That convenience method hands over
+    // Query, Scan, DeleteItem, BatchGetItem and BatchWriteItem across the WHOLE
+    // aggregates table, which also holds every feedback-form configuration and
+    // every signed-in reviewer's ballot — and this is the one function in the
+    // stack that two unauthenticated routes can reach. The handler reads one item
+    // at a time (`get_item`), creates a session (`put_item`) and upserts
+    // (`update_item`); it never lists, never deletes, never writes in bulk. So a
+    // caller who found a flaw in it still cannot enumerate the table or erase
+    // anybody's vote. `ballots Lambda IAM grants` in api-stack.test.ts pins both
+    // the three actions and the absence of the rest.
+    const ballotsRole = this.createLambdaRole('BallotsLambdaRole');
+    aggregatesTable.grant(ballotsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
+    kmsKey.grantEncryptDecrypt(ballotsRole);
+
+    const ballotsLambda = new lambda.Function(this, 'BallotsApi', {
+      functionName: this.uniqueName('voc-ballots-api'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'ballots_handler.lambda_handler',
+      code: createApiLambdaCode('ballots_handler.py'),
+      role: ballotsRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        // The SAME origin every other API Lambda gets, not '*'. A phone reaches
+        // the ballot page by opening `/vote/{id}` on this app's own CloudFront
+        // domain, so the browser sends that domain as its Origin exactly as it
+        // does for every other page — being unauthenticated changes nothing about
+        // where the page is served from. And '*' here would loosen the three
+        // FACILITATOR routes too, which live on this same function.
+        ALLOWED_ORIGIN: allowedOrigin,
+        POWERTOOLS_SERVICE_NAME: 'voc-ballots-api',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [apiLayer],
+      logGroup: this.createLogGroup('BallotsApiLogs', this.uniqueName('voc-ballots-api')),
     });
 
     // Chat API
@@ -901,6 +954,52 @@ export class VocApiStack extends VocStack {
         stageName: 'v1',
         throttlingRateLimit: 100,
         throttlingBurstLimit: 200,
+        // Tighter limits on the two UNAUTHENTICATED ballot methods (see
+        // /voting-sessions/* below). Each request costs a DynamoDB read even for a
+        // session id that does not exist, and nothing in front of them asks who is
+        // calling — the session token is checked inside the handler, which means
+        // the cost is paid before the refusal.
+        //
+        // As STAGE METHOD SETTINGS rather than as a usage plan, which is what the
+        // /mcp route uses: a usage plan's throttle binds per API KEY, and these
+        // methods deliberately require none, so a plan attached to them would
+        // never apply to the requests that matter. Method settings are keyed by
+        // path and apply to every caller.
+        //
+        // 20/s with a burst of 40 is roughly 30x what the feature needs — a room
+        // is bounded by MAX_BALLOT_CAP (200) ballots and submits once each — while
+        // still cutting a scripted flood down to something a single small table
+        // absorbs.
+        methodOptions: {
+          '/voting-sessions/{session_id}/config/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          '/voting-sessions/{session_id}/submit/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          // The MCP endpoint gets the same treatment for the same reason: its
+          // caller holds a bearer token, not a Cognito session, and an invalid
+          // token still costs a DynamoDB Query before the 401. This REPLACES the
+          // former McpUsagePlan, which never bound — a usage plan's throttle
+          // applies per API KEY and no MCP client sends one (SEC-10's fourth
+          // sub-claim, open since #260). 20/40 rather than the ballots' numbers
+          // by coincidence, not inheritance: an agent's tool loop is bursty, and
+          // a legitimate session fires a handful of calls per model turn, so a
+          // burst of 40 absorbs it while still capping a token brute-force at
+          // ~1.7M attempts/day against a 2^256 space.
+          '/mcp/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          // CONCRETE VERBS on the proxy path — the only forms the service
+          // accepts, established by a failed deploy plus update-stage probes
+          // (2026-08-18): `/{path}/*` is rejected ("Method paths can be
+          // defined as {resource_path}/{http_method} ... or */* for
+          // overriding all methods in the stage") and `ANY` is rejected as an
+          // httpMethod too; `/{proxy+}/GET` is accepted. POST covers JSON-RPC
+          // sent to subpaths; GET covers /mcp/autoseed/{project_id}. The
+          // handler answers every other verb 405 before any DynamoDB read,
+          // and OPTIONS is the gateway's CORS mock, so these two are the
+          // complete set of verbs that cost anything. Other verbs on the
+          // proxy (PUT, DELETE, …) deliberately ride the stage default
+          // (100/200) — their whole cost is a Lambda invoke returning 405,
+          // and that ceiling is the intended one.
+          '/mcp/{proxy+}/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          '/mcp/{proxy+}/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+        },
         metricsEnabled: true,
         loggingLevel: apigateway.MethodLoggingLevel.INFO,
         dataTraceEnabled: false,
@@ -927,6 +1026,28 @@ export class VocApiStack extends VocStack {
       type: apigateway.ResponseType.DEFAULT_5XX,
       responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'", 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
     });
+    // API-WIDE, deliberately: this fires on every gateway-GENERATED 401 —
+    // the MCP token authorizer refusing a malformed Bearer shape, AND the
+    // Cognito authorizer rejecting any other route. The challenge is truthful
+    // for both, because every credential this API accepts arrives as
+    // `Authorization: Bearer …` (a Cognito ID token is a bearer token), so
+    // RFC 6750's challenge is the right answer everywhere. A gateway response
+    // is also the ONLY place this header can be set on a REST API: 401s
+    // produced INSIDE a Lambda proxy integration have it unconditionally
+    // remapped to `x-amzn-remapped-www-authenticate` (documented, no opt-out
+    // — verified live 2026-08-18), so mcp_handler keeps sending it and
+    // clients on that path receive it under the remapped name.
+    // Pinned by 'unauthorized gateway response' in api-stack.test.ts.
+    this.api.addGatewayResponse('Unauthorized', {
+      type: apigateway.ResponseType.UNAUTHORIZED,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
+        'WWW-Authenticate': '\'Bearer error="invalid_token"\'',
+        'Access-Control-Expose-Headers': "'WWW-Authenticate'",
+      },
+    });
 
     // Cognito Authorizer
     const cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'VocCognitoAuthorizer', {
@@ -951,6 +1072,7 @@ export class VocApiStack extends VocStack {
     const logsIntegration = new apigateway.LambdaIntegration(logsLambda, { proxy: true });
     const s3ImportIntegration = new apigateway.LambdaIntegration(s3ImportLambda, { proxy: true });
     const dataExplorerIntegration = new apigateway.LambdaIntegration(dataExplorerLambda, { proxy: true });
+    const ballotsIntegration = new apigateway.LambdaIntegration(ballotsLambda, { proxy: true });
 
     // ============================================
     // API ROUTES
@@ -1125,6 +1247,47 @@ export class VocApiStack extends VocStack {
     projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
     projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
 
+    // /voting-sessions/* — a room scores one document from their phones.
+    //
+    // NOT under /projects: that resource ends in a {proxy+} carrying the Cognito
+    // authorizer, and the two routes below that a phone reaches have no
+    // credentials at all. A public exception inside an authenticated proxy is the
+    // defect shape api-stack.test.ts exists to catch, so this gets its own tree.
+    //
+    // Every method is declared EXPLICITLY, with no {proxy+} anywhere: a proxy
+    // without `defaultMethodOptions` defaults to AuthorizationType.NONE, which is
+    // how three feedback-form routes became anonymous. Explicit methods fail
+    // closed — a route the handler registers is unreachable until it is wired
+    // here, which is the direction to fail in for a handler that accepts writes
+    // from anyone holding a link.
+    const votingSessionsResource = this.api.root.addResource('voting-sessions');
+    votingSessionsResource.addMethod('POST', ballotsIntegration, authMethodOptions);
+    const votingSessionItem = votingSessionsResource.addResource('{session_id}');
+    votingSessionItem.addMethod('GET', ballotsIntegration, authMethodOptions);
+    votingSessionItem.addResource('close').addMethod('POST', ballotsIntegration, authMethodOptions);
+
+    // Intentionally unauthenticated: the room votes from personal phones with no
+    // account. The SESSION is the control — a ballot is accepted only against a
+    // valid unguessable session token, only while that session is open and
+    // unexpired, and only up to its ballot cap (enforced by a conditional atomic
+    // increment on the session record). `config` is what lets the page say "this
+    // session is closed" instead of showing a blank form.
+    //
+    // These two are named in INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts.
+    // That list is the review gate: adding to it is a deliberate act, and the test
+    // failing until it is extended is the intended behaviour.
+    //
+    // Both are throttled below the stage default by `deployOptions.methodOptions`
+    // at the top of this stack — keyed by these exact paths, and pinned against
+    // them by a test, because a mistyped key throttles nothing and says nothing.
+    const publicBallotMethods = [
+      votingSessionItem.addResource('config').addMethod('GET', ballotsIntegration),
+      votingSessionItem.addResource('submit').addMethod('POST', ballotsIntegration),
+    ];
+    for (const publicMethod of publicBallotMethods) {
+      NagSuppressions.addResourceSuppressions(publicMethod, publicBallotEndpointSuppressions);
+    }
+
 
     // /webhooks/{pluginId}
     const webhooksResource = this.api.root.addResource('webhooks');
@@ -1144,8 +1307,22 @@ export class VocApiStack extends VocStack {
     const mcpRole = this.createLambdaRole('McpLambdaRole');
     feedbackTable.grantReadData(mcpRole);
     aggregatesTable.grantReadData(mcpRole);
-    projectsTable.grantReadWriteData(mcpRole);  // read tokens + update last_used_at
-    kmsKey.grantDecrypt(mcpRole);
+    // TWO ACTIONS on the projects table, not `grantReadWriteData`. The handler
+    // Queries token rows (auth) and project/persona rows (the get_project and
+    // list_personas tools), and UpdateItems exactly one attribute (last_used_at).
+    // The convenience grant would additionally hand over PutItem, DeleteItem,
+    // Scan and both batch APIs across the WHOLE table — every persona, PRD,
+    // PR/FAQ and prototype — on the ONE function in this stack that is reachable
+    // with a bearer token instead of a Cognito session. The absent actions are
+    // what enforce read-only-ness rather than remember it; same reasoning as the
+    // ballots role above, and `mcp Lambda IAM grants` in api-stack.test.ts pins
+    // the exact set.
+    projectsTable.grant(mcpRole, 'dynamodb:Query', 'dynamodb:UpdateItem');
+    // EncryptDecrypt, not just Decrypt: the narrow grant above no longer brings
+    // the table's KMS permissions along the way grantReadWriteData did, and the
+    // last_used_at UpdateItem is a write to a KMS-encrypted table. Same pairing
+    // as the ballots role.
+    kmsKey.grantEncryptDecrypt(mcpRole);
 
     const mcpLambda = new lambda.Function(this, 'McpApi', {
       functionName: this.uniqueName('voc-mcp-api'),
@@ -1160,6 +1337,12 @@ export class VocApiStack extends VocStack {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
+        // NOT used for CORS here (MCP clients are not browsers, the handler
+        // answers Access-Control-Allow-Origin: *). It is the allowlist for the
+        // MCP spec's DNS-rebinding guard: a request that CARRIES an Origin
+        // header naming any other origin is refused 403 before auth runs. A
+        // request with no Origin header — every real MCP client — is untouched.
+        ALLOWED_ORIGIN: allowedOrigin,
         POWERTOOLS_SERVICE_NAME: 'voc-mcp-api',
         LOG_LEVEL: 'INFO',
       },
@@ -1227,16 +1410,11 @@ exports.handler = async (event) => {
     const mcpMethod = mcpResource.addMethod('POST', mcpIntegration, mcpMethodOptions);
     const mcpProxy = mcpResource.addProxy({ defaultIntegration: mcpIntegration, anyMethod: true, defaultMethodOptions: mcpMethodOptions });
 
-    // Per-method throttling (10 req/s, burst 20) to limit brute-force token attempts
-    const mcpUsagePlan = this.api.addUsagePlan('McpUsagePlan', {
-      name: this.uniqueName('voc-mcp-throttle'),
-      description: 'Throttle MCP endpoints to limit brute-force token attempts',
-      throttle: { rateLimit: 10, burstLimit: 20 },
-    });
-    mcpUsagePlan.addApiStage({
-      stage: this.api.deploymentStage,
-      throttle: [{ method: mcpMethod, throttle: { rateLimit: 10, burstLimit: 20 } }],
-    });
+    // Throttling lives in `deployOptions.methodOptions` at the top of this stack
+    // ('/mcp/POST', '/mcp/{proxy+}/POST', '/mcp/{proxy+}/GET'), NOT in a usage
+    // plan. The McpUsagePlan
+    // that used to sit here never bound: a usage plan's throttle applies per API
+    // key, and no MCP client sends one. Do not reintroduce it.
 
     NagSuppressions.addResourceSuppressions(mcpProxy, [
       { id: 'AwsSolutions-COG4', reason: 'MCP uses a custom Lambda token authorizer instead of Cognito — MCP clients cannot use the Cognito auth flow' },

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Tests for ManualImportModal component.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManualImportModal from './ManualImportModal'
@@ -336,10 +336,32 @@ describe('ManualImportModal', () => {
       })
     })
 
+    // This suite shares ONE jsdom across every test file (`singleFork` in
+    // vitest.config.ts), so a `window.location` replaced here and left in place
+    // leaks into every file that runs after this one — where `location.origin` is
+    // then undefined. It cost the room-vote QR tests an afternoon: they passed
+    // alone and failed in the full run, because the component reads the live
+    // origin to build the address a phone opens.
+    //
+    // Captured in `beforeEach` rather than at collection time, and for the same
+    // reason the restore exists at all: at collection this file has not run yet,
+    // but earlier FILES have, so a snapshot taken then could preserve a value one
+    // of them leaked. Taken per test, it is whatever was in place immediately
+    // before this test replaced it.
+    let originalLocation: Location
+
+    beforeEach(() => {
+      originalLocation = window.location
+    })
+
+    afterEach(() => {
+      Object.defineProperty(window, 'location', { value: originalLocation, writable: true })
+    })
+
     it('calls confirmManualImport when Import is clicked', async () => {
       const user = userEvent.setup()
       mockConfirmManualImport.mockResolvedValue({ success: true, imported_count: 1 })
-      
+
       // Mock window.location.reload
       const reloadMock = vi.fn()
       Object.defineProperty(window, 'location', {

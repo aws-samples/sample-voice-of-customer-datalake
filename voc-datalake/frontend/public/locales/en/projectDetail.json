@@ -29,6 +29,7 @@
     "mentionHint": "Type <at> for personas, <atAll> for roundtable, or <hash> for documents",
     "projectAiChat": "Project AI Chat",
     "roundtable": "🎙️ Roundtable: all {{count}} personas",
+    "send": "Send message",
     "startConversation": "Start a conversation",
     "stop": "Stop",
     "tryExample": "Try: \"@all What do you think about our onboarding flow?\"",
@@ -71,7 +72,9 @@
         "reference": "Reference"
       },
       "selectedUsed": "{{used}} of {{selected}} selected documents used",
-      "unavailable": "No longer available"
+      "unavailable": "No longer available",
+      "visualsUsed_one": "{{count}} visual used",
+      "visualsUsed_other": "{{count}} visuals used"
     },
     "editDocument": "Edit document",
     "newDocument": "New Document",
@@ -106,7 +109,11 @@
       "sourcePrfaq": "PR/FAQ",
       "started": "Started — track it in Background Jobs.",
       "useProductContext": "Product / service description",
-      "useResearch": "Research reports ({{total}})"
+      "useResearch": "Research reports ({{total}})",
+      "visuals": "Visual mockups ({{total}})",
+      "visualsFailed": "{{total}} failed to process — upload again to use",
+      "visualsLimit": "At most {{max}} visuals per build",
+      "visualsNotReady": "{{total}} still being processed"
     },
     "revision": {
       "feedback": "Feedback: {{feedback}}",
@@ -123,12 +130,21 @@
     "selectAtLeastOne": "Select at least one item in each section, or the export would include everything.",
     "title": "Export"
   },
+  "imageErrors": {
+    "tooLarge": "{{name}} is still too large after resizing. Try a smaller screenshot, or crop it.",
+    "unreadable": "Could not read that image: {{name}}"
+  },
   "importPersona": {
     "aiImportDesc": "Claude will extract persona information from your {{type}} and create a structured persona with an AI-generated avatar.",
     "aiPoweredImport": "AI-Powered Import:",
     "cancel": "Cancel",
     "clickToChange": "Click to change file",
     "clickToUpload": "Click to upload or drag and drop",
+    "errors": {
+      "onlyFirstImage": "Only the first image was used.",
+      "unknownType": "unknown type",
+      "unsupportedType": "That file is not an image we can read ({{type}}). Accepted: {{accepted}}"
+    },
     "image": "Image",
     "imageDesc": "Screenshot or card",
     "imageFormats": "PNG, JPG, GIF, WebP",
@@ -140,6 +156,7 @@
     "importTypeText": "text",
     "pasteContent": "Paste Persona Content",
     "pastePlaceholder": "Paste your persona description, user research notes, or any text describing the persona...",
+    "pasteScreenshotHint": "Or paste a screenshot from your clipboard",
     "pdf": "PDF",
     "pdfDesc": "Upload document",
     "pdfOnly": "PDF files only",
@@ -166,6 +183,12 @@
       "mayHaveFailed": "may have failed",
       "pending": "pending",
       "running": "running"
+    },
+    "truncated": {
+      "counted": "Based on {{used}} of the {{total}} feedback items read — the rest did not fit in one generation.",
+      "fetchCapped": "This generation reads at most {{limit}} feedback items. More may match your filters — narrow them to change which ones are used.",
+      "fetchCappedGeneric": "This generation read as much feedback as it can take at once. More may match your filters.",
+      "generic": "Some feedback did not fit in one generation and was not used."
     },
     "types": {
       "buildPrototype": "Prototype Build",
@@ -208,6 +231,13 @@
     "description": "Generate API tokens to connect this project to MCP-compatible clients like Kiro or VS Code.",
     "dismiss": "Dismiss",
     "expandLabel": "Expand",
+    "expiredDate": "Expired {{date}}",
+    "expiresDate": "Expires {{date}}",
+    "expiry": "Expiration",
+    "expiryDays": "{{count}} days",
+    "expiryDays_one": "{{count}} day",
+    "expiryDays_other": "{{count}} days",
+    "expiryNever": "Never expires",
     "generate": "Generate",
     "generateNewToken": "Generate new API token",
     "generateToken": "Generate Token",
@@ -228,6 +258,7 @@
     "scopeReadWrite": "Read & write — includes chat and document generation",
     "title": "MCP Access",
     "tokenCreated": "Token created successfully",
+    "tokenExpiresOn": "This token expires on {{date}}.",
     "tokenName": "Token name",
     "tokenNamePlaceholder": "e.g. My Kiro token",
     "tokenPasteHint": "Paste this token into the <code>Authorization</code> header of your mcp.json or autoseed curl command."
@@ -405,19 +436,21 @@
     "subtitle": "The information here is automatically injected into PRD & PR/FAQ generation as the current product context.",
     "title": "Product / Service Description",
     "upload": {
+      "accepted": "PNG, JPEG, GIF, WebP up to 3.5 MB · MD, TXT up to 10 MB",
       "delete": "Delete document",
-      "dropZone": "Drop files here or click to upload",
+      "dropZone": "Drop files here, paste a screenshot, or click to upload",
       "empty": "No documents yet.",
       "errors": {
         "tooLarge": "Too large (>10 MB): {{name}}",
-        "unsupportedType": "Unsupported type: {{name}} ({{type}})",
+        "unsupportedType": "Unsupported type: {{name}} ({{type}}). Accepted: {{accepted}}",
         "uploadFailed": "{{name}}: {{message}}"
       },
       "extractedChars_one": "{{count}} char extracted",
       "extractedChars_other": "{{count}} chars extracted",
       "heading": "Internal documents",
-      "hint": "PDF, DOCX, MD, TXT — up to 10 MB each, 20 max",
+      "hint": "Images and text — 20 max",
       "loading": "Loading…",
+      "notYet": "PDF and Word (.docx) are not supported yet.",
       "statusExtracting": "Extracting…",
       "statusFailed": "Failed",
       "statusReady": "Ready",

@@ -15,6 +15,7 @@ import i18n from 'i18next'
 const mockGetProjects = vi.fn()
 const mockGetProject = vi.fn()
 const mockGetPrioritizationScores = vi.fn()
+const mockCreatePrioritizationRow = vi.fn()
 const mockGetFeedbackForms = vi.fn()
 const mockGetFeedbackFormStats = vi.fn()
 
@@ -28,6 +29,9 @@ vi.mock('../../api/projectsApi', () => ({
 vi.mock('../../api/client', () => ({
   api: {
     getPrioritizationScores: () => mockGetPrioritizationScores(),
+    // The page ensures a default row per project on mount; an absent stub is a
+    // TypeError that leaves the list with no rows to expand.
+    createPrioritizationRow: (id: string) => mockCreatePrioritizationRow(id),
     patchPrioritizationScores: () => Promise.resolve({ success: true }),
     getFeedbackForms: () => mockGetFeedbackForms(),
     getFeedbackFormStats: (formId: string) => mockGetFeedbackFormStats(formId),
@@ -58,11 +62,28 @@ const project = {
 
 const prfaq = {
   document_id: 'doc_prfaq', document_type: 'prfaq', title: 'Feature A PR/FAQ',
-  content: '# Feature A', created_at: '2025-01-01',
+  content: '# Feature A', created_at: '2025-01-03',
 }
 const prd = {
   document_id: 'doc_prd', document_type: 'prd', title: 'Feature A PRD',
   content: 'PRD content', created_at: '2025-01-02',
+}
+
+/**
+ * The project's ONE row, holding both of its scorable documents.
+ *
+ * Which is what this file is now about: a row is a project's set of documents, and
+ * each document's collected form evidence stays attached to the document it belongs
+ * to INSIDE the expansion. The row is named after its newest document — the PR/FAQ
+ * here — which is what `expandRow` clicks.
+ */
+const row = {
+  row_id: 'row_p1_default',
+  project_id: 'p1',
+  document_ids: ['doc_prfaq', 'doc_prd'],
+  prototype_id: '',
+  is_default: true,
+  created_at: '2025-01-03',
 }
 
 const { t } = i18n
@@ -108,7 +129,8 @@ describe('collected feedback on a prioritization row', () => {
     mockConfig.apiEndpoint = 'https://api.example.com'
     mockGetProjects.mockResolvedValue({ projects: [project] })
     mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, prd] })
-    mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+    mockGetPrioritizationScores.mockResolvedValue({ scores: {}, rows: { [row.row_id]: row } })
+    mockCreatePrioritizationRow.mockResolvedValue({ success: true, created: false, row })
     mockGetFeedbackForms.mockResolvedValue({ forms: [] })
     mockGetFeedbackFormStats.mockResolvedValue({
       success: true, form_id: 'form_1',
@@ -141,8 +163,12 @@ describe('collected feedback on a prioritization row', () => {
 
     await expandRow('Feature A PR/FAQ')
 
+    // ONCE PER DOCUMENT the row holds, because evidence is per document: the row
+    // carries a PR/FAQ and a PRD, and each says for itself that nothing validates
+    // it. One shared "no forms" line for the row would hide which document the
+    // gap is on, which is the thing a reader would act on.
     await waitFor(() => {
-      expect(screen.getByText(t('prioritization:evidence.noLinkedForm'))).toBeInTheDocument()
+      expect(screen.getAllByText(t('prioritization:evidence.noLinkedForm'))).toHaveLength(2)
     })
     expect(screen.queryByText('Website Footer Form')).not.toBeInTheDocument()
     // And no money is spent on stats for a row with nothing to show.
@@ -195,10 +221,17 @@ describe('collected feedback on a prioritization row', () => {
 
     await expandRow('Feature A PR/FAQ')
 
+    // A form whose stored document id names nothing live falls back to the PROJECT,
+    // so it surfaces under every document of that project's row rather than being
+    // lost. Two here, one per document — the fallback is deliberately project-wide,
+    // which is what keeps the collected ratings visible at all after a regenerate.
     await waitFor(() => {
-      expect(screen.getByText('Concept test')).toBeInTheDocument()
+      expect(screen.getAllByText('Concept test')).toHaveLength(2)
     })
-    expect(screen.getByText('3.2')).toBeInTheDocument()
+    // Twice, once per document, matching the panel count above: pinning the exact
+    // number is what fails if the fallback stops fanning out, where "at least one"
+    // passes on a single panel and so cannot tell the two apart.
+    expect(screen.getAllByText('3.2')).toHaveLength(2)
   })
 
   it('degrades gracefully when a linked form no longer exists', async () => {
@@ -214,11 +247,29 @@ describe('collected feedback on a prioritization row', () => {
     })
   })
 
-  it('fetches stats only for the row that is expanded', async () => {
+  it('fetches stats for every document of the expanded row, and no other row', async () => {
+    // The bound is the EXPANSION, not the document: one expanded row shows each of
+    // its documents with that document's own evidence, so both of this row's forms
+    // are fetched. What must not happen is a page of rows fanning out on load —
+    // the stats endpoint scans a whole brand-wide partition per call — so the
+    // second project's form is the one that stays unfetched.
+    mockGetProjects.mockResolvedValue({ projects: [project, { ...project, project_id: 'p2', name: 'Project 2' }] })
+    mockGetProject.mockImplementation((id: string) => Promise.resolve(
+      id === 'p1'
+        ? { project_id: 'p1', documents: [prfaq, prd] }
+        : { project_id: 'p2', documents: [{ ...prfaq, document_id: 'doc_other', title: 'Other proposal' }] },
+    ))
+    const otherRow = {
+      ...row, row_id: 'row_p2_default', project_id: 'p2', document_ids: ['doc_other'],
+    }
+    mockGetPrioritizationScores.mockResolvedValue({
+      scores: {}, rows: { [row.row_id]: row, [otherRow.row_id]: otherRow },
+    })
     mockGetFeedbackForms.mockResolvedValue({
       forms: [
         { form_id: 'form_1', name: 'PR/FAQ form', project_id: 'p1', document_id: 'doc_prfaq' },
         { form_id: 'form_2', name: 'PRD form', project_id: 'p1', document_id: 'doc_prd' },
+        { form_id: 'form_3', name: 'Other form', project_id: 'p2', document_id: 'doc_other' },
       ],
     })
 
@@ -227,9 +278,8 @@ describe('collected feedback on a prioritization row', () => {
     await waitFor(() => {
       expect(mockGetFeedbackFormStats).toHaveBeenCalledWith('form_1')
     })
-    // The stats endpoint scans a whole brand-wide partition per call, so a page
-    // of rows must not fan out on load.
-    expect(mockGetFeedbackFormStats).not.toHaveBeenCalledWith('form_2')
+    expect(mockGetFeedbackFormStats).toHaveBeenCalledWith('form_2')
+    expect(mockGetFeedbackFormStats).not.toHaveBeenCalledWith('form_3')
   })
 
   it('makes no stats request at all until a row is expanded', async () => {
@@ -354,6 +404,7 @@ describe('collected feedback on a prioritization row', () => {
     await waitFor(() => {
       expect(screen.getByText(t('prioritization:scores.title'))).toBeInTheDocument()
     })
-    expect(screen.getByText(t('prioritization:evidence.noLinkedForm'))).toBeInTheDocument()
+    // Once per document of the row, as when the list arrives holding nothing.
+    expect(screen.getAllByText(t('prioritization:evidence.noLinkedForm'))).toHaveLength(2)
   })
 })

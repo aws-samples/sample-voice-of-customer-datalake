@@ -13,6 +13,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { VocCoreStack } from './core-stack';
+import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
 
 function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
   // Skip asset bundling (Docker) — template assertions only need structure.
@@ -373,5 +374,166 @@ describe('VocCoreStack Cognito OAuth flow set (issue #252)', () => {
     // it cannot be protected with PKCE. OAuth 2.1 removes it. The app uses
     // SRP sign-in exclusively, so nothing depends on this flow.
     expect(allowedOAuthFlows()).not.toContain('implicit');
+  });
+});
+
+/**
+ * The S3-triggered product-doc extractor (visual grounding, rung 2).
+ *
+ * PLACEMENT is the property worth pinning. CDK parents a bucket notification
+ * under the BUCKET's scope, so wiring this from the processing stack would emit a
+ * Custom::S3BucketNotifications in VocCoreStack pointing at a VocProcessingStack
+ * function — a CloudFormation cycle, since processing already depends on core.
+ * Nothing in a unit test catches that except asserting the notification and the
+ * function are BOTH in this template.
+ *
+ * Matched on LOGICAL ID rather than FunctionName throughout: uniqueName() builds
+ * names from the Aws.ACCOUNT_ID/Aws.REGION pseudo-parameters, so FunctionName
+ * synthesizes to an Fn::Join object rather than a comparable string.
+ */
+describe('VocCoreStack product doc extractor', () => {
+  const FunctionSchema = z.object({
+    Handler: z.string(),
+    Runtime: z.string(),
+    Timeout: z.number(),
+    MemorySize: z.number(),
+    Architectures: z.array(z.string()),
+    Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }),
+  });
+
+  /** The extractor function's properties, validated rather than assumed. */
+  function extractorFunction(): z.infer<typeof FunctionSchema> {
+    const functions = Object.entries(synthCoreTemplate().findResources('AWS::Lambda::Function'));
+    const extractors = functions.filter(([logicalId]) => logicalId.startsWith('ProductDocExtractorLambda'));
+    // Count FIRST, parse second: a function that exists but lost its
+    // Environment block should read as a schema error, not as "not found".
+    expect(extractors, 'expected exactly one ProductDocExtractorLambda').toHaveLength(1);
+    return FunctionSchema.parse(extractors[0][1].Properties);
+  }
+
+  /** Statements from the extractor role's default policy. */
+  function extractorPolicyStatements(): { Action?: unknown; Resource?: unknown }[] {
+    const policies = Object.entries(synthCoreTemplate().findResources('AWS::IAM::Policy'))
+      .filter(([logicalId]) => logicalId.startsWith('ProductDocExtractorLambdaServiceRoleDefaultPolicy'));
+    expect(policies, 'expected exactly one extractor role policy').toHaveLength(1);
+    return policies[0][1].Properties.PolicyDocument.Statement;
+  }
+
+  it('exists as an ARM Python function with a 120s timeout', () => {
+    const fn = extractorFunction();
+
+    expect(fn.Handler).toBe('handler.lambda_handler');
+    expect(fn.Architectures).toEqual(['arm64']);
+    // Must stay well under product_context.py's EXTRACTION_STALL_SECONDS (300),
+    // which fails any record not extracted inside that window — a longer timeout
+    // would start marking SUCCESSFUL extractions as failed.
+    expect(fn.Timeout).toBe(120);
+    expect(fn.MemorySize).toBeGreaterThanOrEqual(512);
+  });
+
+  it('ships without a bundled layer, so CoreStack stays container-free', () => {
+    // CoreStack deliberately needs no Docker/finch: its signing-key custom
+    // resource is written in Node for exactly this reason. A Layers entry here
+    // would mean a pip-installed layer and container bundling in this stack.
+    const functions = Object.entries(synthCoreTemplate().findResources('AWS::Lambda::Function'))
+      .filter(([logicalId]) => logicalId.startsWith('ProductDocExtractorLambda'));
+
+    expect(functions[0][1].Properties).not.toHaveProperty('Layers');
+  });
+
+  it('registers the notification on the RawDataBucket in THIS stack, filtered to projects/', () => {
+    const template = synthCoreTemplate();
+    const notifications = Object.values(template.findResources('Custom::S3BucketNotifications'))
+      .filter((r) => JSON.stringify(r.Properties?.BucketName ?? '').includes('RawDataBucket'));
+    expect(notifications, 'expected a notification on the RawDataBucket').toHaveLength(1);
+
+    const configs = notifications[0].Properties.NotificationConfiguration
+      .LambdaFunctionConfigurations as {
+        Events: string[];
+        Filter?: { Key: { FilterRules: { Name: string; Value: string }[] } };
+        LambdaFunctionArn: { 'Fn::GetAtt': string[] };
+      }[];
+    // ONE rule: S3 permits a single prefix per rule and rejects overlapping
+    // rules for the same event type, so this cannot be narrowed per project.
+    expect(configs).toHaveLength(1);
+    expect(configs[0].Events).toEqual(['s3:ObjectCreated:*']);
+    expect(configs[0].Filter?.Key.FilterRules).toEqual([{ Name: 'prefix', Value: 'projects/' }]);
+    // Same-stack target — this is the assertion that would fail if the function
+    // were ever moved to the processing stack.
+    expect(configs[0].LambdaFunctionArn['Fn::GetAtt'][0]).toMatch(/^ProductDocExtractorLambda/);
+  });
+
+  it('grants Bedrock invoke on the allowlisted models only', () => {
+    const bedrockStatements = extractorPolicyStatements()
+      .filter((s) => s.Action === 'bedrock:InvokeModel');
+    expect(bedrockStatements).toHaveLength(1);
+
+    const resources = bedrockStatements[0].Resource as string[];
+    // Every allowlisted model, and nothing that would let it reach another one.
+    for (const modelId of ALLOWED_MODEL_IDS) {
+      expect(resources.some((arn) => arn.includes(modelId))).toBe(true);
+    }
+    expect(resources.some((arn) => arn === '*' || arn.endsWith('foundation-model/*'))).toBe(false);
+  });
+
+  it('scopes the S3 write to the extracted/ prefix and never to raw/', () => {
+    // A write grant reaching raw/ would let this role overwrite the user's own
+    // uploads — including the input it is about to read.
+    const writeStatements = extractorPolicyStatements().filter(
+      (s) => Array.isArray(s.Action) && (s.Action as string[]).includes('s3:PutObject'),
+    );
+    expect(writeStatements).toHaveLength(1);
+
+    const rendered = JSON.stringify(writeStatements[0].Resource);
+    expect(rendered).toContain('/projects/*/product_docs/extracted/*');
+    expect(rendered).not.toContain('product_docs/raw');
+
+    const readStatements = extractorPolicyStatements().filter(
+      (s) => Array.isArray(s.Action) && (s.Action as string[]).includes('s3:GetObject*'),
+    );
+    expect(readStatements).toHaveLength(1);
+    expect(JSON.stringify(readStatements[0].Resource)).toContain('/projects/*/product_docs/raw/*');
+  });
+
+  it('injects a MODEL_ALLOWLIST that parses to a non-empty array of allowlisted ids', () => {
+    // The handler cannot import shared/model_config.py (powertools would force a
+    // layer), so this env var IS its allowlist. An empty or malformed value would
+    // make it reject every configured model and silently fall back to the default.
+    const env = extractorFunction().Environment.Variables;
+
+    expect(typeof env.MODEL_ALLOWLIST).toBe('string');
+    const parsed: unknown = JSON.parse(env.MODEL_ALLOWLIST as string);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed as string[]).toEqual([...ALLOWED_MODEL_IDS]);
+    expect((parsed as string[]).length).toBeGreaterThan(0);
+  });
+
+  it('injects the image caps and the default model, all resolvable at runtime', () => {
+    const env = extractorFunction().Environment.Variables;
+
+    // Strings, because Lambda environment values are strings — a number here
+    // fails at synth, but a missing one only fails in production.
+    expect(env.MAX_IMAGE_BYTES).toBe(String(MAX_IMAGE_BYTES));
+    expect(env.MAX_IMAGE_DIMENSION_PX).toBe(String(MAX_IMAGE_DIMENSION_PX));
+    expect(ALLOWED_MODEL_IDS).toContain(env.DEFAULT_MODEL_ID as string);
+    for (const key of ['RAW_DATA_BUCKET', 'PROJECTS_TABLE', 'AGGREGATES_TABLE']) {
+      expect(env[key], `${key} must be injected`).toBeDefined();
+    }
+  });
+  it('injects the structured-logging variables under their non-powertools names', () => {
+    // The handler emits JSON from a stdlib Formatter subclass because it cannot
+    // import powertools (that would need a layer, and building one would force
+    // container bundling into this stack). So the names are SERVICE_NAME and
+    // LOG_LEVEL rather than POWERTOOLS_SERVICE_NAME: a POWERTOOLS_* variable on
+    // a function with no powertools would promise a library that is absent.
+    // The emitted FIELD is still `service`, so an operator's query is unchanged.
+    const env = extractorFunction().Environment.Variables;
+    expect(env.LOG_LEVEL).toBe('INFO');
+    // A bare string, not a namespaced physical name: the handler compares it to
+    // nothing, it only labels a log field, and `uniqueName()` would make it an
+    // unresolved token here — plus it would show up in the baseline's name
+    // inventory as if a resource name had been added.
+    expect(env.SERVICE_NAME).toBe('voc-product-doc-extractor');
+    expect(env).not.toHaveProperty('POWERTOOLS_SERVICE_NAME');
   });
 });

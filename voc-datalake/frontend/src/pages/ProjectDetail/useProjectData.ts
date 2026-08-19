@@ -39,6 +39,16 @@ export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] a
 export const productContextKey = (id: string | undefined) => ['product-context', id] as const
 
 /**
+ * Query key for a project's uploaded product docs.
+ *
+ * Exported for the same reason as the two keys above: more than one place will
+ * need it. The Product tab still lists the docs itself, because it uploads,
+ * deletes and polls them and owns that local state; if it ever moves onto React
+ * Query this is the key it should share.
+ */
+export const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
+
+/**
  * How long to keep polling the jobs list after an action reports that it started
  * a job.
  *
@@ -147,6 +157,28 @@ export function useProjectData({
     retry: false,
   })
 
+  /**
+   * The project's uploaded product docs, for the prototype card's visual picker.
+   *
+   * Fetched here rather than in the card so the Overview tab stays a pure function
+   * of its props, exactly as the product context above is — and so a project with
+   * no uploads pays one small request instead of the card holding its own loading
+   * state.
+   *
+   * `retry: false` and nothing else: a failure reaches the card as `undefined`,
+   * which offers no visuals — the build then reads none, which is what it did
+   * before this feature. No `staleTime`, unlike the context: uploads happen in the
+   * Product tab, which does NOT hand its list back to this cache, so the default
+   * refetch on mount and focus is the only thing that lets a screenshot uploaded a
+   * minute ago appear in the picker.
+   */
+  const { data: productDocsData } = useQuery({
+    queryKey: productDocsKey(id),
+    queryFn: () => projectsApi.listProductDocs(id ?? ''),
+    enabled: isEnabled,
+    retry: false,
+  })
+
   // When a job completes, refresh project data
   useEffect(() => {
     const jobs = jobsData?.jobs ?? []
@@ -185,6 +217,7 @@ export function useProjectData({
     isLoading,
     jobsData,
     productContext: productContextData?.context,
+    productDocs: productDocsData?.docs,
     queryClient,
   }
 }
@@ -359,7 +392,7 @@ export function usePersonaMutations({
 
   const importPersonaMut = useMutation({
     mutationFn: (data: {
-      input_type: 'pdf' | 'image' | 'text';
+      input_type: 'image' | 'text';
       content: string;
       media_type?: string
     }) =>

@@ -225,6 +225,28 @@ export interface ProjectJob {
     persona_id?: string
     title?: string
     personas?: ProjectPersona[]
+    /**
+     * How the generation was grounded (issue #231).
+     *
+     * `feedback_items_used` is the number of feedback records that actually
+     * reached the model, which is smaller than `feedback_count` (the number
+     * read from the data lake) whenever `context_truncated` is true. Reporting
+     * only the count read would overstate the evidence behind the result
+     * exactly when the corpus was too large to fit. `fetch_limit_reached` is a
+     * separate loss: `feedback_count` is itself bounded by `fetch_limit`, so
+     * records the filters matched beyond it were never read at all.
+     *
+     * Read through `parseJobGrounding` (api/jobGroundingSchema.ts), never
+     * directly: these arrive from a DynamoDB job record, so the declared types
+     * are what the API intends, not what the wire guarantees.
+     */
+    metadata?: {
+      feedback_count?: number
+      feedback_items_used?: number
+      context_truncated?: boolean
+      fetch_limit_reached?: boolean
+      fetch_limit?: number
+    }
   }
 }
 
@@ -424,13 +446,114 @@ export interface ProjectDetail {
   documents: ProjectDocument[]
 }
 
+/**
+ * One reviewer's complete ballot on ONE ROW, as read back.
+ *
+ * `row_id`, not `document_id`: a prioritization row is a project's set of
+ * documents and the ballot is about the row. A field named for a document would
+ * name something the row merely contains — and every lookup on the page addresses
+ * the row.
+ */
 export interface PrioritizationScore {
-  document_id: string
+  row_id: string
   impact: number
   time_to_market: number
   confidence: number
   strategic_fit: number
   notes: string
+}
+
+/**
+ * What a prioritization row IS: a project, and the concrete documents it holds.
+ *
+ * Returned as `rows` beside `scores` and `aggregates` on
+ * `GET /projects/prioritization`, keyed by the same row id, so the page learns
+ * every row's composition without a second round trip per row.
+ *
+ * `document_ids` are CONCRETE and stay put. "Latest of each type" is how a row is
+ * first composed and not a pointer it keeps following, so generating a new PRD
+ * changes no existing row — which is what keeps a ballot describing the documents
+ * it was cast about. `prototype_id` is context a reviewer looks at rather than a
+ * document the row is scored on, which is why it is its own field; it is `''` when
+ * the project has no prototype.
+ */
+export interface PrioritizationRow {
+  row_id: string
+  project_id: string
+  document_ids: string[]
+  prototype_id: string
+  is_default: boolean
+  created_at: string
+}
+
+/**
+ * One reviewer's change to their own ballot — only the fields they actually set.
+ *
+ * The body shape `PATCH /projects/prioritization` is built for: the verb means
+ * "change what I sent", and `_ballot_update_kwargs` assigns only the axes an entry
+ * CARRIES, treating an absent or null one as "leave it alone". So an omitted axis is
+ * not a gap to be filled in before sending; it is the request saying nothing about
+ * that axis.
+ *
+ * Distinct from `PrioritizationScore`, which is a COMPLETE ballot as read back, and
+ * the distinction is load-bearing rather than cosmetic. Sending a full score for a
+ * partial edit meant a reviewer who moved one slider on a fresh row also wrote the
+ * other three axes — from `DEFAULT_SCORE`, so two of them as a `0` the slider
+ * (`min={1}`) cannot express and none of them chosen by that reviewer. The backend
+ * counts an explicit `0` as a real vote (`_carries_axis` is deliberately distinct
+ * from `_axis_value(...) == 0`) and averages each axis over the reviewers who scored
+ * it, so those fabricated zeros dragged the TEAM's means down for everybody — and
+ * the team's means are what the prioritization list now displays, bands, counts and
+ * sorts by.
+ *
+ * `PrioritizationScore` remains structurally assignable to this, so sending a
+ * complete ballot is still valid where one genuinely exists.
+ */
+export interface PrioritizationBallotEdit {
+  row_id: string
+  impact?: number
+  time_to_market?: number
+  confidence?: number
+  strategic_fit?: number
+  notes?: string
+}
+
+/**
+ * What every reviewer together said about one ROW.
+ *
+ * A sibling of `scores` on `GET /projects/prioritization`. Where `scores` holds
+ * the CALLER'S OWN ballot, this holds the cross-reviewer view: each axis is the
+ * mean over the reviewers who scored that axis, and `score_spread` is the range
+ * of the composite priority score — weighted exactly as `calculatePriorityScore`,
+ * so it is expressed in the notches the page already sorts by. Zero spread means
+ * agreement, or fewer than two comparable ballots.
+ *
+ * Three things a consumer has to know, all decided on the backend
+ * (`_aggregate_scores` in `projects_handler.py`) and repeated here because this
+ * is where a frontend author reads:
+ *
+ *  - Rows NOBODY scored are absent, so presence means "somebody scored
+ *    this" — do not treat a missing key as a zero row.
+ *  - An entry can OUTLIVE its row. Ballots live beside the row record and nothing
+ *    removes them in this phase, so intersect these keys with the `rows` map
+ *    rather than using this one as a row index.
+ *  - `score_spread` compares only reviewers who scored EVERY axis, and is 0 below
+ *    two of them, so it can be 0 while `reviewer_count` is greater than 1. An
+ *    absent axis counts as zero in the composite, so comparing a partially-scored
+ *    ballot would report how completely people scored rather than how much they
+ *    disagreed. The means describe everyone who scored; the spread describes only
+ *    those comparable like for like.
+ *
+ * `reviewer_count` counts reviewers who scored at least one axis; a ballot
+ * carrying only a note is a legal save but not a vote and is not counted.
+ */
+export interface PrioritizationAggregate {
+  impact: number
+  time_to_market: number
+  confidence: number
+  strategic_fit: number
+  reviewer_count: number
+  score_spread: number
 }
 
 export interface S3ImportSource {
@@ -571,6 +694,9 @@ export interface ApiToken {
   scope: 'read' | 'read-write'
   created_at: string
   last_used_at?: string
+  /** ISO-8601 deadline after which the token stops authenticating; null for
+   *  non-expiring tokens (every token minted before expiry existed). */
+  expires_at?: string | null
   project_id: string
 }
 
@@ -580,6 +706,8 @@ export interface CreateApiTokenResponse {
   token: string
   token_id: string
   name: string
+  /** Echo of the minted deadline; null when the token does not expire. */
+  expires_at?: string | null
   message?: string
 }
 

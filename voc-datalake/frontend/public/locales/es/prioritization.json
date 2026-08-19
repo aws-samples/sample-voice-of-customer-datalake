@@ -6,6 +6,54 @@
     "saving": "Guardando...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "Tu voto es anónimo: cuenta para la puntuación del equipo de este documento, pero no se atribuye a ti ni a nadie más.",
+    "axes": {
+      "confidence": "Confianza",
+      "confidenceHint": "¿Qué seguridad tienes en las dos estimaciones anteriores?",
+      "impact": "Impacto",
+      "impactHint": "Valor de negocio y beneficio para el cliente.",
+      "strategicFit": "Encaje Estratégico",
+      "strategicFitHint": "Alineación con los objetivos de la empresa.",
+      "timeToMarket": "Tiempo de Lanzamiento",
+      "timeToMarketHint": "¿Con qué rapidez se puede entregar? 5 es lo más rápido."
+    },
+    "closed": {
+      "capReached": "Esta votación ya ha recogido todos los votos que acepta. Pide al facilitador que abra otra sesión.",
+      "closed": "El facilitador ha cerrado esta votación, por lo que no se aceptan más votos.",
+      "expired": "Esta votación ha caducado, por lo que no se aceptan más votos.",
+      "invalid": "No se ha podido leer este voto, por lo que no se ha registrado nada. Revisa los números y la nota, y envíalo de nuevo.",
+      "notFound": "Este enlace no abre ninguna votación. Comprueba que has escaneado el código que está en pantalla ahora.",
+      "title": "Esta votación no está abierta",
+      "unknown": "No se ha podido registrar tu voto en este momento. Inténtalo de nuevo en un instante."
+    },
+    "displayName": {
+      "hint": "Opcional. Los votos no se atribuyen a ninguna persona, así que puedes dejarlo en blanco.",
+      "label": "Tu nombre (opcional)"
+    },
+    "done": {
+      "description": "Tu voto cuenta para la puntuación del equipo de este documento. Puedes volver a abrir esta página desde el mismo teléfono para cambiarlo mientras la votación esté abierta.",
+      "title": "Voto registrado"
+    },
+    "loading": "Cargando esta votación...",
+    "notes": {
+      "label": "Notas (opcional)",
+      "placeholder": "Lo que los números no dicen..."
+    },
+    "rejected": {
+      "title": "Tu voto no se ha registrado"
+    },
+    "scopeNote": "Estás puntuando una propuesta completa: este voto cubre el conjunto de documentos que hay detrás, en una sola papeleta.",
+    "submit": {
+      "label": "Enviar voto",
+      "pending": "Enviando..."
+    },
+    "title": "Puntúa esta propuesta",
+    "unavailable": {
+      "description": "No se ha enviado nada. Vuelve a cargar la página para intentarlo de nuevo; la votación en sí puede estar abierta.",
+      "title": "No se ha podido cargar esta votación"
+    }
+  },
   "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
   "docType": {
     "prd": "PRD",
@@ -30,6 +78,10 @@
     "title": "Marco de priorización"
   },
   "loading": "Cargando documentos...",
+  "noteTooLong": {
+    "description": "Las notas están limitadas a {{max}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",
+    "title": "Una nota es demasiado larga para guardarla"
+  },
   "notes": {
     "label": "Notas",
     "placeholder": "Agregar notas sobre esta decisión de priorización..."
@@ -46,6 +98,29 @@
     "medium": "Prioridad media",
     "none": "Sin puntuar"
   },
+  "roomVote": {
+    "anonymousNote": "Los votos emitidos aquí cuentan para la puntuación del equipo de arriba y no se atribuyen a ninguna persona.",
+    "ballotsIn": "{{received}} de {{cap}} votos recibidos",
+    "close": "Cerrar la votación",
+    "closeFailed": "No se ha podido cerrar la votación. Inténtalo de nuevo: hasta que se cierre, se siguen aceptando votos.",
+    "closed": "Esta votación está cerrada. No se aceptan más votos.",
+    "closing": "Cerrando...",
+    "description": "Pon un código QR en pantalla y deja que todos los presentes envíen un voto anónimo desde su teléfono, sin cuenta.",
+    "expired": "Esta votación ha caducado. No se aceptan más votos.",
+    "open": "Abrir una votación en sala",
+    "openAnother": "Abrir otra votación",
+    "openFailed": "No se ha podido abrir la votación. Inténtalo de nuevo.",
+    "opening": "Abriendo...",
+    "qrAccessibleName": "Código QR que abre la página de voto anónimo de {{title}}",
+    "qrCaption": "Escanea para puntuar esta propuesta desde un teléfono",
+    "qrUnavailable": "El código QR no está disponible porque la dirección de esta página no se puede compartir.",
+    "scopeDocuments": "Una papeleta cubre los {{documents}} documentos que hay detrás, así que la sala puntúa la propuesta completa.",
+    "scopeNote": "Esta votación puntúa una propuesta: {{title}}.",
+    "title": "Puntuar en sala"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documentos, una papeleta"
+  },
   "scores": {
     "confidence": "Confianza",
     "confidenceDescription": "Certeza en las estimaciones de impacto y TdC",
@@ -54,13 +129,20 @@
     "impact": "Impacto",
     "impactDescription": "Valor comercial y beneficio para el cliente",
     "low": "Bajo",
-    "score": "Puntuación",
+    "notScored": "Sin puntuar",
     "slow": "Lento",
     "strategicFit": "Ajuste estratégico",
     "strategicFitDescription": "Alineación con los objetivos de la empresa",
     "timeToMarket": "Tiempo de comercialización",
     "timeToMarketDescription": "¿Qué tan rápido se puede entregar?",
-    "title": "Puntuaciones de priorización"
+    "title": "Puntuaciones de priorización",
+    "wholeRow": "Una sola papeleta para los {{documents}} documentos de esta fila.",
+    "yoursOnly": "Tu propia puntuación. Al guardar solo se escriben tus valores."
+  },
+  "scoresUnavailable": {
+    "description": "Sus puntuaciones guardadas no están disponibles en este momento, por lo que los números que se muestran a continuación son valores predeterminados y no los que alguien introdujo. Vuelva a cargar la página antes de guardar.",
+    "staleDescription": "La última actualización de las puntuaciones guardadas falló, por lo que las cifras que se muestran son las últimas que se leyeron correctamente. Su propia valoración no se ha visto afectada: no hace falta recargar antes de guardar.",
+    "title": "No se pudieron cargar las puntuaciones"
   },
   "sort": {
     "date": "Fecha",
@@ -69,6 +151,7 @@
     "label": "Ordenar por:",
     "priority": "Prioridad",
     "priorityFull": "Puntuación de prioridad",
+    "teamOrdered": "{{fields}} ordenan según los números del equipo, los que muestra cada fila, no según tu propia puntuación.",
     "ttm": "TdC",
     "ttmFull": "Tiempo de comercialización"
   },
@@ -76,9 +159,26 @@
     "highPriority": "Alta prioridad",
     "mediumPriority": "Prioridad media",
     "notScored": "Sin puntuar",
-    "totalDocuments": "Total de documentos"
+    "totalRows": "Propuestas totales",
+    "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count}} propuesta, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
+    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count}} propuestas, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
   },
   "subtitle": "Puntuar y priorizar PRD y PR/FAQs en todos los proyectos",
+  "team": {
+    "disagreement": "Dispersión {{spread}}",
+    "disagreementDescription": "Los revisores difieren en {{spread}} sobre esta puntuación. Sus notas explican por qué; esta página solo muestra tu propia nota.",
+    "loading": "Cargando puntuación del equipo",
+    "loadingDescription": "Las puntuaciones del equipo aún se están cargando, así que esta fila todavía no indica si alguien ha votado. Se completará por sí sola.",
+    "noScores": "Aún sin puntuar",
+    "noScoresDescription": "Ningún revisor lo ha puntuado todavía, así que no está mal valorado sino sin valorar. Con los controles de abajo emites el primer voto.",
+    "reviewers": "Revisores",
+    "score": "Puntuación del equipo",
+    "summary": "Media del equipo {{score}} de 5 · Votos de revisores: {{reviewers}}",
+    "title": "Lo que dijo el equipo",
+    "unattributedNote": "Algunos votos pueden ser votos anónimos de sala, que cuentan como un revisor cada uno y no se atribuyen a ninguna persona.",
+    "unavailable": "Puntuación del equipo no disponible",
+    "unavailableDescription": "Las puntuaciones del equipo no se han podido leer ahora mismo, así que esta fila no muestra nada sobre ellas; no significa que nadie haya votado. Vuelve a cargar la página para ver lo que dijo el equipo."
+  },
   "title": "Priorización",
   "unsavedChanges": {
     "cancel": "Permanecer en la página",

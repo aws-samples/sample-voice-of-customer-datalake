@@ -95,6 +95,7 @@ class TestInitializeRecordsInputs:
             'selected_document_count': 0,
             'feedback_count': 2,
             'persona_ids': [],
+            'visual_document_ids': [],
             'product_context_included': False,
         }
 
@@ -199,6 +200,7 @@ class TestSaveWritesDerivation:
             'selected_document_count': 0,
             'feedback_count': 0,
             'persona_ids': [],
+            'visual_document_ids': [],
             'product_context_included': False,
         }
         # The report itself is unaffected.

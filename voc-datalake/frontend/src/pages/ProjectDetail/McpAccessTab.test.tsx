@@ -440,3 +440,103 @@ describe('McpAccessTab \u2014 ExportCard', () => {
     expect(copyBtn).toBeDisabled()
   })
 })
+
+describe('token expiry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockListApiTokens.mockResolvedValue({ success: true, tokens: [] })
+  })
+
+  // NOTE: the omission case — expiry left at its 'never' default sends NO
+  // expires_in_days field — is pinned by the exact-payload assertion in
+  // 'calls createApiToken on submit' above ({ name, scope } and nothing else).
+
+  it('sends expires_in_days when a lifetime is chosen and shows the deadline on the banner', async () => {
+    const user = userEvent.setup()
+    const expiresAt = '2026-09-17T14:00:00+00:00'
+    mockCreateApiToken.mockResolvedValue({
+      success: true,
+      token: 'voc_abc123secret',
+      token_id: 'tok-new',
+      name: 'Expiring token',
+      expires_at: expiresAt,
+    })
+    renderTab()
+    await user.click(screen.getByRole('button', { name: /Generate Token/i }))
+    await user.type(screen.getByLabelText('Token name'), 'Expiring token')
+    await user.selectOptions(screen.getByLabelText('Expiration'), '30')
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await waitFor(() => {
+      expect(screen.getByText('Token created successfully')).toBeInTheDocument()
+    })
+    expect(mockCreateApiToken).toHaveBeenCalledWith('proj-123', {
+      name: 'Expiring token',
+      scope: 'read',
+      expires_in_days: 30,
+    })
+    // The banner names the deadline of THE credential just minted.
+    expect(
+      screen.getByText(`This token expires on ${new Date(expiresAt).toLocaleDateString()}.`),
+    ).toBeInTheDocument()
+  })
+
+  it('resets the expiry choice after a successful create', async () => {
+    const user = userEvent.setup()
+    mockCreateApiToken.mockResolvedValue({
+      success: true, token: 'voc_x', token_id: 'tok-x', name: 't', expires_at: null,
+    })
+    renderTab()
+    await user.click(screen.getByRole('button', { name: /Generate Token/i }))
+    await user.type(screen.getByLabelText('Token name'), 't')
+    await user.selectOptions(screen.getByLabelText('Expiration'), '90')
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await waitFor(() => {
+      expect(screen.getByText('Token created successfully')).toBeInTheDocument()
+    })
+    // Reopen the form (the generate button hides while the banner is up, so
+    // dismiss first): a stale 90-day choice would silently mint the NEXT
+    // token with a lifetime nobody picked this time around.
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await user.click(screen.getByRole('button', { name: /Generate Token/i }))
+    expect(screen.getByLabelText('Expiration')).toHaveValue('never')
+  })
+
+  it('renders a dated row for a future expiry and nothing for legacy tokens', async () => {
+    const future = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+    mockListApiTokens.mockResolvedValue({
+      success: true,
+      tokens: [
+        { ...mockToken, token_id: 'tok-legacy' },
+        { ...mockToken, token_id: 'tok-dated', name: 'Dated', expires_at: future },
+      ],
+    })
+    const user = userEvent.setup()
+    renderTab()
+    await waitFor(() => {
+      expect(screen.getByText('Active Tokens (2)')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('Active Tokens (2)'))
+    // Exactly one row carries the expiry line — the legacy row renders as it
+    // always did, byte-for-byte the pre-expiry UI.
+    expect(screen.getAllByText(`Expires ${new Date(future).toLocaleDateString()}`)).toHaveLength(1)
+    expect(screen.queryByText(/^Expired /)).not.toBeInTheDocument()
+  })
+
+  it('marks an expired token as expired, matching what the backend enforces', async () => {
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    mockListApiTokens.mockResolvedValue({
+      success: true,
+      tokens: [{ ...mockToken, token_id: 'tok-dead', name: 'Dead', expires_at: past }],
+    })
+    const user = userEvent.setup()
+    renderTab()
+    await waitFor(() => {
+      expect(screen.getByText('Active Tokens (1)')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('Active Tokens (1)'))
+    // The backend refuses this credential at auth time; the row must not
+    // read as quietly usable.
+    expect(screen.getByText(`Expired ${new Date(past).toLocaleDateString()}`)).toBeInTheDocument()
+    expect(screen.queryByText(/^Expires /)).not.toBeInTheDocument()
+  })
+})

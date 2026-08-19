@@ -40,12 +40,12 @@ export function PersonaEditModalWrapper({
 
 interface ImportPersonaModalWrapperProps {
   readonly showModal: boolean
-  readonly importType: 'pdf' | 'image' | 'text'
+  readonly importType: 'image' | 'text'
   readonly importContent: string
   readonly importFileName: string
   readonly importMediaType: string
   readonly isImporting: boolean
-  readonly onTypeChange: (type: 'pdf' | 'image' | 'text') => void
+  readonly onTypeChange: (type: 'image' | 'text') => void
   readonly onContentChange: (content: string) => void
   readonly onFileChange: (file: File) => void
   readonly onClose: () => void

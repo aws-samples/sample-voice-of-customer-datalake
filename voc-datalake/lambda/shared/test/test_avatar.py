@@ -1,6 +1,7 @@
 """Tests for shared.avatar module - avatar generation utilities."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock
 import base64
 
@@ -108,9 +109,10 @@ class TestGenerateAvatarPromptWithLlm:
 class TestGeneratePersonaAvatar:
     """Tests for generate_persona_avatar function."""
 
+    @patch('shared.aws.get_s3_client')
     @patch('shared.avatar.boto3')
     @patch('shared.avatar.generate_avatar_prompt_with_llm')
-    def test_successful_avatar_generation(self, mock_prompt, mock_boto3):
+    def test_successful_avatar_generation(self, mock_prompt, mock_boto3, mock_get_s3):
         """Generates avatar and uploads to S3."""
         from shared.avatar import generate_persona_avatar
 
@@ -126,6 +128,10 @@ class TestGeneratePersonaAvatar:
             return mock_s3
 
         mock_boto3.client.side_effect = client_factory
+        # S3 comes from the shared module-cached, s3v4-pinned accessor now, not from a
+        # per-call boto3.client('s3') — that construction was unsafe once the avatar loop
+        # went concurrent, and the bucket is KMS-encrypted so it needs the pinned signer.
+        mock_get_s3.return_value = mock_s3
 
         image_data = base64.b64encode(b'fake-png-data').decode()
         nova_response = json.dumps({'images': [image_data]}).encode()
@@ -285,6 +291,129 @@ class TestGetAvatarCdnUrl:
         assert result.startswith('https://env-cdn.example.com/test.png?')
 
 
+# Avatar prompt config used by the client-reuse tests below. Module-level so it
+# is a single shared definition rather than a mutable class attribute.
+IMAGE_MODEL_TEST_CONFIG = {
+    'system_prompt': 'S', 'user_prompt_template': '{name}', 'max_tokens': 200,
+    'fallback_prompt_template': 'H',
+    'image_model': {'model_id': 'test.image-model', 'region': 'us-west-2',
+                    'aspect_ratio': '1:1', 'output_format': 'jpeg'},
+}
+
+
+class TestImageModelClientIsReused:
+    """The region-pinned Bedrock client is built once per execution
+    environment, not once per persona.
+
+    Persona generation calls this function once per persona (concurrently), and
+    each call used to construct its own boto3 client: a botocore session plus
+    endpoint resolution, repeated for work that always targets the same region.
+    """
+
+    @staticmethod
+    def _image_response():
+        return {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps(
+                {'images': [base64.b64encode(b'bytes').decode()]}).encode()))
+        }
+
+    def _generate(self, persona_ids, config=None):
+        """Generate avatars for several personas through one patched boto3 and
+        report how many bedrock-runtime clients were constructed."""
+        from shared.avatar import generate_persona_avatar
+
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = self._image_response()
+
+        def client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+
+        results = []
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=config or IMAGE_MODEL_TEST_CONFIG), \
+             patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.aws.get_s3_client', return_value=MagicMock()), \
+             patch('shared.avatar.boto3') as mock_boto3:
+            mock_boto3.client.side_effect = client_factory
+            for persona_id in persona_ids:
+                results.append(generate_persona_avatar(
+                    {'persona_id': persona_id, 'name': persona_id, 'identity': {}},
+                    MagicMock(), s3_bucket='b',
+                ))
+            bedrock_client_calls = [
+                c for c in mock_boto3.client.call_args_list
+                if c.args and c.args[0] == 'bedrock-runtime'
+            ]
+        return results, bedrock_client_calls
+
+    def test_three_personas_build_one_client(self):
+        results, client_calls = self._generate(['p1', 'p2', 'p3'])
+        # Positive control: all three avatars really were produced, so the
+        # single client is reuse and not three skipped generations.
+        assert [r['avatar_url'] for r in results] == [
+            's3://b/avatars/p1.jpeg', 's3://b/avatars/p2.jpeg', 's3://b/avatars/p3.jpeg',
+        ]
+        assert len(client_calls) == 1, (
+            f'built {len(client_calls)} bedrock-runtime clients for 3 personas'
+        )
+
+    def test_the_one_client_is_pinned_to_the_configured_region(self):
+        _, client_calls = self._generate(['p1', 'p2'])
+        assert client_calls[0].kwargs['region_name'] == 'us-west-2'
+
+    def test_a_different_configured_region_gets_its_own_client(self):
+        """Cached per region, not globally: the region comes from
+        avatar-generation.json, so a config change must not keep serving a
+        client pinned to the old region."""
+        from shared.avatar import clear_image_model_client_cache
+
+        _, first = self._generate(['p1'])
+        assert first[0].kwargs['region_name'] == 'us-west-2'
+
+        # Same process, no cache clear — only the configured region changes.
+        eu_config = {
+            **IMAGE_MODEL_TEST_CONFIG,
+            'image_model': {**IMAGE_MODEL_TEST_CONFIG['image_model'], 'region': 'eu-west-1'},
+        }
+        _, second = self._generate(['p2'], config=eu_config)
+        assert second[0].kwargs['region_name'] == 'eu-west-1'
+
+        clear_image_model_client_cache()
+
+    def test_concurrent_generations_still_build_one_client(self):
+        """The persona generator now runs these calls in parallel, so several
+        threads reach the cache at once. The lock must keep that to one client
+        while every avatar still comes back."""
+        from shared.avatar import generate_persona_avatar
+
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = self._image_response()
+
+        def client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+
+        persona_ids = [f'p{i}' for i in range(6)]
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=IMAGE_MODEL_TEST_CONFIG), \
+             patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+             patch('shared.aws.get_s3_client', return_value=MagicMock()), \
+             patch('shared.avatar.boto3') as mock_boto3:
+            mock_boto3.client.side_effect = client_factory
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                results = list(pool.map(
+                    lambda pid: generate_persona_avatar(
+                        {'persona_id': pid, 'name': pid, 'identity': {}},
+                        MagicMock(), s3_bucket='b',
+                    ),
+                    persona_ids,
+                ))
+            bedrock_client_calls = [
+                c for c in mock_boto3.client.call_args_list
+                if c.args and c.args[0] == 'bedrock-runtime'
+            ]
+
+        assert all(r['avatar_url'] for r in results)
+        assert len(bedrock_client_calls) == 1
+
+
 class TestNoCryptoDependencyForWriters:
     """`shared.avatar` must not pull in `cryptography` at import time.
 
@@ -301,3 +430,152 @@ class TestNoCryptoDependencyForWriters:
             'Importing shared.avatar pulled in cryptography. Keep the '
             'shared.cloudfront_signing import inside get_avatar_cdn_url.'
         )
+
+
+class TestS3ClientIsSharedNotBuiltPerAvatar:
+    """generate_persona_avatar built `boto3.client('s3')` on every call.
+
+    That was already wasteful, and it became a thread-safety hazard the moment the
+    persona generator started running these calls in parallel: boto3 clients are
+    thread-safe to USE but constructing one is not (aws/boto3#1592) — the same hazard the
+    region-pinned image client is cached to avoid, still present one function down.
+
+    Asserted against the REAL accessor rather than a stub of it, because "we call
+    get_s3_client()" is not the property that matters; "only one client is constructed"
+    is. So shared.aws.boto3 is patched and the module cache reset, and the count is taken
+    from actual client construction.
+    """
+
+    @staticmethod
+    def _image_response():
+        return {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps(
+                {'images': [base64.b64encode(b'bytes').decode()]}).encode()))
+        }
+
+    def _run(self, persona_ids, concurrent):
+        import shared.aws as shared_aws
+        from shared.avatar import generate_persona_avatar
+
+        mock_bedrock = MagicMock()
+        mock_bedrock.invoke_model.return_value = self._image_response()
+
+        def avatar_client_factory(service, **kwargs):
+            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+
+        shared_aws._s3_client = None          # the cache outlives a test
+        try:
+            with patch('shared.avatar.get_avatar_prompt_config', return_value=IMAGE_MODEL_TEST_CONFIG), \
+                 patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
+                 patch('shared.aws.boto3') as shared_boto3, \
+                 patch('shared.avatar.boto3') as avatar_boto3:
+                avatar_boto3.client.side_effect = avatar_client_factory
+                shared_boto3.client.return_value = MagicMock()
+
+                def one(pid):
+                    return generate_persona_avatar(
+                        {'persona_id': pid, 'name': pid, 'identity': {}},
+                        MagicMock(), s3_bucket='b',
+                    )
+
+                if concurrent:
+                    with ThreadPoolExecutor(max_workers=len(persona_ids)) as pool:
+                        results = list(pool.map(one, persona_ids))
+                else:
+                    results = [one(pid) for pid in persona_ids]
+
+                s3_constructions = [
+                    c for c in shared_boto3.client.call_args_list
+                    if c.args and c.args[0] == 's3'
+                ]
+            return results, s3_constructions
+        finally:
+            shared_aws._s3_client = None
+
+    def test_six_sequential_avatars_build_one_s3_client(self):
+        results, s3_constructions = self._run([f'p{i}' for i in range(6)], concurrent=False)
+        # Positive control: every avatar really was produced, so "one client" is reuse
+        # and not six generations that bailed out before reaching S3.
+        assert [r['avatar_url'] for r in results] == [
+            f's3://b/avatars/p{i}.jpeg' for i in range(6)
+        ]
+        assert len(s3_constructions) == 1, (
+            f'built {len(s3_constructions)} S3 clients for 6 avatars'
+        )
+
+    def test_six_concurrent_avatars_build_one_s3_client(self):
+        results, s3_constructions = self._run([f'p{i}' for i in range(6)], concurrent=True)
+        assert sorted(r['avatar_url'] for r in results) == sorted(
+            f's3://b/avatars/p{i}.jpeg' for i in range(6)
+        )
+        assert len(s3_constructions) == 1, (
+            f'built {len(s3_constructions)} S3 clients across 6 concurrent avatars'
+        )
+
+    def test_the_shared_client_pins_the_v4_signer(self):
+        """Why the shared accessor and not a local client: RAW_DATA_BUCKET is
+        KMS-encrypted, which needs signature_version s3v4. Building the client here
+        inherited botocore's default signer instead."""
+        _, s3_constructions = self._run(['p1'], concurrent=False)
+        config = s3_constructions[0].kwargs['config']
+        assert config.signature_version == 's3v4'
+
+
+class TestImageClientIsConfiguredForTheFanOut:
+    """The cached image client is shared by every avatar thread, so its connection pool
+    and retry mode are properties of the fan-out rather than of one call. On botocore
+    defaults it got max_pool_connections=10 — exactly the ceiling, i.e. zero headroom,
+    and urllib3 builds that pool with block=False so an over-limit connection is served
+    by a throwaway socket plus a warning rather than queueing — and retries={'mode':
+    'legacy'}, which does not back off on throttling.
+    """
+
+    @staticmethod
+    def _build_and_capture():
+        from shared.avatar import clear_image_model_client_cache, get_image_model_client
+
+        clear_image_model_client_cache()
+        try:
+            with patch('shared.avatar.boto3') as mock_boto3:
+                get_image_model_client('us-west-2')
+                return mock_boto3.client.call_args
+        finally:
+            clear_image_model_client_cache()
+
+    def test_the_pool_is_at_least_the_persona_ceiling(self):
+        from shared.api import MAX_PERSONAS_PER_GENERATION
+
+        config = self._build_and_capture().kwargs['config']
+        assert config.max_pool_connections >= MAX_PERSONAS_PER_GENERATION, (
+            f'pool {config.max_pool_connections} is below the {MAX_PERSONAS_PER_GENERATION} '
+            'avatars that can be in flight, so connection reuse degrades silently'
+        )
+
+    def test_retries_back_off_rather_than_using_legacy_mode(self):
+        config = self._build_and_capture().kwargs['config']
+        assert config.retries['mode'] == 'standard'
+        assert config.retries['max_attempts'] >= 3
+
+    def test_timeouts_are_explicit(self):
+        config = self._build_and_capture().kwargs['config']
+        assert config.read_timeout and config.connect_timeout
+
+
+class TestConcurrencyCeilingsCannotDrift:
+    """The avatar fan-out's worker count and the image client's pool both size themselves
+    against the maximum persona count. Those were independent literals whose only link
+    was a comment, and a comment does not fail CI: raising the persona ceiling used to
+    halve the fan-out benefit while every test still passed.
+
+    Only the half of the lockstep that needs nothing outside `shared` lives here. The two
+    assertions that must import `api.projects` / `projects_handler` are in
+    lambda/api/test/test_projects_handler.py (TestPersonaCeilingIsShared) — the shared test
+    tree should not depend on the api tree importing cleanly, which is the same isolation
+    argument that moved the avatar cache fixture out of the root conftest.
+    """
+
+    def test_the_client_pool_covers_the_worker_ceiling(self):
+        from shared.api import MAX_PERSONAS_PER_GENERATION
+        from shared.avatar import IMAGE_CLIENT_POOL_CONNECTIONS
+
+        assert IMAGE_CLIENT_POOL_CONNECTIONS >= MAX_PERSONAS_PER_GENERATION

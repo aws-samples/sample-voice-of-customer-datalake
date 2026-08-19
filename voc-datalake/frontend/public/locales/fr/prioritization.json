@@ -6,6 +6,54 @@
     "saving": "Enregistrement...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "Votre vote est anonyme : il compte dans le score de l'équipe pour ce document, mais il n'est attribué ni à vous ni à personne d'autre.",
+    "axes": {
+      "confidence": "Confiance",
+      "confidenceHint": "Quelle est votre certitude sur les deux estimations ci-dessus ?",
+      "impact": "Portée",
+      "impactHint": "Valeur métier et bénéfice pour le client.",
+      "strategicFit": "Adéquation Stratégique",
+      "strategicFitHint": "Alignement avec les objectifs de l'entreprise.",
+      "timeToMarket": "Délai de Mise sur le Marché",
+      "timeToMarketHint": "À quelle vitesse cela peut-il être livré ? 5 est le plus rapide."
+    },
+    "closed": {
+      "capReached": "Ce vote a déjà recueilli tous les bulletins qu'il accepte. Demandez à l'animateur d'ouvrir une autre session.",
+      "closed": "L'animateur a clos ce vote, aucun autre bulletin n'est accepté.",
+      "expired": "Ce vote a expiré, aucun autre bulletin n'est accepté.",
+      "invalid": "Ce bulletin n'a pas pu être lu, rien n'a donc été enregistré. Vérifiez les valeurs et la note, puis renvoyez-le.",
+      "notFound": "Ce lien n'ouvre aucun vote. Vérifiez que vous avez scanné le code affiché à l'écran maintenant.",
+      "title": "Ce vote n'est pas ouvert",
+      "unknown": "Votre bulletin n'a pas pu être enregistré pour l'instant. Réessayez dans un moment."
+    },
+    "displayName": {
+      "hint": "Facultatif. Les bulletins ne sont attribués à personne, vous pouvez donc laisser ce champ vide.",
+      "label": "Votre nom (facultatif)"
+    },
+    "done": {
+      "description": "Votre bulletin compte dans le score d'équipe de ce document. Vous pouvez réouvrir cette page depuis le même téléphone pour le modifier tant que le vote est ouvert.",
+      "title": "Bulletin enregistré"
+    },
+    "loading": "Chargement de ce vote...",
+    "notes": {
+      "label": "Notes (facultatif)",
+      "placeholder": "Ce que les chiffres ne disent pas..."
+    },
+    "rejected": {
+      "title": "Votre bulletin n'a pas été enregistré"
+    },
+    "scopeNote": "Vous notez une proposition entière : ce vote porte sur l'ensemble des documents qui la composent, en un seul bulletin.",
+    "submit": {
+      "label": "Envoyer le bulletin",
+      "pending": "Envoi..."
+    },
+    "title": "Notez cette proposition",
+    "unavailable": {
+      "description": "Rien n'a été envoyé. Rechargez la page pour réessayer : le vote lui-même est peut-être bien ouvert.",
+      "title": "Ce vote n'a pas pu être chargé"
+    }
+  },
   "configureApiEndpoint": "Configurez le point de terminaison API dans les paramètres pour afficher la priorisation.",
   "docType": {
     "prd": "PRD",
@@ -30,6 +78,10 @@
     "title": "Cadre de priorisation"
   },
   "loading": "Chargement des documents...",
+  "noteTooLong": {
+    "description": "Les notes sont limitées à {{max}} caractères, et une note plus longue est refusée plutôt que tronquée. Raccourcissez la note de la ligne modifiée, puis enregistrez de nouveau. Rien n'a encore été enregistré.",
+    "title": "Une note est trop longue pour être enregistrée"
+  },
   "notes": {
     "label": "Remarques",
     "placeholder": "Ajouter des notes sur cette décision de priorisation..."
@@ -46,6 +98,29 @@
     "medium": "Priorité moyenne",
     "none": "Non évalué"
   },
+  "roomVote": {
+    "anonymousNote": "Les bulletins déposés ici comptent dans le score d'équipe ci-dessus et ne sont attribués à personne.",
+    "ballotsIn": "{{received}} bulletins sur {{cap}} reçus",
+    "close": "Clore le vote",
+    "closeFailed": "Le vote n'a pas pu être clos. Réessayez : jusqu'à sa clôture, les bulletins sont encore acceptés.",
+    "closed": "Ce vote est clos. Aucun autre bulletin n'est accepté.",
+    "closing": "Clôture...",
+    "description": "Affichez un QR code et laissez chaque personne présente envoyer un bulletin anonyme depuis son téléphone, sans compte.",
+    "expired": "Ce vote a expiré. Aucun autre bulletin n'est accepté.",
+    "open": "Ouvrir un vote en salle",
+    "openAnother": "Ouvrir un autre vote",
+    "openFailed": "Le vote n'a pas pu être ouvert. Réessayez.",
+    "opening": "Ouverture...",
+    "qrAccessibleName": "QR code ouvrant la page de vote anonyme pour {{title}}",
+    "qrCaption": "Scannez pour noter cette proposition depuis un téléphone",
+    "qrUnavailable": "Le QR code est indisponible car l'adresse de cette page ne peut pas être partagée.",
+    "scopeDocuments": "Un bulletin porte sur les {{documents}} documents qui la composent : la salle note donc la proposition entière.",
+    "scopeNote": "Ce vote note une proposition : {{title}}.",
+    "title": "Noter en salle"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documents, un seul bulletin"
+  },
   "scores": {
     "confidence": "Confiance",
     "confidenceDescription": "Certitude dans les estimations d'impact et de DmM",
@@ -54,13 +129,20 @@
     "impact": "Portée",
     "impactDescription": "Valeur commerciale et bénéfice client",
     "low": "Faible",
-    "score": "Note",
+    "notScored": "Non noté",
     "slow": "Lent",
     "strategicFit": "Adéquation stratégique",
     "strategicFitDescription": "Alignement avec les objectifs de l'entreprise",
     "timeToMarket": "Délai de mise sur le marché",
     "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
-    "title": "Scores de priorisation"
+    "title": "Scores de priorisation",
+    "wholeRow": "Un seul bulletin pour les {{documents}} documents de cette ligne.",
+    "yoursOnly": "Votre propre note. L'enregistrement n'écrit que vos valeurs."
+  },
+  "scoresUnavailable": {
+    "description": "Vos scores enregistrés sont actuellement indisponibles : les valeurs ci-dessous sont donc des valeurs par défaut et non celles qui ont été saisies. Rechargez la page avant d'enregistrer.",
+    "staleDescription": "La dernière actualisation des scores enregistrés a échoué : les valeurs affichées sont les dernières lues correctement. Votre propre notation n'est pas affectée — inutile de recharger avant d'enregistrer.",
+    "title": "Impossible de charger les scores"
   },
   "sort": {
     "date": "Par date",
@@ -69,6 +151,7 @@
     "label": "Trier par :",
     "priority": "Priorité",
     "priorityFull": "Score de priorité",
+    "teamOrdered": "{{fields}} trient selon les chiffres de l'équipe, ceux affichés sur chaque ligne — pas selon votre propre note.",
     "ttm": "DmM",
     "ttmFull": "Délai de mise sur le marché"
   },
@@ -76,9 +159,26 @@
     "highPriority": "Haute priorité",
     "mediumPriority": "Priorité moyenne",
     "notScored": "Non évalué",
-    "totalDocuments": "Total documents"
+    "totalRows": "Propositions au total",
+    "unreadable_one": "La note de l'équipe pour {{count}} proposition n'a pas pu être lue : elle compte dans le total mais dans aucun des autres décomptes. Rechargez la page pour la voir.",
+    "unreadable_other": "Les notes de l'équipe pour {{count}} propositions n'ont pas pu être lues : elles comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir."
   },
   "subtitle": "Évaluer et prioriser les PRD et PR/FAQ de tous les projets",
+  "team": {
+    "disagreement": "Écart {{spread}}",
+    "disagreementDescription": "Les évaluateurs diffèrent de {{spread}} sur cette note. Leurs commentaires expliquent pourquoi — cette page n'affiche que votre propre commentaire.",
+    "loading": "Chargement de la note de l'équipe",
+    "loadingDescription": "Les notes de l'équipe sont encore en cours de chargement : cette ligne n'indique donc pas encore si quelqu'un a voté. Elle se complétera d'elle-même.",
+    "noScores": "Pas encore évalué",
+    "noScoresDescription": "Aucun évaluateur ne l'a encore noté : il n'est donc pas mal classé, mais non classé. Les curseurs ci-dessous enregistrent le premier vote.",
+    "reviewers": "Évaluateurs",
+    "score": "Note de l'équipe",
+    "summary": "Moyenne de l'équipe {{score}} sur 5 · Votes d'évaluateurs : {{reviewers}}",
+    "title": "Ce que l'équipe a dit",
+    "unattributedNote": "Certains bulletins peuvent être des bulletins anonymes de salle : ils comptent chacun pour un évaluateur et ne sont attribués à personne.",
+    "unavailable": "Note de l'équipe indisponible",
+    "unavailableDescription": "Les notes de l'équipe n'ont pas pu être lues pour le moment : cette ligne n'affiche donc rien à leur sujet — cela ne signifie pas que personne n'a voté. Rechargez la page pour voir ce que l'équipe a dit."
+  },
   "title": "Priorisation",
   "unsavedChanges": {
     "cancel": "Rester sur la page",

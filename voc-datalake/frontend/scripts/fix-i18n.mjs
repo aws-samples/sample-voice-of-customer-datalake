@@ -12,8 +12,12 @@ import { execFileSync } from 'node:child_process'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
+// Must match the shipped catalogues in public/locales/<lang>/ — `src/i18n/options.test.ts`
+// compares this list, i18n-check.mjs's copy, src/i18n/options.ts and src/test/setup.ts
+// against the files on disk. `feedback` was listed here with no catalogue in any
+// locale, so every run tried to load a namespace that does not exist.
 const NAMESPACES = ['categories', 'chat', 'common', 'components', 'dashboard',
-  'dataExplorer', 'feedback', 'feedbackDetail', 'feedbackForms', 'login',
+  'dataExplorer', 'feedbackDetail', 'feedbackForms', 'login',
   'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'scrapers', 'settings']
 const LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh']
 const LANG_NAMES = {

@@ -78,12 +78,6 @@
     "settings": "설정"
   },
   "partialWindowHint": "모두 보려면 필터를 좁히세요",
-  "priority": {
-    "high": "높음",
-    "low": "낮음",
-    "medium": "보통",
-    "none": "없음"
-  },
   "problemAnalysisPage": {
     "emptyHint": "기간을 넓히거나 필터를 조정해 보세요",
     "emptyTitle": "선택한 기간에 대한 문제 분석 데이터가 없습니다"

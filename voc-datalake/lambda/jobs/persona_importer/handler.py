@@ -1,7 +1,12 @@
 """
 Persona Importer Job Lambda Handler
 
-Imports personas from PDF, image, or text using LLM extraction.
+Imports personas from an image or pasted text using LLM extraction.
+
+PDF is NOT handled: nothing in this repo extracts text from a PDF, so a PDF
+import is refused (here and, first, at the API boundary in
+api/projects_handler.py) rather than half-worked. The rules both layers enforce
+live in shared/persona_import.py.
 """
 
 import os
@@ -15,6 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
+from shared.persona_import import validate_import_config
+from shared.image_limits import converse_image_format
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.model_config import get_active_model_id
 from api.projects import generate_persona_avatar
@@ -42,10 +49,22 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
     
     ctx.update_progress(10, 'extracting_persona')
     
-    input_type = import_config.get('input_type', 'text')
-    content = import_config.get('content', '')
+    content = import_config.get('content')
+    content = content if isinstance(content, str) else ''
     media_type = import_config.get('media_type', '')
-    
+
+    # INVARIANT: refuse, never substitute placeholder content — this handler used
+    # to hand the model a hardcoded sentence in place of input it could not read,
+    # and the model invented a persona from it. See test/test_unsupported_input.py.
+    #
+    # Re-validated here even though api/projects_handler.py already refused at the
+    # click: a replayed async invoke or a job row queued before that boundary
+    # shipped reaches this Lambda directly. The messages are user-facing because
+    # shared/jobs.py::job_handler writes str(e) into the job record.
+    input_type = validate_import_config(
+        import_config.get('input_type', 'text'), content, media_type
+    )
+
     logger.info(f"[IMPORT_PERSONA_JOB] Starting import from {input_type} for project {project_id}")
     
     system_prompt = """You are a UX researcher expert at extracting persona information from documents and images.
@@ -59,7 +78,10 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
     if input_type == 'image':
         converse_content.append({
             'image': {
-                'format': (media_type or 'image/png').split('/')[-1],
+                # Looked up, not derived: validate_import_config already refused
+                # anything absent from this map, and splitting the media type would
+                # send Converse 'jpg', which it rejects.
+                'format': converse_image_format(media_type),
                 'source': {'bytes': base64.b64decode(content)}
             }
         })
@@ -67,9 +89,10 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
             'text': f"Extract the persona information from this image.\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
         })
     else:
-        text_content = content if input_type == 'text' else "[PDF content - extract persona from this document]"
+        # `input_type` is 'text' here — the guard above left no other possibility,
+        # so there is no fallback content to substitute and nothing to invent.
         converse_content.append({
-            'text': f"Extract the persona information from this text:\n\n---\n{text_content}\n---\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
+            'text': f"Extract the persona information from this text:\n\n---\n{content}\n---\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
         })
     
     ctx.update_progress(30, 'calling_ai')

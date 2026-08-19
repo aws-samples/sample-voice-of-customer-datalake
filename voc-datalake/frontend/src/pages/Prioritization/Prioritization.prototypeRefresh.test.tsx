@@ -28,6 +28,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 const mockGetProjects = vi.fn()
 const mockGetProject = vi.fn()
 const mockGetPrioritizationScores = vi.fn()
+const mockCreatePrioritizationRow = vi.fn()
 const mockGetFeedbackForms = vi.fn()
 
 vi.mock('../../api/projectsApi', () => ({
@@ -40,6 +41,9 @@ vi.mock('../../api/projectsApi', () => ({
 vi.mock('../../api/client', () => ({
   api: {
     getPrioritizationScores: () => mockGetPrioritizationScores(),
+    // The page ensures a default row per project on mount; an absent stub is a
+    // TypeError that leaves the list with no rows to render.
+    createPrioritizationRow: (id: string) => mockCreatePrioritizationRow(id),
     patchPrioritizationScores: () => Promise.resolve({ success: true }),
     getFeedbackForms: () => mockGetFeedbackForms(),
     getFeedbackFormStats: () => Promise.resolve({ success: true, stats: null }),
@@ -72,6 +76,23 @@ const project = {
 const prfaq = {
   document_id: 'doc_prfaq', document_type: 'prfaq', title: ROW_TITLE,
   content: '# Feature A', created_at: '2025-01-01',
+}
+
+/**
+ * The project's one row, holding its one scorable document.
+ *
+ * `prototype_id` is deliberately EMPTY, so the row falls back to the project's
+ * latest prototype — which is what every case here varies. A row that named a
+ * prototype id would pin these tests to one document and stop exercising the
+ * fallback the fixtures are built around.
+ */
+const row = {
+  row_id: 'row_p1_default',
+  project_id: 'p1',
+  document_ids: ['doc_prfaq'],
+  prototype_id: '',
+  is_default: true,
+  created_at: '2025-01-01',
 }
 
 const prototypeDoc = (prototypeUrl?: string) => ({
@@ -109,7 +130,8 @@ async function renderLoadedPage() {
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   mockGetProjects.mockResolvedValue({ projects: [project] })
-  mockGetPrioritizationScores.mockResolvedValue({ scores: {} })
+  mockGetPrioritizationScores.mockResolvedValue({ scores: {}, rows: { [row.row_id]: row } })
+  mockCreatePrioritizationRow.mockResolvedValue({ success: true, created: false, row })
   mockGetFeedbackForms.mockResolvedValue({ forms: [] })
 })
 

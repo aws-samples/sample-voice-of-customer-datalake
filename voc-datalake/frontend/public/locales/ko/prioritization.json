@@ -6,6 +6,54 @@
     "saving": "저장 중...",
     "savingMobile": "..."
   },
+  "ballot": {
+    "anonymousNotice": "이 투표는 익명입니다. 이 문서의 팀 점수에 반영되지만 귀하나 다른 누구에게도 귀속되지 않습니다.",
+    "axes": {
+      "confidence": "확신도",
+      "confidenceHint": "위 두 가지 추정에 대해 얼마나 확신하십니까?",
+      "impact": "영향도",
+      "impactHint": "비즈니스 가치와 고객 편익.",
+      "strategicFit": "전략 적합성",
+      "strategicFitHint": "회사 목표와의 정합성.",
+      "timeToMarket": "출시 기간",
+      "timeToMarketHint": "얼마나 빨리 제공할 수 있습니까? 5가 가장 빠릅니다."
+    },
+    "closed": {
+      "capReached": "이 투표는 이미 받을 수 있는 표를 모두 모았습니다. 진행자에게 다른 세션을 열어 달라고 요청하세요.",
+      "closed": "진행자가 이 투표를 마감했으므로 더 이상 표를 받지 않습니다.",
+      "expired": "이 투표는 만료되었으므로 더 이상 표를 받지 않습니다.",
+      "invalid": "이 투표를 읽을 수 없어 아무것도 기록되지 않았습니다. 점수와 메모를 확인한 뒤 다시 제출하세요.",
+      "notFound": "이 링크로는 투표를 열 수 없습니다. 지금 화면에 표시된 코드를 스캔했는지 확인하세요.",
+      "title": "이 투표는 열려 있지 않습니다",
+      "unknown": "지금은 투표를 기록할 수 없었습니다. 잠시 후 다시 시도하세요."
+    },
+    "displayName": {
+      "hint": "선택 사항입니다. 표는 개인에게 귀속되지 않으므로 비워 두어도 됩니다.",
+      "label": "이름 (선택)"
+    },
+    "done": {
+      "description": "귀하의 표는 이 문서의 팀 점수에 반영됩니다. 투표가 열려 있는 동안 같은 휴대폰에서 이 페이지를 다시 열어 수정할 수 있습니다.",
+      "title": "투표가 기록되었습니다"
+    },
+    "loading": "이 투표를 불러오는 중...",
+    "notes": {
+      "label": "메모 (선택)",
+      "placeholder": "숫자로 표현되지 않는 내용..."
+    },
+    "rejected": {
+      "title": "투표가 기록되지 않았습니다"
+    },
+    "scopeNote": "제안 전체를 평가합니다. 이 투표는 제안을 구성하는 문서 묶음을 한 장의 표로 함께 평가합니다.",
+    "submit": {
+      "label": "투표 제출",
+      "pending": "제출 중..."
+    },
+    "title": "이 제안을 평가하기",
+    "unavailable": {
+      "description": "아무것도 제출되지 않았습니다. 페이지를 새로 고쳐 다시 시도하세요. 투표 자체는 열려 있을 수 있습니다.",
+      "title": "이 투표를 불러올 수 없습니다"
+    }
+  },
   "configureApiEndpoint": "우선순위 지정을 보려면 설정에서 API 엔드포인트를 구성하세요.",
   "docType": {
     "prd": "PRD",
@@ -30,6 +78,10 @@
     "title": "우선순위 지정 프레임워크"
   },
   "loading": "문서 로드 중...",
+  "noteTooLong": {
+    "description": "메모는 {{max}}자까지 입력할 수 있으며, 이를 넘는 메모는 잘리지 않고 거부됩니다. 수정한 행의 메모를 줄인 후 다시 저장하세요. 아직 저장된 내용은 없습니다.",
+    "title": "메모가 너무 길어 저장할 수 없습니다"
+  },
   "notes": {
     "label": "메모",
     "placeholder": "이 우선순위 지정 결정에 대한 메모를 추가하세요..."
@@ -46,6 +98,29 @@
     "medium": "중간 우선순위",
     "none": "평가되지 않음"
   },
+  "roomVote": {
+    "anonymousNote": "여기서 던진 표는 위의 팀 점수에 반영되며 개인에게 귀속되지 않습니다.",
+    "ballotsIn": "{{cap}}표 중 {{received}}표 접수",
+    "close": "투표 마감",
+    "closeFailed": "투표를 마감할 수 없었습니다. 다시 시도하세요 — 마감될 때까지 표는 계속 접수됩니다.",
+    "closed": "이 투표는 마감되었습니다. 더 이상 표를 받지 않습니다.",
+    "closing": "마감 중...",
+    "description": "화면에 QR 코드를 띄우고, 회의실에 있는 모두가 계정 없이 휴대폰으로 익명 투표를 한 번 제출하게 하세요.",
+    "expired": "이 투표는 만료되었습니다. 더 이상 표를 받지 않습니다.",
+    "open": "회의실 투표 열기",
+    "openAnother": "다른 투표 열기",
+    "openFailed": "투표를 열 수 없었습니다. 다시 시도하세요.",
+    "opening": "여는 중...",
+    "qrAccessibleName": "{{title}}의 익명 투표 페이지를 여는 QR 코드",
+    "qrCaption": "스캔하여 휴대폰에서 이 제안을 평가하세요",
+    "qrUnavailable": "이 페이지의 주소를 공유할 수 없어 QR 코드를 사용할 수 없습니다.",
+    "scopeDocuments": "표 1장이 뒤에 있는 문서 {{documents}}건 전체를 포함하므로, 회의실은 제안 전체를 평가합니다.",
+    "scopeNote": "이 투표는 제안 1건을 평가합니다: {{title}}.",
+    "title": "회의실에서 함께 평가"
+  },
+  "row": {
+    "multiDocument": "문서 {{documents}}건, 표 1장"
+  },
   "scores": {
     "confidence": "신뢰도",
     "confidenceDescription": "영향도 및 출시 시간 추정의 확실성",
@@ -54,13 +129,20 @@
     "impact": "영향도",
     "impactDescription": "비즈니스 가치 및 고객 이점",
     "low": "낮음",
-    "score": "점수",
+    "notScored": "미채점",
     "slow": "느림",
     "strategicFit": "전략적 부합도",
     "strategicFitDescription": "회사 목표와의 부합도",
     "timeToMarket": "출시 시간",
     "timeToMarketDescription": "얼마나 빨리 출시할 수 있나요?",
-    "title": "우선순위 지정 점수"
+    "title": "우선순위 지정 점수",
+    "wholeRow": "이 행의 문서 {{documents}}건 전체에 대한 표 1장입니다.",
+    "yoursOnly": "본인의 평가입니다. 저장하면 본인 점수만 기록됩니다."
+  },
+  "scoresUnavailable": {
+    "description": "저장된 점수를 현재 가져올 수 없으므로 아래 숫자는 입력된 값이 아닌 기본값입니다. 저장하기 전에 페이지를 다시 불러오세요.",
+    "staleDescription": "저장된 점수를 다시 가져오지 못했으므로 표시된 수치는 마지막으로 정상적으로 읽은 값입니다. 본인의 평가는 영향을 받지 않으므로 저장하기 전에 다시 불러올 필요가 없습니다.",
+    "title": "점수를 불러올 수 없습니다"
   },
   "sort": {
     "date": "날짜",
@@ -69,6 +151,7 @@
     "label": "정렬 기준:",
     "priority": "우선순위",
     "priorityFull": "우선순위 점수",
+    "teamOrdered": "{{fields}}은(는) 각 행에 표시되는 팀의 숫자를 기준으로 정렬합니다. 본인의 평가 기준이 아닙니다.",
     "ttm": "출시 시간",
     "ttmFull": "출시 시간"
   },
@@ -76,9 +159,26 @@
     "highPriority": "높은 우선순위",
     "mediumPriority": "중간 우선순위",
     "notScored": "평가되지 않음",
-    "totalDocuments": "전체 문서"
+    "totalRows": "전체 제안 수",
+    "unreadable_one": "제안 {{count}}건의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다.",
+    "unreadable_other": "제안 {{count}}건의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다."
   },
   "subtitle": "모든 프로젝트에서 PRD 및 PR/FAQ를 평가하고 우선순위를 지정하세요",
+  "team": {
+    "disagreement": "편차 {{spread}}",
+    "disagreementDescription": "이 점수에 대한 검토자 간 차이는 {{spread}}입니다. 이유는 각자의 메모에 있으며, 이 페이지에는 자신의 메모만 표시됩니다.",
+    "loading": "팀 점수 로드 중",
+    "loadingDescription": "팀의 점수를 아직 불러오는 중이라 이 행에는 누군가 투표했는지가 표시되지 않습니다. 로드가 끝나면 자동으로 채워집니다.",
+    "noScores": "아직 미평가",
+    "noScoresDescription": "아직 아무도 평가하지 않았으므로 낮은 점수가 아니라 미평가 상태입니다. 아래 슬라이더로 첫 평가를 등록할 수 있습니다.",
+    "reviewers": "검토자",
+    "score": "팀 점수",
+    "summary": "팀 평균 {{score}} / 5 · 검토자 투표 수: {{reviewers}}",
+    "title": "팀의 평가",
+    "unattributedNote": "일부 표는 익명 회의실 투표일 수 있으며, 각각 검토자 1명으로 계산되고 개인에게 귀속되지 않습니다.",
+    "unavailable": "팀 점수를 가져올 수 없음",
+    "unavailableDescription": "팀의 점수를 지금 읽을 수 없어 이 행에는 관련 정보를 표시하지 않습니다. 아무도 투표하지 않았다는 뜻은 아닙니다. 페이지를 다시 불러오면 팀의 평가를 확인할 수 있습니다."
+  },
   "title": "우선순위 지정",
   "unsavedChanges": {
     "cancel": "페이지에 머물기",

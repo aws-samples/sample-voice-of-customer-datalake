@@ -2,13 +2,13 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "149d573c20a51a6a3634a44038d3a1b4ab0cdd38e75a019af9f3a07e7a6f3bf4",
+      "templateSha256": "908a83993d71c9cd40263f1538dd1a1e24b21e3e4eaae10a819a464df156bc53",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer",
           "AWS::ApiGateway::RestApi Name = voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
-          "AWS::ApiGateway::UsagePlan UsagePlanName = voc-mcp-throttle-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-ballots-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
@@ -30,6 +30,7 @@
           "AWS::Lambda::Function FunctionName = voc-settings-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-users-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ballots-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
@@ -62,6 +63,7 @@
         ],
         "environmentNames": [
           "MANUAL_IMPORT_PROCESSOR_FUNCTION = voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>",
+          "POWERTOOLS_SERVICE_NAME = voc-ballots-api",
           "POWERTOOLS_SERVICE_NAME = voc-chat-api",
           "POWERTOOLS_SERVICE_NAME = voc-data-explorer-api",
           "POWERTOOLS_SERVICE_NAME = voc-feedback-form-api",
@@ -85,7 +87,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "fe7c4c9e0e28570ee0a78d5d0511ac214393a11288e4730777ab8eb516899f44",
+      "templateSha256": "60df5a648162ad13b2a79af56a06f1d5e02564bf98d20fbfa0df3b2803c4bdda",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -102,6 +104,7 @@
           "AWS::KMS::Alias AliasName = alias/voc-datalake-key-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-admin-bootstrap-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-cdn-signing-keys-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-product-doc-extractor-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-access-logs-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-frontend-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-raw-data-<AWS::AccountId>-<AWS::Region>",
@@ -142,7 +145,9 @@
         "policyResources": [
           "arn:aws:lambda:us-east-1:111111111111:function:*voc-chat-stream*"
         ],
-        "environmentNames": []
+        "environmentNames": [
+          "SERVICE_NAME = voc-product-doc-extractor"
+        ]
       }
     },
     "VocIngestionStack": {
