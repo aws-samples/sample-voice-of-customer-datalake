@@ -129,7 +129,7 @@ from botocore import exceptions as botocore_exceptions
 from botocore.parsers import ResponseParserError
 from boto3.dynamodb.conditions import Key
 from shared.mcp_tokens import (
-    DEFAULT_SCOPES,
+    ALL_READ_SCOPES,
     MCP_TOKEN_PK,
     REACH_KIND_PROJECT,
     REACH_KIND_WORKSPACE,
@@ -186,7 +186,7 @@ def _token_row(**extra) -> dict:
         "token_id": _MINTED.token_id,
         "name": "test token",
         "secret_hash": _MINTED.secret_hash,
-        "scopes": list(DEFAULT_SCOPES),
+        "scopes": list(ALL_READ_SCOPES),
         "projects": [_TOKEN_PROJECT],
         "read_reach": REACH_WORKSPACE,
         **extra,
@@ -276,7 +276,7 @@ class TestConstantTimeTokenComparison:
         result = _authenticate(_make_event())
 
         assert result is not None
-        assert result["scopes"] == list(DEFAULT_SCOPES)
+        assert result["scopes"] == list(ALL_READ_SCOPES)
         assert result["projects"] == [_TOKEN_PROJECT]
         assert result["read_reach"] == REACH_WORKSPACE
 
@@ -572,7 +572,7 @@ class TestScopeEnforcement:
             handler.reset_mock()
             result = self._call_tool(
                 tool_name="fake_multi_tool",
-                token_scopes=list(DEFAULT_SCOPES),
+                token_scopes=list(ALL_READ_SCOPES),
                 handlers_extra={"fake_multi_tool": handler},
                 scopes_extra={"fake_multi_tool": required},
             )
@@ -666,7 +666,7 @@ class TestScopeEnforcement:
         try:
             result = self._call_tool(
                 tool_name="undeclared_tool",
-                token_scopes=list(DEFAULT_SCOPES),
+                token_scopes=list(ALL_READ_SCOPES),
                 # inject handler and a reach kind but NOT a scope declaration
                 handlers_extra={"undeclared_tool": undeclared_handler},
                 reach_extra={"undeclared_tool": REACH_KIND_WORKSPACE},
@@ -691,7 +691,7 @@ class TestScopeEnforcement:
         try:
             result = self._call_tool(
                 tool_name="reachless_tool",
-                token_scopes=list(DEFAULT_SCOPES),
+                token_scopes=list(ALL_READ_SCOPES),
                 handlers_extra={"reachless_tool": handler},
                 scopes_extra={"reachless_tool": SCOPE_FEEDBACK_READ},
                 # An explicit empty dict, not None: None makes _call_tool
@@ -713,14 +713,14 @@ class TestScopeEnforcement:
         from mcp_handler import _scope_allows
 
         assert _scope_allows([SCOPE_FEEDBACK_READ], SCOPE_FEEDBACK_READ) is True
-        assert _scope_allows(list(DEFAULT_SCOPES), SCOPE_PROJECTS_READ) is True
+        assert _scope_allows(list(ALL_READ_SCOPES), SCOPE_PROJECTS_READ) is True
         assert _scope_allows([SCOPE_FEEDBACK_READ], SCOPE_PROJECTS_READ) is False
         assert _scope_allows([], SCOPE_FEEDBACK_READ) is False
         assert _scope_allows(None, SCOPE_FEEDBACK_READ) is False
         # A bare string must not pass by substring containment.
         assert _scope_allows(SCOPE_FEEDBACK_READ, SCOPE_FEEDBACK_READ) is False
         # An empty requirement never grants anything.
-        assert _scope_allows(list(DEFAULT_SCOPES), "") is False
+        assert _scope_allows(list(ALL_READ_SCOPES), "") is False
 
 
 # ===========================================================================
@@ -2173,7 +2173,7 @@ class TestReadReachEnforcement:
         return result, handler
 
     def _token(self, **extra):
-        return {"scopes": list(DEFAULT_SCOPES), "projects": [_TOKEN_PROJECT],
+        return {"scopes": list(ALL_READ_SCOPES), "projects": [_TOKEN_PROJECT],
                 "read_reach": REACH_WORKSPACE, **extra}
 
     # --- workspace reach (the default) -----------------------------------
@@ -2269,18 +2269,51 @@ class TestReadReachEnforcement:
         assert "error" in result, result
         handler.assert_not_called()
 
-    @pytest.mark.parametrize("bad", ["", "   ", None, 123, ["proj-a"]])
-    def test_unusable_project_argument_falls_back_to_the_token_default(self, bad):
-        """A junk argument must not become a project id.
+    @pytest.mark.parametrize("bad", ["", "   ", None, 123, ["proj-a"], {}, True])
+    def test_a_present_but_unusable_project_argument_is_refused(self, bad):
+        """Junk in `project_id` is -32602, NOT a silent fall back to the token's project.
 
-        It falls back to the token's single project (which is in reach), rather
-        than being passed through to a DynamoDB key.
+        Falling back would read a DIFFERENT project than the client named and
+        report success — the caller receives another project's personas and
+        documents believing they are the ones they asked for. An error is the
+        only honest answer, and it is why absence and garbage take different
+        paths through _resolve_project_id.
         """
         result, handler = self._call(
             "get_project", self._token(), arguments={"project_id": bad},
         )
+        assert result.get("error", {}).get("code") == -32602, result
+        assert "project_id" in result["error"]["message"]
+        handler.assert_not_called()
+
+    def test_an_absent_project_argument_still_defaults(self):
+        """Absence is a different intent from garbage and keeps the ergonomics."""
+        result, handler = self._call("get_project", self._token())
         assert "result" in result, result
         assert handler.call_args.args[1]["project_id"] == _TOKEN_PROJECT
+
+    def test_none_reach_is_told_about_reach_not_about_an_argument(self):
+        """A `none`-reach token cannot be helped by supplying a project_id.
+
+        Reach is checked before the missing-argument branch, so the refusal names
+        the thing the caller would have to change. The earlier ordering sent them
+        after an argument that could never work.
+        """
+        result, handler = self._call(
+            "get_project", self._token(read_reach=REACH_NONE, projects=["a", "b"]),
+        )
+        assert result.get("error", {}).get("code") == -32003, result
+        assert "read reach" in result["error"]["message"], result["error"]["message"]
+        handler.assert_not_called()
+
+    def test_project_set_reach_on_a_workspace_tool_names_reach_too(self):
+        """Same ordering rule for the other reach-covers-nothing case."""
+        result, handler = self._call(
+            "search_feedback", self._token(read_reach=REACH_PROJECT_SET),
+        )
+        assert result.get("error", {}).get("code") == -32003, result
+        assert "read reach" in result["error"]["message"]
+        handler.assert_not_called()
 
     def test_reach_is_checked_even_when_the_scope_is_held(self):
         """The two gates are independent; holding the scope is not enough."""

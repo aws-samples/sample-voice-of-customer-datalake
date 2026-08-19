@@ -534,8 +534,17 @@ class TestCreateTokenExpiry:
     isinstance(True, int) is True, and int(30.5) truncates.
     """
 
-    def _post(self, api_gateway_event, lambda_context, body):
+    def _post(self, api_gateway_event, lambda_context, body, *, with_scopes=True):
+        """POST the mint route.
+
+        `scopes` is REQUIRED by the route, so it is supplied unless a test is
+        specifically about its absence — otherwise every test here would be
+        asserting the same 400.
+        """
         from projects_handler import lambda_handler
+        from shared.mcp_tokens import ALL_READ_SCOPES
+        if with_scopes and 'scopes' not in body:
+            body = {**body, 'scopes': list(ALL_READ_SCOPES)}
         with patch('projects_handler.get_projects_table') as mock_get_table:
             mock_table = mock_get_table.return_value
             mock_table.get_item.return_value = {'Item': {'pk': 'PROJECT#proj-1', 'sk': 'META'}}
@@ -547,6 +556,25 @@ class TestCreateTokenExpiry:
             )
             response = lambda_handler(event, lambda_context)
             return response, mock_table
+
+    def test_scopes_are_required_not_defaulted(self, api_gateway_event, lambda_context):
+        """Omitting `scopes` is a 400, NOT a credential holding everything.
+
+        The mint boundary must not be fail-open while enforcement is fail-closed:
+        defaulting here would mean `POST {"name": "x"}` yields the widest
+        possible credential, so the laziest request would produce the most
+        dangerous token. `read_reach` is deliberately different — it HAS a
+        chosen default the UI warns about; `scopes` has no least-privilege
+        fallback, so there is nothing honest to default to.
+        """
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't'}, with_scopes=False,
+        )
+        assert response['statusCode'] == 400, response['body']
+        # This API reports validation failures under `error`, not `message`.
+        body = json.loads(response['body'])
+        assert 'scopes' in body.get('error', ''), body
+        mock_table.put_item.assert_not_called()
 
     def test_absent_expiry_stores_no_attribute(self, api_gateway_event, lambda_context):
         """Omitting the field keeps today's exact row shape — attribute absent."""
@@ -629,6 +657,44 @@ class TestCreateTokenExpiry:
         # One Query of the token partition, not a per-project range scan.
         table.query.assert_called_once()
 
+    def test_list_follows_pagination_to_the_end(self, api_gateway_event, lambda_context):
+        """A truncated first page would make credentials unrevocable.
+
+        All tokens share ONE partition and a Query page is capped at 1 MB, so a
+        single-page read starts silently dropping rows as the workspace grows.
+        The list is the only revoke path, so a dropped row is a credential that
+        cannot be revoked through the UI — the exact invariant the mint route is
+        written to guarantee.
+
+        Revert story: deleting the LastEvaluatedKey loop in `_query_all_tokens`
+        fails this test, because only `tok_page1` comes back.
+        """
+        from projects_handler import lambda_handler
+        page1 = {
+            'Items': [{'token_id': 'tok_page1', 'name': 'a', 'created_at': 'c',
+                       'projects': ['proj-1']}],
+            'LastEvaluatedKey': {'pk': {'S': 'MCPTOKEN'}, 'sk': {'S': 'TOKEN#tok_page1'}},
+        }
+        page2 = {
+            'Items': [{'token_id': 'tok_page2', 'name': 'b', 'created_at': 'c',
+                       'projects': ['proj-1']}],
+        }
+        with patch('projects_handler.get_projects_table') as mock_get_table:
+            table = mock_get_table.return_value
+            table.query.side_effect = [page1, page2]
+            event = api_gateway_event(method='GET', path='/projects/proj-1/api-tokens')
+            response = lambda_handler(event, lambda_context)
+
+        ids = {t['token_id'] for t in json.loads(response['body'])['tokens']}
+        assert ids == {'tok_page1', 'tok_page2'}, (
+            'the second page was dropped — those credentials would be unrevocable'
+        )
+        assert table.query.call_count == 2
+        # The follow-up Query must resume from where the first stopped.
+        assert table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == (
+            page1['LastEvaluatedKey']
+        )
+
     def test_list_never_returns_the_secret_hash(self, api_gateway_event, lambda_context):
         response, _ = self._list(api_gateway_event, lambda_context, [
             {'token_id': 'tok_1', 'name': 'n', 'created_at': 'c', 'projects': ['proj-1'],
@@ -643,8 +709,8 @@ class TestCreateTokenExpiry:
     def test_mint_stores_the_new_credential_shape(self, api_gateway_event, lambda_context):
         """The row carries a secret hash, a scope set, a project set and a reach."""
         from shared.mcp_tokens import (
+            ALL_READ_SCOPES,
             DEFAULT_READ_REACH,
-            DEFAULT_SCOPES,
             MCP_TOKEN_PK,
             parse_token,
         )
@@ -657,7 +723,7 @@ class TestCreateTokenExpiry:
         assert stored['pk'] == MCP_TOKEN_PK
         assert not stored['pk'].startswith('PROJECT#')
         assert stored['sk'] == f"TOKEN#{stored['token_id']}"
-        assert stored['scopes'] == list(DEFAULT_SCOPES)
+        assert stored['scopes'] == list(ALL_READ_SCOPES)
         assert stored['projects'] == ['proj-1']
         assert stored['read_reach'] == DEFAULT_READ_REACH
         assert stored['created_by']

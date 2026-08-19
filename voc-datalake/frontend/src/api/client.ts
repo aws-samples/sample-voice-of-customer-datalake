@@ -754,7 +754,9 @@ export const api = {
   // Zod normalizers rather than being trusted to match the declared types: a
   // token row states what a credential may DO, so a drifted field would make
   // the UI describe a credential's reach differently from how it is enforced.
-  createApiToken: (projectId: string, data: { name: string; scopes?: McpScope[]; read_reach?: ReadReach; expires_in_days?: number }): Promise<CreateApiTokenResponse> =>
+  // `scopes` is REQUIRED, mirroring the route: defaulting it server-side would
+  // make the laziest request mint the widest credential.
+  createApiToken: (projectId: string, data: { name: string; scopes: McpScope[]; read_reach?: ReadReach; expires_in_days?: number }): Promise<CreateApiTokenResponse> =>
     fetchApi<unknown>(`/projects/${projectId}/api-tokens`, { method: 'POST', body: JSON.stringify(data) }).then((raw) => CreateApiTokenResponseSchema.parse(raw)),
 
   listApiTokens: (projectId: string): Promise<{ tokens: ApiToken[] }> =>

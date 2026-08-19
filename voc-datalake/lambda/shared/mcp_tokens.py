@@ -104,10 +104,12 @@ VALID_SCOPES: Final[frozenset[str]] = frozenset({
     SCOPE_PROJECTS_READ,
 })
 
-# What a token gets when it names no scopes. Every current scope is a read, so
-# this is the whole vocabulary; it stops being the default the moment a write
-# scope exists.
-DEFAULT_SCOPES: Final[tuple[str, ...]] = (
+# The full read set, in vocabulary order. NOT a mint default: the mint route
+# REQUIRES `scopes`, because defaulting it would mean omitting the field yields
+# the widest possible credential — a fail-open boundary under a fail-closed
+# enforcement path. This exists for callers that legitimately want everything
+# (and for tests that need a maximal token); it is not a fallback.
+ALL_READ_SCOPES: Final[tuple[str, ...]] = (
     SCOPE_FEEDBACK_READ,
     SCOPE_METRICS_READ,
     SCOPE_PROJECTS_READ,

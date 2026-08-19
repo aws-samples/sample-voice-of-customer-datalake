@@ -91,11 +91,27 @@ describe('normalizeApiTokens', () => {
 })
 
 describe('ApiTokenSchema', () => {
-  it('never surfaces a secret hash as a token field', () => {
-    // The backend does not send it; if it ever did, this documents that the
-    // UI has no field for it.
-    const parsed = ApiTokenSchema.parse({ ...validRow, secret_hash: 'x' })
-    expect(parsed).not.toHaveProperty('scope')
+  it('strips secret_hash and created_by even though the object is loose', () => {
+    // Previously this asserted `not.toHaveProperty('scope')` — unrelated to its
+    // own name, and vacuously true, while `secret_hash` DID pass through the
+    // loose object. The schema now strips both, so the assertion and the name
+    // describe the same guarantee.
+    const parsed = ApiTokenSchema.parse({
+      ...validRow, secret_hash: 'THE-STORED-HASH', created_by: 'a-cognito-sub',
+    })
+    expect(parsed).not.toHaveProperty('secret_hash')
+    expect(parsed).not.toHaveProperty('created_by')
+    expect(JSON.stringify(parsed)).not.toContain('THE-STORED-HASH')
+    expect(JSON.stringify(parsed)).not.toContain('a-cognito-sub')
+    // The rest of the row survives — this is a strip, not a rejection.
+    expect(parsed.token_id).toBe(validRow.token_id)
+  })
+
+  it('still passes through harmless unknown fields', () => {
+    // The strip must be targeted, not a switch to a strict object: forward
+    // compatibility with new backend fields is why the schema is loose.
+    const parsed = ApiTokenSchema.parse({ ...validRow, future_field: 'keep me' })
+    expect(parsed).toMatchObject({ future_field: 'keep me' })
   })
 })
 

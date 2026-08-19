@@ -101,6 +101,24 @@ export const ApiTokenSchema = z.looseObject({
   created_at: z.string().catch(''),
   last_used_at: optionalIsoString,
   expires_at: optionalIsoString,
+}).transform((row) => {
+  // Drop fields that must never reach a component, even though the object is
+  // loose. The backend sends neither — the point is that `looseObject` passes
+  // unknown keys straight through, so "the backend doesn't send it" is the only
+  // thing standing between a future response change and a credential digest or
+  // a Cognito subject landing in a React tree or a console log.
+  //
+  // Belt and braces: the backend test `test_list_never_returns_the_secret_hash`
+  // is the primary guarantee; this is the one that holds if that regresses.
+  //
+  // Copy-and-delete rather than rest-destructuring so the row keeps its inferred
+  // type (a `...rest` spread widens it to an index signature, and asserting it
+  // back would need the type assertion this codebase forbids).
+  if (!('secret_hash' in row) && !('created_by' in row)) return row
+  const cleaned = { ...row }
+  delete cleaned.secret_hash
+  delete cleaned.created_by
+  return cleaned
 })
 
 /**
@@ -112,7 +130,9 @@ export const ApiTokenSchema = z.looseObject({
 export function normalizeApiTokens(raw: unknown): ApiToken[] {
   if (!Array.isArray(raw)) {
     if (raw != null) {
-      console.warn('[mcpTokenSchema] token list was not an array; ignoring', { raw })
+      // The TYPE, not the payload. Token names and project ids are not secrets,
+      // but logging a whole response body is the habit that eventually logs one.
+      console.warn(`[mcpTokenSchema] token list was not an array (got ${typeof raw}); ignoring`)
     }
     return []
   }

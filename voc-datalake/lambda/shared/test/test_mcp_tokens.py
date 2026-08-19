@@ -7,8 +7,8 @@ separately from the two handlers that consume it.
 import pytest
 
 from shared.mcp_tokens import (
+    ALL_READ_SCOPES,
     DEFAULT_READ_REACH,
-    DEFAULT_SCOPES,
     MCP_TOKEN_PK,
     REACH_KIND_PROJECT,
     REACH_KIND_WORKSPACE,
@@ -219,8 +219,14 @@ class TestVocabulary:
         assert DEFAULT_READ_REACH == REACH_WORKSPACE
         assert DEFAULT_READ_REACH in VALID_READ_REACHES
 
-    def test_defaults_are_all_valid_scopes(self):
-        assert set(DEFAULT_SCOPES) <= VALID_SCOPES
+    def test_the_full_read_set_is_exactly_the_vocabulary(self):
+        """ALL_READ_SCOPES is a convenience, not a mint default.
+
+        It must stay in step with VALID_SCOPES while every scope is a read; the
+        day a write scope is added, this fails and forces a decision about
+        whether "all read scopes" still means "all scopes".
+        """
+        assert set(ALL_READ_SCOPES) == VALID_SCOPES
 
     def test_no_scope_is_mintable_without_granting_something(self):
         """Guards against reintroducing a phantom permission.

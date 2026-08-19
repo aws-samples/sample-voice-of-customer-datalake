@@ -2373,7 +2373,18 @@ def _validate_expires_in_days(value: Any) -> str | None:
 
 
 def _validate_scopes(value: Any) -> list[str]:
-    """Validate a requested scope set, defaulting to every read scope.
+    """Validate a requested scope set. REQUIRED — there is no default.
+
+    🔑 Deliberately not defaulted, unlike `read_reach`. Defaulting would mean
+    `POST {"name": "x"}` mints a credential holding *every* scope, i.e. omitting
+    a field yields the widest grant — a fail-OPEN mint boundary sitting under a
+    fail-CLOSED enforcement path (`_scope_allows` grants nothing for an
+    unreadable scope set). The asymmetry with `read_reach` is intentional and is
+    the honest split: the owner chose a *specific* reach default and the UI warns
+    about it, whereas there is no least-privilege scope set to fall back to —
+    every candidate default is either the widest one or useless.
+    Requiring it costs callers nothing: the route's body shape changed anyway, so
+    no existing caller survives unedited.
 
     No escalation gate is needed *yet* and this is deliberately not pretending
     to be one: every scope in the current vocabulary is a read, and a read
@@ -2383,7 +2394,10 @@ def _validate_scopes(value: Any) -> list[str]:
     `created_by` is recorded below.
     """
     if value is None:
-        return list(mcp_tokens.DEFAULT_SCOPES)
+        raise ValidationError(
+            'scopes is required and must be a non-empty array. Valid scopes: '
+            f'{", ".join(sorted(mcp_tokens.VALID_SCOPES))}'
+        )
     if not isinstance(value, list) or not value:
         raise ValidationError('scopes must be a non-empty array')
     if not all(isinstance(s, str) for s in value):
@@ -2431,11 +2445,32 @@ def _token_response(item: dict) -> dict:
 
 
 def _query_all_tokens(table) -> list[dict]:
-    """Every token row. One partition, so one Query — see MCP_TOKEN_PK."""
-    response = table.query(
-        KeyConditionExpression=Key('pk').eq(mcp_tokens.MCP_TOKEN_PK)
-    )
-    return response.get('Items', [])
+    """Every token row, following pagination to the end.
+
+    🔑 The `LastEvaluatedKey` loop is load-bearing, not defensive boilerplate.
+    All tokens share ONE partition (see MCP_TOKEN_PK), and DynamoDB caps a Query
+    page at 1 MB. A single-page read would therefore start silently truncating
+    once the workspace accumulates enough credentials — and because this list is
+    the ONLY revoke path, a truncated page makes the credentials it omits
+    unlistable and so unrevocable. That would break the exact invariant the mint
+    route is written to guarantee.
+
+    Unbounded on purpose: the result is every credential in the workspace, and
+    stopping early is the failure being prevented. The row count is human-scale
+    (a handful per project) and each row is small, so the loop terminates after
+    one page in practice.
+    """
+    items: list[dict] = []
+    kwargs: dict[str, Any] = {
+        'KeyConditionExpression': Key('pk').eq(mcp_tokens.MCP_TOKEN_PK),
+    }
+    while True:
+        response = table.query(**kwargs)
+        items.extend(response.get('Items', []))
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            return items
+        kwargs['ExclusiveStartKey'] = last_key
 
 
 @app.get("/projects/<project_id>/api-tokens")

@@ -27,6 +27,8 @@ from shared.mcp_tokens import (
     MCP_TOKEN_PK,
     REACH_KIND_PROJECT,
     REACH_KIND_WORKSPACE,
+    REACH_NONE,
+    REACH_PROJECT_SET,
     SCOPE_FEEDBACK_READ,
     SCOPE_METRICS_READ,
     SCOPE_PROJECTS_READ,
@@ -916,6 +918,10 @@ def _scope_allows(token_scopes: Any, required_scope: str) -> bool:
     return required_scope in token_scopes
 
 
+class InvalidProjectArgument(Exception):
+    """`project_id` was supplied but is not a usable project id."""
+
+
 def _resolve_project_id(args: dict, token_info: dict) -> str | None:
     """Which project a project-shaped tool is addressing, or None.
 
@@ -924,9 +930,21 @@ def _resolve_project_id(args: dict, token_info: dict) -> str | None:
     minted from a project — so single-project clients need not pass it. An
     ambiguous default (a set with several projects) resolves to None rather
     than picking one, which the caller sees as a request to name the project.
+
+    🔑 A PRESENT but unusable argument (`123`, `["p"]`, `"  "`) RAISES rather
+    than falling back to the token's project. Falling back would read a
+    *different* project than the client named and report success, which is worse
+    than an error: the caller gets someone else's data believing it is the
+    project they asked for. Absence and garbage are different intents and get
+    different answers.
     """
-    explicit = args.get('project_id')
-    if isinstance(explicit, str) and explicit.strip():
+    if 'project_id' in args:
+        explicit = args['project_id']
+        if not isinstance(explicit, str) or not explicit.strip():
+            raise InvalidProjectArgument(
+                f'project_id must be a non-empty string, got '
+                f'{type(explicit).__name__}'
+            )
         return explicit.strip()
     token_projects = token_info.get('projects')
     if isinstance(token_projects, (list, tuple)) and len(token_projects) == 1:
@@ -975,7 +993,12 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     # `projects:read` and still be refused a particular project.
     read_reach = token_info.get('read_reach') or DEFAULT_READ_REACH
     token_projects = token_info.get('projects') or []
-    project_id = _resolve_project_id(arguments, token_info) if tool_reach_kind == REACH_KIND_PROJECT else None
+    project_id = None
+    if tool_reach_kind == REACH_KIND_PROJECT:
+        try:
+            project_id = _resolve_project_id(arguments, token_info)
+        except InvalidProjectArgument as exc:
+            return _jsonrpc_error(req_id, -32602, str(exc))
 
     if not reach_allows(
         read_reach=read_reach,
@@ -983,9 +1006,17 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         tool_reach_kind=tool_reach_kind,
         project_id=project_id,
     ):
-        # The two refusals read differently because they need different fixes:
-        # one wants an argument, the other wants a differently-scoped token.
-        if tool_reach_kind == REACH_KIND_PROJECT and not project_id:
+        # The refusals read differently because they need different fixes: one
+        # wants an argument, the other wants a differently-scoped token.
+        #
+        # Reach is checked FIRST. A `none`-reach token can never call anything,
+        # so telling it to supply a project_id would send the caller after an
+        # argument that cannot help — the ordering here is the whole point.
+        reach_covers_nothing = (
+            read_reach == REACH_NONE
+            or (read_reach == REACH_PROJECT_SET and tool_reach_kind == REACH_KIND_WORKSPACE)
+        )
+        if tool_reach_kind == REACH_KIND_PROJECT and not project_id and not reach_covers_nothing:
             return _jsonrpc_error(
                 req_id, -32602,
                 f"'{tool_name}' needs a project_id argument: this token's project "
