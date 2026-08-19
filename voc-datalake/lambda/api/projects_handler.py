@@ -651,6 +651,30 @@ MAX_PRIORITIZATION_PAGES = 20
 # exists to make impossible.
 MAX_ROW_BALLOTS_PER_DELETE = 98
 
+# How many rows one project may hold.
+#
+# THE ONLY BOUND ON A ROUTE THAT ADDS ONE ROW PER CALL. `POST .../rows/compose` is
+# open to any signed-in reviewer and deliberately produces a new row every time it is
+# asked, so without this the partition the page reads WHOLE grows without limit under
+# ordinary authorized requests — and `_read_prioritization_partition` raises past
+# MAX_PRIORITIZATION_PAGES rather than truncating, which would take the prioritization
+# page down FOR EVERYBODY rather than only for whoever composed the rows. That
+# asymmetry is the reason the bound is here rather than left to API Gateway's throttle.
+#
+# Generous next to the product: a row is one combination of a project's documents, the
+# page renders one line per row, and a backlog nobody can read on one screen is past
+# the point where another row helps. Small enough that even every project holding this
+# many leaves the whole-partition read inside its page budget.
+#
+# Crossing it REFUSES with a 409 naming the bound — the shape MAX_ROW_BALLOTS_PER_DELETE
+# uses — rather than evicting an existing row: a row carries ballots, and deleting one
+# to make room for another is a destructive act, which is admin-gated for that reason.
+#
+# The DEFAULT row is exempt. `POST .../rows` must keep answering for a project whose
+# rows were all composed, because it is idempotent on a derived key and the page has
+# no other way to get the row a project is entitled to.
+MAX_ROWS_PER_PROJECT = 50
+
 # How many document pages a row COMPOSITION will follow.
 #
 # This bounds a project's total STORED BYTES, not its document count. DynamoDB's 1MB
@@ -2048,6 +2072,21 @@ def api_compose_prioritization_row():
     it is kept anyway, because a put with no condition is an upsert, and the one
     thing worse than a failed create is a create that silently replaced a row whose
     ballots already exist.
+
+    BOUNDED AT MAX_ROWS_PER_PROJECT, because this is the one route that adds a row
+    per call and it is open to any signed-in reviewer. The partition the page reads
+    WHOLE would otherwise grow without limit under ordinary authorized requests, and
+    the read raises past its page budget rather than truncating — so enough composed
+    rows takes the prioritization page down for everybody, not only for whoever
+    composed them.
+
+    The count is read and then the put is made, which is a read-then-write: two
+    reviewers composing simultaneously against a project one row under the bound can
+    both pass it and leave the project one row over. Accepted deliberately. Making it
+    exact needs a counter item every compose contends on, and the bound is a
+    protection against unbounded growth rather than an exact quota — one row over it
+    is not a state the reads care about, while a hundred is. The bound still holds as
+    a bound: the next call reads the crossed count and refuses.
     """
     body = _json_object_body()
     project_id = _validated_row_project_id(body.get('project_id'))
@@ -2061,6 +2100,15 @@ def api_compose_prioritization_row():
     table = get_aggregates_table()
     if not table:
         raise ConfigurationError('Aggregates table not configured')
+
+    # Read no further than the bound: what this asks is "are there already this
+    # many", and the keys past that answer nothing.
+    existing = _project_row_sort_keys(table, project_id, limit=MAX_ROWS_PER_PROJECT)
+    if len(existing) >= MAX_ROWS_PER_PROJECT:
+        raise ConflictError(
+            f'This project already holds the {MAX_ROWS_PER_PROJECT} prioritization '
+            'rows one project may have; delete a row before composing another'
+        )
 
     row_id = _minted_row_id()
     now = datetime.now(timezone.utc).isoformat()
@@ -2182,38 +2230,59 @@ def api_recompose_prioritization_row(row_id: str):
     return {'success': True, 'row': _row_payload(stored)}
 
 
-def _project_row_records(table, project_id: str) -> list[dict]:
-    """Every ROW record of one project, from the prioritization partition.
+def _project_row_sort_keys(table, project_id: str, *, limit: int | None = None) -> list[str]:
+    """The sort key of every ROW of one project, in ascending key order.
 
     A bounded, strongly-consistent query over the row keys only
     (`begins_with(sk, 'ROW#')`), so the ballots — which outnumber the rows — are not
-    read to answer a question about rows. Strongly consistent because it GATES a
-    delete, and the case that matters is "composed moments ago".
+    read to answer a question about rows. Strongly consistent because it GATES both
+    of its callers' writes, and the case that matters is "composed moments ago".
+
+    PROJECTED to `sk` and `project_id`, which is everything either caller reads.
+    Without it every row of every project crossed the wire with its `document_ids`
+    inline to answer a question about one project's row COUNT — the same cost
+    `_row_ballot_sort_keys` projects away one screen down.
 
     Filtered on the stored `project_id` field rather than by parsing the row id: a
     minted id says nothing about its project, which is exactly why the record carries
-    the field (see DEFAULT_ROW_ID_PREFIX).
+    the field (see DEFAULT_ROW_ID_PREFIX). That filter is applied HERE rather than as
+    a DynamoDB `FilterExpression` because a filter is applied after the page is read
+    and so changes nothing about what is paid for, while making the page's item count
+    unpredictable — the pagination this loop performs is easier to reason about when
+    every page it sees is a full one.
+
+    `limit` STOPS EARLY once that many of the project's rows have been seen, which is
+    what keeps the delete's sibling lookup from reading a whole keyspace to find one
+    row. Ascending key order is preserved, so "the lowest-keyed sibling" is still
+    deterministic: the first qualifying key of the first page is the lowest one there
+    is.
     """
     query_kwargs: dict[str, Any] = {
         'KeyConditionExpression': (
             Key('pk').eq(PRIORITIZATION_PK) & Key('sk').begins_with(ROW_SK_PREFIX)
         ),
+        # `project_id` is not a DynamoDB reserved word; `sk` is the key itself.
+        'ProjectionExpression': 'sk, project_id',
         'ConsistentRead': True,
     }
-    rows: list[dict] = []
+    sort_keys: list[str] = []
     for _ in range(MAX_PRIORITIZATION_PAGES):
         response = table.query(**query_kwargs)
-        rows.extend(
-            item for item in response.get('Items', [])
-            if isinstance(item, dict) and item.get('project_id') == project_id
-        )
+        for item in response.get('Items', []):
+            if not isinstance(item, dict) or item.get('project_id') != project_id:
+                continue
+            sort_key = str(item.get('sk', ''))
+            if sort_key:
+                sort_keys.append(sort_key)
+            if limit is not None and len(sort_keys) >= limit:
+                return sort_keys
         last_key = response.get('LastEvaluatedKey')
         if not last_key:
-            return rows
+            return sort_keys
         query_kwargs['ExclusiveStartKey'] = last_key
     logger.error(
-        'Prioritization rows exceed %d query pages while deciding whether a '
-        "project's default row is its only row.",
+        'Prioritization rows exceed %d query pages while counting one '
+        "project's rows.",
         MAX_PRIORITIZATION_PAGES,
     )
     raise ServiceError('Too many prioritization rows to read in one request')
@@ -2229,7 +2298,10 @@ def _sibling_row_sk(table, row: dict, row_id: str) -> str | None:
     see two rows and each delete one.
 
     Deterministic (the lowest sort key) so the same delete fences on the same
-    sibling on a retry.
+    sibling on a retry. TWO keys are asked for, not one, because the row being
+    deleted is itself one of the project's rows and is dropped below — asking for
+    one could return only that row and report a project with a sibling as having
+    none.
     """
     project_id = row.get('project_id')
     if not isinstance(project_id, str) or not project_id:
@@ -2238,9 +2310,9 @@ def _sibling_row_sk(table, row: dict, row_id: str) -> str | None:
         # stricter — it refuses. A non-default row is unaffected.
         return None
     siblings = sorted(
-        str(item.get('sk', ''))
-        for item in _project_row_records(table, project_id)
-        if str(item.get('sk', '')) not in ('', _row_sk(row_id))
+        sort_key
+        for sort_key in _project_row_sort_keys(table, project_id, limit=2)
+        if sort_key != _row_sk(row_id)
     )
     return siblings[0] if siblings else None
 

@@ -4443,6 +4443,127 @@ class TestASecondRowCanBeComposedForAnotherCombination:
         assert body['rows'][row_id]['document_ids'] == ['prd-1', 'prfaq-1']
 
 
+class TestAProjectCannotHoldUnboundedlyManyRows:
+    """The compose route adds a row per call and is open to any signed-in reviewer,
+    so it is the one place the partition the page reads WHOLE can be grown by an
+    ordinary authorized request.
+
+    What makes the bound load-bearing rather than tidy: `_read_prioritization_partition`
+    RAISES past its page budget rather than truncating, so enough composed rows takes
+    the prioritization page down for everybody — not only for whoever composed them.
+
+    Every count here is read from the module, so raising the bound moves these tests
+    with it instead of leaving a stale number asserting nothing.
+    """
+
+    @staticmethod
+    def _project_holding(count, project_id='p1'):
+        aggregates = FakeAggregatesTable()
+        for index in range(count):
+            aggregates.seed_rows(f'row-{index:03d}', project_id=project_id,
+                                 is_default=False)
+        return aggregates
+
+    def test_a_project_at_the_bound_is_refused_and_nothing_is_written(
+        self, api_gateway_event, lambda_context
+    ):
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT)
+        aggregates.put_item_calls.clear()
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 409
+        assert str(MAX_ROWS_PER_PROJECT) in body['error']
+        assert aggregates.put_item_calls == []
+        assert len(aggregates.row_keys) == MAX_ROWS_PER_PROJECT
+
+    def test_a_project_one_row_under_the_bound_still_composes(
+        self, api_gateway_event, lambda_context
+    ):
+        """The bound has to admit the last row it allows, or it is off by one against
+        a reviewer who did nothing wrong."""
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT - 1)
+
+        status, _ = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 200
+        assert len(aggregates.row_keys) == MAX_ROWS_PER_PROJECT
+
+    def test_another_projects_rows_do_not_spend_this_projects_bound(
+        self, api_gateway_event, lambda_context
+    ):
+        """The bound is PER PROJECT. Counting the partition instead would refuse a
+        project holding no rows at all once the deployment had enough of them."""
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT, project_id='p2')
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 200
+        assert body['row']['project_id'] == 'p1'
+
+    def test_the_default_row_is_still_created_for_a_project_at_the_bound(
+        self, api_gateway_event, lambda_context
+    ):
+        """`POST .../rows` is exempt, and must be: it is idempotent on a derived key,
+        so the page has no other way to get the row a project is entitled to. A bound
+        applied there would leave a project whose rows were all composed unable to
+        ever obtain its own."""
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT)
+
+        status, body = _create_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1'},
+        )
+
+        assert status == 200
+        assert body['row']['is_default'] is True
+
+    def test_the_row_count_read_pulls_no_document_ids_across_the_wire(
+        self, api_gateway_event, lambda_context
+    ):
+        """A question about one project's row COUNT paid for every row of every
+        project WITH ITS COMPOSITION INLINE, because the 1MB page limit applies
+        before a projection is taken. The row keys and the project id are everything
+        either caller of this read looks at."""
+        aggregates = self._project_holding(3)
+        aggregates.query_calls.clear()
+
+        _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        row_queries = [
+            call for call in aggregates.query_calls
+            if _key_condition(call['KeyConditionExpression'])[1] == 'ROW#'
+        ]
+        assert row_queries, 'the count must read the rows'
+        for call in row_queries:
+            projected = {
+                field.strip() for field in call['ProjectionExpression'].split(',')
+            }
+            assert projected == {'sk', 'project_id'}, (
+                'anything else here is a stored composition being paid for'
+            )
+
+
 class TestARowsDocumentSetIsRefusedBeforeAnythingIsWritten:
     """Five ways a requested composition is not one, each refused before the put.
 
@@ -5273,7 +5394,12 @@ class TestAFrozenRowIsDeletedTogetherWithItsBallots:
 
         def ballot_mid_flight(**kwargs):
             result = real_query(**kwargs)
-            if not raced['done'] and 'ProjectionExpression' in kwargs:
+            # Keyed on the BALLOT enumeration specifically, not on any projected
+            # query: the delete's sibling lookup is projected too, and racing that
+            # one would test a different window.
+            if not raced['done'] and _key_condition(
+                kwargs['KeyConditionExpression']
+            )[1] == 'BALLOT#row-1#':
                 raced['done'] = True
                 _patch_scores(aggregates, api_gateway_event, lambda_context,
                               {'row-1': {'impact': 1}}, subject='bob', seed_rows=False)
@@ -5454,6 +5580,39 @@ class TestTheDefaultRowSurvivesAsAProjectsLastRow:
         assert status == 409
         assert sorted(aggregates.row_keys) == ['ROW#row_p1_default', 'ROW#row_p2_default']
 
+    def test_a_sibling_sorting_after_the_deleted_row_is_still_found(
+        self, api_gateway_event, lambda_context
+    ):
+        """The sibling lookup stops reading early, and the row being deleted is itself
+        one of the project's rows — so a lookup that stopped at ONE key could see only
+        that row and report a project with a sibling as having none. Pinned with the
+        sibling sorting AFTER the deleted row, which is the ordering that reaches it:
+        'ROW#row_p1_default' < 'ROW#zzz-later'."""
+        aggregates = self._project_rows(extra_rows=('zzz-later',))
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default')
+
+        assert status == 200
+        assert aggregates.row_keys == ['ROW#zzz-later']
+
+    def test_a_sibling_sorting_before_the_deleted_row_is_the_one_fenced_on(
+        self, api_gateway_event, lambda_context
+    ):
+        """The other ordering, and the lowest-keyed sibling is what the transaction
+        asserts on — deterministic, so a retry fences on the same row."""
+        aggregates = self._project_rows(extra_rows=('aaa-earlier', 'zzz-later'))
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default')
+
+        assert status == 200
+        checks = [
+            request for entry in aggregates.transact_calls[-1]
+            for operation, request in entry.items() if operation == 'ConditionCheck'
+        ]
+        assert [check['Key']['sk'] for check in checks] == ['ROW#aaa-earlier']
+
     def test_a_composed_row_is_deletable_even_as_a_projects_last_row(
         self, api_gateway_event, lambda_context
     ):
@@ -5482,7 +5641,12 @@ class TestTheDefaultRowSurvivesAsAProjectsLastRow:
 
         def delete_sibling_mid_flight(**kwargs):
             result = real_query(**kwargs)
-            if not raced['done'] and 'ProjectionExpression' in kwargs:
+            # From inside the SIBLING lookup, which is where the two admins' reads
+            # cross: the ballot enumeration is projected too, and racing that one
+            # would leave the sibling still present when the transaction ran.
+            if not raced['done'] and _key_condition(
+                kwargs['KeyConditionExpression']
+            )[1] == 'ROW#':
                 raced['done'] = True
                 aggregates.items.pop((PARTITION, 'ROW#row-composed'), None)
             return result
