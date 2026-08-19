@@ -708,7 +708,17 @@ class TestScopeEnforcement:
         )
         handler.assert_not_called()
 
-    def _tools_call_response(self, arguments, lambda_context, tool="get_project"):
+    def _tools_call_response(self, arguments, lambda_context, tool="get_project",
+                             *, stub_handler=False):
+        """Drive tools/call through the full lambda_handler.
+
+        `stub_handler` is opt-in and used ONLY by the null-arguments case, which
+        has to reach a *successful* dispatch without a real project read. The
+        malformed cases deliberately run against the REAL handler: their whole
+        claim is that such input would otherwise reach the project resolution, so
+        stubbing the handler there would leave that claim resting on the guard's
+        position rather than on the code actually being wired up.
+        """
         import mcp_handler
         event = {
             "httpMethod": "POST",
@@ -719,11 +729,13 @@ class TestScopeEnforcement:
                 "params": {"name": tool, "arguments": arguments},
             }),
         }
+        handlers = (
+            {**mcp_handler.TOOL_HANDLERS,
+             tool: MagicMock(return_value=[{"type": "text", "text": "ok"}])}
+            if stub_handler else mcp_handler.TOOL_HANDLERS
+        )
         with patch("mcp_handler.projects_table") as mock_table, \
-             patch("mcp_handler.TOOL_HANDLERS", {
-                 **mcp_handler.TOOL_HANDLERS,
-                 tool: MagicMock(return_value=[{"type": "text", "text": "ok"}]),
-             }):
+             patch("mcp_handler.TOOL_HANDLERS", handlers):
             mock_table.query.return_value = {"Items": [_token_row()]}
             mock_table.update_item.return_value = {}
             return mcp_handler.lambda_handler(event, lambda_context)
@@ -740,7 +752,7 @@ class TestScopeEnforcement:
         Revert story: deleting the `arguments is None` coercion fails this with
         -32602.
         """
-        response = self._tools_call_response(None, lambda_context)
+        response = self._tools_call_response(None, lambda_context, stub_handler=True)
         assert response["statusCode"] == 200, response
         body = json.loads(response["body"])
         assert "error" not in body, (
