@@ -62,6 +62,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -655,6 +656,48 @@ class TestPathParameterConfinement:
         assert result["result"]["isError"] is False
         assert fake.paths == [f"/projects/{legacy}"]
 
+    # Every decorator form Powertools registers a route with. `patch` is not
+    # hypothetical — projects_handler uses it twice, and an earlier version of
+    # this regex missed it, which is precisely how a security argument that rests
+    # on set completeness goes quietly wrong.
+    ROUTE_DECORATOR = re.compile(
+        r'@\w+\.(?:get|post|put|delete|patch|head|options|route)\(\s*[\'"]([^\'"]+)[\'"]'
+    )
+    OWNERS: ClassVar[dict[str, str]] = {
+        "/projects": "projects_handler.py",
+        "/feedback": "metrics_handler.py",
+    }
+
+    def _static_siblings(self, prefix: str, handler: str) -> set[str]:
+        source = (Path(__file__).resolve().parents[1] / handler).read_text()
+        depth = len(prefix.strip("/").split("/"))
+        siblings = set()
+        for match in self.ROUTE_DECORATOR.finditer(source):
+            parts = match.group(1).strip("/").split("/")
+            if (len(parts) > depth
+                    and "/".join(parts[:depth]) == prefix.strip("/")
+                    and not parts[depth].startswith("<")):
+                siblings.add(parts[depth])
+        return siblings
+
+    def test_the_sibling_derivation_actually_finds_routes(self):
+        """Positive control, because the assertion below is a subset test.
+
+        `siblings <= declared` passes trivially when the regex matches nothing —
+        so a decorator form this pattern does not know (a new verb, a Router, a
+        rename of `app`) would turn the whole reserved-segment argument green and
+        empty. This is the test that fails instead.
+        """
+        for prefix, handler in self.OWNERS.items():
+            siblings = self._static_siblings(prefix, handler)
+            assert siblings, (
+                f"no static routes found under {prefix} in {handler} — the route "
+                f"decorator pattern has drifted, and the lockstep below is vacuous"
+            )
+        # And a specific one, so "found something" cannot pass on an unrelated match.
+        assert "prioritization" in self._static_siblings("/projects", "projects_handler.py")
+        assert "search" in self._static_siblings("/feedback", "metrics_handler.py")
+
     def test_reserved_segments_cover_every_static_sibling(self):
         """Lockstep: the reserved sets are derived from the handlers, not guessed.
 
@@ -663,17 +706,8 @@ class TestPathParameterConfinement:
         otherwise become quietly reachable through the tool that interpolates
         there; adding it now fails this test until it is reserved.
         """
-        owners = {"/projects": "projects_handler.py", "/feedback": "metrics_handler.py"}
-        for prefix, handler in owners.items():
-            source = (Path(__file__).resolve().parents[1] / handler).read_text()
-            depth = len(prefix.strip("/").split("/"))
-            siblings = set()
-            for match in re.finditer(r'@app\.(?:get|post|put|delete)\(\s*[\'"]([^\'"]+)[\'"]', source):
-                parts = match.group(1).strip("/").split("/")
-                if (len(parts) > depth
-                        and "/".join(parts[:depth]) == prefix.strip("/")
-                        and not parts[depth].startswith("<")):
-                    siblings.add(parts[depth])
+        for prefix, handler in self.OWNERS.items():
+            siblings = self._static_siblings(prefix, handler)
             declared = mcp_handler._RESERVED_PATH_SEGMENTS[prefix]
             assert siblings <= declared, (
                 f"{handler} has static routes under {prefix} that are not reserved: "
@@ -681,12 +715,15 @@ class TestPathParameterConfinement:
                 f"there could reach them"
             )
 
-    def test_every_reserved_prefix_is_one_a_declared_route_interpolates(self):
-        """The reverse direction: no reserved set for a prefix nothing uses.
+    def test_every_interpolated_prefix_declares_a_reserved_set(self):
+        """BOTH directions, because only one of them is a security property.
 
-        A stale entry is harmless at runtime but it is a claim about the routes
-        that is no longer true, and it makes the test above pass for a prefix
-        nobody checks.
+        A prefix with no entry used to fall back to an empty set, which meant a
+        future templated route silently permitted sibling collisions — the exact
+        hole the redesign was supposed to close, reintroduced by omission rather
+        than by choice. `_reserved_for` now raises for an unknown prefix, and this
+        asserts the table covers every prefix any declared route interpolates, so
+        the failure is at build time rather than on a caller's first attempt.
         """
         interpolated = set()
         for _domain, _method, template in mcp_handler.DOMAIN_ROUTES.values():
@@ -694,10 +731,24 @@ class TestPathParameterConfinement:
             for index, segment in enumerate(segments):
                 if segment.startswith("{"):
                     interpolated.add("/" + "/".join(segments[:index]))
-        assert set(mcp_handler._RESERVED_PATH_SEGMENTS) <= interpolated, (
-            f"reserved segments declared for prefixes no route interpolates: "
-            f"{sorted(set(mcp_handler._RESERVED_PATH_SEGMENTS) - interpolated)}"
+
+        declared = set(mcp_handler._RESERVED_PATH_SEGMENTS)
+        assert interpolated <= declared, (
+            f"routes interpolate a parameter under prefixes with no reserved set: "
+            f"{sorted(interpolated - declared)} — declare one (an explicit "
+            f"frozenset() if the prefix genuinely has no static siblings)"
         )
+        assert declared <= interpolated, (
+            f"reserved segments declared for prefixes no route interpolates: "
+            f"{sorted(declared - interpolated)}"
+        )
+
+    def test_an_undeclared_prefix_fails_closed(self):
+        """A templated route whose prefix has no entry is refused, not allowed."""
+        future = {"future": (mcp_handler.DOMAIN_PROJECTS, "GET", "/whatever/{project_id}")}
+        with patch.dict(mcp_handler.DOMAIN_ROUTES, future), \
+             pytest.raises(mcp_handler.InvalidToolArgument, match="reserved-segment"):
+            mcp_handler._validated_path_parameters("future", {"project_id": _PROJECT})
 
     def test_a_parameter_the_template_does_not_use_is_refused(self):
         with pytest.raises(mcp_handler.InvalidToolArgument):

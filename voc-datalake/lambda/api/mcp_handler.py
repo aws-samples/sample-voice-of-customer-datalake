@@ -166,10 +166,23 @@ def _reserved_for(template: str, name: str) -> frozenset[str]:
     Keyed on the path PREFIX above the parameter, so `/projects/{project_id}` and
     `/projects/{project_id}/autoseed` share one set — both put the value in the
     same position, which is what decides which siblings it can collide with.
+
+    FAILS CLOSED on a prefix with no entry, which is the property the previous
+    format-allowlist version had and this one lost when it was rewritten: a
+    `.get(prefix, frozenset())` silently permits sibling collisions for any
+    future templated route whose prefix nobody remembered to declare, so adding
+    a route becomes how the hole reopens. Declaring an explicit
+    `frozenset()` is how a prefix with genuinely no static siblings opts out, and
+    that is a deliberate line in a diff rather than an omission.
     """
     segments = template.strip('/').split('/')
     position = segments.index(f'{{{name}}}')
-    return _RESERVED_PATH_SEGMENTS.get('/' + '/'.join(segments[:position]), frozenset())
+    prefix = '/' + '/'.join(segments[:position])
+    if prefix not in _RESERVED_PATH_SEGMENTS:
+        raise InvalidToolArgument(
+            f'{name} cannot be validated: no reserved-segment set declared for {prefix}'
+        )
+    return _RESERVED_PATH_SEGMENTS[prefix]
 
 
 def _validated_path_parameters(route_key: str, params: dict[str, str]) -> dict[str, str]:
@@ -180,12 +193,20 @@ def _validated_path_parameters(route_key: str, params: dict[str, str]) -> dict[s
             # Fail closed rather than ignoring it: a parameter the template does
             # not interpolate means caller and route disagree about the call.
             raise InvalidToolArgument(f"{route_key}: unexpected path parameter '{name}'")
+        # Distinct messages per condition: the caller can act on each of these
+        # differently, and "must be a single path segment" for a stray space sends
+        # them looking for a slash they never sent.
         if not isinstance(value, str) or not value or value.strip() != value:
             raise InvalidToolArgument(f'{name} must be a non-empty identifier')
-        if _FORBIDDEN_PATH_CHARS & set(value):
-            raise InvalidToolArgument(f'{name} must be a single path segment')
-        if value in {'.', '..'} or any(c.isspace() or ord(c) < 0x20 for c in value):
-            raise InvalidToolArgument(f'{name} must be a single path segment')
+        offending = sorted(_FORBIDDEN_PATH_CHARS & set(value))
+        if offending:
+            raise InvalidToolArgument(
+                f'{name} may not contain {" ".join(offending)}: it must be a single path segment'
+            )
+        if any(c.isspace() or ord(c) < 0x20 for c in value):
+            raise InvalidToolArgument(f'{name} may not contain whitespace or control characters')
+        if value in {'.', '..'}:
+            raise InvalidToolArgument(f'{name} may not be a relative path segment')
         if value in _reserved_for(template, name):
             # Named explicitly, because "not found" would be a lie and the caller
             # cannot otherwise tell why a plausible-looking id was refused.
