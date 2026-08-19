@@ -88,13 +88,21 @@ describe('API Client', () => {
     // into every test after it.
     vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
     vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue(DEFAULT_RUNTIME_CONFIG)
-    vi.mocked(useConfigStore.getState).mockReturnValue(DEFAULT_STORE_STATE)
     // The 401-retry tests reach inside `refreshSession` to re-point
     // `getIdToken` at a fresh token; both overrides survive the hooks the same
     // way, so both are restored here. Found by the regression guard below, not
     // by inspection — it failed on `getIdToken` still returning 'fresh-token'.
     vi.mocked(authService.getIdToken).mockReturnValue(DEFAULT_ID_TOKEN)
-    vi.mocked(authService.refreshSession).mockResolvedValue(undefined)
+    // These two go through the file's existing `as ReturnType<typeof vi.fn>`
+    // idiom rather than `vi.mocked`, because the mocks are deliberately PARTIAL:
+    // the store state carries only the two fields the client reads (a whole
+    // `ConfigStore` would mean stubbing every setter), and `refreshSession`
+    // resolves `undefined` rather than a `CognitoUserSession` nobody asserts on.
+    // `vi.mocked` type-checks the argument and would reject both — and since
+    // `tsconfig.app.json` excludes test files, that rejection would not surface
+    // in `npm run check`, only in the un-gated `typecheck:tests` baseline.
+    ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue(DEFAULT_STORE_STATE)
+    ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
     global.fetch = vi.fn()
   })
 
@@ -259,15 +267,24 @@ describe('API Client', () => {
     })
 
     /**
-     * Regression guard for the override in the test above.
+     * Regression guard for the overrides in the two tests above.
      *
-     * Order-dependent: it only means anything while it runs after the untrusted
-     * -origin test, which is why it lives here rather than in a tidier place.
-     * If the `beforeEach` stops re-applying `DEFAULT_RUNTIME_CONFIG`, the
-     * previous test's foreign endpoint is still the allowlist when this runs,
-     * the origin check refuses `DEFAULT_ENDPOINT`, and this fails.
+     * Order-dependence is inherent, not an oversight: a leak detector has to run
+     * AFTER the test that leaks, so this must stay below the untrusted-origin
+     * case. Making it order-INDEPENDENT would also make it useless — with no
+     * preceding override there is nothing left behind to detect.
+     *
+     * Two assertions on purpose. The first reads the mock state directly, so a
+     * failure names the cause ("the runtime config is still the previous test's
+     * foreign endpoint"). The second checks the consequence the cause produces,
+     * so the guard still fires if some future leak reaches the request by another
+     * route. Either fails if `beforeEach` stops re-applying the defaults.
      */
     it('starts from the default trusted allowlist, not the previous test override', async () => {
+      // Cause: the mocks are back at their defaults.
+      expect(runtimeConfig.getRuntimeConfig().apiEndpoint).toBe(DEFAULT_ENDPOINT)
+      expect(authService.getIdToken()).toBe(DEFAULT_ID_TOKEN)
+
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ count: 0, items: [] }),
@@ -275,6 +292,7 @@ describe('API Client', () => {
 
       await api.getFeedback({ days: 7 })
 
+      // Consequence: the request goes to the trusted origin, carrying the token.
       const [calledUrl, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
       expect(calledUrl).toContain(DEFAULT_ENDPOINT)
       expect(init.headers['Authorization']).toBe(DEFAULT_ID_TOKEN)
@@ -477,7 +495,7 @@ describe('API Client', () => {
     })
 
     it('threads the review date basis into the body (issue #150)', async () => {
-      vi.mocked(useConfigStore.getState).mockReturnValue({
+      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
         ...DEFAULT_STORE_STATE,
         dateBasis: 'review',
       })

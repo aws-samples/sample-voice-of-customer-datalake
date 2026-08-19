@@ -167,24 +167,24 @@ describe('getAuthHeaders — trusted origin', () => {
     expect(headers['Authorization']).toBe('mock-cognito-id-token')
   })
 
-  it('requires the target URL, so the origin check cannot be skipped', () => {
-    // This replaced a test asserting the opposite — that `getAuthHeaders()`
-    // with no target attached the header anyway ("backward compat"). That
-    // default made the origin check opt-OUT: every caller did pass a URL, but
-    // a new call site could skip the check silently and no test would fail.
-    //
-    // The guard against that returning is checked by `tsc`, not by vitest:
-    // `targetUrl` is the required first parameter, so if it were made optional
-    // again its type would widen to `string | undefined` and the `required`
-    // assignment below would stop compiling under `npx tsc -b --noEmit`.
-    type TargetUrlParam = Parameters<typeof getAuthHeaders>[0]
-    const targetUrl: TargetUrlParam = `${TRUSTED_API}/feedback`
-    const required: string = targetUrl
-
-    // …and the argument really is what gates the header, rather than being
-    // accepted and ignored.
-    expect(getAuthHeaders(required)['Authorization']).toBe('mock-cognito-id-token')
-  })
+  /*
+   * There is deliberately NO test here for "omitting targetUrl does not compile",
+   * replacing the old "attaches Authorization when no targetUrl is given
+   * (backward compat)" case that pinned the permissive default.
+   *
+   * A type-level assertion in this file could not enforce it: `tsconfig.app.json`
+   * excludes the test globs, and `typecheck:tests` is not part of
+   * `npm run check`, so a test file is never type-checked by any gate — and
+   * vitest transpiles without type-checking. A `@ts-expect-error` or a
+   * `Parameters<>` assertion written here would read as a guard and enforce
+   * nothing.
+   *
+   * The requirement is enforced where the gate does look: `getAuthHeaders` passes
+   * `targetUrl` straight into `isTrustedOrigin(requestUrl: string)`, so widening
+   * it to `string | undefined` fails `npm run typecheck` inside `baseUrl.ts`
+   * itself with TS2345. Verified by mutation: making the parameter optional
+   * reports `src/api/baseUrl.ts(123,23)` and the gate goes red.
+   */
 })
 
 describe('getAuthHeaders — untrusted origin', () => {

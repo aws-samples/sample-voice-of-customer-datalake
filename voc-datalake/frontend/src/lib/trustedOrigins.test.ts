@@ -270,6 +270,15 @@ describe('isTrustedOrigin', () => {
     // that reordered the same-origin comparison ahead of the parse, or that
     // resolved only relative-looking inputs against the base, would turn an
     // opaque document into one that trusts every origin.
+    //
+    // 🪤 The obvious "make it intentional" one-liner LOOSENS this. Adding
+    // `&& origin !== 'null'` to `getCurrentOrigin()` makes it return `null`,
+    // which routes to the base-less `new URL(requestUrl)` branch — and that
+    // SUCCEEDS for an absolute URL, so an allowlisted endpoint becomes trusted
+    // from a sandboxed iframe. Measured: that change fails the
+    // `isTrustedOrigin(TRUSTED_API)` assertion below with "expected true to be
+    // false". Fail-closed here depends on there being no usable base at all,
+    // so the opaque origin must stay a non-null string.
     setLocationOrigin('null')
 
     expect(isTrustedOrigin('/api/feedback')).toBe(false)

@@ -107,9 +107,14 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
  * omitting it is a compile error instead of a silent grant. An earlier
  * signature took it last and optional, defaulting to "trusted" when absent;
  * every caller did pass it, but a new call site could have opted out of the
- * check by accident and nothing would have failed. Pinned by test:
- * "requires the target URL, so the origin check cannot be skipped", which
- * stops compiling if the parameter goes back to being optional.
+ * check by accident and nothing would have failed.
+ *
+ * What enforces that is the `isTrustedOrigin(targetUrl)` call below, not a test:
+ * `isTrustedOrigin` takes a required `string`, so widening this parameter to
+ * `string | undefined` fails `npm run typecheck` *in this file*
+ * (`TS2345` at the call site). That matters because a type-level assertion in a
+ * test file would be INERT — `tsconfig.app.json` excludes the `.test.ts` and
+ * `.test.tsx` globs, and `typecheck:tests` is not part of `npm run check`.
  */
 export function getAuthHeaders(
   targetUrl: string,

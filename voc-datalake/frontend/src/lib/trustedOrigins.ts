@@ -80,6 +80,13 @@ export function buildTrustedApiOrigins(): string[] {
  * trusted, including allowlisted absolute URLs. That falls out of the URL
  * constructor rejecting `'null'` as a base, before any comparison happens.
  * Pinned by test: "refuses everything when the document origin is opaque".
+ *
+ * ⚠️ Do not "clean that up" by having {@link getCurrentOrigin} return `null` for
+ * an opaque origin. A `null` origin means "no usable base", which routes to the
+ * base-less parse — and that succeeds for an absolute URL, so an allowlisted
+ * endpoint would become trusted from a sandboxed iframe. The opaque case is
+ * fail-closed BECAUSE `'null'` is a non-null string that is also an invalid
+ * base. Measured: that one-liner fails the test named above.
  */
 export function isTrustedOrigin(requestUrl: string): boolean {
   const currentOrigin = getCurrentOrigin()
