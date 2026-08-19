@@ -253,15 +253,33 @@
     "noTokensYet": "Noch keine API-Tokens",
     "revealToken": "Token anzeigen",
     "revokeToken": "Token widerrufen",
-    "scope": "Bereich",
-    "scopeRead": "Nur Lesen — Feedback suchen, Metriken anzeigen",
-    "scopeReadWrite": "Lesen & Schreiben — inkl. Chat und Dokumentgenerierung",
     "title": "MCP-Zugang",
     "tokenCreated": "Token erfolgreich erstellt",
     "tokenExpiresOn": "Dieses Token läuft am {{date}} ab.",
     "tokenName": "Token-Name",
     "tokenNamePlaceholder": "z.B. Mein Kiro-Token",
-    "tokenPasteHint": "Fügen Sie dieses Token in den <code>Authorization</code>-Header Ihrer mcp.json oder des Autoseed-Curl-Befehls ein."
+    "tokenPasteHint": "Fügen Sie dieses Token in den <code>Authorization</code>-Header Ihrer mcp.json oder des Autoseed-Curl-Befehls ein.",
+    "scopes": "Berechtigungen",
+    "scopeDesc": {
+      "feedback_read": "Kundenfeedback durchsuchen und lesen",
+      "metrics_read": "Dashboards und Metrik-Aufschlüsselungen lesen",
+      "projects_read": "Projekte, Personas und Dokumente lesen"
+    },
+    "noScopes": "keine Berechtigungen",
+    "readReach": "Lesezugriff",
+    "reachOption": {
+      "workspace": "Gesamter Workspace (Standard)",
+      "project-set": "Nur dieses Projekt"
+    },
+    "reachHint": {
+      "workspace": "Erreicht jedes Projekt im Workspace – einschließlich unveröffentlichter Dokumente anderer Projekte – und das gesamte Kundenfeedback.",
+      "project-set": "Auf dieses Projekt beschränkt. Kann den Feedback-Bestand und Workspace-Metriken nicht lesen, da diese nicht projektbezogen sind."
+    },
+    "reachBadge": {
+      "workspace": "Gesamter Workspace",
+      "project-set": "Dieses Projekt",
+      "none": "Kein Lesezugriff"
+    }
   },
   "notFound": {
     "backToProjects": "Zurück zu Projekten",

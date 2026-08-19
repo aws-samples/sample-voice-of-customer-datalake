@@ -105,6 +105,7 @@ Revert test that catches each defect:
 import json
 import os
 import sys
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -126,6 +127,22 @@ from botocore.exceptions import (
 # builtin, matching how mcp_handler refers to them.
 from botocore import exceptions as botocore_exceptions
 from botocore.parsers import ResponseParserError
+from boto3.dynamodb.conditions import Key
+from shared.mcp_tokens import (
+    ALL_READ_SCOPES,
+    MCP_TOKEN_PK,
+    REACH_KIND_PROJECT,
+    REACH_KIND_WORKSPACE,
+    REACH_NONE,
+    REACH_PROJECT_SET,
+    REACH_WORKSPACE,
+    SCOPE_FEEDBACK_READ,
+    SCOPE_METRICS_READ,
+    SCOPE_PROJECTS_READ,
+    VALID_SCOPES,
+    mint_token,
+    token_sk,
+)
 
 # ---------------------------------------------------------------------------
 # Ensure lambda/ and lambda/api/ are on the path (mirrors conftest.py)
@@ -145,30 +162,68 @@ def _client_error(code: str, operation: str = "Query") -> ClientError:
     )
 
 
-def _make_event(token: str = "voc_testtoken", project_id: str = "proj-1") -> dict:
-    """Build the minimal auth-header event _authenticate reads."""
+# ---------------------------------------------------------------------------
+# Credential fixtures
+# ---------------------------------------------------------------------------
+# One real credential for the whole module, minted through the production
+# helper rather than hand-written. Hand-writing it would let the tests keep
+# passing after a format change that broke every real client — the token must
+# parse, and mint_token is what decides whether it does.
+_MINTED = mint_token()
+_VALID_TOKEN = _MINTED.raw
+_TOKEN_PROJECT = "proj-1"
+
+
+def _token_row(**extra) -> dict:
+    """A stored token row that authenticates _VALID_TOKEN.
+
+    Defaults to the widest shape (every read scope, workspace reach) so a test
+    about something else does not accidentally also test a permission refusal.
+    """
     return {
-        "headers": {
-            "authorization": f"Bearer {token}",
-            "x-project-id": project_id,
-        }
+        "pk": MCP_TOKEN_PK,
+        "sk": token_sk(_MINTED.token_id),
+        "token_id": _MINTED.token_id,
+        "name": "test token",
+        "secret_hash": _MINTED.secret_hash,
+        "scopes": list(ALL_READ_SCOPES),
+        "projects": [_TOKEN_PROJECT],
+        "read_reach": REACH_WORKSPACE,
+        **extra,
     }
 
 
-def _rpc_event() -> dict:
+# A credential that is FORMAT-VALID (so it reaches the token store) but whose
+# secret is a greppable constant, for the "no token material in logs" tests.
+# It has to be real hex, so the sentinel is a hex word rather than a readable
+# one — `voc_SENTINELTOKEN` would now be rejected by the parser before any
+# lookup happened, which would make those tests vacuously green.
+_SENTINEL_SECRET = 'deadbeef' * 8          # 64 hex chars
+_SENTINEL_TOKEN_ID = 'tok_' + 'cafe' * 4   # 16 hex chars
+_SENTINEL_TOKEN = f'voc_{_SENTINEL_TOKEN_ID}_{_SENTINEL_SECRET}'
+
+
+def _make_event(token: str = _VALID_TOKEN) -> dict:
+    """Build the minimal auth-header event _authenticate reads.
+
+    No X-Project-Id: the credential resolves on its own now. A test that needs
+    to prove the header is irrelevant passes it explicitly.
+    """
+    return {"headers": {"authorization": f"Bearer {token}"}}
+
+
+def _rpc_event(tool: str = "get_project", arguments: dict | None = None,
+               token: str = _VALID_TOKEN) -> dict:
     """Build a full JSON-RPC tools/call event for the lambda_handler path."""
     return {
         "httpMethod": "POST",
         "path": "/v1/mcp",
-        "headers": {
-            "authorization": "Bearer voc_testtoken",
-            "x-project-id": "proj-1",
-        },
+        "headers": {"authorization": f"Bearer {token}"},
         "body": json.dumps({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {"name": "get_project", "arguments": {}},
+            "params": {"name": tool, "arguments": arguments or {}},
         }),
     }
 
@@ -178,63 +233,120 @@ def _rpc_event() -> dict:
 # ===========================================================================
 
 class TestConstantTimeTokenComparison:
-    """hmac.compare_digest must be called for every hash comparison in _authenticate."""
+    """hmac.compare_digest must be used for the secret comparison.
 
-    # NOTE: `mcp_handler.hmac` is the shared stdlib module object from
+    The comparison moved into shared.mcp_tokens.secret_matches with the new
+    format, so the patch target moved with it. Patching the handler for a
+    function it no longer owns would silently stop testing anything.
+    """
+
+    # NOTE: `shared.mcp_tokens.hmac` is the shared stdlib module object from
     # sys.modules, so this patch replaces `hmac.compare_digest` *process-wide*
-    # for the duration of the test — not just the handler's view of it.  That
+    # for the duration of the test — not just that module's view of it.  That
     # is safe under serial execution (nothing else in this test calls it;
     # botocore's HMAC signing happens outside the mocked DynamoDB calls), but
     # it would affect any concurrent code that calls `hmac.compare_digest`
     # (e.g. under pytest-xdist, or a fixture that signs a real AWS request).
     @patch("mcp_handler.projects_table")
-    @patch("mcp_handler.hmac.compare_digest")
+    @patch("shared.mcp_tokens.hmac.compare_digest")
     def test_authenticate_uses_compare_digest(self, mock_digest, mock_table):
-        """compare_digest is called for every stored hash; == is never used."""
+        """compare_digest is called for the stored secret hash; == is never used."""
         mock_digest.return_value = False  # force no-match so _authenticate returns None
 
-        # Simulate one stored token in DynamoDB
-        mock_table.query.return_value = {
-            "Items": [{"sk": "TOKEN#1", "token_hash": "somehash", "scope": "read"}]
-        }
+        mock_table.query.return_value = {"Items": [_token_row()]}
 
         from mcp_handler import _authenticate
-        result = _authenticate(_make_event("voc_testtoken"))
+        result = _authenticate(_make_event())
 
-        # compare_digest was called (not ==)
         assert mock_digest.called, "hmac.compare_digest was never called"
-        # And the result is None because we forced it to return False
         assert result is None
 
     @patch("mcp_handler.projects_table")
-    @patch("mcp_handler.hmac.compare_digest")
-    def test_authenticate_returns_token_on_digest_match(self, mock_digest, mock_table):
-        """When compare_digest returns True, _authenticate returns the token item."""
-        mock_digest.return_value = True
+    def test_authenticate_returns_the_row_on_a_matching_secret(self, mock_table):
+        """A correct secret returns the stored row, with its scopes and reach.
 
-        stored_item = {"sk": "TOKEN#1", "token_hash": "somehash", "scope": "read"}
-        mock_table.query.return_value = {"Items": [stored_item]}
+        No patched comparison here — the real credential from mint_token is
+        presented against the real stored hash, so this also proves the mint
+        and authenticate halves agree about the format.
+        """
+        mock_table.query.return_value = {"Items": [_token_row()]}
         mock_table.update_item.return_value = {}
 
         from mcp_handler import _authenticate
-        result = _authenticate(_make_event("voc_testtoken", project_id="proj-1"))
+        result = _authenticate(_make_event())
 
         assert result is not None
-        assert result["scope"] == "read"
-        assert result["project_id"] == "proj-1"
+        assert result["scopes"] == list(ALL_READ_SCOPES)
+        assert result["projects"] == [_TOKEN_PROJECT]
+        assert result["read_reach"] == REACH_WORKSPACE
 
     @patch("mcp_handler.projects_table")
-    def test_authenticate_no_match_returns_none(self, mock_table):
-        """A token whose hash does not match any stored hash returns None."""
-        # Return an item whose hash is deliberately wrong
-        mock_table.query.return_value = {
-            "Items": [{"sk": "TOKEN#1", "token_hash": "wronghash", "scope": "read"}]
-        }
+    def test_authenticate_looks_the_token_up_by_its_own_id(self, mock_table):
+        """The lookup is ONE keyed read in the token partition.
+
+        This is the behaviour that removed the X-Project-Id requirement: a scan
+        of a project's token rows cannot answer "which projects exist". If this
+        ever goes back to a begins_with over a PROJECT# partition, the header
+        comes back with it.
+        """
+        mock_table.query.return_value = {"Items": [_token_row()]}
+        mock_table.update_item.return_value = {}
 
         from mcp_handler import _authenticate
-        # The real hash won't match "wronghash"
-        result = _authenticate(_make_event("voc_realtoken"))
-        assert result is None
+        assert _authenticate(_make_event()) is not None
+
+        # Compared as CONDITION OBJECTS, not as strings: boto3's conditions
+        # stringify to "<...conditions.And object at 0x...>", so a substring
+        # assertion would be vacuously true forever. ConditionBase implements
+        # __eq__ over its operands, so this compares the real key expression —
+        # and a begins_with, or a PROJECT# partition, fails it.
+        expected = Key('pk').eq(MCP_TOKEN_PK) & Key('sk').eq(token_sk(_MINTED.token_id))
+        actual = mock_table.query.call_args.kwargs["KeyConditionExpression"]
+        assert actual == expected, (
+            "the lookup must be an exact keyed read of the token row "
+            f"(pk={MCP_TOKEN_PK}, sk={token_sk(_MINTED.token_id)}), not a range "
+            "scan over a project's token rows — that scan is what required the "
+            "X-Project-Id header"
+        )
+
+    @patch("mcp_handler.projects_table")
+    def test_authentication_needs_no_project_header(self, mock_table):
+        """The credential is self-describing: no X-Project-Id, no project hint."""
+        mock_table.query.return_value = {"Items": [_token_row()]}
+        mock_table.update_item.return_value = {}
+
+        from mcp_handler import _authenticate
+        event = {"headers": {"authorization": f"Bearer {_VALID_TOKEN}"}}
+        assert _authenticate(event) is not None
+
+    @patch("mcp_handler.projects_table")
+    def test_authenticate_wrong_secret_returns_none(self, mock_table):
+        """A real token id with the wrong secret is refused."""
+        mock_table.query.return_value = {"Items": [_token_row(secret_hash="wronghash")]}
+
+        from mcp_handler import _authenticate
+        assert _authenticate(_make_event()) is None
+
+    @patch("mcp_handler.projects_table")
+    def test_authenticate_unknown_token_id_returns_none(self, mock_table):
+        """An id with no row is a plain 401, indistinguishable from a bad secret."""
+        mock_table.query.return_value = {"Items": []}
+
+        from mcp_handler import _authenticate
+        assert _authenticate(_make_event()) is None
+
+    @patch("mcp_handler.projects_table")
+    def test_malformed_credential_never_reaches_the_token_store(self, mock_table):
+        """Strict parsing means caller text does not become a key lookup.
+
+        Includes the retired `voc_<64 hex>` format: dropping legacy support was
+        a deliberate decision (no production users), so a legacy credential must
+        fail closed rather than quietly resolve.
+        """
+        from mcp_handler import _authenticate
+        for bad in ("voc_testtoken", "voc_" + "a" * 64, "Bearer-less", "voc_tok_xyz_abc"):
+            assert _authenticate(_make_event(token=bad)) is None, f"{bad!r} authenticated"
+        mock_table.query.assert_not_called()
 
     @patch("mcp_handler.projects_table")
     def test_authenticate_returns_none_on_retryable_dynamodb_error(self, mock_table):
@@ -246,7 +358,7 @@ class TestConstantTimeTokenComparison:
         mock_table.query.side_effect = _client_error('ProvisionedThroughputExceededException')
 
         from mcp_handler import _authenticate
-        result = _authenticate(_make_event("voc_testtoken"))
+        result = _authenticate(_make_event())
 
         assert result is None, "A retryable DynamoDB error must return None, not raise"
 
@@ -264,7 +376,7 @@ class TestConstantTimeTokenComparison:
         for code in ('ResourceNotFoundException', 'AccessDeniedException'):
             mock_table.query.side_effect = _client_error(code)
             with pytest.raises(mcp_handler.AuthBackendUnavailable):
-                mcp_handler._authenticate(_make_event("voc_testtoken"))
+                mcp_handler._authenticate(_make_event())
 
     @patch("mcp_handler.projects_table")
     def test_permanent_auth_fault_surfaces_as_500_not_401(self, mock_table, lambda_context):
@@ -277,7 +389,7 @@ class TestConstantTimeTokenComparison:
                 "httpMethod": "POST",
                 "path": "/v1/mcp",
                 "headers": {
-                    "authorization": "Bearer voc_testtoken",
+                    "authorization": f"Bearer {_VALID_TOKEN}",
                     "x-project-id": "proj-1",
                 },
                 "body": json.dumps({
@@ -303,61 +415,100 @@ class TestConstantTimeTokenComparison:
 # 2. Scope enforcement
 # ===========================================================================
 
-_NO_SCOPE_KEY = object()  # sentinel: build token_info with no 'scope' key at all
+_NO_SCOPES_KEY = object()  # sentinel: build token_info with no 'scopes' key at all
 
 
 class TestScopeEnforcement:
-    """Dispatch is fail-closed: scope must be declared and satisfied."""
+    """Dispatch is fail-closed: scope must be declared and satisfied.
 
-    def _call_tool(self, tool_name: str, token_scope: str, handlers_extra=None, scopes_extra=None):
-        """Call _handle_tools_call with the given tool and token scope.
+    Scopes are a SET of per-domain grants (`feedback:read`, `projects:read`)
+    with no hierarchy, replacing the old ordered `read` / `read-write` pair.
+    Two consequences the tests below pin:
+      • membership is exact, so nothing "includes" anything else and there is
+        no ordering to get wrong;
+      • a row with no usable `scopes` grants NOTHING. The old model defaulted a
+        missing scope to `read` because deployed rows predated the field; the
+        format change means every row carries an explicit set, so a row without
+        one is data damage and must not be guessed at in the caller's favour.
+    """
 
-        ``token_scope=_NO_SCOPE_KEY`` builds a token_info with no ``scope`` key
-        at all, reproducing a legacy row minted before the field existed.
+    def _call_tool(self, tool_name, token_scopes, handlers_extra=None,
+                   scopes_extra=None, reach_extra=None, token_info_extra=None,
+                   arguments=None):
+        """Call _handle_tools_call with the given tool and token scope set.
+
+        ``token_scopes=_NO_SCOPES_KEY`` builds a token_info with no ``scopes``
+        key at all, reproducing a damaged row.
         """
         import mcp_handler
 
-        token_info = {"project_id": "proj-1"}
-        if token_scope is not _NO_SCOPE_KEY:
-            token_info["scope"] = token_scope
+        # Workspace reach by default so a scope test is not silently also a
+        # reach test; the reach class below varies it deliberately.
+        token_info = {
+            "projects": [_TOKEN_PROJECT],
+            "read_reach": REACH_WORKSPACE,
+            **(token_info_extra or {}),
+        }
+        if token_scopes is not _NO_SCOPES_KEY:
+            token_info["scopes"] = token_scopes
 
-        # Optionally inject synthetic entries into the registries
         original_handlers = mcp_handler.TOOL_HANDLERS.copy()
         original_scopes = mcp_handler.TOOL_SCOPE_REQUIREMENTS.copy()
+        original_reach = mcp_handler.TOOL_REACH_KINDS.copy()
         try:
             if handlers_extra:
                 mcp_handler.TOOL_HANDLERS.update(handlers_extra)
             if scopes_extra:
                 mcp_handler.TOOL_SCOPE_REQUIREMENTS.update(scopes_extra)
+            # A synthetic tool needs a reach kind too, or the fail-closed reach
+            # guard rejects it before the scope check under test is reached.
+            if handlers_extra and reach_extra is None:
+                reach_extra = {name: REACH_KIND_WORKSPACE for name in handlers_extra}
+            if reach_extra:
+                mcp_handler.TOOL_REACH_KINDS.update(reach_extra)
             return mcp_handler._handle_tools_call(
                 req_id=1,
-                params={"name": tool_name, "arguments": {}},
+                params={"name": tool_name, "arguments": arguments or {}},
                 token_info=token_info,
             )
         finally:
             # Restore originals so tests don't bleed into each other
-            mcp_handler.TOOL_HANDLERS.clear()
-            mcp_handler.TOOL_HANDLERS.update(original_handlers)
-            mcp_handler.TOOL_SCOPE_REQUIREMENTS.clear()
-            mcp_handler.TOOL_SCOPE_REQUIREMENTS.update(original_scopes)
+            for registry, original in (
+                (mcp_handler.TOOL_HANDLERS, original_handlers),
+                (mcp_handler.TOOL_SCOPE_REQUIREMENTS, original_scopes),
+                (mcp_handler.TOOL_REACH_KINDS, original_reach),
+            ):
+                registry.clear()
+                registry.update(original)
 
-    def test_every_registered_tool_has_scope_declaration(self):
-        """TOOL_HANDLERS, TOOL_SCOPE_REQUIREMENTS, and MCP_TOOLS must all have identical keys.
+    def test_every_registered_tool_has_scope_and_reach_declarations(self):
+        """TOOL_HANDLERS, the two declaration tables, and MCP_TOOLS must agree.
 
-        Adding a handler without a corresponding scope entry (or vice-versa)
-        breaks this test, signalling the author that the table needs updating.
-        A tool in MCP_TOOLS without a handler returns -32602; a handler not in
-        MCP_TOOLS is silently unreachable — both are caught here.
+        Adding a handler without a scope entry, without a reach kind, or without
+        an MCP_TOOLS entry (or vice-versa) breaks this test, signalling the
+        author that a table needs updating. A tool in MCP_TOOLS without a
+        handler returns -32602; a handler not in MCP_TOOLS is silently
+        unreachable; a handler with no reach kind cannot be authorized at all —
+        all three are caught here.
         """
-        from mcp_handler import TOOL_HANDLERS, TOOL_SCOPE_REQUIREMENTS, MCP_TOOLS
+        from mcp_handler import (
+            MCP_TOOLS,
+            TOOL_HANDLERS,
+            TOOL_REACH_KINDS,
+            TOOL_SCOPE_REQUIREMENTS,
+        )
 
         handler_keys = set(TOOL_HANDLERS.keys())
-        scope_keys = set(TOOL_SCOPE_REQUIREMENTS.keys())
         mcp_names = {t['name'] for t in MCP_TOOLS}
 
-        assert handler_keys == scope_keys, (
+        assert handler_keys == set(TOOL_SCOPE_REQUIREMENTS), (
             "Mismatch between TOOL_HANDLERS and TOOL_SCOPE_REQUIREMENTS keys. "
             "Every handler must have a declared scope requirement and vice-versa."
+        )
+        assert handler_keys == set(TOOL_REACH_KINDS), (
+            "Mismatch between TOOL_HANDLERS and TOOL_REACH_KINDS keys. Every "
+            "handler must declare how its data is shaped, or read_reach cannot "
+            "be applied to it."
         )
         assert mcp_names == handler_keys, (
             f"MCP_TOOLS names {mcp_names} must match TOOL_HANDLERS keys {handler_keys}. "
@@ -365,173 +516,131 @@ class TestScopeEnforcement:
             "MCP_TOOLS is silently unreachable."
         )
 
-    def test_read_token_rejected_for_write_tool(self):
-        """A read-scoped token must be rejected when calling a read-write tool.
+    def test_declared_scopes_and_reaches_are_from_the_vocabulary(self):
+        """No tool may require a scope or reach kind that does not exist.
 
-        The write tool is registered inside the test so no production write
-        tool needs to exist yet.  The scope guard must still fire.
+        A typo like `project:read` (singular) would otherwise be unsatisfiable
+        by any mintable token — the tool would be dead on arrival and the
+        failure would look like a permission problem to whoever called it.
         """
-        write_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        from mcp_handler import TOOL_REACH_KINDS, TOOL_SCOPE_REQUIREMENTS
+
+        assert set(TOOL_SCOPE_REQUIREMENTS.values()) <= VALID_SCOPES, (
+            f"undeclared scope(s): {set(TOOL_SCOPE_REQUIREMENTS.values()) - VALID_SCOPES}"
+        )
+        assert set(TOOL_REACH_KINDS.values()) <= {REACH_KIND_WORKSPACE, REACH_KIND_PROJECT}
+
+    def test_token_without_the_required_scope_is_rejected(self):
+        """Holding one domain's scope does not grant another's.
+
+        This is what per-domain scopes buy that the old pair could not express:
+        a credential that reads feedback but cannot read anybody's product
+        strategy.
+        """
+        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
         result = self._call_tool(
-            tool_name="fake_write_tool",
-            token_scope="read",
-            handlers_extra={"fake_write_tool": write_handler},
-            scopes_extra={"fake_write_tool": "read-write"},
+            tool_name="fake_projects_tool",
+            token_scopes=[SCOPE_FEEDBACK_READ],
+            handlers_extra={"fake_projects_tool": handler},
+            scopes_extra={"fake_projects_tool": SCOPE_PROJECTS_READ},
         )
 
         assert "error" in result, "Expected a JSON-RPC error response"
-        # -32003 = Forbidden (scope insufficient); -32001 is reserved for Unauthorized (bad/missing token)
+        # -32003 = Forbidden (scope insufficient); -32001 is Unauthorized (bad token)
         assert result["error"]["code"] == -32003, (
             f"Expected -32003 (Forbidden) for scope failure, got {result['error']['code']}"
         )
         assert "Forbidden" in result["error"]["message"]
-        # The handler must NOT have been called
-        write_handler.assert_not_called()
+        handler.assert_not_called()
 
-    def test_read_write_token_allowed_for_read_tool(self):
-        """A read-write token satisfies a read-scope requirement."""
-        read_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+    def test_token_holding_the_required_scope_is_allowed(self):
+        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
         result = self._call_tool(
-            tool_name="fake_read_tool",
-            token_scope="read-write",
-            handlers_extra={"fake_read_tool": read_handler},
-            scopes_extra={"fake_read_tool": "read"},
-        )
-
-        # Should succeed
-        assert "result" in result, f"Expected success, got: {result}"
-        read_handler.assert_called_once()
-
-    def test_read_token_allowed_for_read_tool(self):
-        """A read-scoped token can call a read-scope tool."""
-        read_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
-        result = self._call_tool(
-            tool_name="fake_read_tool2",
-            token_scope="read",
-            handlers_extra={"fake_read_tool2": read_handler},
-            scopes_extra={"fake_read_tool2": "read"},
+            tool_name="fake_feedback_tool",
+            token_scopes=[SCOPE_FEEDBACK_READ],
+            handlers_extra={"fake_feedback_tool": handler},
+            scopes_extra={"fake_feedback_tool": SCOPE_FEEDBACK_READ},
         )
 
         assert "result" in result, f"Expected success, got: {result}"
-        read_handler.assert_called_once()
+        handler.assert_called_once()
 
-    def test_missing_scope_defaults_to_read(self):
-        """A token row with NO `scope` attribute can still call a read tool.
+    def test_extra_scopes_do_not_interfere(self):
+        """A token holding several scopes satisfies each of them."""
+        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        for required in (SCOPE_FEEDBACK_READ, SCOPE_METRICS_READ, SCOPE_PROJECTS_READ):
+            handler.reset_mock()
+            result = self._call_tool(
+                tool_name="fake_multi_tool",
+                token_scopes=list(ALL_READ_SCOPES),
+                handlers_extra={"fake_multi_tool": handler},
+                scopes_extra={"fake_multi_tool": required},
+            )
+            assert "result" in result, f"{required} should have been satisfied, got: {result}"
+            handler.assert_called_once()
 
-        Legacy rows minted before the `scope` field existed have no such
-        attribute.  The token *list* path (projects_handler.api_list_tokens)
-        resolves a missing scope to 'read', so the MCP Access tab shows the row
-        as a working read token.  Enforcement must agree, or a token the UI
-        presents as usable is refused on every single call with a message that
-        blames the caller ("token scope '' cannot call ...").
+    @pytest.mark.parametrize("scopes", [
+        _NO_SCOPES_KEY,   # attribute absent
+        None,             # present but null
+        [],               # present but empty
+        "",               # present but not a list
+        "projects:read",  # a bare string, not a list — `in` would match substrings
+        {"projects:read": True},
+    ])
+    def test_an_unusable_scopes_field_grants_nothing(self, scopes):
+        """A row without a readable scope SET is refused, not defaulted.
 
-        Reverting DEFAULT_TOKEN_SCOPE (back to `token_info.get('scope', '')`)
-        makes this test fail with -32003 — the lockout it guards against.
+        This deliberately REVERSES the old behaviour, which resolved a missing
+        scope to `read`. That default existed because deployed rows predated the
+        `scope` field; the format change means every row is minted with an
+        explicit set, so a row without one is data damage. Guessing in the
+        caller's favour would turn a damaged row into a working credential.
+
+        The bare-string case is the interesting one: `"projects:read" in
+        "projects:read"` is True, so a membership test that forgot to require a
+        list would let a string masquerade as a scope set — and a row holding
+        the string "feedback:read,projects:read" would then satisfy BOTH.
         """
-        read_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
         result = self._call_tool(
-            tool_name="legacy_read_tool",
-            token_scope=_NO_SCOPE_KEY,  # no 'scope' key at all
-            handlers_extra={"legacy_read_tool": read_handler},
-            scopes_extra={"legacy_read_tool": "read"},
+            tool_name="damaged_row_tool",
+            token_scopes=scopes,
+            handlers_extra={"damaged_row_tool": handler},
+            scopes_extra={"damaged_row_tool": SCOPE_PROJECTS_READ},
         )
 
-        assert "result" in result, (
-            f"A scope-less legacy token must still satisfy a read tool, got: {result}"
+        assert result.get("error", {}).get("code") == -32003, (
+            f"an unusable scopes field must be refused, got: {result}"
         )
-        read_handler.assert_called_once()
+        handler.assert_not_called()
 
-    def test_missing_scope_still_rejected_for_write_tool(self):
-        """The 'read' default is least-privilege: it does not grant read-write.
-
-        Defaulting a missing scope to 'read' must not silently escalate a legacy
-        row into a read-write token.
-        """
-        write_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
-        result = self._call_tool(
-            tool_name="legacy_write_tool",
-            token_scope=_NO_SCOPE_KEY,
-            handlers_extra={"legacy_write_tool": write_handler},
-            scopes_extra={"legacy_write_tool": "read-write"},
-        )
-
-        assert result["error"]["code"] == -32003
-        write_handler.assert_not_called()
-
-    def test_empty_scope_string_resolves_to_the_default(self):
-        """A present-but-empty `scope` is treated like an absent one, not like a value.
-
-        `token_info.get('scope') or DEFAULT_TOKEN_SCOPE` covers both a missing key
-        and a falsy value ('', None) on purpose: a partial write or a migration
-        that stored '' is the same server-side data problem as a row minted before
-        the field existed.  Resolving it to the default is what keeps the response
-        from being "Forbidden: token scope ''" — a message that blames the caller
-        for a row it can neither see nor fix.
-
-        Reverting to `.get('scope', DEFAULT_TOKEN_SCOPE)` makes this fail with
-        -32003, which is exactly the misdirection it guards.
-        """
-        read_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
-        result = self._call_tool(
-            tool_name="blank_scope_read_tool",
-            token_scope="",
-            handlers_extra={"blank_scope_read_tool": read_handler},
-            scopes_extra={"blank_scope_read_tool": "read"},
-        )
-
-        assert "result" in result, (
-            f"An empty scope must resolve to the default, not be refused, got: {result}"
-        )
-        read_handler.assert_called_once()
-
-    def test_empty_scope_string_still_rejected_for_write_tool(self):
-        """Resolving '' to the default must not escalate it past least privilege.
-
-        The refusal message names the resolved scope ('read'), not the raw '',
-        so it does not read as a caller error about a value the caller never sent.
-        """
-        write_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
-        result = self._call_tool(
-            tool_name="blank_scope_write_tool",
-            token_scope="",
-            handlers_extra={"blank_scope_write_tool": write_handler},
-            scopes_extra={"blank_scope_write_tool": "read-write"},
-        )
-
-        assert result["error"]["code"] == -32003
-        assert "scope ''" not in result["error"]["message"], (
-            "The message must report the resolved scope, not the empty raw value; "
-            f"got: {result['error']['message']}"
-        )
-        write_handler.assert_not_called()
-
-    def test_enforcement_default_matches_list_path_default(self):
-        """mcp_handler and projects_handler must agree on the missing-scope default.
+    def test_list_path_reports_the_reach_enforcement_assumes(self):
+        """mcp_handler and projects_handler must agree on the read_reach default.
 
         The MCP Access tab renders whatever projects_handler.api_list_tokens
-        reports; enforcement uses mcp_handler.DEFAULT_TOKEN_SCOPE.  If the two
-        drift, a token the UI displays as a working read token is refused on
-        every call — or, worse, one displayed as read-only is enforced as
-        something wider.  This is the only mechanical guarantee behind that
-        agreement, so it is asserted on *behaviour*: the list path is called with
-        a scope-less row and its output compared to the constant.
+        reports; enforcement uses DEFAULT_READ_REACH. If the two drift, a token
+        the UI displays as workspace-wide is enforced as something narrower — or,
+        worse, one displayed as sealed is enforced as workspace-wide. This is the
+        only mechanical guarantee behind that agreement, so it is asserted on
+        *behaviour*: the list path is called with a reach-less row and its output
+        compared to the constant.
 
-        Deliberately not `inspect.getsource`: matching the literal
-        "'scope', 'read'" fails on a reformat to double quotes (claiming the
-        default changed when it did not) and passes when the real default moves
-        but a stale copy of the literal survives in a comment.
+        Deliberately not `inspect.getsource`: matching a literal fails on a
+        reformat (claiming the default changed when it did not) and passes when
+        the real default moves but a stale copy survives in a comment.
         """
         import mcp_handler
         import projects_handler
 
         table = MagicMock()
-        # A legacy row: the keys the list path indexes directly, and no 'scope'.
+        # A row missing the reach attribute entirely.
         table.query.return_value = {
             "Items": [
                 {
-                    "token_id": "tok_legacy",
-                    "name": "legacy token",
+                    "token_id": "tok_partial",
+                    "name": "partial token",
                     "created_at": "2024-01-01T00:00:00+00:00",
+                    "projects": ["some-project"],
                 }
             ]
         }
@@ -541,74 +650,159 @@ class TestScopeEnforcement:
 
         tokens = result["tokens"]
         assert len(tokens) == 1, f"Expected exactly one token in the list output, got: {tokens}"
-        assert tokens[0]["scope"] == mcp_handler.DEFAULT_TOKEN_SCOPE, (
-            "projects_handler.api_list_tokens reports a missing scope as "
-            f"{tokens[0]['scope']!r} while enforcement assumes "
-            f"{mcp_handler.DEFAULT_TOKEN_SCOPE!r}. A token shown as usable in the "
-            "MCP Access tab would be refused on every call (or vice-versa) — bring "
-            "the two back into agreement."
+        assert tokens[0]["read_reach"] == mcp_handler.DEFAULT_READ_REACH, (
+            "projects_handler.api_list_tokens reports a missing read_reach as "
+            f"{tokens[0]['read_reach']!r} while enforcement assumes "
+            f"{mcp_handler.DEFAULT_READ_REACH!r}. The MCP Access tab would then "
+            "describe a credential's reach differently from how it is enforced — "
+            "bring the two back into agreement."
         )
 
     def test_tool_without_scope_declaration_is_rejected(self):
         """A handler that exists in TOOL_HANDLERS but not TOOL_SCOPE_REQUIREMENTS is rejected."""
         undeclared_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
-        result = self._call_tool(
-            tool_name="undeclared_tool",
-            token_scope="read-write",
-            # inject handler but NOT into scopes
-            handlers_extra={"undeclared_tool": undeclared_handler},
-            scopes_extra={},  # no entry added
-        )
+        import mcp_handler
+        original = mcp_handler.TOOL_SCOPE_REQUIREMENTS.copy()
+        try:
+            result = self._call_tool(
+                tool_name="undeclared_tool",
+                token_scopes=list(ALL_READ_SCOPES),
+                # inject handler and a reach kind but NOT a scope declaration
+                handlers_extra={"undeclared_tool": undeclared_handler},
+                reach_extra={"undeclared_tool": REACH_KIND_WORKSPACE},
+            )
+        finally:
+            mcp_handler.TOOL_SCOPE_REQUIREMENTS.clear()
+            mcp_handler.TOOL_SCOPE_REQUIREMENTS.update(original)
 
         assert "error" in result, "Expected a JSON-RPC error for undeclared tool scope"
         undeclared_handler.assert_not_called()
 
+    def test_tool_without_reach_declaration_is_rejected(self):
+        """A handler with a scope but no declared reach kind is refused.
+
+        Without a reach kind there is no way to know whether read_reach applies,
+        and guessing would mean guessing permissively. Same fail-closed rule as
+        the missing scope declaration above.
+        """
+        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        import mcp_handler
+        original = mcp_handler.TOOL_REACH_KINDS.copy()
+        try:
+            result = self._call_tool(
+                tool_name="reachless_tool",
+                token_scopes=list(ALL_READ_SCOPES),
+                handlers_extra={"reachless_tool": handler},
+                scopes_extra={"reachless_tool": SCOPE_FEEDBACK_READ},
+                # An explicit empty dict, not None: None makes _call_tool
+                # auto-declare a reach kind for the synthetic tool, which would
+                # make this test assert nothing.
+                reach_extra={},
+            )
+        finally:
+            mcp_handler.TOOL_REACH_KINDS.clear()
+            mcp_handler.TOOL_REACH_KINDS.update(original)
+
+        assert result.get("error", {}).get("code") == -32603, (
+            f"a tool with no declared reach kind must be a server error, got: {result}"
+        )
+        handler.assert_not_called()
+
+    def _tools_call_response(self, arguments, lambda_context, tool="get_project",
+                             *, stub_handler=False):
+        """Drive tools/call through the full lambda_handler.
+
+        `stub_handler` is opt-in and used ONLY by the null-arguments case, which
+        has to reach a *successful* dispatch without a real project read. The
+        malformed cases deliberately run against the REAL handler: their whole
+        claim is that such input would otherwise reach the project resolution, so
+        stubbing the handler there would leave that claim resting on the guard's
+        position rather than on the code actually being wired up.
+        """
+        import mcp_handler
+        event = {
+            "httpMethod": "POST",
+            "path": "/v1/mcp",
+            "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
+            "body": json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": tool, "arguments": arguments},
+            }),
+        }
+        handlers = (
+            {**mcp_handler.TOOL_HANDLERS,
+             tool: MagicMock(return_value=[{"type": "text", "text": "ok"}])}
+            if stub_handler else mcp_handler.TOOL_HANDLERS
+        )
+        with patch("mcp_handler.projects_table") as mock_table, \
+             patch("mcp_handler.TOOL_HANDLERS", handlers):
+            mock_table.query.return_value = {"Items": [_token_row()]}
+            mock_table.update_item.return_value = {}
+            return mcp_handler.lambda_handler(event, lambda_context)
+
+    def test_null_arguments_means_no_arguments_not_a_bad_request(self, lambda_context):
+        """An explicit `"arguments": null` is "no arguments", not malformed.
+
+        `params.get('arguments', {})` cannot default it, because the KEY IS
+        PRESENT — and some clients serialize an omitted optional object as null.
+        Every tool here has only optional arguments, so refusing null would be a
+        compatibility edge invented by the type guard rather than a real protocol
+        error.
+
+        Revert story: deleting the `arguments is None` coercion fails this with
+        -32602.
+        """
+        response = self._tools_call_response(None, lambda_context, stub_handler=True)
+        assert response["statusCode"] == 200, response
+        body = json.loads(response["body"])
+        assert "error" not in body, (
+            f'"arguments": null must be treated as {{}}, got {body}'
+        )
+        assert body["result"]["isError"] is False, body
+
+    @pytest.mark.parametrize("arguments", [
+        ["project_id"], "project_id", 42, 3.5, True,
+    ])
+    def test_non_object_arguments_are_a_protocol_error_not_a_500(
+        self, arguments, lambda_context
+    ):
+        """`arguments` is caller-controlled JSON and need not be an object.
+
+        A list, string or number reaches the project resolution, where both
+        `'project_id' in args` and `args['project_id']` raise TypeError — and
+        that resolution runs OUTSIDE the try/except around the handler, so it
+        escaped as a 502 with no JSON-RPC envelope and no CORS headers. Driven
+        through the FULL lambda_handler path, because the envelope and the status
+        code are the part that was broken.
+
+        `null` is deliberately NOT in this list — it means "no arguments" and is
+        covered by test_null_arguments_means_no_arguments_not_a_bad_request.
+
+        Revert story: deleting the isinstance(arguments, dict) guard in
+        _handle_tools_call fails this with a raised TypeError.
+        """
+        response = self._tools_call_response(arguments, lambda_context)
+        assert response["statusCode"] == 200, response
+        body = json.loads(response["body"])
+        assert body["error"]["code"] == -32602, body
+        assert "arguments" in body["error"]["message"], body
+        assert "Access-Control-Allow-Origin" in response["headers"], (
+            "a protocol error must still carry CORS headers"
+        )
+
     def test_scope_allows_helper(self):
-        """Unit-test _scope_allows to cover all cases."""
+        """Unit-test _scope_allows: exact membership, no hierarchy, list required."""
         from mcp_handler import _scope_allows
 
-        assert _scope_allows("read", "read") is True
-        assert _scope_allows("read-write", "read") is True
-        assert _scope_allows("read", "read-write") is False
-        assert _scope_allows("read-write", "read-write") is True
-        assert _scope_allows("", "read") is False
-        assert _scope_allows("", "read-write") is False
-        assert _scope_allows("read", "unknown") is False
-
-    def test_unrecognised_required_scope_logs_error(self):
-        """An unrecognised required_scope value is an internal error (-32603), not -32003.
-
-        A typo in TOOL_SCOPE_REQUIREMENTS ("write" instead of "read-write") is the
-        same class of bug as omitting the entry entirely, which already returns
-        -32603.  Returning -32003 Forbidden and naming the caller's scope would
-        tell an operator holding the most-privileged token available that their
-        token is insufficient — sending them to re-mint a token, which cannot
-        help.  The message must not mention the caller's token scope.
-
-        The log originates from _handle_tools_call (not the pure _scope_allows
-        predicate) so that the tool name and scope value are available together.
-        """
-        bad_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
-        with patch("mcp_handler.logger") as mock_logger:
-            result = self._call_tool(
-                tool_name="misconfigured_tool",
-                token_scope="read-write",
-                handlers_extra={"misconfigured_tool": bad_handler},
-                scopes_extra={"misconfigured_tool": "write"},  # "write" is not a valid scope
-            )
-            assert result["error"]["code"] == -32603, (
-                "A misconfigured scope declaration is a server fault, expected -32603, "
-                f"got {result['error']['code']}"
-            )
-            message = result["error"]["message"]
-            assert "read-write" not in message and "Forbidden" not in message, (
-                f"The message must not blame the caller's token scope; got: {message}"
-            )
-            assert "misconfigured_tool" in message
-            assert mock_logger.error.called, (
-                "_handle_tools_call must log at ERROR for an unrecognised required_scope value"
-            )
-        bad_handler.assert_not_called()
+        assert _scope_allows([SCOPE_FEEDBACK_READ], SCOPE_FEEDBACK_READ) is True
+        assert _scope_allows(list(ALL_READ_SCOPES), SCOPE_PROJECTS_READ) is True
+        assert _scope_allows([SCOPE_FEEDBACK_READ], SCOPE_PROJECTS_READ) is False
+        assert _scope_allows([], SCOPE_FEEDBACK_READ) is False
+        assert _scope_allows(None, SCOPE_FEEDBACK_READ) is False
+        # A bare string must not pass by substring containment.
+        assert _scope_allows(SCOPE_FEEDBACK_READ, SCOPE_FEEDBACK_READ) is False
+        # An empty requirement never grants anything.
+        assert _scope_allows(list(ALL_READ_SCOPES), "") is False
 
 
 # ===========================================================================
@@ -953,54 +1147,56 @@ class TestPartialResultReporting:
 
 
 # ===========================================================================
-# 4. Non-string token_hash type safety
+# 4. Non-string secret_hash type safety
 # ===========================================================================
 
-class TestTokenHashTypeSafety:
-    """_authenticate must not raise when a DynamoDB row has a non-str token_hash."""
+class TestSecretHashTypeSafety:
+    """_authenticate must not raise when the stored secret_hash is not a str."""
 
+    @pytest.mark.parametrize("bad_hash", [
+        pytest.param(Decimal("12345"), id="Decimal"),
+        pytest.param(b"binary_bytes", id="bytes"),
+        pytest.param(None, id="None"),
+        pytest.param(["a"], id="list"),
+    ])
     @patch("mcp_handler.projects_table")
-    def test_non_string_token_hash_skipped(self, mock_table):
-        """A DynamoDB item with a non-str token_hash is skipped, not raised.
+    def test_non_string_secret_hash_is_refused_not_raised(self, mock_table, bad_hash):
+        """A malformed row is a 401, not an AttributeError turned into a 500.
 
-        A malformed/migrated row (e.g. token_hash stored as Binary or Decimal)
-        must not cause an AttributeError that propagates out of _authenticate
-        and turns a single bad row into a 500 for every request in that project.
+        Calling .encode() on a Decimal or Binary would raise straight out of
+        _authenticate. With the keyed lookup there is only ever ONE row, so a
+        damaged row can no longer be skipped in favour of a later one — it is
+        simply refused, which is the fail-closed answer.
         """
-        from decimal import Decimal
-        # Row 1: non-string hash (simulates a malformed/migrated row)
-        # Row 2: correct string hash that won't match (so _authenticate returns None)
-        mock_table.query.return_value = {
-            "Items": [
-                {"sk": "TOKEN#1", "token_hash": Decimal("12345"), "scope": "read"},
-                {"sk": "TOKEN#2", "token_hash": b"binary_bytes", "scope": "read"},
-                {"sk": "TOKEN#3", "token_hash": "correcthash_that_wont_match", "scope": "read"},
-            ]
-        }
+        mock_table.query.return_value = {"Items": [_token_row(secret_hash=bad_hash)]}
 
         from mcp_handler import _authenticate
-        # Must return None without raising
-        result = _authenticate(_make_event("voc_testtoken"))
-        assert result is None, "Non-string token_hash must not raise; should return None"
+        assert _authenticate(_make_event()) is None
 
     @patch("mcp_handler.projects_table")
-    def test_non_string_token_hash_logs_warning(self, mock_table):
-        """A non-str token_hash row triggers a WARNING log with the type name, not the value."""
+    def test_non_string_secret_hash_logs_the_type_and_row(self, mock_table):
+        """The warning names the type and the token_id, never the value.
+
+        token_id is deliberately included: it is what lets an operator find and
+        re-mint the damaged row, and hashing only the secret half is what makes
+        it safe to log.
+        """
         from decimal import Decimal
-        mock_table.query.return_value = {
-            "Items": [
-                {"sk": "TOKEN#1", "token_hash": Decimal("99"), "scope": "read"},
-            ]
-        }
+        mock_table.query.return_value = {"Items": [_token_row(secret_hash=Decimal("99"))]}
 
         from mcp_handler import _authenticate
         with patch("mcp_handler.logger") as mock_logger:
-            _authenticate(_make_event("voc_testtoken"))
-            assert mock_logger.warning.called, "A non-str token_hash must trigger a WARNING log"
-            # The log must include the type name but NOT the value itself
-            call_kwargs = mock_logger.warning.call_args
-            extra = call_kwargs[1].get("extra", {}) if call_kwargs[1] else {}
-            assert "type" in extra, "WARNING extra must include 'type' (the type name)"
+            _authenticate(_make_event())
+            assert mock_logger.warning.called, "A non-str secret_hash must trigger a WARNING log"
+            call = mock_logger.warning.call_args
+            extra = (call.kwargs or {}).get("extra", {})
+            assert extra.get("type") == "Decimal", (
+                f"WARNING extra must name the offending type; got {extra}"
+            )
+            assert extra.get("token_id") == _MINTED.token_id, (
+                f"WARNING extra must name the row so an operator can fix it; got {extra}"
+            )
+            assert "99" not in str(extra.get("type", "")), "the value must not be logged"
 
 
 # ===========================================================================
@@ -1225,15 +1421,18 @@ class TestBotoCoreErrorHandling:
     @pytest.mark.parametrize("exc", _TRANSIENT_BOTOCORE + _PERMANENT_BOTOCORE)
     @patch("mcp_handler.projects_table")
     def test_botocore_logs_carry_no_token_material(self, mock_table, exc):
-        """Only the exception *type* is logged — never the token or its hash.
+        """Only the exception *type* is logged — never the secret or its hash.
 
-        The Bearer token is a recognisable sentinel here, so an f-string or an
-        `extra` field that interpolated it would trip this immediately.
+        The credential's secret half is a recognisable sentinel here, so an
+        f-string or an `extra` field that interpolated it would trip this
+        immediately. The token ID is deliberately exempt: hashing only the
+        secret half is what makes the id safe to log, and log lines naming the
+        row are how an operator fixes one.
         """
         import mcp_handler
 
         mock_table.query.side_effect = exc
-        event = _make_event(token="voc_SENTINELTOKEN")
+        event = _make_event(token=_SENTINEL_TOKEN)
 
         with patch("mcp_handler.logger") as mock_logger:
             try:
@@ -1246,10 +1445,10 @@ class TestBotoCoreErrorHandling:
             for call in calls:
                 extra = (call.kwargs or {}).get("extra", {})
                 rendered = " ".join(str(a) for a in call.args) + " " + str(extra)
-                assert "SENTINELTOKEN" not in rendered, (
-                    f"Log must not contain token material; got: {rendered}"
+                assert _SENTINEL_SECRET not in rendered, (
+                    f"Log must not contain the credential secret; got: {rendered}"
                 )
-                assert "token_hash" not in extra, f"Log extra must not carry a hash; got: {extra}"
+                assert "secret_hash" not in extra, f"Log extra must not carry a hash; got: {extra}"
 
 
 # ===========================================================================
@@ -1338,7 +1537,7 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
         mock_table.query.side_effect = exc
         with patch("mcp_handler.logger") as mock_logger:
             with pytest.raises(mcp_handler.AuthBackendUnavailable):
-                mcp_handler._authenticate(_make_event(token="voc_SENTINELTOKEN"))
+                mcp_handler._authenticate(_make_event(token=_SENTINEL_TOKEN))
 
             calls = mock_logger.exception.call_args_list
             assert calls, f"{type(exc).__name__} must be logged for an operator"
@@ -1348,8 +1547,8 @@ class TestUnclassifiedAuthFaultsAreServerErrors:
             assert type(exc).__name__ in rendered, (
                 f"The log must name the fault type; got: {rendered}"
             )
-            assert "SENTINELTOKEN" not in rendered, (
-                f"Log must not contain token material; got: {rendered}"
+            assert _SENTINEL_SECRET not in rendered, (
+                f"Log must not contain the credential secret; got: {rendered}"
             )
 
     @patch("mcp_handler.projects_table")
@@ -1423,7 +1622,7 @@ class TestUnconfiguredTableIsAServerFault:
                 "httpMethod": "POST",
                 "path": "/v1/mcp",
                 "headers": {
-                    "authorization": "Bearer voc_testtoken",
+                    "authorization": f"Bearer {_VALID_TOKEN}",
                     "x-project-id": "proj-1",
                 },
                 "body": json.dumps({
@@ -1456,7 +1655,7 @@ class TestUnconfiguredTableIsAServerFault:
                 "httpMethod": "GET",
                 "path": "/v1/mcp/autoseed/proj-1",
                 "headers": {
-                    "authorization": "Bearer voc_testtoken",
+                    "authorization": f"Bearer {_VALID_TOKEN}",
                     "x-project-id": "proj-1",
                 },
             },
@@ -1590,7 +1789,7 @@ class TestWwwAuthenticateChallenge:
             {
                 "httpMethod": "GET",
                 "path": "/v1/mcp/autoseed/proj-1",
-                "headers": {"authorization": "Bearer voc_testtoken"},
+                "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
             },
             lambda_context,
         )
@@ -1632,14 +1831,7 @@ class TestTokenExpiry:
     """
 
     def _row(self, **extra) -> dict:
-        from shared.tokens import hash_token
-        return {
-            "sk": "TOKEN#1",
-            "token_id": "tok_1",
-            "token_hash": hash_token("voc_testtoken"),
-            "scope": "read",
-            **extra,
-        }
+        return _token_row(**extra)
 
     def _auth(self, row: dict):
         """Run _authenticate against a single stored row; return its result."""
@@ -1701,47 +1893,43 @@ class TestTokenExpiry:
         the root logger, which would make a caplog assertion vacuously green.
         """
         import mcp_handler
-        from shared.tokens import hash_token
-        sentinel = "voc_SENTINELTOKEN"
-        row = {
-            "sk": "TOKEN#1",
-            "token_id": "tok_1",
-            "token_hash": hash_token(sentinel),
-            "scope": "read",
-            "expires_at": "not-a-date",
-        }
+        from shared.mcp_tokens import hash_secret
+        row = self._row(secret_hash=hash_secret(_SENTINEL_SECRET),
+                        expires_at="not-a-date")
         mock_table.query.return_value = {"Items": [row]}
         with patch("mcp_handler.logger") as mock_logger:
-            result = mcp_handler._authenticate(_make_event(token=sentinel))
+            result = mcp_handler._authenticate(_make_event(token=_SENTINEL_TOKEN))
             assert result is None
             calls = mock_logger.warning.call_args_list
             assert calls, "the malformed expiry must be logged"
             for call in calls:
                 extra = (call.kwargs or {}).get("extra", {})
                 rendered = " ".join(str(a) for a in call.args) + " " + str(extra)
-                assert "SENTINELTOKEN" not in rendered
-                assert hash_token(sentinel) not in rendered
-                assert extra.get("token_id") == "tok_1", (
+                assert _SENTINEL_SECRET not in rendered
+                assert hash_secret(_SENTINEL_SECRET) not in rendered
+                assert extra.get("token_id") == _MINTED.token_id, (
                     "the log must name the row so an operator can fix it"
                 )
 
-    def test_only_the_matching_row_is_expiry_checked(self):
-        """An expired NON-matching row must not block a valid matching row."""
+    def test_expiry_is_checked_only_after_the_secret_matches(self):
+        """A wrong secret on an expired row is refused as a bad secret.
+
+        Ordering matters for timing: checking expiry first would let a caller
+        distinguish "this id exists but expired" from "this id does not exist"
+        by which work the server performed. With the keyed lookup there is one
+        row, so the old "only the matching row is expiry-checked" invariant
+        becomes this ordering one.
+        """
         from datetime import datetime, timedelta, timezone
 
         import mcp_handler
         past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        expired_other = {
-            "sk": "TOKEN#0",
-            "token_id": "tok_0",
-            "token_hash": "hash-of-some-other-token",
-            "scope": "read",
-            "expires_at": past,
-        }
+        row = self._row(secret_hash="not-the-right-hash", expires_at=past)
         with patch("mcp_handler.projects_table") as mock_table:
-            mock_table.query.return_value = {"Items": [expired_other, self._row()]}
-            mock_table.update_item.return_value = {}
-            assert mcp_handler._authenticate(_make_event()) is not None
+            mock_table.query.return_value = {"Items": [row]}
+            with patch("mcp_handler._credential_expired") as mock_expired:
+                assert mcp_handler._authenticate(_make_event()) is None
+                mock_expired.assert_not_called()
 
 
 # ===========================================================================
@@ -1764,15 +1952,8 @@ class TestProjectsTableUsageMatchesNarrowGrant:
 
     def _strict_table(self):
         """A projects_table where any non-granted DynamoDB method raises."""
-        from shared.tokens import hash_token
         table = MagicMock()
-        row = {
-            "sk": "TOKEN#1",
-            "token_id": "tok_1",
-            "token_hash": hash_token("voc_testtoken"),
-            "scope": "read-write",
-        }
-        table.query.return_value = {"Items": [row]}
+        table.query.return_value = {"Items": [_token_row()]}
         table.update_item.return_value = {}
         for method in self.FORBIDDEN:
             getattr(table, method).side_effect = AssertionError(
@@ -1788,7 +1969,7 @@ class TestProjectsTableUsageMatchesNarrowGrant:
             "httpMethod": "POST",
             "path": "/v1/mcp",
             "headers": {
-                "authorization": "Bearer voc_testtoken",
+                "authorization": f"Bearer {_VALID_TOKEN}",
                 "x-project-id": "proj-1",
             },
             "body": json.dumps({
@@ -1863,7 +2044,7 @@ class TestProjectsTableUsageMatchesNarrowGrant:
                 {
                     "httpMethod": "GET",
                     "path": "/v1/mcp/autoseed/proj-1",
-                    "headers": {"authorization": "Bearer voc_testtoken"},
+                    "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
                 },
                 lambda_context,
             )
@@ -2035,3 +2216,258 @@ class TestOriginDefaultFailsClosed:
             lambda_context,
         )
         assert response["statusCode"] == 200
+
+
+# ===========================================================================
+# 11. Read reach — the second axis
+# ===========================================================================
+
+class TestReadReachEnforcement:
+    """Reach is enforced separately from scope, at dispatch.
+
+    Scope says WHICH KIND of data a credential may read; reach says HOW FAR.
+    A token can hold `projects:read` and still be refused a given project, and
+    the two refusals are distinct code paths.
+
+    Revert stories:
+      • deleting the reach_allows call in _handle_tools_call fails
+        test_project_set_token_cannot_read_a_project_outside_its_set;
+      • letting a project-set token call a workspace-shaped tool fails
+        test_project_set_token_cannot_read_the_feedback_corpus, which is the
+        one that matters — the corpus has no project dimension, so allowing it
+        hands a supposedly sealed credential every verbatim.
+    """
+
+    def _call(self, tool, token_info, arguments=None):
+        import mcp_handler
+        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        original = mcp_handler.TOOL_HANDLERS.copy()
+        try:
+            mcp_handler.TOOL_HANDLERS[tool] = handler
+            result = mcp_handler._handle_tools_call(
+                req_id=1,
+                params={"name": tool, "arguments": arguments or {}},
+                token_info=token_info,
+            )
+        finally:
+            mcp_handler.TOOL_HANDLERS.clear()
+            mcp_handler.TOOL_HANDLERS.update(original)
+        return result, handler
+
+    def _token(self, **extra):
+        return {"scopes": list(ALL_READ_SCOPES), "projects": [_TOKEN_PROJECT],
+                "read_reach": REACH_WORKSPACE, **extra}
+
+    # --- workspace reach (the default) -----------------------------------
+    def test_workspace_token_reads_the_feedback_corpus(self):
+        result, handler = self._call("search_feedback", self._token())
+        assert "result" in result, result
+        handler.assert_called_once()
+
+    def test_workspace_token_reads_a_project_outside_its_own_set(self):
+        """The default really is workspace-wide.
+
+        Pinned deliberately, because it is the surprising half of the owner's
+        decision: a credential minted inside one project can read another
+        project's personas and documents. The mint UI is what has to say so.
+        """
+        result, handler = self._call(
+            "get_project", self._token(), arguments={"project_id": "someone-elses"},
+        )
+        assert "result" in result, result
+        # The tool receives the project it was ASKED for, not the token's own.
+        assert handler.call_args.args[1]["project_id"] == "someone-elses"
+
+    # --- project-set reach (the sealed option) ---------------------------
+    def test_project_set_token_reads_a_project_in_its_set(self):
+        result, handler = self._call(
+            "get_project", self._token(read_reach=REACH_PROJECT_SET),
+            arguments={"project_id": _TOKEN_PROJECT},
+        )
+        assert "result" in result, result
+        handler.assert_called_once()
+
+    def test_project_set_token_cannot_read_a_project_outside_its_set(self):
+        result, handler = self._call(
+            "get_project", self._token(read_reach=REACH_PROJECT_SET),
+            arguments={"project_id": "someone-elses"},
+        )
+        assert result.get("error", {}).get("code") == -32003, result
+        handler.assert_not_called()
+
+    def test_project_set_token_cannot_read_the_feedback_corpus(self):
+        """The load-bearing refusal.
+
+        `voc-feedback` is keyed SOURCE#{platform} with no project_id, so
+        `project-set` has nothing to narrow. Allowing the call "because the
+        token holds feedback:read" would make a sealed credential a
+        workspace-wide one.
+        """
+        for tool in ("search_feedback", "get_metrics_summary", "get_feedback_detail"):
+            result, handler = self._call(tool, self._token(read_reach=REACH_PROJECT_SET))
+            assert result.get("error", {}).get("code") == -32003, f"{tool}: {result}"
+            handler.assert_not_called()
+
+    # --- none ------------------------------------------------------------
+    def test_none_reach_reads_nothing(self):
+        for tool in ("search_feedback", "get_project"):
+            result, handler = self._call(
+                tool, self._token(read_reach=REACH_NONE),
+                arguments={"project_id": _TOKEN_PROJECT},
+            )
+            assert result.get("error", {}).get("code") == -32003, f"{tool}: {result}"
+            handler.assert_not_called()
+
+    # --- project resolution ---------------------------------------------
+    def test_single_project_token_needs_no_project_argument(self):
+        """The common case stays ergonomic: one project, no argument required."""
+        result, handler = self._call("list_personas", self._token())
+        assert "result" in result, result
+        assert handler.call_args.args[1]["project_id"] == _TOKEN_PROJECT
+
+    def test_explicit_argument_wins_over_the_token_default(self):
+        result, handler = self._call(
+            "list_personas", self._token(), arguments={"project_id": "other"},
+        )
+        assert "result" in result, result
+        assert handler.call_args.args[1]["project_id"] == "other"
+
+    def test_ambiguous_project_set_requires_an_explicit_argument(self):
+        """Several projects and no argument resolves to a request, not a guess.
+
+        -32602 (invalid params) rather than -32003: the caller can fix this by
+        naming the project, and calling it Forbidden would send them looking for
+        a different token instead.
+        """
+        result, handler = self._call(
+            "get_project", self._token(projects=["proj-a", "proj-b"]),
+        )
+        assert result.get("error", {}).get("code") == -32602, result
+        assert "project_id" in result["error"]["message"]
+        handler.assert_not_called()
+
+    def test_empty_project_set_cannot_default_a_project(self):
+        result, handler = self._call("get_project", self._token(projects=[]))
+        assert "error" in result, result
+        handler.assert_not_called()
+
+    @pytest.mark.parametrize("bad", ["", "   ", None, 123, ["proj-a"], {}, True])
+    def test_a_present_but_unusable_project_argument_is_refused(self, bad):
+        """Junk in `project_id` is -32602, NOT a silent fall back to the token's project.
+
+        Falling back would read a DIFFERENT project than the client named and
+        report success — the caller receives another project's personas and
+        documents believing they are the ones they asked for. An error is the
+        only honest answer, and it is why absence and garbage take different
+        paths through _resolve_project_id.
+        """
+        result, handler = self._call(
+            "get_project", self._token(), arguments={"project_id": bad},
+        )
+        assert result.get("error", {}).get("code") == -32602, result
+        assert "project_id" in result["error"]["message"]
+        handler.assert_not_called()
+
+    def test_an_absent_project_argument_still_defaults(self):
+        """Absence is a different intent from garbage and keeps the ergonomics."""
+        result, handler = self._call("get_project", self._token())
+        assert "result" in result, result
+        assert handler.call_args.args[1]["project_id"] == _TOKEN_PROJECT
+
+    def test_none_reach_is_told_about_reach_not_about_an_argument(self):
+        """A `none`-reach token cannot be helped by supplying a project_id.
+
+        Reach is checked before the missing-argument branch, so the refusal names
+        the thing the caller would have to change. The earlier ordering sent them
+        after an argument that could never work.
+        """
+        result, handler = self._call(
+            "get_project", self._token(read_reach=REACH_NONE, projects=["a", "b"]),
+        )
+        assert result.get("error", {}).get("code") == -32003, result
+        assert "read reach" in result["error"]["message"], result["error"]["message"]
+        handler.assert_not_called()
+
+    def test_project_set_reach_on_a_workspace_tool_names_reach_too(self):
+        """Same ordering rule for the other reach-covers-nothing case."""
+        result, handler = self._call(
+            "search_feedback", self._token(read_reach=REACH_PROJECT_SET),
+        )
+        assert result.get("error", {}).get("code") == -32003, result
+        assert "read reach" in result["error"]["message"]
+        handler.assert_not_called()
+
+    def test_reach_is_checked_even_when_the_scope_is_held(self):
+        """The two gates are independent; holding the scope is not enough."""
+        token = self._token(read_reach=REACH_PROJECT_SET)
+        assert SCOPE_PROJECTS_READ in token["scopes"]
+        result, handler = self._call(
+            "get_project", token, arguments={"project_id": "not-in-set"},
+        )
+        assert result.get("error", {}).get("code") == -32003, result
+        assert "read reach" in result["error"]["message"], (
+            "the refusal must name reach, not scope, or the operator re-mints "
+            f"the wrong thing; got: {result['error']['message']}"
+        )
+        handler.assert_not_called()
+
+
+# ===========================================================================
+# 12. Autoseed goes through the same gates as the tools
+# ===========================================================================
+
+class TestAutoseedAuthorization:
+    """GET /mcp/autoseed/{project_id} is a project-shaped read.
+
+    It returns the project's personas and documents — exactly what get_project
+    serves — so it must pass the same scope and reach checks. The old code
+    compared the path project to the token's single project and checked no scope
+    at all.
+    """
+
+    def _get(self, project_id, row, lambda_context):
+        import mcp_handler
+        with patch("mcp_handler.projects_table") as mock_table, \
+             patch("mcp_handler.autoseed_project", return_value={"ok": True}) as seed:
+            mock_table.query.return_value = {"Items": [row]}
+            mock_table.update_item.return_value = {}
+            response = mcp_handler.lambda_handler(
+                {
+                    "httpMethod": "GET",
+                    "path": f"/v1/mcp/autoseed/{project_id}",
+                    "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
+                },
+                lambda_context,
+            )
+        return response, seed
+
+    def test_workspace_token_may_autoseed_any_project(self, lambda_context):
+        response, seed = self._get("another-project", _token_row(), lambda_context)
+        assert response["statusCode"] == 200, response["body"]
+        seed.assert_called_once()
+
+    def test_project_set_token_may_autoseed_its_own_project(self, lambda_context):
+        row = _token_row(read_reach=REACH_PROJECT_SET)
+        response, seed = self._get(_TOKEN_PROJECT, row, lambda_context)
+        assert response["statusCode"] == 200, response["body"]
+        seed.assert_called_once()
+
+    def test_project_set_token_refused_outside_its_set(self, lambda_context):
+        row = _token_row(read_reach=REACH_PROJECT_SET)
+        response, seed = self._get("another-project", row, lambda_context)
+        assert response["statusCode"] == 403, response["body"]
+        seed.assert_not_called()
+
+    def test_token_without_projects_scope_is_refused(self, lambda_context):
+        """The check the old equality test did not perform at all."""
+        row = _token_row(scopes=[SCOPE_FEEDBACK_READ])
+        response, seed = self._get(_TOKEN_PROJECT, row, lambda_context)
+        assert response["statusCode"] == 403, response["body"]
+        assert SCOPE_PROJECTS_READ in json.loads(response["body"])["message"]
+        seed.assert_not_called()
+
+    def test_none_reach_is_refused(self, lambda_context):
+        row = _token_row(read_reach=REACH_NONE)
+        response, seed = self._get(_TOKEN_PROJECT, row, lambda_context)
+        assert response["statusCode"] == 403, response["body"]
+        seed.assert_not_called()

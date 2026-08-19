@@ -534,8 +534,17 @@ class TestCreateTokenExpiry:
     isinstance(True, int) is True, and int(30.5) truncates.
     """
 
-    def _post(self, api_gateway_event, lambda_context, body):
+    def _post(self, api_gateway_event, lambda_context, body, *, with_scopes=True):
+        """POST the mint route.
+
+        `scopes` is REQUIRED by the route, so it is supplied unless a test is
+        specifically about its absence — otherwise every test here would be
+        asserting the same 400.
+        """
         from projects_handler import lambda_handler
+        from shared.mcp_tokens import ALL_READ_SCOPES
+        if with_scopes and 'scopes' not in body:
+            body = {**body, 'scopes': list(ALL_READ_SCOPES)}
         with patch('projects_handler.get_projects_table') as mock_get_table:
             mock_table = mock_get_table.return_value
             mock_table.get_item.return_value = {'Item': {'pk': 'PROJECT#proj-1', 'sk': 'META'}}
@@ -547,6 +556,25 @@ class TestCreateTokenExpiry:
             )
             response = lambda_handler(event, lambda_context)
             return response, mock_table
+
+    def test_scopes_are_required_not_defaulted(self, api_gateway_event, lambda_context):
+        """Omitting `scopes` is a 400, NOT a credential holding everything.
+
+        The mint boundary must not be fail-open while enforcement is fail-closed:
+        defaulting here would mean `POST {"name": "x"}` yields the widest
+        possible credential, so the laziest request would produce the most
+        dangerous token. `read_reach` is deliberately different — it HAS a
+        chosen default the UI warns about; `scopes` has no least-privilege
+        fallback, so there is nothing honest to default to.
+        """
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't'}, with_scopes=False,
+        )
+        assert response['statusCode'] == 400, response['body']
+        # This API reports validation failures under `error`, not `message`.
+        body = json.loads(response['body'])
+        assert 'scopes' in body.get('error', ''), body
+        mock_table.put_item.assert_not_called()
 
     def test_absent_expiry_stores_no_attribute(self, api_gateway_event, lambda_context):
         """Omitting the field keeps today's exact row shape — attribute absent."""
@@ -586,17 +614,234 @@ class TestCreateTokenExpiry:
         assert response['statusCode'] == 200
         assert 'expires_at' not in mock_table.put_item.call_args.kwargs['Item']
 
-    def test_list_returns_expires_at(self, api_gateway_event, lambda_context):
-        """GET .../api-tokens surfaces the deadline; legacy rows read as None."""
+    def _list(self, api_gateway_event, lambda_context, items, project='proj-1'):
         from projects_handler import lambda_handler
         with patch('projects_handler.get_projects_table') as mock_get_table:
-            mock_get_table.return_value.query.return_value = {'Items': [
-                {'token_id': 'tok_new', 'name': 'n', 'created_at': 'c',
-                 'expires_at': '2027-01-01T00:00:00+00:00'},
-                {'token_id': 'tok_legacy', 'name': 'l', 'created_at': 'c'},
-            ]}
-            event = api_gateway_event(method='GET', path='/projects/proj-1/api-tokens')
+            mock_get_table.return_value.query.return_value = {'Items': items}
+            event = api_gateway_event(method='GET', path=f'/projects/{project}/api-tokens')
             response = lambda_handler(event, lambda_context)
+        return response, mock_get_table.return_value
+
+    def test_list_returns_expires_at(self, api_gateway_event, lambda_context):
+        """GET .../api-tokens surfaces the deadline; a row without one reads None."""
+        response, _ = self._list(api_gateway_event, lambda_context, [
+            {'token_id': 'tok_new', 'name': 'n', 'created_at': 'c',
+             'projects': ['proj-1'], 'expires_at': '2027-01-01T00:00:00+00:00'},
+            {'token_id': 'tok_forever', 'name': 'l', 'created_at': 'c',
+             'projects': ['proj-1']},
+        ])
         tokens = {t['token_id']: t for t in json.loads(response['body'])['tokens']}
         assert tokens['tok_new']['expires_at'] == '2027-01-01T00:00:00+00:00'
-        assert tokens['tok_legacy']['expires_at'] is None
+        assert tokens['tok_forever']['expires_at'] is None
+
+    def test_list_shows_only_tokens_whose_project_set_includes_this_project(
+        self, api_gateway_event, lambda_context
+    ):
+        """Tokens live in one partition, so the tab filters by membership.
+
+        A credential is workspace-level now; the project tab shows the ones
+        minted for (or reaching) that project. Getting this filter wrong would
+        show every project's credentials in every tab.
+        """
+        response, table = self._list(api_gateway_event, lambda_context, [
+            {'token_id': 'tok_mine', 'name': 'a', 'created_at': 'c', 'projects': ['proj-1']},
+            {'token_id': 'tok_theirs', 'name': 'b', 'created_at': 'c', 'projects': ['proj-2']},
+            {'token_id': 'tok_both', 'name': 'c', 'created_at': 'c',
+             'projects': ['proj-1', 'proj-2']},
+            {'token_id': 'tok_none', 'name': 'd', 'created_at': 'c', 'projects': []},
+        ])
+        ids = {t['token_id'] for t in json.loads(response['body'])['tokens']}
+        assert ids == {'tok_mine', 'tok_both'}, (
+            'the tab must show exactly the tokens whose project set names this project'
+        )
+        # One Query of the token partition, not a per-project range scan.
+        table.query.assert_called_once()
+
+    def test_list_follows_pagination_to_the_end(self, api_gateway_event, lambda_context):
+        """A truncated first page would make credentials unrevocable.
+
+        All tokens share ONE partition and a Query page is capped at 1 MB, so a
+        single-page read starts silently dropping rows as the workspace grows.
+        The list is the only revoke path, so a dropped row is a credential that
+        cannot be revoked through the UI — the exact invariant the mint route is
+        written to guarantee.
+
+        Revert story: deleting the LastEvaluatedKey loop in `_query_all_tokens`
+        fails this test, because only `tok_page1` comes back.
+        """
+        from projects_handler import lambda_handler
+        page1 = {
+            'Items': [{'token_id': 'tok_page1', 'name': 'a', 'created_at': 'c',
+                       'projects': ['proj-1']}],
+            'LastEvaluatedKey': {'pk': {'S': 'MCPTOKEN'}, 'sk': {'S': 'TOKEN#tok_page1'}},
+        }
+        page2 = {
+            'Items': [{'token_id': 'tok_page2', 'name': 'b', 'created_at': 'c',
+                       'projects': ['proj-1']}],
+        }
+        with patch('projects_handler.get_projects_table') as mock_get_table:
+            table = mock_get_table.return_value
+            table.query.side_effect = [page1, page2]
+            event = api_gateway_event(method='GET', path='/projects/proj-1/api-tokens')
+            response = lambda_handler(event, lambda_context)
+
+        ids = {t['token_id'] for t in json.loads(response['body'])['tokens']}
+        assert ids == {'tok_page1', 'tok_page2'}, (
+            'the second page was dropped — those credentials would be unrevocable'
+        )
+        assert table.query.call_count == 2
+        # The follow-up Query must resume from where the first stopped.
+        assert table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == (
+            page1['LastEvaluatedKey']
+        )
+
+    def test_list_never_returns_the_secret_hash(self, api_gateway_event, lambda_context):
+        response, _ = self._list(api_gateway_event, lambda_context, [
+            {'token_id': 'tok_1', 'name': 'n', 'created_at': 'c', 'projects': ['proj-1'],
+             'secret_hash': 'THE-STORED-HASH', 'created_by': 'a-cognito-sub'},
+        ])
+        body = response['body']
+        assert 'THE-STORED-HASH' not in body
+        assert 'secret_hash' not in body
+        # created_by identifies a person; it is stored for audit, not displayed.
+        assert 'a-cognito-sub' not in body
+
+    def test_mint_stores_the_new_credential_shape(self, api_gateway_event, lambda_context):
+        """The row carries a secret hash, a scope set, a project set and a reach."""
+        from shared.mcp_tokens import (
+            ALL_READ_SCOPES,
+            DEFAULT_READ_REACH,
+            MCP_TOKEN_PK,
+            parse_token,
+        )
+        response, mock_table = self._post(api_gateway_event, lambda_context, {'name': 't'})
+        assert response['statusCode'] == 200
+        stored = mock_table.put_item.call_args.kwargs['Item']
+        body = json.loads(response['body'])
+
+        # Stored outside any project partition: a credential is workspace-level.
+        assert stored['pk'] == MCP_TOKEN_PK
+        assert not stored['pk'].startswith('PROJECT#')
+        assert stored['sk'] == f"TOKEN#{stored['token_id']}"
+        assert stored['scopes'] == list(ALL_READ_SCOPES)
+        assert stored['projects'] == ['proj-1']
+        assert stored['read_reach'] == DEFAULT_READ_REACH
+        assert stored['created_by']
+
+        # The returned credential parses back to the row that was stored, and
+        # the row holds a hash of the secret rather than the credential itself.
+        parsed = parse_token(body['token'])
+        assert parsed is not None, f"minted credential does not parse: {body['token']!r}"
+        assert parsed[0] == stored['token_id']
+        assert stored['secret_hash'] not in body['token']
+        assert 'token_hash' not in stored, 'the retired field must not be written'
+
+    def test_mint_accepts_a_narrower_scope_set(self, api_gateway_event, lambda_context):
+        from shared.mcp_tokens import SCOPE_FEEDBACK_READ
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context,
+            {'name': 't', 'scopes': [SCOPE_FEEDBACK_READ]},
+        )
+        assert response['statusCode'] == 200
+        assert mock_table.put_item.call_args.kwargs['Item']['scopes'] == [SCOPE_FEEDBACK_READ]
+
+    @pytest.mark.parametrize('bad_scopes', [
+        [], 'projects:read', ['nope:read'], ['projects:write'], [123], {}, ['projects:read', 'x'],
+    ])
+    def test_mint_rejects_an_unusable_scope_set(
+        self, api_gateway_event, lambda_context, bad_scopes
+    ):
+        """Unknown scopes are refused rather than dropped.
+
+        Silently ignoring one would mint a credential narrower than the caller
+        asked for, which they discover as a permission error much later.
+        `projects:write` is in the list on purpose: it does not exist yet, and
+        accepting it would recreate the phantom-permission bug the old
+        `read-write` scope was.
+        """
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't', 'scopes': bad_scopes},
+        )
+        assert response['statusCode'] == 400, response['body']
+        mock_table.put_item.assert_not_called()
+
+    def test_mint_deduplicates_scopes_without_reordering(self, api_gateway_event, lambda_context):
+        from shared.mcp_tokens import SCOPE_FEEDBACK_READ, SCOPE_PROJECTS_READ
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context,
+            {'name': 't', 'scopes': [SCOPE_PROJECTS_READ, SCOPE_FEEDBACK_READ,
+                                     SCOPE_PROJECTS_READ]},
+        )
+        assert response['statusCode'] == 200
+        assert mock_table.put_item.call_args.kwargs['Item']['scopes'] == [
+            SCOPE_PROJECTS_READ, SCOPE_FEEDBACK_READ,
+        ]
+
+    @pytest.mark.parametrize('reach', ['workspace', 'project-set', 'none'])
+    def test_mint_accepts_each_valid_read_reach(
+        self, api_gateway_event, lambda_context, reach
+    ):
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't', 'read_reach': reach},
+        )
+        assert response['statusCode'] == 200
+        assert mock_table.put_item.call_args.kwargs['Item']['read_reach'] == reach
+
+    @pytest.mark.parametrize('bad', ['all', 'WORKSPACE', '', 'write-set', 1, [], None])
+    def test_mint_rejects_an_unknown_read_reach(
+        self, api_gateway_event, lambda_context, bad
+    ):
+        """Including 'write-set', an earlier name for 'project-set'.
+
+        A stale client sending the old value must be refused rather than
+        silently defaulted to workspace — the widest reach is the last thing to
+        grant by accident.
+        """
+        response, mock_table = self._post(
+            api_gateway_event, lambda_context, {'name': 't', 'read_reach': bad},
+        )
+        if bad is None:
+            # JSON null means "no preference" and takes the default, like an
+            # absent field. Every other bad value is a 400.
+            assert response['statusCode'] == 200
+            return
+        assert response['statusCode'] == 400, response['body']
+        mock_table.put_item.assert_not_called()
+
+    def test_revoke_addresses_the_token_partition(self, api_gateway_event, lambda_context):
+        from projects_handler import lambda_handler
+        from shared.mcp_tokens import MCP_TOKEN_PK
+        with patch('projects_handler.get_projects_table') as mock_get_table:
+            table = mock_get_table.return_value
+            table.get_item.return_value = {
+                'Item': {'token_id': 'tok_x', 'projects': ['proj-1']}
+            }
+            event = api_gateway_event(
+                method='DELETE', path='/projects/proj-1/api-tokens/tok_x',
+            )
+            response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200, response['body']
+        assert table.delete_item.call_args.kwargs['Key'] == {
+            'pk': MCP_TOKEN_PK, 'sk': 'TOKEN#tok_x',
+        }
+
+    def test_revoke_refuses_a_token_outside_this_project(
+        self, api_gateway_event, lambda_context
+    ):
+        """404, and nothing is deleted.
+
+        Tokens share one partition, so without this check any project's route
+        could revoke any other project's credential by id.
+        """
+        from projects_handler import lambda_handler
+        with patch('projects_handler.get_projects_table') as mock_get_table:
+            table = mock_get_table.return_value
+            table.get_item.return_value = {
+                'Item': {'token_id': 'tok_x', 'projects': ['proj-2']}
+            }
+            event = api_gateway_event(
+                method='DELETE', path='/projects/proj-1/api-tokens/tok_x',
+            )
+            response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 404, response['body']
+        table.delete_item.assert_not_called()

@@ -3,6 +3,9 @@
 // The derivation contract lives with its schema and resolver, so the runtime
 // validation and the declared type cannot drift apart.
 import type { DocumentDerivation } from './derivation'
+// The credential vocabulary lives with its schema for the same reason: the
+// declared type and the runtime validation cannot drift apart.
+import type { McpScope, ReadReach } from './mcpTokenSchema'
 
 export interface FeedbackItem {
   feedback_id: string
@@ -691,24 +694,32 @@ export interface LogsSummary {
 export interface ApiToken {
   token_id: string
   name: string
-  scope: 'read' | 'read-write'
+  /** Per-domain grants (`feedback:read`, …). Replaces the old single `scope`,
+   *  whose `read-write` value was mintable but required by no tool. */
+  scopes: McpScope[]
+  /** The projects this credential is about. Bounds reads when read_reach is
+   *  'project-set'; will bound writes when write tools land. */
+  projects: string[]
+  /** How far the credential may read. 'workspace' is the default and is NOT
+   *  the harmless option — see READ_REACHES. */
+  read_reach: ReadReach
   created_at: string
   last_used_at?: string
-  /** ISO-8601 deadline after which the token stops authenticating; null for
-   *  non-expiring tokens (every token minted before expiry existed). */
-  expires_at?: string | null
-  project_id: string
+  /** ISO-8601 deadline after which the token stops authenticating; absent for
+   *  non-expiring tokens. */
+  expires_at?: string
 }
 
 /** Response when creating an API token; `token` is the only time the raw value is returned. */
 export interface CreateApiTokenResponse {
-  success: boolean
   token: string
   token_id: string
   name: string
-  /** Echo of the minted deadline; null when the token does not expire. */
-  expires_at?: string | null
-  message?: string
+  scopes: McpScope[]
+  projects: string[]
+  read_reach: ReadReach
+  /** Echo of the minted deadline; absent when the token does not expire. */
+  expires_at?: string
 }
 
 

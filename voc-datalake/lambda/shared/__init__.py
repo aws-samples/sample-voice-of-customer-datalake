@@ -9,5 +9,5 @@ Import directly from submodules:
     from shared.tables import get_feedback_table, get_projects_table
     from shared.jobs import job_handler, JobContext
     from shared.api import create_api_resolver, api_handler
-    from shared.tokens import hash_token
+    from shared.mcp_tokens import mint_token, parse_token, reach_allows
 """
