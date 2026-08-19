@@ -254,6 +254,14 @@ BALLOT_TRANSACT_ROW_INDEX = 1
 # Small and few on purpose. The room is holding a phone waiting for the response, and
 # a conflict clears in single-digit milliseconds; a long backoff would spend the
 # request's remaining time to no better end than the retry it already has.
+#
+# WHAT THESE VALUES COST WHEN RAISED: the backoff is `time.sleep` inside the Lambda,
+# so it is billed wall-clock on a PUBLIC, unauthenticated request a phone is
+# waiting on — worst case with these values ~150ms (25-50ms after attempt 1,
+# 50-100ms after attempt 2), which is deliberate and small next to the round trip a
+# retry saves. Raising either constant raises HELD CONCURRENCY for exactly the
+# contended case the retry exists to help: the room that conflicts is the room
+# whose Lambdas are now also sleeping.
 BALLOT_WRITE_ATTEMPTS = 3
 BALLOT_WRITE_BACKOFF_SECONDS = 0.05
 
@@ -1255,14 +1263,17 @@ def _write_ballot(
                 # this device's own key.
                 #
                 # Jittered, so a room whose phones all conflicted does not re-collide
-                # in lockstep having waited the same interval.
+                # in lockstep having waited the same interval. Logged BEFORE the
+                # sleep: the log records the decision to retry, and a reader timing
+                # a slow submission should see the line at the moment the wait
+                # began, not after it ended.
                 delay = BALLOT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
-                time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
                 logger.warning(
                     f'An anonymous ballot write was cancelled without a failed '
                     f'condition on session {_session_ref(session_id)}; retrying '
                     f'(attempt {attempt + 2} of {BALLOT_WRITE_ATTEMPTS}).'
                 )
+                time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
                 continue
             # Never echoes the note or the display name — both are submitter
             # content, and one of them is PII.
@@ -1286,6 +1297,14 @@ def _write_ballot(
     # `test_the_write_attempts_bound_leaves_at_least_one_attempt` pins the bound
     # itself, the way `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100` pins the delete's
     # reservation; this is the guard for the case where it stops holding anyway.
+    #
+    # The refused submission's CAP SLOT IS ALREADY SPENT — `_hold_open_session`
+    # claimed it before this function ran, and here that is EVERY ballot in the
+    # room, not one unlucky device. Accepted for the same reason the `_RowIsGone`
+    # branch accepts it: releasing races other claimers, and the cap must bound a
+    # public route's writes even while the route itself is misconfigured. The cost
+    # of this guard firing is a room whose session must be reopened, which is the
+    # right price for never thanking a room for ballots that were not written.
     logger.error(
         'An anonymous ballot write made no attempt at all, which means '
         'BALLOT_WRITE_ATTEMPTS is not at least 1. Refusing rather than reporting a '

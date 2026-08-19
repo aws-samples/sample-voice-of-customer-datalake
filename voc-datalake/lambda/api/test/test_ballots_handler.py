@@ -825,7 +825,8 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
 
         table.meta.client.transact_write_items = conflict
 
-        status, _ = _submit(table, api_gateway_event, lambda_context)
+        with patch('ballots_handler.time.sleep'):
+            status, _ = _submit(table, api_gateway_event, lambda_context)
 
         assert status == 500, 'a retryable failure, not a 404'
 
@@ -858,11 +859,17 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
 
         table.meta.client.transact_write_items = conflict_once
 
-        status, body = _submit(table, api_gateway_event, lambda_context)
+        # The retry's backoff is real `time.sleep`, and a test suite paying it is
+        # the same money-for-nothing the jitter comment warns about — stubbed here
+        # and in the other retry tests, with the DELAYS still asserted so the wait
+        # itself cannot silently disappear.
+        with patch('ballots_handler.time.sleep') as slept:
+            status, body = _submit(table, api_gateway_event, lambda_context)
 
         assert status == 200
         assert body['success'] is True
         assert len(attempts) == 2, 'the conflict was re-attempted'
+        assert slept.call_count == 1, 'one conflict, one backoff'
 
     def test_a_retried_ballot_is_written_exactly_once(
             self, api_gateway_event, lambda_context):
@@ -887,7 +894,8 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
 
         table.meta.client.transact_write_items = conflict_once
 
-        _submit(table, api_gateway_event, lambda_context)
+        with patch('ballots_handler.time.sleep'):
+            _submit(table, api_gateway_event, lambda_context)
 
         assert len(table.ballot_keys) == 1
         assert table.row()['ballot_writes'] == 1
@@ -915,21 +923,17 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
 
         table.meta.client.transact_write_items = always_conflict
 
-        status, _ = _submit(table, api_gateway_event, lambda_context)
+        with patch('ballots_handler.time.sleep') as slept:
+            status, _ = _submit(table, api_gateway_event, lambda_context)
 
         assert status == 500, 'transient, not a vanished proposal'
         assert len(attempts) == ballots_handler.BALLOT_WRITE_ATTEMPTS
         assert table.ballot_keys == [], 'and nothing was written'
-
-    def test_the_write_attempts_bound_leaves_at_least_one_attempt(self):
-        """A bound of 0 makes `range` yield nothing, so the write loop is never
-        entered — and this function signals a written ballot by returning, which makes
-        falling out of the loop indistinguishable from success. Pinned as a number the
-        way `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100` pins the delete's reservation,
-        because it is a tuning constant and a later change may lower it."""
-        import ballots_handler
-
-        assert ballots_handler.BALLOT_WRITE_ATTEMPTS >= 1
+        # The backoff is jittered around an exponential base; what must hold is that
+        # every wait happened and each stayed under a second, not an exact schedule.
+        delays = [call.args[0] for call in slept.call_args_list]
+        assert len(delays) == ballots_handler.BALLOT_WRITE_ATTEMPTS - 1
+        assert all(0 < delay < 1 for delay in delays)
 
     def test_a_bound_that_allows_no_attempt_is_a_500_and_not_a_silent_success(
             self, api_gateway_event, lambda_context):
@@ -964,6 +968,41 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         row = table.row()
         assert ballots_handler.ROW_FROZEN_AT_FIELD in row
         assert ballots_handler.ROW_BALLOT_WRITES_FIELD in row
+
+
+class TestTheTuningConstantsKeepTheirAssumptions:
+    """Constant pins, in one place — the shape `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100`
+    uses in the projects suite. Separate from the route classes because these tests
+    involve no request at all: each pins a number some mechanism silently depends
+    on, so the failure names the assumption rather than a symptom."""
+
+    def test_the_write_attempts_bound_leaves_at_least_one_attempt(self):
+        """A bound of 0 makes `range` yield nothing, so the write loop is never
+        entered — and `_write_ballot` signals a written ballot by returning, which
+        makes falling out of the loop indistinguishable from success. It is a tuning
+        constant and a later change may lower it; the post-loop guard is what fires
+        if this stops holding anyway."""
+        import ballots_handler
+
+        assert ballots_handler.BALLOT_WRITE_ATTEMPTS >= 1
+
+    def test_the_worst_case_backoff_stays_well_inside_the_route_budget(self):
+        """The retry's sleeps are billed wall-clock inside a PUBLIC request a phone
+        is waiting on. The comment on the constants states ~150ms as the worst case;
+        this pins that the constants cannot drift to where the sleeps rival the 30s
+        route timeout while the comment keeps promising milliseconds."""
+        import ballots_handler
+
+        # The jitter multiplier tops out just under 1.0, so the un-jittered sum is
+        # the bound.
+        worst_case = sum(
+            ballots_handler.BALLOT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
+            for attempt in range(ballots_handler.BALLOT_WRITE_ATTEMPTS - 1)
+        )
+        assert worst_case < 1, (
+            f'the retry can now sleep {worst_case:.2f}s inside a public request; '
+            f'if that is intended, move the submission budget, not just this pin'
+        )
 
 
 class TestValidationRefusalsAreTheirOwnReason:
