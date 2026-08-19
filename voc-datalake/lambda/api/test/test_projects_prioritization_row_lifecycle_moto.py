@@ -94,6 +94,43 @@ def _call(aggregates, projects, lambda_context, method, path, body=None,
     return response['statusCode'], json.loads(response['body'])
 
 
+def _room_ballot(aggregates, lambda_context, row_id, axes=None, ballot_id=None):
+    """One ANONYMOUS ballot, through `ballots_handler`'s own public route.
+
+    Both handlers against ONE table, which is the only way to show that the two
+    bundles' duplicated attribute names actually meet. `test_anon_row_mark_lockstep.py`
+    pins the spellings as source text; this exercises the consequence.
+    """
+    import ballots_handler
+
+    session_id = 'vs_' + '1a' * 16
+    aggregates.put_item(Item={
+        'pk': 'VOTING_SESSION', 'sk': f'SESSION#{session_id}',
+        'session_id': session_id, 'row_id': row_id, 'row_title': 'Instant refunds',
+        'status': 'open', 'ballot_cap': 40, 'ballot_count': 0,
+        'created_by': 'facilitator', 'created_at': '2026-08-17T10:00:00+00:00',
+        'expires_at': '2096-10-02T07:06:40+00:00', 'ttl': 4_000_000_000,
+    })
+    body = dict(axes or AXES)
+    if ballot_id:
+        body['ballot_id'] = ballot_id
+    path = f'/voting-sessions/{session_id}/submit'
+    event = {
+        'httpMethod': 'POST', 'path': path, 'resource': path,
+        'headers': {'Content-Type': 'application/json'},
+        'requestContext': {'requestId': 'test-request', 'stage': 'test',
+                           'httpMethod': 'POST', 'path': path,
+                           'identity': {'sourceIp': '1.2.3.4'}},
+        'body': json.dumps(body),
+        'pathParameters': {'session_id': session_id},
+        'queryStringParameters': None, 'multiValueQueryStringParameters': None,
+        'stageVariables': None, 'multiValueHeaders': {}, 'isBase64Encoded': False,
+    }
+    with patch.object(ballots_handler, 'get_aggregates_table', return_value=aggregates):
+        response = ballots_handler.lambda_handler(event, lambda_context)
+    return response['statusCode'], json.loads(response['body'])
+
+
 @pytest.fixture()
 def lambda_context():
     return MagicMock()
@@ -314,3 +351,181 @@ class TestTheRowLifecycleAgainstARealTable:
         assert status == 200
         assert body['rows'][balloted_id]['is_frozen'] is True
         assert body['rows'][open_row['row']['row_id']]['is_frozen'] is False
+
+
+class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
+    """BOTH HANDLERS, ONE TABLE — which is the only place the two bundles' duplicated
+    attribute names actually meet.
+
+    `test_anon_row_mark_lockstep.py` pins the spellings as source text, and
+    `test_ballots_handler.py` shows the anonymous write stamps them. Neither can show
+    the CONSEQUENCE: that the mark one bundle writes is the mark the other bundle's
+    condition refuses on. That is what these tests are for, and they are here rather
+    than in either handler's own file because they are about the pair.
+
+    A room's ballots are the least attributable votes in the product — nobody's name
+    is on them — so an invariant that held for signed-in reviewers and not for these
+    would fail exactly where it is hardest to notice.
+    """
+
+    @mock_aws
+    def test_a_room_ballot_freezes_the_row_against_a_recompose(self, lambda_context):
+        """The invariant #339 advertises as database-enforced, across the bundle
+        boundary. Before the anonymous write stamped the mark, a row carrying nothing
+        but real room votes stayed recomposable — and recomposing it left every one of
+        those ballots describing documents the room never saw."""
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        row_id = created['row']['row_id']
+
+        assert _room_ballot(aggregates, lambda_context, row_id)[0] == 200
+
+        status, body = _call(aggregates, projects, lambda_context, 'PATCH',
+                             f'/projects/prioritization/rows/{row_id}',
+                             {'project_id': 'p1', 'document_ids': ['d2']})
+
+        assert status == 409
+        assert 'frozen' in body['error']
+        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
+        assert row['document_ids'] == ['d1'], 'the refusal wrote nothing'
+
+    @mock_aws
+    def test_the_page_reports_a_row_frozen_by_a_room_as_frozen(self, lambda_context):
+        """`is_frozen` is one question with one answer, whoever voted. A page that
+        showed such a row as editable would offer a control the server refuses."""
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        row_id = created['row']['row_id']
+        _room_ballot(aggregates, lambda_context, row_id)
+
+        _, body = _call(aggregates, projects, lambda_context, 'GET',
+                        '/projects/prioritization')
+
+        assert body['rows'][row_id]['is_frozen'] is True
+        assert body['aggregates'][row_id]['reviewer_count'] == 1
+
+    @mock_aws
+    def test_a_room_ballot_racing_a_delete_cancels_it_rather_than_being_orphaned(
+        self, lambda_context
+    ):
+        """The #342 fault the fence exists to close, in the path that used to bypass
+        it. The ballot is cast from inside the delete's ballot enumeration — the only
+        point where the two can cross — and it moves `ballot_writes`, so the delete's
+        fence fails and the whole transaction is cancelled. Before the anonymous write
+        moved that counter the delete committed and left the ballot behind."""
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        row_id = created['row']['row_id']
+
+        real_query = aggregates.query
+        raced = {'done': False}
+
+        def ballot_mid_enumeration(**kwargs):
+            response = real_query(**kwargs)
+            # From inside the BALLOT enumeration specifically — the only point where
+            # a ballot and this delete can cross. Recognised by the projection the
+            # enumeration takes, since the delete's other read (the sibling lookup)
+            # projects `sk, project_id`.
+            if not raced['done'] and kwargs.get('ProjectionExpression') == 'sk':
+                raced['done'] = True
+                assert _room_ballot(aggregates, lambda_context, row_id)[0] == 200
+            return response
+
+        racing = MagicMock()
+        racing.name = aggregates.name
+        racing.meta = aggregates.meta
+        racing.get_item.side_effect = aggregates.get_item
+        racing.query.side_effect = ballot_mid_enumeration
+
+        status, body = _call(racing, projects, lambda_context, 'DELETE',
+                             f'/projects/prioritization/rows/{row_id}')
+
+        assert raced['done'], 'the race never happened, so this asserts nothing'
+        assert status == 409
+        assert 'reload' in body['error']
+        stored = sorted(item['sk'] for item in aggregates.scan()['Items']
+                        if item['pk'] == PARTITION)
+        assert stored[-1] == f'ROW#{row_id}', 'the row survived'
+        assert any(sk.startswith(f'BALLOT#{row_id}#anon:') for sk in stored), (
+            "and so did the room's ballot"
+        )
+
+    @mock_aws
+    def test_a_delete_takes_a_rooms_ballots_with_the_row(self, lambda_context):
+        """The other half of the same contract: once nothing is racing, a room's
+        ballots go with their row exactly as a reviewer's do. The enumeration is by
+        row prefix, so nothing about which kind wrote a ballot decides whether it
+        goes."""
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        row_id = created['row']['row_id']
+        _room_ballot(aggregates, lambda_context, row_id)
+        _call(aggregates, projects, lambda_context, 'PATCH', '/projects/prioritization',
+              {'scores': {row_id: AXES}})
+
+        status, body = _call(aggregates, projects, lambda_context, 'DELETE',
+                             f'/projects/prioritization/rows/{row_id}')
+
+        assert status == 200
+        assert body['ballots_deleted'] == 2, 'the room ballot and the reviewer ballot'
+        assert [item['sk'] for item in aggregates.scan()['Items']
+                if item['pk'] == PARTITION] == []
+
+    @mock_aws
+    def test_a_room_ballot_on_a_deleted_row_is_refused_rather_than_resurrecting_it(
+        self, lambda_context
+    ):
+        """A session is opened against a row that exists, but the room can vote an
+        hour later. `attribute_exists(sk)` on the row half of the anonymous write is
+        what makes a ballot on a row deleted in between fail — rather than recreating
+        the row as a bare record, which `update_item`'s upsert would otherwise do."""
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        row_id = created['row']['row_id']
+        _call(aggregates, projects, lambda_context, 'DELETE',
+              f'/projects/prioritization/rows/{row_id}')
+
+        status, _ = _room_ballot(aggregates, lambda_context, row_id)
+
+        assert status == 404
+        assert [item['sk'] for item in aggregates.scan()['Items']
+                if item['pk'] == PARTITION] == [], 'nothing was resurrected'
+
+    @mock_aws
+    def test_a_room_correction_leaves_the_freeze_instant_where_the_first_ballot_put_it(
+        self, lambda_context
+    ):
+        """`if_not_exists` across the bundle boundary and across a correction: the
+        composition froze when the first phone submitted, and a device amending its
+        own vote is not a new decision about which documents the row holds."""
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        row_id = created['row']['row_id']
+        _, first = _room_ballot(aggregates, lambda_context, row_id)
+        froze_at = aggregates.get_item(
+            Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item'][ 'first_ballot_at']
+
+        status, corrected = _room_ballot(aggregates, lambda_context, row_id,
+                                        axes={**AXES, 'impact': 1},
+                                        ballot_id=first['ballot_id'])
+
+        assert status == 200
+        assert corrected['corrected'] is True
+        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
+        assert row['first_ballot_at'] == froze_at
+        assert row['ballot_writes'] == Decimal(2), (
+            'the fence moves for a correction, so a delete that listed the ballots '
+            'before it landed is cancelled rather than committing over it'
+        )

@@ -78,6 +78,21 @@ Nothing here reads or changes the aggregate. `_aggregate_scores` in
 kind, so a correctly keyed `anon:` ballot appears in the team's combined score,
 `reviewer_count` and `score_spread` with no change to the read, its response shape
 or the page that renders it.
+
+AND A BALLOT MARKS ITS ROW, WHOEVER CAST IT
+-------------------------------------------
+An anonymous ballot is a ballot, so `_write_ballot` is a TRANSACTION rather than a
+lone `update_item`: it writes the ballot and, on the row record, the freeze mark a
+composition change asserts the absence of plus the counter a row delete fences on.
+The alternative was an invariant that held for signed-in reviewers and not for a
+room — a row carrying nothing but real anonymous votes staying recomposable, and a
+room ballot landing during a delete being orphaned by it — which would have failed
+precisely where the votes are least attributable and hardest to reconstruct.
+
+Those two attribute names are duplicated from `projects_handler` (the bundles cannot
+import each other) and pinned by `test_anon_row_mark_lockstep.py`, because a drift is
+a freeze that does not freeze and a fence that does not fence, and neither failure is
+loud.
 """
 import json
 import math
@@ -178,6 +193,34 @@ BALLOT_SK_PREFIX = 'BALLOT#'
 # exists (`_row_exists`). This module still never composes or interprets a row.
 ROW_SK_PREFIX = 'ROW#'
 REVIEWER_KIND_ANON = 'anon'
+
+# The two attributes a ballot stamps on its ROW, spelled exactly as
+# `projects_handler` spells them (ROW_FROZEN_AT_FIELD, ROW_BALLOT_WRITES_FIELD) and
+# duplicated here for the same reason the key prefixes are: the two handlers are
+# separate Lambda bundles and neither may import the other.
+#
+# WHAT A DRIFT HERE WOULD COST, and why it is pinned by
+# `test_anon_row_mark_lockstep.py` rather than trusted to this comment:
+#
+# * `first_ballot_at` under another name is a FREEZE THAT DOES NOT FREEZE. The
+#   recompose route asserts `attribute_not_exists(first_ballot_at)`, so a row whose
+#   only ballots were cast in a room would stay recomposable — and those ballots
+#   would end up describing documents the room never saw.
+# * `ballot_writes` under another name is a FENCE THAT DOES NOT FENCE. The row
+#   delete asserts that attribute has not moved since it listed the row's ballots,
+#   so an anonymous ballot landing in that window would be orphaned by a delete
+#   that committed anyway.
+#
+# Neither failure is loud. Both are the invariants #339 and #342 are about.
+ROW_FROZEN_AT_FIELD = 'first_ballot_at'
+ROW_BALLOT_WRITES_FIELD = 'ballot_writes'
+
+# Where the ROW's write sits in the ballot transaction, and so which
+# `CancellationReasons` entry says whether the row is what refused.
+#
+# The ballot's own half carries no condition, so a cancellation reported against
+# index 0 is not a fact about the row — see `_row_condition_failed`.
+BALLOT_TRANSACT_ROW_INDEX = 1
 
 # Minted here, never accepted from a caller — see `_minted_ballot_id`.
 BALLOT_ID_BYTES = 16
@@ -404,12 +447,18 @@ def _validated_row_id(raw: Any) -> str:
     honestly — one `get_item` on the aggregates table, which is exactly the
     read this Lambda's role already grants — and it must (#342): a session
     opened for a row that does not resolve collects a room's ballots that the
-    page then discards on read, and a room's votes are unrepeatable. The check
-    is at session CREATION and not at submit, deliberately: submit takes the
-    row id from the stored session, never from the body, so a session that
-    named a real row cannot start naming a phantom one (nothing deletes rows
-    today — phase 2's delete path owes the write-time condition), and the
-    public submit path stays at its current cost.
+    page then discards on read, and a room's votes are unrepeatable.
+
+    That read is at session CREATION and is not the whole of the story, because a
+    row CAN now be deleted (`projects_handler.api_delete_prioritization_row`) and a
+    room can vote an hour after the facilitator opened the vote. Submit does not
+    repeat the read — it takes the row id from the STORED SESSION, never from the
+    body, so a session that named a real row cannot start naming a different one, and
+    the public path keeps its current cost. What closes the remaining window is a
+    CONDITION ON THE WRITE rather than another read: `_write_ballot`'s transaction
+    asserts `attribute_exists(sk)` on the row, so a ballot on a row deleted in the
+    meantime is refused instead of being orphaned — and refused without resurrecting
+    the row, which `update_item`'s upsert would otherwise do.
     """
     if not isinstance(raw, str) or not raw.strip():
         raise ValidationError('row_id is required')
@@ -956,6 +1005,33 @@ def _hold_open_session(session_id: str, now: datetime, *, claim_slot: bool) -> b
         raise ServiceError('Failed to record the ballot') from e
 
 
+def _row_condition_failed(e: ClientError) -> bool:
+    """Did the ROW's condition cancel this transaction, or did contention?
+
+    A `TransactionCanceledException` IS NOT ONLY A FAILED CONDITION. DynamoDB
+    cancels with the same exception for `TransactionConflict` (another in-flight
+    transaction touching one of the same items), `ThrottlingError`,
+    `ProvisionedThroughputExceeded` and `ValidationError`, and botocore does not
+    auto-retry it — so all of them arrive here.
+
+    `TransactionConflict` is the ORDINARY CASE in this handler, not a corner: a room
+    of phones submitting at once is exactly what this feature is for, and every one
+    of those ballots writes the same row record. Reading the exception as "the row is
+    gone" would tell a phone that lost a race that the proposal no longer exists — a
+    settled refusal, in place of the transient failure the page already retries.
+
+    Read at the ROW's index specifically, because the ballot's own half carries no
+    condition: a reason reported against it is not a fact about the row. A missing or
+    short `CancellationReasons` answers False, so an unreadable cancellation is
+    handled as the transient failure it might be rather than the fact it might not be.
+    """
+    reasons = e.response.get('CancellationReasons')
+    if not isinstance(reasons, list) or BALLOT_TRANSACT_ROW_INDEX >= len(reasons):
+        return False
+    reason = reasons[BALLOT_TRANSACT_ROW_INDEX]
+    return isinstance(reason, dict) and reason.get('Code') == 'ConditionalCheckFailed'
+
+
 def _write_ballot(
     row_id: str,
     ballot_id: str,
@@ -965,11 +1041,46 @@ def _write_ballot(
     display_name: str,
     now: datetime,
 ) -> None:
-    """Upsert one anonymous ballot on its own key.
+    """Write one anonymous ballot and mark its ROW, in ONE transaction.
 
-    A single `update_item`, so a device correcting its vote replaces its own
-    record and touches nobody else's — the same property that lets two signed-in
-    reviewers save at the same moment without losing each other's numbers.
+    The ballot lands on its own key, so a device correcting its vote replaces its
+    own record and touches nobody else's — the same property that lets two
+    signed-in reviewers save at the same moment without losing each other's
+    numbers.
+
+    THE ROW HALF IS WHY THIS IS A TRANSACTION RATHER THAN AN `update_item`. An
+    anonymous ballot is a ballot: it is a durable decision record about the set of
+    documents the row held when the room voted, and it is counted in the same
+    aggregate a signed-in reviewer's is. So it has to do the same three things a
+    signed-in save does, and all three are properties of the WRITE:
+
+    * FREEZE THE COMPOSITION. `first_ballot_at` is what
+      `projects_handler.api_recompose_prioritization_row` asserts the absence of.
+      Without it, a row carrying nothing but real anonymous votes stayed
+      recomposable, and those ballots would end up describing documents the room
+      never saw — the invariant that route advertises as database-enforced, with
+      a hole in it exactly where the votes are least attributable.
+    * MOVE THE DELETE'S FENCE. `ballot_writes` is what
+      `projects_handler._transact_delete_row` asserts has not changed since it
+      enumerated the row's ballots. An anonymous ballot landing in that gap that
+      did not move it left the delete free to commit — and leave that ballot
+      orphaned, which is the #342 fault the fence exists to close.
+    * ASSERT THE ROW STILL EXISTS. `_row_exists` is checked when the session is
+      OPENED, which can be an hour before the room votes; `attribute_exists(sk)`
+      on the write is what makes a ballot on a row deleted in between fail instead
+      of resurrecting the row as a bare record.
+
+    Every one of those is spelled here the way `projects_handler` spells it, and
+    `test_anon_row_mark_lockstep.py` pins the three attribute names across the two
+    bundles — the same protection `test_anon_ballot_key_lockstep.py` gives the sort
+    key, and for the same reason: a drifted name here is a freeze that does not
+    freeze and a fence that does not fence, with nothing failing loudly.
+
+    A CORRECTION TAKES THIS PATH TOO, and stamps the same marks. `first_ballot_at`
+    is `if_not_exists`, so a correction cannot move a freeze instant that a first
+    ballot already recorded; `ballot_writes` DOES move, which is correct — it counts
+    writes precisely so that a delete which enumerated the row's ballots before a
+    correction landed is cancelled rather than committing over it.
 
     NO `ttl` IS EVER ASSIGNED HERE. The aggregates table expires anything carrying
     that attribute, and a ballot is a durable decision record: an expiring one
@@ -980,6 +1091,13 @@ def _write_ballot(
     (see `_existing_ballot`) and because a ballot nobody's name is on should at
     least record which room cast it. `display_name` is stored only when the
     submitter gave one, and no read exposes it today.
+
+    A CANCELLED TRANSACTION IS ANSWERED BY THE REASON, not by the exception.
+    DynamoDB cancels for `TransactionConflict` and throttling as well as for a
+    failed condition, and a room of phones submitting at once contends on the one
+    row record — so only a condition failure on the row means the row is gone
+    (`REASON_NOT_FOUND`, which the page states); anything else is the transient
+    failure the page already retries.
     """
     # `row_id`, the same attribute name the signed-in save stamps
     # (`BALLOT_STAMP_FIELDS` in `projects_handler`), because both write the same
@@ -1011,18 +1129,61 @@ def _write_ballot(
         names['#display_name'] = 'display_name'
         values[':display_name'] = display_name
 
+    table = _table()
     try:
-        _table().update_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, ballot_id)},
-            UpdateExpression='SET ' + ', '.join(assignments),
-            ExpressionAttributeNames=names,
-            ExpressionAttributeValues=values,
+        table.meta.client.transact_write_items(TransactItems=[
+            {'Update': {
+                'TableName': table.name,
+                'Key': {'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, ballot_id)},
+                'UpdateExpression': 'SET ' + ', '.join(assignments),
+                'ExpressionAttributeNames': names,
+                'ExpressionAttributeValues': values,
+            }},
+            {'Update': {
+                'TableName': table.name,
+                'Key': {'pk': PRIORITIZATION_PK, 'sk': f'{ROW_SK_PREFIX}{row_id}'},
+                # `attribute_exists(sk)` on the ROW rather than on the ballot,
+                # because `update_item` is an upsert: without it this would CREATE a
+                # bare row record for a row somebody deleted.
+                'ConditionExpression': 'attribute_exists(sk)',
+                'UpdateExpression': (
+                    'SET #frozen_at = if_not_exists(#frozen_at, :now) '
+                    'ADD #ballot_writes :one'
+                ),
+                'ExpressionAttributeNames': {
+                    '#frozen_at': ROW_FROZEN_AT_FIELD,
+                    '#ballot_writes': ROW_BALLOT_WRITES_FIELD,
+                },
+                'ExpressionAttributeValues': {':now': now.isoformat(), ':one': 1},
+            }},
+        ])
+    except ClientError as e:
+        if (
+            e.response.get('Error', {}).get('Code') != 'TransactionCanceledException'
+            or not _row_condition_failed(e)
+        ):
+            # Never echoes the note or the display name — both are submitter
+            # content, and one of them is PII.
+            logger.exception(
+                f'Failed to write an anonymous ballot for session '
+                f'{_session_ref(session_id)}: {e}'
+            )
+            raise ServiceError('Failed to record the ballot') from e
+        # The row's only condition is its existence, so this row went away between
+        # the session being opened and the room voting. The device is told the same
+        # thing a vanished session is answered with, because from the phone's side
+        # it is the same fact: there is nothing here to score any more. Nothing was
+        # written — a transaction applies whole or not at all — so the slot this
+        # submission claimed is spent, which is the honest direction: the cap exists
+        # to bound writes, and refusing to record a ballot never lets one past it.
+        logger.warning(
+            f'An anonymous ballot named a row that no longer exists, on session '
+            f'{_session_ref(session_id)}. Nothing was written.'
         )
+        raise NotFoundError('That proposal no longer exists') from e
     except ApiError:
         raise
     except Exception as e:
-        # Never echoes the note or the display name — both are submitter content,
-        # and one of them is PII.
         logger.exception(f'Failed to write an anonymous ballot for session {_session_ref(session_id)}: {e}')
         raise ServiceError('Failed to record the ballot') from e
 
