@@ -272,6 +272,15 @@ class TestABallotNeverCarriesAnExpiry:
             f'failed to strip _write_ballot\'s docstring in {BALLOTS_SOURCE}; this '
             f'test would otherwise assert against prose rather than code.'
         )
+        # COMMENTS ARE PROSE TOO, and stripped for the same reason. `ttl` is asserted
+        # as a bare substring rather than as an attribute reference — which is the
+        # right direction for a guard against an expiry reaching this write, since it
+        # catches every spelling — but it also matches the three letters inside an
+        # ordinary English word, so a comment explaining WHY a cancellation is
+        # retried ("thro-ttl-ing") failed this test while the code was correct. A
+        # lockstep test that fails on a comment is one that gets deleted rather than
+        # heeded.
+        body = re.sub(r'#[^\n]*', '', body)
         assert ttl_attribute not in body, (
             f'_write_ballot sets {ttl_attribute!r}. The aggregates table expires any '
             f'item carrying it, so ballots would disappear from the team score '

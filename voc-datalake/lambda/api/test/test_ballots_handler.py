@@ -778,6 +778,33 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         assert table.row() is None, 'and the row was not resurrected'
         assert body['success'] is False
 
+    def test_the_vanished_row_is_refused_with_a_reason_the_page_can_state(
+            self, api_gateway_event, lambda_context):
+        """THE SHAPE, not the status. The page dispatches on `reason` alone —
+        `submitBallot` parses the body with `ballotRefusalSchema` and falls back to
+        `unknown` when the field is absent, which renders as "try again in a moment".
+
+        A bare `NotFoundError` is rendered by the shared handler WITHOUT a `reason`,
+        so the one case where the row is permanently gone got the copy reserved for
+        transient failures — inverting the very distinction the cancellation-reason
+        read exists to draw. `not_found` already has its own translated sentence."""
+        table = FakeAggregatesTable([open_session()], rows_exist=False)
+
+        _, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert body['reason'] == 'not_found'
+
+    def test_a_vanished_row_is_not_retried(
+            self, api_gateway_event, lambda_context):
+        """A deleted row does not come back, so re-attempting would spend the room's
+        request time to reach the same answer. Only a cancellation NO CONDITION caused
+        is transient."""
+        table = FakeAggregatesTable([open_session()], rows_exist=False)
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert len(table.transact_calls) == 1
+
     def test_a_write_conflict_is_a_retryable_failure_not_a_vanished_proposal(
             self, api_gateway_event, lambda_context):
         """The ordinary case in this handler: a room of phones submitting at once all
@@ -801,6 +828,98 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         status, _ = _submit(table, api_gateway_event, lambda_context)
 
         assert status == 500, 'a retryable failure, not a 404'
+
+    def test_a_conflict_that_clears_records_the_ballot_rather_than_failing(
+            self, api_gateway_event, lambda_context):
+        """CONTENTION IS THE DESIGNED CASE, so it is retried rather than reported.
+
+        Every ballot of a session `ADD`s to the SAME row record, so a room submitting
+        on the facilitator's count of three conflicts by construction — and botocore
+        does not auto-retry `TransactionCanceledException`, so it arrives at the
+        handler. Reporting it costs the voter their ballot AND their cap slot: the
+        slot was claimed before this write, and the page renders a terminal panel
+        with no way to resubmit, so a contended room would burn slots on conflicts
+        and then refuse ballots with `cap_reached` it should have accepted."""
+        table = FakeAggregatesTable([open_session()])
+        real = table.meta.client.transact_write_items
+        attempts = []
+
+        def conflict_once(**kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                raise ClientError(
+                    {'Error': {'Code': 'TransactionCanceledException',
+                               'Message': 'Transaction cancelled'},
+                     'CancellationReasons': [{'Code': 'None'},
+                                             {'Code': 'TransactionConflict'}]},
+                    'TransactWriteItems',
+                )
+            return real(**kwargs)
+
+        table.meta.client.transact_write_items = conflict_once
+
+        status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 200
+        assert body['success'] is True
+        assert len(attempts) == 2, 'the conflict was re-attempted'
+
+    def test_a_retried_ballot_is_written_exactly_once(
+            self, api_gateway_event, lambda_context):
+        """The retry is safe BECAUSE the ballot's half is an upsert on this device's
+        own key: re-attempting cannot leave two records or count a vote twice. The
+        fence moves once too, since the cancelled attempt wrote nothing at all."""
+        table = FakeAggregatesTable([open_session()])
+        real = table.meta.client.transact_write_items
+        attempts = []
+
+        def conflict_once(**kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                raise ClientError(
+                    {'Error': {'Code': 'TransactionCanceledException',
+                               'Message': 'Transaction cancelled'},
+                     'CancellationReasons': [{'Code': 'None'},
+                                             {'Code': 'TransactionConflict'}]},
+                    'TransactWriteItems',
+                )
+            return real(**kwargs)
+
+        table.meta.client.transact_write_items = conflict_once
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert len(table.ballot_keys) == 1
+        assert table.row()['ballot_writes'] == 1
+
+    def test_a_conflict_that_never_clears_is_still_a_retryable_500(
+            self, api_gateway_event, lambda_context):
+        """The retries are BOUNDED. A room holding phones cannot be made to wait
+        indefinitely, and a conflict that outlasts the attempts is reported as the
+        transient failure it is — a 500, which the page may retry, rather than a 404
+        claiming the proposal is gone."""
+        import ballots_handler
+
+        table = FakeAggregatesTable([open_session()])
+        attempts = []
+
+        def always_conflict(**kwargs):
+            attempts.append(kwargs)
+            raise ClientError(
+                {'Error': {'Code': 'TransactionCanceledException',
+                           'Message': 'Transaction cancelled'},
+                 'CancellationReasons': [{'Code': 'None'},
+                                         {'Code': 'TransactionConflict'}]},
+                'TransactWriteItems',
+            )
+
+        table.meta.client.transact_write_items = always_conflict
+
+        status, _ = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 500, 'transient, not a vanished proposal'
+        assert len(attempts) == ballots_handler.BALLOT_WRITE_ATTEMPTS
+        assert table.ballot_keys == [], 'and nothing was written'
 
     def test_the_marks_are_spelled_the_way_the_other_bundle_reads_them(
             self, api_gateway_event, lambda_context):
