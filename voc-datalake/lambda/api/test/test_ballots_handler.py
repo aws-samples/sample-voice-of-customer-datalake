@@ -921,6 +921,34 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         assert len(attempts) == ballots_handler.BALLOT_WRITE_ATTEMPTS
         assert table.ballot_keys == [], 'and nothing was written'
 
+    def test_the_write_attempts_bound_leaves_at_least_one_attempt(self):
+        """A bound of 0 makes `range` yield nothing, so the write loop is never
+        entered — and this function signals a written ballot by returning, which makes
+        falling out of the loop indistinguishable from success. Pinned as a number the
+        way `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100` pins the delete's reservation,
+        because it is a tuning constant and a later change may lower it."""
+        import ballots_handler
+
+        assert ballots_handler.BALLOT_WRITE_ATTEMPTS >= 1
+
+    def test_a_bound_that_allows_no_attempt_is_a_500_and_not_a_silent_success(
+            self, api_gateway_event, lambda_context):
+        """The guard for the bound going wrong anyway. Without the raise after the
+        loop the device is told 200 and the room is thanked for a ballot that was
+        never written — the one failure this module makes loud everywhere else. A
+        misconfigured bound is a server fault, so it reads as one."""
+        import ballots_handler
+
+        table = FakeAggregatesTable([open_session()])
+
+        with patch.object(ballots_handler, 'BALLOT_WRITE_ATTEMPTS', 0):
+            status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 500
+        assert body['success'] is False
+        assert table.transact_calls == [], 'no attempt was made'
+        assert table.ballot_keys == [], 'and nothing was written'
+
     def test_the_marks_are_spelled_the_way_the_other_bundle_reads_them(
             self, api_gateway_event, lambda_context):
         """The two handlers are separate Lambda bundles and neither may import the

@@ -3183,22 +3183,42 @@ def api_patch_prioritization_scores():
     Body shape is `{'scores': {row_id: {...}}}`; every entry is written as the
     CALLER'S ballot on that row.
 
-    Each row is one `update_item` on the caller's own key — never a
-    read-modify-write of a shared map — so concurrent reviewers cannot overwrite
-    each other. Only the fields an entry carries are written, so a partial entry
-    leaves the reviewer's other axes untouched. No `ttl` attribute is ever
-    written: the aggregates table expires anything carrying one, and a ballot is a
-    durable decision record.
+    Each row is one TRANSACTION carrying two writes: the ballot, on the caller's own
+    key — never a read-modify-write of a shared map, so concurrent reviewers cannot
+    overwrite each other — and its row's mark (see `_ballot_transact_items`). Only the
+    fields an entry carries are written, so a partial entry leaves the reviewer's
+    other axes untouched. No `ttl` attribute is ever written: the aggregates table
+    expires anything carrying one, and a ballot is a durable decision record.
 
     PARTIAL FAILURE, and why RETRYING IS SAFE. This is NOT all-or-nothing. Nothing
     malformed can half-apply — every key and every value is refused before the
-    first write — but the rows are written sequentially, so a throttle or a
-    timeout on row 3 of 10 leaves the first two durably persisted and answers
-    a bare 500 that does not say so. Retrying the identical body is nonetheless
-    safe: every write is an idempotent `update_item` on a deterministic key derived
-    from the row id and the caller's own subject, so replaying converges on
-    the same ballots rather than duplicating or compounding anything. A client that
-    sees a 500 should re-send the whole body, not try to work out what landed.
+    first write, and each row's two writes land together or not at all — but the rows
+    are written sequentially, so a throttle or a timeout on row 3 of 10 leaves the
+    first two durably persisted and answers a bare 500 that does not say so.
+    Retrying the identical body is nonetheless safe, and it is worth being exact about
+    WHICH of the two writes converges, because they do not converge in the same sense:
+
+    * THE BALLOT CONVERGES. It is an upsert on a deterministic key derived from the
+      row id and the caller's own subject, so a replay overwrites the reviewer's own
+      record with the same values rather than adding a second one. This is the part
+      that matters, and it is what makes "re-send the whole body" the right advice.
+    * ROW_FROZEN_AT_FIELD CONVERGES TOO, because it is written with `if_not_exists`:
+      a replay cannot move the instant a first ballot recorded.
+    * ROW_BALLOT_WRITES_FIELD DOES NOT, and is not meant to. It is an `ADD`, so it
+      counts WRITE ATTEMPTS THAT COMMITTED rather than reviewers, and a replay
+      advances it — which is exactly what the delete's fence needs, since a fence
+      that did not move under a replay would let a delete that enumerated before it
+      commit over it. Nothing reads this number as a count of anything: it is
+      published nowhere (`_row_payload`), and `reviewer_count` is derived from the
+      ballot records themselves. The only consequence of the extra increment is that
+      a delete racing the replay is cancelled with a 409 its caller retries — the
+      conservative direction `_transact_delete_row` already argues for, where a
+      spurious 409 costs a retry and a missed one costs an orphan.
+
+    So a client that sees a 500 should re-send the whole body, not try to work out
+    what landed: no ballot is lost, none is double-counted, and no freeze instant
+    moves. A change that started publishing ROW_BALLOT_WRITES_FIELD, or deriving a
+    reviewer count from it, would be relying on an idempotence it does not have.
 
     `updated_count` is returned only on success, where it is the number of BALLOTS
     WRITTEN — saves that stored a value the reviewer entered — which is at most the

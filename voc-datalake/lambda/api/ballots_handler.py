@@ -1276,6 +1276,22 @@ def _write_ballot(
         except Exception as e:
             logger.exception(f'Failed to write an anonymous ballot for session {_session_ref(session_id)}: {e}')
             raise ServiceError('Failed to record the ballot') from e
+    # UNREACHABLE while BALLOT_WRITE_ATTEMPTS >= 1, and kept because falling out of
+    # this loop is INDISTINGUISHABLE FROM SUCCESS: this function signals a written
+    # ballot by returning None, so a bound of 0 would make `range` yield nothing, log
+    # 'Recorded an anonymous ballot' and answer the device 200 having written nothing
+    # at all — a silent false success on a public vote-recording write. The bound is a
+    # tuning number, exactly the kind a later change lowers or reads from the
+    # environment, so the assumption is stated as a raise rather than left to hold.
+    # `test_the_write_attempts_bound_leaves_at_least_one_attempt` pins the bound
+    # itself, the way `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100` pins the delete's
+    # reservation; this is the guard for the case where it stops holding anyway.
+    logger.error(
+        'An anonymous ballot write made no attempt at all, which means '
+        'BALLOT_WRITE_ATTEMPTS is not at least 1. Refusing rather than reporting a '
+        'ballot that was never written.'
+    )
+    raise ServiceError('Failed to record the ballot')
 
 
 @app.post('/voting-sessions/<session_id>/submit')

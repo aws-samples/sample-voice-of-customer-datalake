@@ -225,6 +225,48 @@ class TestTheRowLifecycleAgainstARealTable:
         assert row['ballot_writes'] == Decimal(2), 'ADD moved for each of them'
 
     @mock_aws
+    def test_replaying_an_identical_save_converges_on_one_ballot_and_one_instant(
+        self, lambda_context
+    ):
+        """The save's docstring tells a client that sees a 500 to RE-SEND THE WHOLE
+        BODY, so what a replay does is a contract rather than an implementation
+        detail — and the row half's `ADD` is not idempotent, which makes the claim
+        worth executing rather than asserting.
+
+        Both halves of it, against a real evaluator: the BALLOT converges (one record,
+        the same values) and ROW_FROZEN_AT_FIELD converges (`if_not_exists` cannot move
+        an instant a first ballot recorded), which is the whole of what "safe to
+        retry" has to mean. ROW_BALLOT_WRITES_FIELD is asserted to ADVANCE, because it
+        counts committed writes rather than reviewers and a fence that stood still
+        under a replay would let a delete that enumerated before it commit over it.
+        """
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        row_id = created['row']['row_id']
+        body = {'scores': {row_id: {**AXES, 'notes': 'ship it'}}}
+
+        _call(aggregates, projects, lambda_context, 'PATCH',
+              '/projects/prioritization', body)
+        first = aggregates.get_item(
+            Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']['first_ballot_at']
+        status, replayed = _call(aggregates, projects, lambda_context, 'PATCH',
+                                 '/projects/prioritization', body)
+
+        assert (status, replayed['updated_count']) == (200, 1)
+        ballots = [item for item in aggregates.scan()['Items']
+                   if str(item['sk']).startswith('BALLOT#')]
+        assert len(ballots) == 1, 'the replay overwrote the one record, not added one'
+        assert (ballots[0]['impact'], ballots[0]['notes']) == (Decimal(4), 'ship it')
+        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
+        assert row['first_ballot_at'] == first, 'if_not_exists held the first instant'
+        assert row['ballot_writes'] == Decimal(2), (
+            'the fence counts committed writes, so a replay advances it — which is '
+            'what cancels a delete that enumerated before the replay landed'
+        )
+
+    @mock_aws
     def test_a_frozen_row_is_refused_by_the_database_not_by_the_handler(
         self, lambda_context
     ):
