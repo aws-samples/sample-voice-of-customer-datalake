@@ -2,7 +2,8 @@
 Tests for MCP handler security hardening (issue #260):
   1. Constant-time token comparison (hmac.compare_digest)
   2. Scope enforcement at dispatch (fail-closed)
-  3. Partial-result reporting in get_metrics_summary (is_partial flag)
+  3. Partial-result reporting — retired at server 2.0.0 (see section 3 below)
+  4. Claim synthesis: the request cannot influence the delegated identity
 
 Regression coverage
 -------------------
@@ -20,12 +21,20 @@ Revert test that catches each defect:
     lookup and the _scope_allows check) causes this test to fail because the
     tool would execute instead of returning an error.
 
-  defect 3 (partial): test_partial_read_sets_is_partial_flag
-    — forces one DynamoDB read to raise and asserts the response carries
-    is_partial=True while the successful reads are still present.
-    Reverting the is_partial tracking (restoring bare `except Exception: pass`)
-    causes this test to fail because is_partial would be False even when a
-    read raised.
+  defect 3 (partial): RETIRED at server 2.0.0, along with the behaviour it
+    guarded. The tool no longer reads DynamoDB, so there are no per-read
+    failures to degrade and no is_partial to track. The replacement invariant is
+    test_a_route_server_error_is_a_protocol_error in test_mcp_delegation.py: a
+    failing route is now reported as an error rather than as a plausible-looking
+    answer with a flag on it. Full reasoning in the section-3 comment below.
+
+  defect 4 (claim forgery): TestClaimSynthesis
+    — delegating made this function an authorization authority: it tells the
+    domain Lambda who is calling, and that Lambda believes it, because in every
+    other case those claims came from API Gateway's Cognito authorizer. Passing
+    the request into the claim builder — or merging `arguments` into the
+    synthesized authorizer context — fails test_arguments_cannot_forge_the_subject
+    and test_arguments_cannot_forge_group_membership. Highest-value test here.
 
   additional scope tests:
     test_every_registered_tool_has_scope_declaration
@@ -90,25 +99,39 @@ Revert test that catches each defect:
       ordered ahead of the specific handlers.
 
   schema agreement:
-    test_resolve_days_rejects_values_the_schema_forbids
-    — `days` must be an integer by the tool's own inputSchema; `int(True) == 1`
-      and `int(2.9) == 2` would answer a window the caller never asked for.
+    — the `days` coercion tests moved with `_resolve_days`, which delegation
+      deleted. The window is now bounded by the route's shared `validate_days`,
+      and its non-finite / non-numeric cases live in
+      lambda/shared/test/test_api.py. One case genuinely changed behaviour
+      (`days: true`); it is recorded at the section-3 comment below rather than
+      here, next to the reasoning.
 
-    test_resolve_days_falls_back_on_infinity /
-    test_json_parsed_infinity_reports_the_default_window
-    — `int(float('inf'))` raises OverflowError, not ValueError, so an infinite
-      `days` bypassed the fallback and surfaced as an opaque error.  Reachable
-      from plain JSON: both `1e400` and `Infinity` parse to `inf`.  Dropping
-      OverflowError from the except tuple fails both.
+  delegation:
+    test_every_tool_touches_the_table_only_to_authenticate /
+    test_autoseed_reads_no_project_rows_in_this_process
+    — the Python half of the IAM lockstep, and both got STRONGER when the tools
+      started delegating: the expected projects-table query count per tool is now
+      exactly one (the credential lookup), and autoseed — the last in-process
+      reader of project artifacts — must not touch that table at all. Together
+      they are what justifies the `dynamodb:LeadingKeys` condition on the role,
+      which api-stack.test.ts pins from the other side.
 """
 
+import io
 import json
 import os
 import sys
 from decimal import Decimal
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
+from boto3.dynamodb.conditions import Key
+
+# botocore names its own `ConnectionError`/`HTTPClientError`; imported via the
+# module so `botocore_exceptions.ConnectionError` cannot be misread as the
+# builtin, matching how mcp_handler refers to them.
+from botocore import exceptions as botocore_exceptions
 from botocore.exceptions import (
     ClientError,
     ConnectionClosedError,
@@ -122,12 +145,7 @@ from botocore.exceptions import (
     ResponseStreamingError,
     SSLError,
 )
-# botocore names its own `ConnectionError`/`HTTPClientError`; imported via the
-# module so `botocore_exceptions.ConnectionError` cannot be misread as the
-# builtin, matching how mcp_handler refers to them.
-from botocore import exceptions as botocore_exceptions
 from botocore.parsers import ResponseParserError
-from boto3.dynamodb.conditions import Key
 from shared.mcp_tokens import (
     ALL_READ_SCOPES,
     MCP_TOKEN_PK,
@@ -171,7 +189,11 @@ def _client_error(code: str, operation: str = "Query") -> ClientError:
 # parse, and mint_token is what decides whether it does.
 _MINTED = mint_token()
 _VALID_TOKEN = _MINTED.raw
-_TOKEN_PROJECT = "proj-1"
+# Shaped like an id the product actually mints (`proj_` + a timestamp), because
+# the path-parameter guard in _domain_call refuses anything else — any test that
+# reaches a delegated call needs a realistic one. The reach tests, which stub the
+# tool handler, are unaffected either way.
+_TOKEN_PROJECT = "proj_20260819143000"
 
 
 def _token_row(**extra) -> dict:
@@ -210,6 +232,37 @@ def _make_event(token: str = _VALID_TOKEN) -> dict:
     to prove the header is irrelevant passes it explicitly.
     """
     return {"headers": {"authorization": f"Bearer {token}"}}
+
+
+def _stub_domain_client(body: dict | None = None, status: int = 200):
+    """A Lambda client that answers any delegated route with a 200.
+
+    These tests are about the credential and the dispatch, so the domain
+    function's answer is deliberately uninteresting — the route translation
+    itself is covered in test_mcp_delegation.py.
+    """
+    client = MagicMock()
+    client.invoke.side_effect = lambda **_kwargs: {
+        "Payload": io.BytesIO(json.dumps({
+            "statusCode": status,
+            "body": json.dumps(body if body is not None else {"ok": True}),
+        }).encode()),
+    }
+    return client
+
+
+def _ok_result():
+    """What a tool returns now: a ToolResult, not a list of content blocks.
+
+    These tests stub the TOOL EXECUTION so they can be about the credential and
+    the dispatch instead of about data. The stub still has to honour the real
+    contract — when tools started returning `ToolResult` (structured output,
+    server 2.0.0), a stub returning the old list shape made every one of these
+    fail on `result.text`, which is the contract check working rather than
+    breaking.
+    """
+    import mcp_handler
+    return mcp_handler.ToolResult({"ok": True})
 
 
 def _rpc_event(tool: str = "get_project", arguments: dict | None = None,
@@ -537,7 +590,7 @@ class TestScopeEnforcement:
         a credential that reads feedback but cannot read anybody's product
         strategy.
         """
-        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        handler = MagicMock(return_value=_ok_result())
         result = self._call_tool(
             tool_name="fake_projects_tool",
             token_scopes=[SCOPE_FEEDBACK_READ],
@@ -554,7 +607,7 @@ class TestScopeEnforcement:
         handler.assert_not_called()
 
     def test_token_holding_the_required_scope_is_allowed(self):
-        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        handler = MagicMock(return_value=_ok_result())
         result = self._call_tool(
             tool_name="fake_feedback_tool",
             token_scopes=[SCOPE_FEEDBACK_READ],
@@ -567,7 +620,7 @@ class TestScopeEnforcement:
 
     def test_extra_scopes_do_not_interfere(self):
         """A token holding several scopes satisfies each of them."""
-        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        handler = MagicMock(return_value=_ok_result())
         for required in (SCOPE_FEEDBACK_READ, SCOPE_METRICS_READ, SCOPE_PROJECTS_READ):
             handler.reset_mock()
             result = self._call_tool(
@@ -601,7 +654,7 @@ class TestScopeEnforcement:
         list would let a string masquerade as a scope set — and a row holding
         the string "feedback:read,projects:read" would then satisfy BOTH.
         """
-        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        handler = MagicMock(return_value=_ok_result())
         result = self._call_tool(
             tool_name="damaged_row_tool",
             token_scopes=scopes,
@@ -660,7 +713,7 @@ class TestScopeEnforcement:
 
     def test_tool_without_scope_declaration_is_rejected(self):
         """A handler that exists in TOOL_HANDLERS but not TOOL_SCOPE_REQUIREMENTS is rejected."""
-        undeclared_handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        undeclared_handler = MagicMock(return_value=_ok_result())
         import mcp_handler
         original = mcp_handler.TOOL_SCOPE_REQUIREMENTS.copy()
         try:
@@ -685,7 +738,7 @@ class TestScopeEnforcement:
         and guessing would mean guessing permissively. Same fail-closed rule as
         the missing scope declaration above.
         """
-        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        handler = MagicMock(return_value=_ok_result())
         import mcp_handler
         original = mcp_handler.TOOL_REACH_KINDS.copy()
         try:
@@ -731,7 +784,7 @@ class TestScopeEnforcement:
         }
         handlers = (
             {**mcp_handler.TOOL_HANDLERS,
-             tool: MagicMock(return_value=[{"type": "text", "text": "ok"}])}
+             tool: MagicMock(return_value=_ok_result())}
             if stub_handler else mcp_handler.TOOL_HANDLERS
         )
         with patch("mcp_handler.projects_table") as mock_table, \
@@ -806,344 +859,45 @@ class TestScopeEnforcement:
 
 
 # ===========================================================================
-# 3. Partial-result reporting
+# 3. Partial-result reporting — REMOVED, and why
 # ===========================================================================
-
-# The four sentiment buckets get_metrics_summary reads per day.  Asserted as a
-# set on the response payload rather than as a read count: the payload is the
-# contract, so a batch_get_item rewrite that still returns all four passes,
-# while three of the four reads quietly disappearing does not.
-_ALL_SENTIMENTS = {"positive", "negative", "neutral", "mixed"}
-
-
-class TestPartialResultReporting:
-    """get_metrics_summary sets is_partial=True and logs when any read fails."""
-
-    @patch("mcp_handler.aggregates_table")
-    def test_partial_read_sets_is_partial_flag(self, mock_table):
-        """When the daily_total read raises, is_partial=True appears in the response.
-
-        The sentiment counts (from successful reads) must still appear — the
-        readable portion of the answer must not be lost.
-
-        The surviving reads are pinned on the *payload* rather than on a read
-        count: every sentiment bucket must be present with the value its read
-        returned, and the failed daily_total must contribute nothing.  That is
-        read-strategy independent (a batch_get_item rewrite returning the same
-        four buckets still passes) but not vacuous — a `>= 1` call-count check
-        held even when three of the four sentiment reads were deleted.
-        """
-        def get_item_side_effect(Key, **kwargs):  # noqa: N803
-            pk = Key.get("pk", "")
-            if pk == "METRIC#daily_total":
-                raise Exception("ProvisionedThroughputExceededException")
-            # Sentiment reads return a small positive count
-            return {"Item": {"count": 2}}
-
-        mock_table.get_item.side_effect = get_item_side_effect
-        mock_table.query.return_value = {"Items": []}
-
-        from mcp_handler import _tool_get_metrics_summary
-        content = _tool_get_metrics_summary({"days": 1}, {})
-
-        assert len(content) == 1
-        payload = json.loads(content[0]["text"])
-
-        assert payload["is_partial"] is True, "is_partial must be True when a read fails"
-        # Every sentiment bucket the tool claims to report is present, with the
-        # value its read returned — not merely "some sentiment key survived".
-        assert payload["sentiment_breakdown"] == dict.fromkeys(_ALL_SENTIMENTS, 2), (
-            "every sentiment bucket must survive a daily_total failure; got "
-            f"{payload['sentiment_breakdown']}"
-        )
-        # The failed read contributes nothing rather than a stale/invented total.
-        assert payload["total_feedback"] == 0
-
-    @patch("mcp_handler.aggregates_table")
-    def test_all_reads_succeed_is_partial_false(self, mock_table):
-        """When all reads succeed, is_partial is False."""
-        mock_table.get_item.return_value = {"Item": {"count": 5}}
-        mock_table.query.return_value = {"Items": []}
-
-        from mcp_handler import _tool_get_metrics_summary
-        content = _tool_get_metrics_summary({"days": 1}, {})
-        payload = json.loads(content[0]["text"])
-
-        assert payload["is_partial"] is False
-
-    @patch("mcp_handler.aggregates_table")
-    def test_totals_cover_every_day_in_the_window(self, mock_table):
-        """period_days days of aggregates are summed, not just the latest day.
-
-        Stated on the payload so it holds under any read strategy: with a
-        uniform count of 5 per aggregate row, a 3-day window must report
-        3 x 5 for the total and for each sentiment bucket.  Without this, a
-        window that silently collapsed to a single day (or sentiment buckets
-        that quietly stopped being read) still produced a well-shaped,
-        is_partial=False answer that under-reported the period.
-        """
-        mock_table.get_item.return_value = {"Item": {"count": 5}}
-        mock_table.query.return_value = {"Items": []}
-
-        from mcp_handler import _tool_get_metrics_summary
-        payload = json.loads(_tool_get_metrics_summary({"days": 3}, {})[0]["text"])
-
-        assert payload["period_days"] == 3
-        assert payload["is_partial"] is False
-        assert payload["total_feedback"] == 15, (
-            "a 3-day window must sum all 3 daily_total rows, got "
-            f"{payload['total_feedback']} (1 day would be 5)"
-        )
-        assert payload["sentiment_breakdown"] == dict.fromkeys(_ALL_SENTIMENTS, 15), (
-            "each sentiment bucket must accumulate across the whole window; got "
-            f"{payload['sentiment_breakdown']}"
-        )
-
-    @patch("mcp_handler.aggregates_table")
-    def test_category_read_failure_sets_is_partial(self, mock_table):
-        """When the category_breakdown query fails, is_partial=True."""
-        mock_table.get_item.return_value = {"Item": {"count": 3}}
-        mock_table.query.side_effect = Exception("ResourceNotFoundException")
-
-        from mcp_handler import _tool_get_metrics_summary
-        content = _tool_get_metrics_summary({"days": 1}, {})
-        payload = json.loads(content[0]["text"])
-
-        assert payload["is_partial"] is True
-        # total_feedback still populated from the successful get_item calls
-        assert payload["total_feedback"] == 3
-
-    @patch("mcp_handler.aggregates_table")
-    def test_is_partial_field_always_present(self, mock_table):
-        """is_partial is always present in the response regardless of outcome."""
-        mock_table.get_item.return_value = {}  # no Item
-        mock_table.query.return_value = {"Items": []}
-
-        from mcp_handler import _tool_get_metrics_summary
-        content = _tool_get_metrics_summary({"days": 1}, {})
-        payload = json.loads(content[0]["text"])
-
-        assert "is_partial" in payload
-
-    @patch("mcp_handler.aggregates_table")
-    def test_partial_failure_logged_at_warning(self, mock_table):
-        """A failed read is logged at WARNING level (not silently swallowed),
-        and the WARNING log must not contain token or token_hash values.
-
-        The docstring promises failures are logged "without any token or hash" —
-        this test enforces that promise so a future refactor that accidentally
-        adds a sensitive field trips CI immediately.  Both the `extra` dict and
-        the positional message text are inspected: a hash interpolated into an
-        f-string message would leak just as readily as one in `extra`.
-        """
-        mock_table.get_item.side_effect = Exception("Throttled")
-        mock_table.query.return_value = {"Items": []}
-
-        # A token_info carrying a recognisable secret; none of it may reach a log.
-        token_info = {"project_id": "proj-1", "token_hash": "SENTINELHASH"}
-
-        from mcp_handler import _tool_get_metrics_summary
-        with patch("mcp_handler.logger") as mock_logger:
-            _tool_get_metrics_summary({"days": 1}, token_info)
-            assert mock_logger.warning.called, "Failure must be logged at WARNING level"
-            for call in mock_logger.warning.call_args_list:
-                extra = (call.kwargs or {}).get("extra", {})
-                assert "token" not in extra and "token_hash" not in extra, (
-                    f"WARNING log must not contain token/hash fields; extra={extra}"
-                )
-                rendered = " ".join(str(a) for a in call.args) + " " + str(extra)
-                assert "SENTINELHASH" not in rendered, (
-                    f"WARNING log must not contain the token hash; got: {rendered}"
-                )
-
-    @patch("mcp_handler.aggregates_table")
-    def test_existing_fields_unchanged_when_partial(self, mock_table):
-        """Existing response fields keep their meaning when is_partial=True.
-
-        total_feedback, sentiment_breakdown, and top_categories are still
-        present so a client that already reads total_feedback does not break.
-
-        Presence is asserted on the payload, and sentiment_breakdown is checked
-        to still be fully populated: "the field exists" alone would hold for an
-        empty dict, which is a broken answer wearing the right shape.
-        """
-        def get_item_side_effect(Key, **kwargs):  # noqa: N803
-            pk = Key.get("pk", "")
-            if pk == "METRIC#daily_total":
-                raise Exception("Throttled")
-            return {"Item": {"count": 1}}
-
-        mock_table.get_item.side_effect = get_item_side_effect
-        mock_table.query.return_value = {"Items": []}
-
-        from mcp_handler import _tool_get_metrics_summary
-        content = _tool_get_metrics_summary({"days": 1}, {})
-        payload = json.loads(content[0]["text"])
-
-        assert "total_feedback" in payload
-        assert "sentiment_breakdown" in payload
-        assert "top_categories" in payload
-        assert "period_days" in payload
-        assert set(payload["sentiment_breakdown"]) == _ALL_SENTIMENTS, (
-            "sentiment_breakdown must still carry every bucket when partial; got "
-            f"{sorted(payload['sentiment_breakdown'])}"
-        )
-
-    @patch("mcp_handler.aggregates_table", None)
-    def test_aggregates_table_not_configured_includes_is_partial(self):
-        """When aggregates_table is None, the response includes is_partial=True
-        and the full five-field payload shape with zeroed values.
-
-        The docstring promises is_partial is always present in the response.
-        The early-exit path must honour the full payload shape so clients can
-        read total_feedback, period_days, sentiment_breakdown, and top_categories
-        unconditionally without a KeyError.
-        """
-        from mcp_handler import _tool_get_metrics_summary
-        content = _tool_get_metrics_summary({"days": 1}, {})
-        assert len(content) == 1
-        payload = json.loads(content[0]["text"])
-        assert "is_partial" in payload, "is_partial must be present even on the early-exit path"
-        assert payload["is_partial"] is True
-        # All four normal-path fields must be present with zeroed/empty values
-        assert "total_feedback" in payload, "total_feedback must be present on early-exit path"
-        assert payload["total_feedback"] == 0
-        assert "period_days" in payload, "period_days must be present on early-exit path"
-        assert payload["period_days"] == 1  # from args
-        assert "sentiment_breakdown" in payload, "sentiment_breakdown must be present on early-exit path"
-        assert "top_categories" in payload, "top_categories must be present on early-exit path"
-
-    @patch("mcp_handler.aggregates_table", None)
-    def test_early_exit_period_days_is_clamped(self):
-        """period_days is clamped identically on the early-exit and normal paths.
-
-        Before this fix the early exit echoed the raw `args['days']`, so the same
-        request reported period_days=999 when aggregates_table happened to be
-        unconfigured and 30 otherwise — the field stopped describing the window.
-        """
-        from mcp_handler import _tool_get_metrics_summary
-        payload = json.loads(_tool_get_metrics_summary({"days": 50}, {})[0]["text"])
-        assert payload["period_days"] == 30, (
-            f"days=50 must clamp to 30 on the early-exit path, got {payload['period_days']}"
-        )
-
-    @patch("mcp_handler.aggregates_table")
-    def test_normal_path_period_days_is_clamped(self, mock_table):
-        """The normal path clamps the same way, so the two agree."""
-        mock_table.get_item.return_value = {}
-        mock_table.query.return_value = {"Items": []}
-
-        from mcp_handler import _tool_get_metrics_summary
-        payload = json.loads(_tool_get_metrics_summary({"days": 50}, {})[0]["text"])
-        assert payload["period_days"] == 30
-
-    @patch("mcp_handler.aggregates_table", None)
-    def test_early_exit_non_numeric_days_falls_back_to_default(self):
-        """A non-numeric `days` is coerced, not echoed back verbatim.
-
-        `period_days` is the only response field taken from caller input, so a
-        client doing arithmetic on it must not receive a str.
-        """
-        from mcp_handler import _tool_get_metrics_summary
-        payload = json.loads(_tool_get_metrics_summary({"days": "abc"}, {})[0]["text"])
-        assert payload["period_days"] == 7, (
-            f"A non-numeric days must fall back to 7, got {payload['period_days']!r}"
-        )
-
-    @patch("mcp_handler.aggregates_table")
-    def test_normal_path_non_numeric_days_falls_back_to_default(self, mock_table):
-        """The normal path also coerces rather than raising on a non-numeric days.
-
-        Previously `min(args.get('days', 7), 30)` raised TypeError, which the
-        _handle_tools_call catch-all turned into an opaque isError result.
-        """
-        mock_table.get_item.return_value = {}
-        mock_table.query.return_value = {"Items": []}
-
-        from mcp_handler import _tool_get_metrics_summary
-        payload = json.loads(_tool_get_metrics_summary({"days": "abc"}, {})[0]["text"])
-        assert payload["period_days"] == 7
-
-    def test_resolve_days_helper(self):
-        """Unit-test the coercion/clamping helper across its cases."""
-        from mcp_handler import _resolve_days
-
-        assert _resolve_days(None) == 7        # missing → default
-        assert _resolve_days(1) == 1
-        assert _resolve_days(30) == 30
-        assert _resolve_days(999) == 30        # clamped down
-        assert _resolve_days(0) == 1           # clamped up
-        assert _resolve_days(-5) == 1
-        assert _resolve_days("14") == 14       # numeric string coerced
-        assert _resolve_days("abc") == 7       # non-numeric → default
-        assert _resolve_days([1]) == 7         # wrong type → default
-
-    def test_resolve_days_falls_back_on_infinity(self):
-        """An infinite `days` falls back rather than raising.
-
-        `int(float('inf'))` raises **OverflowError**, which is neither TypeError
-        nor ValueError, so it was not caught: the documented "falls back rather
-        than raising" contract did not hold for infinities.  This is reachable
-        from a plain JSON body — `json` parses both `1e400` and the non-standard
-        `Infinity` literal to `inf` — so the value arrives without the caller
-        doing anything exotic.  `float('nan')` raises ValueError and was already
-        covered; asserted here so the two stay distinguished.
-        """
-        from mcp_handler import _resolve_days
-
-        assert _resolve_days(float("inf")) == 7, "+inf must fall back, not raise"
-        assert _resolve_days(float("-inf")) == 7, "-inf must fall back, not raise"
-        assert _resolve_days(float("nan")) == 7  # ValueError path, already covered
-
-    def test_resolve_days_rejects_values_the_schema_forbids(self):
-        """`days` values that are not integers per the tool's own inputSchema.
-
-        `inputSchema` declares "integer", and JSON Schema counts neither a bool
-        nor a fractional number as one — but Python does: `int(True) == 1` and
-        `int(2.9) == 2`.  Coercing those answers a window the caller never asked
-        for, so they fall back to the default instead.  An integral float (2.0)
-        *is* an integer by the schema and is still accepted.
-        """
-        from mcp_handler import _resolve_days
-
-        assert _resolve_days(True) == 7, "days=true is not an integer window of 1"
-        assert _resolve_days(False) == 7
-        assert _resolve_days(2.9) == 7, "a fractional days must not truncate to 2"
-        assert _resolve_days(0.5) == 7
-        assert _resolve_days(2.0) == 2, "an integral float is an integer per JSON Schema"
-        # The tolerated case, kept deliberately: "14" can only mean 14.
-        assert _resolve_days("14") == 14
-
-    @patch("mcp_handler.aggregates_table")
-    def test_json_parsed_infinity_reports_the_default_window(self, mock_table):
-        """End-to-end from a real JSON body: `{"days": 1e400}` reports 7.
-
-        Built by parsing JSON rather than passing `float('inf')` directly, so the
-        test pins the path an actual client takes: `json` widens 1e400 to `inf`,
-        `int(inf)` raises OverflowError, and without that in the except tuple the
-        fault reached the _handle_tools_call catch-all and came back as an opaque
-        isError result instead of the documented 7-day default.
-        """
-        mock_table.get_item.return_value = {}
-        mock_table.query.return_value = {"Items": []}
-
-        args = json.loads('{"days": 1e400}')
-        assert args["days"] == float("inf"), "json must widen 1e400 to inf for this test to bite"
-
-        from mcp_handler import _tool_get_metrics_summary
-        payload = json.loads(_tool_get_metrics_summary(args, {})[0]["text"])
-        assert payload["period_days"] == 7, (
-            f"days=1e400 must report the default window, got {payload['period_days']!r}"
-        )
-
-    @patch("mcp_handler.aggregates_table", None)
-    def test_bool_days_reported_as_the_default_window(self):
-        """The rejection is visible end-to-end: period_days echoes 7, not 1."""
-        from mcp_handler import _tool_get_metrics_summary
-        payload = json.loads(_tool_get_metrics_summary({"days": True}, {})[0]["text"])
-        assert payload["period_days"] == 7, (
-            f"days=true must report the default window, got {payload['period_days']!r}"
-        )
+#
+# `TestPartialResultReporting` (17 tests) tested `get_metrics_summary`'s
+# hand-rolled aggregation: a per-read try/except that reported `is_partial` when
+# a DynamoDB read failed, plus `_resolve_days`, which coerced and clamped the
+# window before that aggregation ran.
+#
+# Both are gone because the behaviour they tested is gone, not because the tests
+# became inconvenient:
+#
+#   • The tool no longer reads DynamoDB, so there are no per-read failures to
+#     degrade. `GET /metrics/summary` either answers or fails, and a failure is
+#     now reported as a JSON-RPC error rather than as a plausible-looking answer
+#     with a flag on it. `test_a_route_server_error_is_a_protocol_error` in
+#     test_mcp_delegation.py is the replacement invariant, and it is the stronger
+#     one: a silently under-reported total was the failure mode worth removing.
+#
+#   • `_resolve_days` is deleted. The window is bounded by the route's own
+#     `validate_days`, which — unlike the hand-rolled clamp — is a validator the
+#     whole API shares and is documented never to raise. Its non-finite and
+#     non-numeric cases are pinned in lambda/shared/test/test_api.py
+#     (`test_returns_default_for_a_non_finite_float_instead_of_raising`), so that
+#     coverage moved rather than disappeared.
+#
+#     ⚠️ ONE case genuinely changes behaviour, recorded here rather than glossed:
+#     `{"days": true}`. `_resolve_days` refused a bool and reported the 7-day
+#     default, on the reasoning that JSON Schema does not count `true` as an
+#     integer. `validate_int` COERCES it (`test_a_bool_is_coerced_rather_than_
+#     refused`), so the window becomes 1 day. The house-wide validator wins on
+#     purpose: a client sending `true` for a field its own inputSchema declares
+#     as an integer is already outside the contract, and having one endpoint in
+#     the API treat that input differently from the other forty is a worse
+#     property than either answer. Server 2.0.0 is where that is allowed to
+#     change.
+#
+# The route's own `is_partial` means something different — "the scan truncated"
+# — and is passed through untouched, which
+# `test_a_pass_through_tool_does_not_reshape_the_route_payload` pins.
 
 
 # ===========================================================================
@@ -1154,7 +908,7 @@ class TestSecretHashTypeSafety:
     """_authenticate must not raise when the stored secret_hash is not a str."""
 
     @pytest.mark.parametrize("bad_hash", [
-        pytest.param(Decimal("12345"), id="Decimal"),
+        pytest.param(Decimal(12345), id="Decimal"),
         pytest.param(b"binary_bytes", id="bytes"),
         pytest.param(None, id="None"),
         pytest.param(["a"], id="list"),
@@ -1182,7 +936,7 @@ class TestSecretHashTypeSafety:
         it safe to log.
         """
         from decimal import Decimal
-        mock_table.query.return_value = {"Items": [_token_row(secret_hash=Decimal("99"))]}
+        mock_table.query.return_value = {"Items": [_token_row(secret_hash=Decimal(99))]}
 
         from mcp_handler import _authenticate
         with patch("mcp_handler.logger") as mock_logger:
@@ -1653,7 +1407,7 @@ class TestUnconfiguredTableIsAServerFault:
         response = mcp_handler.lambda_handler(
             {
                 "httpMethod": "GET",
-                "path": "/v1/mcp/autoseed/proj-1",
+                "path": f"/v1/mcp/autoseed/{_TOKEN_PROJECT}",
                 "headers": {
                     "authorization": f"Bearer {_VALID_TOKEN}",
                     "x-project-id": "proj-1",
@@ -1788,7 +1542,7 @@ class TestWwwAuthenticateChallenge:
         response = mcp_handler.lambda_handler(
             {
                 "httpMethod": "GET",
-                "path": "/v1/mcp/autoseed/proj-1",
+                "path": f"/v1/mcp/autoseed/{_TOKEN_PROJECT}",
                 "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
             },
             lambda_context,
@@ -1985,72 +1739,81 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         "transact_get_items", "transact_write_items",
     )
 
-    def test_every_tool_stays_within_the_granted_actions(self, lambda_context):
+    def test_every_tool_touches_the_table_only_to_authenticate(self, lambda_context):
         """Drive each registered tool end to end against the strict mock.
 
+        The invariant STRENGTHENED when the tools started delegating, and this
+        is where that shows: the expected projects-table Query count is now
+        exactly ONE for every tool — the credential lookup — where get_project
+        and list_personas used to pay a second for their own read. Nothing this
+        function does reaches a PROJECT#... row any more, which is precisely
+        what lets the CDK grant carry a `dynamodb:LeadingKeys` condition
+        naming only the token partition. A tool that went back to reading
+        directly would still work in production today, and fail here.
+
         The verdict is read off the MOCK, not the response body: a violation
-        raised inside a tool is caught by _handle_tools_call's broad except
-        and could be rephrased into any message, so a body-text assertion
-        would go vacuous the day that message changes.  A positive control
-        asserts the loop actually reached the table at all.
+        raised inside a tool is caught by _handle_tools_call's except clauses
+        and could be rephrased into any message, so a body-text assertion would
+        go vacuous the day that message changes.
         """
         import mcp_handler
         strict = self._strict_table()
-        args_for = {"get_feedback_detail": {"feedback_id": "fb-1"}}
-        # PER-TOOL positive control: every call pays one auth Query, and the
-        # two projects-table tools pay exactly one more.  An aggregate count
-        # could not tell "every tool reached the table" from "auth queried N
-        # times"; an exact per-tool delta can, so a tool that starts
-        # validating its way past DynamoDB fails here by name.
-        expected_query_delta = {
-            "get_project": 2,
-            "list_personas": 2,
+        args_for = {
+            "get_feedback_detail": {"feedback_id": "fb-1"},
+            "get_metrics_breakdown": {"dimension": "categories"},
         }
         with patch("mcp_handler.projects_table", strict), \
-             patch("mcp_handler.feedback_table"), \
-             patch("mcp_handler.aggregates_table"), \
-             patch("mcp_handler.query_feedback_by_date", return_value=[]):
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=_stub_domain_client()), \
+             patch.dict(os.environ, {"METRICS_FUNCTION": "m", "PROJECTS_FUNCTION": "p"}):
             for tool_name in mcp_handler.TOOL_HANDLERS:
                 before = strict.query.call_count
                 self._call_tool(tool_name, args_for.get(tool_name, {}), lambda_context)
                 delta = strict.query.call_count - before
-                assert delta == expected_query_delta.get(tool_name, 1), (
-                    f"{tool_name}: expected "
-                    f"{expected_query_delta.get(tool_name, 1)} projects-table "
-                    f"queries (auth[, tool read]), saw {delta} — the strict-mock "
-                    f"assertions below no longer cover what this tool does"
+                assert delta == 1, (
+                    f"{tool_name}: expected exactly 1 projects-table query (the "
+                    f"credential lookup), saw {delta}. A tool reading the table "
+                    f"itself is what the LeadingKeys condition in api-stack.ts now "
+                    f"forbids at deploy time — it would AccessDenied in production."
                 )
         for method in self.FORBIDDEN:
             getattr(strict, method).assert_not_called()
 
-    def test_autoseed_stays_within_the_granted_actions(self, lambda_context):
-        """Drive the REAL autoseed path — the most plausible write site.
+    def test_autoseed_reads_no_project_rows_in_this_process(self, lambda_context):
+        """Autoseed was the last in-process reader of project artifacts.
 
-        Nothing is patched away: the route runs projects.autoseed_project,
-        which runs projects.get_project, against a strict data table patched
-        at projects.projects_table (auth uses its own strict table on
-        mcp_handler.projects_table).  The verdict is read off both mocks.
+        It now delegates to `GET /projects/{id}/autoseed`, so `projects.py`'s own
+        table handle must never be touched from this Lambda at all — not even a
+        Query. That is a stronger claim than "it stayed within Query+UpdateItem",
+        and it is the one the narrowed IAM grant depends on: with the
+        `LeadingKeys` condition in place, an in-process project read would be
+        refused by IAM rather than merely being untidy.
         """
         import mcp_handler
         import projects as projects_module
         strict_auth = self._strict_table()
         strict_data = self._strict_table()
-        strict_data.query.return_value = {
-            "Items": [{"pk": "PROJECT#proj-1", "sk": "META", "name": "P"}]
-        }
+        # Make even a READ fail: this table must not be consulted at all.
+        strict_data.query.side_effect = AssertionError(
+            "autoseed read the projects table in-process; it must delegate to "
+            "GET /projects/{id}/autoseed instead"
+        )
         with patch("mcp_handler.projects_table", strict_auth), \
-             patch.object(projects_module, "projects_table", strict_data):
+             patch.object(projects_module, "projects_table", strict_data), \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=_stub_domain_client()), \
+             patch.dict(os.environ, {"PROJECTS_FUNCTION": "voc-projects-api"}):
             response = mcp_handler.lambda_handler(
                 {
                     "httpMethod": "GET",
-                    "path": "/v1/mcp/autoseed/proj-1",
+                    "path": f"/v1/mcp/autoseed/{_TOKEN_PROJECT}",
                     "headers": {"authorization": f"Bearer {_VALID_TOKEN}"},
                 },
                 lambda_context,
             )
         assert response["statusCode"] == 200, response["body"]
-        # Positive control first: the real get_project read the data table.
-        strict_data.query.assert_called_once()
+        strict_data.query.assert_not_called()
+        # Positive control: the credential lookup still happened, so this test
+        # is exercising the route rather than being refused before it.
+        strict_auth.query.assert_called_once()
         for method in self.FORBIDDEN:
             getattr(strict_data, method).assert_not_called()
             getattr(strict_auth, method).assert_not_called()
@@ -2240,7 +2003,7 @@ class TestReadReachEnforcement:
 
     def _call(self, tool, token_info, arguments=None):
         import mcp_handler
-        handler = MagicMock(return_value=[{"type": "text", "text": "ok"}])
+        handler = MagicMock(return_value=_ok_result())
         original = mcp_handler.TOOL_HANDLERS.copy()
         try:
             mcp_handler.TOOL_HANDLERS[tool] = handler
@@ -2426,9 +2189,25 @@ class TestAutoseedAuthorization:
     """
 
     def _get(self, project_id, row, lambda_context):
+        """Drive the autoseed route, stubbing the DELEGATED call.
+
+        `seed` is now the Lambda invoke rather than an in-process
+        `autoseed_project`, which makes these assertions stronger than they were:
+        `seed.assert_not_called()` used to mean "the helper did not run", and now
+        means "nothing was asked of the projects function at all" — the refusal
+        happens before this function spends anyone else's permissions.
+        """
         import mcp_handler
+        seed = MagicMock(return_value={
+            "Payload": io.BytesIO(json.dumps({
+                "statusCode": 200, "body": json.dumps({"ok": True}),
+            }).encode()),
+        })
+        client = MagicMock()
+        client.invoke = seed
         with patch("mcp_handler.projects_table") as mock_table, \
-             patch("mcp_handler.autoseed_project", return_value={"ok": True}) as seed:
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=client), \
+             patch.dict(os.environ, {"PROJECTS_FUNCTION": "voc-projects-api"}):
             mock_table.query.return_value = {"Items": [row]}
             mock_table.update_item.return_value = {}
             response = mcp_handler.lambda_handler(
@@ -2442,7 +2221,7 @@ class TestAutoseedAuthorization:
         return response, seed
 
     def test_workspace_token_may_autoseed_any_project(self, lambda_context):
-        response, seed = self._get("another-project", _token_row(), lambda_context)
+        response, seed = self._get("proj_20260603094346", _token_row(), lambda_context)
         assert response["statusCode"] == 200, response["body"]
         seed.assert_called_once()
 
@@ -2454,7 +2233,7 @@ class TestAutoseedAuthorization:
 
     def test_project_set_token_refused_outside_its_set(self, lambda_context):
         row = _token_row(read_reach=REACH_PROJECT_SET)
-        response, seed = self._get("another-project", row, lambda_context)
+        response, seed = self._get("proj_20260603094346", row, lambda_context)
         assert response["statusCode"] == 403, response["body"]
         seed.assert_not_called()
 
@@ -2471,3 +2250,152 @@ class TestAutoseedAuthorization:
         response, seed = self._get(_TOKEN_PROJECT, row, lambda_context)
         assert response["statusCode"] == 403, response["body"]
         seed.assert_not_called()
+
+
+# ===========================================================================
+# 12. Claim synthesis — the MCP Lambda as an authorization authority
+# ===========================================================================
+
+class TestClaimSynthesis:
+    """No field of a JSON-RPC request may influence the synthesized identity.
+
+    Delegating makes this function an authorization authority: it tells the
+    domain Lambda who is calling, and that Lambda believes it, because in every
+    other case the claims came from API Gateway's Cognito authorizer. So the
+    identity must derive ONLY from the stored credential.
+
+    The guarantee is STRUCTURAL rather than filtered — `synthetic_claims` takes
+    the token record and nothing else, so the request is not in scope to leak
+    from — and these tests exist because that structure is easy to undo by
+    "helpfully" passing the arguments in later.
+
+    Revert stories:
+      • making synthetic_claims accept the request (or merging `arguments` into
+        the authorizer context) fails test_arguments_cannot_forge_the_subject
+        and test_arguments_cannot_forge_group_membership;
+      • dropping the `mcp:` prefix fails test_the_subject_is_namespaced, which is
+        what stops a token id from colliding with a Cognito sub;
+      • defaulting `cognito:groups` to the minter's groups fails
+        test_no_credential_carries_admin_group, the one that keeps a bearer
+        token off every require_admin route.
+    """
+
+    HOSTILE_ARGUMENTS: ClassVar[dict] = {
+        "sub": "00000000-0000-0000-0000-000000000000",
+        "cognito:groups": "admins",
+        "email": "admin@example.com",
+        "requestContext": {"authorizer": {"claims": {"sub": "impostor",
+                                                     "cognito:groups": "admins"}}},
+        "authorizer": {"claims": {"sub": "impostor"}},
+        "claims": {"sub": "impostor"},
+        "project_id": _TOKEN_PROJECT,
+    }
+
+    def _claims_from_a_delegated_call(self, arguments, row=None, tool="get_project"):
+        """Run a tool and return the claims the domain function was handed."""
+        import mcp_handler
+        client = _stub_domain_client({"project": {"name": "P"}, "personas": [],
+                                      "documents": []})
+        with patch("mcp_handler.projects_table") as table, \
+             patch("shared.mcp_delegate.get_delegate_lambda_client", return_value=client), \
+             patch.dict(os.environ, {"METRICS_FUNCTION": "m", "PROJECTS_FUNCTION": "p"}):
+            table.query.return_value = {"Items": [row or _token_row()]}
+            table.update_item.return_value = {}
+            mcp_handler._handle_tools_call(
+                1, {"name": tool, "arguments": arguments}, row or _token_row(),
+            )
+        event = json.loads(client.invoke.call_args.kwargs["Payload"])
+        return event["requestContext"]["authorizer"]["claims"], event
+
+    def test_arguments_cannot_forge_the_subject(self):
+        claims, _event = self._claims_from_a_delegated_call(dict(self.HOSTILE_ARGUMENTS))
+
+        assert claims["sub"] == f"mcp:{_MINTED.token_id}"
+        assert "impostor" not in json.dumps(claims)
+
+    def test_arguments_cannot_forge_group_membership(self):
+        claims, _event = self._claims_from_a_delegated_call(dict(self.HOSTILE_ARGUMENTS))
+
+        assert claims["cognito:groups"] == ""
+
+    def test_arguments_cannot_smuggle_a_whole_request_context(self):
+        """A nested `requestContext` in the arguments must not be merged.
+
+        The synthesized event is BUILT, never merged into, so an argument that
+        happens to be shaped like an authorizer context has nowhere to land.
+        """
+        _claims, event = self._claims_from_a_delegated_call(dict(self.HOSTILE_ARGUMENTS))
+
+        assert set(event["requestContext"]) == {"authorizer", "stage"}
+        assert set(event["requestContext"]["authorizer"]) == {"claims"}
+
+    def test_the_subject_is_namespaced(self):
+        """A service credential can never collide with a Cognito subject.
+
+        Cognito subs are UUIDs; the `mcp:` prefix makes the two sets disjoint by
+        construction, which matters wherever a row is keyed by subject — the same
+        discipline the ballot keys use with `user:` / `anon:`.
+        """
+        from shared.mcp_delegate import SYNTHETIC_SUBJECT_PREFIX, synthetic_claims
+
+        claims = synthetic_claims(_token_row())
+
+        assert claims["sub"].startswith(SYNTHETIC_SUBJECT_PREFIX)
+        assert claims["sub"] == f"mcp:{_MINTED.token_id}"
+
+    def test_no_credential_carries_admin_group(self):
+        """Whatever the row says, the delegated call is not an admin.
+
+        No token record has a groups field to forward — the mint route records
+        `created_by` for provenance only — so an admin-gated route stays refused
+        even if a later phase maps a tool onto one by mistake.
+        """
+        from shared.api import get_caller_groups, require_admin
+        from shared.mcp_delegate import DomainCall, build_proxy_event, synthetic_claims
+
+        row = _token_row(created_by="an-admins-cognito-sub", acting_groups=["admins"])
+        event = build_proxy_event(
+            DomainCall(function_name="f", method="GET", path="/x"),
+            synthetic_claims(row),
+        )
+
+        assert get_caller_groups(event) == []
+        with pytest.raises(Exception, match="Admin"):
+            require_admin(event)
+
+    def test_the_claim_set_is_exactly_what_is_declared(self):
+        """An unconsidered claim cannot arrive unremarked.
+
+        Asserted as an exact set rather than a subset: a claim added here is a
+        statement about identity that the domain functions will act on.
+        """
+        from shared.mcp_delegate import SYNTHETIC_CLAIM_KEYS, synthetic_claims
+
+        assert set(synthetic_claims(_token_row())) == SYNTHETIC_CLAIM_KEYS
+
+    def test_a_row_without_a_token_id_is_refused_rather_than_anonymous(self):
+        """An unattributable credential must not produce a call.
+
+        Falling back to a placeholder subject would attribute an agent's actions
+        to nobody — and in a later phase, its WRITES to nobody.
+        """
+        from shared.mcp_delegate import DelegationUnavailable, synthetic_claims
+
+        row = _token_row()
+        del row["token_id"]
+
+        with pytest.raises(DelegationUnavailable):
+            synthetic_claims(row)
+
+    def test_the_synthesized_identity_is_what_the_route_reads(self):
+        """End to end through the helper the domain handlers actually use.
+
+        Asserting the dict shape alone would pass even if the nesting were wrong;
+        `get_caller_subject` is the function every project route calls, and it
+        raises when the claim is absent.
+        """
+        from shared.api import get_caller_subject
+
+        _claims, event = self._claims_from_a_delegated_call({"project_id": _TOKEN_PROJECT})
+
+        assert get_caller_subject(event) == f"mcp:{_MINTED.token_id}"

@@ -1313,20 +1313,50 @@ export class VocApiStack extends VocStack {
     // MCP SERVER API (public — auth via Bearer token authorizer)
     // ============================================
     const mcpRole = this.createLambdaRole('McpLambdaRole');
-    feedbackTable.grantReadData(mcpRole);
-    aggregatesTable.grantReadData(mcpRole);
-    // TWO ACTIONS on the projects table, not `grantReadWriteData`. The handler
-    // Queries token rows (auth) and project/persona rows (the get_project and
-    // list_personas tools), and UpdateItems exactly one attribute (last_used_at).
-    // The convenience grant would additionally hand over PutItem, DeleteItem,
-    // Scan and both batch APIs across the WHOLE table — every persona, PRD,
-    // PR/FAQ and prototype — on the ONE function in this stack that is reachable
-    // with a bearer token instead of a Cognito session. The absent actions are
-    // what enforce read-only-ness rather than remember it; same reasoning as the
-    // ballots role above, and `mcp Lambda IAM grants` in api-stack.test.ts pins
-    // the exact set.
-    projectsTable.grant(mcpRole, 'dynamodb:Query', 'dynamodb:UpdateItem');
-    // EncryptDecrypt, not just Decrypt: the narrow grant above no longer brings
+    // NO feedback-table grant and NO aggregates-table grant. The MCP function is
+    // a protocol adapter now: every tool's data comes from the domain function
+    // that already owns the route, so this role holds the permission to CALL
+    // those functions instead of the permission to read what they read. That is
+    // the whole point of the delegation change — a single function accumulating
+    // the union of every domain's permissions is what the 20 KB role-policy
+    // ceiling eventually refuses, silently and only at deploy time.
+    //
+    // Written out rather than `grantInvoke`, which additionally grants
+    // `<fn>.Arn:*` — every published version and alias. The adapter invokes by
+    // unqualified function name, which `$LATEST` serves and the unqualified ARN
+    // authorizes, so the wildcard buys nothing and costs a cdk-nag IAM5
+    // suppression. Two exact ARNs and no suppression is the smaller statement
+    // and the smaller grant.
+    mcpRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [metricsLambda.functionArn, projectsLambda.functionArn],
+    }));
+
+    // The token keyspace, and nothing else on the table.
+    //
+    // Two actions (Query for the credential lookup, UpdateItem for last_used_at)
+    // AND a partition condition, which is new: authentication is the only reason
+    // this function touches DynamoDB at all now, so the grant can finally say so.
+    // `dynamodb:LeadingKeys` restricts every request to items whose partition key
+    // is the token partition, so even the two granted actions cannot reach a
+    // PROJECT#... row — the function that is reachable with a bearer token rather
+    // than a Cognito session can no longer read a persona, a PRD, a PR/FAQ or a
+    // prototype through its own credentials, only through a domain function that
+    // applies that route's own rules.
+    //
+    // `ForAllValues:` is required rather than stylistic: LeadingKeys is a
+    // multi-valued condition key, and the plain StringEquals form would not
+    // constrain a request that presents several keys.
+    //
+    // The literal must match shared/mcp_tokens.py's MCP_TOKEN_PK — pinned by
+    // 'mcp Lambda IAM grants' in api-stack.test.ts, which reads the Python
+    // constant rather than repeating the string.
+    mcpRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
+      resources: [projectsTable.tableArn],
+      conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['MCPTOKEN'] } },
+    }));
+    // EncryptDecrypt, not just Decrypt: the narrow grant above does not bring
     // the table's KMS permissions along the way grantReadWriteData did, and the
     // last_used_at UpdateItem is a write to a KMS-encrypted table. Same pairing
     // as the ballots role.
@@ -1342,9 +1372,19 @@ export class VocApiStack extends VocStack {
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
       environment: {
+        // The token table only. FEEDBACK_TABLE and AGGREGATES_TABLE are gone
+        // with the in-process tools that read them: the handler resolves every
+        // tool through the two function names below instead. Leaving the table
+        // names behind would advertise an access this role no longer has.
         PROJECTS_TABLE: projectsTable.tableName,
-        FEEDBACK_TABLE: feedbackTable.tableName,
-        AGGREGATES_TABLE: aggregatesTable.tableName,
+        // The delegation targets. Handed down from the infrastructure exactly as
+        // PERSONA_GENERATOR_FUNCTION and MANUAL_IMPORT_PROCESSOR_FUNCTION are,
+        // rather than rebuilt in Python from account/region — under a
+        // deploymentPrefix a reconstructed name names a function that does not
+        // exist, and the failure arrives as a tool that mysteriously returns
+        // nothing. mcp_handler.py reads these two keys via _DOMAIN_FUNCTION_ENV.
+        METRICS_FUNCTION: metricsLambda.functionName,
+        PROJECTS_FUNCTION: projectsLambda.functionName,
         // NOT used for CORS here (MCP clients are not browsers, the handler
         // answers Access-Control-Allow-Origin: *). It is the allowlist for the
         // MCP spec's DNS-rebinding guard: a request that CARRIES an Origin
