@@ -145,7 +145,15 @@ export function CreateTokenForm({
                 />
                 <span>
                   <span className="font-mono text-xs">{scope}</span>
-                  <span className="text-gray-500 block text-xs">{t(`mcp.scopeDesc.${scope}`)}</span>
+                  {/* nsSeparator: false is REQUIRED, not decorative. Scope names
+                      contain a colon, which is i18next's default namespace
+                      separator, so `mcp.scopeDesc.feedback:read` is otherwise
+                      parsed as namespace `mcp.scopeDesc.feedback` + key `read`,
+                      resolves to nothing, and renders the literal "read".
+                      Found in a browser — a mocked-i18n unit test cannot see it. */}
+                  <span className="text-gray-500 block text-xs">
+                    {t(`mcp.scopeDesc.${scope}`, { nsSeparator: false })}
+                  </span>
                 </span>
               </label>
             ))}

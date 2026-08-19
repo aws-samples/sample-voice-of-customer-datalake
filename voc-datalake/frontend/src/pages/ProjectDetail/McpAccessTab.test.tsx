@@ -377,6 +377,25 @@ describe('McpAccessTab', () => {
     })
   })
 
+  it('renders each scope description, not an i18n fallback', async () => {
+    const user = userEvent.setup()
+    renderTab()
+    await user.click(screen.getByRole('button', { name: /Generate Token/i }))
+
+    // Regression: scope names contain a COLON, which is i18next's default
+    // namespace separator, so `t('mcp.scopeDesc.feedback:read')` was parsed as
+    // namespace `mcp.scopeDesc.feedback` + key `read`, resolved to nothing, and
+    // rendered the literal "read" under every checkbox. Found in a browser
+    // against the deployed site; invisible here until something asserted the
+    // description text, because the key still "resolved" to a plausible word.
+    expect(screen.getByText('Search and read customer feedback')).toBeInTheDocument()
+    expect(screen.getByText('Read dashboards and metric breakdowns')).toBeInTheDocument()
+    expect(screen.getByText('Read projects, personas and documents')).toBeInTheDocument()
+
+    // And the fallback string must not appear on its own anywhere.
+    expect(screen.queryAllByText('read')).toHaveLength(0)
+  })
+
   it('starts with no scope checked and cannot submit until one is', async () => {
     const user = userEvent.setup()
     renderTab()
