@@ -25,6 +25,7 @@ write, so a change to one of those expressions has to be reflected here.
 """
 import json
 import re
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -42,21 +43,76 @@ FUTURE = 4_000_000_000
 PAST = 1_000_000_000
 
 
+def _split_top_level(text, separator=','):
+    """Split on `separator` outside parentheses.
+
+    `if_not_exists(#frozen_at, :now)` carries a comma of its own, so a naive split
+    would cut it in half and report an assignment the route never made.
+    """
+    parts, depth, current = [], 0, ''
+    for character in text:
+        if character == '(':
+            depth += 1
+        elif character == ')':
+            depth -= 1
+        if character == separator and depth == 0:
+            parts.append(current)
+            current = ''
+            continue
+        current += character
+    parts.append(current)
+    return [part.strip() for part in parts if part.strip()]
+
+
 class FakeAggregatesTable:
     """An in-memory stand-in for the aggregates table.
 
-    Supports `get_item`, `put_item`, and the conditional `SET` updates these
-    routes issue. The condition evaluator understands only the four forms the
-    handler uses (`attribute_exists(sk)`, `#name = :value`, `#name > :value`,
-    `attr < attr`) and raises on anything else, so a new conjunct cannot pass
-    unnoticed by being silently treated as true.
+    Supports `get_item`, `put_item`, the conditional `SET`/`ADD` updates these
+    routes issue, and the `transact_write_items` the ballot write issues. The
+    condition evaluator understands only the four forms the handler uses
+    (`attribute_exists(sk)`, `#name = :value`, `#name > :value`, `attr < attr`) and
+    raises on anything else, so a new conjunct cannot pass unnoticed by being
+    silently treated as true.
+
+    The TRANSACTION is all-or-nothing here as it is in DynamoDB — every condition is
+    evaluated before any item is applied — because that is the property the ballot
+    write depends on: the ballot and its row's freeze mark land together or neither
+    does, and a fake that applied items as it walked them would let a test about that
+    pass against code that wrote one without the other.
     """
 
-    def __init__(self, items=None, close_after_reads=None):
+    def __init__(self, items=None, close_after_reads=None, rows_exist=True):
         self.items = {(i['pk'], i['sk']): dict(i) for i in (items or [])}
+        if rows_exist:
+            # THE ROW RECORD OF EVERY SEEDED SESSION, because that is the only state
+            # the product can reach: a session is created only for a row that exists
+            # (`_row_exists` gates it), and a ballot now asserts the row still does —
+            # it stamps that record's freeze mark and moves the fence a row delete
+            # reads. A fixture with a session and no row is a row deleted after the
+            # vote opened, which is what `rows_exist=False` is for.
+            for (pk, _), item in list(self.items.items()):
+                if pk != SESSION_PK:
+                    continue
+                row_id = item.get('row_id')
+                if not isinstance(row_id, str) or not row_id:
+                    continue
+                key = (PRIORITIZATION_PK, f'ROW#{row_id}')
+                self.items.setdefault(key, {
+                    'pk': key[0], 'sk': key[1], 'row_id': row_id,
+                    'project_id': 'proj', 'document_ids': [f'{row_id}-prd'],
+                    'is_default': True, 'created_at': '2026-08-17T10:00:00+00:00',
+                })
         self.get_item_calls = []
         self.put_item_calls = []
         self.update_item_calls = []
+        self.transact_calls = []
+        # `table.name` and `table.meta.client` are what a transaction needs: it is
+        # issued on the resource's underlying CLIENT, which takes the table name per
+        # item rather than being bound to one table.
+        self.name = 'test-aggregates'
+        self.meta = SimpleNamespace(client=SimpleNamespace(
+            transact_write_items=self._transact_write_items,
+        ))
         # Models the RACE: the facilitator closes the vote after the handler has
         # read the session and before it writes. `None` disables it.
         self.close_after_reads = close_after_reads
@@ -103,17 +159,89 @@ class FakeAggregatesTable:
                 'UpdateItem',
             )
 
+        self._apply(key, kwargs)
+        item = self.items[key]
+        return {'Attributes': dict(item)} if kwargs.get('ReturnValues') == 'ALL_NEW' else {}
+
+    def _apply(self, key, kwargs):
+        """The `SET` / `ADD` clauses these routes write, condition already checked."""
+        names = kwargs.get('ExpressionAttributeNames', {})
+        values = kwargs.get('ExpressionAttributeValues', {})
+        item = self.items.get(key)
         if item is None:
             item = {'pk': key[0], 'sk': key[1]}
             self.items[key] = item
 
         expression = kwargs['UpdateExpression'].strip()
-        assert expression.upper().startswith('SET'), expression
-        for assignment in expression[len('SET'):].split(','):
-            target, _, source = (part.strip() for part in assignment.partition('='))
+        # One expression may carry both clauses: the row half of the ballot
+        # transaction is `SET #frozen_at = if_not_exists(...) ADD #ballot_writes :one`.
+        set_clause, add_clause = expression, ''
+        if ' ADD ' in expression:
+            set_clause, _, add_clause = expression.partition(' ADD ')
+        elif expression.upper().startswith('ADD'):
+            set_clause, add_clause = '', expression[len('ADD'):]
+        if set_clause:
+            assert set_clause.strip().upper().startswith('SET'), expression
+            for assignment in _split_top_level(set_clause.strip()[len('SET'):]):
+                target, _, source = (part.strip() for part in assignment.partition('='))
+                attribute = names.get(target, target)
+                if source.startswith('if_not_exists('):
+                    existing, fallback = _split_top_level(
+                        source[len('if_not_exists('):-1]
+                    )
+                    # `if_not_exists` is what makes the freeze mark record the FIRST
+                    # ballot rather than the latest, so it is honoured rather than
+                    # treated as a plain assignment: a fake that overwrote would let
+                    # an assignment pass as a freeze instant.
+                    if names.get(existing.strip(), existing.strip()) in item:
+                        continue
+                    item[attribute] = values[fallback.strip()]
+                    continue
+                item[attribute] = self._value(source, item, names, values)
+        if add_clause:
+            target, source = add_clause.split()
             attribute = names.get(target, target)
-            item[attribute] = self._value(source, item, names, values)
-        return {'Attributes': dict(item)} if kwargs.get('ReturnValues') == 'ALL_NEW' else {}
+            item[attribute] = (item.get(attribute) or 0) + values[source]
+
+    def _transact_write_items(self, TransactItems):
+        """All-or-nothing, which is what the ballot write depends on.
+
+        The capitalised parameter is boto3's own spelling of it, kept so the fake
+        accepts exactly the call the route makes.
+
+        `CancellationReasons` is ONE ENTRY PER ITEM, POSITIONALLY, with `'None'` for
+        the items that did not fail — DynamoDB's own shape. The route reads the reason
+        at the ROW's index to tell a vanished row from a write conflict, so a
+        single-element list would let it pass here while reading the wrong position in
+        production.
+        """
+        self.transact_calls.append(TransactItems)
+        reasons = []
+        for entry in TransactItems:
+            (operation, request), = entry.items()
+            assert operation == 'Update', operation
+            assert request['TableName'] == self.name, request['TableName']
+            key = (request['Key']['pk'], request['Key']['sk'])
+            holds = self._holds(
+                request['ConditionExpression'], self.items.get(key),
+                request.get('ExpressionAttributeNames', {}),
+                request.get('ExpressionAttributeValues', {}),
+            ) if request.get('ConditionExpression') else True
+            reasons.append({'Code': 'None'} if holds else {
+                'Code': 'ConditionalCheckFailed',
+                'Message': 'The conditional request failed',
+            })
+        if any(reason['Code'] != 'None' for reason in reasons):
+            raise ClientError(
+                {'Error': {'Code': 'TransactionCanceledException',
+                           'Message': 'Transaction cancelled'},
+                 'CancellationReasons': reasons},
+                'TransactWriteItems',
+            )
+        for entry in TransactItems:
+            (_, request), = entry.items()
+            self._apply((request['Key']['pk'], request['Key']['sk']), request)
+        return {}
 
     # -- expression evaluation --------------------------------------------
     def _value(self, source, item, names, values):
@@ -157,10 +285,21 @@ class FakeAggregatesTable:
     # -- helpers -----------------------------------------------------------
     @property
     def ballot_keys(self):
-        return sorted(sk for (pk, sk) in self.items if pk == PRIORITIZATION_PK)
+        """Only the BALLOT keys. The row records the ballot write now stamps share
+        this partition, and every "nothing was written" assertion here is about
+        ballots — counting a fixture's row record among them would make each of them
+        fail while saying nothing about the ballot."""
+        return sorted(
+            sk for (pk, sk) in self.items
+            if pk == PRIORITIZATION_PK and sk.startswith('BALLOT#')
+        )
 
     def ballot(self, sort_key):
         return self.items.get((PRIORITIZATION_PK, sort_key))
+
+    def row(self, row_id='row_proj_20260817_default'):
+        """The ROW record a ballot stamps — the freeze mark and the delete's fence."""
+        return self.items.get((PRIORITIZATION_PK, f'ROW#{row_id}'))
 
     def session(self, session_id=OPEN_SESSION_ID):
         return self.items.get((SESSION_PK, f'SESSION#{session_id}'))
@@ -534,6 +673,336 @@ class TestWhatABallotIsAndIsNot:
         _submit(table, api_gateway_event, lambda_context)
 
         assert table.ballot(table.ballot_keys[0])['voting_session'] == OPEN_SESSION_ID
+
+
+class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
+    """An anonymous ballot is A BALLOT: a durable decision record about the set of
+    documents the row held when the room voted, counted in the same aggregate a
+    signed-in reviewer's is.
+
+    So it has to do the same three things to its row, and all three are properties of
+    the write rather than of some later reconciliation — which is why they are
+    asserted here, against the real route, rather than trusted to the attribute names
+    the lockstep test pins.
+    """
+
+    ROW = 'row_proj_20260817_default'
+
+    def test_a_room_ballot_freezes_the_rows_composition(
+            self, api_gateway_event, lambda_context):
+        """Without this, a row carrying nothing but REAL anonymous votes stayed
+        recomposable — and recomposing it would leave every one of those ballots
+        describing documents the room never saw. `first_ballot_at` is exactly what
+        `projects_handler`'s recompose route asserts the absence of."""
+        table = FakeAggregatesTable([open_session()])
+        assert 'first_ballot_at' not in table.row()
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert table.row()['first_ballot_at']
+
+    def test_the_freeze_mark_records_the_first_room_ballot_and_not_the_latest(
+            self, api_gateway_event, lambda_context):
+        """`if_not_exists`, so it is a freeze instant and not a last-modified stamp:
+        the composition froze when the FIRST phone submitted."""
+        table = FakeAggregatesTable([open_session()])
+
+        _submit(table, api_gateway_event, lambda_context)
+        first = table.row()['first_ballot_at']
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert table.row()['first_ballot_at'] == first
+
+    def test_a_room_ballot_moves_the_deletes_fence(
+            self, api_gateway_event, lambda_context):
+        """`ballot_writes` is what a row delete asserts has not changed since it
+        enumerated the row's ballots. An anonymous ballot that did not move it left
+        the delete free to commit and orphan that ballot — the #342 fault the fence
+        exists to close, surviving in the one path least able to notice it."""
+        table = FakeAggregatesTable([open_session()])
+
+        _submit(table, api_gateway_event, lambda_context)
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert table.row()['ballot_writes'] == 2
+
+    def test_a_correction_moves_the_fence_without_moving_the_freeze(
+            self, api_gateway_event, lambda_context):
+        """A correction is a write, so the fence has to move: a delete that listed the
+        row's ballots before the correction landed must be cancelled rather than
+        committing over it. The freeze instant does not move, because the first ballot
+        is what froze the composition and a correction is not a new decision about
+        which documents the row holds."""
+        table = FakeAggregatesTable([open_session()])
+        _, first = _submit(table, api_gateway_event, lambda_context)
+        froze_at = table.row()['first_ballot_at']
+
+        _, second = _submit(table, api_gateway_event, lambda_context,
+                            body={**AXES, 'ballot_id': first['ballot_id']})
+
+        assert second['corrected'] is True
+        assert table.row()['first_ballot_at'] == froze_at
+        assert table.row()['ballot_writes'] == 2
+
+    def test_the_ballot_and_its_rows_marks_land_in_ONE_write(
+            self, api_gateway_event, lambda_context):
+        """Two writes would leave a window in which the ballot exists and its row is
+        still recomposable — the freeze arriving a moment late, which is precisely the
+        interleaving the condition on a composition change exists to lose to."""
+        table = FakeAggregatesTable([open_session()])
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert len(table.transact_calls) == 1
+        keys = sorted(
+            request['Key']['sk'] for entry in table.transact_calls[0]
+            for request in entry.values()
+        )
+        assert keys == [
+            f'BALLOT#{self.ROW}#anon:{table.ballot_keys[0].rsplit(":", 1)[1]}',
+            f'ROW#{self.ROW}',
+        ]
+
+    def test_a_ballot_on_a_row_deleted_after_the_vote_opened_is_refused(
+            self, api_gateway_event, lambda_context):
+        """`_row_exists` is checked when the session is OPENED, which can be an hour
+        before the room votes. `attribute_exists(sk)` on the write is what makes a
+        ballot on a row deleted in between fail — instead of resurrecting the row as
+        a bare record, since `update_item` is an upsert."""
+        table = FakeAggregatesTable([open_session()], rows_exist=False)
+
+        status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 404
+        assert table.ballot_keys == [], 'no orphan was left behind'
+        assert table.row() is None, 'and the row was not resurrected'
+        assert body['success'] is False
+
+    def test_the_vanished_row_is_refused_with_a_reason_the_page_can_state(
+            self, api_gateway_event, lambda_context):
+        """THE SHAPE, not the status. The page dispatches on `reason` alone —
+        `submitBallot` parses the body with `ballotRefusalSchema` and falls back to
+        `unknown` when the field is absent, which renders as "try again in a moment".
+
+        A bare `NotFoundError` is rendered by the shared handler WITHOUT a `reason`,
+        so the one case where the row is permanently gone got the copy reserved for
+        transient failures — inverting the very distinction the cancellation-reason
+        read exists to draw. `not_found` already has its own translated sentence."""
+        table = FakeAggregatesTable([open_session()], rows_exist=False)
+
+        _, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert body['reason'] == 'not_found'
+
+    def test_a_vanished_row_is_not_retried(
+            self, api_gateway_event, lambda_context):
+        """A deleted row does not come back, so re-attempting would spend the room's
+        request time to reach the same answer. Only a cancellation NO CONDITION caused
+        is transient."""
+        table = FakeAggregatesTable([open_session()], rows_exist=False)
+
+        _submit(table, api_gateway_event, lambda_context)
+
+        assert len(table.transact_calls) == 1
+
+    def test_a_write_conflict_is_a_retryable_failure_not_a_vanished_proposal(
+            self, api_gateway_event, lambda_context):
+        """The ordinary case in this handler: a room of phones submitting at once all
+        write the SAME row record, so `TransactionConflict` is what contention looks
+        like here. Reading it as "the row is gone" would tell a phone that lost a race
+        that the proposal no longer exists — a settled refusal in place of the
+        transient failure the page already retries."""
+        table = FakeAggregatesTable([open_session()])
+
+        def conflict(**kwargs):
+            raise ClientError(
+                {'Error': {'Code': 'TransactionCanceledException',
+                           'Message': 'Transaction cancelled'},
+                 'CancellationReasons': [{'Code': 'None'},
+                                         {'Code': 'TransactionConflict'}]},
+                'TransactWriteItems',
+            )
+
+        table.meta.client.transact_write_items = conflict
+
+        with patch('ballots_handler.time.sleep'):
+            status, _ = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 500, 'a retryable failure, not a 404'
+
+    def test_a_conflict_that_clears_records_the_ballot_rather_than_failing(
+            self, api_gateway_event, lambda_context):
+        """CONTENTION IS THE DESIGNED CASE, so it is retried rather than reported.
+
+        Every ballot of a session `ADD`s to the SAME row record, so a room submitting
+        on the facilitator's count of three conflicts by construction — and botocore
+        does not auto-retry `TransactionCanceledException`, so it arrives at the
+        handler. Reporting it costs the voter their ballot AND their cap slot: the
+        slot was claimed before this write, and the page renders a terminal panel
+        with no way to resubmit, so a contended room would burn slots on conflicts
+        and then refuse ballots with `cap_reached` it should have accepted."""
+        table = FakeAggregatesTable([open_session()])
+        real = table.meta.client.transact_write_items
+        attempts = []
+
+        def conflict_once(**kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                raise ClientError(
+                    {'Error': {'Code': 'TransactionCanceledException',
+                               'Message': 'Transaction cancelled'},
+                     'CancellationReasons': [{'Code': 'None'},
+                                             {'Code': 'TransactionConflict'}]},
+                    'TransactWriteItems',
+                )
+            return real(**kwargs)
+
+        table.meta.client.transact_write_items = conflict_once
+
+        # The retry's backoff is real `time.sleep`, and a test suite paying it is
+        # the same money-for-nothing the jitter comment warns about — stubbed here
+        # and in the other retry tests, with the DELAYS still asserted so the wait
+        # itself cannot silently disappear.
+        with patch('ballots_handler.time.sleep') as slept:
+            status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 200
+        assert body['success'] is True
+        assert len(attempts) == 2, 'the conflict was re-attempted'
+        assert slept.call_count == 1, 'one conflict, one backoff'
+
+    def test_a_retried_ballot_is_written_exactly_once(
+            self, api_gateway_event, lambda_context):
+        """The retry is safe BECAUSE the ballot's half is an upsert on this device's
+        own key: re-attempting cannot leave two records or count a vote twice. The
+        fence moves once too, since the cancelled attempt wrote nothing at all."""
+        table = FakeAggregatesTable([open_session()])
+        real = table.meta.client.transact_write_items
+        attempts = []
+
+        def conflict_once(**kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                raise ClientError(
+                    {'Error': {'Code': 'TransactionCanceledException',
+                               'Message': 'Transaction cancelled'},
+                     'CancellationReasons': [{'Code': 'None'},
+                                             {'Code': 'TransactionConflict'}]},
+                    'TransactWriteItems',
+                )
+            return real(**kwargs)
+
+        table.meta.client.transact_write_items = conflict_once
+
+        with patch('ballots_handler.time.sleep'):
+            _submit(table, api_gateway_event, lambda_context)
+
+        assert len(table.ballot_keys) == 1
+        assert table.row()['ballot_writes'] == 1
+
+    def test_a_conflict_that_never_clears_is_still_a_retryable_500(
+            self, api_gateway_event, lambda_context):
+        """The retries are BOUNDED. A room holding phones cannot be made to wait
+        indefinitely, and a conflict that outlasts the attempts is reported as the
+        transient failure it is — a 500, which the page may retry, rather than a 404
+        claiming the proposal is gone."""
+        import ballots_handler
+
+        table = FakeAggregatesTable([open_session()])
+        attempts = []
+
+        def always_conflict(**kwargs):
+            attempts.append(kwargs)
+            raise ClientError(
+                {'Error': {'Code': 'TransactionCanceledException',
+                           'Message': 'Transaction cancelled'},
+                 'CancellationReasons': [{'Code': 'None'},
+                                         {'Code': 'TransactionConflict'}]},
+                'TransactWriteItems',
+            )
+
+        table.meta.client.transact_write_items = always_conflict
+
+        with patch('ballots_handler.time.sleep') as slept:
+            status, _ = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 500, 'transient, not a vanished proposal'
+        assert len(attempts) == ballots_handler.BALLOT_WRITE_ATTEMPTS
+        assert table.ballot_keys == [], 'and nothing was written'
+        # The backoff is jittered around an exponential base; what must hold is that
+        # every wait happened and each stayed under a second, not an exact schedule.
+        delays = [call.args[0] for call in slept.call_args_list]
+        assert len(delays) == ballots_handler.BALLOT_WRITE_ATTEMPTS - 1
+        assert all(0 < delay < 1 for delay in delays)
+
+    def test_a_bound_that_allows_no_attempt_is_a_500_and_not_a_silent_success(
+            self, api_gateway_event, lambda_context):
+        """The guard for the bound going wrong anyway. Without the raise after the
+        loop the device is told 200 and the room is thanked for a ballot that was
+        never written — the one failure this module makes loud everywhere else. A
+        misconfigured bound is a server fault, so it reads as one."""
+        import ballots_handler
+
+        table = FakeAggregatesTable([open_session()])
+
+        with patch.object(ballots_handler, 'BALLOT_WRITE_ATTEMPTS', 0):
+            status, body = _submit(table, api_gateway_event, lambda_context)
+
+        assert status == 500
+        assert body['success'] is False
+        assert table.transact_calls == [], 'no attempt was made'
+        assert table.ballot_keys == [], 'and nothing was written'
+
+    def test_the_marks_are_spelled_the_way_the_other_bundle_reads_them(
+            self, api_gateway_event, lambda_context):
+        """The two handlers are separate Lambda bundles and neither may import the
+        other, so the attribute names are duplicated. Pinned against the real writer
+        here and across the two source files by `test_anon_row_mark_lockstep.py`: a
+        drift is a freeze that does not freeze and a fence that does not fence, and
+        neither failure is loud."""
+        import ballots_handler
+
+        table = FakeAggregatesTable([open_session()])
+        _submit(table, api_gateway_event, lambda_context)
+
+        row = table.row()
+        assert ballots_handler.ROW_FROZEN_AT_FIELD in row
+        assert ballots_handler.ROW_BALLOT_WRITES_FIELD in row
+
+
+class TestTheTuningConstantsKeepTheirAssumptions:
+    """Constant pins, in one place — the shape `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100`
+    uses in the projects suite. Separate from the route classes because these tests
+    involve no request at all: each pins a number some mechanism silently depends
+    on, so the failure names the assumption rather than a symptom."""
+
+    def test_the_write_attempts_bound_leaves_at_least_one_attempt(self):
+        """A bound of 0 makes `range` yield nothing, so the write loop is never
+        entered — and `_write_ballot` signals a written ballot by returning, which
+        makes falling out of the loop indistinguishable from success. It is a tuning
+        constant and a later change may lower it; the post-loop guard is what fires
+        if this stops holding anyway."""
+        import ballots_handler
+
+        assert ballots_handler.BALLOT_WRITE_ATTEMPTS >= 1
+
+    def test_the_worst_case_backoff_stays_well_inside_the_route_budget(self):
+        """The retry's sleeps are billed wall-clock inside a PUBLIC request a phone
+        is waiting on. The comment on the constants states ~150ms as the worst case;
+        this pins that the constants cannot drift to where the sleeps rival the 30s
+        route timeout while the comment keeps promising milliseconds."""
+        import ballots_handler
+
+        # The jitter multiplier tops out just under 1.0, so the un-jittered sum is
+        # the bound.
+        worst_case = sum(
+            ballots_handler.BALLOT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
+            for attempt in range(ballots_handler.BALLOT_WRITE_ATTEMPTS - 1)
+        )
+        assert worst_case < 1, (
+            f'the retry can now sleep {worst_case:.2f}s inside a public request; '
+            f'if that is intended, move the submission budget, not just this pin'
+        )
 
 
 class TestValidationRefusalsAreTheirOwnReason:

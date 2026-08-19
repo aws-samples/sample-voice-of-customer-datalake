@@ -78,12 +78,34 @@ Nothing here reads or changes the aggregate. `_aggregate_scores` in
 kind, so a correctly keyed `anon:` ballot appears in the team's combined score,
 `reviewer_count` and `score_spread` with no change to the read, its response shape
 or the page that renders it.
+
+AND A BALLOT MARKS ITS ROW, WHOEVER CAST IT
+-------------------------------------------
+An anonymous ballot is a ballot, so `_write_ballot` is a TRANSACTION rather than a
+lone `update_item`: it writes the ballot and, on the row record, the freeze mark a
+composition change asserts the absence of plus the counter a row delete fences on.
+The alternative was an invariant that held for signed-in reviewers and not for a
+room — a row carrying nothing but real anonymous votes staying recomposable, and a
+room ballot landing during a delete being orphaned by it — which would have failed
+precisely where the votes are least attributable and hardest to reconstruct.
+
+Those two attribute names are duplicated from `projects_handler` (the bundles cannot
+import each other) and pinned by `test_anon_row_mark_lockstep.py`, because a drift is
+a freeze that does not freeze and a fence that does not fence, and neither failure is
+loud.
+
+The row record is also what makes CONTENTION ordinary here rather than exceptional:
+every ballot of a session updates the same one, so a room submitting together
+conflicts by design. `_write_ballot` retries such a cancellation instead of reporting
+it, because by then the submission's cap slot is already spent and the page offers the
+voter no way to try again.
 """
 import json
 import math
 import os
 import re
 import secrets
+import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -178,6 +200,70 @@ BALLOT_SK_PREFIX = 'BALLOT#'
 # exists (`_row_exists`). This module still never composes or interprets a row.
 ROW_SK_PREFIX = 'ROW#'
 REVIEWER_KIND_ANON = 'anon'
+
+# The two attributes a ballot stamps on its ROW, spelled exactly as
+# `projects_handler` spells them (ROW_FROZEN_AT_FIELD, ROW_BALLOT_WRITES_FIELD) and
+# duplicated here for the same reason the key prefixes are: the two handlers are
+# separate Lambda bundles and neither may import the other.
+#
+# WHAT A DRIFT HERE WOULD COST, and why it is pinned by
+# `test_anon_row_mark_lockstep.py` rather than trusted to this comment:
+#
+# * `first_ballot_at` under another name is a FREEZE THAT DOES NOT FREEZE. The
+#   recompose route asserts `attribute_not_exists(first_ballot_at)`, so a row whose
+#   only ballots were cast in a room would stay recomposable — and those ballots
+#   would end up describing documents the room never saw.
+# * `ballot_writes` under another name is a FENCE THAT DOES NOT FENCE. The row
+#   delete asserts that attribute has not moved since it listed the row's ballots,
+#   so an anonymous ballot landing in that window would be orphaned by a delete
+#   that committed anyway.
+#
+# Neither failure is loud. Both are the invariants #339 and #342 are about.
+ROW_FROZEN_AT_FIELD = 'first_ballot_at'
+ROW_BALLOT_WRITES_FIELD = 'ballot_writes'
+
+# Where the ROW's write sits in the ballot transaction, and so which
+# `CancellationReasons` entry says whether the row is what refused.
+#
+# The ballot's own half carries no condition, so a cancellation reported against
+# index 0 is not a fact about the row — see `_row_condition_failed`.
+BALLOT_TRANSACT_ROW_INDEX = 1
+
+# How many times the ballot's transaction is attempted before its failure is
+# reported, and how long the wait between attempts starts at.
+#
+# CONTENTION IS THE DESIGNED CASE HERE, WHICH IS WHY THIS EXISTS. Every ballot of a
+# session `ADD`s to the SAME row record, so a room submitting on the facilitator's
+# count of three contends on one item — and DynamoDB answers that with
+# `TransactionCanceledException`/`TransactionConflict`, which botocore does NOT
+# auto-retry (`botocore/data/_retry.json` lists `TransactionInProgressException` and
+# `ReplicatedWriteConflictException`, not this one). So it arrives here.
+#
+# Without a retry the cost falls on the voter and is unrecoverable: the caller has
+# ALREADY claimed a slot of the cap (`_hold_open_session(claim_slot=True)`), and the
+# page renders a terminal panel on failure with no way to resubmit. So a contended
+# room would burn slots on conflicts and then refuse ballots with `cap_reached` that
+# it should have accepted.
+#
+# RETRIED RATHER THAN THE SLOT RELEASED, because releasing races every other
+# claimer: two submissions each releasing a slot they are about to re-claim can let a
+# third past the cap, and the cap is the one thing that bounds what a public route
+# writes. A retry has no such interaction — the ballot's half is an upsert on the
+# device's OWN key, so re-attempting it cannot double-count a vote.
+#
+# Small and few on purpose. The room is holding a phone waiting for the response, and
+# a conflict clears in single-digit milliseconds; a long backoff would spend the
+# request's remaining time to no better end than the retry it already has.
+#
+# WHAT THESE VALUES COST WHEN RAISED: the backoff is `time.sleep` inside the Lambda,
+# so it is billed wall-clock on a PUBLIC, unauthenticated request a phone is
+# waiting on — worst case with these values ~150ms (25-50ms after attempt 1,
+# 50-100ms after attempt 2), which is deliberate and small next to the round trip a
+# retry saves. Raising either constant raises HELD CONCURRENCY for exactly the
+# contended case the retry exists to help: the room that conflicts is the room
+# whose Lambdas are now also sleeping.
+BALLOT_WRITE_ATTEMPTS = 3
+BALLOT_WRITE_BACKOFF_SECONDS = 0.05
 
 # Minted here, never accepted from a caller — see `_minted_ballot_id`.
 BALLOT_ID_BYTES = 16
@@ -404,12 +490,18 @@ def _validated_row_id(raw: Any) -> str:
     honestly — one `get_item` on the aggregates table, which is exactly the
     read this Lambda's role already grants — and it must (#342): a session
     opened for a row that does not resolve collects a room's ballots that the
-    page then discards on read, and a room's votes are unrepeatable. The check
-    is at session CREATION and not at submit, deliberately: submit takes the
-    row id from the stored session, never from the body, so a session that
-    named a real row cannot start naming a phantom one (nothing deletes rows
-    today — phase 2's delete path owes the write-time condition), and the
-    public submit path stays at its current cost.
+    page then discards on read, and a room's votes are unrepeatable.
+
+    That read is at session CREATION and is not the whole of the story, because a
+    row CAN now be deleted (`projects_handler.api_delete_prioritization_row`) and a
+    room can vote an hour after the facilitator opened the vote. Submit does not
+    repeat the read — it takes the row id from the STORED SESSION, never from the
+    body, so a session that named a real row cannot start naming a different one, and
+    the public path keeps its current cost. What closes the remaining window is a
+    CONDITION ON THE WRITE rather than another read: `_write_ballot`'s transaction
+    asserts `attribute_exists(sk)` on the row, so a ballot on a row deleted in the
+    meantime is refused instead of being orphaned — and refused without resurrecting
+    the row, which `update_item`'s upsert would otherwise do.
     """
     if not isinstance(raw, str) or not raw.strip():
         raise ValidationError('row_id is required')
@@ -956,6 +1048,52 @@ def _hold_open_session(session_id: str, now: datetime, *, claim_slot: bool) -> b
         raise ServiceError('Failed to record the ballot') from e
 
 
+class _RowIsGone(Exception):
+    """The row a ballot names no longer exists.
+
+    A module-private signal rather than a `NotFoundError`, because of the SHAPE the
+    answer has to have. Every refusal in this module goes through `_refusal`, which
+    emits `{'success': False, 'reason': ..., 'error': ...}`, and the ballot page
+    dispatches on `reason` alone — `submitBallot` parses the body with
+    `ballotRefusalSchema` and falls back to `unknown` when the field is absent, which
+    renders as "try again in a moment".
+
+    `NotFoundError` is rendered by the shared handler as `{'success': False, 'error':
+    ...}` with NO `reason`, so raising one here answered the single case where the row
+    is PERMANENTLY gone with the copy reserved for transient failures — exactly
+    inverting the distinction `_row_condition_failed` exists to draw. Raised so the
+    route can answer `_refusal(REASON_NOT_FOUND)`, whose translated copy states the
+    fact rather than inviting a retry that cannot work.
+    """
+
+
+def _row_condition_failed(e: ClientError) -> bool:
+    """Did the ROW's condition cancel this transaction, or did contention?
+
+    A `TransactionCanceledException` IS NOT ONLY A FAILED CONDITION. DynamoDB
+    cancels with the same exception for `TransactionConflict` (another in-flight
+    transaction touching one of the same items), `ThrottlingError`,
+    `ProvisionedThroughputExceeded` and `ValidationError`, and botocore does not
+    auto-retry it — so all of them arrive here.
+
+    `TransactionConflict` is the ORDINARY CASE in this handler, not a corner: a room
+    of phones submitting at once is exactly what this feature is for, and every one
+    of those ballots writes the same row record. Reading the exception as "the row is
+    gone" would tell a phone that lost a race that the proposal no longer exists — a
+    settled refusal, in place of the transient failure the page already retries.
+
+    Read at the ROW's index specifically, because the ballot's own half carries no
+    condition: a reason reported against it is not a fact about the row. A missing or
+    short `CancellationReasons` answers False, so an unreadable cancellation is
+    handled as the transient failure it might be rather than the fact it might not be.
+    """
+    reasons = e.response.get('CancellationReasons')
+    if not isinstance(reasons, list) or BALLOT_TRANSACT_ROW_INDEX >= len(reasons):
+        return False
+    reason = reasons[BALLOT_TRANSACT_ROW_INDEX]
+    return isinstance(reason, dict) and reason.get('Code') == 'ConditionalCheckFailed'
+
+
 def _write_ballot(
     row_id: str,
     ballot_id: str,
@@ -965,11 +1103,47 @@ def _write_ballot(
     display_name: str,
     now: datetime,
 ) -> None:
-    """Upsert one anonymous ballot on its own key.
+    """Write one anonymous ballot and mark its ROW, in ONE transaction.
 
-    A single `update_item`, so a device correcting its vote replaces its own
-    record and touches nobody else's — the same property that lets two signed-in
-    reviewers save at the same moment without losing each other's numbers.
+    The ballot lands on its own key, so a device correcting its vote replaces its
+    own record and touches nobody else's — the same property that lets two
+    signed-in reviewers save at the same moment without losing each other's
+    numbers.
+
+    THE ROW HALF IS WHY THIS IS A TRANSACTION RATHER THAN AN `update_item`. An
+    anonymous ballot is a ballot: it is a durable decision record about the set of
+    documents the row held when the room voted, and it is counted in the same
+    aggregate a signed-in reviewer's is. So it has to do the same three things a
+    signed-in save does, and all three are properties of the WRITE:
+
+    * FREEZE THE COMPOSITION. `first_ballot_at` is what
+      `projects_handler.api_recompose_prioritization_row` asserts the absence of.
+      Without it, a row carrying nothing but real anonymous votes stayed
+      recomposable, and those ballots would end up describing documents the room
+      never saw — the invariant that route advertises as database-enforced, with
+      a hole in it exactly where the votes are least attributable.
+    * MOVE THE DELETE'S FENCE. `ballot_writes` is what
+      `projects_handler._transact_delete_row` asserts has not changed since it
+      enumerated the row's ballots. An anonymous ballot landing in that gap that
+      did not move it left the delete free to commit — and leave that ballot
+      orphaned, which is the #342 fault the fence exists to close.
+    * ASSERT THE ROW STILL EXISTS. `_row_exists` is checked when the session is
+      OPENED, which can be an hour before the room votes; `attribute_exists(sk)`
+      on the write is what makes a ballot on a row deleted in between fail instead
+      of resurrecting the row as a bare record.
+
+    Every one of those is spelled here the way `projects_handler` spells it, and
+    `test_anon_row_mark_lockstep.py` pins the two attribute names and the reason
+    index across the two bundles — the same protection
+    `test_anon_ballot_key_lockstep.py` gives the sort key (including this row key's
+    `ROW_SK_PREFIX`), and for the same reason: a drifted name here is a freeze that
+    does not freeze and a fence that does not fence, with nothing failing loudly.
+
+    A CORRECTION TAKES THIS PATH TOO, and stamps the same marks. `first_ballot_at`
+    is `if_not_exists`, so a correction cannot move a freeze instant that a first
+    ballot already recorded; `ballot_writes` DOES move, which is correct — it counts
+    writes precisely so that a delete which enumerated the row's ballots before a
+    correction landed is cancelled rather than committing over it.
 
     NO `ttl` IS EVER ASSIGNED HERE. The aggregates table expires anything carrying
     that attribute, and a ballot is a durable decision record: an expiring one
@@ -980,6 +1154,25 @@ def _write_ballot(
     (see `_existing_ballot`) and because a ballot nobody's name is on should at
     least record which room cast it. `display_name` is stored only when the
     submitter gave one, and no read exposes it today.
+
+    A CANCELLED TRANSACTION IS ANSWERED BY THE REASON, not by the exception.
+    DynamoDB cancels for `TransactionConflict` and throttling as well as for a
+    failed condition, so the two are answered differently and only one of them is
+    retried:
+
+    * A FAILED CONDITION ON THE ROW means the row is gone. Reported at once, since
+      a deleted row does not come back, and raised as `_RowIsGone` so the route can
+      answer `_refusal(REASON_NOT_FOUND)` — a body carrying the `reason` the page
+      dispatches on. A `NotFoundError` here would render as `unknown`, i.e. "try
+      again in a moment" about a row that is permanently gone.
+    * ANYTHING ELSE IS TRANSIENT, and is re-attempted up to
+      BALLOT_WRITE_ATTEMPTS times with a jittered backoff before it becomes a 500.
+      A room of phones submitting at once all `ADD` to the one row record, so
+      contention is the ORDINARY case here rather than a corner — and the voter
+      cannot recover from a failure themselves: their cap slot is already claimed
+      and the page's error panel offers no resubmit. Retrying is safe because the
+      ballot's half is an upsert on this device's own key, so a repeated attempt
+      cannot double-count a vote.
     """
     # `row_id`, the same attribute name the signed-in save stamps
     # (`BALLOT_STAMP_FIELDS` in `projects_handler`), because both write the same
@@ -1011,20 +1204,113 @@ def _write_ballot(
         names['#display_name'] = 'display_name'
         values[':display_name'] = display_name
 
-    try:
-        _table().update_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, ballot_id)},
-            UpdateExpression='SET ' + ', '.join(assignments),
-            ExpressionAttributeNames=names,
-            ExpressionAttributeValues=values,
-        )
-    except ApiError:
-        raise
-    except Exception as e:
-        # Never echoes the note or the display name — both are submitter content,
-        # and one of them is PII.
-        logger.exception(f'Failed to write an anonymous ballot for session {_session_ref(session_id)}: {e}')
-        raise ServiceError('Failed to record the ballot') from e
+    table = _table()
+    transact_items = [
+        {'Update': {
+            'TableName': table.name,
+            'Key': {'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, ballot_id)},
+            'UpdateExpression': 'SET ' + ', '.join(assignments),
+            'ExpressionAttributeNames': names,
+            'ExpressionAttributeValues': values,
+        }},
+        {'Update': {
+            'TableName': table.name,
+            'Key': {'pk': PRIORITIZATION_PK, 'sk': f'{ROW_SK_PREFIX}{row_id}'},
+            # `attribute_exists(sk)` on the ROW rather than on the ballot,
+            # because `update_item` is an upsert: without it this would CREATE a
+            # bare row record for a row somebody deleted.
+            'ConditionExpression': 'attribute_exists(sk)',
+            'UpdateExpression': (
+                'SET #frozen_at = if_not_exists(#frozen_at, :now) '
+                'ADD #ballot_writes :one'
+            ),
+            'ExpressionAttributeNames': {
+                '#frozen_at': ROW_FROZEN_AT_FIELD,
+                '#ballot_writes': ROW_BALLOT_WRITES_FIELD,
+            },
+            'ExpressionAttributeValues': {':now': now.isoformat(), ':one': 1},
+        }},
+    ]
+    for attempt in range(BALLOT_WRITE_ATTEMPTS):
+        try:
+            table.meta.client.transact_write_items(TransactItems=transact_items)
+            return
+        except ClientError as e:
+            cancelled = (
+                e.response.get('Error', {}).get('Code')
+                == 'TransactionCanceledException'
+            )
+            if cancelled and _row_condition_failed(e):
+                # The row's only condition is its existence, so this row went away
+                # between the session being opened and the room voting. NOT RETRIED:
+                # a deleted row does not come back, so re-attempting would spend the
+                # request's time to reach the same answer. Nothing was written — a
+                # transaction applies whole or not at all — so the slot this
+                # submission claimed is spent, which is the honest direction: the cap
+                # exists to bound writes, and refusing to record a ballot never lets
+                # one past it.
+                logger.warning(
+                    f'An anonymous ballot named a row that no longer exists, on '
+                    f'session {_session_ref(session_id)}. Nothing was written.'
+                )
+                raise _RowIsGone from e
+            if cancelled and attempt + 1 < BALLOT_WRITE_ATTEMPTS:
+                # A cancellation NO CONDITION CAUSED: contention on the row record,
+                # throttling. Transient, and the ordinary case for the room this
+                # feature is for — so it is re-attempted rather than reported, because
+                # the caller's cap slot is already spent and the page offers the voter
+                # no way to resubmit. Safe to repeat: the ballot's half is an upsert on
+                # this device's own key.
+                #
+                # Jittered, so a room whose phones all conflicted does not re-collide
+                # in lockstep having waited the same interval. Logged BEFORE the
+                # sleep: the log records the decision to retry, and a reader timing
+                # a slow submission should see the line at the moment the wait
+                # began, not after it ended.
+                delay = BALLOT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
+                logger.warning(
+                    f'An anonymous ballot write was cancelled without a failed '
+                    f'condition on session {_session_ref(session_id)}; retrying '
+                    f'(attempt {attempt + 2} of {BALLOT_WRITE_ATTEMPTS}).'
+                )
+                time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
+                continue
+            # Never echoes the note or the display name — both are submitter
+            # content, and one of them is PII.
+            logger.exception(
+                f'Failed to write an anonymous ballot for session '
+                f'{_session_ref(session_id)}: {e}'
+            )
+            raise ServiceError('Failed to record the ballot') from e
+        except ApiError:
+            raise
+        except Exception as e:
+            logger.exception(f'Failed to write an anonymous ballot for session {_session_ref(session_id)}: {e}')
+            raise ServiceError('Failed to record the ballot') from e
+    # UNREACHABLE while BALLOT_WRITE_ATTEMPTS >= 1, and kept because falling out of
+    # this loop is INDISTINGUISHABLE FROM SUCCESS: this function signals a written
+    # ballot by returning None, so a bound of 0 would make `range` yield nothing, log
+    # 'Recorded an anonymous ballot' and answer the device 200 having written nothing
+    # at all — a silent false success on a public vote-recording write. The bound is a
+    # tuning number, exactly the kind a later change lowers or reads from the
+    # environment, so the assumption is stated as a raise rather than left to hold.
+    # `test_the_write_attempts_bound_leaves_at_least_one_attempt` pins the bound
+    # itself, the way `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100` pins the delete's
+    # reservation; this is the guard for the case where it stops holding anyway.
+    #
+    # The refused submission's CAP SLOT IS ALREADY SPENT — `_hold_open_session`
+    # claimed it before this function ran, and here that is EVERY ballot in the
+    # room, not one unlucky device. Accepted for the same reason the `_RowIsGone`
+    # branch accepts it: releasing races other claimers, and the cap must bound a
+    # public route's writes even while the route itself is misconfigured. The cost
+    # of this guard firing is a room whose session must be reopened, which is the
+    # right price for never thanking a room for ballots that were not written.
+    logger.error(
+        'An anonymous ballot write made no attempt at all, which means '
+        'BALLOT_WRITE_ATTEMPTS is not at least 1. Refusing rather than reporting a '
+        'ballot that was never written.'
+    )
+    raise ServiceError('Failed to record the ballot')
 
 
 @app.post('/voting-sessions/<session_id>/submit')
@@ -1049,7 +1335,16 @@ def submit_ballot(session_id: str):
 
     A failure between 4 and 5 loses a slot without recording a ballot, and answers
     500. That is the honest direction: the alternative (write first, count after)
-    would let a flood past the cap, which is the whole thing the cap exists for.
+    would let a flood past the cap, which is the whole thing the cap exists for. It
+    is also why step 5 RETRIES a write cancelled by contention rather than reporting
+    it — the slot is already spent by then and the page gives the voter no way to
+    resubmit, so a conflict the room caused simply by voting together would otherwise
+    cost a ballot AND its slot (see `_write_ballot`).
+
+    A row that went away between steps 4 and 5 is answered as a refusal carrying
+    `REASON_NOT_FOUND`, not as a 500 and not as a bare 404: the page dispatches on
+    the reason, and this is a permanent fact rather than something to retry.
+
     The row id comes from the SESSION, never from the body — a public caller
     does not get to choose which proposal it is scoring.
     """
@@ -1117,7 +1412,16 @@ def submit_ballot(session_id: str):
     if ballot_id is None:
         ballot_id = _minted_ballot_id()
 
-    _write_ballot(row_id, ballot_id, validated_session, axes, note, display_name, now)
+    try:
+        _write_ballot(row_id, ballot_id, validated_session, axes, note, display_name,
+                      now)
+    except _RowIsGone:
+        # Answered with the same `reason` a vanished SESSION is, because from the
+        # phone's side it is the same fact: there is nothing here to score any more.
+        # As a refusal rather than a raise, so the body carries that reason — the page
+        # reads only the reason, and a 404 without one renders as "try again in a
+        # moment" about a row that will never be back.
+        return _refusal(REASON_NOT_FOUND, 'That proposal no longer exists')
 
     # The ballot id is the device's own credential for correcting its vote, so it
     # is never logged; nor is the note or the display name.

@@ -441,6 +441,14 @@ export class VocApiStack extends VocStack {
     // caller who found a flaw in it still cannot enumerate the table or erase
     // anybody's vote. `ballots Lambda IAM grants` in api-stack.test.ts pins both
     // the three actions and the absence of the rest.
+    //
+    // `UpdateItem` also covers the ballot write's TRANSACTION, and no fourth action
+    // is needed for it. `TransactWriteItems` is authorised per PARTICIPANT rather
+    // than as an action of its own, and both of that transaction's participants are
+    // `Update` — the ballot record, and the row's freeze mark plus the counter a row
+    // delete fences on. It needs no `ConditionCheckItem`, because the row's condition
+    // rides on its own `Update` rather than on a separate `ConditionCheck`; that
+    // shape is what keeps this role at three actions.
     const ballotsRole = this.createLambdaRole('BallotsLambdaRole');
     aggregatesTable.grant(ballotsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
     kmsKey.grantEncryptDecrypt(ballotsRole);

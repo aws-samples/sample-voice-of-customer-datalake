@@ -22,6 +22,9 @@ not a general DynamoDB — it implements exactly the expressions this route
 writes, so that a change to those expressions has to be reflected here.
 """
 import json
+import re
+from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
@@ -58,14 +61,115 @@ def row_item(row_id, *, project_id=None, document_ids=None, is_default=True, **o
     }
 
 
+def _split_top_level(text, separator=','):
+    """Split on `separator` outside parentheses.
+
+    `if_not_exists(#frozen_at, :now)` carries a comma of its own, so a naive split
+    of a `SET` clause tears that call in half — and a fake that mis-parsed it would
+    report an update the route never made.
+    """
+    parts, depth, current = [], 0, ''
+    for char in text:
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+        if char == separator and depth == 0:
+            parts.append(current)
+            current = ''
+            continue
+        current += char
+    parts.append(current)
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _resolved_path(path, names):
+    """One attribute path, with `#alias` segments resolved. `sk` stays `sk`."""
+    return [names.get(segment, segment) for segment in path.strip().split('.')]
+
+
+def _attribute_present(item, path, names):
+    cursor = item
+    for segment in _resolved_path(path, names):
+        if not isinstance(cursor, dict) or segment not in cursor:
+            return False
+        cursor = cursor[segment]
+    return True
+
+
+def _condition_holds(condition, item, names, values):
+    """Evaluate the condition expressions THIS MODULE writes, and no others.
+
+    `attribute_exists`, `attribute_not_exists` and `path = :value`, joined by AND.
+    Deliberately narrow: the conditions here are the freeze, the create's
+    idempotence and the delete's fence, so a fake that waved one through would let
+    a test pass against code that had lost it. Anything unrecognised raises rather
+    than being assumed true, which is what keeps that true as the module grows.
+    """
+    for conjunct in (part.strip() for part in (condition or '').split(' AND ')):
+        if not conjunct:
+            continue
+        if conjunct.startswith('attribute_exists(') and conjunct.endswith(')'):
+            if not _attribute_present(item or {}, conjunct[17:-1], names):
+                return False
+        elif conjunct.startswith('attribute_not_exists(') and conjunct.endswith(')'):
+            if _attribute_present(item or {}, conjunct[21:-1], names):
+                return False
+        elif '=' in conjunct:
+            path, _, value_alias = (part.strip() for part in conjunct.partition('='))
+            segments = _resolved_path(path, names)
+            cursor = item or {}
+            for segment in segments:
+                cursor = cursor.get(segment) if isinstance(cursor, dict) else None
+            if cursor != values[value_alias]:
+                return False
+        else:
+            raise AssertionError(f'unsupported condition: {conjunct!r}')
+    return True
+
+
+def _key_condition(expression):
+    """`(pk, sk_prefix)` out of a boto3 key-condition tree.
+
+    Read back rather than accepted wholesale, so a read of the WRONG partition — or
+    a ballot enumeration whose prefix stopped naming one row — fails here instead of
+    passing against a permissive fake.
+    """
+    pk, prefix = None, None
+
+    def walk(node):
+        nonlocal pk, prefix
+        parsed = node.get_expression()
+        operator = parsed['operator']
+        if operator == 'AND':
+            for value in parsed['values']:
+                walk(value)
+        elif operator == '=':
+            pk = parsed['values'][1]
+        elif operator == 'begins_with':
+            prefix = parsed['values'][1]
+        else:
+            raise AssertionError(f'unsupported key condition: {operator}')
+
+    walk(expression)
+    return pk, prefix
+
+
 class FakeAggregatesTable:
     """An in-memory stand-in for the aggregates table.
 
     Supports the single-key `SET` update a ballot save issues, the conditional
-    `REMOVE #scores.#document` the legacy migration issues, and a paginated query
-    of one partition. Every call is recorded so a test can assert HOW the write
-    was made, not just what it left behind — "one update_item on its own key"
-    is the invariant, and a put_item of a merged map would leave the same state.
+    `REMOVE #scores.#document` the legacy migration issues, the conditional
+    `transact_write_items` the ballot save and the row delete issue, and a
+    paginated query of one partition. Every call is recorded so a test can assert
+    HOW the write was made, not just what it left behind — "the ballot and its
+    row's freeze mark in ONE transaction" is the invariant, and two separate
+    writes would leave the same state.
+
+    CONDITIONS ARE ENFORCED, never ignored. They are the whole contract of this
+    change: the freeze, the create's idempotence and the delete's fence are all
+    conditions, and a fake that accepted every write would let every one of those
+    tests pass against code that had lost them.
     """
 
     def __init__(self, items=None, page_size=None):
@@ -75,6 +179,14 @@ class FakeAggregatesTable:
         self.put_item_calls = []
         self.get_item_calls = []
         self.query_calls = []
+        self.transact_calls = []
+        # `table.name` and `table.meta.client` are what a transaction needs: it is
+        # issued on the resource's underlying CLIENT, which takes the table name per
+        # item rather than being bound to one table.
+        self.name = 'test-aggregates'
+        self.meta = SimpleNamespace(client=SimpleNamespace(
+            transact_write_items=self._transact_write_items,
+        ))
 
     # -- writes ------------------------------------------------------------
     def put_item(self, **kwargs):
@@ -98,9 +210,8 @@ class FakeAggregatesTable:
         self.items[key] = dict(item)
         return {}
 
-    def update_item(self, **kwargs):
-        self.update_item_calls.append(kwargs)
-        key = (kwargs['Key']['pk'], kwargs['Key']['sk'])
+    def _apply_update(self, key, kwargs):
+        """The `SET` / `ADD` / `REMOVE` clauses this module writes."""
         expression = kwargs['UpdateExpression'].strip()
         names = kwargs.get('ExpressionAttributeNames', {})
         values = kwargs.get('ExpressionAttributeValues', {})
@@ -111,22 +222,104 @@ class FakeAggregatesTable:
             attr = names[attr_alias]
             member = names[member_alias]
             item = self.items.get(key)
-            present = isinstance(item, dict) and member in (item.get(attr) or {})
-            if kwargs.get('ConditionExpression') and not present:
-                raise ClientError(
-                    {'Error': {'Code': 'ConditionalCheckFailedException',
-                               'Message': 'The conditional request failed'}},
-                    'UpdateItem',
-                )
-            if present:
+            if isinstance(item, dict) and member in (item.get(attr) or {}):
                 del item[attr][member]
-            return {}
+            return None
 
-        assert expression.upper().startswith('SET'), expression
         item = self.items.setdefault(key, {'pk': key[0], 'sk': key[1]})
-        for assignment in expression[len('SET'):].split(','):
-            name_alias, _, value_alias = (part.strip() for part in assignment.partition('='))
-            item[names[name_alias]] = values[value_alias]
+        # One expression may carry both clauses: the row half of a ballot
+        # transaction is `SET #frozen_at = if_not_exists(...) ADD #ballot_writes :one`.
+        set_clause, add_clause = expression, ''
+        if ' ADD ' in expression:
+            set_clause, _, add_clause = expression.partition(' ADD ')
+        elif expression.upper().startswith('ADD'):
+            set_clause, add_clause = '', expression[len('ADD'):]
+        if set_clause:
+            assert set_clause.strip().upper().startswith('SET'), expression
+            for assignment in _split_top_level(set_clause.strip()[len('SET'):]):
+                name_alias, _, value_expression = (
+                    part.strip() for part in assignment.partition('=')
+                )
+                attribute = names[name_alias]
+                if value_expression.startswith('if_not_exists('):
+                    existing_alias, fallback_alias = _split_top_level(
+                        value_expression[len('if_not_exists('):-1]
+                    )
+                    existing = names[existing_alias]
+                    if existing in item:
+                        continue
+                    item[attribute] = values[fallback_alias]
+                    continue
+                item[attribute] = values[value_expression]
+        if add_clause:
+            name_alias, value_alias = add_clause.split()
+            attribute = names[name_alias]
+            item[attribute] = (item.get(attribute) or 0) + values[value_alias]
+        return dict(item)
+
+    def update_item(self, **kwargs):
+        self.update_item_calls.append(kwargs)
+        key = (kwargs['Key']['pk'], kwargs['Key']['sk'])
+        condition = kwargs.get('ConditionExpression')
+        if condition and not _condition_holds(
+            condition, self.items.get(key),
+            kwargs.get('ExpressionAttributeNames', {}),
+            kwargs.get('ExpressionAttributeValues', {}),
+        ):
+            raise ClientError(
+                {'Error': {'Code': 'ConditionalCheckFailedException',
+                           'Message': 'The conditional request failed'}},
+                'UpdateItem',
+            )
+        stored = self._apply_update(key, kwargs)
+        if kwargs.get('ReturnValues') == 'ALL_NEW' and stored is not None:
+            return {'Attributes': stored}
+        return {}
+
+    def _transact_write_items(self, TransactItems):
+        """All-or-nothing, which is the property every caller of this depends on.
+
+        The capitalised parameter is boto3's own spelling of it, kept so the fake
+        accepts exactly the call the route makes.
+
+        Every condition is evaluated BEFORE any item is applied, and a single
+        failure cancels the whole transaction with nothing written. A fake that
+        applied items as it walked them would let a test about atomicity pass
+        against code that wrote the ballot and then failed to freeze its row.
+
+        `CancellationReasons` is ONE ENTRY PER ITEM, POSITIONALLY, with `'None'` for
+        the items that did not fail — DynamoDB's own shape, verified against moto.
+        A single-element list would let a route that reads the reason at a specific
+        item's index (the ballot save does, so a lost write-conflict is not reported
+        as a vanished row) pass here while reading the wrong position in production.
+        """
+        self.transact_calls.append(TransactItems)
+        reasons = []
+        for entry in TransactItems:
+            (operation, request), = entry.items()
+            assert request['TableName'] == self.name, request['TableName']
+            assert operation in ('Update', 'Delete', 'ConditionCheck'), operation
+            key = (request['Key']['pk'], request['Key']['sk'])
+            reasons.append({'Code': 'None'} if _condition_holds(
+                request.get('ConditionExpression'), self.items.get(key),
+                request.get('ExpressionAttributeNames', {}),
+                request.get('ExpressionAttributeValues', {}),
+            ) else {'Code': 'ConditionalCheckFailed',
+                    'Message': 'The conditional request failed'})
+        if any(reason['Code'] != 'None' for reason in reasons):
+            raise ClientError(
+                {'Error': {'Code': 'TransactionCanceledException',
+                           'Message': 'Transaction cancelled'},
+                 'CancellationReasons': reasons},
+                'TransactWriteItems',
+            )
+        for entry in TransactItems:
+            (operation, request), = entry.items()
+            key = (request['Key']['pk'], request['Key']['sk'])
+            if operation == 'Update':
+                self._apply_update(key, request)
+            elif operation == 'Delete':
+                self.items.pop(key, None)
         return {}
 
     # -- reads -------------------------------------------------------------
@@ -141,14 +334,18 @@ class FakeAggregatesTable:
 
     def query(self, **kwargs):
         self.query_calls.append(kwargs)
-        rows = [dict(i) for (pk, _), i in sorted(self.items.items()) if pk == PARTITION]
+        wanted, prefix = _key_condition(kwargs['KeyConditionExpression'])
+        rows = [
+            dict(i) for (pk, sk), i in sorted(self.items.items())
+            if pk == wanted and (prefix is None or sk.startswith(prefix))
+        ]
         start = kwargs.get('ExclusiveStartKey')
         if start:
             skips = [r['sk'] for r in rows]
             rows = rows[skips.index(start['sk']) + 1:]
         if self.page_size and len(rows) > self.page_size:
             page = rows[:self.page_size]
-            return {'Items': page, 'LastEvaluatedKey': {'pk': PARTITION, 'sk': page[-1]['sk']}}
+            return {'Items': page, 'LastEvaluatedKey': {'pk': wanted, 'sk': page[-1]['sk']}}
         return {'Items': rows}
 
     # -- helpers -----------------------------------------------------------
@@ -158,6 +355,48 @@ class FakeAggregatesTable:
     @property
     def ballot_keys(self):
         return sorted(sk for (_, sk) in self.items if sk.startswith('BALLOT#'))
+
+    @property
+    def row_keys(self):
+        return sorted(sk for (_, sk) in self.items if sk.startswith('ROW#'))
+
+    @property
+    def writes(self):
+        """Every mutating call this table took, whatever shape it arrived in.
+
+        The unit "was anything written at all?" is asked in, and it has to span all
+        three paths: a ballot arrives as a transaction, the legacy migration as an
+        `update_item`, a row create as a `put_item`. Counting only one of them would
+        make "the refusal wrote nothing" vacuously true for the others — which is
+        exactly what happened to every such assertion the moment the ballot write
+        became a transaction.
+        """
+        return (
+            self.put_item_calls
+            + self.update_item_calls
+            + [request for items in self.transact_calls for entry in items
+               for operation, request in entry.items() if operation != 'ConditionCheck']
+        )
+
+    @property
+    def ballot_writes(self):
+        """The update kwargs of every write aimed at a BALLOT key.
+
+        Spans the transaction and a bare `update_item` on purpose: a change that
+        stopped using a transaction would still be found here, so the tests about
+        what a ballot STORES keep testing that, and the tests about atomicity are the
+        ones that fail.
+        """
+        direct = [
+            call for call in self.update_item_calls
+            if str(call['Key']['sk']).startswith('BALLOT#')
+        ]
+        transacted = [
+            request for items in self.transact_calls for entry in items
+            for operation, request in entry.items()
+            if operation == 'Update' and str(request['Key']['sk']).startswith('BALLOT#')
+        ]
+        return direct + transacted
 
     def seed_rows(self, *row_ids, **kwargs):
         """Put a row record in place for each id, WITHOUT going through put_item.
@@ -333,15 +572,15 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 200
         assert body == {'success': True, 'updated_count': 1}
-        ballot_writes = [
-            call for call in table.update_item_calls
-            if call['Key']['sk'].startswith('BALLOT#')
-        ]
-        assert len(ballot_writes) == 1
-        assert ballot_writes[0]['Key'] == {
+        # One update AIMED AT THE BALLOT KEY, wherever it was issued from. The write
+        # is now inside a transaction beside its row's freeze mark (#339 phase 2);
+        # what this class is about is that a reviewer's numbers land on their own key
+        # by an update rather than by a merged whole-map put, and that is unchanged.
+        assert len(table.ballot_writes) == 1
+        assert table.ballot_writes[0]['Key'] == {
             'pk': PARTITION, 'sk': 'BALLOT#row-1#user:alice',
         }
-        assert ballot_writes[0]['UpdateExpression'].strip().upper().startswith('SET')
+        assert table.ballot_writes[0]['UpdateExpression'].strip().upper().startswith('SET')
 
     def test_a_save_never_put_items_a_merged_map(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable(items=[{
@@ -377,8 +616,8 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         _patch_scores(table, api_gateway_event, lambda_context, {'row-1': AXES}, subject='alice')
 
         assert 'ttl' not in table.ballot('row-1', 'alice')
-        for call in table.update_item_calls:
-            assert 'ttl' not in call['UpdateExpression']
+        for call in table.writes:
+            assert 'ttl' not in call.get('UpdateExpression', '')
 
     def test_an_empty_body_writes_nothing(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable()
@@ -387,7 +626,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 200
         assert body['success'] is True
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     @pytest.mark.parametrize('bad_key,expected', [
         ('', 'non-empty'),
@@ -413,7 +652,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 400
         assert expected in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     @pytest.mark.parametrize('bad_entry', ['nonsense', None, [1, 2], 7, True])
     def test_a_non_object_score_entry_is_refused_before_any_write(
@@ -433,7 +672,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 400
         assert 'must be objects' in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     def test_a_row_with_no_record_is_refused_and_nothing_is_stored(
@@ -459,7 +698,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         assert status == 404
         assert 'does not exist' in body['error']
         assert 'row-ghost' not in body['error'], 'no echo of caller input'
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     def test_one_phantom_row_in_a_multi_row_save_persists_nothing(
@@ -478,7 +717,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         )
 
         assert status == 404
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot('row-real', 'reviewer-1') is None
 
     def test_a_failed_existence_read_is_a_server_fault_not_a_refusal(
@@ -507,7 +746,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         )
 
         assert status == 500
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     def test_a_save_larger_than_the_bound_is_refused(self, api_gateway_event, lambda_context):
         """Each row costs the ballot write plus, when it scored, a read of the row
@@ -522,7 +761,7 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
 
         assert status == 400
         assert 'at most 100 rows' in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     def test_a_save_at_the_bound_is_accepted(self, api_gateway_event, lambda_context):
         """The bound is a ceiling on absurdity, not a limit the product can hit —
@@ -544,22 +783,24 @@ class TestSaveIsAnAtomicUpdateOfOneKey:
         cause that, only a write failure can, so the request is a 500 and the count
         of rows that DID persist is logged rather than silently lost."""
         table = FakeAggregatesTable()
-        real_update = table.update_item
+        real_transact = table.meta.client.transact_write_items
         # Counts only BALLOT writes, so the legacy-migration removals a scoring save
         # also issues cannot absorb the injected failure and leave the request a 200.
         ballot_calls = {'n': 0}
 
-        def failing_update(**kwargs):
-            if kwargs['Key']['sk'].startswith('BALLOT#'):
-                ballot_calls['n'] += 1
-                if ballot_calls['n'] > 1:
-                    raise ClientError(
-                        {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
-                        'UpdateItem',
-                    )
-            return real_update(**kwargs)
+        def failing_transact(TransactItems):
+            ballot_calls['n'] += 1
+            if ballot_calls['n'] > 1:
+                # NOT a TransactionCanceledException: a cancellation means the row
+                # went away and is a 404. This is a throttle — the class that leaves
+                # the earlier rows durably written and answers 500.
+                raise ClientError(
+                    {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
+                    'TransactWriteItems',
+                )
+            return real_transact(TransactItems)
 
-        table.update_item = failing_update
+        table.meta.client.transact_write_items = failing_transact
 
         status, body = _patch_scores(
             table, api_gateway_event, lambda_context,
@@ -615,7 +856,7 @@ class TestAPartialEntryLeavesTheOtherAxesAlone:
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'impact': 5}}, subject='alice')
 
-        expression = table.update_item_calls[0]['UpdateExpression']
+        expression = table.ballot_writes[0]['UpdateExpression']
         assert 'impact' in expression
         for axis in ('time_to_market', 'confidence', 'strategic_fit', 'notes'):
             assert axis not in expression
@@ -768,10 +1009,10 @@ class TestANonNumberIsRefusedRatherThanFlooredAtZero:
         if existing:
             _patch_scores(table, api_gateway_event, lambda_context,
                           {'row-1': existing}, subject='alice')
-        writes_before = len(table.update_item_calls)
+        writes_before = len(table.writes)
         status, body = _patch_scores(table, api_gateway_event, lambda_context,
                                      {'row-1': entry}, subject='alice')
-        return status, body, table, len(table.update_item_calls) - writes_before
+        return status, body, table, len(table.writes) - writes_before
 
     @pytest.mark.parametrize('value', ['high', [1, 2], {'a': 1}, True, False,
                                        float('inf'), float('-inf'), float('nan')])
@@ -862,7 +1103,7 @@ class TestANonNumberIsRefusedRatherThanFlooredAtZero:
         assert status == 400
         assert 'impact' in body['error']
         assert table.ballot_keys == []
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     @pytest.mark.parametrize('value', [99, -4, 2.7, '3', 0, 5])
     def test_a_number_still_clamps_rather_than_being_refused(
@@ -913,7 +1154,7 @@ class TestANonStringNoteCannotDestroyTheStoredNote:
         table = FakeAggregatesTable()
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'notes': 'ship this in Q3'}}, subject='alice')
-        writes_before = len(table.update_item_calls)
+        writes_before = len(table.writes)
 
         status, body = _patch_scores(table, api_gateway_event, lambda_context,
                                      {'row-1': {'notes': value}}, subject='alice')
@@ -921,7 +1162,7 @@ class TestANonStringNoteCannotDestroyTheStoredNote:
         assert status == 400
         assert 'notes' in body['error']
         assert table.ballot('row-1', 'alice')['notes'] == 'ship this in Q3'
-        assert len(table.update_item_calls) == writes_before
+        assert len(table.writes) == writes_before
 
     def test_the_caller_still_reads_back_the_note_they_saved(
         self, api_gateway_event, lambda_context
@@ -965,7 +1206,7 @@ class TestReviewerIdentityFailsClosed:
 
         assert status == 403
         assert body['success'] is False
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     @pytest.mark.parametrize('subject', [None, '', '   '])
@@ -1018,7 +1259,7 @@ class TestAReviewerSubjectCannotCorruptTheBallotKey:
         assert status == 403
         assert body['success'] is False
         assert "'#'" in body['error']
-        assert table.update_item_calls == [], 'nothing may be written under a bad key'
+        assert table.writes == [], 'nothing may be written under a bad key'
         assert table.ballot_keys == []
 
     @pytest.mark.parametrize('subject', ['has#hash', '#leading', 'trailing#'])
@@ -1915,7 +2156,7 @@ class TestAnExplicitNullAxisMeansLeaveItAlone:
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'impact': 3, 'confidence': None}}, subject='alice')
 
-        expression = table.update_item_calls[0]['UpdateExpression']
+        expression = table.ballot_writes[0]['UpdateExpression']
         assert 'impact' in expression
         assert 'confidence' not in expression
 
@@ -1996,7 +2237,7 @@ class TestDuplicateRowKeysAreRefused:
             subject='alice',
         )
 
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     def test_distinct_keys_are_still_accepted(self, api_gateway_event, lambda_context):
@@ -2318,7 +2559,7 @@ class TestWholeMapOverwriteRouteIsGone:
         )
 
         assert table.put_item_calls == []
-        assert table.update_item_calls == []
+        assert table.writes == []
 
     def test_the_old_whole_map_handler_no_longer_exists(self):
         import projects_handler
@@ -2810,12 +3051,12 @@ class TestAnOverLongNoteIsRefusedRatherThanTruncated:
         table = FakeAggregatesTable()
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'notes': 'ship this in Q3'}}, subject='alice')
-        writes_before = len(table.update_item_calls)
+        writes_before = len(table.writes)
 
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {'notes': self._over_long()}}, subject='alice')
 
-        assert len(table.update_item_calls) == writes_before
+        assert len(table.writes) == writes_before
 
     def test_an_over_long_note_cannot_half_persist_a_multi_document_save(
         self, api_gateway_event, lambda_context
@@ -2971,7 +3212,7 @@ class TestUpdatedCountCountsBallotsNotKeys:
         _patch_scores(table, api_gateway_event, lambda_context,
                       {'row-1': {}}, subject='alice')
 
-        assigned = set(table.update_item_calls[0]['ExpressionAttributeNames'].values())
+        assigned = set(table.ballot_writes[0]['ExpressionAttributeNames'].values())
         assert assigned == set(BALLOT_STAMP_FIELDS)
 
     def test_the_save_bound_still_counts_keys(self, api_gateway_event, lambda_context):
@@ -3723,7 +3964,7 @@ class TestABodyThatIsNotAJsonObjectIsTheCallersMistake:
 
         assert status == 400
         assert 'JSON' in body['error']
-        assert table.update_item_calls == []
+        assert table.writes == []
         assert table.ballot_keys == []
 
     @pytest.mark.parametrize('raw_body', NON_OBJECT_BODIES)
@@ -3945,3 +4186,2274 @@ class TestTheRowCreateRouteIsNotShadowedByTheProjectUpsert:
 
         assert status == 405
         assert update_project.call_count == 0
+
+
+# ============================================
+# Phase 2 — the rest of a row's life
+# ============================================
+#
+# Phase 1 gave every project a default row. What follows pins the lifecycle around
+# it: a second row for another combination, the freeze at the first ballot, and the
+# one destructive action.
+#
+# The two shapes worth naming, because a test that asserts them loosely cannot fail:
+# a freeze test that changes a composition on a row with NO ballots proves nothing
+# about freezing, and a delete test on a row with no ballots proves nothing about
+# ballots going with it. Every test below that claims either states the ballot first.
+
+
+def _compose_row(aggregates, projects, api_gateway_event, lambda_context,
+                 body=None, subject='reviewer-1', raw_body=None):
+    """POST the compose route. Same plumbing as `_create_row`, different path."""
+    from projects_handler import lambda_handler
+
+    event = api_gateway_event(
+        method='POST', path='/projects/prioritization/rows/compose', body=body,
+    )
+    if raw_body is not None:
+        event['body'] = raw_body
+    event['requestContext']['authorizer']['claims']['sub'] = subject
+    with (
+        patch('projects_handler.get_aggregates_table', return_value=aggregates),
+        patch('projects_handler.get_projects_table', return_value=projects),
+    ):
+        response = lambda_handler(event, lambda_context)
+    return response['statusCode'], json.loads(response['body'])
+
+
+def _recompose_row(aggregates, projects, api_gateway_event, lambda_context, row_id,
+                   body=None, subject='reviewer-1'):
+    from projects_handler import lambda_handler
+
+    event = api_gateway_event(
+        method='PATCH', path=f'/projects/prioritization/rows/{row_id}', body=body,
+    )
+    event['requestContext']['authorizer']['claims']['sub'] = subject
+    with (
+        patch('projects_handler.get_aggregates_table', return_value=aggregates),
+        patch('projects_handler.get_projects_table', return_value=projects),
+    ):
+        response = lambda_handler(event, lambda_context)
+    return response['statusCode'], json.loads(response['body'])
+
+
+def _delete_row(aggregates, api_gateway_event, lambda_context, row_id,
+                subject='admin-1', groups='admins', logger=None):
+    """DELETE one row. `groups` is what the admin gate reads.
+
+    The projects table is deliberately NOT patched: a delete that reached for a
+    project's documents would fail here rather than passing against a fake that
+    happened to be in scope, and the route has no business reading them.
+
+    `logger` follows the pattern `_get_scores` uses: pass a double to assert on what
+    the delete REPORTED, which for the one destructive action on this data is part of
+    what it is supposed to do rather than incidental.
+    """
+    from projects_handler import lambda_handler
+
+    event = api_gateway_event(
+        method='DELETE', path=f'/projects/prioritization/rows/{row_id}',
+    )
+    claims = event['requestContext']['authorizer']['claims']
+    claims['sub'] = subject
+    if groups is None:
+        claims.pop('cognito:groups', None)
+    else:
+        claims['cognito:groups'] = groups
+    with patch('projects_handler.get_aggregates_table', return_value=aggregates):
+        if logger is None:
+            response = lambda_handler(event, lambda_context)
+        else:
+            with patch('projects_handler.logger', logger):
+                response = lambda_handler(event, lambda_context)
+    return response['statusCode'], json.loads(response['body'])
+
+
+def _project_with(*documents, project_id='p1'):
+    """A project holding META plus the named `(sk_prefix, document_id)` documents."""
+    items = [project_meta(project_id)]
+    items.extend(
+        project_document(project_id, sk_prefix, document_id,
+                         f'2026-08-{index + 1:02d}T00:00:00+00:00')
+        for index, (sk_prefix, document_id) in enumerate(documents)
+    )
+    return FakeProjectsTable(items)
+
+
+TWO_SCORABLE = (('PRD#', 'prd-1'), ('PRFAQ#', 'prfaq-1'))
+FOUR_SCORABLE = TWO_SCORABLE + (('PRD#', 'prd-2'), ('PRFAQ#', 'prfaq-2'))
+
+
+class TestASecondRowCanBeComposedForAnotherCombination:
+    """"Score another combination" is the escape hatch a frozen row leaves — so a
+    project has to be able to hold more than one row, and the caller has to be able
+    to say which documents the new one holds.
+
+    STORED VERBATIM is the load-bearing half. A route that re-derived "latest of each
+    type" would answer 200 to a request naming an older PRD and quietly compose
+    something else, so the ballots on that row would describe documents nobody chose.
+    """
+
+    def test_a_reviewer_can_compose_a_row_for_a_chosen_pair_of_documents(
+        self, api_gateway_event, lambda_context
+    ):
+        aggregates = FakeAggregatesTable()
+
+        status, body = _compose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1', 'prfaq-2']},
+        )
+
+        assert status == 200
+        assert body['created'] is True
+        assert body['row']['document_ids'] == ['prd-1', 'prfaq-2']
+        assert body['row']['project_id'] == 'p1'
+        assert body['row']['is_default'] is False
+
+    def test_the_stored_row_holds_the_ids_the_caller_named_and_not_the_latest(
+        self, api_gateway_event, lambda_context
+    ):
+        """The whole point of the route. Reverting to "compose it from the project"
+        fails here: `prd-2` and `prfaq-2` are the latest of each type, and this row
+        asked for neither."""
+        aggregates = FakeAggregatesTable()
+
+        _, body = _compose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        stored = aggregates.items[(PARTITION, f"ROW#{body['row']['row_id']}")]
+        assert stored['document_ids'] == ['prd-1']
+
+    def test_composing_twice_gives_the_project_two_rows(
+        self, api_gateway_event, lambda_context
+    ):
+        """DELIBERATELY not idempotent, unlike the default row's create: "add a row
+        for another combination" is a request to add one, and two clicks that
+        collapsed into one row would make the escape hatch unusable."""
+        aggregates = FakeAggregatesTable()
+        projects = _project_with(*FOUR_SCORABLE)
+
+        _, first = _compose_row(aggregates, projects, api_gateway_event, lambda_context,
+                                body={'project_id': 'p1', 'document_ids': ['prd-1']})
+        _, second = _compose_row(aggregates, projects, api_gateway_event, lambda_context,
+                                 body={'project_id': 'p1', 'document_ids': ['prd-2']})
+
+        assert first['row']['row_id'] != second['row']['row_id']
+        assert len(aggregates.row_keys) == 2
+
+    def test_the_row_id_is_minted_here_and_never_taken_from_the_caller(
+        self, api_gateway_event, lambda_context
+    ):
+        """A row id becomes the FIRST SEGMENT of every ballot sort key on the row, so
+        a caller-chosen one puts that key's shape under a caller's control. A
+        `row_id` in the body is ignored, not honoured and not refused: it names no
+        field this route has."""
+        aggregates = FakeAggregatesTable()
+
+        _, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1'],
+                  'row_id': 'row_chosen#by:the-caller'},
+        )
+
+        assert body['row']['row_id'] != 'row_chosen#by:the-caller'
+        assert '#' not in body['row']['row_id']
+        assert aggregates.row_keys == [f"ROW#{body['row']['row_id']}"]
+
+    def test_a_composed_row_can_never_occupy_the_default_rows_key(
+        self, api_gateway_event, lambda_context
+    ):
+        """The default row's idempotence is a conditional put on a DERIVED key. A
+        minted id that could spell that key would let this route take it and turn
+        `POST .../rows` into a permanent 'already exists' for a row nobody composed
+        as the default."""
+        aggregates = FakeAggregatesTable()
+
+        for _ in range(5):
+            _, body = _compose_row(
+                aggregates, _project_with(*TWO_SCORABLE), api_gateway_event,
+                lambda_context, body={'project_id': 'p1', 'document_ids': ['prd-1']},
+            )
+            assert body['row']['row_id'] != 'row_p1_default'
+
+    def test_any_signed_in_reviewer_may_compose_one(
+        self, api_gateway_event, lambda_context
+    ):
+        """Per the decision recorded on #339: the identity of whoever created a row
+        is not the protection — the freeze is. Only the DELETE is admin-gated, and a
+        caller in no group composes a row."""
+        aggregates = FakeAggregatesTable()
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/projects/prioritization/rows/compose',
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+        event['requestContext']['authorizer']['claims'].pop('cognito:groups', None)
+        with (
+            patch('projects_handler.get_aggregates_table', return_value=aggregates),
+            patch('projects_handler.get_projects_table',
+                  return_value=_project_with(*TWO_SCORABLE)),
+        ):
+            response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+
+    def test_the_composed_row_carries_the_projects_latest_prototype_as_context(
+        self, api_gateway_event, lambda_context
+    ):
+        """A prototype is context a reviewer looks at rather than a document the row
+        is scored on, so it rides in its own field exactly as it does on the default
+        row — and it is not composable, because a second dimension of choice over
+        something no ballot is about would mean nothing."""
+        aggregates = FakeAggregatesTable()
+        projects = _project_with(
+            *TWO_SCORABLE, ('PROTOTYPE#', 'proto-old'), ('PROTOTYPE#', 'proto-new'),
+        )
+
+        _, body = _compose_row(aggregates, projects, api_gateway_event, lambda_context,
+                               body={'project_id': 'p1', 'document_ids': ['prd-1']})
+
+        assert body['row']['prototype_id'] == 'proto-new'
+        assert body['row']['document_ids'] == ['prd-1']
+
+    def test_the_composed_row_never_carries_an_expiry(
+        self, api_gateway_event, lambda_context
+    ):
+        """The aggregates table expires anything carrying `ttl`, and a row is as
+        durable as the ballots keyed to it."""
+        aggregates = FakeAggregatesTable()
+
+        _compose_row(aggregates, _project_with(*TWO_SCORABLE), api_gateway_event,
+                     lambda_context, body={'project_id': 'p1', 'document_ids': ['prd-1']})
+
+        for call in aggregates.put_item_calls:
+            assert 'ttl' not in call['Item']
+
+    def test_a_ballot_on_a_composed_row_is_keyed_to_it_and_reads_back(
+        self, api_gateway_event, lambda_context
+    ):
+        """End to end in the unit that matters: the row this route produced is a row
+        a save addresses and the read answers about, exactly as the default row is."""
+        aggregates = FakeAggregatesTable()
+        _, created = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1', 'prfaq-1']},
+        )
+        row_id = created['row']['row_id']
+
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {row_id: AXES}, subject='alice', seed_rows=False)
+        _, body = _get_scores(aggregates, api_gateway_event, lambda_context, subject='alice')
+
+        assert aggregates.ballot_keys == [f'BALLOT#{row_id}#user:alice']
+        assert body['aggregates'][row_id]['reviewer_count'] == 1
+        assert body['rows'][row_id]['document_ids'] == ['prd-1', 'prfaq-1']
+
+
+class TestAProjectCannotHoldUnboundedlyManyRows:
+    """The compose route adds a row per call and is open to any signed-in reviewer,
+    so it is the one place the partition the page reads WHOLE can be grown by an
+    ordinary authorized request.
+
+    What makes the bound load-bearing rather than tidy: `_read_prioritization_partition`
+    RAISES past its page budget rather than truncating, so enough composed rows takes
+    the prioritization page down for everybody — not only for whoever composed them.
+
+    Every count here is read from the module, so raising the bound moves these tests
+    with it instead of leaving a stale number asserting nothing.
+    """
+
+    @staticmethod
+    def _project_holding(count, project_id='p1'):
+        aggregates = FakeAggregatesTable()
+        for index in range(count):
+            aggregates.seed_rows(f'row-{index:03d}', project_id=project_id,
+                                 is_default=False)
+        return aggregates
+
+    def test_a_project_at_the_bound_is_refused_and_nothing_is_written(
+        self, api_gateway_event, lambda_context
+    ):
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT)
+        aggregates.put_item_calls.clear()
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 409
+        assert str(MAX_ROWS_PER_PROJECT) in body['error']
+        assert aggregates.put_item_calls == []
+        assert len(aggregates.row_keys) == MAX_ROWS_PER_PROJECT
+
+    def test_a_project_one_row_under_the_bound_still_composes(
+        self, api_gateway_event, lambda_context
+    ):
+        """The bound has to admit the last row it allows, or it is off by one against
+        a reviewer who did nothing wrong."""
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT - 1)
+
+        status, _ = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 200
+        assert len(aggregates.row_keys) == MAX_ROWS_PER_PROJECT
+
+    def test_another_projects_rows_do_not_spend_this_projects_bound(
+        self, api_gateway_event, lambda_context
+    ):
+        """The bound is PER PROJECT. Counting the partition instead would refuse a
+        project holding no rows at all once the deployment had enough of them."""
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT, project_id='p2')
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 200
+        assert body['row']['project_id'] == 'p1'
+
+    def test_the_default_row_is_still_created_for_a_project_at_the_bound(
+        self, api_gateway_event, lambda_context
+    ):
+        """`POST .../rows` is exempt, and must be: it is idempotent on a derived key,
+        so the page has no other way to get the row a project is entitled to. A bound
+        applied there would leave a project whose rows were all composed unable to
+        ever obtain its own."""
+        from projects_handler import MAX_ROWS_PER_PROJECT
+
+        aggregates = self._project_holding(MAX_ROWS_PER_PROJECT)
+
+        status, body = _create_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1'},
+        )
+
+        assert status == 200
+        assert body['row']['is_default'] is True
+
+    def test_the_row_count_read_pulls_no_document_ids_across_the_wire(
+        self, api_gateway_event, lambda_context
+    ):
+        """A question about one project's row COUNT paid for every row of every
+        project WITH ITS COMPOSITION INLINE, because the 1MB page limit applies
+        before a projection is taken. The row keys and the project id are everything
+        either caller of this read looks at."""
+        aggregates = self._project_holding(3)
+        aggregates.query_calls.clear()
+
+        _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        row_queries = [
+            call for call in aggregates.query_calls
+            if _key_condition(call['KeyConditionExpression'])[1] == 'ROW#'
+        ]
+        assert row_queries, 'the count must read the rows'
+        for call in row_queries:
+            projected = {
+                field.strip() for field in call['ProjectionExpression'].split(',')
+            }
+            assert projected == {'sk', 'project_id'}, (
+                'anything else here is a stored composition being paid for'
+            )
+
+
+class TestARowsDocumentSetIsRefusedBeforeAnythingIsWritten:
+    """Five ways a requested composition is not one, each refused before the put.
+
+    Every one of these is a row that would otherwise be durable and — once anybody
+    ballots on it — unrecomposable, so a repair through the product is not available
+    afterwards. That asymmetry is why they are refusals rather than corrections.
+    """
+
+    def test_an_empty_document_set_is_refused(self, api_gateway_event, lambda_context):
+        """A row with nothing to score is not a row — the same rule the default row's
+        create already applies to a project with no scorable document."""
+        aggregates = FakeAggregatesTable()
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': []},
+        )
+
+        assert status == 400
+        assert 'at least one document' in body['error']
+        assert aggregates.put_item_calls == []
+
+    def test_a_document_the_project_does_not_own_is_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        """The trust boundary. A row is a PROJECT'S set of documents and the team
+        aggregate is read per project, so an id from elsewhere would put another
+        project's document inside this project's team score."""
+        aggregates = FakeAggregatesTable()
+        projects = FakeProjectsTable([
+            project_meta('p1'),
+            project_document('p1', 'PRD#', 'prd-1', '2026-08-01T00:00:00+00:00'),
+            project_meta('p2'),
+            project_document('p2', 'PRD#', 'other-prd', '2026-08-02T00:00:00+00:00'),
+        ])
+
+        status, body = _compose_row(
+            aggregates, projects, api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1', 'other-prd']},
+        )
+
+        assert status == 404
+        assert 'does not hold' in body['error']
+        assert 'other-prd' not in body['error'], 'no echo of caller input'
+        assert aggregates.put_item_calls == []
+
+    @pytest.mark.parametrize('sk_prefix,document_id', [
+        ('PROTOTYPE#', 'proto-1'),
+        ('RESEARCH#', 'research-1'),
+        ('DOC#', 'doc-1'),
+    ])
+    def test_a_document_that_is_not_scorable_is_refused(
+        self, api_gateway_event, lambda_context, sk_prefix, document_id
+    ):
+        """A prototype or a research report has no sliders on the page, so a row
+        holding one would show a member nobody can score and would miscount what it
+        holds. PRD and PR/FAQ remain the scorable set."""
+        aggregates = FakeAggregatesTable()
+
+        status, body = _compose_row(
+            aggregates,
+            _project_with(*TWO_SCORABLE, (sk_prefix, document_id)),
+            api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1', document_id]},
+        )
+
+        assert status == 404
+        assert 'PRD or a PR/FAQ' in body['error']
+        assert aggregates.put_item_calls == []
+
+    def test_a_duplicated_document_id_is_refused_rather_than_collapsed(
+        self, api_gateway_event, lambda_context
+    ):
+        """The same document twice says nothing new about the row and spends the
+        bound twice. Refused rather than de-duplicated, for the reason the save
+        path's duplicate-key refusal records: the request states something
+        contradictory and there is nothing to prefer."""
+        aggregates = FakeAggregatesTable()
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': ['prd-1', 'prd-1']},
+        )
+
+        assert status == 400
+        assert 'distinct' in body['error']
+        assert aggregates.put_item_calls == []
+
+    @pytest.mark.parametrize('raw', [None, 'prd-1', {'0': 'prd-1'}, 7, [None], [''], [7]])
+    def test_a_document_set_that_is_not_a_list_of_ids_is_refused(
+        self, api_gateway_event, lambda_context, raw
+    ):
+        """There is no set to store, and coercing one would invent a composition
+        nobody chose."""
+        aggregates = FakeAggregatesTable()
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            body={'project_id': 'p1', 'document_ids': raw},
+        )
+
+        assert status == 400
+        assert 'document_ids' in body['error']
+        assert aggregates.put_item_calls == []
+
+    def test_a_set_at_the_bound_is_accepted_and_one_over_it_is_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        """MAX_ROW_DOCUMENT_IDS keeps bounding a row's composition — the same number
+        the page's row schema states, which is what
+        `test_prioritization_row_bound_lockstep.py` pins."""
+        from projects_handler import MAX_ROW_DOCUMENT_IDS
+
+        at_the_bound = [('PRD#', f'prd-{i}') for i in range(MAX_ROW_DOCUMENT_IDS)]
+        over = at_the_bound + [('PRD#', 'prd-one-too-many')]
+
+        ok_status, ok_body = _compose_row(
+            FakeAggregatesTable(), _project_with(*at_the_bound), api_gateway_event,
+            lambda_context,
+            body={'project_id': 'p1',
+                  'document_ids': [document_id for _, document_id in at_the_bound]},
+        )
+        refused_aggregates = FakeAggregatesTable()
+        refused_status, refused_body = _compose_row(
+            refused_aggregates, _project_with(*over), api_gateway_event, lambda_context,
+            body={'project_id': 'p1',
+                  'document_ids': [document_id for _, document_id in over]},
+        )
+
+        assert (ok_status, len(ok_body['row']['document_ids'])) == (200, MAX_ROW_DOCUMENT_IDS)
+        assert refused_status == 400
+        assert str(MAX_ROW_DOCUMENT_IDS) in refused_body['error']
+        assert refused_aggregates.put_item_calls == []
+
+    def test_a_project_that_does_not_exist_is_a_404(self, api_gateway_event, lambda_context):
+        aggregates = FakeAggregatesTable()
+
+        status, _ = _compose_row(
+            aggregates, FakeProjectsTable([]), api_gateway_event, lambda_context,
+            body={'project_id': 'nope', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 404
+        assert aggregates.put_item_calls == []
+
+    @pytest.mark.parametrize('project_id,expected', [
+        (None, 'required'),
+        ('', 'required'),
+        ('p#1', "must not contain '#'"),
+        ('x' * 300, 'at most 256 characters'),
+    ])
+    def test_a_project_id_that_cannot_name_a_row_is_refused(
+        self, api_gateway_event, lambda_context, project_id, expected
+    ):
+        aggregates = FakeAggregatesTable()
+
+        status, body = _compose_row(
+            aggregates, FakeProjectsTable([]), api_gateway_event, lambda_context,
+            body={'project_id': project_id, 'document_ids': ['prd-1']},
+        )
+
+        assert status == 400
+        assert expected in body['error']
+        assert aggregates.put_item_calls == []
+
+    @pytest.mark.parametrize('raw_body', ['{not json', '[1,2]', '"hi"'])
+    def test_a_body_that_is_not_a_json_object_is_the_callers_mistake(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        """The same reading `_json_object_body` records for every prioritization
+        route: a malformed REQUEST reported as a server fault says nothing the page
+        can act on."""
+        aggregates = FakeAggregatesTable()
+
+        status, body = _compose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            raw_body=raw_body,
+        )
+
+        assert status == 400
+        assert 'JSON' in body['error']
+        assert aggregates.put_item_calls == []
+
+
+class TestAnUnBallotedRowsCompositionCanStillChange:
+    """Before the first ballot a row is still being decided, so swapping documents in
+    and out is ordinary. These are the tests the freeze class below is only
+    meaningful next to: without them, "the freeze refuses everything" would pass."""
+
+    def test_a_row_with_no_ballots_can_be_recomposed(
+        self, api_gateway_event, lambda_context
+    ):
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2', 'prfaq-2']},
+        )
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-2', 'prfaq-2']
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'prd-2', 'prfaq-2',
+        ]
+
+    def test_a_default_row_can_be_narrowed_before_anybody_votes(
+        self, api_gateway_event, lambda_context
+    ):
+        """DELIBERATE, and the ordinary case this route exists for. "Latest of each
+        type" is how a default row is FIRST composed, not a property it keeps: a
+        reviewer who wants to score two of the four documents they were handed is
+        editing the row they got, not replacing it.
+
+        Refusing here would force compose-then-delete for that — and the delete is
+        admin-gated, so an ordinary reviewer could not complete it, while the project's
+        derived key would go on holding the row nobody wanted."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row_p1_default', body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-1']
+        assert body['row']['is_default'] is True, (
+            'it is still the row the project got without a setup step, which is what '
+            'keeps it undeletable as the only one'
+        )
+
+    def test_the_create_hands_back_the_recomposed_default_row_rather_than_re_deriving(
+        self, api_gateway_event, lambda_context
+    ):
+        """The consequence of the above, asserted so it is a decision rather than a
+        surprise. `POST .../rows` is idempotent and answers with what is STORED — a
+        create that re-derived "latest of each type" would silently discard the choice
+        the recompose recorded, on a row somebody may be about to ballot on."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+        projects = _project_with(*FOUR_SCORABLE)
+        _recompose_row(aggregates, projects, api_gateway_event, lambda_context,
+                       'row_p1_default', body={'project_id': 'p1',
+                                               'document_ids': ['prd-1']})
+
+        status, body = _create_row(aggregates, projects, api_gateway_event,
+                                   lambda_context, body={'project_id': 'p1'})
+
+        assert status == 200
+        assert body['created'] is False
+        assert body['row']['document_ids'] == ['prd-1']
+
+    def test_a_default_row_frozen_by_a_ballot_is_refused_like_any_other(
+        self, api_gateway_event, lambda_context
+    ):
+        """Being the default row buys no exemption in either direction: the freeze is
+        about ballots, not about which row it is."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row_p1_default': AXES}, subject='alice', seed_rows=False)
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row_p1_default', body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 409
+        assert 'frozen' in body['error']
+
+    def test_the_recomposed_row_reads_back_as_un_frozen(
+        self, api_gateway_event, lambda_context
+    ):
+        """Changing a composition is not a ballot: the row stays open to the next
+        change until somebody votes or comments on it."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+
+        _, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert body['row']['is_frozen'] is False
+
+    def test_a_recompose_refuses_the_same_document_sets_a_compose_refuses(
+        self, api_gateway_event, lambda_context
+    ):
+        """One validator, so the two routes cannot disagree about what a row may
+        hold. A composition legal to create and illegal to change into, or the
+        reverse, would be two contracts for one field."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+
+        empty, _ = _recompose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': []},
+        )
+        foreign, _ = _recompose_row(
+            aggregates,
+            FakeProjectsTable([
+                project_meta('p1'),
+                project_document('p1', 'PRD#', 'prd-1', '2026-08-01T00:00:00+00:00'),
+                project_meta('p2'),
+                project_document('p2', 'PRD#', 'other', '2026-08-01T00:00:00+00:00'),
+            ]),
+            api_gateway_event, lambda_context, 'row-1',
+            body={'project_id': 'p1', 'document_ids': ['other']},
+        )
+        unscorable, _ = _recompose_row(
+            aggregates,
+            _project_with(*TWO_SCORABLE, ('PROTOTYPE#', 'proto-1')),
+            api_gateway_event, lambda_context, 'row-1',
+            body={'project_id': 'p1', 'document_ids': ['proto-1']},
+        )
+
+        assert (empty, foreign, unscorable) == (400, 404, 404)
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == ['row-1-prfaq']
+
+    def test_a_row_that_does_not_exist_is_refused_and_no_row_record_is_created(
+        self, api_gateway_event, lambda_context
+    ):
+        """`update_item` is an upsert, so without `attribute_exists(sk)` in the
+        condition this would CREATE a bare row for an id that never existed — a
+        phantom row on the page, composed by whoever guessed the id."""
+        aggregates = FakeAggregatesTable()
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            'row-ghost', body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 409
+        assert aggregates.row_keys == []
+
+    def test_a_row_belonging_to_another_project_is_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        """The ids were validated against the project the CALLER named, so a row of
+        another project must not receive them — otherwise naming someone else's row
+        id installs this project's documents on it."""
+        aggregates = FakeAggregatesTable().seed_rows('row-other', project_id='p2')
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            'row-other', body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 409
+        assert aggregates.items[(PARTITION, 'ROW#row-other')]['document_ids'] == [
+            'row-other-prfaq',
+        ]
+
+    def test_an_over_long_row_id_is_refused_by_this_route(
+        self, api_gateway_event, lambda_context
+    ):
+        """A 400 naming the bound rather than a DynamoDB ValidationException
+        surfacing as a 500 — the same reasoning the save path's row-id check
+        records, on the id's other entry point."""
+        aggregates = FakeAggregatesTable()
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            'x' * 300, body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status == 400
+        assert 'at most 256 characters' in body['error']
+        assert aggregates.writes == []
+
+    @pytest.mark.parametrize('row_id', ['row#1', 'row-1#user:alice'])
+    def test_a_row_id_carrying_the_delimiter_reaches_no_route_and_writes_nothing(
+        self, api_gateway_event, lambda_context, row_id
+    ):
+        """A path segment reaches the same sort key a body key does: a '#' in it would
+        compose `ROW#a#b`, and a later ballot's key would then parse to a different
+        row than the one written.
+
+        Refused TWICE OVER, and the outer refusal is why the status is a 404 rather
+        than the 400 the validator would give: Powertools' dynamic-segment pattern
+        excludes '#', so such a path resolves to no route at all. The check inside the
+        route is kept anyway rather than relied upon being unreachable — it is one
+        resolver upgrade away from mattering, and the assertion that survives either
+        way is that nothing was written."""
+        aggregates = FakeAggregatesTable()
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*TWO_SCORABLE), api_gateway_event, lambda_context,
+            row_id, body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+
+        assert status != 200
+        assert aggregates.writes == []
+        assert aggregates.row_keys == []
+
+    def test_that_refusal_is_the_routes_own_and_not_only_the_resolvers(self):
+        """The validator behind the path segment, asked directly.
+
+        The route's own refusal cannot be observed end to end (the resolver answers
+        first), and a check nothing exercises is a check that quietly stops working.
+        Asked of the function so that deleting it fails a test rather than nothing."""
+        import projects_handler
+        from shared.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="must not contain '#'"):
+            projects_handler._validated_path_row_id('row#1')
+        with pytest.raises(ValidationError, match='required'):
+            projects_handler._validated_path_row_id('   ')
+
+    def test_any_signed_in_reviewer_may_recompose_an_un_balloted_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """#339: any signed-in reviewer may edit an un-balloted row's composition —
+        the freeze is the protection, not the identity of the author."""
+        from projects_handler import lambda_handler
+
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        event = api_gateway_event(
+            method='PATCH', path='/projects/prioritization/rows/row-1',
+            body={'project_id': 'p1', 'document_ids': ['prd-1']},
+        )
+        event['requestContext']['authorizer']['claims'].pop('cognito:groups', None)
+        with (
+            patch('projects_handler.get_aggregates_table', return_value=aggregates),
+            patch('projects_handler.get_projects_table',
+                  return_value=_project_with(*TWO_SCORABLE)),
+        ):
+            response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+
+
+class TestTheFirstBallotFreezesTheComposition:
+    """The acceptance criterion, and the one the wording of #339 is emphatic about:
+    "when the first vote comes in, no changes are possible", enforced by the DATABASE
+    rather than by the UI.
+
+    EVERY TEST HERE BALLOTS FIRST. A freeze test that changed a composition on a row
+    with no ballots would prove nothing about freezing — it would pass against a
+    route with no condition at all.
+    """
+
+    @staticmethod
+    def _balloted(api_gateway_event, lambda_context, entry, subject='alice'):
+        """A row with `entry` saved on it as a real ballot, through the real route.
+
+        Through the route rather than by seeding the freeze mark directly, because
+        what is being pinned is that THE BALLOT WRITE sets it: seeding it by hand
+        would let a route that never stamps it pass every test below.
+        """
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        status, _ = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                  {'row-1': entry}, subject=subject, seed_rows=False)
+        assert status == 200, 'the ballot itself must land, or this proves nothing'
+        return aggregates
+
+    def test_a_scored_ballot_freezes_the_row(self, api_gateway_event, lambda_context):
+        """Reverting the condition on the composition change fails here: the
+        recompose answers 200 and the stored documents become `prd-2`."""
+        aggregates = self._balloted(api_gateway_event, lambda_context, AXES)
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 409
+        assert 'frozen' in body['error']
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ], 'the refusal must write nothing'
+
+    def test_a_note_only_ballot_freezes_the_row_exactly_as_a_scored_one_does(
+        self, api_gateway_event, lambda_context
+    ):
+        """A note is a durable decision record ABOUT the set of documents the row
+        held when it was written, so recomposing afterwards would leave that record
+        describing documents its author never saw.
+
+        This is where freezing follows `_writes_a_reviewer_value` rather than
+        `_is_a_vote`: the vote predicate calls a notes-only ballot silence, and
+        reusing it here — which #339 explicitly warns against — fails this test while
+        leaving the scored case above passing."""
+        aggregates = self._balloted(
+            api_gateway_event, lambda_context, {'notes': 'this pair is the wrong scope'},
+        )
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 409
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ]
+
+    def test_a_ballot_clearing_a_note_freezes_the_row_too(
+        self, api_gateway_event, lambda_context
+    ):
+        """`{'notes': ''}` is a reviewer deliberately deciding the row needs no
+        justification — a change they wrote, which the counter already treats as a
+        ballot written. The same reading applies here."""
+        aggregates = self._balloted(api_gateway_event, lambda_context, {'notes': ''})
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 409
+
+    @pytest.mark.parametrize('entry', [{}, {'impact': None}, {'notes': None},
+                                       {'typo_axis': 3}])
+    def test_a_save_that_stored_nothing_a_reviewer_entered_does_not_freeze(
+        self, api_gateway_event, lambda_context, entry
+    ):
+        """The other side of the same predicate. These entries stamp a ballot and
+        answer 200 while storing no value the reviewer expressed — the module already
+        declines to count them (`updated_count`) — so they are not a decision about
+        the row's documents and must not settle them.
+
+        Freezing on "a ballot record exists" instead would fail here, and the failure
+        matters: a page that PATCHes an empty entry on load would freeze every row
+        nobody had touched."""
+        aggregates = self._balloted(api_gateway_event, lambda_context, entry)
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-2']
+
+    def test_the_freeze_is_a_condition_on_the_write_not_a_count_read_first(
+        self, api_gateway_event, lambda_context
+    ):
+        """THE RACE, pinned on the write itself. A read that counted ballots and then
+        wrote would land the change in the gap between the two calls, leaving a row
+        whose documents nobody balloting on it ever saw — which is why #339 records
+        disabled dropdowns as a courtesy and the condition as the rule.
+
+        A read-then-write refactor leaves this assertion with nothing to find."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+
+        _recompose_row(aggregates, _project_with(*TWO_SCORABLE), api_gateway_event,
+                       lambda_context, 'row-1',
+                       body={'project_id': 'p1', 'document_ids': ['prd-1']})
+
+        composition_writes = [
+            call for call in aggregates.update_item_calls
+            if str(call['Key']['sk']).startswith('ROW#')
+        ]
+        assert composition_writes, 'the recompose must reach the row record'
+        for call in composition_writes:
+            condition = call['ConditionExpression']
+            assert 'attribute_not_exists(first_ballot_at)' in condition
+            assert 'attribute_exists(sk)' in condition
+
+    def test_a_composition_change_racing_the_first_ballot_loses_to_it(
+        self, api_gateway_event, lambda_context
+    ):
+        """The interleaving itself, as the DB sees it: the ballot lands between the
+        recompose reading the project and its conditional write, and the write is the
+        loser. Simulated by ballotting from inside the projects-table read the
+        recompose performs, which is the only point where the two can cross.
+
+        A read-then-write freeze passes with the change applied — that is the whole
+        defect — so this test is what distinguishes them."""
+        from projects_handler import lambda_handler
+
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        projects = _project_with(*FOUR_SCORABLE)
+        real_query = projects.query
+        raced = {'done': False}
+
+        def ballot_mid_flight(**kwargs):
+            if not raced['done']:
+                raced['done'] = True
+                _patch_scores(aggregates, api_gateway_event, lambda_context,
+                              {'row-1': AXES}, subject='alice', seed_rows=False)
+            return real_query(**kwargs)
+
+        projects.query = ballot_mid_flight
+        event = api_gateway_event(
+            method='PATCH', path='/projects/prioritization/rows/row-1',
+            body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+        with (
+            patch('projects_handler.get_aggregates_table', return_value=aggregates),
+            patch('projects_handler.get_projects_table', return_value=projects),
+        ):
+            response = lambda_handler(event, lambda_context)
+
+        assert raced['done'], 'the race never happened, so this asserts nothing'
+        assert response['statusCode'] == 409
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ]
+
+    def test_the_freeze_mark_records_the_first_ballot_and_not_the_latest(
+        self, api_gateway_event, lambda_context
+    ):
+        """`if_not_exists`, so a second reviewer's ballot leaves it alone: it is the
+        freeze instant, not a last-modified stamp. A plain assignment would leave the
+        field describing whoever saved most recently."""
+        aggregates = self._balloted(api_gateway_event, lambda_context, AXES)
+        first = aggregates.items[(PARTITION, 'ROW#row-1')]['first_ballot_at']
+
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row-1': {'impact': 1}}, subject='bob', seed_rows=False)
+
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['first_ballot_at'] == first
+
+    def test_the_read_reports_a_frozen_row_as_frozen(
+        self, api_gateway_event, lambda_context
+    ):
+        """The page needs the state to explain why its controls are inert, and it has
+        to be the SAME fact the condition enforces — a page computing the freeze
+        itself would eventually say the opposite of what the save does."""
+        aggregates = self._balloted(api_gateway_event, lambda_context, AXES)
+        aggregates.seed_rows('row-untouched', project_id='p1')
+
+        _, body = _get_scores(aggregates, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['rows']['row-1']['is_frozen'] is True
+        assert body['rows']['row-untouched']['is_frozen'] is False
+
+    def test_the_row_payload_keeps_every_field_the_page_already_reads(
+        self, api_gateway_event, lambda_context
+    ):
+        """Additive only: the frozen state is a new field, and no existing one changes
+        name or meaning, so the shipped page keeps working."""
+        aggregates = FakeAggregatesTable().seed_rows(
+            'row-1', project_id='proj-1', document_ids=['prd-1'],
+        )
+
+        _, body = _get_scores(aggregates, api_gateway_event, lambda_context, subject='alice')
+
+        assert set(body['rows']['row-1']) == {
+            'row_id', 'project_id', 'document_ids', 'prototype_id', 'is_default',
+            'created_at', 'is_frozen',
+        }
+
+    def test_a_frozen_row_still_takes_more_ballots(
+        self, api_gateway_event, lambda_context
+    ):
+        """The freeze settles the COMPOSITION, not the scoring. A second reviewer
+        arriving after the first must still be able to vote — freezing the ballots
+        too would make the first reviewer the only one."""
+        aggregates = self._balloted(api_gateway_event, lambda_context, AXES)
+
+        status, body = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                     {'row-1': {'impact': 2}}, subject='bob',
+                                     seed_rows=False)
+
+        assert (status, body['updated_count']) == (200, 1)
+        assert aggregates.ballot('row-1', 'bob')['impact'] == 2
+
+    def test_regenerating_a_document_changes_no_existing_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """A row holds CONCRETE ids, so a newer PR/FAQ leaves every existing row
+        composed exactly as it was — which is what keeps a ballot describing the
+        documents it was cast about.
+
+        This follows from how a composition is stored rather than from any new code;
+        the test exists so that a future change which starts re-deriving the set
+        fails here. Asserted through the read the page uses, on a row that has been
+        balloted, because that is the state where a silent re-derivation would do the
+        damage."""
+        aggregates = self._balloted(api_gateway_event, lambda_context, AXES)
+        composed_at_ballot_time = list(
+            aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids']
+        )
+
+        # The project generates a newer document of each scorable type, and the page
+        # is re-read and the default row re-requested — the two things a client does
+        # after a generation.
+        grown = _project_with(*FOUR_SCORABLE)
+        _create_row(aggregates, grown, api_gateway_event, lambda_context,
+                    body={'project_id': 'p1'})
+        _, body = _get_scores(aggregates, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['rows']['row-1']['document_ids'] == composed_at_ballot_time
+        assert 'prd-2' not in body['rows']['row-1']['document_ids']
+
+
+class TestARowBallotedBeforeTheMarkExistedIsStillFrozen:
+    """THE UPGRADE PATH. ROW_FROZEN_AT_FIELD was introduced by this change, so every
+    ballot already in a deployed table was written WITHOUT it — and those rows are
+    precisely the ones that already carry real votes. A freeze that asked only the
+    mark recomposed exactly them, with a 200, leaving each ballot describing
+    documents its author never saw.
+
+    EVERY TEST HERE SEEDS ITS BALLOT DIRECTLY, which is the one thing the class
+    above must never do: the route stamps the mark, so no route-seeded fixture can
+    reproduce a pre-mark row. The two classes are the two halves of one predicate —
+    "a ballot has landed", enforced by the condition where the mark exists and by
+    `_row_holds_a_value_bearing_ballot` where it cannot.
+    """
+
+    @staticmethod
+    def _legacy_balloted(entry, reviewer='user:alice'):
+        """A row holding a ballot the PREVIOUSLY DEPLOYED code wrote: real reviewer
+        values, no freeze mark on the row, no `ballot_writes` — the stored shape a
+        phase-1 save left behind."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        sk = f'BALLOT#row-1#{reviewer}'
+        aggregates.items[(PARTITION, sk)] = {
+            'pk': PARTITION, 'sk': sk, 'row_id': 'row-1', 'reviewer': reviewer,
+            'updated_at': '2026-08-01T10:00:00+00:00', **entry,
+        }
+        return aggregates
+
+    def test_a_recompose_of_a_pre_mark_balloted_row_is_refused(
+        self, api_gateway_event, lambda_context
+    ):
+        """The reviewer's reproduction, closed: before this guard the recompose
+        answered 200 and alice's surviving ballot described documents she never
+        saw."""
+        aggregates = self._legacy_balloted(AXES)
+        assert 'first_ballot_at' not in aggregates.items[(PARTITION, 'ROW#row-1')], (
+            'the fixture must hold no mark, or this tests the condition instead'
+        )
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 409
+        assert 'frozen' in body['error']
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ], 'the refusal must write nothing'
+
+    def test_a_pre_mark_note_only_ballot_freezes_too(
+        self, api_gateway_event, lambda_context
+    ):
+        """The same reading the write side has: a note is a durable decision record
+        about the row's documents, whichever deployment stored it."""
+        aggregates = self._legacy_balloted({'notes': 'this pair is the wrong scope'})
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 409
+
+    def test_a_row_holding_only_a_legacy_scores_value_is_not_frozen(
+        self, api_gateway_event, lambda_context
+    ):
+        """ONE EPOCH FURTHER BACK, and the answer flips — deliberately. A ballot
+        claims "I scored this SET", which a recompose falsifies; a pre-ballot
+        `SCORES` value claims "somebody once scored this DOCUMENT", and the
+        read-through honours that claim through any recomposition (the value
+        surfaces only on a row still holding its document). Freezing on it would
+        permanently freeze every pre-ballot deployment's default rows — refusing
+        this route's primary use for exactly the deployments upgrading."""
+        aggregates = FakeAggregatesTable([{
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'row-1-doc': {'impact': 4}},
+        }]).seed_rows('row-1', project_id='p1', document_ids=['row-1-doc'])
+
+        _, page = _get_scores(aggregates, api_gateway_event, lambda_context)
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert page['scores']['row-1']['impact'] == 4.0, (
+            'the fixture must read through, or this proves nothing about legacy values'
+        )
+        assert page['rows']['row-1']['is_frozen'] is False
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-2']
+        # THE CONSEQUENCE the decision rests on, not only its premise: once the row
+        # no longer holds the value's document, the value stops surfacing rather
+        # than being re-attributed to a set its author never scored. A change to
+        # `_legacy_scores_by_row` that broke this would break the "it never
+        # described a set at all" argument, and this is what would catch it.
+        _, reread = _get_scores(aggregates, api_gateway_event, lambda_context)
+        assert 'row-1' not in reread['scores'], (
+            'a legacy value must follow its document out of the row, not migrate '
+            'onto documents nobody scored'
+        )
+
+    def test_a_stamp_only_ballot_record_does_not_freeze_without_the_mark(
+        self, api_gateway_event, lambda_context
+    ):
+        """The guard must not be STRICTER than the write it stands in for. A
+        stamp-only save writes a ballot record and deliberately does not freeze
+        (`_writes_a_reviewer_value`), so its stored record must not freeze either —
+        refusing on "any ballot record exists" would fail this and re-open the
+        page-that-PATCHes-on-load hazard the write side already closed."""
+        aggregates = self._legacy_balloted({})
+
+        status, body = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 200
+        assert body['row']['document_ids'] == ['prd-2']
+
+    def test_the_page_reports_a_pre_mark_balloted_row_as_frozen(
+        self, api_gateway_event, lambda_context
+    ):
+        """The read half. `_is_frozen_row` answers off the ballots the page read
+        already holds, so the page offers no edit control on a row the recompose
+        would refuse — the two halves saying the same thing about the same row."""
+        aggregates = self._legacy_balloted(AXES)
+        aggregates.seed_rows('row-untouched', project_id='p1')
+
+        _, body = _get_scores(aggregates, api_gateway_event, lambda_context, subject='alice')
+
+        assert body['rows']['row-1']['is_frozen'] is True
+        assert body['rows']['row-untouched']['is_frozen'] is False
+
+    def test_a_first_ballot_landing_after_the_legacy_read_still_loses_the_race(
+        self, api_gateway_event, lambda_context
+    ):
+        """The guard READS, so it re-opens the exact window the condition exists to
+        close — a first ballot landing between the ballot query and the write. The
+        condition, kept on the write, is what settles it: this test lands alice's
+        ballot through the real route the moment the guard's query has answered
+        "no value-bearing ballot", and the recompose must still lose."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        real_query = aggregates.query
+        raced = {'done': False}
+
+        def ballot_after_the_guard_read(**kwargs):
+            response = real_query(**kwargs)
+            _, prefix = _key_condition(kwargs['KeyConditionExpression'])
+            if not raced['done'] and prefix == 'BALLOT#row-1#':
+                raced['done'] = True
+                _patch_scores(aggregates, api_gateway_event, lambda_context,
+                              {'row-1': AXES}, subject='alice', seed_rows=False)
+            return response
+
+        aggregates.query = ballot_after_the_guard_read
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert raced['done'], 'the race never happened, so this asserts nothing'
+        assert status == 409
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ]
+
+    def test_ballots_the_guard_cannot_enumerate_refuse_the_recompose(
+        self, api_gateway_event, lambda_context
+    ):
+        """Past the page budget the guard RAISES, like every bounded read in the
+        module: "could not read the ballots" must not be read as "there are none"
+        by a route about to recompose the row. A 500 rather than a silent
+        proceed-on-partial-knowledge."""
+        aggregates = FakeAggregatesTable(page_size=1).seed_rows('row-1', project_id='p1')
+        from projects_handler import MAX_PRIORITIZATION_PAGES
+        for count in range(MAX_PRIORITIZATION_PAGES + 1):
+            sk = f'BALLOT#row-1#user:reviewer-{count:03d}'
+            aggregates.items[(PARTITION, sk)] = {
+                'pk': PARTITION, 'sk': sk, 'row_id': 'row-1',
+                'reviewer': f'user:reviewer-{count:03d}',
+                'updated_at': '2026-08-01T10:00:00+00:00',
+            }
+
+        status, _ = _recompose_row(
+            aggregates, _project_with(*FOUR_SCORABLE), api_gateway_event, lambda_context,
+            'row-1', body={'project_id': 'p1', 'document_ids': ['prd-2']},
+        )
+
+        assert status == 500
+        assert aggregates.items[(PARTITION, 'ROW#row-1')]['document_ids'] == [
+            'row-1-prfaq',
+        ], 'and nothing was recomposed on partial knowledge'
+
+
+class TestAFrozenRowIsDeletedTogetherWithItsBallots:
+    """The one destructive action, and the reason a frozen row is never edited: the
+    escape hatch is adding a row, and the way out is removing one whole.
+
+    EVERY TEST HERE THAT CLAIMS ANYTHING ABOUT BALLOTS BALLOTS FIRST. A delete test
+    on a row with no ballots proves nothing about ballots being removed with it — it
+    would pass against a route that deleted only the row record and left every ballot
+    in the partition, which is the exact fault the page's discard warning counts.
+    """
+
+    @staticmethod
+    def _row_with_ballots(api_gateway_event, lambda_context, *subjects, row_id='row-1'):
+        """A row with one real ballot per named reviewer, through the real route.
+
+        Plus a SIBLING row carrying its own ballot, in every case: the delete must
+        take this row's ballots and no others, and a fake partition holding only one
+        row's items could not tell "deleted its ballots" from "cleared the
+        partition".
+        """
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows(row_id, project_id='p1', is_default=False)
+        aggregates.seed_rows('row-sibling', project_id='p1', is_default=False)
+        for subject in subjects:
+            status, _ = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                      {row_id: AXES}, subject=subject, seed_rows=False)
+            assert status == 200, 'the ballots must land, or this proves nothing'
+        status, _ = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                  {'row-sibling': AXES}, subject='carol', seed_rows=False)
+        assert status == 200
+        return aggregates
+
+    def test_the_row_and_every_ballot_on_it_are_gone(
+        self, api_gateway_event, lambda_context
+    ):
+        """Reverting to "delete the row record only" fails here on the ballot keys:
+        the row disappears either way, and the ballots are what distinguishes the two.
+        """
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context,
+                                            'alice', 'bob')
+        assert sorted(aggregates.ballot_keys) == [
+            'BALLOT#row-1#user:alice', 'BALLOT#row-1#user:bob',
+            'BALLOT#row-sibling#user:carol',
+        ]
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 200
+        assert aggregates.row_keys == ['ROW#row-sibling']
+        assert aggregates.ballot_keys == ['BALLOT#row-sibling#user:carol']
+
+    def test_the_response_reports_how_many_ballots_went_with_the_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """That count is the ONLY evidence the caller has that the deletion was
+        complete: the row is gone, so nothing can be re-read to check, and a bare
+        `{'success': True}` would read identically whether the ballots went or were
+        orphaned."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context,
+                                            'alice', 'bob', 'dave')
+
+        _, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert body['ballots_deleted'] == 3
+        assert body['row_id'] == 'row-1'
+
+    def test_a_completed_delete_leaves_a_record_of_what_it_removed(
+        self, api_gateway_event, lambda_context
+    ):
+        """`ballots_deleted` is evidence only in the caller's own response body. An
+        operator asked "where did the team's score go?" reads CloudWatch, and the
+        cancelled case already logs — so leaving the successful one silent made the
+        delete that actually removed data the one with no record of it."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context,
+                                            'alice', 'bob')
+        logger = MagicMock()
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1',
+                                logger=logger)
+
+        assert status == 200
+        # `lambda_handler` logs its own "Returning response" through the same logger,
+        # so the delete's line is picked out rather than counted.
+        deletions = [
+            call.args for call in logger.info.call_args_list
+            if 'Deleted prioritization row' in str(call.args[0])
+        ]
+        assert len(deletions) == 1
+        assert 'row-1' in deletions[0]
+        assert 2 in deletions[0], 'the ballot count is the whole point of the line'
+        assert False in deletions[0], 'whether it was the default row'
+
+    def test_the_delete_log_names_no_reviewer(self, api_gateway_event, lambda_context):
+        """The module's standing rule. A row id and a count are what an investigation
+        needs; whose ballots they were is not, and a note never is."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context, 'alice')
+        logger = MagicMock()
+
+        _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1',
+                    logger=logger)
+
+        emitted = ' '.join(
+            str(part) for call in logger.info.call_args_list for part in call.args
+        )
+        assert 'alice' not in emitted
+        assert 'admin-1' not in emitted
+
+    def test_a_refused_delete_reports_no_completed_delete(
+        self, api_gateway_event, lambda_context
+    ):
+        """The line has to mean "this row is gone". A delete refused for its only-row
+        rule writes nothing, so logging it would put a deletion in the record that
+        never happened."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+        logger = MagicMock()
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default', logger=logger)
+
+        assert status == 409
+        assert not [
+            call for call in logger.info.call_args_list
+            if 'Deleted prioritization row' in str(call.args[0])
+        ]
+
+    def test_a_row_nobody_balloted_on_reports_no_ballots_deleted(
+        self, api_gateway_event, lambda_context
+    ):
+        """The count is a count, not a flag: a row deleted before anybody voted says
+        zero rather than omitting the field, so a caller reading it never has to tell
+        'none' from 'not reported'."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+
+        _, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert body['ballots_deleted'] == 0
+        assert aggregates.row_keys == []
+
+    def test_the_row_and_its_ballots_go_in_ONE_atomic_write(
+        self, api_gateway_event, lambda_context
+    ):
+        """No ballot may outlive the row it describes, not even for the moment
+        between two writes: a failure in that moment leaves exactly the orphaned
+        ballots the page's read counts and warns about, and the warning's rising count
+        is what would report this path not working.
+
+        Asserted on the SHAPE of the write, because the end state of a loop of deletes
+        is identical."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context,
+                                            'alice', 'bob')
+        aggregates.transact_calls.clear()
+
+        _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert len(aggregates.transact_calls) == 1
+        deleted = sorted(
+            request['Key']['sk']
+            for entry in aggregates.transact_calls[0]
+            for operation, request in entry.items() if operation == 'Delete'
+        )
+        assert deleted == [
+            'BALLOT#row-1#user:alice', 'BALLOT#row-1#user:bob', 'ROW#row-1',
+        ]
+
+    def test_an_anonymous_room_ballot_goes_with_the_row_too(
+        self, api_gateway_event, lambda_context
+    ):
+        """A room's ballots are keyed `BALLOT#{row_id}#anon:{ballot_id}` by
+        `ballots_handler`, in the same partition. The enumeration is by row prefix
+        rather than by reviewer kind, so nothing about which kind wrote a ballot
+        decides whether it goes — the row it describes does."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+        aggregates.items[(PARTITION, 'BALLOT#row-1#anon:deadbeef')] = {
+            'pk': PARTITION, 'sk': 'BALLOT#row-1#anon:deadbeef',
+            'row_id': 'row-1', 'reviewer': 'anon:deadbeef', **AXES,
+        }
+
+        _, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert body['ballots_deleted'] == 1
+        assert aggregates.ballot_keys == []
+
+    def test_a_row_whose_id_is_a_prefix_of_another_keeps_that_others_ballots(
+        self, api_gateway_event, lambda_context
+    ):
+        """The enumeration prefix ends with the '#' delimiter, so `row-1` cannot
+        sweep up `row-10`'s ballots. Without that character the delete would take
+        another row's votes and report them in its own count."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+        aggregates.seed_rows('row-10', project_id='p1', is_default=False)
+        for row_id in ('row-1', 'row-10'):
+            _patch_scores(aggregates, api_gateway_event, lambda_context,
+                          {row_id: AXES}, subject='alice', seed_rows=False)
+
+        _, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert body['ballots_deleted'] == 1
+        assert aggregates.ballot_keys == ['BALLOT#row-10#user:alice']
+        assert aggregates.row_keys == ['ROW#row-10']
+
+    def test_the_legacy_score_item_is_never_touched(
+        self, api_gateway_event, lambda_context
+    ):
+        """It lives in the same partition and is keyed by DOCUMENT, so a delete that
+        reached for "everything about this row" could take it. It is not a ballot on
+        any row and outlives every one of them."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context, 'alice')
+        aggregates.items[(PARTITION, LEGACY_SK)] = {
+            'pk': PARTITION, 'sk': LEGACY_SK, 'scores': {'prd-1': {'impact': 4}},
+        }
+
+        _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert aggregates.items[(PARTITION, LEGACY_SK)]['scores'] == {
+            'prd-1': {'impact': 4},
+        }
+
+    def test_a_frozen_row_is_deletable(self, api_gateway_event, lambda_context):
+        """The point of the pairing: a frozen row is never EDITED, and deletion is the
+        one thing it still admits. A delete that inherited the composition change's
+        no-ballots condition would leave a balloted row permanently unremovable."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context, 'alice')
+        assert aggregates.items[(PARTITION, 'ROW#row-1')].get('first_ballot_at')
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 200
+        assert aggregates.row_keys == ['ROW#row-sibling']
+
+    def test_the_page_read_no_longer_discards_anything_after_a_delete(
+        self, api_gateway_event, lambda_context
+    ):
+        """The acceptance criterion #342 names: the discard warning's count must not
+        rise in the delete case, which is what distinguishes 'handled' from 'still
+        orphaning, just less often'. A delete leaving its ballots behind would make
+        every later page load log that warning."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context,
+                                            'alice', 'bob')
+        _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+        logger = MagicMock()
+
+        status, body = _get_scores(aggregates, api_gateway_event, lambda_context,
+                                   subject='alice', logger=logger)
+
+        assert status == 200
+        assert 'row-1' not in body['rows']
+        assert 'row-1' not in body['aggregates']
+        assert logger.warning.call_count == 0
+
+    def test_a_ballot_racing_the_delete_is_not_left_behind(
+        self, api_gateway_event, lambda_context
+    ):
+        """The gap the enumeration opens, closed by a fence. A reviewer saving between
+        the read that listed the ballots and the write that removes them would
+        otherwise have their ballot orphaned — the row gone, the ballot not.
+
+        Simulated by ballotting from inside the ballot enumeration, which is the only
+        point where the two can cross. The delete is refused, nothing is written, and
+        the reviewer's ballot survives with its row."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context, 'alice')
+        real_query = aggregates.query
+        raced = {'done': False}
+
+        def ballot_mid_flight(**kwargs):
+            result = real_query(**kwargs)
+            # Keyed on the BALLOT enumeration specifically, not on any projected
+            # query: the delete's sibling lookup is projected too, and racing that
+            # one would test a different window.
+            if not raced['done'] and _key_condition(
+                kwargs['KeyConditionExpression']
+            )[1] == 'BALLOT#row-1#':
+                raced['done'] = True
+                _patch_scores(aggregates, api_gateway_event, lambda_context,
+                              {'row-1': {'impact': 1}}, subject='bob', seed_rows=False)
+            return result
+
+        aggregates.query = ballot_mid_flight
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert raced['done'], 'the race never happened, so this asserts nothing'
+        assert status == 409
+        assert 'reload' in body['error']
+        assert aggregates.items.get((PARTITION, 'ROW#row-1')) is not None
+        assert aggregates.ballot('row-1', 'bob') is not None
+
+    def test_the_delete_is_fenced_on_the_write_rather_than_on_the_read(
+        self, api_gateway_event, lambda_context
+    ):
+        """The fence, pinned on the transaction itself: removing it leaves the
+        race above with nothing to lose to."""
+        aggregates = self._row_with_ballots(api_gateway_event, lambda_context, 'alice')
+        aggregates.transact_calls.clear()
+
+        _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        row_deletes = [
+            request for entry in aggregates.transact_calls[0]
+            for operation, request in entry.items()
+            if operation == 'Delete' and request['Key']['sk'] == 'ROW#row-1'
+        ]
+        assert len(row_deletes) == 1
+        condition = row_deletes[0]['ConditionExpression']
+        assert 'attribute_exists(sk)' in condition
+        assert 'ballot_writes' in condition
+
+
+class TestOnlyAnAdminDeletesARow:
+    """The one admin-gated action on a row, per the decision recorded on #339 —
+    everything else about a row is open to any signed-in reviewer."""
+
+    @staticmethod
+    def _balloted_row(api_gateway_event, lambda_context):
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row-1': AXES}, subject='alice', seed_rows=False)
+        return aggregates
+
+    @pytest.mark.parametrize('groups', ['users', '', None, 'admins-of-something-else'])
+    def test_a_non_admin_caller_is_refused_and_nothing_is_deleted(
+        self, api_gateway_event, lambda_context, groups
+    ):
+        """403, and the row and its ballot both survive — a refusal that deleted
+        something first would be the worst of both."""
+        aggregates = self._balloted_row(api_gateway_event, lambda_context)
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                   'row-1', subject='bob', groups=groups)
+
+        assert status == 403
+        assert body['success'] is False
+        assert aggregates.row_keys == ['ROW#row-1']
+        assert aggregates.ballot_keys == ['BALLOT#row-1#user:alice']
+
+    def test_the_refusal_costs_no_read_at_all(self, api_gateway_event, lambda_context):
+        """Checked before anything is read, so a 403 is one decision rather than a
+        round trip — and, more to the point, cannot be a 403 that read and wrote
+        first."""
+        aggregates = self._balloted_row(api_gateway_event, lambda_context)
+        aggregates.get_item_calls.clear()
+        aggregates.query_calls.clear()
+        aggregates.transact_calls.clear()
+
+        _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1',
+                    groups='users')
+
+        assert aggregates.get_item_calls == []
+        assert aggregates.query_calls == []
+        assert aggregates.transact_calls == []
+
+    def test_an_admin_caller_is_allowed(self, api_gateway_event, lambda_context):
+        aggregates = self._balloted_row(api_gateway_event, lambda_context)
+        aggregates.seed_rows('row-sibling', project_id='p1', is_default=False)
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1',
+                                groups='admins')
+
+        assert status == 200
+        assert aggregates.row_keys == ['ROW#row-sibling']
+
+    def test_the_gate_is_the_shared_helper_rather_than_a_local_group_check(
+        self, api_gateway_event, lambda_context
+    ):
+        """`shared.api.require_admin` is the one place this codebase decides who is an
+        admin — `users_handler` and `settings_handler` are the existing examples. A
+        local re-reading of `cognito:groups` is what this repo forbids, because a
+        comment saying 'keep these in step' cannot fail CI.
+
+        Asserted by DELEGATION: the helper is patched, so a route deciding for itself
+        records zero calls here whatever its verdict happens to be today."""
+        import projects_handler
+
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+        event = api_gateway_event(
+            method='DELETE', path='/projects/prioritization/rows/row-1',
+        )
+        with (
+            patch('projects_handler.require_admin') as require_admin,
+            patch('projects_handler.get_aggregates_table', return_value=aggregates),
+        ):
+            response = projects_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert require_admin.call_count == 1
+        assert require_admin.call_args.args[0] is event, (
+            'the helper must be handed the raw event, which is where the claims are'
+        )
+
+
+class TestTheDefaultRowSurvivesAsAProjectsLastRow:
+    """A project whose only row was deleted would show the page's "create a PRD or a
+    PR/FAQ" invitation beside documents it still holds — and the create route is
+    idempotent on a DERIVED key, so asking again cannot repair it."""
+
+    @staticmethod
+    def _project_rows(*, extra_rows=()):
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row_p1_default', project_id='p1', is_default=True)
+        for row_id in extra_rows:
+            aggregates.seed_rows(row_id, project_id='p1', is_default=False)
+        return aggregates
+
+    def test_a_projects_only_row_cannot_be_deleted_even_with_ballots_on_it(
+        self, api_gateway_event, lambda_context
+    ):
+        aggregates = self._project_rows()
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row_p1_default': AXES}, subject='alice', seed_rows=False)
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                   'row_p1_default')
+
+        assert status == 409
+        assert 'only row' in body['error']
+        assert aggregates.row_keys == ['ROW#row_p1_default']
+        assert aggregates.ballot_keys == ['BALLOT#row_p1_default#user:alice']
+
+    def test_the_default_row_becomes_deletable_once_the_project_has_another(
+        self, api_gateway_event, lambda_context
+    ):
+        """"Not while it is the only row" rather than "never": once another row holds
+        the project's place on the page, the default one carries no special duty."""
+        aggregates = self._project_rows(extra_rows=('row-composed',))
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row_p1_default': AXES}, subject='alice', seed_rows=False)
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                   'row_p1_default')
+
+        assert status == 200
+        assert body['ballots_deleted'] == 1
+        assert aggregates.row_keys == ['ROW#row-composed']
+
+    def test_another_projects_row_does_not_count_as_a_sibling(
+        self, api_gateway_event, lambda_context
+    ):
+        """Siblings are read off the stored `project_id`, not off the partition:
+        every row in the deployment shares one partition, so counting rows rather
+        than the project's rows would let another project's row authorise this
+        deletion."""
+        aggregates = self._project_rows()
+        aggregates.seed_rows('row_p2_default', project_id='p2', is_default=True)
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default')
+
+        assert status == 409
+        assert sorted(aggregates.row_keys) == ['ROW#row_p1_default', 'ROW#row_p2_default']
+
+    def test_a_sibling_sorting_after_the_deleted_row_is_still_found(
+        self, api_gateway_event, lambda_context
+    ):
+        """The sibling lookup stops reading early, and the row being deleted is itself
+        one of the project's rows — so a lookup that stopped at ONE key could see only
+        that row and report a project with a sibling as having none. Pinned with the
+        sibling sorting AFTER the deleted row, which is the ordering that reaches it:
+        'ROW#row_p1_default' < 'ROW#zzz-later'."""
+        aggregates = self._project_rows(extra_rows=('zzz-later',))
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default')
+
+        assert status == 200
+        assert aggregates.row_keys == ['ROW#zzz-later']
+
+    def test_a_sibling_sorting_before_the_deleted_row_is_the_one_fenced_on(
+        self, api_gateway_event, lambda_context
+    ):
+        """The other ordering, and the lowest-keyed sibling is what the transaction
+        asserts on — deterministic, so a retry fences on the same row."""
+        aggregates = self._project_rows(extra_rows=('aaa-earlier', 'zzz-later'))
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default')
+
+        assert status == 200
+        checks = [
+            request for entry in aggregates.transact_calls[-1]
+            for operation, request in entry.items() if operation == 'ConditionCheck'
+        ]
+        assert [check['Key']['sk'] for check in checks] == ['ROW#aaa-earlier']
+
+    def test_a_composed_row_is_deletable_even_as_a_projects_last_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """A composed row is never the reason a project has a row at all — its default
+        row is — so removing the last composed one cannot leave the page inviting a
+        PRD for a project that has one. Asserted so the rule stays about the DEFAULT
+        row rather than becoming 'a project must always have a row'."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-composed', project_id='p1', is_default=False)
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row-composed')
+
+        assert status == 200
+        assert aggregates.row_keys == []
+
+    def test_the_last_sibling_disappearing_concurrently_cancels_the_delete(
+        self, api_gateway_event, lambda_context
+    ):
+        """Two admins each see two rows and each delete one, and the project ends with
+        none. The sibling's continued existence is asserted inside the same
+        transaction, so the second delete is cancelled instead."""
+        aggregates = self._project_rows(extra_rows=('row-composed',))
+        real_query = aggregates.query
+        raced = {'done': False}
+
+        def delete_sibling_mid_flight(**kwargs):
+            result = real_query(**kwargs)
+            # From inside the SIBLING lookup, which is where the two admins' reads
+            # cross: the ballot enumeration is projected too, and racing that one
+            # would leave the sibling still present when the transaction ran.
+            if not raced['done'] and _key_condition(
+                kwargs['KeyConditionExpression']
+            )[1] == 'ROW#':
+                raced['done'] = True
+                aggregates.items.pop((PARTITION, 'ROW#row-composed'), None)
+            return result
+
+        aggregates.query = delete_sibling_mid_flight
+
+        status, _ = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                'row_p1_default')
+
+        assert raced['done'], 'the race never happened, so this asserts nothing'
+        assert status == 409
+        assert aggregates.row_keys == ['ROW#row_p1_default']
+
+    def test_a_row_that_does_not_exist_is_a_404_and_nothing_is_written(
+        self, api_gateway_event, lambda_context
+    ):
+        aggregates = FakeAggregatesTable()
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context,
+                                   'row-ghost')
+
+        assert status == 404
+        assert 'does not exist' in body['error']
+        assert 'row-ghost' not in body['error'], 'no echo of caller input'
+        assert aggregates.transact_calls == []
+
+
+class TestABallotAndItsRowsExistenceAreSettledTogether:
+    """#342's remaining criterion. The existence check used to be a keyed read
+    followed by a write, which is complete only while nothing can delete a row —
+    and deletion now exists, so the two race.
+
+    The up-front read is still there and still does its own job (a body naming one
+    vanished row among five persists nothing). What these tests are about is the
+    part it cannot do.
+    """
+
+    def test_a_row_deleted_between_the_check_and_the_write_gets_no_ballot(
+        self, api_gateway_event, lambda_context
+    ):
+        """The sequence #342 describes as ordinary: a reviewer has the page open, an
+        admin deletes the row, the reviewer saves. Simulated by deleting the row from
+        inside the existence read, which is the only point where the two can cross.
+
+        A read-then-write leaves the ballot stored and answers 200 `updated_count: 1`
+        — silent loss reported as success, which is the whole defect."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        real_get = aggregates.get_item
+        raced = {'done': False}
+
+        def delete_mid_flight(**kwargs):
+            result = real_get(**kwargs)
+            if not raced['done'] and str(kwargs['Key']['sk']).startswith('ROW#'):
+                raced['done'] = True
+                aggregates.items.pop((PARTITION, 'ROW#row-1'), None)
+            return result
+
+        aggregates.get_item = delete_mid_flight
+
+        status, body = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                     {'row-1': AXES}, subject='alice', seed_rows=False)
+
+        assert raced['done'], 'the race never happened, so this asserts nothing'
+        assert status == 404
+        assert 'does not exist' in body['error']
+        assert aggregates.ballot_keys == [], 'the reviewer must not be left an orphan'
+
+    def test_that_reviewer_is_told_the_row_is_gone_rather_than_told_it_saved(
+        self, api_gateway_event, lambda_context
+    ):
+        """The acceptance criterion in the reviewer's own terms — and the reason the
+        answer is a status rather than a silent drop: 404 is a state the client can
+        act on by refetching."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        real_get = aggregates.get_item
+
+        def delete_mid_flight(**kwargs):
+            result = real_get(**kwargs)
+            aggregates.items.pop((PARTITION, 'ROW#row-1'), None)
+            return result
+
+        aggregates.get_item = delete_mid_flight
+
+        status, body = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                     {'row-1': AXES}, subject='alice', seed_rows=False)
+
+        assert status == 404
+        assert 'updated_count' not in body
+        assert body['success'] is False
+
+    def test_the_existence_assertion_rides_on_the_write_itself(
+        self, api_gateway_event, lambda_context
+    ):
+        """Pinned on the transaction, because that is what makes the race above
+        winnable: dropping the condition leaves the ballot landing anyway, and only
+        this assertion and that test would notice."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        aggregates.transact_calls.clear()
+
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row-1': AXES}, subject='alice', seed_rows=False)
+
+        assert len(aggregates.transact_calls) == 1
+        row_writes = [
+            request for entry in aggregates.transact_calls[0]
+            for operation, request in entry.items()
+            if str(request['Key']['sk']).startswith('ROW#')
+        ]
+        assert len(row_writes) == 1
+        assert 'attribute_exists(sk)' in row_writes[0]['ConditionExpression']
+
+    def test_a_ballot_and_its_rows_freeze_mark_land_in_the_same_write(
+        self, api_gateway_event, lambda_context
+    ):
+        """Two writes would leave a window in which the ballot exists and its row is
+        still recomposable — the freeze arriving a moment late, which is exactly the
+        interleaving the condition on the composition change exists to lose to."""
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+        aggregates.transact_calls.clear()
+
+        _patch_scores(aggregates, api_gateway_event, lambda_context,
+                      {'row-1': AXES}, subject='alice', seed_rows=False)
+
+        keys = sorted(
+            request['Key']['sk'] for entry in aggregates.transact_calls[0]
+            for request in entry.values()
+        )
+        assert keys == ['BALLOT#row-1#user:alice', 'ROW#row-1']
+
+    def test_a_ballot_write_never_creates_the_row_it_names(
+        self, api_gateway_event, lambda_context
+    ):
+        """`update_item` is an upsert, so the row half of the transaction has to carry
+        `attribute_exists(sk)`: without it, scoring a deleted row would resurrect it
+        as a bare record — a deleted proposal reappearing as a side effect of somebody
+        scoring it, which #342 rules out by name."""
+        aggregates = FakeAggregatesTable()
+
+        status, _ = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                  {'row-ghost': AXES}, subject='alice', seed_rows=False)
+
+        assert status == 404
+        assert aggregates.row_keys == []
+        assert aggregates.ballot_keys == []
+
+    def test_a_multi_row_save_still_persists_nothing_when_one_row_is_gone(
+        self, api_gateway_event, lambda_context
+    ):
+        """The up-front read's own job, unchanged: it is what makes a body naming one
+        vanished row among several persist NOTHING, rather than persisting the rows
+        before the phantom and then failing."""
+        aggregates = FakeAggregatesTable().seed_rows('row-real', project_id='p1')
+
+        status, _ = _patch_scores(aggregates, api_gateway_event, lambda_context,
+                                  {'row-real': AXES, 'row-ghost': AXES},
+                                  subject='alice', seed_rows=False)
+
+        assert status == 404
+        assert aggregates.ballot_keys == []
+        assert aggregates.transact_calls == []
+
+
+def _cancelled_transaction(reasons):
+    """A `TransactionCanceledException` carrying the given per-item reasons.
+
+    Positional and one entry per item, with `'None'` for the items that did not
+    fail, which is DynamoDB's own shape — verified against moto, whose reasons for a
+    two-item transaction failing on the second read
+    `[{'Code': 'None'}, {'Code': 'ConditionalCheckFailed', ...}]`.
+    """
+    return ClientError(
+        {'Error': {'Code': 'TransactionCanceledException',
+                   'Message': 'Transaction cancelled'},
+         'CancellationReasons': list(reasons)},
+        'TransactWriteItems',
+    )
+
+
+class TestOnlyAFailedConditionMeansTheRowIsGone:
+    """A cancelled transaction is not only a failed condition.
+
+    DynamoDB cancels with the same exception for `TransactionConflict`,
+    `ThrottlingError` and `ProvisionedThroughputExceeded`, and botocore does not
+    auto-retry it. `TransactionConflict` is reachable on the ordinary path: every
+    ballot on a row `ADD`s to the SAME row record, so two reviewers scoring one row
+    at the same moment contend on one item.
+
+    The direction of the mistake is what matters. The page treats a 4xx as a
+    refusal that retrying cannot fix, so answering 404 to a lost write-conflict
+    costs the reviewer their ballot AND tells them to reload a row that is still
+    there. A 500 is released for a retry, so the save survives.
+    """
+
+    @staticmethod
+    def _save_cancelled_with(reasons, api_gateway_event, lambda_context):
+        aggregates = FakeAggregatesTable().seed_rows('row-1', project_id='p1')
+
+        def cancel(**kwargs):
+            raise _cancelled_transaction(reasons)
+
+        aggregates.meta.client.transact_write_items = cancel
+        return _patch_scores(aggregates, api_gateway_event, lambda_context,
+                             {'row-1': AXES}, subject='alice', seed_rows=False)
+
+    def test_a_write_conflict_is_a_retryable_500_not_a_404(
+        self, api_gateway_event, lambda_context
+    ):
+        """Two reviewers saving on one row at the same instant. A 404 here would tell
+        one of them the row does not exist, which is false and unretryable."""
+        status, body = self._save_cancelled_with(
+            [{'Code': 'None'}, {'Code': 'TransactionConflict'}],
+            api_gateway_event, lambda_context,
+        )
+
+        assert status == 500
+        assert 'does not exist' not in body['error']
+
+    def test_throttling_is_a_retryable_500_too(self, api_gateway_event, lambda_context):
+        """The same reading for the other transient codes: nothing about the row
+        changed, so nothing a reload would show the reviewer is different."""
+        for code in ('ThrottlingError', 'ProvisionedThroughputExceeded',
+                     'ItemCollectionSizeLimitExceeded', 'ValidationError'):
+            status, _ = self._save_cancelled_with(
+                [{'Code': 'None'}, {'Code': code}], api_gateway_event, lambda_context,
+            )
+            assert status == 500, code
+
+    def test_a_failed_condition_on_the_row_is_still_a_404(
+        self, api_gateway_event, lambda_context
+    ):
+        """The case the discrimination must not break: the row's own condition is its
+        existence, so a condition failure there really is a vanished row."""
+        status, body = self._save_cancelled_with(
+            [{'Code': 'None'}, {'Code': 'ConditionalCheckFailed'}],
+            api_gateway_event, lambda_context,
+        )
+
+        assert status == 404
+        assert 'does not exist' in body['error']
+
+    def test_a_condition_failure_on_the_BALLOTs_half_is_not_read_as_a_missing_row(
+        self, api_gateway_event, lambda_context
+    ):
+        """The reason is read at the ROW's index, not "any reason in the list". The
+        ballot's own write carries no condition today, so a failure reported against
+        it is not a fact about the row and must not be answered as one."""
+        status, body = self._save_cancelled_with(
+            [{'Code': 'ConditionalCheckFailed'}, {'Code': 'None'}],
+            api_gateway_event, lambda_context,
+        )
+
+        assert status == 500
+        assert 'does not exist' not in body['error']
+
+    def test_an_unreadable_cancellation_is_treated_as_transient(
+        self, api_gateway_event, lambda_context
+    ):
+        """A missing or short `CancellationReasons` cannot establish that the row
+        went away, and the safe direction is the retryable one: a 500 costs a retry,
+        a wrong 404 costs a ballot."""
+        for reasons in ([], [{'Code': 'None'}], [{}, {}], 'not-a-list'):
+            status, _ = self._save_cancelled_with(
+                reasons, api_gateway_event, lambda_context,
+            )
+            assert status == 500, reasons
+
+    def test_the_row_index_the_reason_is_read_at_is_where_the_condition_actually_is(
+        self, api_gateway_event, lambda_context
+    ):
+        """The index is only meaningful while the transaction is built in that order.
+        Pinned against the real builder rather than restated, so reordering the two
+        items fails here instead of silently reading the wrong reason."""
+        import projects_handler
+
+        index_read = projects_handler.BALLOT_TRANSACT_ROW_INDEX
+        table = FakeAggregatesTable()
+        items = projects_handler._ballot_transact_items(
+            table,
+            projects_handler._ballot_update_kwargs('row-1', 'alice', AXES, 'now'),
+            'row-1', 'now',
+        )
+
+        assert len(items) == 2
+        row_write = items[index_read]['Update']
+        assert row_write['Key']['sk'] == 'ROW#row-1'
+        assert row_write['ConditionExpression'] == 'attribute_exists(sk)'
+        others = [
+            item for index, item in enumerate(items) if index != index_read
+        ]
+        assert all(
+            'ConditionExpression' not in request
+            for item in others for request in item.values()
+        ), 'a second condition would make one index too little to tell them apart'
+
+    def test_a_key_a_transaction_cannot_carry_is_refused_rather_than_asserted(
+        self, api_gateway_event, lambda_context
+    ):
+        """A `TransactItems[].Update` accepts a NARROWER set of keys than `update_item`
+        does, so a resource-only one reaching the builder has DynamoDB reject the whole
+        transaction — a ballot failing on something the ballot is not about.
+
+        REFUSED WITH A RAISE, not a bare `assert`. An `assert` is stripped under
+        `python -O`/`PYTHONOPTIMIZE`, which would let exactly the malformed key it
+        names through to DynamoDB, and an `AssertionError` in a request path is an
+        unhandled 500 that bypasses this module's logging. Pinned as a `ServiceError`
+        so the mechanism cannot quietly regress to one.
+
+        The offending key is named in the LOG, not the raise: a ServiceError's
+        message reaches the client verbatim, and an internal function's kwargs are
+        for whoever reads the log, not for a reviewer saving scores."""
+        import projects_handler
+        from shared.exceptions import ServiceError
+
+        table = FakeAggregatesTable()
+        kwargs = projects_handler._ballot_update_kwargs('row-1', 'alice', AXES, 'now')
+        kwargs['ReturnValues'] = 'ALL_NEW'
+        log = MagicMock()
+
+        with (
+            patch('projects_handler.logger', log),
+            pytest.raises(ServiceError) as refused,
+        ):
+            projects_handler._ballot_transact_items(table, kwargs, 'row-1', 'now')
+
+        assert 'ReturnValues' not in str(refused.value), (
+            'internal kwargs must not reach the client'
+        )
+        assert any(
+            'ReturnValues' in str(call) for call in log.error.call_args_list
+        ), 'the log names the key that failed'
+
+    def test_no_check_in_the_production_lambda_tree_is_a_bare_assert(self):
+        """WHY the check above is a raise, pinned where it can actually regress.
+
+        `assert` is stripped under `python -O`/`PYTHONOPTIMIZE`, so a guard written
+        that way silently is not there — and an `AssertionError` in a request path is
+        an unhandled 500 with a bare message, bypassing the logging every failure in
+        these modules routes through. Every invariant in this tree is a raise, and
+        this is what keeps that true: a reviewer's comment cannot fail CI.
+
+        Read as SOURCE TEXT over the whole production tree rather than by re-executing
+        one module under `optimize=2`, because the property is a convention about all
+        of it, and the failure names the file and line to fix.
+
+        "The whole production tree" MEANS ALL OF IT: `lambda/` — including `shared/`,
+        which is bundled into every API Lambda and is where the exception handlers
+        this finding was originally about live — and `plugins/`. A scan of
+        `lambda/api` alone would not fail on a bare `assert` reintroduced one
+        directory up, which is the same "guard narrower than the property it states"
+        shape this test exists to close. `layers/` is excluded as vendored
+        third-party (ruff's `extend-exclude` draws the same line), and test files by
+        both path component and name — `test` as a component alone would keep a
+        `test_helpers.py` in scope and drop a production package that happened to be
+        called `contest`."""
+        lambda_tree = Path(__file__).resolve().parents[2]
+        production_trees = (lambda_tree, lambda_tree.parent / 'plugins')
+
+        def _is_production(path):
+            if any(part in ('test', 'tests', 'layers') for part in path.parts):
+                return False
+            return not (path.name.startswith('test_') or path.name == 'conftest.py')
+
+        offenders = [
+            f'{path.relative_to(lambda_tree.parent)}:{number}'
+            for tree in production_trees
+            for path in sorted(tree.rglob('*.py'))
+            if _is_production(path.relative_to(tree))
+            for number, line in enumerate(
+                path.read_text(encoding='utf-8').splitlines(), start=1
+            )
+            if re.match(r'^\s*assert\s', line)
+        ]
+
+        assert offenders == [], (
+            f'bare `assert` in the production Lambda tree: {offenders}. Stripped '
+            f'under `python -O`, so the invariant it states would not be checked at '
+            f'all, and an AssertionError bypasses this tree\'s logging. Raise instead.'
+        )
+
+    def test_a_delete_cancelled_by_contention_is_a_500_not_a_409(
+        self, api_gateway_event, lambda_context
+    ):
+        """The delete's 409 says "this row changed while it was being deleted", which
+        is a claim about the world. Contention did not change the row, and the page
+        does not retry a 4xx, so the admin's delete would simply not happen."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+
+        def cancel(**kwargs):
+            raise _cancelled_transaction([{'Code': 'TransactionConflict'}])
+
+        aggregates.meta.client.transact_write_items = cancel
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 500
+        assert 'changed while it was being deleted' not in body['error']
+        assert aggregates.row_keys == ['ROW#row-1'], 'nothing was written'
+
+    def test_a_delete_cancelled_by_its_fence_is_still_a_409(
+        self, api_gateway_event, lambda_context
+    ):
+        """The actionable case, unchanged: a ballot landed in the gap, the fence
+        caught it, and reloading really does show the admin something different."""
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+
+        def cancel(**kwargs):
+            raise _cancelled_transaction([{'Code': 'ConditionalCheckFailed'}])
+
+        aggregates.meta.client.transact_write_items = cancel
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 409
+        assert 'changed while it was being deleted' in body['error']
+
+
+class TestARowWithMoreBallotsThanOneWriteCanRemoveIsRefused:
+    """DynamoDB caps a transaction at 100 items. A row past that bound is refused
+    rather than deleted in batches, which is the whole argument for the transaction:
+    several writes would leave the ballots that did not fit in the first one orphaned
+    between them.
+
+    Far outside the team-sized shape the partition itself is scaled for, and asserted
+    anyway, because what happens at the edge is the difference between a refusal and
+    the silent orphaning this path exists to prevent.
+    """
+
+    @staticmethod
+    def _row_with(count):
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        aggregates = FakeAggregatesTable()
+        aggregates.seed_rows('row-1', project_id='p1', is_default=False)
+        for index in range(count):
+            sort_key = f'BALLOT#row-1#user:reviewer-{index:03d}'
+            aggregates.items[(PARTITION, sort_key)] = {
+                'pk': PARTITION, 'sk': sort_key, 'row_id': 'row-1', **AXES,
+            }
+        return aggregates, MAX_ROW_BALLOTS_PER_DELETE
+
+    def test_a_row_at_the_bound_is_still_deleted_whole(
+        self, api_gateway_event, lambda_context
+    ):
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        aggregates, bound = self._row_with(MAX_ROW_BALLOTS_PER_DELETE)
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 200
+        assert body['ballots_deleted'] == bound
+        assert aggregates.ballot_keys == []
+        assert aggregates.row_keys == []
+
+    def test_a_row_past_the_bound_is_refused_and_nothing_is_removed(
+        self, api_gateway_event, lambda_context
+    ):
+        """A partial delete would be strictly worse than this refusal: the row would
+        be gone and the ballots that did not fit would remain, which is the orphan
+        the page's read counts and warns about."""
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        aggregates, bound = self._row_with(MAX_ROW_BALLOTS_PER_DELETE + 1)
+
+        status, body = _delete_row(aggregates, api_gateway_event, lambda_context, 'row-1')
+
+        assert status == 409
+        assert str(bound) in body['error']
+        assert aggregates.transact_calls == []
+        assert aggregates.row_keys == ['ROW#row-1']
+        assert len(aggregates.ballot_keys) == bound + 1
+
+    def test_the_bound_leaves_room_for_the_items_the_transaction_reserves(self):
+        """The row's own delete, and a `ConditionCheck` on a sibling when the row is a
+        default one. A bound of 100 would make a full row's delete exceed the
+        transaction cap and fail as a server error instead of as this refusal."""
+        from projects_handler import MAX_ROW_BALLOTS_PER_DELETE
+
+        assert MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100
