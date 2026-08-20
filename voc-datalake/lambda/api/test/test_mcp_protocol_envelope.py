@@ -25,6 +25,14 @@ revert makes each assertion fail.
       several calls later as a field it could not parse. Deleting the header
       check fails test_an_unsupported_version_header_is_refused.
 
+  TestTheHandshakeIsExemptFromTheVersionRefusal
+    — and then the refusal met the handshake, where a current-generation client
+      MUST send its own revision and has nothing else to send: its first contact
+      was a 400 and the counter-offer was unreachable. Reverting the
+      `method == 'initialize'` exemption in `_validated_protocol_version` fails
+      test_a_current_generation_first_contact_is_counter_offered; widening it past
+      the handshake fails test_every_other_method_still_refuses_the_same_header.
+
   TestEncodedWordHeaders
     — the `=?base64?...?=` sentinel form is what a conforming client sends when
       it cannot be sure a value survives an intermediary. Treating it as literal
@@ -40,15 +48,26 @@ revert makes each assertion fail.
 
   TestResultDiscriminator
     — every result carried a bare object and a client had to infer its shape
-      from which keys were present (`{}` is both a pong and an ack; a tool error
-      differs from a tool result by a boolean). Making `resultType` optional in
-      `_jsonrpc_result` fails test_every_method_answers_with_a_declared_result_type,
+      from which keys were present (a tool error differs from a tool result by a
+      boolean; `ping` answers a bare `{}`). Making the shape optional in
+      `_jsonrpc_result` fails test_every_method_answers_with_a_declared_result_shape,
       and the AST check fails the moment a result is built outside the builder.
+
+  TestNotificationsAreAccepted
+    — a notification was answered 200 with a result carrying `id: null`, and every
+      notification this server does not dispatch was answered 404 — which on this
+      endpoint means "your session was terminated, re-initialize", so routine
+      `notifications/cancelled` traffic tore down live sessions. Deleting the
+      `_is_notification` branch in `lambda_handler` fails every test in that class;
+      answering a notification anywhere but 202-with-no-body fails
+      test_a_notification_is_202_with_an_empty_body.
 
   TestMethodNotAllowed / TestUnknownMethod
     — GET and DELETE are transport methods this server does not implement, so
-      they are 405 with an `Allow` header; an unknown JSON-RPC method is -32601.
-      Answering either any other way fails these.
+      they are 405 with an `Allow` header; an unknown JSON-RPC REQUEST is -32601
+      with a 404. Answering either any other way fails these, and collapsing the
+      request/notification split back into one answer fails
+      test_the_two_message_kinds_get_different_answers.
 
   TestToolCatalogueIsFilteredByAuthorization
     — the spec blesses a credential-shaped tool set, and every caller used to see
@@ -145,6 +164,29 @@ def _event(method: str = "initialize", *, params: dict | None = None,
     }
 
 
+def _notification_event(method: str, *, params: dict | None = None,
+                        headers: dict | None = None,
+                        token: str | None = None) -> dict:
+    """A Lambda proxy event for a JSON-RPC NOTIFICATION.
+
+    The `id` MEMBER is absent, which is JSON-RPC's own definition of a
+    notification — not `"id": null`, which is a present member and is a request
+    with a null id. `_event` cannot express this, because it always writes an id,
+    and the distinction is exactly what the 202 path turns on.
+    """
+    request_headers = dict(headers or {})
+    if token is not None:
+        request_headers["authorization"] = f"Bearer {token}"
+    return {
+        "httpMethod": "POST",
+        "path": "/v1/mcp",
+        "headers": request_headers,
+        "body": json.dumps({
+            "jsonrpc": "2.0", "method": method, "params": params or {},
+        }),
+    }
+
+
 def _stub_domain_client():
     """A Lambda client answering any delegated route with an empty 200 payload."""
     client = MagicMock()
@@ -156,12 +198,16 @@ def _stub_domain_client():
     return client
 
 
-def _call(event: dict, *, row: dict | None = None) -> tuple[int, dict]:
-    """Drive `lambda_handler` end to end; return (status, parsed body).
+def _raw_call(event: dict, *, row: dict | None = None) -> dict:
+    """Drive `lambda_handler` end to end; return the RAW proxy response.
 
     The token store and the delegation client are stubbed because this file is
     about the envelope: what the store holds is `test_mcp_security.py`'s subject
     and what the routes answer is `test_mcp_delegation.py`'s.
+
+    Separate from `_call` because a 202 carries no body to parse, and a helper that
+    always parses one cannot express "there is nothing here" — it raises
+    `JSONDecodeError` and the failure names the helper rather than the assertion.
     """
     with patch("mcp_handler.projects_table") as table, \
          patch("shared.mcp_delegate.get_delegate_lambda_client",
@@ -169,7 +215,12 @@ def _call(event: dict, *, row: dict | None = None) -> tuple[int, dict]:
          patch.dict(os.environ, {"METRICS_FUNCTION": "m", "PROJECTS_FUNCTION": "p"}):
         table.query.return_value = {"Items": [row] if row is not None else [_token_row()]}
         table.update_item.return_value = {}
-        response = mcp_handler.lambda_handler(event, MagicMock())
+        return mcp_handler.lambda_handler(event, MagicMock())
+
+
+def _call(event: dict, *, row: dict | None = None) -> tuple[int, dict]:
+    """Drive `lambda_handler` end to end; return (status, parsed body)."""
+    response = _raw_call(event, row=row)
     return response["statusCode"], json.loads(response["body"])
 
 
@@ -529,9 +580,15 @@ class TestProtocolVersionHeader:
         RECOGNIZED modern error to decide the server is modern. `-32600` there means
         "legacy server", so the client falls back to `initialize` while this server
         is advertising a modern revision.
+
+        On `ping` rather than `initialize`, and that is the subject of
+        `TestTheHandshakeIsExemptFromTheVersionRefusal` below: past the handshake a
+        client has a negotiated version to send, so one this server never offered is
+        the client contradicting itself. On the handshake it is a client that has not
+        been told yet.
         """
         status, body = _call(_event(
-            "initialize", headers={"MCP-Protocol-Version": "1999-01-01"},
+            "ping", headers={"MCP-Protocol-Version": "1999-01-01"},
         ))
 
         assert status == 400
@@ -545,7 +602,7 @@ class TestProtocolVersionHeader:
         that recovery path requires parsing English.
         """
         _status, body = _call(_event(
-            "initialize", headers={"MCP-Protocol-Version": "1999-01-01"},
+            "ping", headers={"MCP-Protocol-Version": "1999-01-01"},
         ))
 
         data = body["error"]["data"]
@@ -597,7 +654,13 @@ class TestProtocolVersionHeader:
     def test_an_empty_version_header_is_refused(self):
         """A client that sent the header empty said something, and what it said is
         not a version. Reading it as absence would let a client that MEANT to name
-        a version be served silently on another one."""
+        a version be served silently on another one.
+
+        Refused on `initialize` too, which the unsupported-version case is NOT: an
+        empty value names no revision, so there is no claim for the handshake to
+        counter-offer against. The exemption below is for a client that stated a
+        version this server does not implement, not for one that stated nothing.
+        """
         status, body = _call(_event(
             "initialize", headers={"MCP-Protocol-Version": ""},
         ))
@@ -612,7 +675,7 @@ class TestProtocolVersionHeader:
         for spelling in ("MCP-Protocol-Version", "mcp-protocol-version",
                          "Mcp-Protocol-Version"):
             status, _body = _call(_event(
-                "initialize", headers={spelling: "1999-01-01"},
+                "ping", headers={spelling: "1999-01-01"},
             ))
             assert status == 400, f"{spelling} was not read"
 
@@ -657,6 +720,118 @@ class TestProtocolVersionHeader:
             )
 
 
+class TestTheHandshakeIsExemptFromTheVersionRefusal:
+    """A client's FIRST request may name a revision this server does not have.
+
+    The header refusal and the `initialize` counter-offer are both right and they
+    met in a place that served neither: a client whose newest revision is
+    2026-07-28 must send that value in the header on its very first POST — that
+    revision requires the header on every request and has no handshake to learn a
+    different value from — and header validation runs before dispatch, so the
+    request was refused 400 and `_handle_initialize` never ran. The counter-offer
+    that exists for exactly this client was unreachable by it.
+
+    Reverting the `method == 'initialize'` exemption in
+    `_validated_protocol_version` fails
+    test_a_current_generation_first_contact_is_counter_offered.
+    """
+
+    # The revision this server deliberately does not advertise, which is precisely
+    # the value a current SDK puts in the header. Written as a literal rather than
+    # derived: the point is a version OUTSIDE the supported tuple, and deriving it
+    # from the tuple would make the test agree with whatever the tuple says.
+    _UNIMPLEMENTED = "2026-07-28"
+
+    def test_the_unimplemented_revision_really_is_unimplemented(self):
+        """Anti-vacuity. If this revision were added to the tuple, every test in
+        this class would pass by the ordinary supported-version path and would stop
+        testing the exemption at all."""
+        assert self._UNIMPLEMENTED not in mcp_handler.SUPPORTED_PROTOCOL_VERSIONS
+
+    def test_a_current_generation_first_contact_is_counter_offered(self):
+        """The whole finding, end to end: 200 and a usable version, not a 400.
+
+        The client sends its newest revision in BOTH places, which is what a fresh
+        SDK does, and gets the newest revision this server speaks — one round trip,
+        no error to parse.
+        """
+        status, body = _call(_event(
+            "initialize",
+            params={"protocolVersion": self._UNIMPLEMENTED},
+            headers={"MCP-Protocol-Version": self._UNIMPLEMENTED},
+        ))
+
+        assert status == 200, body
+        assert "error" not in body, body
+        assert body["result"]["protocolVersion"] == mcp_handler.PREFERRED_PROTOCOL_VERSION
+
+    def test_the_exemption_covers_the_header_alone_as_well(self):
+        """A client may state the transport version and leave `params` empty; the
+        header must not refuse what the body would have been counter-offered."""
+        status, body = _call(_event(
+            "initialize", headers={"MCP-Protocol-Version": self._UNIMPLEMENTED},
+        ))
+
+        assert status == 200, body
+        assert body["result"]["protocolVersion"] == mcp_handler.PREFERRED_PROTOCOL_VERSION
+
+    @pytest.mark.parametrize("method", ["ping", "server/discover", "tools/list"])
+    def test_every_other_method_still_refuses_the_same_header(self, method):
+        """The asymmetry is the point, and it is not "initialize is special".
+
+        Past the handshake a client HAS a negotiated value to send, so one this
+        server never offered is the client contradicting itself. Parametrized across
+        both halves of the dispatch so an exemption that leaked into the
+        unauthenticated methods generally, or into the authenticated path, fails.
+        """
+        status, body = _call(_event(
+            method, headers={"MCP-Protocol-Version": self._UNIMPLEMENTED},
+            token=_TOKEN,
+        ))
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32022
+        assert body["error"]["data"]["requested"] == self._UNIMPLEMENTED
+
+    def test_the_exempted_handshake_still_negotiates_a_declared_version(self):
+        """Exempt from the REFUSAL, not from the rule.
+
+        The session must still speak something this server implements — an
+        exemption that returned the client's own unimplemented version would have
+        replaced a wrong refusal with a wrong promise.
+        """
+        negotiated = mcp_handler._validated_protocol_version(
+            _event("initialize", headers={"MCP-Protocol-Version": self._UNIMPLEMENTED}),
+            "initialize",
+        )
+
+        assert negotiated in mcp_handler.SUPPORTED_PROTOCOL_VERSIONS
+
+    def test_a_malformed_sentinel_is_still_refused_on_the_handshake(self):
+        """The exemption is for an unsupported VERSION, not for a broken encoding.
+
+        There is nothing to counter-offer about a value that does not decode: the
+        fault is the encoding and no negotiation fixes it.
+        """
+        status, body = _call(_event("initialize", headers={
+            "MCP-Protocol-Version": "=?base64?not-base64!!?=",
+        }))
+
+        assert status == 400
+        assert body["error"]["code"] == -32600
+        assert "base64" in body["error"]["message"]
+
+    def test_a_contradicting_routing_header_is_still_refused_on_the_handshake(self):
+        """And the exemption is confined to the VERSION check, not to header
+        validation as a whole."""
+        status, body = _call(_event(
+            "initialize", headers={"MCP-Method": "tools/call"},
+        ))
+
+        assert status == 400
+        assert body["error"]["code"] == -32020
+
+
 # ===========================================================================
 # The encoded-word sentinel form
 # ===========================================================================
@@ -680,8 +855,13 @@ class TestEncodedWordHeaders:
     def test_an_encoded_unsupported_version_is_still_refused(self):
         """Decoding is not permitting: the sentinel changes the spelling, not the
         rule. The message names the DECODED value, which is what the caller can
-        act on."""
-        status, body = _call(_event("initialize", headers={
+        act on.
+
+        On `ping`, because the handshake counter-offers rather than refuses an
+        unsupported version — and the rule under test here is that the sentinel
+        does not change which rule applies.
+        """
+        status, body = _call(_event("ping", headers={
             "MCP-Protocol-Version": _encoded("1999-01-01"),
         }))
 
@@ -870,11 +1050,10 @@ class TestRoutingHeaders:
 class TestResultDiscriminator:
     """Every result says what SHAPE it is, rather than being inferred from keys.
 
-    `{}` is both a `ping` answer and a notification acknowledgement; a tool error
-    differs from a tool result by a boolean and by whether `structuredContent`
-    happens to be present. A client switching on inferred shape re-derives that
-    table from scratch and gets it subtly wrong — in the client, where nothing
-    here can catch it.
+    A tool error differs from a tool result by a boolean and by whether
+    `structuredContent` happens to be present, and `ping` answers a bare `{}`. A
+    client switching on inferred shape re-derives that table from scratch and gets
+    it subtly wrong — in the client, where nothing here can catch it.
 
     The mechanism is split across two fields on purpose, and the split IS the
     subject of this class: `resultType` carries the spec's `"complete"`, and the
@@ -883,16 +1062,21 @@ class TestResultDiscriminator:
     of the newest advertised revision to reject every result this server sends,
     because the spec says an unrecognized `resultType` value MUST be considered
     invalid and this server declares no capability-advertised extension.
+
+    ⚠️ Notifications are absent from `CASES`, and that is not an omission: a
+    notification is answered 202 with no body, so it has no result to discriminate.
+    `TestNotificationsAreAccepted` owns that path. An earlier version of this class
+    justified the discriminator partly on "`{}` is both a pong and an ack" — a pair
+    that only existed because a notification was being answered at all.
     """
 
-    # Every dispatchable method, with whatever it needs to reach an answer. Keyed
-    # by method so a method added to the tables without a line here fails
-    # `test_every_dispatchable_method_is_covered` rather than going unchecked.
+    # Every dispatchable method that RETURNS A RESULT, with whatever it needs to
+    # reach an answer. Keyed by method so a method added to the tables without a
+    # line here fails `test_every_dispatchable_method_is_covered`.
     CASES: ClassVar[dict[str, tuple[dict, str | None]]] = {
         "initialize": ({}, None),
         "ping": ({}, None),
         "server/discover": ({}, None),
-        "notifications/initialized": ({}, None),
         "tools/list": ({}, _TOKEN),
         "tools/call": ({"name": "get_metrics_summary", "arguments": {}}, _TOKEN),
     }
@@ -948,12 +1132,28 @@ class TestResultDiscriminator:
             assert key.startswith(prefix), key
 
     def test_every_dispatchable_method_is_covered(self):
-        """Anti-vacuity for the parametrized test below."""
-        dispatched = {*mcp_handler.MCP_METHODS, *mcp_handler.MCP_AUTH_METHODS}
+        """Anti-vacuity for the parametrized test below.
 
-        assert set(self.CASES) == dispatched, (
-            f"uncovered methods: {sorted(dispatched - set(self.CASES))}; "
-            f"stale cases: {sorted(set(self.CASES) - dispatched)}"
+        The result-bearing methods are the dispatch tables MINUS the notifications,
+        and the subtraction is derived from the table (a `None` handler is a method
+        that produces no result) rather than by naming them here — so a notification
+        added to the dispatch does not silently become an uncovered case, and one
+        that gains a handler does not stay excluded.
+        """
+        dispatched = {*mcp_handler.MCP_METHODS, *mcp_handler.MCP_AUTH_METHODS}
+        answers_with_a_result = {
+            method for method in dispatched
+            if mcp_handler.MCP_METHODS.get(method, 'authenticated') is not None
+        }
+
+        assert set(self.CASES) == answers_with_a_result, (
+            f"uncovered methods: {sorted(answers_with_a_result - set(self.CASES))}; "
+            f"stale cases: {sorted(set(self.CASES) - answers_with_a_result)}"
+        )
+        # Positive control: the subtraction must actually remove something, or this
+        # test is the old one with more code.
+        assert dispatched - answers_with_a_result, (
+            "no notification is dispatched, so the exclusion above is vacuous"
         )
 
     @pytest.mark.parametrize("method", sorted(CASES))
@@ -967,22 +1167,37 @@ class TestResultDiscriminator:
             f"{method} answered with result shape {declared!r}"
         )
 
-    def test_the_shapes_a_client_cannot_otherwise_tell_apart_differ(self):
-        """The pairs that motivated the discriminator.
+    def test_no_two_methods_share_a_shape(self):
+        """The discriminator has to DISCRIMINATE.
 
-        A pong and an acknowledgement are both `{}` on the wire; a tool result and
-        a tool error are the same object with one flag flipped. If either pair
-        shared a shape the discriminator would not be discriminating.
+        This replaces a pong/ack comparison, which compared two answers to two
+        messages only one of which should have been answered at all. The surviving
+        property is the general one and a stronger claim: every result-bearing
+        method names a shape no other method names, so a client switching on the
+        value never has to fall back to inferring from keys.
         """
-        _s, pong = _call(_event("ping"))
-        _s, ack = _call(_event("notifications/initialized"))
+        shapes = {}
+        for method, (params, token) in sorted(self.CASES.items()):
+            _status, body = _call(_event(method, params=params, token=token))
+            shapes[method] = body["result"]["_meta"][mcp_handler.RESULT_SHAPE_KEY]
 
-        assert pong["result"]["_meta"][mcp_handler.RESULT_SHAPE_KEY] != (
-            ack["result"]["_meta"][mcp_handler.RESULT_SHAPE_KEY]
-        )
-        # …while both still say `complete` in the spec's field, which is the whole
-        # reason the local discriminator had to move out of it.
-        assert pong["result"]["resultType"] == ack["result"]["resultType"] == "complete"
+        assert len(set(shapes.values())) == len(shapes), f"shared shapes: {shapes}"
+        # …while every one still says `complete` in the spec's field, which is the
+        # whole reason the local discriminator had to move out of it.
+        for method, (params, token) in sorted(self.CASES.items()):
+            _status, body = _call(_event(method, params=params, token=token))
+            assert body["result"]["resultType"] == "complete", method
+
+    def test_there_is_no_shape_for_a_notification(self):
+        """The `ack` shape is gone, and it must not come back.
+
+        It named the answer to a notification — and a notification is answered 202
+        with no body, which every advertised revision states as a MUST. A shape
+        describing that response describes a response that must not be sent, so its
+        absence is the invariant rather than a tidying.
+        """
+        assert 'ack' not in mcp_handler.RESULT_SHAPES
+        assert not hasattr(mcp_handler, 'RESULT_SHAPE_ACK')
 
     def test_a_tool_error_is_a_different_shape_from_a_tool_result(self):
         """A refusal carries no `structuredContent` to validate, and the shape says
@@ -1132,6 +1347,149 @@ class TestResultDiscriminator:
 
 
 # ===========================================================================
+# The envelope's forward-compatible extras are ADDITIVE
+# ===========================================================================
+
+class TestTheForwardCompatibleExtrasAreAdditive:
+    """This envelope sends 2026-07-28 constructs under a range that predates them.
+
+    `resultType`, `ttlMs`/`cacheScope`, `-32020`/`-32022` and `server/discover` are
+    all defined by 2026-07-28, and this server deliberately advertises only the
+    handshake-based revisions. That is a documented forward-compatibility bet (the
+    PROVENANCE block at `ASSUMED_PROTOCOL_VERSION`) and it is safe for exactly one
+    reason: those revisions' result schemas are permissive about members they do not
+    know, so an extra field is IGNORED rather than rejected.
+
+    This class pins the half of that argument which could break a client: the extras
+    only ever ADD. A field an advertised revision defines is never replaced, retyped
+    or renamed by them — because a client of an advertised revision reads those
+    fields, and no permissiveness rule protects it there.
+
+    Making any extra replace a spec-defined member fails these.
+    """
+
+    # What the advertised revisions define for the results this server sends, and
+    # what a client written against one of them therefore reads. Deliberately a
+    # LITERAL table rather than something derived from the handler: it is the other
+    # side of the contract, so deriving it from the code under test would let the
+    # code define its own obligations.
+    REQUIRED_MEMBERS: ClassVar[dict[str, dict[str, type | tuple[type, ...]]]] = {
+        "initialize": {
+            "protocolVersion": str,
+            "capabilities": dict,
+            "serverInfo": dict,
+        },
+        "tools/list": {"tools": list},
+        # `structuredContent` belongs HERE and not among the extras below: it is
+        # defined by 2025-06-18, which is inside the advertised range. It arrived
+        # ahead of the version that defined it once already — the skew the
+        # SUPPORTED_PROTOCOL_VERSIONS comment records — and negotiating that range
+        # is what ended that. Listing it as an extra would re-file a resolved
+        # problem as an open one.
+        "tools/call": {"content": list, "isError": bool, "structuredContent": dict},
+    }
+
+    @pytest.mark.parametrize("method", sorted(REQUIRED_MEMBERS))
+    def test_every_member_the_advertised_revisions_define_is_still_there(self, method):
+        """The extras did not displace anything.
+
+        A client on 2025-11-25 reads exactly these members; an extra field beside
+        them costs it nothing, and an extra field INSTEAD of one breaks it.
+        """
+        params, token = TestResultDiscriminator.CASES[method]
+        status, body = _call(_event(method, params=params, token=token))
+
+        assert status == 200, body
+        for member, expected_type in self.REQUIRED_MEMBERS[method].items():
+            assert member in body["result"], (
+                f"{method} no longer sends {member!r}, which the advertised "
+                f"revisions define"
+            )
+            assert isinstance(body["result"][member], expected_type), (
+                f"{method}.{member} is {type(body['result'][member]).__name__}, "
+                f"not {expected_type.__name__}: a retype, not an addition"
+            )
+
+    def test_the_extras_are_the_only_new_members(self):
+        """Stated as a closed set, so an undocumented extra fails too.
+
+        The provenance note is only worth having if it is complete: a field added to
+        a result without a line in that note is exactly the "deliberate bet or
+        mistake?" question the note exists to answer.
+        """
+        # `_meta` is the spec's own extension point and is defined by every
+        # advertised revision, so it is not an extra — what is INSIDE it is
+        # vendor-prefixed and covered by `test_the_vendor_prefix_is_not_one_the_
+        # spec_reserves`.
+        documented_extras = {"resultType", "ttlMs", "cacheScope", "_meta"}
+
+        for method, required in sorted(self.REQUIRED_MEMBERS.items()):
+            params, token = TestResultDiscriminator.CASES[method]
+            _status, body = _call(_event(method, params=params, token=token))
+            extras = set(body["result"]) - set(required)
+            assert extras <= documented_extras, (
+                f"{method} sends undocumented extra members {sorted(extras - documented_extras)}; "
+                f"add them to the PROVENANCE note in mcp_handler.py or remove them"
+            )
+
+    def test_the_extras_are_actually_present(self):
+        """Positive control for the subset assertion above.
+
+        With no extras at all, `extras <= documented_extras` holds vacuously and
+        this class would pass while the envelope sent nothing it claims to.
+        """
+        _status, body = _call(_event("initialize"))
+        assert "resultType" in body["result"]
+
+        _status, listing = _call(_event("tools/list", token=_TOKEN))
+        assert {"ttlMs", "cacheScope"} <= set(listing["result"])
+
+    def test_a_tool_result_keeps_the_text_block_a_pre_structured_client_reads(self):
+        """The oldest advertised revision has no `structuredContent`.
+
+        `content[0].text` carries the same payload serialized, so a 2024-11-05
+        client is unaffected by everything this envelope added — which is the
+        additive claim at its furthest reach.
+        """
+        _status, body = _call(_event(
+            "tools/call",
+            params={"name": "get_metrics_summary", "arguments": {}},
+            token=_TOKEN,
+        ))
+
+        content = body["result"]["content"]
+        assert content[0]["type"] == "text"
+        assert json.loads(content[0]["text"]) == body["result"]["structuredContent"]
+
+    def test_the_error_codes_outside_the_advertised_range_are_only_the_two_named(self):
+        """The reserved-range judgement call, pinned to its stated scope.
+
+        -32020 and -32022 are 2026-07-28's and are kept deliberately; the argument
+        is in the provenance note. What must NOT happen is a third code appearing in
+        that reserved sub-range, because "we use exactly the two the spec defines" is
+        the whole basis for keeping them.
+        """
+        reserved = range(-32099, -32019)
+        emitted = {
+            mcp_handler.JSONRPC_HEADER_MISMATCH,
+            mcp_handler.JSONRPC_UNSUPPORTED_PROTOCOL_VERSION,
+        }
+        module_codes = {
+            value for name, value in vars(mcp_handler).items()
+            if name.startswith('JSONRPC_') and isinstance(value, int)
+        }
+
+        assert module_codes & set(reserved) == emitted, (
+            f"a code in the spec-reserved -32020..-32099 range that is not one of "
+            f"the two 2026-07-28 defines: "
+            f"{sorted((module_codes & set(reserved)) - emitted)}"
+        )
+        # Positive control: the two ARE in the reserved range, or the assertion
+        # above is comparing two empty sets.
+        assert emitted <= set(reserved)
+
+
+# ===========================================================================
 # HTTP methods the transport defines and this server does not implement
 # ===========================================================================
 
@@ -1272,8 +1630,182 @@ class TestMethodNotAllowed:
         assert response["statusCode"] == 200
 
 
+class TestNotificationsAreAccepted:
+    """A notification is 202 with NO body, and never a JSON-RPC response.
+
+    Every advertised revision says it in identical words: "If the input is a
+    JSON-RPC response or notification: If the server accepts the input, the server
+    MUST return HTTP status code 202 Accepted with no body."
+
+    Two defects lived here, and both were client-visible:
+
+      • `notifications/initialized` was answered 200 with a full result carrying
+        `id: null` — a reply to a message that gets no reply, and an ill-formed one,
+        because a result's id must not be null and a client correlating by id holds
+        a response matching no request it sent.
+      • every OTHER notification fell through to the unknown-method branch and got
+        404. On this endpoint, in the revisions this server advertises, a 404 means
+        the SESSION was terminated and the client "MUST start a new session by
+        sending a new InitializeRequest" — so `notifications/cancelled`, the
+        transport's own cancellation mechanism, told a client to tear down a live
+        session over routine traffic.
+
+    Reverting the `_is_notification` branch in `lambda_handler` fails every test in
+    this class.
+    """
+
+    # The notification this server dispatches, plus three a conforming client may
+    # send that it does not. All four get the same answer, which is the point: a
+    # notification carries no obligation to act, so accepting and ignoring one is
+    # what a server with no cancellation semantics honestly does.
+    NOTIFICATIONS: ClassVar[tuple[str, ...]] = (
+        "notifications/initialized",
+        "notifications/cancelled",
+        "notifications/progress",
+        "notifications/roots/list_changed",
+    )
+
+    @pytest.mark.parametrize("method", NOTIFICATIONS)
+    def test_a_notification_is_202_with_an_empty_body(self, method):
+        response = _raw_call(_notification_event(method))
+
+        assert response["statusCode"] == 202, response["body"]
+        assert response["body"] == "", (
+            f"{method} was answered with a body: {response['body']}"
+        )
+
+    def test_the_undispatched_notifications_really_are_undispatched(self):
+        """Anti-vacuity for the parametrisation above.
+
+        Three of those four are not in the dispatch tables, and that is what makes
+        them the interesting cases: they used to reach the unknown-method branch.
+        If they were all dispatched, this class would only be testing the one that
+        always had a handler.
+        """
+        dispatched = {*mcp_handler.MCP_METHODS, *mcp_handler.MCP_AUTH_METHODS}
+        undispatched = [m for m in self.NOTIFICATIONS if m not in dispatched]
+
+        assert len(undispatched) >= 3, (
+            f"only {undispatched} are undispatched; this class needs the "
+            f"not-implemented notifications to be the subject"
+        )
+
+    @pytest.mark.parametrize("method", NOTIFICATIONS)
+    def test_a_notification_is_never_answered_404(self, method):
+        """The finding, stated as the thing that must not happen.
+
+        A 404 on this endpoint instructs a client to re-initialize, so this is not
+        a matter of tidiness: normal cancellation traffic was corrupting session
+        state.
+        """
+        response = _raw_call(_notification_event(method))
+
+        assert response["statusCode"] != 404, (
+            f"{method} was answered 404, which tells the client its session died"
+        )
+
+    def test_a_notification_keeps_its_cors_headers(self):
+        """A browser-based client must be able to read the 202.
+
+        Without `Access-Control-Allow-Origin` the answer is opaque to it, which is
+        the same property every other response on this endpoint has.
+        """
+        response = _raw_call(_notification_event("notifications/initialized"))
+
+        assert response["headers"]["Access-Control-Allow-Origin"] == "*"
+
+    def test_an_accepted_notification_announces_no_content_type(self):
+        """There is no content to describe.
+
+        `Content-Type: application/json` on an empty body is a small lie a strict
+        client is entitled to complain about — and it is what a shared
+        `_cors_response` would have sent.
+        """
+        response = _raw_call(_notification_event("notifications/initialized"))
+
+        assert "Content-Type" not in response["headers"]
+
+    def test_a_notification_with_an_id_is_a_request_and_is_answered(self):
+        """JSON-RPC's definition is the id MEMBER, not the method name.
+
+        A `notifications/`-named message carrying an id is a request by that
+        definition, so it gets the request answer rather than being silently
+        accepted — a client that sent an id is waiting for something.
+        """
+        status, body = _call(_event("notifications/initialized"))
+
+        assert status == 404, body
+        assert body["error"]["code"] == -32601
+        assert body["id"] == 1
+
+    def test_a_null_id_is_not_a_notification(self):
+        """`"id": null` is a PRESENT member, so this is a malformed request rather
+        than a notification. Accepting it as one would let a client that meant to
+        correlate a response be answered with silence."""
+        response = _raw_call(_event(
+            body=json.dumps({"jsonrpc": "2.0", "id": None,
+                             "method": "notifications/cancelled", "params": {}}),
+        ))
+
+        assert response["statusCode"] != 202
+        assert json.loads(response["body"])["error"]["code"] == -32601
+
+    def test_a_non_notification_method_without_an_id_is_not_accepted(self):
+        """Both halves of `_is_notification` are required.
+
+        A `tools/call` with no id is not a notification — MCP defines none by that
+        name — and accepting it 202 would silently drop a request a client is
+        waiting on.
+        """
+        response = _raw_call(_notification_event("tools/call", token=_TOKEN))
+
+        assert response["statusCode"] != 202, response["body"]
+
+    def test_a_notification_never_reaches_the_token_store(self):
+        """It is accepted before dispatch and before authentication, so a
+        credential presented on one buys no probe of the store."""
+        with patch("mcp_handler.projects_table") as table:
+            response = mcp_handler.lambda_handler(
+                _notification_event("notifications/cancelled", token=_TOKEN), MagicMock(),
+            )
+
+        assert response["statusCode"] == 202
+        table.query.assert_not_called()
+
+    def test_a_notification_still_passes_the_transport_guards(self):
+        """202 is for a notification this server ACCEPTS.
+
+        A malformed transport is not accepted: the message has not said what it is,
+        and the Origin and header guards run before the message kind is considered.
+        """
+        response = _raw_call(_notification_event(
+            "notifications/initialized",
+            headers={"MCP-Protocol-Version": "1999-01-01"},
+        ))
+
+        assert response["statusCode"] == 400, response["body"]
+        assert json.loads(response["body"])["error"]["code"] == -32022
+
+    def test_a_disallowed_origin_is_refused_before_a_notification_is_accepted(self):
+        """The DNS-rebinding guard covers this path too — a 202 is still an answer
+        to a request a rebound page made."""
+        with patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com"):
+            response = mcp_handler.lambda_handler(
+                _notification_event("notifications/initialized",
+                                    headers={"Origin": "https://evil.example.net"}),
+                MagicMock(),
+            )
+
+        assert response["statusCode"] == 403, response["body"]
+
+
 class TestUnknownMethod:
-    """An unknown JSON-RPC method is -32601 and nothing else."""
+    """An unknown JSON-RPC REQUEST is -32601 with a 404, and nothing else.
+
+    A request, not a notification: the two used to share this branch, and 404 means
+    something different to a notification's sender. `TestNotificationsAreAccepted`
+    owns that half.
+    """
 
     def test_an_unknown_method_is_method_not_found(self):
         """-32601 with HTTP 404, which the Streamable HTTP transport REQUIRES.
@@ -1289,6 +1821,20 @@ class TestUnknownMethod:
         assert body["error"]["code"] == -32601
         assert "tools/teleport" in body["error"]["message"]
         assert status == 404, body
+
+    def test_the_two_message_kinds_get_different_answers(self):
+        """The split, asserted as a difference.
+
+        A single hard-coded answer satisfied both branches before, and that was the
+        defect: one status for "this method does not exist" and for "your session
+        died". Comparing the two answers is what stops one answer serving both.
+        """
+        request = _raw_call(_event("notifications/cancelled"))
+        notification = _raw_call(_notification_event("notifications/cancelled"))
+
+        assert request["statusCode"] == 404
+        assert notification["statusCode"] == 202
+        assert request["statusCode"] != notification["statusCode"]
 
     def test_an_unknown_method_never_reaches_the_token_store(self):
         """A method that does not exist cannot need a credential, so asking for
@@ -1749,24 +2295,35 @@ class TestADeadCredentialFailsTheHandshake:
         )
         assert not checked & set(mcp_handler.MCP_AUTH_METHODS)
 
-    @pytest.mark.parametrize("method", ["ping", "notifications/initialized"])
-    def test_a_keepalive_is_not_a_liveness_probe(self, method):
-        """`ping` and the notifications are deliberately NOT checked, and the
-        second reason is the stronger one.
+    def test_a_keepalive_is_not_a_liveness_probe(self):
+        """`ping` is deliberately NOT checked.
 
         Cost: `ping` is a keepalive, so checking it put a token-store read on every
         heartbeat of every session — on a route throttled at 20 rps whose authorizer
         caches for 300 s, which is how one valid-shaped token drives that stream
         past the cache. Before this, `ping` touched nothing.
-
-        Protocol: a NOTIFICATION CARRIES NO ID, so a 401 to one is a response to a
-        message JSON-RPC says must not receive one. And nobody concludes "connected"
-        from an un-refused notification, so the honesty defect was never here.
         """
-        status, body = _call(_event(method, token=_TOKEN), row=self._expired_row())
+        status, body = _call(_event("ping", token=_TOKEN), row=self._expired_row())
 
         assert status == 200, body
         assert "error" not in body
+
+    def test_a_notification_with_a_dead_credential_is_still_accepted(self):
+        """The other half of the same rule, now enforced structurally.
+
+        A NOTIFICATION CARRIES NO ID, so a 401 to one is a response to a message
+        JSON-RPC says must not receive one — and nobody concludes "connected" from
+        an un-refused notification, so the honesty defect was never here. The 202
+        answer reaches this before the dispatch does, which is why this is no longer
+        a matter of `_LIVENESS_CHECKED_METHODS`'s contents.
+        """
+        response = _raw_call(
+            _notification_event("notifications/initialized", token=_TOKEN),
+            row=self._expired_row(),
+        )
+
+        assert response["statusCode"] == 202, response["body"]
+        assert response["body"] == ""
 
     def test_the_liveness_check_never_stamps_last_used_at(self):
         """"Last used" means "last used to read something".

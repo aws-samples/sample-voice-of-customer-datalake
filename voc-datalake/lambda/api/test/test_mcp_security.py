@@ -1487,6 +1487,54 @@ class TestOriginValidation:
         response = mcp_handler.lambda_handler(event, lambda_context)
         assert response["statusCode"] == 403
 
+    @pytest.mark.parametrize("spelling", ["Origin", "origin", "ORIGIN", "oRigin"])
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_every_casing_of_the_header_is_checked(self, spelling, lambda_context):
+        """A guard that reads two spellings by hand is bypassed by the third.
+
+        This function matched only `'origin'` and `'Origin'`, so `ORIGIN:` and
+        `oRigin:` walked past the DNS-rebinding guard entirely on a direct invoke or
+        any non-API-Gateway trigger — a check that fails OPEN. It now reads through
+        `_request_header`, the module's one case-insensitive header reader, which is
+        the same helper `_authenticate` and the transport headers use.
+
+        HTTP header names are case-insensitive, so all four of these are the same
+        header and a browser or a proxy may send any of them.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"][spelling] = "https://evil.example.net"
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, (
+            f"Origin spelled {spelling!r} bypassed the DNS-rebinding guard"
+        )
+
+    @pytest.mark.parametrize("headers", [["x"], "origin", 7, [("origin", "x")]])
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_a_non_dict_headers_value_is_not_a_crash(self, headers, lambda_context):
+        """`event['headers']` is a dict or null from API Gateway — and this is not
+        the only way in.
+
+        `headers.get('origin')` on a list raised `AttributeError`, and this guard
+        runs FIRST in `lambda_handler`, outside its try/except: the result was a 502
+        with no JSON-RPC envelope and no CORS headers, which is precisely the failure
+        shape the `BotoCoreError` clause documents as the thing to avoid. A truthy
+        non-dict was needed to reach it, so `or {}` hid the falsy cases.
+
+        Reads as absence, which passes the guard — the same answer as no Origin at
+        all, and the only honest one: a malformed headers structure states no origin.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"] = headers
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] != 502, response.get("body")
+        assert response["statusCode"] == 200, response["body"]
+
     @patch("mcp_handler.ALLOWED_ORIGIN", "*")
     def test_wildcard_config_disables_the_guard(self, lambda_context):
         """Dev deployments set ALLOWED_ORIGIN='*'; any Origin then passes."""

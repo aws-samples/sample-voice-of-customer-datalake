@@ -127,6 +127,84 @@ PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
 # did — silently upgrades exactly the clients that cannot be upgraded.
 ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 
+# 🔑 THE NEGOTIATED VERSION IS A GATE, NOT A MODE — and this is a deliberate
+# decision rather than an unfinished one, recorded here because the alternative is
+# a reader hunting for a consumer that does not exist.
+#
+# `_validated_protocol_version` is called for its EXCEPTION: nothing reads its
+# return value, and nothing reads `ASSUMED_PROTOCOL_VERSION` beyond it.
+# `_handle_initialize` puts the negotiated version in its answer and no later
+# request consults what was negotiated. So the version decides whether a request is
+# SERVED, never what it is served.
+#
+# That is honest as long as the envelope is revision-invariant, which it is: every
+# revision in the range above is handshake-based, none of them differs in a way
+# this server exercises, and the same fields go out whichever one was negotiated.
+# The transport's stated purpose for the header — "allowing the MCP server to
+# respond based on the MCP protocol version" — is therefore satisfied vacuously
+# rather than ignored.
+#
+# Per-revision response SHAPING is the next phase's work, and it arrives with
+# 2026-07-28 rather than before it: that is the revision that actually defines
+# fields the older ones do not (see the provenance note below), so it is the first
+# one where "which revision is this" changes what should be sent. Threading the
+# validated version into the dispatch now would add a parameter every handler
+# ignores, which is a seam that looks load-bearing and is not.
+#
+# ---------------------------------------------------------------------------
+# ⚠️ PROVENANCE: what this envelope sends that the advertised range does not define
+# ---------------------------------------------------------------------------
+#
+# Several envelope constructs here are defined by 2026-07-28 — the revision this
+# server deliberately does NOT advertise. Recorded once, and referenced from each
+# declaration, so the next reader can tell a deliberate forward-compatibility bet
+# from a mistake:
+#
+#   • `resultType` (`RESULT_TYPE_KEY`, value `complete`)
+#   • `ttlMs` and `cacheScope` (`CACHE_SCOPE_*`, `_TOOL_LIST_TTL_MS`,
+#     `_DISCOVER_TTL_MS`)
+#   • `-32020 HeaderMismatch` and `-32022 UnsupportedProtocolVersion`
+#   • the `server/discover` method and its `DiscoverResult` field names
+#
+# None of these appears in 2025-11-25 or earlier. They are sent anyway, and it is
+# safe because it is ADDITIVE: those revisions' `Result` is
+# `additionalProperties: {}` and `ListToolsResult` sets no
+# `additionalProperties: false`, so a conforming client of an advertised revision
+# IGNORES a member it does not know rather than rejecting the message. No field
+# any advertised revision defines is replaced or retyped — `_additive_only` in the
+# envelope tests pins that half, which is the half that could break a client.
+#
+# The alternative was to hold these back until 2026-07-28 is negotiable, which
+# would mean shipping a locally-invented equivalent in the meantime and renaming it
+# later — the exact defect the previous round removed.
+#
+# THE ERROR CODES ARE THE ONE JUDGEMENT CALL, so it is stated rather than implied.
+# 2026-07-28 reserves -32020..-32099 for the specification and says an
+# implementation "MUST NOT emit any code from this sub-range that is not defined by
+# this specification". Read literally, that rule is satisfied: -32020 and -32022
+# ARE defined by that specification and are used with exactly its meaning, and no
+# neighbour in the range is invented. Read from a 2025-11-25 client's seat, the
+# sub-range has no definitions at all, so the code is one that client cannot
+# interpret. Both readings were weighed and the codes are KEPT:
+#
+#   • the fallback, `-32600`, is actively worse for the client this matters to. The
+#     transport's backward-compatibility rules have a dual-era client read a 400
+#     body for a RECOGNIZED modern error to conclude "modern server, retry with a
+#     supported version", and anything else to conclude "legacy server". `-32600`
+#     sent a client that merely guessed a version wrong into legacy fallback
+#     against a server advertising a modern revision. That was the earlier finding
+#     these codes exist to answer.
+#   • an unrecognized error CODE is not a validation failure the way an
+#     unrecognized `resultType` value is. There is no schema rule obliging a client
+#     to reject it, the human-readable `message` is unaffected, and the recovery
+#     path travels in `data.supported`, which a client reads without knowing the
+#     code at all.
+#
+# When 2026-07-28 becomes negotiable, none of this changes shape — it stops being
+# early. What changes is that these constructs become REQUIRED rather than
+# additive, and the reserved-range question stops having two readings.
+# ---------------------------------------------------------------------------
+
 # Semver on the SERVER, independent of the protocol revision above, and the only
 # signal a client gets that a tool's output shape moved — it is advertised in
 # `serverInfo` on every `initialize`.
@@ -184,7 +262,49 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 # Minor rather than major because no declared tool INPUT or OUTPUT shape moved: a
 # client validating `structuredContent` against a cached `outputSchema` is
 # unaffected. The reconnect caveat above applies with the same force.
-MCP_SERVER_VERSION = "3.3.0"
+#
+# ⚠️ Minor for a RENAME needs the argument the 3.0.0 entry above implies, because
+# by that entry's own rule — "a client coded against the NAMES loses them, which is
+# a major bump by this file's own rule rather than a judgement about how many
+# clients exist" — renaming a published field reads like the major case. What makes
+# it minor here is not the count of affected clients but that there can be none:
+# every field 3.3.0 renames was INTRODUCED IN 3.2.0, and 3.2.0 was never deployed.
+# No client can hold a catalogue or a cached result containing `_meta.cacheHints`,
+# a local `resultType` value or a bare `costClass`, because no build that published
+# them ever left the account. Measured against the last DEPLOYED version, 3.1.0,
+# every part of 3.3.0 is an addition.
+#
+# So the rule stands and is worth restating sharply: renaming a field a DEPLOYED
+# version published is a MAJOR bump. Renaming one introduced and superseded between
+# two deploys is bookkeeping. The distinction is "could a client have cached it",
+# not "is the diff large".
+#
+# 3.4.0 fixes what the envelope does with a message it must not answer, and with a
+# status that means something else on the revisions it advertises:
+#   • A NOTIFICATION is now `202 Accepted` with no body, which every advertised
+#     revision states as a MUST. It was answered `200` with a JSON-RPC result
+#     carrying `id: null` — a reply to a message that gets no reply, and an
+#     ill-formed one, since a result's id must not be null.
+#   • The notifications this server does NOT dispatch — `notifications/cancelled`
+#     above all — were answered `404`, and on the advertised revisions a 404 on this
+#     endpoint means the session was terminated and the client MUST re-initialize.
+#     Routine cancellation traffic was tearing down live sessions. An unknown
+#     REQUEST is still 404 with -32601.
+#   • `initialize` no longer refuses an `MCP-Protocol-Version` naming a revision
+#     this server does not implement; it counter-offers, which is what a
+#     current-generation client's very first request needs (it must send its own
+#     revision and has nothing else to send). Every other method still refuses.
+#   • `RESULT_SHAPE_ACK` is GONE, because the response it described must not be
+#     sent. This is the only REMOVAL, and it is why this entry is not a patch.
+#
+# Minor rather than major, and the rule above is what decides it: no published tool
+# declaration moved, so the fingerprinted catalogue is untouched, and the removed
+# `ack` shape was introduced in 3.3.0 — undeployed — so no client can have seen it.
+# What DOES change for a deployed 3.1.0 client is the notification path, and that
+# change is from an ill-formed answer to the one the spec mandates: a client
+# ignoring the ack (the only correct thing to do with it) is unaffected, and one
+# parsing it was parsing a response it should never have received.
+MCP_SERVER_VERSION = "3.4.0"
 
 
 # ============================================
@@ -587,6 +707,65 @@ def _cors_response(body: dict, status_code: int = 200,
     }
 
 
+def _accepted_no_content() -> dict:
+    """202 Accepted with NO body — the transport's answer to a notification.
+
+    Every revision this server advertises states the rule in identical words
+    (Streamable HTTP, *Sending Messages to the Server*): "If the input is a
+    JSON-RPC response or notification: If the server accepts the input, the server
+    MUST return HTTP status code 202 Accepted with no body."
+
+    ⚠️ What this replaces was not merely untidy. A notification used to be answered
+    with `200` and a full JSON-RPC result carrying `id: null`, which breaks the rule
+    twice over: it REPLIES to a message JSON-RPC says gets no reply, and the reply
+    it sends is ill-formed, because a result's `id` must not be null and a client
+    correlating responses by id holds one matching no request it ever made.
+
+    A separate function from `_cors_response` because the difference is the absence
+    of a body, and threading a "no body" flag through the builder every other
+    answer uses would have made an empty body a thing a caller can produce by
+    accident. CORS headers still travel — a browser-based client must be able to
+    read the 202 — while `Content-Type` deliberately does not: there is no content
+    to describe, and announcing `application/json` for an empty body is the sort of
+    small lie a strict client is entitled to complain about.
+    """
+    return {
+        'statusCode': 202,
+        'headers': dict(CORS_HEADERS),
+        'body': '',
+    }
+
+
+def _request_header(event: dict, name: str) -> str | None:
+    """One header, matched case-insensitively, or None when absent.
+
+    `name` is the LOWERCASE spelling; every key on the event is folded before
+    comparison. API Gateway lowercases header names in proxy mode, but a direct
+    invoke (a test, a local driver) does not, and a guard has to hold for both.
+    An empty value is NOT absence: a client that sent a header empty said
+    something, and what it said is not a valid value for any header read here.
+
+    A non-dict `headers` reads as absence. A Lambda proxy event always delivers a
+    dict or null, so this needs a direct invoke or a non-API-Gateway trigger to
+    reach — but the alternative is an `AttributeError` from `.get`, and the one
+    caller that ran before the handler's try/except turned that into a 502 with no
+    JSON-RPC envelope and no CORS headers.
+
+    ⚠️ Shared by `_origin_allowed`, the transport headers and the credential read,
+    which is the point: it is the only header reader in this module, so a casing
+    or a shape that would bypass one guard bypasses none of them. `_origin_allowed`
+    used to match `'origin'` and `'Origin'` by hand, so `ORIGIN:` or `oRigin:`
+    walked past the DNS-rebinding guard on a direct invoke.
+    """
+    headers = event.get('headers') or {}
+    if not isinstance(headers, dict):
+        return None
+    for key, value in headers.items():
+        if isinstance(key, str) and key.lower() == name:
+            return value if isinstance(value, str) else ''
+    return None
+
+
 def _origin_allowed(event: dict) -> bool:
     """DNS-rebinding guard: reject a browser-presented Origin that is not ours.
 
@@ -598,9 +777,16 @@ def _origin_allowed(event: dict) -> bool:
     '*' (dev deployments) passes everything. Comparison is exact-string on the
     scheme+host+port tuple the browser sends — no normalisation, mirroring the
     strictness the MCP auth spec demands for issuer comparison.
+
+    The header is read through `_request_header`, the shared reader, which closes
+    two gaps this function had while it read `event['headers']` by hand: it matched
+    only `'origin'` and `'Origin'`, so `ORIGIN:` or `oRigin:` bypassed the guard
+    entirely on a direct invoke, and `.get` on a non-dict `headers` raised
+    `AttributeError`. This function runs FIRST in `lambda_handler`, outside its
+    try/except, so that raise was a 502 with no JSON-RPC envelope and no CORS
+    headers — the exact shape the `BotoCoreError` clause exists to avoid.
     """
-    headers = event.get('headers') or {}
-    origin = headers.get('origin') or headers.get('Origin') or ''
+    origin = _request_header(event, 'origin') or ''
     if not origin:
         return True
     if ALLOWED_ORIGIN == '*':
@@ -647,12 +833,28 @@ _ENCODED_WORD = re.compile(r'\A=\?base64\?(.*)\?=\Z', re.DOTALL)
 #
 # (-32021 MissingRequiredClientCapability is the third in the range and is not
 # used here: this server requires no client capability.)
+#
+# ⚠️ WHICH spec: BOTH CODES ARE DEFINED BY 2026-07-28 ONLY, and no advertised
+# revision defines any code in that sub-range. So every client this server actually
+# talks to receives a code its own revision does not define. That is the one
+# genuine judgement call in the provenance note at `ASSUMED_PROTOCOL_VERSION`, and
+# it is argued in full there: kept because the fallback (-32600) actively misleads
+# a dual-era client's era probe into legacy fallback, and because an unrecognized
+# error CODE — unlike an unrecognized `resultType` VALUE — obliges a client to
+# reject nothing, while the recovery path travels in `data.supported`, which is
+# readable without knowing the code.
 JSONRPC_HEADER_MISMATCH = -32020
 JSONRPC_UNSUPPORTED_PROTOCOL_VERSION = -32022
 
-# JSON-RPC's own code for a method this server does not implement. Paired with
-# HTTP 404 by the Streamable HTTP transport, which is what lets a client tell this
-# apart from the 404 of a legacy HTTP+SSE server that does not host the endpoint.
+# JSON-RPC's own code for a method this server does not implement — from JSON-RPC
+# 2.0 itself, so unlike the two above every revision knows it.
+#
+# Paired with HTTP 404 by the Streamable HTTP transport, which is what lets a client
+# tell this apart from the 404 of a legacy HTTP+SSE server that does not host the
+# endpoint. ⚠️ That PAIRING is 2026-07-28's rule, and on the advertised revisions a
+# 404 here also carries a session meaning — which is why only a REQUEST is answered
+# with it and a notification is answered 202. See the unknown-method branch in
+# `lambda_handler`.
 JSONRPC_METHOD_NOT_FOUND = -32601
 
 # `-32600 Invalid Request` for a malformed transport that is neither of the two
@@ -694,24 +896,6 @@ class InvalidTransportHeader(Exception):
         self.status_code = status_code
 
 
-def _request_header(event: dict, name: str) -> str | None:
-    """One header, matched case-insensitively, or None when absent.
-
-    API Gateway lowercases header names in proxy mode, but a direct invoke (a
-    test, a local driver) does not, and the guard has to hold for both — the same
-    lesson `_origin_allowed` records for `Origin`. An empty value is NOT absence:
-    a client that sent the header empty said something, and what it said is not a
-    valid value for any of the three.
-    """
-    headers = event.get('headers') or {}
-    if not isinstance(headers, dict):
-        return None
-    for key, value in headers.items():
-        if isinstance(key, str) and key.lower() == name:
-            return value if isinstance(value, str) else ''
-    return None
-
-
 def _decoded_header(raw: str, name: str) -> str:
     """A header value with the encoded-word sentinel resolved.
 
@@ -721,6 +905,22 @@ def _decoded_header(raw: str, name: str) -> str:
     compared literally: treating `=?base64?not-base64?=` as a version string
     would report "unsupported protocol version =?base64?…?=", which sends the
     caller after a version number when the fault is the encoding.
+
+    Accepted on `MCP-Protocol-Version` too, which is WIDER than the spec asks: the
+    sentinel is defined for `Mcp-Name` and `Mcp-Param-{Name}`, and a date string is
+    always header-safe so a conforming client has no reason to encode one. Kept
+    deliberately — decoding is not permitting, and the version rule survives the
+    spelling — rather than refusing a decodable value on the grounds that nobody
+    should have sent it.
+
+    ⚠️ CONSTRAINT ON FUTURE CALLERS. `validate=True` rejects non-alphabet
+    characters in the payload, but the DECODED UTF-8 may still carry control
+    characters — a CR or an LF is exactly what an encoded-word smuggles past a
+    header parser. Every value this returns today is compared against a body value
+    and then discarded, so nothing is injected anywhere; that is a property of the
+    three call sites, NOT of this function. A caller that logs a decoded value or
+    forwards it into a downstream header or path needs a CR/LF guard first, and
+    that is the moment to add one here rather than at the new call site.
     """
     match = _ENCODED_WORD.match(raw)
     if not match:
@@ -768,15 +968,15 @@ def _negotiate_protocol_version(requested: Any) -> str:
     with the counter-offer closes the connection, which is its decision to make.
 
     Contrast the HEADER (`_validated_protocol_version` below), where an
-    unsupported value IS refused: by then the handshake has happened, so a
-    version this server never offered can only be a client contradicting itself.
+    unsupported value IS refused — for every method EXCEPT this one. See that
+    function for why the handshake is the exception.
     """
     if isinstance(requested, str) and requested in SUPPORTED_PROTOCOL_VERSIONS:
         return requested
     return PREFERRED_PROTOCOL_VERSION
 
 
-def _validated_protocol_version(event: dict) -> str:
+def _validated_protocol_version(event: dict, method: str = '') -> str:
     """The revision named by the transport header, refusing one we cannot speak.
 
     An ABSENT header reads as `ASSUMED_PROTOCOL_VERSION` (2025-03-26), which is
@@ -786,12 +986,50 @@ def _validated_protocol_version(event: dict) -> str:
     those clients; reading it as the NEWEST supported revision — as this did —
     silently upgrades precisely the clients that cannot be upgraded. A client that
     DOES send the header has made a claim this server can check.
+
+    ⚠️ `initialize` IS EXEMPT from the refusal, and this is the asymmetry the
+    docstring above points at. The earlier reading — "by then the handshake has
+    happened, so a version this server never offered can only be a client
+    contradicting itself" — is true of request N and false of request 1. A client
+    whose newest revision is 2026-07-28 MUST send that value on its very first
+    POST: that revision requires the header on every request and has no handshake
+    to learn a different value from. Refusing it here meant a current-generation
+    SDK's first contact was a hard 400 and `_negotiate_protocol_version` — the
+    counter-offer that exists for exactly this client — was unreachable, because
+    validation runs before dispatch and `initialize` never ran.
+
+    So on the handshake an unsupported header value falls THROUGH to
+    `_handle_initialize`, which counter-offers the newest revision this server
+    speaks, and the client learns in one round trip what it would otherwise have
+    had to parse out of an error. A 400 on first contact is also what a dual-era
+    client reads as "possibly a legacy server", so the refusal cost a round trip
+    and risked an era misdetection to enforce a rule the handshake already handles.
+
+    Every other method keeps the refusal, `ping` and `server/discover` included:
+    past the handshake a client has a negotiated value to send, and one this server
+    never offered is the client contradicting itself.
+
+    The exemption is narrow: it covers a well-formed value naming a revision this
+    server does not implement, which is the case a counter-offer answers. Two
+    faults are still refused on `initialize`:
+
+      • a malformed encoded-word sentinel, which raises from `_decoded_header`
+        before this function compares anything — there is nothing to counter-offer
+        about a value that does not decode, and the fault is the encoding;
+      • an EMPTY value, refused just below. A client that sent the header empty has
+        not named a revision, so there is no claim to negotiate against; treating
+        it as an unsupported version would answer a version question nobody asked.
     """
     raw = _request_header(event, PROTOCOL_VERSION_HEADER)
     if raw is None:
         return ASSUMED_PROTOCOL_VERSION
     version = _decoded_header(raw, PROTOCOL_VERSION_HEADER)
     if version not in SUPPORTED_PROTOCOL_VERSIONS:
+        if method == 'initialize' and version:
+            # Not an error, and not the client's value either: the session speaks
+            # what the handshake negotiates, which is `PREFERRED_PROTOCOL_VERSION`
+            # for a header naming a revision this server does not implement.
+            return PREFERRED_PROTOCOL_VERSION
         raise InvalidTransportHeader(
             f'Unsupported protocol version {version!r}. This server speaks: '
             f'{", ".join(SUPPORTED_PROTOCOL_VERSIONS)}',
@@ -1802,6 +2040,13 @@ MCP_TOOLS = [_published_tool(declaration) for declaration in _TOOL_DECLARATIONS]
 # `private` is the spec's own encoding of exactly the property the credential
 # filter makes load-bearing: "Cached responses MAY be reused for the same
 # authorization context. Caches MUST NOT be shared across authorization contexts."
+#
+# ⚠️ BOTH FIELDS ARE DEFINED BY 2026-07-28, which this server does not advertise —
+# so "it REQUIRES them" above is that revision's requirement, and under the
+# advertised range they are additive extras a client may ignore. Sending them early
+# is the deliberate bet recorded in the PROVENANCE block at
+# `ASSUMED_PROTOCOL_VERSION`; the alternative was the locally-invented
+# `_meta.cacheHints` this replaced, renamed later.
 CACHE_SCOPE_PUBLIC = 'public'
 CACHE_SCOPE_PRIVATE = 'private'
 
@@ -2357,6 +2602,11 @@ TOOL_REACH_KINDS: dict[str, str] = {
 # `complete` on every result here is the whole vocabulary this server needs:
 # `input_required` belongs to multi-round-trip requests, and no tool asks the
 # caller for more input mid-call.
+#
+# ⚠️ DEFINED BY 2026-07-28, which this server does not advertise. Sent anyway
+# because it is additive under every advertised revision's permissive `Result`
+# schema; see the PROVENANCE block at `ASSUMED_PROTOCOL_VERSION` for the full
+# argument and for what changes when that revision becomes negotiable.
 RESULT_TYPE_KEY = 'resultType'
 RESULT_TYPE_COMPLETE = 'complete'
 
@@ -2368,22 +2618,29 @@ RESULT_TYPE_COMPLETE = 'complete'
 #
 # 🔑 Why a discriminator at all, rather than "look at which keys are present":
 # every result here is a bare JSON object, and telling them apart by key
-# inference is guesswork that gets worse as shapes grow. `{}` is both a `ping`
-# answer and a notification acknowledgement; a tool result and a tool ERROR
-# differ only by a boolean and by whether `structuredContent` happens to be
-# there. A client switching on inferred shape re-derives that table from scratch,
-# gets it subtly wrong, and the failure lands in the client rather than here.
+# inference is guesswork that gets worse as shapes grow. A tool result and a tool
+# ERROR differ only by a boolean and by whether `structuredContent` happens to be
+# there; `ping` answers a bare `{}`. A client switching on inferred shape
+# re-derives that table from scratch, gets it subtly wrong, and the failure lands
+# in the client rather than here.
 #
 # `toolError` is a distinct shape rather than "a toolResult with isError" ON
 # PURPOSE, and `isError` is still sent: the flag is what the spec defines, the
 # shape is what says the payload has no `structuredContent` to validate.
+#
+# ⚠️ There is NO `ack` shape, and its absence is load-bearing rather than an
+# omission. It existed to describe the answer to a notification — and a
+# notification gets 202 Accepted with no body, which every advertised revision
+# states as a MUST, so there is no result to name. Adding one back would be
+# describing a response the transport says must not be sent; the pong/ack pair
+# that half-justified this discriminator was a pair of answers to a message that
+# should have had one.
 RESULT_SHAPE_INITIALIZE = 'initialize'
 RESULT_SHAPE_DISCOVERY = 'discovery'
 RESULT_SHAPE_TOOL_LIST = 'toolList'
 RESULT_SHAPE_TOOL_RESULT = 'toolResult'
 RESULT_SHAPE_TOOL_ERROR = 'toolError'
 RESULT_SHAPE_PONG = 'pong'
-RESULT_SHAPE_ACK = 'ack'
 
 RESULT_SHAPES: frozenset[str] = frozenset({
     RESULT_SHAPE_INITIALIZE,
@@ -2392,7 +2649,6 @@ RESULT_SHAPES: frozenset[str] = frozenset({
     RESULT_SHAPE_TOOL_RESULT,
     RESULT_SHAPE_TOOL_ERROR,
     RESULT_SHAPE_PONG,
-    RESULT_SHAPE_ACK,
 })
 
 
@@ -2522,6 +2778,14 @@ def _handle_discover(req_id: Any, _params: dict) -> dict:
     off than if the method did not exist. The extra facts this server can report
     are still reported — under a vendor-prefixed `_meta` key, which is where the
     cost class already lives and for the same reason.
+
+    ⚠️ THE METHOD ITSELF, and `DiscoverResult` with it, is defined by 2026-07-28 —
+    the revision this server does not advertise. It is offered under the advertised
+    range as an extra method a client is free never to call, which is additive in
+    the strongest sense: a client that does not know it asks for `initialize`
+    instead and loses nothing, and one that does know it gets the spec's own field
+    names rather than a local approximation it would have to unlearn. See the
+    PROVENANCE block at `ASSUMED_PROTOCOL_VERSION`.
     """
     return _jsonrpc_result(req_id, RESULT_SHAPE_DISCOVERY, {
         # The spec's name for this list, and the one field a client calls this
@@ -2985,7 +3249,9 @@ MCP_METHODS = {
     "initialize": _handle_initialize,
     "ping": _handle_ping,
     "server/discover": _handle_discover,
-    "notifications/initialized": None,  # notification, no response needed
+    # `None` means "this method produces no result": it is answered with 202 and
+    # no body, not with a result carrying `id: null`. See `_is_notification`.
+    "notifications/initialized": None,
 }
 
 # Methods that require authentication
@@ -2993,6 +3259,40 @@ MCP_AUTH_METHODS = {
     "tools/list": _handle_tools_list,
     "tools/call": _handle_tools_call,
 }
+
+
+# The prefix MCP gives every notification method it defines. Used to tell a
+# fire-and-forget message from a request WITHOUT a table of them, which matters
+# because the notifications this server does not implement are the ones that need
+# recognising: `notifications/cancelled`, `notifications/progress` and
+# `notifications/roots/list_changed` are all methods a conforming client may send
+# and none of them is dispatched here.
+_NOTIFICATION_METHOD_PREFIX = 'notifications/'
+
+
+def _is_notification(body: Any, method: str) -> bool:
+    """True when this message is a JSON-RPC notification: no reply may be sent.
+
+    Two conditions, and BOTH are required:
+
+      • no `id` MEMBER in the body — JSON-RPC's own definition of a notification
+        is "a Request object without an id member". Tested with `not in` rather
+        than by truthiness, because `"id": 0` and `"id": null` are present members
+        and only one of the three is a notification;
+      • a `notifications/`-prefixed method — MCP's naming convention for the whole
+        class of them.
+
+    Requiring both keeps two things straight that a single test would confuse. An
+    `id` PRESENT on a `notifications/` method makes it a request by JSON-RPC's
+    definition, so it is answered like one (`-32601` for a method that is not
+    dispatched) instead of being silently accepted; and a malformed body with no
+    `id` — a bare `[]`, a string, a number — is not promoted to a notification and
+    accepted, which is what an id-only test would have done to precisely the input
+    that used to crash this handler.
+    """
+    if not isinstance(body, dict) or 'id' in body:
+        return False
+    return method.startswith(_NOTIFICATION_METHOD_PREFIX)
 
 
 @tracer.capture_method
@@ -3149,12 +3449,14 @@ def lambda_handler(event: dict, context: Any) -> dict:
     # authentication for the same reason `_origin_allowed` is — a malformed
     # request should not buy a probe of the token store.
     #
-    # The protocol version is validated even for `initialize`, which is not a
-    # contradiction: the HEADER is the transport's version, the handshake's
-    # `params.protocolVersion` is the session's, and a client may state a
-    # transport version it cannot be served on its very first request.
+    # The METHOD is passed to the version check because the handshake is exempt
+    # from the refusal: a current-generation client MUST send its own revision in
+    # the header on its very first request and has no negotiated value to send
+    # instead, so refusing there made `_handle_initialize`'s counter-offer
+    # unreachable for exactly the clients it exists for. Every other method keeps
+    # the refusal. The reasoning is at `_validated_protocol_version`.
     try:
-        _validated_protocol_version(event)
+        _validated_protocol_version(event, method)
         _validate_routing_headers(event, method, params)
     except InvalidTransportHeader as exc:
         # The code, the `data` payload and the status all come from the exception
@@ -3168,8 +3470,37 @@ def lambda_handler(event: dict, context: Any) -> dict:
             status_code=exc.status_code,
         )
 
+    # A NOTIFICATION is answered 202 with no body and nothing else — before the
+    # dispatch tables are consulted, because the answer is the same whether or not
+    # this server implements the notification in question.
+    #
+    # Every advertised revision states it as a MUST: "If the input is a JSON-RPC
+    # response or notification: If the server accepts the input, the server MUST
+    # return HTTP status code 202 Accepted with no body." Two defects lived here:
+    #
+    #   • `notifications/initialized` was answered with a 200 and a full JSON-RPC
+    #     result carrying `id: null` — a reply to a message that gets no reply, and
+    #     an ill-formed one, since a result's id must not be null;
+    #   • every OTHER notification fell through to the unknown-method branch and
+    #     was answered `404`. On this endpoint a 404 has a specific meaning in the
+    #     advertised revisions — the session was terminated, and a client receiving
+    #     one "MUST start a new session by sending a new InitializeRequest". So a
+    #     client sending `notifications/cancelled`, which is the transport's own
+    #     cancellation mechanism, was told by the revision it negotiated to tear
+    #     down its session and re-initialize. The 404-for-an-unknown-method rule is
+    #     2026-07-28's, and that revision is deliberately not advertised here.
+    #
+    # ACCEPTED rather than refused, for the notifications this server does not
+    # implement as much as for the one it does: a notification carries no
+    # obligation to act, so accepting and ignoring one is what a server with no
+    # cancellation semantics honestly does. Refusing would report a failure to a
+    # sender that is not listening for one.
+    if _is_notification(body, method):
+        logger.info(f"MCP notification accepted: method={method}")
+        return _accepted_no_content()
+
     # Handle the methods that need no credential (initialize, ping,
-    # server/discover, notifications).
+    # server/discover).
     if method in MCP_METHODS:
         # A PRESENTED credential is checked on the methods a client uses to decide
         # it is CONNECTED, and this is the honesty fix this envelope owes: a revoked
@@ -3185,8 +3516,17 @@ def lambda_handler(event: dict, context: Any) -> dict:
             return refusal
         handler = MCP_METHODS[method]
         if handler is None:
-            # Notification — no response needed, but HTTP requires a body
-            return _cors_response(_jsonrpc_result(req_id, RESULT_SHAPE_ACK, {}))
+            # A `None` handler is a method that produces no result, which is only
+            # ever a notification — and one carrying an `id` reached here rather
+            # than the 202 above, so it is a REQUEST naming a notification method.
+            # JSON-RPC says the id makes it a request, and this server implements
+            # no request by that name, so it gets the request answer.
+            return _cors_response(
+                _jsonrpc_error(req_id, JSONRPC_METHOD_NOT_FOUND,
+                               f"Method not found: {method} is a notification and "
+                               f"takes no id"),
+                status_code=404,
+            )
         return _cors_response(handler(req_id, params))
 
     # All other methods require authentication
@@ -3214,18 +3554,34 @@ def lambda_handler(event: dict, context: Any) -> dict:
         # wrong arguments without anything saying so.
         return _cors_response(MCP_AUTH_METHODS[method](req_id, params, token_info))
 
-    # An unknown method is JSON-RPC's own -32601, and nothing else: a client
+    # An unknown REQUEST is JSON-RPC's own -32601, and nothing else: a client
     # probing for a method this server might have needs to be able to tell
     # "no such method here" from a refusal it could fix. `server/discover` exists
     # so the probe is unnecessary in the first place.
     #
-    # HTTP 404 alongside it, which the Streamable HTTP transport REQUIRES and which
-    # is not merely decorative: it is what a dual-era client's fallback probe reads,
-    # and the JSON-RPC body is what distinguishes this 404 from the 404 of a legacy
-    # HTTP+SSE server that does not host the modern endpoint at all. Answering 200
-    # here — as this did — left the status saying "your request was fine" about a
-    # method that does not exist, while the 405 path in this same module already
-    # set a status for the same class of "this server does not do that".
+    # Only a request reaches here. A notification was answered 202 above, which is
+    # the distinction this branch used to miss: `notifications/cancelled` and its
+    # siblings are not dispatched by this server, so they landed here and were told
+    # 404 — see that comment for why that is worse than untidy.
+    #
+    # HTTP 404 alongside the code, which the Streamable HTTP transport REQUIRES and
+    # which is not merely decorative: it is what a dual-era client's fallback probe
+    # reads, and the JSON-RPC body is what distinguishes this 404 from the 404 of a
+    # legacy HTTP+SSE server that does not host the modern endpoint at all.
+    # Answering 200 — as this did — left the status saying "your request was fine"
+    # about a method that does not exist, while the 405 path in this same module
+    # already set a status for the same class of "this server does not do that".
+    #
+    # ⚠️ The 404 is OVERLOADED on this endpoint, and the overload is why it is
+    # confined to requests. The dedicated 404-for-an-unknown-method rule is
+    # 2026-07-28's; in the revisions this server actually advertises, a 404 on the
+    # MCP endpoint means the SESSION was terminated and a client receiving one
+    # "MUST start a new session by sending a new InitializeRequest". A client that
+    # asked for a method this server does not implement re-initializing is a wasted
+    # round trip and no worse — it re-establishes a session that still works and
+    # the method is still absent. A client whose CANCELLATION was answered that way
+    # tore down a live session over routine traffic, which is why notifications
+    # never reach this line.
     return _cors_response(
         _jsonrpc_error(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}"),
         status_code=404,
@@ -3251,7 +3607,10 @@ def lambda_handler(event: dict, context: Any) -> dict:
 #   • A NOTIFICATION CARRIES NO ID. JSON-RPC says a notification gets no response at
 #     all, so answering one with a 401 replies to a message that must not be replied
 #     to. The honesty defect was never about notifications anyway: nobody concludes
-#     "connected" from an un-refused notification.
+#     "connected" from an un-refused notification. This is now structural rather
+#     than a matter of this set's contents — a notification is answered 202 before
+#     the dispatch is reached, so it cannot arrive here — and the entry stays out
+#     for the same reason it was never in.
 _LIVENESS_CHECKED_METHODS: frozenset[str] = frozenset({
     'initialize',
     'server/discover',
