@@ -15,9 +15,10 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import (
     create_api_resolver, validate_days, validate_limit, validate_int,
-    validate_date_basis, DATE_BASIS_REVIEW,
+    validate_date_basis, DATE_BASIS_REVIEW, SEARCH_QUERY_MIN_LENGTH,
     get_configured_categories, api_handler, DEFAULT_CATEGORIES
 )
+from shared.exceptions import ValidationError
 from shared.feedback import basis_date, window_cutoff
 from shared.indexes import (
     AGGREGATES_BY_METRIC_TYPE_INDEX,
@@ -547,8 +548,22 @@ def search_feedback():
     params = app.current_event.query_string_parameters or {}
     
     query = params.get('q', '').strip().lower()
-    if not query or len(query) < 2:
+    # No search term at all is not an error: `q` absent or blank means the caller
+    # is not searching, and the filter-only answer belongs to `/feedback` (which
+    # is where MCP's adapter routes such a call). An empty result is the honest
+    # answer to an empty question.
+    if not query:
         return {'count': 0, 'items': [], 'entities': {}, 'query': query}
+    # A term that IS present but too short used to return the same empty success,
+    # which is a very different claim: it reports "nothing in the corpus matches"
+    # about a search that was never run. On the dashboard a human sees their own
+    # one-character box and infers it; through MCP a model receives
+    # `{'count': 0}` with no error and reports "no customer mentioned that".
+    if len(query) < SEARCH_QUERY_MIN_LENGTH:
+        raise ValidationError(
+            f"Search query must be at least {SEARCH_QUERY_MIN_LENGTH} characters "
+            f"after trimming; received {len(query)}."
+        )
     
     days = validate_days(params.get('days'), default=30)
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
@@ -561,10 +576,22 @@ def search_feedback():
     # /feedback and /metrics/*). Previously spanned days+1 calendar days.
     cutoff_date = window_cutoff(days)
     
-    candidates, _ = _scan_recent_items(
-        # Sampling scan: search text-matches within a bounded recent sample,
-        # so it keeps the smaller legacy budget rather than the full window.
-        min(days, 30), per_day_limit=300, soft_cap=CANDIDATES_SOFT_CAP,
+    # The REQUESTED window, not a second undocumented one.
+    #
+    # This read `min(days, 30)` while `cutoff_date` above was computed from the
+    # caller's full `days`, so the two disagreed: at `days=365` the filter admitted
+    # a year of items and the candidate set held thirty days of them. Every item
+    # older than a month was unreachable by text search at ANY `days` value, and
+    # the answer was a plain `count: 0` — a claim about the corpus standing in for
+    # the boundary of a scan. On the corpus this was found on, a 5,240-item import
+    # sits 37 days back, so roughly 84% of it could not be searched.
+    #
+    # `is_partial` is now KEPT rather than discarded (`candidates, _ =`). That is
+    # the load-bearing half: the soft cap still bounds how many candidates are
+    # collected, so widening the window without saying when the scan stopped early
+    # would only make an incomplete answer slower and no more honest.
+    candidates, window_truncated = _scan_recent_items(
+        days, per_day_limit=300, soft_cap=CANDIDATES_SOFT_CAP,
         source=source_filter,
     )
     
@@ -606,7 +633,17 @@ def search_feedback():
             'sources': dict(sorted(source_counts.items(), key=lambda x: x[1], reverse=True)),
             'sentiments': dict(sorted(sentiment_counts.items(), key=lambda x: x[1], reverse=True)),
         },
-        'query': query
+        'query': query,
+        # Named as `/feedback` names it, because it means the same thing and a
+        # second name for one concept is how the two drift. True when the
+        # candidate scan stopped on the soft cap, so `count: 0` can be told apart
+        # from "the scan gave up before it reached the end of the window" — which
+        # is the distinction the caller could not previously make at all.
+        #
+        # Hitting `limit` is deliberately NOT truncation here, matching
+        # `/feedback`: a caller that asked for N and received N can see that for
+        # itself, whereas a scan that stopped early is invisible without this.
+        'is_partial_window': window_truncated,
     }
 
 

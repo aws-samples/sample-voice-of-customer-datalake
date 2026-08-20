@@ -22,7 +22,7 @@ from boto3.dynamodb.conditions import Key
 # Imported as a module because botocore's own `ConnectionError` would shadow the builtin.
 from botocore import exceptions as botocore_exceptions
 
-from shared.api import DecimalEncoder
+from shared.api import DecimalEncoder, SEARCH_QUERY_MIN_LENGTH
 from shared.mcp_delegate import (
     DelegationUnavailable,
     DomainCall,
@@ -92,7 +92,14 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # uncallable against real data, so nothing could have consumed them — but a
 # client coded against the NAMES loses them, which is a major bump by this
 # file's own rule rather than a judgement about how many clients exist.
-MCP_SERVER_VERSION = "3.0.0"
+#
+# 3.1.0 ADDS `is_partial` to `search_feedback`'s output — an added field, which
+# is a minor bump by the rule above. ⚠️ Minor does not mean invisible: these
+# output shapes carry `additionalProperties: false` and a client validates
+# against the `tools/list` it cached at CONNECT, so a session that predates the
+# deploy rejects the new field until it reconnects. The server honestly declares
+# `tools.listChanged: false`, so there is no notification path to tell it.
+MCP_SERVER_VERSION = "3.1.0"
 
 
 # ============================================
@@ -834,6 +841,40 @@ _PERSONA_SCALAR_TYPES: dict[str, str] = {
     if declared_type not in ("object", "array")
 }
 
+# Each projected feedback key, mapped to the row keys it reads — first non-empty
+# wins.
+#
+# 🔑 This map exists so the feedback projection can be driven by its own
+# declarations, exactly as `_project_persona` is. It could not simply iterate the
+# declared properties against the row, because this projection RENAMES
+# (`source_platform`→`source`, `original_text`→`text`,
+# `problem_root_cause_hypothesis`→`problem_root_cause`), so the declared key is
+# not the key to read. Stating the mapping once is what lets EVERY declared field
+# be coerced instead of the handful someone remembered to wrap in `str()`.
+#
+# `id` is the only multi-key entry, preserving the existing fallback: the
+# processor writes `feedback_id`, and a row that happens to carry a plain `id` is
+# not worth breaking to make a point.
+_FEEDBACK_SOURCE_KEYS: dict[str, tuple[str, ...]] = {
+    "id": ('feedback_id', 'id'),
+    "source": ('source_platform',),
+    "date": ('source_created_at',),
+    "sentiment": ('sentiment_label',),
+    "sentiment_score": ('sentiment_score',),
+    "category": ('category',),
+    "urgency": ('urgency',),
+    "rating": ('rating',),
+    "persona_type": ('persona_type',),
+    "text": ('original_text',),
+    "problem_summary": ('problem_summary',),
+    "journey_stage": ('journey_stage',),
+    "problem_root_cause": ('problem_root_cause_hypothesis',),
+    "direct_quote": ('direct_customer_quote',),
+    "keywords": ('keywords',),
+}
+_FEEDBACK_SUMMARY_TYPES: dict[str, str] = _declared_types(_FEEDBACK_SUMMARY_PROPERTIES)
+_FEEDBACK_DETAIL_TYPES: dict[str, str] = _declared_types(_FEEDBACK_DETAIL_PROPERTIES)
+
 # A window argument, stated once. `maximum` is the route's real ceiling
 # (`validate_days` bounds to 365) rather than a tighter number restated here:
 # the adapter no longer clamps, so a limit this file invented would be a
@@ -859,9 +900,18 @@ MCP_TOOLS = [
             "properties": {
                 "query": {
                     "type": "string",
+                    # DECLARED, not just described. The sentence below always said
+                    # "at least 2 characters" while the schema accepted "a", so a
+                    # validating client had nothing to check against and the route
+                    # answered a one-character search with `{'count': 0}` and no
+                    # error. Both the constraint and the sentence now read from
+                    # `SEARCH_QUERY_MIN_LENGTH`, so the prose cannot drift from the
+                    # rule the route actually enforces.
+                    "minLength": SEARCH_QUERY_MIN_LENGTH,
                     "description": (
                         "Text to match in the verbatim, title or problem summary. "
-                        "Must be at least 2 characters. Omit to list by filters alone."
+                        f"Must be at least {SEARCH_QUERY_MIN_LENGTH} characters. "
+                        "Omit to list by filters alone."
                     ),
                 },
                 "days": _DAYS_ARG,
@@ -903,6 +953,21 @@ MCP_TOOLS = [
             "properties": {
                 "count": {"type": "integer", "description": "Items returned"},
                 "query": {"type": "string", "description": "The text matched, empty when filtering only"},
+                # The tool most likely to truncate was the only one that hid it.
+                # `get_metrics_breakdown` has always published `is_partial`; this
+                # one collected the same flag from the route and threw it away, so
+                # `count: 0` could mean "nothing matches in your window" or "the
+                # scan stopped before reaching the end of it" and a caller had no
+                # way to tell. REQUIRED, because a flag that is sometimes missing
+                # is read as absence of truncation — the same mistake as asserting
+                # it false.
+                "is_partial": {
+                    "type": "boolean",
+                    "description": (
+                        "True when the candidate scan stopped on its soft cap before "
+                        "covering the whole window, so results are a sample of it"
+                    ),
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -912,7 +977,7 @@ MCP_TOOLS = [
                     },
                 },
             },
-            "required": ["count", "query", "items"],
+            "required": ["count", "query", "is_partial", "items"],
             "additionalProperties": False,
         },
     },
@@ -1099,6 +1164,20 @@ MCP_TOOLS = [
 # MCP Tool implementations
 # ============================================
 
+def _row_value(item: dict, keys: tuple[str, ...]) -> Any:
+    """The first present value among `keys`, or None.
+
+    Presence is "not absent and not empty string" rather than truthiness, so a
+    `rating` or `sentiment_score` of 0 counts as present and reports as `'0'`.
+    Testing truthiness here would report a zero rating as unrated.
+    """
+    for key in keys:
+        value = item.get(key)
+        if value is not None and value != '':
+            return value
+    return None
+
+
 def _project_feedback(item: dict, *, summary: bool) -> dict:
     """Reshape one raw feedback record for a model to read.
 
@@ -1116,45 +1195,51 @@ def _project_feedback(item: dict, *, summary: bool) -> dict:
     `sentiment_score` and `rating` are stringified, preserving the existing
     contract: both are DynamoDB Decimals, and a client that pattern-matched on
     `"rating": "N/A"` for an unrated item still sees it.
+
+    Every field is coerced to the type it is DECLARED as, driven by
+    `_FEEDBACK_SOURCE_KEYS` and the declarations rather than field by field. The
+    version this replaces read each field with `item.get(key, default)`, and a
+    default fires only when a key is ABSENT — it cannot correct a value of the
+    wrong TYPE. That is the same defect that made `list_personas` uncallable, and
+    here it was worse than a schema violation: `date` and `text` are SLICED
+    (`[:10]`, `[:_SUMMARY_TEXT_LIMIT]`), so a row storing either as a number or a
+    dict raised `TypeError` inside the projection and took down the whole tool
+    call. Coercing first makes both slices safe by construction.
+
+    Only `id` and `rating` keep behaviour that the declarations cannot express:
+    `id` falls back across two row keys, and an absent `rating` reports the
+    documented `'N/A'` rather than an empty string.
     """
+    # `feedback_id` FIRST, and this is a bug fix rather than a rename.
+    #
+    # Both feedback tools reported `item.get('id')`, and the processor that
+    # writes these rows never sets a plain `id` — the identifier is
+    # `feedback_id`, which is also the key `GET /feedback/{id}` looks up on its
+    # GSI. So `search_feedback` advertised an `id` field and filled it with `""`
+    # for every item in the corpus, which made `get_feedback_detail` unreachable
+    # for an agent: the only way to learn a feedback id is to search, and search
+    # reported none. Verified live against the deployed API before fixing.
+    declared = _FEEDBACK_SUMMARY_TYPES if summary else _FEEDBACK_DETAIL_TYPES
     projected = {
-        # `feedback_id` FIRST, and this is a bug fix rather than a rename.
-        #
-        # Both feedback tools reported `item.get('id')`, and the processor that
-        # writes these rows never sets a plain `id` — the identifier is
-        # `feedback_id`, which is also the key `GET /feedback/{id}` looks up on
-        # its GSI. So `search_feedback` advertised an `id` field and filled it
-        # with `""` for every item in the corpus, which made
-        # `get_feedback_detail` unreachable for an agent: the only way to learn a
-        # feedback id is to search, and search reported none. Verified live
-        # against the deployed API before fixing.
-        #
-        # `item.get('id')` is kept as the fallback rather than dropped, because a
-        # row that does carry one is not worth breaking to make a point.
-        "id": item.get('feedback_id') or item.get('id', ''),
-        "source": item.get('source_platform', ''),
-        "date": item.get('source_created_at', '') or '',
-        "sentiment": item.get('sentiment_label', ''),
-        "sentiment_score": str(item.get('sentiment_score', '')),
-        "category": item.get('category', ''),
-        "urgency": item.get('urgency', ''),
-        "rating": str(item.get('rating', 'N/A')),
-        "persona_type": item.get('persona_type', ''),
-        "text": item.get('original_text', '') or '',
-        "problem_summary": item.get('problem_summary', ''),
+        # `.get(key, (key,))` rather than `[key]`: a declared property with no
+        # entry in the map reads the row key of its own name instead of raising
+        # `KeyError` and killing the tool call — the M1 failure mode. The
+        # omission is still a CI failure, pinned by
+        # `test_source_key_map_covers_every_declared_field`; this only decides
+        # whether the symptom is a red test or a dead tool in production.
+        key: _coerce_declared(_row_value(item, _FEEDBACK_SOURCE_KEYS.get(key, (key,))), declared_type)
+        for key, declared_type in declared.items()
     }
+    # An unrated item reads `'N/A'`, not `''`. Applied after coercion so a stored
+    # `None` reports `'N/A'` too — `str(None)` used to put the literal `'None'`
+    # in front of a model, which reads as a value rather than as an absence.
+    if not projected["rating"]:
+        projected["rating"] = 'N/A'
     if summary:
         # A list answer carries the date as a plain day and clips the verbatim;
         # the single-item answer carries both in full.
         projected["date"] = projected["date"][:10]
         projected["text"] = projected["text"][:_SUMMARY_TEXT_LIMIT]
-        return projected
-    projected.update({
-        "journey_stage": item.get('journey_stage', ''),
-        "problem_root_cause": item.get('problem_root_cause_hypothesis', ''),
-        "direct_quote": item.get('direct_customer_quote', ''),
-        "keywords": item.get('keywords', []),
-    })
     return projected
 
 
@@ -1192,9 +1277,15 @@ def _tool_search_feedback(args: dict, token_info: dict) -> ToolResult:
     # `count` exceed `len(items)` in the same payload.
     items = [_project_feedback(item, summary=True) for item in raw_items
              if isinstance(item, dict)]
+    # Both routes publish the flag under the same name, so one read covers the
+    # search branch and the filter-only branch. Coerced with `bool()` rather than
+    # passed through: the declaration says boolean, and a route that answered
+    # `null` would otherwise reproduce M1 in the field added to fix M5.
+    truncated = bool(body.get('is_partial_window')) if isinstance(body, dict) else False
     return ToolResult({
         "count": len(items),
         "query": query,
+        "is_partial": truncated,
         "items": items,
     })
 

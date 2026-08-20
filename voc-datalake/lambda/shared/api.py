@@ -53,6 +53,19 @@ def decimal_default(obj):
 # raising this ceiling used to silently halve the fan-out benefit while every test passed.
 MAX_PERSONAS_PER_GENERATION = 10
 
+# The shortest text search `/feedback/search` will run. Lives here, beside
+# MAX_PERSONAS_PER_GENERATION and for the same reason, because THREE places size
+# themselves against it and two of them are in other files: the route that
+# enforces it, the MCP tool's `inputSchema.minLength` plus the sentence in its
+# description that states it, and the frontend's own `SEARCH_MIN_CHARS` gate.
+#
+# 🔑 The bound was previously the bare literal `2` in the route and a claim in
+# English in the MCP tool description, with nothing declaring it — so the tool
+# advertised "must be at least 2 characters" while its schema accepted `"a"`, the
+# route answered `{'count': 0}` to it, and a model read that as "no customer
+# mentioned this". A prose promise cannot fail CI.
+SEARCH_QUERY_MIN_LENGTH = 2
+
 
 def validate_days(
     value: str | int | None,
