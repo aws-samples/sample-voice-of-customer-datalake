@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext
 from shared.persona_import import validate_import_config
+from shared.prompts import PERSONA_IMPORT_PROMPTS, format_prompt, load_prompt_file
 from shared.image_limits import converse_image_format
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.model_config import get_active_model_id
@@ -66,13 +67,24 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
     )
 
     logger.info(f"[IMPORT_PERSONA_JOB] Starting import from {input_type} for project {project_id}")
-    
-    system_prompt = """You are a UX researcher expert at extracting persona information from documents and images.
-Extract persona data from the provided input and output a structured JSON object.
-CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
 
-    json_schema = '{"name": "Full Name", "tagline": "One sentence", "confidence": "high", "identity": {...}, "goals_motivations": {...}, "pain_points": {...}, "behaviors": {...}, "context_environment": {...}, "quotes": [...], "scenario": {...}}'
-    
+    # The prompt comes from `persona-import.json`, which carries the canonical key
+    # set with example values that pin the TYPES (`"workarounds": ["Workaround 1"]`)
+    # and enums (`low|medium|high`). It replaces a schema string built here whose
+    # every section was the literal `{...}`, which named the sections and nothing
+    # about their contents — so the model invented inner keys per document and
+    # `.get(k, {})` below persisted whatever came back.
+    #
+    # The template needs no bundling change: `createJobLambdaCode` copies
+    # `api/prompts` to the bundle root, so `get_prompts_dir()` resolves
+    # `/var/task/prompts` first.
+    prompt_config = load_prompt_file(PERSONA_IMPORT_PROMPTS)
+    system_prompt = prompt_config['system_prompt']
+    # Dumped from the template rather than restated here, so the schema the model
+    # is shown cannot drift from the schema the file declares.
+    json_schema = json.dumps(prompt_config['output_schema'], indent=2)
+    user_prompts = prompt_config['user_prompts']
+
     # Build converse content
     converse_content = []
     if input_type == 'image':
@@ -86,13 +98,18 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
             }
         })
         converse_content.append({
-            'text': f"Extract the persona information from this image.\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
+            'text': f"{user_prompts['image']}\n\nSchema:\n{json_schema}"
         })
     else:
         # `input_type` is 'text' here — the guard above left no other possibility,
         # so there is no fallback content to substitute and nothing to invent.
+        #
+        # The template's `pdf` prompt is deliberately NOT wired: `pdf` is in
+        # `DEFERRED_INPUT_TYPES` and `validate_import_config` refuses it upstream,
+        # so a branch for it here would be unreachable code advertising a
+        # capability the product declines.
         converse_content.append({
-            'text': f"Extract the persona information from this text:\n\n---\n{content}\n---\n\nOutput a JSON object with this structure:\n{json_schema}\n\nOutput ONLY the JSON object."
+            'text': f"{format_prompt(user_prompts['text'], content=content)}\n\nSchema:\n{json_schema}"
         })
     
     ctx.update_progress(30, 'calling_ai')
@@ -108,7 +125,10 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
         modelId=model_id,
         system=[{'text': system_prompt}],
         messages=[{'role': 'user', 'content': converse_content}],
-        inferenceConfig={'maxTokens': 4096}
+        # From the template too, so the budget lives beside the schema it has to
+        # produce rather than as a literal here that nobody updates when the
+        # schema grows.
+        inferenceConfig={'maxTokens': prompt_config['max_tokens']}
     )
     
     response_text = response.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
@@ -146,6 +166,14 @@ CRITICAL: Output ONLY valid JSON, no markdown, no explanation."""
         'scenario': persona_data.get('scenario', {}),
         'research_notes': [],
         'imported_from': input_type,
+        # Attributability, matching what the generation path already records. An
+        # imported persona previously carried no prompt version at all, so a row
+        # with odd inner keys could not be traced to the prompt that produced it —
+        # which is exactly the diagnosis this fix had to reconstruct by hand.
+        'llm_metadata': {
+            'model': model_id,
+            'prompt_version': prompt_config['version'],
+        },
         'created_at': now,
         'updated_at': now,
     }
