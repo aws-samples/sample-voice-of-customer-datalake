@@ -1164,7 +1164,7 @@ MCP_TOOLS = [
 # MCP Tool implementations
 # ============================================
 
-def _row_value(item: dict, keys: tuple[str, ...]) -> Any:
+def _row_value(item: dict[str, Any], keys: tuple[str, ...]) -> Any:
     """The first present value among `keys`, or None.
 
     Presence is "not absent and not empty string" rather than truthiness, so a

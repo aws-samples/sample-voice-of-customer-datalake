@@ -190,7 +190,12 @@ export const api = {
   
   searchFeedback: async (params: { q: string; days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
     const searchParams = buildSearchParams(params)
-    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    // `is_partial_window` declared, not merely surviving the spread below: the
+    // route sets it when the candidate scan stops on its soft cap, and
+    // `extractTotals` already reads that key for the search branch, so the "N+"
+    // display works either way. Declaring it is what tells the next reader the
+    // field is real rather than incidental.
+    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string; is_partial_window?: boolean }>(`/feedback/search?${searchParams}`)
     return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   

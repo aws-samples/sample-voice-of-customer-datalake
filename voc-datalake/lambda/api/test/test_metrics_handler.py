@@ -1026,6 +1026,12 @@ class TestSearchScansTheRequestedWindow:
         answer slower. `count: 0` and "the scan gave up" must be distinguishable.
         """
         from metrics_handler import CANDIDATES_SOFT_CAP
+        # `date` is OMITTED on purpose, and that is load-bearing: the default
+        # `imported` basis reads `item['date']`, so `basis_date` returns `''`,
+        # every row falls below the cutoff, and `count` is 0 for a reason that has
+        # nothing to do with the search term. That is exactly the state under test
+        # — zero matches out of a scan that also truncated. Adding `date` here
+        # would make the rows pass the cutoff and test something else.
         dense_day = [
             {'feedback_id': f'f{i}', 'original_text': 'nothing to match here',
              'source_created_at': '2026-08-01T00:00:00Z'}

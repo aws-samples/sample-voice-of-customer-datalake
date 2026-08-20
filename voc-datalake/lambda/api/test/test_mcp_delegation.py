@@ -1533,11 +1533,21 @@ class TestFeedbackDeclaredTypes:
         under-report class. The runtime fallback keeps it from being a dead tool;
         this test is what keeps it from being invisible.
         """
-        declared = set(mcp_handler._FEEDBACK_DETAIL_TYPES)
+        detail = set(mcp_handler._FEEDBACK_DETAIL_TYPES)
+        summary = set(mcp_handler._FEEDBACK_SUMMARY_TYPES)
         mapped = set(mcp_handler._FEEDBACK_SOURCE_KEYS)
 
-        assert declared - mapped == set(), "declared but unmapped: reads its own name"
-        assert mapped - declared == set(), "mapped but undeclared: dead entry"
+        assert detail - mapped == set(), "declared but unmapped: reads its own name"
+        assert mapped - detail == set(), "mapped but undeclared: dead entry"
+        # BOTH declaration sets, asserted separately. Detail is built as
+        # `{**summary, ...}` so it is a superset today and covering it covers
+        # summary — but that is an implementation detail of one dict literal, and
+        # if it ever stops holding, a summary-only property would fall through to
+        # the `.get(key, (key,))` self-name read with nothing failing. The
+        # superset relation is asserted too, so the redundancy is visible rather
+        # than accidental.
+        assert summary <= detail, "detail is expected to extend summary"
+        assert summary - mapped == set(), "summary-only declaration would read its own name"
 
 
 class TestSearchQueryMinimumIsDeclared:
