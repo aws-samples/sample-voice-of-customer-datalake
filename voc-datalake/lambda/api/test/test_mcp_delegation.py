@@ -144,6 +144,138 @@ def _call(tool: str, arguments: dict, fake: _FakeLambda) -> dict:
         return mcp_handler._handle_tools_call(1, {"name": tool, "arguments": arguments}, _token())
 
 
+# Persona fixtures copied from the SHAPES OF LIVE ROWS, not invented.
+#
+# Two writers exist and they do not agree. `projects.py` generation follows
+# `schemas/persona.schema.json`; `jobs/persona_importer` does not constrain the
+# model, so imported rows carry keys this file cannot predict and sometimes a
+# scalar where the schema says array. Both are represented here, because a
+# fixture that only covered the tidy writer is exactly what hid the defect.
+_GENERATED_PERSONA: dict = {
+    "persona_id": "persona_20260802204425",
+    "name": "Priya Shah",
+    "tagline": "The Habitual Skimmer",
+    "confidence": "high",
+    "feedback_count": 42,
+    "identity": {"age_range": "35-44", "occupation": "Solicitor", "location": "Leeds, UK"},
+    "goals_motivations": {
+        "primary_goal": "Stay informed in ten minutes",
+        "secondary_goals": ["Follow local council news"],
+    },
+    "pain_points": {
+        "current_challenges": ["Alerts bury the real news"],
+        "blockers": ["Nothing blocking her today"],
+        "workarounds": ["Curated her notification categories"],
+        "emotional_impact": "Calm but quietly resigned",
+    },
+    "behaviors": {
+        "current_solutions": ["Home-screen widget"],
+        "tools_used": ["iOS app"],
+        "tech_savviness": "medium-high",
+        "decision_style": "Research-heavy at setup, habitual after",
+    },
+    # Avatar keys, source ids and notes are present on real rows and must be
+    # dropped by the projection — asserted in test_storage_layout_is_not_exposed.
+    "avatar_url": "s3://bucket/avatars/p.png",
+    "source_feedback_ids": ["1ae1eb6abcd7d3a2e364f46139f98466"],
+    "research_notes": [{"note_id": "n1", "text": "seen twice", "created_at": "t"}],
+    "quotes": [{"text": "I just want the headlines.", "context": "onboarding"}],
+}
+
+# `imported_from` rows: unpredictable keys, and `workarounds` is a STRING here
+# while it is a list above. Same key, two types, both live.
+_IMPORTED_PERSONA: dict = {
+    "persona_id": "persona_20260814135248",
+    "name": "Priya Raman",
+    "tagline": "Ops lead under audit pressure",
+    "imported_from": "text",
+    "identity": {"role": "Ops Lead", "industry": "Logistics", "company_size": "200-500"},
+    "goals_motivations": {"primary_goal": "Close the audit", "motivations": ["Avoid fines"]},
+    "pain_points": {"primary_frustration": "No audit trail", "related_issues": ["Manual exports"]},
+    "behaviors": {"workarounds": "Keeps a private spreadsheet", "current_practices": "Weekly review"},
+    "quotes": [{"text": "I cannot prove what changed."}],
+}
+
+# The thinnest live row: one key per section, no quotes, no confidence.
+_SPARSE_PERSONA: dict = {
+    "persona_id": "persona_20260815121940",
+    "name": "Tobias Krenzler",
+    "tagline": "Night-shift supervisor",
+    "identity": {"location": "Hamburg"},
+    "goals_motivations": {"primary_goal": "Finish the handover"},
+    "pain_points": {"frustration": "Shift notes get lost"},
+    "behaviors": {},
+}
+
+_LIVE_PERSONA_SHAPES: tuple[dict, ...] = (
+    _GENERATED_PERSONA, _IMPORTED_PERSONA, _SPARSE_PERSONA,
+)
+
+
+def _tool_output_schema(name: str) -> dict:
+    """The tool's OWN declared `outputSchema`, read from the live registry.
+
+    Read rather than restated so the check cannot drift from what the server
+    publishes — a copy in this file would keep passing after the schema changed.
+    """
+    for tool in mcp_handler.MCP_TOOLS:
+        if tool["name"] == name:
+            return tool["outputSchema"]
+    raise AssertionError(f"no tool named {name}")
+
+
+_JSON_TYPES: dict[str, type | tuple[type, ...]] = {
+    "object": dict,
+    "array": (list, tuple),
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+}
+
+
+def _schema_errors(value, schema: dict, path: str = "") -> list[str]:
+    """Validate against the JSON Schema subset these tool schemas actually use.
+
+    Deliberately NOT a general implementation, and deliberately not a new
+    dependency: `jsonschema` is not installed in this suite, and a hand-rolled
+    general validator is the kind of thing that passes for the wrong reason. This
+    covers exactly `type`, `properties`, `items`, `required`, `enum` and
+    `additionalProperties: false` — every construct present in `MCP_TOOLS` — and
+    `test_the_schema_checker_itself_rejects_a_bad_payload` is its positive
+    control.
+    """
+    declared = schema.get("type")
+    expected = _JSON_TYPES.get(declared) if declared else None
+    if expected is not None:
+        # bool is a subclass of int in Python; an integer field must not accept it.
+        if declared in ("integer", "number") and isinstance(value, bool):
+            return [f"{path or '<root>'}: bool where {declared} declared"]
+        if not isinstance(value, expected):
+            return [f"{path or '<root>'}: {type(value).__name__} where {declared} declared"]
+
+    if "enum" in schema and value not in schema["enum"]:
+        return [f"{path or '<root>'}: {value!r} not in enum"]
+
+    errors: list[str] = []
+    if declared == "object" and isinstance(value, dict):
+        properties = schema.get("properties", {})
+        for key in schema.get("required", []):
+            if key not in value:
+                errors.append(f"{path}.{key}: required but absent")
+        if schema.get("additionalProperties") is False:
+            for key in value:
+                if key not in properties:
+                    errors.append(f"{path}.{key}: not declared (additionalProperties is false)")
+        for key, inner in value.items():
+            if key in properties:
+                errors += _schema_errors(inner, properties[key], f"{path}.{key}")
+    elif declared == "array" and isinstance(value, (list, tuple)) and "items" in schema:
+        for i, entry in enumerate(value):
+            errors += _schema_errors(entry, schema["items"], f"{path}[{i}]")
+    return errors
+
+
 def _feedback_row(**extra) -> dict:
     return {
         "id": "1ae1eb6abcd7d3a2e364f46139f98466",
@@ -425,17 +557,149 @@ class TestProjections:
         assert "SECRET-BODY" not in json.dumps(result)
 
     def test_personas_are_listed_in_full_by_the_persona_tool(self):
+        """The canonical 8-section shape, which is what every writer persists.
+
+        The fixture this replaced was `{"goals": ["g"], "pain_points": ["pp"],
+        "behaviors": ["b"], "quote": "q"}` — flat string lists and a `quote`
+        string. No writer has ever produced that, and believing it is precisely
+        what made `list_personas` uncallable against real data while this test
+        passed.
+        """
         fake = _FakeLambda({f"/projects/{_PROJECT}": {
             "project": {"name": "P"},
-            "personas": [{"persona_id": "p1", "name": "Ann", "goals": ["g"],
-                          "pain_points": ["pp"], "behaviors": ["b"], "quote": "q"}],
+            "personas": [_GENERATED_PERSONA],
             "documents": [],
         }})
         payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
 
         assert payload["count"] == 1
-        assert payload["personas"][0]["goals"] == ["g"]
-        assert payload["personas"][0]["age_range"] == "", "absent fields get typed defaults"
+        persona = payload["personas"][0]
+        assert persona["tagline"] == "The Habitual Skimmer"
+        assert persona["identity"]["age_range"] == "35-44"
+        assert persona["goals_motivations"]["primary_goal"] == "Stay informed in ten minutes"
+        assert persona["pain_points"]["current_challenges"] == ["Alerts bury the real news"]
+        assert persona["behaviors"]["tech_savviness"] == "medium-high"
+        assert persona["quotes"][0]["text"] == "I just want the headlines."
+
+    def test_storage_layout_is_not_exposed(self):
+        """Avatar keys, source ids and notes are dropped; the persona is the answer."""
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [_GENERATED_PERSONA], "documents": [],
+        }})
+        result = _call("list_personas", {"project_id": _PROJECT}, fake)
+
+        for leaked in ("avatar_url", "source_feedback_ids", "research_notes"):
+            assert leaked not in json.dumps(result), f"{leaked} reached the client"
+
+    @pytest.mark.parametrize(
+        "persona", _LIVE_PERSONA_SHAPES, ids=["generated", "imported", "sparse"]
+    )
+    def test_every_live_persona_shape_satisfies_the_declared_output_schema(self, persona):
+        """The gate that did not exist, and its absence is the whole defect.
+
+        `list_personas` declared `pain_points`/`behaviors` as `array<string>`
+        while every stored row holds an OBJECT. The declaration was published as
+        a contract and never checked against real data, so 2 944 pytest cases,
+        268 CDK cases and an 84/84 live curl battery all passed while a
+        schema-validating client — the official MCP SDK, by default — rejected
+        every call with `-32602`.
+
+        Reverting the projection to `item.get('pain_points', [])` fails this,
+        because a `.get` default fires only on an ABSENT key and cannot correct a
+        value of the wrong TYPE.
+        """
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [persona], "documents": [],
+        }})
+        payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        errors = _schema_errors(payload, _tool_output_schema("list_personas"))
+        assert errors == [], f"payload violates its own outputSchema: {errors}"
+
+    def test_an_undeclared_key_keeps_its_own_type(self):
+        """Live shape: the imported row files `workarounds` under `behaviors`.
+
+        `workarounds` is a declared array under `pain_points` and undeclared under
+        `behaviors`, so here it is neither coerced nor dropped — it is preserved
+        as the string it is, which `additionalProperties: true` permits. Coercing
+        by key NAME regardless of section would fail this and would also make the
+        answer claim a structure the row does not have.
+        """
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [_IMPORTED_PERSONA], "documents": [],
+        }})
+        payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        assert payload["personas"][0]["behaviors"]["workarounds"] == "Keeps a private spreadsheet"
+
+    def test_a_scalar_in_a_DECLARED_array_slot_is_coerced(self):
+        """Defensive, and the reason is a trust boundary, not a known bad row.
+
+        No live row currently holds a scalar in a declared array slot, but every
+        one of these values is LLM-authored and the live rows already prove the
+        shape varies per writer. A scalar arriving in `secondary_goals` would
+        reproduce M1 exactly — a payload contradicting its own schema — so the
+        boundary coerces. Deleting the list branch of `_as_string_list` fails this
+        AND the conformance test above.
+        """
+        persona = {
+            **_SPARSE_PERSONA,
+            "goals_motivations": {"primary_goal": "Ship", "secondary_goals": "Only one"},
+            "pain_points": {"current_challenges": "Just the one"},
+        }
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [persona], "documents": [],
+        }})
+        payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        projected = payload["personas"][0]
+        assert projected["goals_motivations"]["secondary_goals"] == ["Only one"]
+        assert projected["pain_points"]["current_challenges"] == ["Just the one"]
+        assert _schema_errors(payload, _tool_output_schema("list_personas")) == []
+
+    def test_unpredicted_section_keys_are_preserved(self):
+        """An imported persona's pain points live under keys this file never chose.
+
+        Dropping them would answer "this persona has no pain points" about a
+        persona whose pain points are simply filed elsewhere — the same silent
+        under-report the surface is being fixed for. Restricting the projection to
+        the declared keys fails this.
+        """
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [_IMPORTED_PERSONA], "documents": [],
+        }})
+        payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        pains = payload["personas"][0]["pain_points"]
+        assert pains["primary_frustration"] == "No audit trail"
+        assert pains["related_issues"] == ["Manual exports"]
+
+    def test_the_schema_checker_itself_rejects_a_bad_payload(self):
+        """Positive control. A conformance test that cannot fail proves nothing.
+
+        Every violation the real defect produced must be caught: a dict where an
+        array is declared, a scalar where an array is declared, a string where an
+        integer is declared, and an undeclared top-level key.
+        """
+        schema = _tool_output_schema("list_personas")
+        good = {"count": 1, "personas": [{
+            "persona_id": "p", "name": "n", "tagline": "t", "confidence": "high",
+            "feedback_count": 1, "identity": {}, "goals_motivations": {},
+            "pain_points": {}, "behaviors": {}, "quotes": [],
+        }]}
+        assert _schema_errors(good, schema) == []
+
+        def broken(**changes):
+            persona = {**good["personas"][0], **changes}
+            return {"count": 1, "personas": [persona]}
+
+        # The exact shape of the live defect: an object where array was declared.
+        assert _schema_errors(
+            broken(pain_points={"current_challenges": {"a": 1}}), schema)
+        assert _schema_errors(broken(feedback_count="42"), schema)
+        assert _schema_errors(broken(tagline=["not", "a", "string"]), schema)
+        assert _schema_errors(broken(journey_stage="undeclared"), schema)
+        assert _schema_errors({"count": "1", "personas": []}, schema)
 
     def test_count_never_exceeds_the_items_it_describes(self):
         """`count` describes what the CALLER received, not what the route sent.
