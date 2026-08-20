@@ -18,6 +18,7 @@ from shared.jobs import job_handler, JobContext
 from shared.aws import get_dynamodb_resource
 from shared.converse import converse
 from shared.feedback import query_feedback_by_date
+from shared.persona_context import personas_prompt_context
 from shared.derivation import (
     DERIVATION_FIELD,
     ROLE_MERGE_INPUT,
@@ -87,12 +88,17 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
         personas = [i for i in all_items if i.get('sk', '').startswith('PERSONA#')]
         selected_personas = [p for p in personas if p.get('persona_id') in selected_persona_ids]
         if selected_personas:
-            persona_text = "## USER PERSONAS FOR CONTEXT\n\n"
+            # Was reading phantom `goals`/`frustrations`, so every merged document
+            # carried persona headings with empty values. Field paths live in
+            # shared/persona_context.py.
+            persona_text = personas_prompt_context(
+                selected_personas, header="## USER PERSONAS FOR CONTEXT"
+            )
             for p in selected_personas:
-                persona_text += f"**{p.get('name')}**: {p.get('tagline', '')}\n- Goals: {', '.join(p.get('goals', [])[:3])}\n- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n\n"
                 if p.get('persona_id'):
                     used_persona_ids.append(p['persona_id'])
-            context_parts.append(persona_text)
+            if persona_text:
+                context_parts.append(persona_text)
     
     if use_feedback:
         ctx.update_progress(40, 'fetching_feedback')

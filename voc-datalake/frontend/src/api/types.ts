@@ -3,6 +3,9 @@
 // The derivation contract lives with its schema and resolver, so the runtime
 // validation and the declared type cannot drift apart.
 import type { DocumentDerivation } from './derivation'
+// The credential vocabulary lives with its schema for the same reason: the
+// declared type and the runtime validation cannot drift apart.
+import type { McpScope, ReadReach } from './mcpTokenSchema'
 
 export interface FeedbackItem {
   feedback_id: string
@@ -476,6 +479,14 @@ export interface PrioritizationScore {
  * it was cast about. `prototype_id` is context a reviewer looks at rather than a
  * document the row is scored on, which is why it is its own field; it is `''` when
  * the project has no prototype.
+ *
+ * `is_frozen` says a ballot has landed, so the composition can no longer change. A
+ * fact the page DISPLAYS, never one it enforces: the freeze is a condition on the
+ * write itself, so a composition change racing the first ballot loses to it in the
+ * database and answers 409 whatever this field said a moment earlier. The timestamp
+ * behind it, and the write count the delete fences on, are deliberately NOT published
+ * — a client computing the freeze itself would eventually disagree with the condition
+ * that enforces it.
  */
 export interface PrioritizationRow {
   row_id: string
@@ -484,6 +495,7 @@ export interface PrioritizationRow {
   prototype_id: string
   is_default: boolean
   created_at: string
+  is_frozen: boolean
 }
 
 /**
@@ -691,24 +703,32 @@ export interface LogsSummary {
 export interface ApiToken {
   token_id: string
   name: string
-  scope: 'read' | 'read-write'
+  /** Per-domain grants (`feedback:read`, …). Replaces the old single `scope`,
+   *  whose `read-write` value was mintable but required by no tool. */
+  scopes: McpScope[]
+  /** The projects this credential is about. Bounds reads when read_reach is
+   *  'project-set'; will bound writes when write tools land. */
+  projects: string[]
+  /** How far the credential may read. 'workspace' is the default and is NOT
+   *  the harmless option — see READ_REACHES. */
+  read_reach: ReadReach
   created_at: string
   last_used_at?: string
-  /** ISO-8601 deadline after which the token stops authenticating; null for
-   *  non-expiring tokens (every token minted before expiry existed). */
-  expires_at?: string | null
-  project_id: string
+  /** ISO-8601 deadline after which the token stops authenticating; absent for
+   *  non-expiring tokens. */
+  expires_at?: string
 }
 
 /** Response when creating an API token; `token` is the only time the raw value is returned. */
 export interface CreateApiTokenResponse {
-  success: boolean
   token: string
   token_id: string
   name: string
-  /** Echo of the minted deadline; null when the token does not expire. */
-  expires_at?: string | null
-  message?: string
+  scopes: McpScope[]
+  projects: string[]
+  read_reach: ReadReach
+  /** Echo of the minted deadline; absent when the token does not expire. */
+  expires_at?: string
 }
 
 

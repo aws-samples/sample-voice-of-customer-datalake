@@ -266,8 +266,22 @@ interface ApiConfigSectionProps {
   readonly onApiEndpointChange: (value: string) => void
 }
 
+/**
+ * API Configuration section — shown only in development builds.
+ *
+ * In a production build the API endpoint comes solely from the deployment's
+ * runtime config (config.json) and cannot be edited. This prevents a
+ * social-engineering attack where a user is persuaded to paste a foreign URL
+ * and the app then sends their Cognito bearer token to it.
+ *
+ * The dev gate lives here rather than in the parent Settings component so the
+ * parent's cyclomatic complexity stays within the lint budget.
+ */
 function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSectionProps) {
   const [showApiConfig, setShowApiConfig] = useState(!apiEndpoint)
+
+  // Production builds: no editable endpoint field.
+  if (!import.meta.env.DEV) return null
 
   return (
     <div className="card">
@@ -281,7 +295,7 @@ function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSection
           <ChevronDown size={18} className={clsx('text-gray-400 transition-transform', showApiConfig && 'rotate-180')} />
         </div>
       </button>
-      
+
       {showApiConfig && (
         <div className="space-y-4 mt-4 pt-4 border-t border-gray-100">
           <div>

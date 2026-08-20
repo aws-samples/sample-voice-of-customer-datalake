@@ -9,11 +9,12 @@ Public endpoint — no Cognito auth. Auth is handled by validating the Bearer to
 from the Authorization header against SHA-256 hashes in the projects table.
 """
 
-import hmac
 import json
 import os
 import re
-from datetime import datetime, timezone, timedelta
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from aws_lambda_powertools import Logger, Tracer, Metrics
@@ -21,31 +22,307 @@ from boto3.dynamodb.conditions import Key
 # Imported as a module because botocore's own `ConnectionError` would shadow the builtin.
 from botocore import exceptions as botocore_exceptions
 
-from shared.aws import get_dynamodb_resource
-from shared.api import DecimalEncoder, validate_date_basis
-from shared.feedback import query_feedback_by_date
-from shared.tokens import hash_token
-from shared.tables import get_projects_table, get_feedback_table, get_aggregates_table
-from shared.indexes import FEEDBACK_BY_ID_INDEX
-from projects import autoseed_project
+from shared.api import DecimalEncoder
+from shared.mcp_delegate import (
+    DelegationUnavailable,
+    DomainCall,
+    DomainResult,
+    call_domain,
+    synthetic_claims,
+)
+from shared.mcp_tokens import (
+    MCP_TOKEN_PK,
+    REACH_KIND_PROJECT,
+    REACH_KIND_WORKSPACE,
+    REACH_NONE,
+    REACH_PROJECT_SET,
+    SCOPE_FEEDBACK_READ,
+    SCOPE_METRICS_READ,
+    SCOPE_PROJECTS_READ,
+    DEFAULT_READ_REACH,
+    parse_token,
+    reach_allows,
+    secret_matches,
+    token_sk,
+)
+from shared.tables import get_projects_table
 
 logger = Logger()
 tracer = Tracer()
 metrics = Metrics(namespace="VoC-MCP")
 
-# AWS Clients
-dynamodb = get_dynamodb_resource()
-
-# Configuration
+# The ONLY table this function reads directly, and only its token partition:
+# authentication is the one thing that cannot be delegated, because it is what
+# decides who the delegated call is made as. Every tool's data now comes from
+# the domain function that owns the route (shared/mcp_delegate.py), which is why
+# FEEDBACK_TABLE and AGGREGATES_TABLE are gone from this Lambda's environment
+# and its role no longer holds a grant on either.
 projects_table = get_projects_table()
-feedback_table = get_feedback_table()
-aggregates_table = get_aggregates_table()
 
 # MCP Protocol version
+#
+# ⚠️ KNOWN SKEW, and it is temporary by plan rather than by oversight.
+# `structuredContent` and `outputSchema` (below) arrived in the 2025-06-18
+# revision, while this still advertises 2024-11-05 and `initialize` declares no
+# capability for them. The version range — negotiating 2026-07-28 / 2025-11-25 /
+# 2025-06-18 and answering `server/discover` — is the next phase of the plan, and
+# bumping the number here without that negotiation would claim conformance this
+# handler does not yet have (no `resultType`, no header validation).
+#
+# Shipping the structured fields early is safe in the meantime because both are
+# ADDITIVE: a 2024-11-05 client reads `content[0].text`, which still carries the
+# same payload serialized, and JSON-RPC clients ignore result fields they do not
+# know. The reverse order — negotiate first, add the fields later — would have
+# meant two breaking output changes instead of one.
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
-# Token prefix used during generation
-TOKEN_PREFIX = 'voc_'
+# Semver on the SERVER, independent of the protocol revision above, and the only
+# signal a client gets that a tool's output shape moved — it is advertised in
+# `serverInfo` on every `initialize`.
+#
+# 2.0.0 carried `structuredContent` alongside the text block, turned sad paths
+# that used to arrive as prose in a successful result into tool errors, and made
+# `get_project` report the documents it had been dropping.
+#
+# 3.0.0 changes the persona shape both persona-reporting tools publish:
+# `list_personas` now mirrors `schemas/persona.schema.json` and no longer
+# declares `goals`, `age_range`, `occupation`, `quote`, `journey_stage` or
+# `type`, and `get_project`'s persona summary reports `tagline` in place of
+# `type`. Those six keys existed on no stored row and `list_personas` was
+# uncallable against real data, so nothing could have consumed them — but a
+# client coded against the NAMES loses them, which is a major bump by this
+# file's own rule rather than a judgement about how many clients exist.
+MCP_SERVER_VERSION = "3.0.0"
+
+
+# ============================================
+# Domain routes — the delegation map
+# ============================================
+
+# Which domain function owns which route. Two functions serve all five tools:
+# the metrics Lambda owns /feedback/* and /metrics/*, the projects Lambda owns
+# /projects/*. Adding a tool for a third domain means adding its function here
+# AND a grantInvoke in api-stack.ts — the lockstep test in api-stack.test.ts
+# fails if a route named here is not wired and invokable.
+DOMAIN_METRICS = 'metrics'
+DOMAIN_PROJECTS = 'projects'
+
+_DOMAIN_FUNCTION_ENV: dict[str, str] = {
+    DOMAIN_METRICS: 'METRICS_FUNCTION',
+    DOMAIN_PROJECTS: 'PROJECTS_FUNCTION',
+}
+
+# route key → (owning domain, method, path template). Load-bearing at runtime
+# (every call is built from it) so it cannot rot into stale documentation the
+# way a test-only table would.
+DOMAIN_ROUTES: dict[str, tuple[str, str, str]] = {
+    'feedback_list': (DOMAIN_METRICS, 'GET', '/feedback'),
+    'feedback_search': (DOMAIN_METRICS, 'GET', '/feedback/search'),
+    'feedback_item': (DOMAIN_METRICS, 'GET', '/feedback/{feedback_id}'),
+    'metrics_summary': (DOMAIN_METRICS, 'GET', '/metrics/summary'),
+    # The four breakdown axes behind the single get_metrics_breakdown tool.
+    'metrics_sentiment': (DOMAIN_METRICS, 'GET', '/metrics/sentiment'),
+    'metrics_categories': (DOMAIN_METRICS, 'GET', '/metrics/categories'),
+    'metrics_sources': (DOMAIN_METRICS, 'GET', '/metrics/sources'),
+    'metrics_personas': (DOMAIN_METRICS, 'GET', '/metrics/personas'),
+    'project_get': (DOMAIN_PROJECTS, 'GET', '/projects/{project_id}'),
+    'project_autoseed': (DOMAIN_PROJECTS, 'GET', '/projects/{project_id}/autoseed'),
+}
+
+
+# ---------------------------------------------------------------------------
+# Path-parameter confinement
+# ---------------------------------------------------------------------------
+#
+# 🔑 A ROUTE-CONFUSION guard, not input tidiness. The delegated path is what the
+# Powertools resolver matches on — `pathParameters` is never consulted — so a
+# parameter value is not data, it is part of the routing key. Two ways an
+# unvalidated value changes which route answers:
+#
+#   • EXTRA SEGMENTS. `project_id='p/api-tokens'` builds `/projects/p/api-tokens`
+#     and lands on the token-list route instead of the project route.
+#   • A COLLISION WITH A STATIC SIBLING. `project_id='prioritization'` builds
+#     `/projects/prioritization`, and Powertools resolves static routes BEFORE
+#     dynamic ones, so it lands on `api_get_prioritization_scores` — the surface
+#     deliberately excluded from MCP altogether. Segment counting does not catch
+#     this: it is a well-formed single segment.
+#
+# The guard is a SHAPE rule plus a reserved-segment set, deliberately NOT a
+# format allowlist per id. An allowlist (`proj_…`, 32 hex) was the first
+# implementation and it bet on id PROVENANCE: any project seeded, imported or
+# minted by an older generator becomes permanently unreachable through MCP, and
+# reported as a malformed argument rather than as a missing project. That trades
+# a security property for an availability one, and it is avoidable — the shape
+# rule stops segment injection, and the reserved set stops sibling collisions,
+# without either caring where an id came from.
+#
+# The reserved sets are DERIVED from the owning handlers' static routes by
+# `test_reserved_segments_cover_every_static_sibling`, so a new static sibling
+# added to one of those handlers fails the suite instead of quietly becoming
+# reachable. That is the same lockstep shape as the route and throttle tests.
+_RESERVED_PATH_SEGMENTS: dict[str, frozenset[str]] = {
+    '/projects': frozenset({'config', 'prioritization'}),
+    '/feedback': frozenset({'search', 'urgent', 'entities'}),
+}
+
+# Characters that would let a value escape its segment or its path entirely.
+# `/` is the injection above; `?` and `#` would graft a query or fragment onto
+# the routing key; `%` would let a percent-encoded `/` arrive decoded at a
+# resolver that has already matched.
+_FORBIDDEN_PATH_CHARS = frozenset('/?#%\\')
+
+
+def _reserved_for(template: str, name: str) -> frozenset[str]:
+    """The static sibling segments a parameter must not impersonate.
+
+    Keyed on the path PREFIX above the parameter, so `/projects/{project_id}` and
+    `/projects/{project_id}/autoseed` share one set — both put the value in the
+    same position, which is what decides which siblings it can collide with.
+
+    FAILS CLOSED on a prefix with no entry, which is the property the previous
+    format-allowlist version had and this one lost when it was rewritten: a
+    `.get(prefix, frozenset())` silently permits sibling collisions for any
+    future templated route whose prefix nobody remembered to declare, so adding
+    a route becomes how the hole reopens. Declaring an explicit
+    `frozenset()` is how a prefix with genuinely no static siblings opts out, and
+    that is a deliberate line in a diff rather than an omission.
+    """
+    segments = template.strip('/').split('/')
+    position = segments.index(f'{{{name}}}')
+    prefix = '/' + '/'.join(segments[:position])
+    if prefix not in _RESERVED_PATH_SEGMENTS:
+        # DelegationUnavailable, not InvalidToolArgument: this is a SERVER
+        # misconfiguration, and -32602 "Invalid params" would tell the caller its
+        # arguments are wrong when nothing it could send would work. The state is
+        # unreachable in a deployed build — the prefix lockstep fails first — so
+        # this is about not lying if it ever is reached.
+        logger.error('No reserved-segment set declared', extra={'prefix': prefix})
+        raise DelegationUnavailable(f'no reserved-segment set declared for {prefix}')
+    return _RESERVED_PATH_SEGMENTS[prefix]
+
+
+def _validated_path_parameters(route_key: str, params: dict[str, str]) -> dict[str, str]:
+    """Refuse any path parameter that could change which route answers."""
+    _domain, _method, template = DOMAIN_ROUTES[route_key]
+    for name, value in params.items():
+        if f'{{{name}}}' not in template:
+            # Fail closed rather than ignoring it: a parameter the template does
+            # not interpolate means caller and route disagree about the call.
+            raise InvalidToolArgument(f"{route_key}: unexpected path parameter '{name}'")
+        # Distinct messages per condition: the caller can act on each of these
+        # differently, and "must be a single path segment" for a stray space sends
+        # them looking for a slash they never sent.
+        if not isinstance(value, str) or not value:
+            raise InvalidToolArgument(f'{name} must be a non-empty identifier')
+        if value.strip() != value:
+            # Split from the emptiness check on purpose: bundling them reported
+            # "must be a non-empty identifier" for a value that plainly was not
+            # empty, which is the same misdirection the messages below avoid.
+            raise InvalidToolArgument(f'{name} must not be surrounded by whitespace')
+        offending = sorted(_FORBIDDEN_PATH_CHARS & set(value))
+        if offending:
+            raise InvalidToolArgument(
+                f'{name} may not contain {" ".join(offending)}: it must be a single path segment'
+            )
+        if any(c.isspace() or ord(c) < 0x20 for c in value):
+            raise InvalidToolArgument(f'{name} may not contain whitespace or control characters')
+        if value in {'.', '..'}:
+            raise InvalidToolArgument(f'{name} may not be a relative path segment')
+        if value in _reserved_for(template, name):
+            # Named explicitly, because "not found" would be a lie and the caller
+            # cannot otherwise tell why a plausible-looking id was refused.
+            raise InvalidToolArgument(
+                f"{name} may not be '{value}': that names a different route"
+            )
+    return params
+
+
+def _domain_call(
+    route_key: str,
+    *,
+    path_parameters: dict[str, str] | None = None,
+    query: dict[str, Any] | None = None,
+) -> DomainCall:
+    """Build the call for a declared route, resolving its function name.
+
+    The env var is read per call rather than captured at import so a test can
+    set it, and so a missing one surfaces as this route being unconfigured
+    rather than as the whole module failing to load.
+
+    Every delegated call is built here — tools and the autoseed route alike — so
+    this is the one place path parameters have to be confined.
+    """
+    domain, method, template = DOMAIN_ROUTES[route_key]
+    params = _validated_path_parameters(route_key, dict(path_parameters or {}))
+    return DomainCall(
+        function_name=os.environ.get(_DOMAIN_FUNCTION_ENV[domain], ''),
+        method=method,
+        path=template.format(**params) if params else template,
+        path_parameters=params,
+        query=dict(query or {}),
+    )
+
+
+class ToolRouteError(Exception):
+    """The delegated route refused the call — a 4xx the model should hear.
+
+    Distinct from DelegationUnavailable (a 5xx or transport fault, which is a
+    server problem the model cannot fix). The MCP spec draws exactly this line:
+    input-validation and business-logic failures belong in the tool RESULT with
+    `isError: true`, because a model can self-correct from them, while malformed
+    requests and server faults belong in the JSON-RPC `error`.
+    """
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    """A tool's answer: the structured payload plus its serialized text form.
+
+    Both are returned because the spec says a tool SHOULD keep sending the
+    serialized JSON in a `TextContent` for clients that predate structured
+    output, and `structuredContent` is what a modern client validates against
+    the tool's `outputSchema`. One value produces both, so they cannot drift.
+    """
+
+    structured: dict
+
+    @property
+    def text(self) -> str:
+        return json.dumps(self.structured, indent=2, cls=DecimalEncoder)
+
+
+def _delegate(call: DomainCall, token_info: dict) -> DomainResult:
+    """Invoke a domain route and map its refusals onto the MCP error taxonomy."""
+    result = call_domain(call, claims=synthetic_claims(token_info))
+    if result.ok:
+        return result
+    if 400 <= result.status_code < 500:
+        raise ToolRouteError(_route_error_message(result))
+    # A 5xx from the route is a server fault, not something a model can fix.
+    logger.error(
+        'Delegated route returned a server error',
+        extra={'route': f'{call.method} {call.path}', 'status': result.status_code},
+    )
+    raise DelegationUnavailable(f'{call.method} {call.path} returned {result.status_code}')
+
+
+def _route_error_message(result: DomainResult) -> str:
+    """The route's own message, so the model reads the real reason.
+
+    Powertools serializes its exceptions as `{"message": ...}`; anything else is
+    reported by status alone rather than by dumping an unknown body into the
+    model's context.
+    """
+    payload = result.payload
+    if isinstance(payload, dict):
+        message = payload.get('message') or payload.get('error')
+        if isinstance(message, str) and message:
+            return message
+    return f'The request was refused (HTTP {result.status_code})'
+
+# The credential format lives in shared/mcp_tokens.py — this module does not
+# spell the prefix. It used to, as did projects_handler and an inline authorizer
+# in api-stack.ts, three copies of one rule.
 
 # The one origin a BROWSER may present. Not a CORS setting (see CORS_HEADERS
 # below) — it is the allowlist for the MCP spec's DNS-rebinding guard, which
@@ -61,7 +338,10 @@ ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '')
 
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Project-Id',
+    # X-Project-Id is gone: the credential carries its own project reach, so a
+    # client has no reason to send it and allowing it would keep a dead contract
+    # looking alive.
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
     # Without this a BROWSER-based MCP client can receive the 401 challenge but
     # never read it: WWW-Authenticate is not a CORS-safelisted response header.
@@ -212,16 +492,19 @@ def _authenticate(event: dict) -> dict | None:
     headers = event.get('headers', {})
     # API Gateway lowercases header names in proxy mode
     auth_header = headers.get('authorization') or headers.get('Authorization') or ''
-    project_id = headers.get('x-project-id') or headers.get('X-Project-Id') or ''
 
-    if not auth_header.startswith('Bearer ') or not project_id:
+    if not auth_header.startswith('Bearer '):
         return None
 
-    raw_token = auth_header[7:]  # strip "Bearer "
-    if not raw_token.startswith(TOKEN_PREFIX):
+    # NO X-Project-Id. The credential carries its own id, so the lookup is one
+    # keyed read instead of "Query a project's token rows and hash each one" —
+    # which is what required the header, and what made a workspace-wide tool
+    # such as list_projects unimplementable. Parsing is strict, so malformed
+    # caller text never becomes a key lookup.
+    parsed = parse_token(auth_header[7:])  # strip "Bearer "
+    if not parsed:
         return None
-
-    token_hash = hash_token(raw_token)
+    token_id, presented_secret = parsed
 
     if not projects_table:
         # An unset PROJECTS_TABLE is the same class of fault as a missing table
@@ -232,11 +515,15 @@ def _authenticate(event: dict) -> dict | None:
         logger.error("Projects table not configured")
         raise AuthBackendUnavailable('projects table not configured')
 
-    # Query all tokens for this project and find matching hash
+    # ONE item, addressed by the id inside the credential. A Query with an
+    # exact sort key rather than get_item on purpose: it is the same single-item
+    # read, and it keeps the IAM grant at exactly Query + UpdateItem — the
+    # narrowed grant that makes this bearer-token-reachable function unable to
+    # write project artifacts. Adding GetItem would widen it for no gain.
     try:
         response = projects_table.query(
             KeyConditionExpression=(
-                Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('TOKEN#')
+                Key('pk').eq(MCP_TOKEN_PK) & Key('sk').eq(token_sk(token_id))
             ),
         )
     except botocore_exceptions.ClientError as exc:
@@ -289,44 +576,276 @@ def _authenticate(event: dict) -> dict | None:
         )
         raise AuthBackendUnavailable(error_type) from exc
 
-    for item in response.get('Items', []):
-        stored_hash = item.get('token_hash', '')
-        # Guard against malformed/migrated rows where token_hash is stored as
-        # a non-string type (Binary, Decimal, …).  Calling .encode() on such a
-        # value would raise AttributeError and turn one bad row into a 500 for
-        # every request in that project.  Skip the row and log so an operator
-        # can clean it up, but do not expose the value itself.
-        if not isinstance(stored_hash, str):
-            logger.warning(
-                'Unexpected token_hash type in DynamoDB item; skipping row',
-                extra={'type': type(stored_hash).__name__},
-            )
-            continue
-        # Constant-time comparison prevents timing-based hash enumeration.
-        # Both operands must be the same type (str); encode to bytes so
-        # compare_digest can work even if one value is unexpectedly empty.
-        if hmac.compare_digest(stored_hash.encode(), token_hash.encode()):
-            # Checked AFTER the hash match — only the matching row's expiry
-            # matters, and non-matching rows must not influence timing.
-            if _credential_expired(item):
-                return None
-            # Update last_used_at
-            try:
-                projects_table.update_item(
-                    Key={'pk': f'PROJECT#{project_id}', 'sk': item['sk']},
-                    UpdateExpression='SET last_used_at = :now',
-                    ExpressionAttributeValues={':now': datetime.now(timezone.utc).isoformat()},
-                )
-            except Exception as e:
-                logger.warning(f"Failed to update last_used_at: {e}")
-            return {**item, 'project_id': project_id}
+    items = response.get('Items', [])
+    if not items:
+        # No such token id. Indistinguishable to the caller from a wrong
+        # secret: both are a plain 401.
+        return None
+    item = items[0]
 
-    return None
+    stored_hash = item.get('secret_hash', '')
+    # Guard against a malformed row where secret_hash is stored as a non-string
+    # type (Binary, Decimal, …). Calling .encode() on such a value would raise
+    # AttributeError and turn one bad row into a 500 instead of a 401. Log the
+    # type so an operator can clean it up, never the value.
+    if not isinstance(stored_hash, str):
+        logger.warning(
+            'Unexpected secret_hash type in DynamoDB item; refusing credential',
+            extra={'type': type(stored_hash).__name__, 'token_id': item.get('token_id', '')},
+        )
+        return None
+
+    # Constant-time, to deny timing-based enumeration of the stored digest.
+    if not secret_matches(presented_secret=presented_secret, stored_hash=stored_hash):
+        return None
+
+    # Checked AFTER the secret matches, so a wrong secret and an expired
+    # credential cost the same work.
+    if _credential_expired(item):
+        return None
+
+    try:
+        projects_table.update_item(
+            Key={'pk': MCP_TOKEN_PK, 'sk': item['sk']},
+            UpdateExpression='SET last_used_at = :now',
+            ExpressionAttributeValues={':now': datetime.now(timezone.utc).isoformat()},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to update last_used_at: {e}")
+
+    return item
 
 
 # ============================================
 # MCP Tool definitions
 # ============================================
+
+# The project argument shared by the project-shaped tools. One definition so
+# the two schemas cannot drift, and so the "optional when unambiguous" rule is
+# stated to clients exactly once.
+_PROJECT_ID_ARG = {
+    "type": "string",
+    "description": (
+        "Which project to read. Optional when this credential names exactly one "
+        "project, in which case that one is used; required otherwise."
+    ),
+}
+
+# How much of a verbatim a LIST answer carries. A single item is never
+# truncated; twenty of them would otherwise crowd out the model's own reasoning.
+_SUMMARY_TEXT_LIMIT = 500
+
+
+# ---------------------------------------------------------------------------
+# Output schemas
+# ---------------------------------------------------------------------------
+#
+# `outputSchema` describes what a tool puts in `structuredContent`, so a client
+# can validate the answer instead of parsing prose. The schemas are built from
+# shared pieces for the same reason the projections are: the two feedback tools
+# agree on ten fields, and two hand-maintained copies is how the declaration
+# stops matching the code.
+#
+# 🔑 `additionalProperties` is deliberately NOT uniform, and the split is the
+# honest one: a tool that PROJECTS its answer controls every key, so it declares
+# `false` and a stray field becomes a test failure. A tool that PASSES THROUGH a
+# route's payload does not control the keys — the route may add one tomorrow —
+# so declaring `false` there would make this file the thing that breaks when a
+# route grows a field, which is precisely the coupling delegation removes.
+
+_FEEDBACK_SUMMARY_PROPERTIES: dict[str, Any] = {
+    "id": {"type": "string"},
+    "source": {"type": "string", "description": "Source platform"},
+    "date": {"type": "string", "description": "YYYY-MM-DD"},
+    "sentiment": {"type": "string"},
+    "sentiment_score": {"type": "string", "description": "Stringified decimal"},
+    "category": {"type": "string"},
+    "urgency": {"type": "string"},
+    "rating": {"type": "string", "description": "Stringified, or 'N/A'"},
+    "persona_type": {"type": "string"},
+    "text": {"type": "string", "description": f"Verbatim, first {_SUMMARY_TEXT_LIMIT} characters"},
+    "problem_summary": {"type": "string"},
+}
+
+_FEEDBACK_DETAIL_PROPERTIES: dict[str, Any] = {
+    **_FEEDBACK_SUMMARY_PROPERTIES,
+    "date": {"type": "string", "description": "Full ISO-8601 timestamp"},
+    "text": {"type": "string", "description": "Full verbatim, untruncated"},
+    "journey_stage": {"type": "string"},
+    "problem_root_cause": {"type": "string"},
+    "direct_quote": {"type": "string"},
+    "keywords": {"type": "array", "items": {"type": "string"}},
+}
+
+# The document sort-key prefixes, mapped to the kind of document each names.
+#
+# 🔑 This map is why delegating mattered. The in-process tool recognised two of
+# these six — `PRD#` and `PRFAQ#` — so an MCP client saw a third of a project's
+# documents and was told nothing had been filtered: no research reports, no
+# uploaded documents, no product reports, no prototypes. The route always knew
+# all six. Reading the kind from the sort key rather than from a `type`
+# attribute is deliberate: the four formerly-invisible kinds do not all carry
+# one, so keying on `type` alone would have made them visible but unlabelled.
+_DOCUMENT_KINDS: dict[str, str] = {
+    'PRD#': 'prd',
+    'PRFAQ#': 'prfaq',
+    'RESEARCH#': 'research',
+    'DOC#': 'document',
+    'PRODUCT_REPORT#': 'product_report',
+    'PROTOTYPE#': 'prototype',
+}
+
+_STRING_LIST: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
+
+# The persona, mirroring `schemas/persona.schema.json` — the repo's canonical
+# declaration, what both writers persist, and what the frontend
+# `ProjectPersona` type already describes. Section numbers below are the
+# canonical schema's own: 1-5 and 7 are objects and are declared here, 6
+# (`quotes`) is an array declared under `_QUOTE_PROPERTIES`, and 8
+# (`research_notes`) is researcher annotation rather than persona content and is
+# deliberately not reported. That division is enforced against the schema file
+# by `test_every_canonical_persona_section_is_reported_or_excluded`, so a ninth
+# section cannot go missing here the way 5 and 7 first did.
+#
+# `additionalProperties` is deliberately OPEN on each section. These values are
+# LLM-authored, and a prompt is a request rather than enforcement: live rows
+# carry `primary_frustration`, `frustration`, `tooling`, `current_practices`,
+# `related_issues`. Declaring `false` would make the tool fail on its own
+# product; declaring the known keys and permitting the rest is the honest
+# contract, and the variance belongs to the writer.
+_PERSONA_SECTIONS: dict[str, dict[str, Any]] = {
+    # Section 1 — Identity & Demographics.
+    "identity": {
+        "age_range": {"type": "string"},
+        "location": {"type": "string"},
+        "occupation": {"type": "string"},
+        "income_bracket": {"type": "string"},
+        "education": {"type": "string"},
+        "family_status": {"type": "string"},
+        "bio": {"type": "string"},
+    },
+    # Section 2 — Goals & Motivations.
+    "goals_motivations": {
+        "primary_goal": {"type": "string"},
+        "secondary_goals": _STRING_LIST,
+        "success_definition": {"type": "string"},
+        "underlying_motivations": _STRING_LIST,
+    },
+    # Section 3 — Pain Points & Frustrations.
+    "pain_points": {
+        "current_challenges": _STRING_LIST,
+        "blockers": _STRING_LIST,
+        "workarounds": _STRING_LIST,
+        "emotional_impact": {"type": "string"},
+    },
+    # Section 4 — Behaviors & Habits.
+    "behaviors": {
+        "current_solutions": _STRING_LIST,
+        "tools_used": _STRING_LIST,
+        "activity_frequency": {"type": "string"},
+        "tech_savviness": {"type": "string"},
+        "decision_style": {"type": "string"},
+    },
+    # Section 5 — Context & Environment.
+    "context_environment": {
+        "usage_context": {"type": "string"},
+        "devices": _STRING_LIST,
+        "time_constraints": {"type": "string"},
+        "social_context": {"type": "string"},
+        "influencers": _STRING_LIST,
+    },
+    # Section 7 — Scenario / User Story.
+    "scenario": {
+        "title": {"type": "string"},
+        "narrative": {"type": "string"},
+        "trigger": {"type": "string"},
+        "outcome": {"type": "string"},
+    },
+}
+
+# Section 6 — Representative Quotes. Objects on the row, not strings, and the
+# old single `quote` key never existed. Named separately from the sections above
+# because it is an array, so it needs its own projection.
+#
+# `source_feedback_id` is the quote's own citation and is declared, unlike the
+# persona's top-level `source_feedback_ids`, which is dropped: one is where this
+# sentence came from and is the id `get_feedback_detail` takes, the other is the
+# row's provenance list.
+_QUOTE_PROPERTIES: dict[str, Any] = {
+    "text": {"type": "string"},
+    "context": {"type": "string"},
+    "source_feedback_id": {"type": "string"},
+}
+
+_PERSONA_PROPERTIES: dict[str, Any] = {
+    "persona_id": {"type": "string"},
+    "name": {"type": "string"},
+    # `tagline` is the persona's one-line characterisation and is REQUIRED by the
+    # canonical schema. It replaces the old `type`, which no row has ever carried.
+    "tagline": {"type": "string"},
+    "confidence": {"type": "string"},
+    "feedback_count": {"type": "integer"},
+    **{
+        section: {
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": True,
+        }
+        for section, properties in _PERSONA_SECTIONS.items()
+    },
+    "quotes": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": _QUOTE_PROPERTIES,
+            "additionalProperties": True,
+        },
+    },
+}
+
+
+def _declared_types(properties: dict[str, Any]) -> dict[str, str]:
+    """The declared JSON type of each property, so the projection can coerce to it.
+
+    Read off the declarations by VALUE rather than by identity with
+    `_STRING_LIST`: an author who inlines a literal instead of reusing the
+    constant must still get coercion, or this derivation would have exactly the
+    silent-omission hole it exists to close. Deriving EVERY type rather than
+    only the arrays is what stops the next declared field from being the one
+    nobody coerces — `confidence` was that field.
+    """
+    return {
+        key: declared["type"]
+        for key, declared in properties.items()
+        if isinstance(declared.get("type"), str)
+    }
+
+
+_PERSONA_SECTION_TYPES: dict[str, dict[str, str]] = {
+    section: _declared_types(properties)
+    for section, properties in _PERSONA_SECTIONS.items()
+}
+_QUOTE_TYPES: dict[str, str] = _declared_types(_QUOTE_PROPERTIES)
+# The top-level scalars only: the sections and `quotes` are objects and arrays of
+# objects, each with its own projection below.
+_PERSONA_SCALAR_TYPES: dict[str, str] = {
+    key: declared_type
+    for key, declared_type in _declared_types(_PERSONA_PROPERTIES).items()
+    if declared_type not in ("object", "array")
+}
+
+# A window argument, stated once. `maximum` is the route's real ceiling
+# (`validate_days` bounds to 365) rather than a tighter number restated here:
+# the adapter no longer clamps, so a limit this file invented would be a
+# promise nothing keeps. The route CLAMPS rather than refuses, which is why an
+# out-of-range value is not an error.
+_DAYS_ARG: dict[str, Any] = {
+    "type": "integer",
+    "description": "Days to look back (default 7). Values above the route's ceiling are clamped, not refused.",
+    "default": 7,
+    "minimum": 1,
+    "maximum": 365,
+}
 
 MCP_TOOLS = [
     {
@@ -340,13 +859,12 @@ MCP_TOOLS = [
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Text to search for in feedback (substring match on original_text)",
+                    "description": (
+                        "Text to match in the verbatim, title or problem summary. "
+                        "Must be at least 2 characters. Omit to list by filters alone."
+                    ),
                 },
-                "days": {
-                    "type": "integer",
-                    "description": "Number of days to look back (default 7, max 30)",
-                    "default": 7,
-                },
+                "days": _DAYS_ARG,
                 "category": {
                     "type": "string",
                     "description": "Filter by category (e.g. delivery, pricing, product_quality)",
@@ -372,52 +890,182 @@ MCP_TOOLS = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Max items to return (default 20, max 50)",
+                    "description": "Max items to return (default 20). Clamped to the route's ceiling of 100.",
                     "default": 20,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "count": {"type": "integer", "description": "Items returned"},
+                "query": {"type": "string", "description": "The text matched, empty when filtering only"},
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": _FEEDBACK_SUMMARY_PROPERTIES,
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["count", "query", "items"],
             "additionalProperties": False,
         },
     },
     {
         "name": "get_metrics_summary",
         "description": (
-            "Get dashboard summary metrics: total feedback count, sentiment breakdown, "
-            "top categories, and average rating over a time period."
+            "Dashboard summary over a time window: total feedback, average sentiment, "
+            "urgent count, and the daily totals and sentiment series. "
+            "For counts per category, sentiment, source or persona use get_metrics_breakdown."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "days": {
-                    "type": "integer",
-                    "description": "Number of days to aggregate (default 7, max 30)",
-                    "default": 7,
-                },
+                "days": {**_DAYS_ARG, "description": "Days to aggregate (default 7)."},
             },
             "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "period_days": {"type": "integer"},
+                "total_feedback": {"type": "integer"},
+                "avg_sentiment": {"type": "number", "description": "Weighted mean, -1..1"},
+                "urgent_count": {"type": "integer"},
+                "daily_totals": {"type": "array", "items": {"type": "object"}},
+                "daily_sentiment": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+    },
+    {
+        "name": "get_metrics_breakdown",
+        "description": (
+            "Counts along one axis over a time window: sentiment labels, categories, "
+            "source platforms, or inferred personas."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dimension": {
+                    "type": "string",
+                    "enum": ["sentiment", "categories", "sources", "personas"],
+                    "description": "Which axis to break the window down by",
+                },
+                "days": {**_DAYS_ARG, "description": "Days to aggregate (default 7)."},
+            },
+            "required": ["dimension"],
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "period_days": {"type": "integer"},
+                "is_partial": {
+                    "type": "boolean",
+                    "description": "True when an aggregate read failed and counts are incomplete",
+                },
+                "breakdown": {"type": "object", "description": "Counts, when dimension=sentiment"},
+                "percentages": {"type": "object", "description": "Shares, when dimension=sentiment"},
+                "categories": {"type": "object", "description": "When dimension=categories"},
+                "sources": {"type": "object", "description": "When dimension=sources"},
+                "personas": {"type": "object", "description": "When dimension=personas"},
+            },
         },
     },
     {
         "name": "get_project",
         "description": (
-            "Get details of the current project including personas, documents (PRDs, PR/FAQs), "
-            "and project metadata. The project is determined by the X-Project-Id header."
+            "Project metadata with its personas and its documents listed by title. "
+            "Documents cover PRDs, PR/FAQs, research reports, uploaded documents, "
+            "product reports and prototypes; bodies are not included."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "project_id": _PROJECT_ID_ARG,
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "created_at": {"type": "string"},
+                "persona_count": {"type": "integer"},
+                "document_count": {"type": "integer"},
+                "personas": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "persona_id": {"type": "string"},
+                            "name": {"type": "string"},
+                            # `tagline`, not `type`: no stored persona has ever
+                            # carried a `type`, so this summary reported an empty
+                            # string for every persona in every project.
+                            "tagline": {"type": "string"},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "document_id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "type": {"type": "string"},
+                            "kind": {
+                                "type": "string",
+                                "enum": sorted(set(_DOCUMENT_KINDS.values())) + [""],
+                                "description": "Document kind, derived from its storage prefix",
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["project_id", "persona_count", "document_count", "personas", "documents"],
             "additionalProperties": False,
         },
     },
     {
         "name": "list_personas",
         "description": (
-            "List all personas for the current project with their demographics, "
-            "pain points, goals, and behavioral traits."
+            "List all personas for a project: identity and demographics, goals "
+            "and motivations, pain points, behaviors, context and environment, "
+            "representative quotes, and scenario. Researcher notes are not "
+            "included."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "project_id": _PROJECT_ID_ARG,
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "count": {"type": "integer"},
+                "personas": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": _PERSONA_PROPERTIES,
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["count", "personas"],
             "additionalProperties": False,
         },
     },
@@ -435,6 +1083,14 @@ MCP_TOOLS = [
             "required": ["feedback_id"],
             "additionalProperties": False,
         },
+        "outputSchema": {
+            "type": "object",
+            "properties": _FEEDBACK_DETAIL_PROPERTIES,
+            # Every key is always emitted (the projection uses typed defaults),
+            # so declaring them costs nothing and lets a client rely on them.
+            "required": sorted(_FEEDBACK_DETAIL_PROPERTIES),
+            "additionalProperties": False,
+        },
     },
 ]
 
@@ -443,357 +1099,484 @@ MCP_TOOLS = [
 # MCP Tool implementations
 # ============================================
 
-@tracer.capture_method
-def _tool_search_feedback(args: dict, _token_info: dict) -> list[dict]:
-    """Search feedback items with filters."""
-    if not feedback_table:
-        return [{"type": "text", "text": "Feedback table not configured"}]
+def _project_feedback(item: dict, *, summary: bool) -> dict:
+    """Reshape one raw feedback record for a model to read.
 
-    days = min(args.get('days', 7), 30)
-    category = args.get('category')
-    sentiment = args.get('sentiment')
-    source = args.get('source')
-    query = args.get('query', '').lower()
-    limit = min(args.get('limit', 20), 50)
-    date_basis = validate_date_basis(args.get('date_basis'))
+    The projection is the adapter's job, not the route's: a raw record carries
+    pk/sk/gsi keys, enrichment internals and the full verbatim, and a list of 20
+    of them would spend a model's context on fields it cannot use. The renames
+    (`source_platform`→`source`, `sentiment_label`→`sentiment`,
+    `original_text`→`text`) are the names the tools have always reported.
 
-    items = query_feedback_by_date(
-        feedback_table,
-        days=days,
-        sources=[source] if source else None,
-        categories=[category] if category else None,
-        sentiments=[sentiment] if sentiment else None,
-        limit=limit,
-        date_basis=date_basis,
-    )
+    ONE function for both feedback tools, parameterized by `summary`, because
+    they agree on ten fields and differ only in truncation and in the five
+    detail-only fields. Two copies is how the pair drifts — which is exactly the
+    defect that made delegating worth doing in the first place.
 
-    if query:
-        items = [i for i in items if query in (i.get('original_text', '') or '').lower()]
-        items = items[:limit]
-
-    if not items:
-        return [{"type": "text", "text": "No feedback items found matching the filters."}]
-
-    results = []
-    for item in items:
-        results.append({
-            "id": item.get('id', ''),
-            "source": item.get('source_platform', ''),
-            "date": (item.get('source_created_at', '') or '')[:10],
-            "sentiment": item.get('sentiment_label', ''),
-            "sentiment_score": str(item.get('sentiment_score', '')),
-            "category": item.get('category', ''),
-            "urgency": item.get('urgency', ''),
-            "rating": str(item.get('rating', 'N/A')),
-            "persona_type": item.get('persona_type', ''),
-            "text": (item.get('original_text', '') or '')[:500],
-            "problem_summary": item.get('problem_summary', ''),
-        })
-
-    return [{"type": "text", "text": json.dumps(results, indent=2, cls=DecimalEncoder)}]
-
-
-_DEFAULT_METRICS_DAYS = 7
-_MAX_METRICS_DAYS = 30
-
-
-def _resolve_days(raw: Any) -> int:
-    """Coerce and clamp a caller-supplied ``days`` argument to 1..30.
-
-    Pure helper.  A missing or non-numeric value falls back to the default
-    rather than raising, so ``period_days`` is always an ``int`` inside the
-    advertised range regardless of what the client sent.  That includes the
-    infinities: ``json`` parses both ``1e400`` and ``Infinity`` to ``inf``, and
-    ``int(float('inf'))`` raises ``OverflowError`` rather than the ``ValueError``
-    a non-numeric string gives, so ``OverflowError`` is caught alongside them —
-    without it, ``{"days": 1e400}`` bypassed this fallback and surfaced as an
-    opaque error from the ``_handle_tools_call`` catch-all.
-
-    A value that is not an integer *by the tool's own ``inputSchema``* also
-    falls back rather than being silently reinterpreted: JSON Schema counts
-    neither ``true`` nor ``2.9`` as an integer, but ``int(True) == 1`` and
-    ``int(2.9) == 2`` in Python, so coercing them would answer a window the
-    caller never asked for.  A numeric *string* is still accepted — ``"14"``
-    can only mean 14, and the resolved value is echoed back as ``period_days``.
+    `sentiment_score` and `rating` are stringified, preserving the existing
+    contract: both are DynamoDB Decimals, and a client that pattern-matched on
+    `"rating": "N/A"` for an unrated item still sees it.
     """
-    if raw is None:
-        return _DEFAULT_METRICS_DAYS
-    # isinstance(True, int) is True in Python, so bools must be excluded before
-    # the int() call or `days: true` quietly becomes a 1-day window.
-    if isinstance(raw, bool):
-        return _DEFAULT_METRICS_DAYS
-    try:
-        days = int(raw)
-    except (TypeError, ValueError, OverflowError):
-        # OverflowError is the infinities: int(float('inf')) raises it, not
-        # ValueError, and json parses 1e400 / Infinity to inf.  int(float('nan'))
-        # does raise ValueError, so NaN is covered by the clause above.
-        return _DEFAULT_METRICS_DAYS
-    # Fractional input: int() truncates, which narrows the window rather than
-    # rejecting it.  Strings are exempt — int("14") is exact, and "14" != 14.
-    if not isinstance(raw, str) and days != raw:
-        return _DEFAULT_METRICS_DAYS
-    return max(1, min(days, _MAX_METRICS_DAYS))
-
-
-@tracer.capture_method
-def _tool_get_metrics_summary(args: dict, _token_info: dict) -> list[dict]:
-    """Get aggregated metrics summary.
-
-    Mirrors the ``is_partial`` convention used by the REST metrics endpoints:
-    if any underlying DynamoDB read raises, the partial result is still returned
-    (so the readable portion is not lost), but ``is_partial`` is set to ``True``
-    and the failure is logged at WARNING level — without any token or hash.
-    """
-    # Resolve `days` once, before the early exit, so both paths report the same
-    # window.  The value is caller-supplied and echoed back as `period_days`,
-    # so coerce it as well as clamp it: `inputSchema` declares "integer" but
-    # nothing enforces that server-side, and `min()` against a str raises.
-    days = _resolve_days(args.get('days'))
-
-    if not aggregates_table:
-        return [{"type": "text", "text": json.dumps({
-            "is_partial": True,
-            "error": "Aggregates table not configured",
-            "period_days": days,
-            "total_feedback": 0,
-            "sentiment_breakdown": {},
-            "top_categories": {},
-        })}]
-
-    current_date = datetime.now(timezone.utc)
-
-    total = 0
-    sentiment_counts: dict[str, int] = {}
-    category_counts: dict[str, int] = {}
-    is_partial = False
-
-    for i in range(days):
-        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-
-        # Daily total
-        try:
-            resp = aggregates_table.get_item(Key={'pk': 'METRIC#daily_total', 'sk': date})
-            item = resp.get('Item')
-            if item:
-                total += int(item.get('count', 0))
-        except Exception as exc:
-            logger.warning("Failed to read daily_total aggregate", extra={"date": date, "error": str(exc)})
-            is_partial = True
-
-        # Sentiment counts
-        for sent in ['positive', 'negative', 'neutral', 'mixed']:
-            try:
-                resp = aggregates_table.get_item(Key={'pk': f'METRIC#daily_sentiment#{sent}', 'sk': date})
-                item = resp.get('Item')
-                if item:
-                    sentiment_counts[sent] = sentiment_counts.get(sent, 0) + int(item.get('count', 0))
-            except Exception as exc:
-                logger.warning(
-                    "Failed to read sentiment aggregate",
-                    extra={"sentiment": sent, "date": date, "error": str(exc)},
-                )
-                is_partial = True
-
-    # Category breakdown from latest aggregate
-    try:
-        resp = aggregates_table.query(
-            KeyConditionExpression=Key('pk').eq('METRIC#category_breakdown'),
-            ScanIndexForward=False,
-            Limit=1,
-        )
-        for item in resp.get('Items', []):
-            cats = item.get('categories', {})
-            if isinstance(cats, dict):
-                category_counts = {k: int(v) for k, v in cats.items()}
-    except Exception as exc:
-        logger.warning("Failed to read category_breakdown aggregate", extra={"error": str(exc)})
-        is_partial = True
-
-    summary = {
-        "period_days": days,
-        "total_feedback": total,
-        "is_partial": is_partial,
-        "sentiment_breakdown": sentiment_counts,
-        "top_categories": dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
-    }
-
-    return [{"type": "text", "text": json.dumps(summary, indent=2)}]
-
-
-@tracer.capture_method
-def _tool_get_project(args: dict, token_info: dict) -> list[dict]:
-    """Get project details including personas and documents."""
-    project_id = token_info['project_id']
-
-    if not projects_table:
-        return [{"type": "text", "text": "Projects table not configured"}]
-
-    # Get all items for this project
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
-    )
-    items = response.get('Items', [])
-
-    project_meta = None
-    personas = []
-    documents = []
-
-    for item in items:
-        sk = item.get('sk', '')
-        if sk == 'META':
-            project_meta = item
-        elif sk.startswith('PERSONA#'):
-            personas.append(item)
-        elif sk.startswith('PRD#') or sk.startswith('PRFAQ#'):
-            documents.append(item)
-
-    if not project_meta:
-        return [{"type": "text", "text": f"Project {project_id} not found"}]
-
-    result = {
-        "project_id": project_id,
-        "name": project_meta.get('name', ''),
-        "description": project_meta.get('description', ''),
-        "created_at": project_meta.get('created_at', ''),
-        "persona_count": len(personas),
-        "document_count": len(documents),
-        "personas": [
-            {"persona_id": p.get('persona_id', ''), "name": p.get('name', ''), "type": p.get('type', '')}
-            for p in personas
-        ],
-        "documents": [
-            {"document_id": d.get('document_id', ''), "title": d.get('title', ''), "type": d.get('type', '')}
-            for d in documents
-        ],
-    }
-
-    return [{"type": "text", "text": json.dumps(result, indent=2, cls=DecimalEncoder)}]
-
-
-@tracer.capture_method
-def _tool_list_personas(args: dict, token_info: dict) -> list[dict]:
-    """List personas with full details."""
-    project_id = token_info['project_id']
-
-    if not projects_table:
-        return [{"type": "text", "text": "Projects table not configured"}]
-
-    response = projects_table.query(
-        KeyConditionExpression=(
-            Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#')
-        ),
-    )
-    items = response.get('Items', [])
-
-    if not items:
-        return [{"type": "text", "text": "No personas found for this project."}]
-
-    personas = []
-    for item in items:
-        personas.append({
-            "persona_id": item.get('persona_id', ''),
-            "name": item.get('name', ''),
-            "type": item.get('type', ''),
-            "age_range": item.get('age_range', ''),
-            "occupation": item.get('occupation', ''),
-            "goals": item.get('goals', []),
-            "pain_points": item.get('pain_points', []),
-            "behaviors": item.get('behaviors', []),
-            "quote": item.get('quote', ''),
-            "journey_stage": item.get('journey_stage', ''),
-        })
-
-    return [{"type": "text", "text": json.dumps(personas, indent=2, cls=DecimalEncoder)}]
-
-
-@tracer.capture_method
-def _tool_get_feedback_detail(args: dict, _token_info: dict) -> list[dict]:
-    """Get a single feedback item by ID."""
-    feedback_id = args.get('feedback_id', '')
-    if not feedback_id:
-        return [{"type": "text", "text": "feedback_id is required"}]
-
-    if not feedback_table:
-        return [{"type": "text", "text": "Feedback table not configured"}]
-
-    response = feedback_table.query(
-        IndexName=FEEDBACK_BY_ID_INDEX,
-        KeyConditionExpression=Key('feedback_id').eq(feedback_id),
-        Limit=1,
-    )
-    items = response.get('Items', [])
-
-    if not items:
-        return [{"type": "text", "text": f"Feedback item {feedback_id} not found"}]
-
-    item = items[0]
-    result = {
-        "id": item.get('id', ''),
+    projected = {
+        # `feedback_id` FIRST, and this is a bug fix rather than a rename.
+        #
+        # Both feedback tools reported `item.get('id')`, and the processor that
+        # writes these rows never sets a plain `id` — the identifier is
+        # `feedback_id`, which is also the key `GET /feedback/{id}` looks up on
+        # its GSI. So `search_feedback` advertised an `id` field and filled it
+        # with `""` for every item in the corpus, which made
+        # `get_feedback_detail` unreachable for an agent: the only way to learn a
+        # feedback id is to search, and search reported none. Verified live
+        # against the deployed API before fixing.
+        #
+        # `item.get('id')` is kept as the fallback rather than dropped, because a
+        # row that does carry one is not worth breaking to make a point.
+        "id": item.get('feedback_id') or item.get('id', ''),
         "source": item.get('source_platform', ''),
-        "date": item.get('source_created_at', ''),
+        "date": item.get('source_created_at', '') or '',
         "sentiment": item.get('sentiment_label', ''),
         "sentiment_score": str(item.get('sentiment_score', '')),
         "category": item.get('category', ''),
         "urgency": item.get('urgency', ''),
         "rating": str(item.get('rating', 'N/A')),
         "persona_type": item.get('persona_type', ''),
-        "journey_stage": item.get('journey_stage', ''),
-        "text": item.get('original_text', ''),
+        "text": item.get('original_text', '') or '',
         "problem_summary": item.get('problem_summary', ''),
+    }
+    if summary:
+        # A list answer carries the date as a plain day and clips the verbatim;
+        # the single-item answer carries both in full.
+        projected["date"] = projected["date"][:10]
+        projected["text"] = projected["text"][:_SUMMARY_TEXT_LIMIT]
+        return projected
+    projected.update({
+        "journey_stage": item.get('journey_stage', ''),
         "problem_root_cause": item.get('problem_root_cause_hypothesis', ''),
         "direct_quote": item.get('direct_customer_quote', ''),
         "keywords": item.get('keywords', []),
+    })
+    return projected
+
+
+@tracer.capture_method
+def _tool_search_feedback(args: dict, token_info: dict) -> ToolResult:
+    """Search feedback, via the route that owns the corpus.
+
+    TWO routes behind one tool, chosen by whether a `query` was given, because
+    that is what this tool has always done: `GET /feedback/search` is a text
+    search and REFUSES a query shorter than two characters, while the filters
+    alone (no text) are what `GET /feedback` answers. Mapping the tool onto
+    `/feedback/search` alone would have made every filter-only call return
+    nothing; splitting it into two tools is Phase 3's `list_feedback`.
+    """
+    query = args.get('query')
+    query = query.strip() if isinstance(query, str) else ''
+    shared_filters = {
+        'days': args.get('days', 7),
+        'limit': args.get('limit', 20),
+        'category': args.get('category'),
+        'sentiment': args.get('sentiment'),
+        'source': args.get('source'),
+        'date_basis': args.get('date_basis'),
     }
 
-    return [{"type": "text", "text": json.dumps(result, indent=2, cls=DecimalEncoder)}]
+    if query:
+        call = _domain_call('feedback_search', query={'q': query, **shared_filters})
+    else:
+        call = _domain_call('feedback_list', query=shared_filters)
+
+    body = _delegate(call, token_info).payload
+    raw_items = body.get('items', []) if isinstance(body, dict) else []
+    # Projected FIRST, then counted, so `count` describes what the caller
+    # received. Counting the route's list instead would let a non-dict entry make
+    # `count` exceed `len(items)` in the same payload.
+    items = [_project_feedback(item, summary=True) for item in raw_items
+             if isinstance(item, dict)]
+    return ToolResult({
+        "count": len(items),
+        "query": query,
+        "items": items,
+    })
+
+
+@tracer.capture_method
+def _tool_get_metrics_summary(args: dict, token_info: dict) -> ToolResult:
+    """Dashboard summary metrics, from the route the dashboard itself uses.
+
+    ⚠️ The answer's SHAPE changed at server 2.0.0, and not only by field names.
+    This tool used to recompute the summary from raw aggregate rows and reported
+    `sentiment_breakdown` + `top_categories`; the route reports `avg_sentiment`,
+    `urgent_count` and the daily series instead. The counts per sentiment and
+    per category now come from `get_metrics_breakdown`, which is why that tool
+    is in this phase rather than the next one — between them the two tools
+    report strictly more than the old one did, so no client loses information.
+
+    The window-clamping helper this used to need is gone with it: `days` is
+    bounded by the route's own `validate_days`, which is a validator documented
+    never to raise (it clamps and defaults), so a nonsense window degrades the
+    same way it does for every other caller of that route instead of the way
+    one hand-written clamp in this file happened to.
+    """
+    body = _delegate(
+        _domain_call('metrics_summary', query={'days': args.get('days', 7)}),
+        token_info,
+    ).payload
+    return ToolResult(body if isinstance(body, dict) else {})
+
+
+# The four breakdown routes, as the `dimension` argument names them. One tool
+# over four routes: they answer the same question about different axes, and four
+# near-identical tool declarations would spend a model's context to say so.
+_BREAKDOWN_DIMENSIONS: dict[str, str] = {
+    'sentiment': '/metrics/sentiment',
+    'categories': '/metrics/categories',
+    'sources': '/metrics/sources',
+    'personas': '/metrics/personas',
+}
+
+
+@tracer.capture_method
+def _tool_get_metrics_breakdown(args: dict, token_info: dict) -> ToolResult:
+    """Counts along one axis: sentiment, categories, sources or personas.
+
+    Passed through unprojected, deliberately: each of these routes answers with
+    a small `{period_days, is_partial, <axis>: {...}}` object that is already
+    exactly what a model needs, and re-shaping it here would reintroduce the
+    second implementation that delegating exists to remove. It also carries the
+    routes' own `is_partial`, so a degraded aggregate read is still reported.
+    """
+    dimension = args.get('dimension')
+    if dimension not in _BREAKDOWN_DIMENSIONS:
+        # A -32602 rather than a delegated 404: the enum is this tool's own
+        # contract, so an unknown value is a malformed call, not a route refusal.
+        raise InvalidToolArgument(
+            f"dimension must be one of: {', '.join(sorted(_BREAKDOWN_DIMENSIONS))}"
+        )
+    body = _delegate(
+        _domain_call(f'metrics_{dimension}', query={'days': args.get('days', 7)}),
+        token_info,
+    ).payload
+    return ToolResult(body if isinstance(body, dict) else {})
+
+
+def _document_kind(item: dict) -> str:
+    sk = item.get('sk', '')
+    for prefix, kind in _DOCUMENT_KINDS.items():
+        if sk.startswith(prefix):
+            return kind
+    return ''
+
+
+def _as_string(value: Any) -> str:
+    """Coerce a declared-string persona field to the string it promises.
+
+    A list is joined rather than passed through: `emotional_impact` and
+    `primary_goal` are declared strings, and a list arriving in either would
+    reproduce the defect this schema fix is about — a payload contradicting its
+    own declaration. A dict becomes JSON rather than a Python `repr`, because
+    the reader is a model and `{'a': 'x'}` is not machine-readable.
+    """
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        return '; '.join(_as_string(v) for v in value if v not in (None, ''))
+    if isinstance(value, dict):
+        return json.dumps(value, cls=DecimalEncoder)
+    return str(value)
+
+
+def _as_int(value: Any) -> int:
+    """Coerce a declared-integer persona field, defaulting rather than lying.
+
+    `feedback_count` arrives from DynamoDB as a `Decimal`, and not at all on
+    rows that predate it. An unparseable value becomes 0 instead of travelling
+    as the string it was.
+    """
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _as_string_list(value: Any) -> list[str]:
+    """Coerce a declared-array persona field to the list of strings it promises.
+
+    A writer that leaves a single value unwrapped (`workarounds` is a string on
+    some imported rows and a list on generated ones) must not make the payload
+    contradict its own schema, so the boundary coerces instead of passing the
+    scalar through. Non-string entries are stringified rather than dropped: the
+    value is a model's evidence, and silently losing it is worse than reporting
+    it in the declared type.
+    """
+    if value is None or value == '':
+        return []
+    if isinstance(value, (list, tuple)):
+        return [_as_string(v) for v in value if v not in (None, '')]
+    return [_as_string(value)]
+
+
+# One coercion per JSON type the persona schema declares. Objects are absent on
+# purpose: the sections and quotes have their own projections, which is also why
+# `_PERSONA_SCALAR_TYPES` excludes them.
+_COERCIONS: dict[str, Callable[[Any], Any]] = {
+    "string": _as_string,
+    "integer": _as_int,
+    "array": _as_string_list,
+}
+
+
+def _coerce_declared(value: Any, declared_type: str) -> Any:
+    """Coerce one value to the JSON type its own schema declares.
+
+    A type with no coercion passes through unchanged, so an undeclared key keeps
+    whatever the row holds — `additionalProperties: true` permits it and
+    rewriting it would claim a structure the row does not have.
+    """
+    coerce = _COERCIONS.get(declared_type)
+    return coerce(value) if coerce else value
+
+
+def _persona_section(name: str, value: Any, declared: dict[str, str]) -> dict:
+    """One canonical persona section, coerced to its declared types.
+
+    Unrecognised keys are PRESERVED, not dropped. The section's declared keys
+    are what the prompts pin; a prompt is a request, so real rows also carry
+    `primary_frustration`, `tooling`, `related_issues`. Dropping those would
+    make the tool answer "this persona has no pain points" about a persona whose
+    pain points are simply under a key this file did not predict — the same
+    class of silent under-report the surface is being fixed for.
+    """
+    if not isinstance(value, dict):
+        # Absent, or a shape no writer produces. Both writers persist an object
+        # (both default to `{}`) and all five live rows are objects, so there is
+        # no flat-list case to salvage — and guessing a destination key would
+        # file content under a misleading heading (`sorted()` would pick
+        # `blockers` for a list of pain points). An absent section is normal and
+        # silent; anything else is logged, because a section that cannot be
+        # reported should be visible rather than invisible. The value itself is
+        # never logged: it is customer-derived text.
+        if value not in (None, '', [], {}):
+            logger.warning(
+                "Persona section not reported: not an object",
+                extra={"section": name, "arrived_as": type(value).__name__},
+            )
+        return {}
+    return {
+        key: _coerce_declared(inner, declared[key]) if key in declared else inner
+        for key, inner in value.items()
+    }
+
+
+def _as_quote(value: Any) -> dict | None:
+    """One representative quote, as the object the schema declares.
+
+    A bare string entry used to be filtered out, which answered "this persona
+    has no quotes" about a persona who had them — the same silent under-report
+    this file argues against everywhere else. These entries are LLM-authored on
+    a path that pinned nothing until now, so `quotes: ["…"]` is a plausible
+    stored shape and it becomes `{"text": …}`. `None` means the entry carried no
+    content, not that content was discarded.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _coerce_declared(inner, _QUOTE_TYPES[key]) if key in _QUOTE_TYPES else inner
+            for key, inner in value.items()
+        }
+    text = _as_string(value)
+    return {"text": text} if text else None
+
+
+def _project_persona(item: dict) -> dict:
+    """One persona in the canonical shape of `schemas/persona.schema.json`.
+
+    Used ONLY by `list_personas`. `get_project` deliberately renders a two-field
+    summary of its own — an earlier version of this docstring claimed the two
+    shared a projection, which was never true and is why the schema mismatch
+    went unnoticed for so long.
+
+    Every field is coerced to the type it is DECLARED as, driven by the
+    declarations rather than written out field by field. The bug this replaces
+    read each field with `item.get(key, default)`, and a default fires only when
+    a key is ABSENT: it cannot correct a value of the wrong TYPE, so the object
+    `pain_points` travelled unchanged under a schema declaring `array<string>`
+    and a validating client rejected the whole result. Driving it from the
+    declarations is the second half of that lesson — the field-by-field version
+    of this function guarded `feedback_count` and left `confidence` unchecked.
+
+    Everything not declared — avatar keys, source feedback ids, researcher
+    notes, timestamps, llm metadata — is still dropped: a project's personas are
+    the answer, not its storage layout.
+    """
+    projected: dict[str, Any] = {
+        key: _coerce_declared(item.get(key), declared_type)
+        for key, declared_type in _PERSONA_SCALAR_TYPES.items()
+    }
+    for section, declared in _PERSONA_SECTION_TYPES.items():
+        projected[section] = _persona_section(section, item.get(section), declared)
+
+    quotes = item.get('quotes')
+    entries = quotes if isinstance(quotes, (list, tuple)) else [quotes]
+    projected["quotes"] = [q for q in map(_as_quote, entries) if q is not None]
+    return projected
+
+
+def _get_project_payload(token_info: dict) -> tuple[dict, list[dict], list[dict]]:
+    """Fetch one project from the route that owns it.
+
+    `project_id` is the project `_handle_tools_call` resolved from the arguments
+    (or the token's single project) AND authorized against the token's read
+    reach. It is not "the token's project" — a credential can reach several — so
+    it must not be re-derived here.
+    """
+    project_id = token_info['project_id']
+    body = _delegate(
+        _domain_call('project_get', path_parameters={'project_id': project_id}),
+        token_info,
+    ).payload
+    if not isinstance(body, dict):
+        raise DelegationUnavailable('project route returned no object')
+    meta = body.get('project')
+    personas = body.get('personas') or []
+    documents = body.get('documents') or []
+    return (
+        meta if isinstance(meta, dict) else {},
+        [p for p in personas if isinstance(p, dict)],
+        [d for d in documents if isinstance(d, dict)],
+    )
+
+
+@tracer.capture_method
+def _tool_get_project(args: dict, token_info: dict) -> ToolResult:
+    """Project metadata with its personas and documents listed by name.
+
+    Documents are listed, never inlined: a generated prototype is hundreds of
+    kilobytes and a PRD is thousands of words, so returning bodies here would
+    blow both the model's context and the 6 MB synchronous-invoke ceiling.
+    Bodies become resources in a later phase.
+    """
+    meta, personas, documents = _get_project_payload(token_info)
+    # Every field below is declared a string in this tool's own `outputSchema`, so
+    # every one is coerced. `.get(key, '')` defaults on an ABSENT key and cannot
+    # correct a value of the wrong TYPE — the mechanism behind `list_personas`
+    # being uncallable, and this tool reports a persona `tagline` from the same
+    # LLM-authored rows. Well-formed rows are unaffected: `_as_string` returns a
+    # string unchanged.
+    return ToolResult({
+        "project_id": token_info['project_id'],
+        "name": _as_string(meta.get('name')),
+        "description": _as_string(meta.get('description')),
+        "created_at": _as_string(meta.get('created_at')),
+        "persona_count": len(personas),
+        "document_count": len(documents),
+        "personas": [
+            {"persona_id": _as_string(p.get('persona_id')), "name": _as_string(p.get('name')),
+             "tagline": _as_string(p.get('tagline'))}
+            for p in personas
+        ],
+        "documents": [
+            {"document_id": _as_string(d.get('document_id')), "title": _as_string(d.get('title')),
+             "type": _as_string(d.get('type')), "kind": _document_kind(d)}
+            for d in documents
+        ],
+    })
+
+
+@tracer.capture_method
+def _tool_list_personas(args: dict, token_info: dict) -> ToolResult:
+    """Every persona for a project, in full.
+
+    Derived from the same project route rather than from a personas-only read:
+    there is no such route, and inventing a second path to the same rows is what
+    delegating exists to avoid. The cost is reading the project's documents to
+    discard them, which is one Query either way.
+    """
+    _meta, personas, _documents = _get_project_payload(token_info)
+    return ToolResult({
+        "count": len(personas),
+        "personas": [_project_persona(p) for p in personas],
+    })
+
+
+@tracer.capture_method
+def _tool_get_feedback_detail(args: dict, token_info: dict) -> ToolResult:
+    """One feedback item in full, by id.
+
+    A missing item is now the route's 404 arriving as a tool ERROR rather than
+    the prose "not found" inside a successful result this tool used to return.
+    That is the point of the change: a model reading `isError: false` has been
+    told the call worked, so it treats the prose as data and reports the item as
+    empty rather than retrying with a different id.
+    """
+    feedback_id = args.get('feedback_id')
+    if not isinstance(feedback_id, str) or not feedback_id.strip():
+        raise InvalidToolArgument('feedback_id must be a non-empty string')
+
+    body = _delegate(
+        _domain_call('feedback_item',
+                     path_parameters={'feedback_id': feedback_id.strip()}),
+        token_info,
+    ).payload
+    if not isinstance(body, dict):
+        raise DelegationUnavailable('feedback route returned no object')
+    return ToolResult(_project_feedback(body, summary=False))
 
 
 # Tool name → implementation mapping
 TOOL_HANDLERS = {
     "search_feedback": _tool_search_feedback,
+    "get_feedback_detail": _tool_get_feedback_detail,
     "get_metrics_summary": _tool_get_metrics_summary,
+    "get_metrics_breakdown": _tool_get_metrics_breakdown,
     "get_project": _tool_get_project,
     "list_personas": _tool_list_personas,
-    "get_feedback_detail": _tool_get_feedback_detail,
 }
 
-# Minimum scope required for each registered tool.
-# "read" — any valid token may call this tool.
-# "read-write" — only tokens with read-write scope may call this tool.
+# The scope each registered tool requires, from the vocabulary in
+# shared/mcp_tokens.py.
 #
-# Every entry in TOOL_HANDLERS MUST appear here.  The dispatch in
-# _handle_tools_call is fail-closed: a tool with no declared scope is
-# rejected rather than defaulting to allowed, so an author who adds a
-# handler without updating this table gets an immediate error at call
-# time rather than an accidentally-public endpoint.
+# Every entry in TOOL_HANDLERS MUST appear here. The dispatch in
+# _handle_tools_call is fail-closed: a tool with no declared scope is rejected
+# rather than defaulting to allowed, so an author who adds a handler without
+# updating this table gets an immediate error at call time rather than an
+# accidentally-public endpoint.
+#
+# Scopes are now per-domain (`feedback:read`, not `read`), so a token can be
+# minted that reads feedback without reading anybody's product strategy. The
+# previous single `read`/`read-write` pair could not express that, and its
+# `read-write` half was a phantom — mintable, stored and badged in the UI while
+# no tool ever required it.
 TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
-    "search_feedback": "read",
-    "get_metrics_summary": "read",
-    "get_project": "read",
-    "list_personas": "read",
-    "get_feedback_detail": "read",
+    "search_feedback": SCOPE_FEEDBACK_READ,
+    "get_feedback_detail": SCOPE_FEEDBACK_READ,
+    "get_metrics_summary": SCOPE_METRICS_READ,
+    "get_metrics_breakdown": SCOPE_METRICS_READ,
+    "get_project": SCOPE_PROJECTS_READ,
+    "list_personas": SCOPE_PROJECTS_READ,
 }
 
-# The complete set of valid required-scope values.  Both _scope_allows and
-# _handle_tools_call reference this constant so adding a new scope means one
-# change instead of three.
-_VALID_REQUIRED_SCOPES: frozenset[str] = frozenset({"read", "read-write"})
-
-# Scope assumed for a token row with no usable ``scope`` — the attribute absent,
-# or present but falsy ('', None).
+# How each tool's data is SHAPED, which decides how the token's read_reach
+# applies to it (shared.mcp_tokens.reach_allows).
 #
-# ``scope`` has been validated to be exactly "read" or "read-write" at mint
-# time (projects_handler.api_create_token) but that only constrains *newly*
-# minted rows; it says nothing about rows already sitting in a deployed table.
-# The token *list* path (projects_handler.api_list_tokens) already resolves a
-# missing scope to "read", so the MCP Access tab displays such a row as a
-# working read token.  Defaulting to "read" here as well keeps enforcement and
-# presentation in agreement: a scope-less row behaves exactly as the UI says
-# it does, instead of being shown as usable and then refused on every call.
-# "read" is also the least-privilege choice — it grants nothing beyond what
-# every valid token already has.
-DEFAULT_TOKEN_SCOPE = "read"
+# `workspace` — the data has no project dimension at all. The feedback corpus
+#   is keyed `SOURCE#{platform}` with no project_id, and metrics are workspace
+#   aggregates. A token whose reach is `project-set` therefore cannot call
+#   these: there is nothing to narrow, so allowing them would hand a supposedly
+#   sealed credential the entire verbatim history.
+# `project` — the tool addresses exactly one project, named by a `project_id`
+#   argument (or defaulted from the token's project set when unambiguous), and
+#   that project must be within reach.
+#
+# Also fail-closed: a tool with no declared reach kind is rejected.
+TOOL_REACH_KINDS: dict[str, str] = {
+    "search_feedback": REACH_KIND_WORKSPACE,
+    "get_feedback_detail": REACH_KIND_WORKSPACE,
+    "get_metrics_summary": REACH_KIND_WORKSPACE,
+    "get_metrics_breakdown": REACH_KIND_WORKSPACE,
+    "get_project": REACH_KIND_PROJECT,
+    "list_personas": REACH_KIND_PROJECT,
+}
 
 
 # ============================================
@@ -827,7 +1610,7 @@ def _handle_initialize(req_id: Any, _params: dict) -> dict:
         },
         "serverInfo": {
             "name": "voc-datalake",
-            "version": "1.0.0",
+            "version": MCP_SERVER_VERSION,
         },
     })
 
@@ -837,28 +1620,101 @@ def _handle_tools_list(req_id: Any, _params: dict) -> dict:
     return _jsonrpc_result(req_id, {"tools": MCP_TOOLS})
 
 
-def _scope_allows(token_scope: str, required_scope: str) -> bool:
-    """Return True when *token_scope* satisfies *required_scope*.
+def _scope_allows(token_scopes: Any, required_scope: str) -> bool:
+    """Return True when the token's scope set contains *required_scope*.
 
-    Pure predicate — no side effects.  Callers are responsible for logging
-    when this returns False.
+    Pure predicate — no side effects. Callers are responsible for logging when
+    this returns False.
 
-    "read-write" satisfies both "read" and "read-write".
-    "read" satisfies only "read".
-    Any value not in _VALID_REQUIRED_SCOPES is treated as insufficient.
+    Exact membership, with no hierarchy: scopes are per-domain, so nothing
+    "includes" anything else and there is no ordering to get wrong. A row whose
+    `scopes` is missing or not a list of strings grants NOTHING rather than
+    falling back to a default — the old code defaulted a missing scope to
+    "read" because deployed rows predated the field, but the format change
+    means every row now carries an explicit set, so a row without one is data
+    damage and must not be guessed at.
     """
-    if required_scope not in _VALID_REQUIRED_SCOPES:
+    if not required_scope:
         return False
-    if required_scope == "read":
-        return token_scope in ("read", "read-write")
-    # required_scope == "read-write"
-    return token_scope == "read-write"
+    if not isinstance(token_scopes, (list, tuple, set, frozenset)):
+        return False
+    return required_scope in token_scopes
+
+
+class InvalidToolArgument(Exception):
+    """A tool argument is malformed on the tool's OWN terms.
+
+    Reported as `-32602 Invalid params` and never delegated, which is the line
+    worth keeping straight: a value the tool's `inputSchema` forbids (an unknown
+    enum member, a `project_id` that is not a string) is a malformed request,
+    while a well-formed value the DATA refuses (a project that does not exist)
+    is the route's 404 and arrives as a tool error the model can act on. Sending
+    the first kind downstream would turn a client bug into a domain lookup.
+    """
+
+
+class InvalidProjectArgument(InvalidToolArgument):
+    """`project_id` was supplied but is not a usable project id."""
+
+
+def _resolve_project_id(args: dict, token_info: dict) -> str | None:
+    """Which project a project-shaped tool is addressing, or None.
+
+    Explicit argument wins. Absent, it defaults to the token's project set when
+    that set names exactly one project — the common case, since a token is
+    minted from a project — so single-project clients need not pass it. An
+    ambiguous default (a set with several projects) resolves to None rather
+    than picking one, which the caller sees as a request to name the project.
+
+    🔑 A PRESENT but unusable argument (`123`, `["p"]`, `"  "`) RAISES rather
+    than falling back to the token's project. Falling back would read a
+    *different* project than the client named and report success, which is worse
+    than an error: the caller gets someone else's data believing it is the
+    project they asked for. Absence and garbage are different intents and get
+    different answers.
+    """
+    if 'project_id' in args:
+        explicit = args['project_id']
+        if not isinstance(explicit, str) or not explicit.strip():
+            raise InvalidProjectArgument(
+                f'project_id must be a non-empty string, got '
+                f'{type(explicit).__name__}'
+            )
+        return explicit.strip()
+    token_projects = token_info.get('projects')
+    if isinstance(token_projects, (list, tuple)) and len(token_projects) == 1:
+        only = token_projects[0]
+        return only if isinstance(only, str) and only else None
+    return None
 
 
 def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     """Handle MCP tools/call request."""
     tool_name = params.get('name', '')
     arguments = params.get('arguments', {})
+
+    # An explicit `"arguments": null` means "no arguments", not "bad request".
+    # `params.get('arguments', {})` cannot supply the default for it, because the
+    # KEY IS PRESENT — and some JSON-RPC/MCP clients serialize an omitted
+    # optional object as null rather than dropping it. Every tool here has only
+    # optional arguments, so `{}` is exactly what such a caller meant; refusing
+    # it would be a compatibility edge invented by this guard rather than a real
+    # protocol error.
+    if arguments is None:
+        arguments = {}
+
+    # Anything else non-object is genuinely malformed. A list, string or number
+    # reaches the project resolution below, where both `'project_id' in args` and
+    # `args['project_id']` raise TypeError — and that resolution runs OUTSIDE the
+    # try/except around the handler, so it escapes as a 502 with no JSON-RPC
+    # envelope and no CORS headers. Refused here at the boundary, which is the
+    # same lesson the BotoCoreError clause in _authenticate records: an unhandled
+    # type is a protocol-level error, not a server crash.
+    if not isinstance(arguments, dict):
+        return _jsonrpc_error(
+            req_id, -32602,
+            f"'arguments' must be an object, got {type(arguments).__name__}",
+        )
 
     handler = TOOL_HANDLERS.get(tool_name)
     if not handler:
@@ -871,44 +1727,124 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         logger.error("Tool has no declared scope requirement", extra={"tool": tool_name})
         return _jsonrpc_error(req_id, -32603, f"Tool {tool_name} has no declared scope requirement")
 
-    # A token row with no usable `scope` — the attribute absent (it predates the
-    # field) or present but empty/falsy (a partial write, a migration that wrote
-    # '') — is resolved to DEFAULT_TOKEN_SCOPE.  `or` rather than a two-argument
-    # .get() is deliberate: both cases are the same server-side data problem, and
-    # only the absent one would be covered by .get('scope', DEFAULT_TOKEN_SCOPE).
-    # An empty string would otherwise fall through to a "Forbidden: token scope
-    # ''" that blames the caller for a row it cannot see or fix.  The fallback is
-    # least-privilege, so a falsy value can never grant more than `read`.
-    # See DEFAULT_TOKEN_SCOPE for why `read` specifically.
-    token_scope = token_info.get('scope') or DEFAULT_TOKEN_SCOPE
-    if not _scope_allows(token_scope, required_scope):
-        # An unrecognised required_scope is a server-side misconfiguration in
-        # TOOL_SCOPE_REQUIREMENTS, not a client permission problem: report it
-        # as an internal error (like the missing-declaration case above) so the
-        # caller is not told that its most-privileged token is insufficient.
-        if required_scope not in _VALID_REQUIRED_SCOPES:
-            logger.error(
-                "Unrecognised required_scope value in TOOL_SCOPE_REQUIREMENTS",
-                extra={"tool": tool_name, "required_scope": required_scope},
-            )
-            return _jsonrpc_error(
-                req_id, -32603, f"Tool {tool_name} has an invalid scope requirement"
-            )
+    # Same fail-closed treatment for the reach kind: without it there is no way
+    # to know whether read_reach even applies to this tool, and guessing would
+    # mean guessing in the permissive direction.
+    tool_reach_kind = TOOL_REACH_KINDS.get(tool_name)
+    if tool_reach_kind is None:
+        logger.error("Tool has no declared reach kind", extra={"tool": tool_name})
+        return _jsonrpc_error(req_id, -32603, f"Tool {tool_name} has no declared reach kind")
+
+    token_scopes = token_info.get('scopes')
+    if not _scope_allows(token_scopes, required_scope):
         logger.warning(
             "Scope insufficient for tool",
-            extra={"tool": tool_name, "required": required_scope, "token_scope": token_scope},
+            extra={"tool": tool_name, "required": required_scope},
         )
-        return _jsonrpc_error(req_id, -32003, f"Forbidden: token scope '{token_scope}' cannot call '{tool_name}'")
+        return _jsonrpc_error(
+            req_id, -32003,
+            f"Forbidden: token lacks the '{required_scope}' scope required by '{tool_name}'",
+        )
 
+    # Reach enforcement. Separate from scope on purpose: scope says WHICH KIND
+    # of data a token may read, reach says HOW FAR. A token can hold
+    # `projects:read` and still be refused a particular project.
+    read_reach = token_info.get('read_reach') or DEFAULT_READ_REACH
+    token_projects = token_info.get('projects') or []
+    project_id = None
+    if tool_reach_kind == REACH_KIND_PROJECT:
+        try:
+            project_id = _resolve_project_id(arguments, token_info)
+        except InvalidProjectArgument as exc:
+            return _jsonrpc_error(req_id, -32602, str(exc))
+
+    if not reach_allows(
+        read_reach=read_reach,
+        token_projects=token_projects,
+        tool_reach_kind=tool_reach_kind,
+        project_id=project_id,
+    ):
+        # The refusals read differently because they need different fixes: one
+        # wants an argument, the other wants a differently-scoped token.
+        #
+        # Ordering, precisely — a MALFORMED argument is reported earlier, by
+        # _resolve_project_id, because an ill-formed request is ill-formed
+        # whatever the token's reach (syntax before authorization, as everywhere
+        # else). What is checked reach-first is the MISSING-argument case below:
+        # a `none`-reach token can never call anything, so asking it for a
+        # project_id would send the caller after an argument that cannot help.
+        reach_covers_nothing = (
+            read_reach == REACH_NONE
+            or (read_reach == REACH_PROJECT_SET and tool_reach_kind == REACH_KIND_WORKSPACE)
+        )
+        if tool_reach_kind == REACH_KIND_PROJECT and not project_id and not reach_covers_nothing:
+            return _jsonrpc_error(
+                req_id, -32602,
+                f"'{tool_name}' needs a project_id argument: this token's project "
+                f"set does not name exactly one project",
+            )
+        logger.warning(
+            "Read reach does not cover this call",
+            extra={"tool": tool_name, "read_reach": read_reach, "kind": tool_reach_kind},
+        )
+        return _jsonrpc_error(
+            req_id, -32003,
+            f"Forbidden: this token's read reach ('{read_reach}') does not cover "
+            f"'{tool_name}'",
+        )
+
+    if tool_reach_kind == REACH_KIND_PROJECT:
+        # The AUTHORIZED project for this one call, which is what the
+        # project-shaped tools read. Injected rather than passed as a new
+        # parameter so resolution and authorization stay in this one place
+        # instead of being repeated per tool.
+        token_info = {**token_info, 'project_id': project_id}
+
+    # The three outcomes are separated because the MCP spec separates them, and
+    # the distinction is what lets a model behave sensibly:
+    #
+    #   malformed call        → JSON-RPC error   (-32602) — the client is wrong
+    #   route refused a call  → RESULT isError   — the model can try something else
+    #   infrastructure fault  → JSON-RPC error   (-32603) — nobody upstream can fix it
+    #
+    # Collapsing the middle case into the first would tell a model its request
+    # was malformed when it was merely unlucky; collapsing it into a successful
+    # result (what this handler used to do for "not found") tells the model the
+    # call worked and the data is empty, which it then reports as fact.
     try:
-        content = handler(arguments, token_info)
-        return _jsonrpc_result(req_id, {"content": content, "isError": False})
+        result = handler(arguments, token_info)
+    except InvalidToolArgument as exc:
+        return _jsonrpc_error(req_id, -32602, str(exc))
+    except ToolRouteError as exc:
+        return _tool_error(req_id, str(exc))
+    except DelegationUnavailable:
+        # Already logged with the route and fault type at the point of failure.
+        # The client is told only that the server failed: the detail is a
+        # function name, a status code or a stack trace, none of which is the
+        # caller's business and one of which is a fingerprint of the topology.
+        logger.error("Delegation failed", extra={"tool": tool_name})
+        return _jsonrpc_error(req_id, -32603, "Internal error: upstream service unavailable")
     except Exception as e:
         logger.exception(f"Tool execution error: {tool_name}")
-        return _jsonrpc_result(req_id, {
-            "content": [{"type": "text", "text": f"Error: {str(e)}"}],
-            "isError": True,
-        })
+        return _tool_error(req_id, f"Error: {str(e)}")
+
+    return _jsonrpc_result(req_id, {
+        "content": [{"type": "text", "text": result.text}],
+        # Structured output alongside the text block, not instead of it: the
+        # spec says a tool SHOULD keep sending the serialized form for clients
+        # that predate `structuredContent`, and both come from one value here so
+        # they cannot disagree.
+        "structuredContent": result.structured,
+        "isError": False,
+    })
+
+
+def _tool_error(req_id: Any, message: str) -> dict:
+    """A tool EXECUTION error: a successful JSON-RPC call reporting a failure."""
+    return _jsonrpc_result(req_id, {
+        "content": [{"type": "text", "text": message}],
+        "isError": True,
+    })
 
 
 def _handle_ping(req_id: Any, _params: dict) -> dict:
@@ -934,20 +1870,14 @@ MCP_AUTH_METHODS = {
 @tracer.capture_method
 def _handle_autoseed(event: dict) -> dict:
     """Handle GET /mcp/autoseed/{project_id} with Bearer token auth.
-    
-    The project_id is extracted from the URL path (injected into pathParameters
-    by the router). We also inject it as the X-Project-Id header so _authenticate
-    can find it without requiring the caller to pass the header explicitly.
+
+    The project_id comes from the URL path (injected into pathParameters by the
+    router). It no longer has to be echoed into an X-Project-Id header: the
+    credential resolves on its own, so the path is simply the project being
+    asked for, and the token's reach decides whether that is allowed.
     """
     path_params = event.get('pathParameters', {}) or {}
     project_id = path_params.get('project_id', '')
-
-    # Inject project_id into headers so _authenticate can find it
-    if project_id:
-        headers = event.get('headers', {}) or {}
-        if not headers.get('x-project-id') and not headers.get('X-Project-Id'):
-            headers['x-project-id'] = project_id
-            event['headers'] = headers
 
     try:
         token_info = _authenticate(event)
@@ -959,20 +1889,57 @@ def _handle_autoseed(event: dict) -> dict:
     if not token_info:
         return _cors_response({'message': 'Unauthorized'}, status_code=401)
 
-    # Ensure the token's project matches the requested project
-    if project_id != token_info.get('project_id'):
-        return _cors_response({'message': 'Forbidden: token does not match project'}, status_code=403)
+    # Autoseed hands back the project's personas and documents, so it is a
+    # project-shaped read of exactly the kind get_project performs, and it goes
+    # through the same gate — including the scope check, which the old
+    # equality-against-the-token's-project test did not perform at all.
+    if not _scope_allows(token_info.get('scopes'), SCOPE_PROJECTS_READ):
+        return _cors_response(
+            {'message': f"Forbidden: token lacks the '{SCOPE_PROJECTS_READ}' scope"},
+            status_code=403,
+        )
+    if not reach_allows(
+        read_reach=token_info.get('read_reach') or DEFAULT_READ_REACH,
+        token_projects=token_info.get('projects') or [],
+        tool_reach_kind=REACH_KIND_PROJECT,
+        project_id=project_id,
+    ):
+        return _cors_response(
+            {'message': 'Forbidden: project is outside this token\'s read reach'},
+            status_code=403,
+        )
 
-    query_params = event.get('queryStringParameters', {}) or {}
-    persona_ids = query_params.get('persona_ids', '').split(',') if query_params.get('persona_ids') else None
-    document_ids = query_params.get('document_ids', '').split(',') if query_params.get('document_ids') else None
-
+    # Delegated like every tool, and this one is why the projects-table grant
+    # could be narrowed to the token partition: autoseed was the last reader of
+    # project ARTIFACT rows in this function. The filter arguments are passed
+    # through as the route's own query string rather than re-parsed here — the
+    # comma-splitting used to be duplicated in both places.
+    query_params = event.get('queryStringParameters') or {}
+    # ONE try around both steps, because both can raise both kinds. Building the
+    # call can fail on a malformed path parameter (400 — the credential is fine
+    # and the path is not) OR on a missing reserved-segment declaration, which is
+    # a server fault and belongs with the delegation failure below. Two separate
+    # try blocks let the second kind escape from the first step to the outer
+    # catch-all, answering something other than the 502 this route establishes.
     try:
-        result = autoseed_project(project_id, persona_ids=persona_ids, document_ids=document_ids)
-        return _cors_response(result)
-    except Exception as e:
-        logger.exception(f"Autoseed error for project {project_id}")
-        return _cors_response({'message': str(e)}, status_code=500)
+        call = _domain_call('project_autoseed', path_parameters={'project_id': project_id}, query={
+            'persona_ids': query_params.get('persona_ids'),
+            'document_ids': query_params.get('document_ids'),
+        })
+        result = call_domain(call, claims=synthetic_claims(token_info))
+    except InvalidToolArgument as exc:
+        return _cors_response({'message': str(exc)}, status_code=400)
+    except DelegationUnavailable:
+        logger.error('Autoseed delegation failed', extra={'project_id': project_id})
+        return _cors_response({'message': 'Upstream service unavailable'}, status_code=502)
+    # The route's own status travels with its body: a 404 for an unknown project
+    # stays a 404 here instead of becoming the 500 this used to answer for it.
+    #
+    # An empty upstream body becomes `{}` rather than `null`: this route's clients
+    # read fields off the response, and `null` makes that a TypeError where `{}`
+    # makes it a missing key.
+    return _cors_response(result.payload if result.payload is not None else {},
+                          status_code=result.status_code)
 
 
 # ============================================

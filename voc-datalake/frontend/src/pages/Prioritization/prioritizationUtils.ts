@@ -706,12 +706,25 @@ export function normalizeRow(raw: unknown, rowId?: string): PrioritizationRow | 
  * reason, so the two agree.
  *
  * The rest degrades, because none of it decides whether the row exists: a missing
- * `prototype_id` means "no prototype", and `is_default`/`created_at` are metadata the
- * list does not depend on.
+ * `prototype_id` means "no prototype", and `is_default`/`created_at`/`is_frozen` are
+ * metadata the list does not depend on.
+ *
+ * `is_frozen` degrades to FALSE, and that direction is deliberate. It is the API's
+ * answer to "has a ballot landed on this row", and the freeze itself is a DATABASE
+ * CONDITION on the write — so this field only ever decides whether a control is
+ * offered, never whether an edit is allowed. An unreadable value that defaulted to
+ * `true` would hide a control on a row that is perfectly editable, with nothing on
+ * screen explaining why; defaulting to `false` offers a control whose request the
+ * server refuses with a 409 the page can state. A courtesy that occasionally shows
+ * too much beats one that silently withholds.
  *
  * `z.object`, not `looseObject`: this is the shape the page ACCEPTS, matching
  * `OwnBallotSchema`'s reasoning — a boundary that keeps what it does not understand
- * is not saying what it accepts.
+ * is not saying what it accepts. Which is why a field the API publishes has to be
+ * DECLARED here rather than left to be stripped: an undeclared `is_frozen` parses
+ * fine and is silently discarded, so the page could never learn the row was frozen
+ * and nothing would fail to say so. `test_prioritization_row_payload_lockstep.py`
+ * pins every key `_row_payload` returns against this list for that reason.
  */
 /**
  * How many documents one row may hold.
@@ -745,6 +758,7 @@ const RowSchema = z.object({
   prototype_id: z.string().catch(''),
   is_default: z.boolean().catch(false),
   created_at: z.string().catch(''),
+  is_frozen: z.boolean().catch(false),
 })
 
 /**

@@ -36,6 +36,7 @@ PERSONA_GENERATION_PROMPTS = 'persona-generation.json'
 # personas get thrown away.
 PERSONA_SYNTHESIS_STEP = 'persona_synthesis'
 PERSONA_CHAIN_STEPS = ('research_analysis', PERSONA_SYNTHESIS_STEP)
+PERSONA_IMPORT_PROMPTS = 'persona-import.json'
 PRD_GENERATION_PROMPTS = 'prd-generation.json'
 PRFAQ_GENERATION_PROMPTS = 'prfaq-generation.json'
 RESEARCH_ANALYSIS_PROMPTS = 'research-analysis.json'
