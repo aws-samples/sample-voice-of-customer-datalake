@@ -16,6 +16,8 @@ change on either side fails CI instead of the live UI.
 import re
 from pathlib import Path
 
+import pytest
+
 from shared.api import SEARCH_QUERY_MIN_LENGTH
 
 
@@ -37,6 +39,15 @@ def _frontend_minimum() -> int | None:
 
 
 class TestSearchMinimumMirror:
+    """The positive control stays LOUD; the comparison SKIPS when the tree is gone.
+
+    A checkout without `frontend/` (a backend-only sparse checkout, say) should
+    not report a mirror mismatch it cannot possibly have measured — that is a
+    `FileNotFoundError` masquerading as a finding. The control below is the one
+    test that must still fail in a normal checkout, so it is not skipped on the
+    file's contents, only on its absence.
+    """
+
     def test_the_frontend_constant_is_findable(self):
         """The positive control.
 
@@ -50,6 +61,7 @@ class TestSearchMinimumMirror:
             'parsed no SEARCH_MIN_CHARS from useFeedbackListData.ts — parser drift?'
         )
 
+    @pytest.mark.skipif(not _GATE_SOURCE.exists(), reason='frontend tree absent from this checkout')
     def test_both_languages_agree_on_the_minimum(self):
         """Equality, so raising the bound on one side fails here rather than
         turning an ordinary keystroke into a 400."""
@@ -58,12 +70,16 @@ class TestSearchMinimumMirror:
             f'{SEARCH_QUERY_MIN_LENGTH}'
         )
 
-    def test_the_client_trims_before_measuring_against_the_route(self):
-        """The route trims `q` before applying the minimum, so the client has to
-        compare the same string. This pins the trim at the API boundary, where it
-        covers every caller, rather than in one hook's gate."""
-        client = (_repo_root() / 'frontend' / 'src' / 'api' / 'client.ts').read_text()
-
-        assert 'q: params.q.trim()' in client, (
-            'api.searchFeedback must trim `q` so every caller agrees with the route'
-        )
+    # The client's trim is NOT asserted here any more.
+    #
+    # It used to be, as the literal substring `q: params.q.trim()` in client.ts —
+    # which pins CHARACTERS, not behaviour: a Prettier reflow or an extracted
+    # local would have failed a green test with no change in what the code does.
+    # That is the "assert on structure, not text" rule this repo already learned
+    # elsewhere, and grepping another language's source for an expression was the
+    # weakest available form of it.
+    #
+    # The behaviour is pinned where it can be observed instead — `client.test.ts`
+    # § "searchFeedback trims the query at the boundary" asserts the trimmed term
+    # in the REQUEST URL. This file keeps only what genuinely needs cross-language
+    # parsing: the shared CONSTANT.

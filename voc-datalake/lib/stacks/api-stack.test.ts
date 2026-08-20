@@ -1047,6 +1047,66 @@ describe('the delegation timeout budget', () => {
   });
 });
 
+describe('the search fan-out fits the metrics timeout', () => {
+  // `/feedback/search` walks ONE DynamoDB query per day partition, because
+  // gsi1-by-date is partitioned BY DAY (`gsi1pk = DATE#YYYY-MM-DD`) and no index
+  // supports a bounded multi-day query with a usable projection. Removing the old
+  // undocumented `min(days, 30)` cap — which made most of the corpus unreachable
+  // by text search — means the loop can now run for the FULL validated window.
+  //
+  // So the window ceiling and the Lambda timeout became coupled, and nothing said
+  // so. This pins the arithmetic: raising `validate_days`' maximum, or lowering
+  // the metrics timeout, fails here instead of producing 502s on a year-long
+  // search. The measured cost is ~10-15 ms per day partition (p50, sparse days),
+  // so the upper bound is used.
+  const MEASURED_MS_PER_DAY = 15;
+  const SAFETY_FACTOR = 2;
+  // API Gateway hard-caps a REST integration at 29 s regardless of the Lambda's
+  // own timeout, so a budget above this is unreachable however it is configured.
+  const API_GATEWAY_INTEGRATION_CEILING_SECONDS = 29;
+
+  const maxWindowDays = () => {
+    const source = readRepoFile('lambda', 'shared', 'api.py');
+    // `validate_days`' own ceiling, read rather than restated — a copy here would
+    // keep passing after the real bound moved, which is the whole failure mode.
+    const block = source.match(/def validate_days\([\s\S]*?\)\s*->\s*int:/)?.[0];
+    expect(block, 'could not locate validate_days signature').toBeDefined();
+    const maxVal = block?.match(/max_val:\s*int\s*=\s*(\d+)/)?.[1];
+    expect(maxVal, 'could not read validate_days max_val').toBeDefined();
+    return Number(maxVal);
+  };
+
+  const metricsTimeout = () => {
+    const fn = Object.values(apiTemplate().findResources('AWS::Lambda::Function'))
+      .map((f) => z.object({
+        Properties: z.object({ Handler: z.string().optional(), Timeout: z.number().optional() }),
+      }).parse(f).Properties)
+      .find((p) => p.Handler === 'metrics_handler.lambda_handler');
+    expect(fn, 'no Lambda with the metrics_handler entry point').toBeDefined();
+    return fn?.Timeout ?? 0;
+  };
+
+  it('leaves the metrics function time for a full-window search', () => {
+    const worstCaseSeconds = (maxWindowDays() * MEASURED_MS_PER_DAY) / 1000;
+
+    expect(
+      metricsTimeout(),
+      `a ${maxWindowDays()}-day search projects to ~${worstCaseSeconds.toFixed(1)}s ` +
+      `at ${MEASURED_MS_PER_DAY}ms/day; the metrics timeout must cover that with margin`,
+    ).toBeGreaterThanOrEqual(worstCaseSeconds * SAFETY_FACTOR);
+  });
+
+  it('keeps the budget inside what API Gateway will actually wait for', () => {
+    // Not redundant with the assertion above: that one could be satisfied by
+    // raising the Lambda timeout past the point where the caller still receives
+    // the response, which would trade a 502 for a slower 504.
+    const worstCaseSeconds = (maxWindowDays() * MEASURED_MS_PER_DAY) / 1000;
+
+    expect(worstCaseSeconds).toBeLessThan(API_GATEWAY_INTEGRATION_CEILING_SECONDS);
+    expect(metricsTimeout()).toBeLessThanOrEqual(API_GATEWAY_INTEGRATION_CEILING_SECONDS + 1);
+  });
+});
+
 describe('mcp endpoint throttling', () => {
   // The former McpUsagePlan never bound: a usage plan's throttle applies per
   // API KEY and no MCP client sends one (SEC-10's fourth sub-claim, open since

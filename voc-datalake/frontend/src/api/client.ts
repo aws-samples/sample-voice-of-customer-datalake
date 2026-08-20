@@ -189,15 +189,25 @@ export const api = {
   },
   
   searchFeedback: async (params: { q: string; days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
-    // `q` trimmed HERE, at the single boundary every caller goes through, rather
-    // than in each caller's gate.
+    // `q` trimmed HERE, at the single boundary every caller goes through, so the
+    // string that is SENT is the string the route measures.
     //
     // `/feedback/search` trims before applying `SEARCH_QUERY_MIN_LENGTH` and
-    // REFUSES a present-but-too-short term with a 400, so any caller comparing
-    // raw `.length` could ship `"a "` — two characters here, one there — and
-    // surface a server error from ordinary typing. Trimming at the boundary makes
-    // every caller agree with the route by construction; a caller's own gate then
-    // only decides WHETHER to search, not what counts as long enough.
+    // refuses a present-but-too-short term with a 400, so a caller passing `"a "`
+    // through untrimmed would have the server measure something different from
+    // what the caller measured.
+    //
+    // ⚠️ Precisely what this does and does not buy: it normalises the VALUE, not
+    // the DECISION. A caller that gates on raw `.length` will still let `"a "`
+    // past its own gate, and this boundary will faithfully send `q=a` and get a
+    // 400. Only a caller's own TRIMMED gate prevents that — `useFeedbackListData`
+    // has one, and `test_search_minimum_lockstep.py` pins its constant to the
+    // route's.
+    //
+    // Deliberately NOT short-circuiting a too-short term into an empty result
+    // here, which was the reviewer's alternative: returning `count: 0` for a
+    // search that never ran is exactly the ambiguity the route was just fixed to
+    // stop producing. Better a loud 400 than a quiet zero.
     const searchParams = buildSearchParams({ ...params, q: params.q.trim() })
     // `is_partial_window` declared, not merely surviving the spread below: the
     // route sets it when the candidate scan stops on its soft cap, and

@@ -1784,3 +1784,57 @@ describe('getDateRangeParams', () => {
     })
   })
 })
+
+describe('searchFeedback trims the query at the boundary', () => {
+  // `/feedback/search` trims `q` before applying its minimum and refuses a
+  // present-but-too-short term with a 400. Trimming here means the string that
+  // is SENT is the string the route measures, whatever a caller passed in.
+  //
+  // Asserted on the REQUEST URL rather than on the source text of client.ts. A
+  // sibling guard used to assert the literal substring `q: params.q.trim()`,
+  // which a Prettier reflow or an extracted local would break with no behaviour
+  // change — pinning characters instead of behaviour.
+  beforeEach(() => {
+    ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue(DEFAULT_STORE_STATE)
+    ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
+    global.fetch = vi.fn()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const okOnce = (body: unknown) =>
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(body),
+    })
+
+  const requestedUrl = () =>
+    String((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0])
+
+  it('sends the trimmed term when the caller passes surrounding whitespace', async () => {
+    okOnce({ count: 0, items: [], entities: {}, query: 'delivery' })
+
+    await api.searchFeedback({ q: '  delivery  ' })
+
+    expect(requestedUrl()).toContain('q=delivery')
+  })
+
+  it('preserves interior spaces, which are part of the term', async () => {
+    okOnce({ count: 0, items: [], entities: {}, query: 'slow delivery' })
+
+    await api.searchFeedback({ q: '  slow delivery  ' })
+
+    // URLSearchParams encodes the space; what matters is that it survives.
+    expect(decodeURIComponent(requestedUrl().replace(/\+/g, ' '))).toContain('q=slow delivery')
+  })
+
+  it('surfaces the truncation flag the route reports', async () => {
+    okOnce({ count: 1, items: [{ feedback_id: '1' }], entities: {}, query: 'x', is_partial_window: true })
+
+    const result = await api.searchFeedback({ q: 'delivery' })
+
+    expect(result.is_partial_window).toBe(true)
+  })
+})
