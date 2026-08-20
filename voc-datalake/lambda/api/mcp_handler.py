@@ -22,7 +22,7 @@ from boto3.dynamodb.conditions import Key
 # Imported as a module because botocore's own `ConnectionError` would shadow the builtin.
 from botocore import exceptions as botocore_exceptions
 
-from shared.api import DecimalEncoder, SEARCH_QUERY_MIN_LENGTH
+from shared.api import DecimalEncoder, MAX_FEEDBACK_WINDOW_DAYS, SEARCH_QUERY_MIN_LENGTH
 from shared.mcp_delegate import (
     DelegationUnavailable,
     DomainCall,
@@ -875,17 +875,22 @@ _FEEDBACK_SOURCE_KEYS: dict[str, tuple[str, ...]] = {
 _FEEDBACK_SUMMARY_TYPES: dict[str, str] = _declared_types(_FEEDBACK_SUMMARY_PROPERTIES)
 _FEEDBACK_DETAIL_TYPES: dict[str, str] = _declared_types(_FEEDBACK_DETAIL_PROPERTIES)
 
-# A window argument, stated once. `maximum` is the route's real ceiling
-# (`validate_days` bounds to 365) rather than a tighter number restated here:
-# the adapter no longer clamps, so a limit this file invented would be a
-# promise nothing keeps. The route CLAMPS rather than refuses, which is why an
-# out-of-range value is not an error.
+# A window argument, stated once. `maximum` is the route's real ceiling rather
+# than a tighter number restated here: the adapter no longer clamps, so a limit
+# this file invented would be a promise nothing keeps. The route CLAMPS rather
+# than refuses, which is why an out-of-range value is not an error.
+#
+# 🔑 IMPORTED from `MAX_FEEDBACK_WINDOW_DAYS`, not written as `365`. It was the
+# literal, with the real bound named only in this comment — which is precisely
+# the declaration-vs-enforcement drift the rest of this file exists to remove,
+# sitting in the file that removes it. A comment cannot fail CI; an import
+# cannot disagree.
 _DAYS_ARG: dict[str, Any] = {
     "type": "integer",
     "description": "Days to look back (default 7). Values above the route's ceiling are clamped, not refused.",
     "default": 7,
     "minimum": 1,
-    "maximum": 365,
+    "maximum": MAX_FEEDBACK_WINDOW_DAYS,
 }
 
 MCP_TOOLS = [
@@ -912,8 +917,10 @@ MCP_TOOLS = [
                     #
                     # `minLength` forbids `""`, while `_tool_search_feedback` still
                     # treats a blank query as "no query" and answers from
-                    # `/feedback` — pinned by `test_a_blank_query_is_not_a_search`,
-                    # so the tolerance is tested rather than incidental.
+                    # `/feedback`. That tolerance is tested rather than incidental:
+                    # `test_mcp_delegation.py::TestRouteSelection`
+                    # ::test_a_blank_query_is_not_a_search (a pre-existing test,
+                    # which is why it appears in no diff that adds this comment).
                     #
                     # That asymmetry is safe in the direction it runs. A schema
                     # says what a caller MAY send, and a client that sends `""`
