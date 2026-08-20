@@ -68,6 +68,27 @@ const CORS_ALLOW_HEADERS = [
  */
 const CORS_ALLOW_HEADERS_VALUE = `'${CORS_ALLOW_HEADERS.join(',')}'`;
 
+/**
+ * Response headers a browser-based client is allowed to READ.
+ *
+ * Neither of these is CORS-safelisted, so without this list a browser receives them
+ * and hides them from the page — the failure `WWW-Authenticate` already documents.
+ * `Vary` joins it because `mcp_handler.py` now sends `Vary: Authorization` on every
+ * response (its answers depend on the credential), and a header stating that fact
+ * which the client cannot read states it to nobody.
+ *
+ * `Content-Type` stays because the frontend reads it.
+ *
+ * Kept in lockstep with `mcp_handler.CORS_HEADERS['Access-Control-Expose-Headers']`
+ * by 'mcp transport headers reach a browser' in api-stack.test.ts: the handler's own
+ * responses carry its list and gateway-GENERATED ones carry this, so a header
+ * exposed by one and not the other is readable on some answers and not others.
+ */
+const CORS_EXPOSE_HEADERS = ['Content-Type', 'WWW-Authenticate', 'Vary'];
+
+/** The same list in the single-quoted form an API Gateway response header takes. */
+const CORS_EXPOSE_HEADERS_VALUE = `'${CORS_EXPOSE_HEADERS.join(',')}'`;
+
 export interface VocApiStackProps extends VocStackProps {
   // Core stack resources
   feedbackTable: dynamodb.Table;
@@ -1074,7 +1095,7 @@ export class VocApiStack extends VocStack {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
         allowHeaders: CORS_ALLOW_HEADERS,
-        exposeHeaders: ['Content-Type'],
+        exposeHeaders: CORS_EXPOSE_HEADERS,
       },
       cloudWatchRoleRemovalPolicy: cdk.RemovalPolicy.DESTROY
     });
@@ -1109,7 +1130,13 @@ export class VocApiStack extends VocStack {
         'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE,
         'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
         'WWW-Authenticate': '\'Bearer error="invalid_token"\'',
-        'Access-Control-Expose-Headers': "'WWW-Authenticate'",
+        'Access-Control-Expose-Headers': CORS_EXPOSE_HEADERS_VALUE,
+        // A 401 is the most credential-dependent answer this API gives, and it is
+        // produced by the authorizer rather than by the Lambda — so the `Vary`
+        // mcp_handler sends on its own responses does not reach it. Without this, an
+        // intermediary could cache the authorizer's 401 against the endpoint alone
+        // and serve it to a request carrying a perfectly good credential.
+        'Vary': "'Authorization'",
       },
     });
 

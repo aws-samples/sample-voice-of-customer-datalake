@@ -60,7 +60,32 @@ revert makes each assertion fail.
       `notifications/cancelled` traffic tore down live sessions. Deleting the
       `_is_notification` branch in `lambda_handler` fails every test in that class;
       answering a notification anywhere but 202-with-no-body fails
-      test_a_notification_is_202_with_an_empty_body.
+      test_a_notification_is_202_with_an_empty_body. And a REFUSED notification kept
+      the `id: null` the accepted one had lost: passing `req_id` instead of `_NO_ID`
+      in the `InvalidTransportHeader` catch fails
+      test_a_refused_notification_carries_no_id_member, while omitting the id
+      unconditionally fails test_a_refused_request_still_carries_its_id.
+
+  TestBatchBodiesAreRefused
+    — 2025-03-26 was advertised and is the one revision that mandates JSON-RPC
+      batching, which this handler does not implement: a legal array body fell through
+      to the unknown-method branch and was answered `404 -32601 "Method not found: "`,
+      and that 404 tells an advertised-revision client its session died. Re-adding
+      the revision to `SUPPORTED_PROTOCOL_VERSIONS` raises at import and fails
+      test_no_advertised_revision_requires_a_body_grammar_this_server_refuses;
+      deleting the `_is_batch` branch fails the rest.
+
+  TestCacheScopeMatchesWhatTheResponseDependsOn
+    — `server/discover` declared `cacheScope: public` while being liveness-checked, so
+      a shared cache was licensed to replay its unauthenticated 200 across
+      authorization contexts — to the request carrying a revoked token that was owed a
+      401. Restoring `CACHE_SCOPE_PUBLIC` there fails
+      test_no_public_answer_is_credential_gated.
+
+  TestTheHttpLayerStatesWhatTheBodyStates
+    — `cacheScope` travels in the JSON-RPC body and the caches in front of this
+      endpoint read headers, so the mitigation reached only body-parsing clients.
+      Removing `Vary` or `Cache-Control` from `CORS_HEADERS` fails this class.
 
   TestMethodNotAllowed / TestUnknownMethod
     — GET and DELETE are transport methods this server does not implement, so
@@ -288,27 +313,29 @@ class TestVersionNegotiation:
             f"per-request `_meta` era is a phase, not a tuple entry."
         )
 
-    def test_the_revisions_the_deployed_server_negotiated_are_still_accepted(self):
+    def test_the_revision_the_deployed_server_negotiated_is_still_accepted(self):
         """A client that handshook against the DEPLOYED server must keep working.
 
         The deployed handler pinned 2024-11-05, so every connected client sends
         `MCP-Protocol-Version: 2024-11-05` on every subsequent request. Dropping it
         from the accepted set — while the header validator refuses anything not in
         that set — turns each of those clients into a 400 at the next call.
-        2025-03-26 is here for the same reason: it is widely deployed, and it is the
-        value the spec tells a server to assume when the header is absent.
 
         Accepting a revision is not preferring it: neither is the counter-offer.
+
+        2025-03-26 was here too and is deliberately gone; see
+        `TestBatchBodiesAreRefused` for why (it mandates batching, which this handler
+        does not implement) and for why dropping it breaks no deployed client.
         """
-        for version in ("2024-11-05", "2025-03-26"):
-            assert version in mcp_handler.SUPPORTED_PROTOCOL_VERSIONS, (
-                f"{version} was negotiable against a deployed build; refusing it "
-                f"now breaks every client that handshook on it"
-            )
-            status, _body = _call(_event(
-                "initialize", headers={"MCP-Protocol-Version": version},
-            ))
-            assert status == 200, f"{version} header refused"
+        version = "2024-11-05"
+        assert version in mcp_handler.SUPPORTED_PROTOCOL_VERSIONS, (
+            f"{version} was negotiable against a deployed build; refusing it "
+            f"now breaks every client that handshook on it"
+        )
+        status, _body = _call(_event(
+            "initialize", headers={"MCP-Protocol-Version": version},
+        ))
+        assert status == 200, f"{version} header refused"
 
     def test_the_supported_versions_are_ordered_newest_first(self):
         """The order is load-bearing: the first entry is the counter-offer.
@@ -508,9 +535,15 @@ class TestServerDiscover:
         assert result["ttlMs"] >= 60_000, (
             f"ttlMs={result['ttlMs']} looks like seconds, not milliseconds"
         )
-        # `public` is honest for this answer specifically: it names no project, no
-        # tool and no data, so a shared cache reveals nothing credential-shaped.
-        assert result["cacheScope"] == "public"
+        # `private`, and the earlier `public` was the defect: it was argued from the
+        # PAYLOAD (which names no project, no tool and no data — true) where the
+        # field is about the RESPONSE. This method is liveness-checked, so whether
+        # there is a 200 at all depends on the credential, and `public` licenses a
+        # shared cache to replay the unauthenticated 200 across authorization
+        # contexts — including to the request carrying a revoked token that was owed
+        # a 401. `TestCacheScopeMatchesWhatTheResponseDependsOn` pins the invariant
+        # generally; this pins the value a client actually reads.
+        assert result["cacheScope"] == "private"
 
     def test_the_discovery_answer_carries_no_undefined_top_level_fields(self):
         """The whole correction, stated once as a closed set.
@@ -645,11 +678,33 @@ class TestProtocolVersionHeader:
         assert mcp_handler._validated_protocol_version(_event("initialize")) == (
             mcp_handler.ASSUMED_PROTOCOL_VERSION
         )
-        # And it must be one this server actually serves, or the default would
-        # refuse every header-less client on the next line of the guard.
-        assert mcp_handler.ASSUMED_PROTOCOL_VERSION in (
+
+    def test_the_assumed_revision_is_a_reading_and_not_an_advertisement(self):
+        """It is deliberately NOT in the advertised range, and that is the point.
+
+        This test used to assert the opposite — that the assumed value is one the
+        server serves — on the reasoning that otherwise the guard would refuse every
+        header-less client on its next line. That reasoning was about the CODE PATH,
+        and the path returns before it compares anything, so the assertion was
+        pinning a coincidence rather than a requirement.
+
+        The requirement is the distinction: 2025-03-26 mandates batching, which this
+        handler does not implement, so it must not be OFFERED — and it is the value
+        the spec names as the reading for a header-less request, so it must not be
+        dropped. A fallback reading is not an advertisement, and conflating the two
+        is what re-added the revision in the first place.
+
+        A header-less request is still served, which is the property that reasoning
+        was reaching for; asserted directly rather than via the tuple.
+        """
+        assert mcp_handler.ASSUMED_PROTOCOL_VERSION not in (
             mcp_handler.SUPPORTED_PROTOCOL_VERSIONS
+        ), (
+            "the assumed revision is being advertised; if it is now implementable "
+            "in full, say so here rather than letting the two facts merge"
         )
+        status, _body = _call(_event("initialize"))
+        assert status == 200, "a header-less client must still be served"
 
     def test_an_empty_version_header_is_refused(self):
         """A client that sent the header empty said something, and what it said is
@@ -1798,6 +1853,86 @@ class TestNotificationsAreAccepted:
 
         assert response["statusCode"] == 403, response["body"]
 
+    # A refused notification, one per transport fault that can refuse one, with the
+    # status and code each is owed. The 202 fix covered the ACCEPTED case; these are
+    # the four requests that still came back carrying `id: null`.
+    REFUSALS: ClassVar[tuple[tuple[str, dict, int], ...]] = (
+        ("notifications/cancelled", {"MCP-Protocol-Version": "1999-01-01"}, -32022),
+        ("notifications/cancelled", {"Mcp-Method": "ping"}, -32020),
+        ("notifications/cancelled", {"Mcp-Name": "search_feedback"}, -32020),
+        ("notifications/progress", {"Mcp-Method": "=?base64?!!!?="}, -32600),
+    )
+
+    @pytest.mark.parametrize("method,headers,code", REFUSALS)
+    def test_a_refused_notification_carries_no_id_member(self, method, headers, code):
+        """The `id: null` defect, one branch over from where it was fixed.
+
+        Every advertised revision says a notification the server cannot accept gets an
+        HTTP error status whose body "MAY comprise a JSON-RPC error response that has
+        NO `id`". `"id": null` is a PRESENT member with a null value, which this module
+        already holds is a different thing — it is what `_is_notification` turns on,
+        what `test_a_null_id_is_not_a_notification` pins, and what the 3.4.0 entry
+        records about a result's id. A client correlating by id held an error entry
+        matching no request it ever sent.
+
+        Asserted with `not in` rather than against a value, because the whole
+        distinction is presence.
+        """
+        response = _raw_call(_notification_event(method, headers=headers))
+        body = json.loads(response["body"])
+
+        assert "id" not in body, (
+            f"{method} refused with an id member: {body}"
+        )
+
+    @pytest.mark.parametrize("method,headers,code", REFUSALS)
+    def test_a_refused_notification_keeps_its_status_and_its_code(self, method, headers, code):
+        """Only the envelope changed.
+
+        The 400 is what the advertised revisions require for a notification the server
+        cannot accept, and the code is the spec's own per-fault code — the machine
+        readable half a dual-era client's era probe reads. A fix that quietly
+        collapsed these to one generic answer would be the earlier `-32600` regression
+        wearing a different hat.
+        """
+        response = _raw_call(_notification_event(method, headers=headers))
+
+        assert response["statusCode"] == 400, response["body"]
+        assert json.loads(response["body"])["error"]["code"] == code
+
+    def test_a_refused_request_still_carries_its_id(self):
+        """Anti-vacuity, and the property that makes the change narrow.
+
+        Omitting the id unconditionally would break every client that correlates a
+        REQUEST's refusal — which is most of them, and it is why `_NO_ID` is a
+        sentinel rather than `None`: a request whose id could not be detected is still
+        reported as null.
+        """
+        response = _raw_call(_event(
+            "ping", headers={"MCP-Protocol-Version": "1999-01-01"},
+        ))
+        body = json.loads(response["body"])
+
+        assert body["id"] == 1, body
+
+    def test_a_rebound_origin_refusal_carries_no_id_either(self):
+        """The 403 runs before the body is even parsed, so it cannot know it is
+        answering a request — and the transport's wording for this refusal is the same
+        "no `id`".
+
+        Sending `id: null` there guessed at an id for a message that may have carried
+        none.
+        """
+        with patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com"):
+            response = mcp_handler.lambda_handler(
+                _notification_event("notifications/initialized",
+                                    headers={"Origin": "https://evil.example.net"}),
+                MagicMock(),
+            )
+
+        assert response["statusCode"] == 403
+        assert "id" not in json.loads(response["body"])
+
 
 class TestUnknownMethod:
     """An unknown JSON-RPC REQUEST is -32601 with a 404, and nothing else.
@@ -1852,17 +1987,175 @@ class TestUnknownMethod:
         assert status == 404
         assert body["error"]["code"] == -32601
 
-    @pytest.mark.parametrize("body_text", ["[]", '"a string"', "42", "null"])
+    @pytest.mark.parametrize("body_text", ['"a string"', "42", "null"])
     def test_a_non_object_body_is_not_a_crash(self, body_text):
         """The body is caller-controlled JSON and need not be an object. `[]`
         used to reach `.get` on a list — an AttributeError, i.e. a 502 with no
         envelope and no CORS headers, which is the failure mode the auth path's
-        catch-all exists to prevent."""
+        catch-all exists to prevent.
+
+        `[]` is no longer parametrised here: an ARRAY is a batch, which has its own
+        answer and its own reason (`TestBatchBodiesAreRefused`). It reached this
+        branch — and its 404 — precisely because "not a dict" was the only thing this
+        handler noticed about it.
+        """
         status, body = _call(_event(body=body_text))
 
         assert status == 404, body
         assert body["error"]["code"] == -32601
+        # `null`, not omitted: JSON-RPC reports an id it could not detect as null, and
+        # a malformed body is exactly that case. `_NO_ID` is for a message that
+        # carries no id BY DESIGN — a notification — which this is not.
         assert body["id"] is None
+
+
+# ===========================================================================
+# Batch bodies — the grammar of a revision this server no longer advertises
+# ===========================================================================
+
+class TestBatchBodiesAreRefused:
+    """An array body is refused NAMING batching, and 2025-03-26 is not advertised.
+
+    Batching is defined by exactly one revision: 2025-03-26 added it to the transport
+    ("an array batching one or more requests and/or notifications") and 2025-06-18
+    removed it again. This handler implements none of it, and it USED TO ADVERTISE
+    that revision — so a conforming client was told it could send a shape that was
+    then answered `404 -32601 "Method not found: "`, because a list has no `method`
+    to find. On the advertised revisions a 404 on this endpoint means the SESSION was
+    terminated and the client MUST re-initialize, so a client batching its
+    `initialized` notification was told to tear down a live session, and
+    re-initializing brought it straight back.
+
+    Two halves, and both are needed: the revision is no longer offered (so no client
+    is told this server accepts batches) AND an array is refused legibly (so a client
+    that sends one anyway learns the actual constraint).
+
+    Re-adding "2025-03-26" to `SUPPORTED_PROTOCOL_VERSIONS` fails
+    test_no_advertised_revision_requires_a_body_grammar_this_server_refuses — and
+    raises at IMPORT, from the guard beside the tuple. Deleting the `_is_batch`
+    branch in `lambda_handler` fails the rest.
+    """
+
+    ONLY_NOTIFICATIONS: ClassVar[str] = json.dumps([
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 1}},
+    ])
+    CONTAINS_A_REQUEST: ClassVar[str] = json.dumps([
+        {"jsonrpc": "2.0", "id": 1, "method": "ping"},
+    ])
+
+    def test_no_advertised_revision_requires_a_body_grammar_this_server_refuses(self):
+        """The rule, so a future entry is checked rather than reasoned about.
+
+        2025-03-26 was re-added in this PR for a good reason — a header validator was
+        refusing clients that had handshook against the deployed build — by reasoning
+        about the HEADER and not about the body grammar. That is the mistake this
+        assertion exists to catch, and the module raises on it at import too.
+        """
+        overlap = set(mcp_handler.SUPPORTED_PROTOCOL_VERSIONS) & (
+            mcp_handler.BODY_GRAMMAR_UNIMPLEMENTED_VERSIONS
+        )
+        assert overlap == set(), (
+            f"advertising {sorted(overlap)}, whose body grammar this handler refuses. "
+            f"Either implement the grammar or stop offering the revision."
+        )
+        # Positive control: the constraint names something, or the line above is
+        # comparing an empty intersection of an empty set.
+        assert "2025-03-26" in mcp_handler.BODY_GRAMMAR_UNIMPLEMENTED_VERSIONS
+
+    @pytest.mark.parametrize("label", ["ONLY_NOTIFICATIONS", "CONTAINS_A_REQUEST"])
+    def test_a_batch_is_refused_as_a_malformed_request_not_a_missing_method(self, label):
+        """-32600, not -32601: there is no method here to be found.
+
+        `-32601 "Method not found: "` — with the empty method name the fall-through
+        produced — told a caller nothing about what it had actually done, and sent it
+        looking for a method name it never sent.
+        """
+        status, body = _call(_event(body=getattr(self, label)))
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32600
+        assert "batch" in body["error"]["message"].lower(), (
+            f"the refusal does not name batching: {body['error']['message']!r}"
+        )
+
+    @pytest.mark.parametrize("label", ["ONLY_NOTIFICATIONS", "CONTAINS_A_REQUEST"])
+    def test_a_batch_is_never_answered_404(self, label):
+        """The finding, stated as the thing that must not happen.
+
+        A 404 here instructed the client to tear down its session and re-initialize,
+        so this was not untidiness: normal batched traffic was destroying sessions,
+        and the retry landed on the same answer.
+        """
+        status, _body = _call(_event(body=getattr(self, label)))
+
+        assert status != 404, (
+            "a batch answered 404 tells the client its session died"
+        )
+
+    def test_the_refusal_carries_a_machine_readable_recovery_path(self):
+        """A client should not have to parse English to find out what to do.
+
+        Same standard the -32022 refusal already meets: `supported` is what to retry
+        on, and `batchingSupported: false` is the constraint stated as data.
+        """
+        _status, body = _call(_event(body=self.CONTAINS_A_REQUEST))
+
+        data = body["error"]["data"]
+        assert data["supported"] == list(mcp_handler.SUPPORTED_PROTOCOL_VERSIONS)
+        assert data["batchingSupported"] is False
+
+    def test_a_batch_never_reaches_the_token_store(self):
+        """Refused before authentication, like every other malformed transport: a
+        body shape this server does not accept buys no probe of the credential
+        store."""
+        with patch("mcp_handler.projects_table") as table:
+            response = mcp_handler.lambda_handler(
+                _event(body=self.CONTAINS_A_REQUEST, token=_TOKEN), MagicMock(),
+            )
+
+        assert response["statusCode"] == 400
+        table.query.assert_not_called()
+
+    def test_a_batch_is_refused_before_a_routing_header_is_compared(self):
+        """A batch has no single `method`, so there is nothing for `Mcp-Method` to
+        contradict.
+
+        Validating the routing echoes first reported a header/body mismatch against
+        `''` — an answer about a header, for a request whose whole shape this server
+        does not accept. The ordering is asserted through the CODE a client receives,
+        because that is the part a client acts on.
+        """
+        _status, body = _call(_event(
+            body=self.CONTAINS_A_REQUEST, headers={"Mcp-Method": "ping"},
+        ))
+
+        assert body["error"]["code"] == -32600, (
+            f"a batch was diagnosed as a header mismatch: {body['error']}"
+        )
+
+    def test_a_single_message_is_still_served(self):
+        """Anti-vacuity, and the only thing this refusal must not do.
+
+        A guard on "is the body a list" that caught the ordinary object body would
+        refuse every request this server has ever served.
+        """
+        status, body = _call(_event("initialize"))
+
+        assert status == 200, body
+        assert "result" in body
+
+    def test_an_array_body_is_the_only_thing_this_refuses(self):
+        """The other non-object bodies keep their existing answer.
+
+        `"a string"`, `42` and `null` are malformed rather than batched, and reporting
+        batching for them would send a caller after a feature it never used.
+        `TestUnknownMethod` owns that half; this pins that the batch branch did not
+        swallow it.
+        """
+        for body_text in ('"a string"', "42", "null"):
+            status, body = _call(_event(body=body_text))
+            assert status == 404, f"{body_text} was answered {status}: {body}"
 
 
 # ===========================================================================
@@ -2053,18 +2346,33 @@ class TestToolCatalogueIsFilteredByAuthorization:
 
         assert body["result"]["cacheScope"] == "private"
 
-    def test_the_two_cacheable_answers_scope_differently(self):
-        """Anti-vacuity, and the distinction is the whole point of the field.
+    def test_both_cacheable_answers_declare_the_scope_their_table_states(self):
+        """Read from `METHOD_CACHE_SCOPES` rather than restated, because the value is
+        now the same for both and a restated literal would be a second copy of it.
 
-        Discovery is `public` (it names no project, tool or data) and the catalogue
-        is `private` (it is a function of the credential). A change that hard-coded
-        one value for both would pass each test above on its own.
+        This test used to assert the two DIFFER — discovery `public`, the catalogue
+        `private` — as an anti-vacuity guard against one hard-coded value. That guard
+        was pinning the very bug the `public` finding named: the difference it
+        protected was wrong, and asserting a difference made the wrong value look
+        deliberate. The vacuity it was worried about is covered instead by
+        `TestCacheScopeMatchesWhatTheResponseDependsOn`, which derives the rule from
+        what the response actually depends on — a stronger claim than "these two
+        strings are not equal".
         """
         _s, discovery = _call(_event("server/discover"))
         _s, listing = _call(_event("tools/list", token=_TOKEN))
 
-        assert discovery["result"]["cacheScope"] == "public"
-        assert listing["result"]["cacheScope"] == "private"
+        assert discovery["result"]["cacheScope"] == (
+            mcp_handler.METHOD_CACHE_SCOPES["server/discover"]
+        )
+        assert listing["result"]["cacheScope"] == (
+            mcp_handler.METHOD_CACHE_SCOPES["tools/list"]
+        )
+        # And the table says something: a scope not in the spec's vocabulary is a
+        # value no client can act on.
+        assert set(mcp_handler.METHOD_CACHE_SCOPES.values()) <= {
+            mcp_handler.CACHE_SCOPE_PUBLIC, mcp_handler.CACHE_SCOPE_PRIVATE,
+        }
 
     def test_the_cache_hint_agrees_with_the_declared_capability(self):
         """Two statements about notifications, from one fact."""
@@ -2109,6 +2417,203 @@ class TestToolCatalogueIsFilteredByAuthorization:
         response = mcp_handler.lambda_handler(_event("tools/list"), MagicMock())
 
         assert response["statusCode"] == 401, response["body"]
+
+
+# ===========================================================================
+# cacheScope describes the RESPONSE, and the HTTP layer says so too
+# ===========================================================================
+
+class TestCacheScopeMatchesWhatTheResponseDependsOn:
+    """`public` licenses a shared cache to serve a response ACROSS authorization
+    contexts, so it must not be declared by an answer that depends on one.
+
+    `server/discover` declared `public`, argued from its payload — which names no
+    project, no tool and no data, and is beside the point. The method is in
+    `_LIVENESS_CHECKED_METHODS`, so whether it answers 200 at all depends on the
+    credential presented: none is a 200, a revoked one is a 401. An intermediary was
+    therefore permitted to cache the unauthenticated 200 for an hour and replay it to
+    the request carrying the dead token — defeating the liveness check on precisely
+    the method that is in that set for the client which starts at discovery.
+
+    Two changes each correct on their own terms (the liveness check made discovery
+    credential-sensitive; the cache hints declared it credential-insensitive), which
+    is why the invariant is asserted across BOTH constants rather than either being
+    re-read on its own.
+
+    Restoring `CACHE_SCOPE_PUBLIC` on discovery fails
+    test_no_public_answer_is_credential_gated.
+    """
+
+    def test_no_public_answer_is_credential_gated(self):
+        """The invariant, derived from both constants rather than restating either."""
+        public_methods = {
+            method for method, scope in mcp_handler.METHOD_CACHE_SCOPES.items()
+            if scope == mcp_handler.CACHE_SCOPE_PUBLIC
+        }
+        gated = public_methods & mcp_handler._LIVENESS_CHECKED_METHODS
+
+        assert gated == set(), (
+            f"{sorted(gated)} declare cacheScope 'public' while their RESPONSE "
+            f"depends on the credential (liveness-checked), so a shared cache may "
+            f"serve a 200 where a 401 was owed. Either scope them 'private' or take "
+            f"them out of the liveness set."
+        )
+
+    def test_the_invariant_has_a_subject(self):
+        """Positive control: an empty intersection proves nothing about empty inputs.
+
+        Both sides have to be non-empty, and they have to OVERLAP in methods — this
+        rule is only about a method that is both cacheable and credential-gated, and
+        `server/discover` is the one that is. If it stopped being either, the test
+        above would pass while enforcing nothing.
+        """
+        assert mcp_handler.METHOD_CACHE_SCOPES, "no cacheable answers to check"
+        assert mcp_handler._LIVENESS_CHECKED_METHODS, "no credential-gated methods"
+        assert "server/discover" in mcp_handler.METHOD_CACHE_SCOPES
+        assert "server/discover" in mcp_handler._LIVENESS_CHECKED_METHODS
+
+    def test_the_credential_gate_on_discovery_is_real(self):
+        """The premise, driven rather than read off a constant.
+
+        The whole argument is that discovery's RESPONSE varies by credential. If it
+        did not — if a dead token got the same 200 as no token — `public` would have
+        been fine and this class would be enforcing a rule about nothing.
+        """
+        expired = _token_row(
+            expires_at=(datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        )
+        anonymous, _body = _call(_event("server/discover"))
+        with_a_dead_token, _body = _call(
+            _event("server/discover", token=_TOKEN), row=expired,
+        )
+
+        assert anonymous == 200
+        assert with_a_dead_token == 401, (
+            "discovery no longer depends on the credential, so the cache-scope rule "
+            "this class enforces has lost its subject"
+        )
+
+
+class TestTheHttpLayerStatesWhatTheBodyStates:
+    """`cacheScope` lives in the JSON-RPC body; the caches in front of this endpoint
+    read HEADERS.
+
+    API Gateway, a CDN and a corporate proxy do not parse a JSON-RPC result, so
+    `cacheScope: private` reached only the clients that were never the risk. The
+    catalogue genuinely varies — a full credential lists six tools, a `metrics:read`
+    one lists two, with different etags — and it was served with no HTTP-level signal
+    that it varies at all.
+
+    Removing `Vary` or `Cache-Control` from `CORS_HEADERS` fails this class.
+    """
+
+    def _headers(self, event: dict, **kwargs) -> dict:
+        return _raw_call(event, **kwargs)["headers"]
+
+    @pytest.mark.parametrize("event_kwargs", [
+        {"method": "tools/list", "token": _TOKEN},
+        {"method": "initialize"},
+        {"method": "server/discover"},
+        {"method": "tools/teleport"},
+    ])
+    def test_every_answer_names_authorization_as_the_axis_it_varies_on(self, event_kwargs):
+        """Unconditional, from the one choke point, rather than on the answers that
+        vary today.
+
+        The header costs nothing on an answer that does not vary — it forbids a cache
+        hit that would have been correct — while a missing one costs a
+        cross-credential hit. That asymmetry is the argument for having no condition
+        to get wrong, and it matches how the module treats fail-closed elsewhere.
+        """
+        headers = self._headers(_event(**event_kwargs))
+
+        varies_on = {name.strip().lower() for name in headers["Vary"].split(",")}
+        assert "authorization" in varies_on, (
+            f"{event_kwargs} answered without naming Authorization in Vary: "
+            f"{headers.get('Vary')!r}"
+        )
+
+    def test_the_401_says_it_varies_too(self):
+        """The most credential-dependent answer of all.
+
+        A cached 401 replayed to a request carrying a good credential is the same
+        defect facing the other way, and a refusal is exactly the kind of response an
+        intermediary is happy to reuse.
+        """
+        headers = self._headers(_event("tools/list"))
+
+        assert "authorization" in headers["Vary"].lower()
+
+    def test_origin_is_not_named_because_the_answer_does_not_vary_by_it(self):
+        """`Access-Control-Allow-Origin` is the static `*`, so naming `Origin` would
+        forbid cache hits for no reason.
+
+        Written as an absence with its reason, because "list every request header" is
+        the tempting wrong answer and it silently disables caching altogether.
+        """
+        headers = self._headers(_event("initialize"))
+
+        assert "origin" not in headers["Vary"].lower()
+        assert mcp_handler.CORS_HEADERS["Access-Control-Allow-Origin"] == "*", (
+            "the Allow-Origin header is no longer static, so Origin IS now an axis "
+            "this endpoint varies on and Vary must name it"
+        )
+
+    def test_a_shared_cache_is_told_not_to_store_the_answer(self):
+        """`Vary` says which header partitions the cache; `Cache-Control: private`
+        says a shared cache must not store the response at all.
+
+        Both, because a cache may honour one and not the other — a proxy that ignores
+        `Vary` and respects `private` still cannot serve one credential's catalogue to
+        another.
+        """
+        headers = self._headers(_event("tools/list", token=_TOKEN))
+
+        directives = {d.strip().lower() for d in headers["Cache-Control"].split(",")}
+        assert "private" in directives
+
+    def test_the_client_is_not_forbidden_the_reuse_the_body_invites(self):
+        """`no-store`/`no-cache` would contradict `ttlMs` at the HTTP layer.
+
+        The two statements have to agree, and the one they agree on is "yours to
+        reuse, not to share" — a client caching its OWN catalogue for `ttlMs` is
+        exactly what the hint asks for.
+        """
+        response = _raw_call(_event("tools/list", token=_TOKEN))
+        directives = {
+            d.strip().lower() for d in response["headers"]["Cache-Control"].split(",")
+        }
+
+        assert "no-store" not in directives
+        assert "no-cache" not in directives
+        # Positive control: the body really does invite reuse, or there is nothing to
+        # contradict.
+        assert json.loads(response["body"])["result"]["ttlMs"] > 0
+
+    def test_a_browser_can_read_the_header_that_says_the_answer_varies(self):
+        """`Vary` is not CORS-safelisted, so a browser receives it and hides it.
+
+        A statement the client cannot read is a statement to nobody — the same
+        failure `WWW-Authenticate` already documents on this endpoint.
+        """
+        headers = self._headers(_event("tools/list", token=_TOKEN))
+
+        exposed = {
+            name.strip().lower()
+            for name in headers["Access-Control-Expose-Headers"].split(",")
+        }
+        assert "vary" in exposed
+
+    def test_an_accepted_notification_carries_the_same_statement(self):
+        """The 202 builds its headers separately from `_cors_response`, which is how
+        one of them comes to be missing a header the other has.
+
+        Nothing caches a 202 in practice; the point is that the two builders do not
+        disagree about what this endpoint's answers depend on.
+        """
+        response = _raw_call(_notification_event("notifications/initialized"))
+
+        assert "authorization" in response["headers"]["Vary"].lower()
 
 
 # ===========================================================================

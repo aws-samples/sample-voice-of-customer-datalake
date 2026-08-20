@@ -1372,6 +1372,88 @@ describe('mcp transport headers reach a browser', () => {
       }
     }
   });
+
+  // `mcp_handler.py` now sends `Vary: Authorization` on every response, because its
+  // answers depend on the credential and the caches in front of this endpoint read
+  // headers rather than the JSON-RPC body's `cacheScope`. `Vary` is not
+  // CORS-safelisted, so a browser receives it and hides it from the page unless the
+  // endpoint says otherwise — the same failure `WWW-Authenticate` already documents.
+  //
+  // Read out of the Python source for the same reason as the allow-list above: the
+  // handler's own responses carry ITS expose list and gateway-GENERATED ones (the
+  // authorizer's 401) carry the template's, so a header exposed by one and not the
+  // other is readable on some of this endpoint's answers and not others.
+  const pythonExposeHeaders = (): string[] => {
+    const source = readRepoFile('lambda', 'api', 'mcp_handler.py');
+    const value = source.match(
+      /^\s*'Access-Control-Expose-Headers':\s*'([^']+)',/m,
+    )?.[1];
+    expect(value, "could not read Access-Control-Expose-Headers from mcp_handler.py")
+      .toBeDefined();
+    return (value ?? '').split(',').map((h) => h.trim());
+  };
+
+  it('exposes every response header the handler expects a browser to read', () => {
+    const declared = pythonExposeHeaders();
+    // Positive control: a regex that matched nothing would make the loop vacuous.
+    expect(declared.map((h) => h.toLowerCase())).toContain('vary');
+
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const parsed = responses.map((r) => ResponseSchema.parse(r).Properties);
+    const withExpose = parsed.filter((props) => props.ResponseParameters?.[
+      'gatewayresponse.header.Access-Control-Expose-Headers'
+    ]);
+    expect(withExpose.length, 'no gateway response publishes an expose list')
+      .toBeGreaterThan(0);
+
+    for (const props of withExpose) {
+      const raw = props.ResponseParameters?.[
+        'gatewayresponse.header.Access-Control-Expose-Headers'
+      ] as string;
+      const exposed = new Set(
+        raw.replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase()),
+      );
+      for (const header of declared) {
+        expect(
+          exposed,
+          `${header} is exposed by the handler but not by the ${props.ResponseType} response`,
+        ).toContain(header.toLowerCase());
+      }
+    }
+  });
+
+  it('tells a cache the authorizer 401 varies by credential', () => {
+    // The 401 is the most credential-dependent answer this API gives, and the
+    // authorizer produces it — so the `Vary` the handler sends never reaches it.
+    // Without this, an intermediary could cache that refusal against the endpoint
+    // alone and serve it to a request carrying a perfectly good credential.
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const unauthorized = responses
+      .map((r) => ResponseSchema.parse(r).Properties)
+      .filter((props) => props.ResponseType === 'UNAUTHORIZED');
+
+    expect(unauthorized.length, 'no UNAUTHORIZED gateway response in the template')
+      .toBe(1);
+    const vary = unauthorized[0].ResponseParameters?.['gatewayresponse.header.Vary'];
+    expect(vary, 'the UNAUTHORIZED response sends no Vary').toBeDefined();
+    expect((vary ?? '').toLowerCase()).toContain('authorization');
+  });
 });
 
 describe('unauthorized gateway response', () => {
@@ -1396,6 +1478,13 @@ describe('unauthorized gateway response', () => {
     expect(unauthorized, 'no UNAUTHORIZED gateway response in the template').toBeDefined();
     const params = unauthorized?.ResponseParameters ?? {};
     expect(params['gatewayresponse.header.WWW-Authenticate']).toBe('\'Bearer error="invalid_token"\'');
-    expect(params['gatewayresponse.header.Access-Control-Expose-Headers']).toBe("'WWW-Authenticate'");
+    // The challenge must be READABLE, which is the property this line is about —
+    // asserted as membership rather than as the whole list, because the list also
+    // carries `Content-Type` and `Vary` and pinning it exactly made this test fail
+    // when an unrelated header was exposed. 'mcp transport headers reach a browser'
+    // owns the completeness of the list; this owns the challenge being in it.
+    const exposed = (params['gatewayresponse.header.Access-Control-Expose-Headers'] ?? '')
+      .replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase());
+    expect(exposed).toContain('www-authenticate');
   });
 });

@@ -91,12 +91,36 @@ projects_table = get_projects_table()
 # a real phase (per-request `_meta`, the -32602 refusal, the header/`_meta` match)
 # rather than an entry in this tuple.
 #
-# The two OLDEST entries are here for compatibility rather than because they
-# define anything this server needs, and leaving them out was a live client break:
-# the deployed handler pinned 2024-11-05, so every client that has completed a
+# The OLDEST entry is here for compatibility rather than because it defines
+# anything this server needs, and leaving it out was a live client break: the
+# deployed handler pinned 2024-11-05, so every client that has completed a
 # handshake against it sends `MCP-Protocol-Version: 2024-11-05` on every
 # subsequent request — which a header validator that only knew the newer revisions
 # refused with a 400. Accepting a revision is not the same as preferring it.
+#
+# ⚠️ 2025-03-26 IS DELIBERATELY ABSENT TOO, and for the same class of reason as
+# 2026-07-28: it is the ONE revision that mandates JSON-RPC BATCHING, and this
+# handler implements none. That revision's *Sending Messages to the Server* says
+# the POST body MUST be a single message, "an array batching one or more requests
+# and/or notifications", or an array of responses — batching arrived in 2025-03-26
+# and was removed again in 2025-06-18, so it is a one-revision-wide obligation this
+# range happened to straddle. Advertising it while answering a legal batch body
+# with `404 -32601 "Method not found: "` was the same skew this tuple exists to
+# end, and the 404 was worse than the wrong code: on the advertised revisions a 404
+# on this endpoint means the SESSION was terminated and the client MUST
+# re-initialize, so a client batching its `initialized` notification was told to
+# tear down and try again — which got it there again.
+#
+# It SURVIVES as `ASSUMED_PROTOCOL_VERSION` below, which is not a contradiction:
+# the spec names 2025-03-26 as the READING for a request carrying no header at all,
+# and a fallback reading is not an advertisement. Nothing is offered on it, so no
+# client concludes from a counter-offer that its batches will be served. A client
+# whose own newest revision is 2025-03-26 and which sends the header now gets the
+# spec's -32022 with `data.supported` and retries on 2024-11-05 or 2025-06-18 —
+# one round trip, against a batch body being answered with a session teardown.
+#
+# A batch body is refused explicitly rather than left to fall through the dispatch:
+# see `_is_batch` and the `-32600` refusal in `lambda_handler`.
 #
 # Ordered NEWEST FIRST, and that order is load-bearing: `_negotiate_protocol_version`
 # answers with the client's version when it is one of these, and otherwise with
@@ -105,9 +129,26 @@ projects_table = get_projects_table()
 SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
     "2025-11-25",
     "2025-06-18",
-    "2025-03-26",
     "2024-11-05",
 )
+
+# The revisions whose TRANSPORT-LEVEL BODY GRAMMAR this handler does not accept, so
+# that "we advertise only what we implement" is checked rather than remembered.
+# 2025-03-26 requires an array body to be handled; this server refuses one.
+#
+# Declared beside the tuple it constrains, and asserted against it below, because
+# the way this went wrong was a revision being re-added for a good reason (a header
+# validator was refusing deployed clients) by someone reasoning about the header
+# and not about the body grammar.
+BODY_GRAMMAR_UNIMPLEMENTED_VERSIONS: frozenset[str] = frozenset({"2025-03-26"})
+
+# `raise` rather than `assert`, which this tree requires: a bare `assert` is
+# stripped under `python -O`.
+if set(SUPPORTED_PROTOCOL_VERSIONS) & BODY_GRAMMAR_UNIMPLEMENTED_VERSIONS:
+    raise RuntimeError(
+        'advertising a revision whose body grammar this handler does not accept: '
+        f'{sorted(set(SUPPORTED_PROTOCOL_VERSIONS) & BODY_GRAMMAR_UNIMPLEMENTED_VERSIONS)}'
+    )
 
 # What an `initialize` that asks for nothing usable is answered with. Derived
 # rather than restated so it cannot disagree with the tuple above.
@@ -125,6 +166,16 @@ PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
 # client written against an earlier revision, and 2025-03-26 is the value the spec
 # names for that case. Reading absence as the NEWEST supported revision — as this
 # did — silently upgrades exactly the clients that cannot be upgraded.
+#
+# ⚠️ DELIBERATELY NOT IN `SUPPORTED_PROTOCOL_VERSIONS`, and the distinction is the
+# whole reason this is a separate constant rather than an index into that tuple. A
+# FALLBACK READING is what this server assumes about a client that said nothing; an
+# ADVERTISEMENT is what it offers a client that asked. 2025-03-26 mandates JSON-RPC
+# batching, which this handler does not implement (see the tuple's comment), so it
+# must not be offered — and it is exactly the value the spec tells a server to
+# assume for a header-less request, so it must not be dropped either. Nothing reads
+# this value beyond `_validated_protocol_version`, which is what makes assuming an
+# unadvertised revision harmless: the assumption gates nothing and shapes nothing.
 ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 
 # 🔑 THE NEGOTIATED VERSION IS A GATE, NOT A MODE — and this is a deliberate
@@ -304,7 +355,44 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 # change is from an ill-formed answer to the one the spec mandates: a client
 # ignoring the ack (the only correct thing to do with it) is unaffected, and one
 # parsing it was parsing a response it should never have received.
-MCP_SERVER_VERSION = "3.4.0"
+#
+# 3.5.0 stops claiming three things this envelope does not do, and each was a claim
+# a client could act on:
+#   • `2025-03-26` IS NO LONGER ADVERTISED. It is the one revision that mandates
+#     JSON-RPC batching and this handler implements none: a legal batch body was
+#     answered `404 -32601`, and on the advertised revisions that 404 means the
+#     session was terminated, so a client batching its `initialized` notification was
+#     told to tear down and re-initialize — which got it there again. A batch is now
+#     refused with `-32600` and a message naming batching, and the revision remains
+#     the reading for a HEADER-LESS request (`ASSUMED_PROTOCOL_VERSION`), which is a
+#     fallback rather than an offer.
+#   • `server/discover` DECLARES `cacheScope: private`, not `public`. The payload is
+#     credential-independent; the RESPONSE is not, because the method is liveness-
+#     checked — no credential is a 200 and a revoked one is a 401. `public` licenses a
+#     shared cache to serve that 200 across authorization contexts for an hour,
+#     including to the request that was owed the 401.
+#   • A refusal aimed at a message that is not a request OMITS the `id` member
+#     instead of sending `id: null`. The 202 path had fixed the accepted case; a
+#     notification failing a transport guard, and the Origin 403 (which runs before
+#     the body is parsed), still replied with an id matching no request the client
+#     sent.
+# Also `Vary: Authorization` and `Cache-Control: private` on every response — the
+# header-level form of `cacheScope`, for the intermediaries that never parse a body.
+#
+# ⚠️ MINOR, and the rule at 3.3.0 is what decides it, but this entry is the closest
+# call in this file's history. Dropping an advertised revision REMOVES something a
+# deployed client can hold: a client that handshook on 2025-03-26 against the 3.3.0
+# build and sends that header now gets `-32022` where it got a 200. It is minor
+# because no 3.x build advertising it was ever DEPLOYED — the deployed build pinned
+# 2024-11-05, which is still advertised — so the set of clients that can hold
+# 2025-03-26 from this server is empty. Were it non-empty, this would be major: the
+# distinction remains "could a client have cached it", and the refusal it gets now
+# carries `data.supported` and one retry, against a batch body being answered with a
+# session teardown.
+#
+# No published tool declaration moved, so the fingerprinted catalogue is untouched
+# again.
+MCP_SERVER_VERSION = "3.5.0"
 
 
 # ============================================
@@ -648,7 +736,47 @@ CORS_HEADERS = {
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
     # Without this a BROWSER-based MCP client can receive the 401 challenge but
     # never read it: WWW-Authenticate is not a CORS-safelisted response header.
-    'Access-Control-Expose-Headers': 'WWW-Authenticate',
+    #
+    # `Vary` is exposed for the same reason. It is not CORS-safelisted either, so a
+    # browser-based client that wanted to reason about its own cache — or to notice
+    # that this endpoint varies by credential — could not read the header that says
+    # so. Pinned in lockstep with the gateway's `exposeHeaders` by
+    # api-stack.test.ts, because a gateway-GENERATED response (the authorizer's 401)
+    # carries the gateway's list and not this one.
+    'Access-Control-Expose-Headers': 'WWW-Authenticate,Vary',
+    # 🔑 The HTTP-layer counterpart of `cacheScope`, and it is needed because those
+    # two words live in the JSON-RPC BODY while every cache likely to sit in front of
+    # this endpoint — API Gateway, a CDN, a corporate proxy — reads headers and never
+    # parses a body. `tools/list` genuinely varies: a full credential lists six tools
+    # and a `metrics:read` one lists two, with different etags. Declaring
+    # `cacheScope: private` in a payload no intermediary reads is a mitigation that
+    # reaches only the clients that were never the risk.
+    #
+    # Sent UNCONDITIONALLY, from the one choke point, rather than on the responses
+    # that happen to vary today. Two reasons: the header costs nothing on an answer
+    # that does not vary (it forbids a cache hit that would have been correct, and
+    # nothing in the current path caches POST at all), while getting the condition
+    # wrong costs a cross-credential hit — so the asymmetry says do not have a
+    # condition. And `Allow`/`WWW-Authenticate` above are attached by STATUS, which
+    # is a fact about one response; "this endpoint's answers depend on the
+    # credential" is a fact about the endpoint.
+    #
+    # `Authorization` alone: `Access-Control-Allow-Origin` is the static `*` above,
+    # so the answer does not vary by `Origin` and naming it would forbid cache hits
+    # for no reason. The credential is the only axis.
+    'Vary': 'Authorization',
+    # And the statement a cache actually obeys. `Vary` says WHICH request header
+    # partitions the cache; `Cache-Control: private` says a SHARED cache must not
+    # store the response at all. Both, because they answer different questions and a
+    # cache may honour one and not the other — a proxy that ignores `Vary` and
+    # respects `private` still cannot serve one credential's catalogue to another.
+    #
+    # `private` alone, with no `no-store` and no `no-cache`: a client's OWN cache
+    # reusing its OWN answer for `ttlMs` is exactly what the hint invites, and
+    # `no-cache` would forbid at the HTTP layer the reuse the body asks for. The two
+    # statements have to agree, and the one they agree on is "yours to reuse, not to
+    # share".
+    'Cache-Control': 'private',
 }
 
 # RFC 6750 §3: a 401 for a protected resource carries a WWW-Authenticate
@@ -2041,12 +2169,37 @@ MCP_TOOLS = [_published_tool(declaration) for declaration in _TOOL_DECLARATIONS]
 # filter makes load-bearing: "Cached responses MAY be reused for the same
 # authorization context. Caches MUST NOT be shared across authorization contexts."
 #
+# 🔑 THE SCOPE DESCRIBES THE RESPONSE, NOT THE PAYLOAD, and getting that backwards
+# was a live hole. `server/discover` was declared `public` on the argument that its
+# CONTENT names no project, no tool and no data — true of the content, and beside
+# the point. `server/discover` is in `_LIVENESS_CHECKED_METHODS`, so whether there
+# is an answer at all is a function of the credential: no credential is a 200, a
+# revoked one is a 401. `public` says a shared cache MAY serve the response "across
+# authorization contexts", which licenses replaying that unauthenticated 200 for an
+# hour to the request carrying the dead token — defeating the liveness check on the
+# one method whose whole reason for being in that set is the client that STARTS at
+# discovery. Two changes each right on their own terms: the liveness check made
+# discovery credential-sensitive and the cache hints declared it
+# credential-insensitive.
+#
+# `public` is therefore reserved for a response whose EXISTENCE is credential-
+# independent, and no answer this server currently sends qualifies. The invariant is
+# checked rather than remembered: `test_no_public_answer_is_credential_gated` derives
+# both halves from the constants and fails if a method declaring `public` appears in
+# `_LIVENESS_CHECKED_METHODS`.
+#
 # ⚠️ BOTH FIELDS ARE DEFINED BY 2026-07-28, which this server does not advertise —
 # so "it REQUIRES them" above is that revision's requirement, and under the
 # advertised range they are additive extras a client may ignore. Sending them early
 # is the deliberate bet recorded in the PROVENANCE block at
 # `ASSUMED_PROTOCOL_VERSION`; the alternative was the locally-invented
 # `_meta.cacheHints` this replaced, renamed later.
+#
+# `CACHE_SCOPE_PUBLIC` is declared and currently SENT BY NOTHING, which is deliberate
+# rather than dead: it is half of the spec's vocabulary, it is what the invariant
+# above is stated in terms of, and the test that enforces that invariant needs the
+# value to compare against. Keeping the name is what lets the rule be written down;
+# deleting it would leave the rule expressible only as a string literal in a test.
 CACHE_SCOPE_PUBLIC = 'public'
 CACHE_SCOPE_PRIVATE = 'private'
 
@@ -2067,10 +2220,33 @@ _TOOL_LIST_MAX_AGE_SECONDS = 300
 # not simply be renamed.
 _TOOL_LIST_TTL_MS = _TOOL_LIST_MAX_AGE_SECONDS * 1000
 
-# Discovery is cacheable for longer than the catalogue, and for a different reason:
-# it is a function of the DEPLOYED BUILD (versions, methods, headers), not of any
-# credential, so the only thing that invalidates it is a deploy.
+# Discovery's CONTENT is cacheable for longer than the catalogue, and for a
+# different reason: it is a function of the DEPLOYED BUILD (versions, methods,
+# headers), not of any credential, so the only thing that invalidates the content is
+# a deploy.
+#
+# The hour stands even under `private`. A per-authorization-context cache can serve
+# a stale 200 to the holder of a credential revoked in the meantime, and that costs
+# nothing this server was protecting: the liveness check on discovery is an HONESTY
+# fix — it stops a dead credential presenting as a connected server — not a
+# confidentiality boundary, and this payload names no project, no tool and no data.
+# What `private` prevents is the case that IS a boundary: replaying it to a
+# DIFFERENT authorization context that was owed a 401.
 _DISCOVER_TTL_MS = 3_600_000
+
+# The two cacheable answers and the scope each declares, as ONE table rather than a
+# literal at each handler — because the invariant that binds it (`public` must not
+# be a credential-gated answer) spans this and `_LIVENESS_CHECKED_METHODS`, and an
+# invariant across two facts needs both to be readable in one place. The test
+# derives from this and from that set rather than restating either.
+METHOD_CACHE_SCOPES: dict[str, str] = {
+    # Credential-gated by `_LIVENESS_CHECKED_METHODS`, so not `public`. See the
+    # 🔑 note above `CACHE_SCOPE_PUBLIC`.
+    'server/discover': CACHE_SCOPE_PRIVATE,
+    # Credential-gated twice over: it requires a credential AND its content varies
+    # by one.
+    'tools/list': CACHE_SCOPE_PRIVATE,
+}
 
 
 # ============================================
@@ -2652,6 +2828,19 @@ RESULT_SHAPES: frozenset[str] = frozenset({
 })
 
 
+# The id of a message that HAS none — passed to `_jsonrpc_error` for a refusal
+# whose subject is not a request, where the `id` member is OMITTED rather than sent
+# as null.
+#
+# A sentinel object rather than `None`, because `None` is a legitimate id to echo:
+# JSON-RPC's own rule for a malformed body is that an id it could not detect is
+# reported as `null`, and `test_a_non_object_body_is_not_a_crash` pins exactly that.
+# So "no id at all" and "an id of null" are two different answers and cannot share
+# one spelling — which is the same distinction `_is_notification` turns on, one
+# layer down.
+_NO_ID = object()
+
+
 def _jsonrpc_error(req_id: Any, code: int, message: str, data: Any = None) -> dict:
     """Build a JSON-RPC error response, optionally carrying machine-readable data.
 
@@ -2662,15 +2851,29 @@ def _jsonrpc_error(req_id: Any, code: int, message: str, data: Any = None) -> di
     It exists because two of the spec's own errors put the caller's recovery path
     in `data` rather than in prose — `-32022` lists the versions this server does
     speak, which is what the client retries with. Prose is not a recovery path.
+
+    ⚠️ `req_id=_NO_ID` OMITS the `id` member, and that is not a cosmetic option. The
+    202 path stopped answering notifications with a result carrying `id: null`, but
+    the REFUSAL path still did: a notification failing a transport guard was answered
+    `400 {"id": null, "error": …}`. Every advertised revision says a notification the
+    server cannot accept gets an HTTP error status whose body "MAY comprise a
+    JSON-RPC error response that has NO id" — and `id: null` is a PRESENT member with
+    a null value, which this module already holds is not the same thing (see
+    `_is_notification`, and the 3.4.0 note recording that a result's id must not be
+    null). A client correlating by id held an error entry matching no request it sent.
+
+    Passing `None` still sends `"id": null`, which is what JSON-RPC requires for a
+    body whose id could not be detected at all — a parse error, a batch, a non-object.
+    The two cases are spelled differently because they are different answers.
     """
     error: dict[str, Any] = {"code": code, "message": message}
     if data is not None:
         error["data"] = data
-    return {
-        "jsonrpc": "2.0",
-        "id": req_id,
-        "error": error,
-    }
+    envelope: dict[str, Any] = {"jsonrpc": "2.0"}
+    if req_id is not _NO_ID:
+        envelope["id"] = req_id
+    envelope["error"] = error
+    return envelope
 
 
 def _jsonrpc_result(req_id: Any, result_shape: str, result: dict) -> dict:
@@ -2793,11 +2996,20 @@ def _handle_discover(req_id: Any, _params: dict) -> dict:
         "supportedVersions": list(SUPPORTED_PROTOCOL_VERSIONS),
         "capabilities": _server_capabilities(),
         # `server/discover` is in the spec's cacheable-results list, so the hints
-        # are REQUIRED rather than a nicety. `public` is honest here: this answer
-        # names no project, no tool and no data, so a shared cache serving it to
-        # another caller reveals nothing that caller could not ask for itself.
+        # are REQUIRED rather than a nicety.
+        #
+        # ⚠️ `private`, NOT `public`, and the earlier `public` was wrong for a reason
+        # worth stating at the site: the scope describes the RESPONSE, not the
+        # payload. This payload is genuinely credential-independent — it names no
+        # project, no tool and no data — but this method is in
+        # `_LIVENESS_CHECKED_METHODS`, so whether there is a 200 at all depends on
+        # the credential presented. `public` licenses an intermediary to serve the
+        # unauthenticated 200 "across authorization contexts" for the hour below,
+        # including to the request carrying a revoked token that was owed a 401 —
+        # defeating the liveness check on the one method that exists in that set for
+        # the client which starts here. Full argument at `CACHE_SCOPE_PUBLIC`.
         "ttlMs": _DISCOVER_TTL_MS,
-        "cacheScope": CACHE_SCOPE_PUBLIC,
+        "cacheScope": METHOD_CACHE_SCOPES['server/discover'],
         "_meta": {
             # The spec's reserved key for server identity — self-reported, and the
             # spec says clients SHOULD NOT make security decisions on it.
@@ -2965,7 +3177,7 @@ def _handle_tools_list(req_id: Any, _params: dict, token_info: dict) -> dict:
         # CREDENTIAL rather than of the endpoint — the spec names this exact case
         # ("filtered list results that vary per user").
         "ttlMs": _TOOL_LIST_TTL_MS,
-        "cacheScope": CACHE_SCOPE_PRIVATE,
+        "cacheScope": METHOD_CACHE_SCOPES['tools/list'],
         "_meta": {
             # Not spec fields, so vendor-prefixed. The etag is what makes staleness
             # DETECTABLE rather than merely time-bounded, which matters more here
@@ -3295,6 +3507,22 @@ def _is_notification(body: Any, method: str) -> bool:
     return method.startswith(_NOTIFICATION_METHOD_PREFIX)
 
 
+def _is_batch(body: Any) -> bool:
+    """True when the body is a JSON-RPC BATCH — an array of messages.
+
+    A list is the only shape this can be, and it is a shape only ONE revision ever
+    required: 2025-03-26 added batching to the transport and 2025-06-18 removed it
+    again. This server implements none of it, which is why that revision is not
+    advertised (see `SUPPORTED_PROTOCOL_VERSIONS`).
+
+    An EMPTY list counts, and deliberately: `[]` is not a legal batch under the
+    revision that defined them ("one or more"), but it is unambiguously an array
+    body, and the answer a caller needs is "this server does not do arrays" rather
+    than a count of the elements in the array it should not have sent.
+    """
+    return isinstance(body, list)
+
+
 @tracer.capture_method
 def _handle_autoseed(event: dict) -> dict:
     """Handle GET /mcp/autoseed/{project_id} with Bearer token auth.
@@ -3384,9 +3612,16 @@ def lambda_handler(event: dict, context: Any) -> dict:
     # including OPTIONS. The MCP transport spec requires 403 for a present,
     # invalid Origin; checking before _authenticate also means a rebound page
     # cannot use a victim's browser to probe the token store at all.
+    #
+    # `_NO_ID`, not `None`: this guard runs before the body is even parsed, so the
+    # message being refused may well be a notification — and the transport's own
+    # wording for this refusal is that the body "MAY comprise a JSON-RPC error
+    # response that has no `id`". Sending `id: null` handed a correlating client an
+    # entry matching no request it made, for a message that may have carried no id
+    # in the first place.
     if not _origin_allowed(event):
         return _cors_response(
-            _jsonrpc_error(None, -32600, "Forbidden: invalid Origin"),
+            _jsonrpc_error(_NO_ID, -32600, "Forbidden: invalid Origin"),
             status_code=403,
         )
 
@@ -3442,6 +3677,51 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
     logger.info(f"MCP request: method={method}, id={req_id}")
 
+    # A BATCH — an array body — is refused here, naming batching, rather than left
+    # to fall through the dispatch.
+    #
+    # It used to fall through: `body.get(...) if isinstance(body, dict)` made
+    # `method` the empty string, and a legal 2025-03-26 batch landed on the
+    # unknown-method branch and was answered `404 -32601 "Method not found: "`. Three
+    # things were wrong with that and only one of them was the code. The 404 means
+    # "the session was terminated, re-initialize" on the revisions this server
+    # advertises, so a client batching its `initialized` notification was told to
+    # tear down a working session — and re-initializing got it there again. And an
+    # empty method name in the message told a caller nothing about what it had
+    # actually done wrong.
+    #
+    # `-32600 Invalid Request`, not `-32601`: the fault is the SHAPE of the request,
+    # not a method that is missing — there is no method here to be found. The
+    # message names batching so the caller learns the actual constraint, and the
+    # `data` payload carries the machine-readable version of it.
+    #
+    # The honest fix upstream is that 2025-03-26 is no longer advertised (see
+    # `SUPPORTED_PROTOCOL_VERSIONS`), so no client is told this server accepts a
+    # shape it refuses. This branch is what makes the refusal legible to a client
+    # that sends one anyway.
+    #
+    # Before the transport-header guards, and that ordering is deliberate: a batch
+    # has no single `method` for `Mcp-Method` to be compared against, so validating
+    # the routing echoes first would report a header/body mismatch against `''` —
+    # an answer about a header, for a request whose whole shape this server does not
+    # accept. The batch refusal still buys no probe of the token store, which is the
+    # property the guard ordering exists for.
+    if _is_batch(body):
+        logger.info("MCP batch body refused: this server accepts one message per POST")
+        return _cors_response(
+            _jsonrpc_error(
+                None, JSONRPC_INVALID_REQUEST,
+                'Batched requests are not supported: send one JSON-RPC message per '
+                'POST. Batching is defined only by protocol revision 2025-03-26, '
+                'which this server does not advertise.',
+                data={
+                    "supported": list(SUPPORTED_PROTOCOL_VERSIONS),
+                    "batchingSupported": False,
+                },
+            ),
+            status_code=400,
+        )
+
     # Transport-header validation, BEFORE dispatch and before authentication.
     #
     # Before dispatch because a request whose transport and body disagree has not
@@ -3465,8 +3745,22 @@ def lambda_handler(event: dict, context: Any) -> dict:
         # disagreement), and a single generic code at this one catch site is how the
         # first draft of this change lost both the client's recovery path and the
         # era-detection signal.
+        #
+        # ⚠️ The MESSAGE KIND is consulted here even though this runs before the
+        # notification branch, and it has to be: a notification that fails a guard is
+        # still a notification, and its refusal was the last place `id: null` was
+        # sent to a message that carries no id. The advertised revisions say a
+        # notification the server cannot accept gets an HTTP error status whose body
+        # "MAY comprise a JSON-RPC error response that has NO id" — so the STATUS and
+        # the code stay exactly as they were and only the envelope changes. This
+        # branch is not the notification's acceptance path (that is the 202 below,
+        # and it is deliberately still after the guards); it is the refusal path
+        # learning what it is refusing.
         return _cors_response(
-            _jsonrpc_error(req_id, exc.code, str(exc), exc.data),
+            _jsonrpc_error(
+                _NO_ID if _is_notification(body, method) else req_id,
+                exc.code, str(exc), exc.data,
+            ),
             status_code=exc.status_code,
         )
 
