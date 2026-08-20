@@ -189,13 +189,23 @@ export const api = {
   },
   
   searchFeedback: async (params: { q: string; days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
-    const searchParams = buildSearchParams(params)
+    // `q` trimmed HERE, at the single boundary every caller goes through, rather
+    // than in each caller's gate.
+    //
+    // `/feedback/search` trims before applying `SEARCH_QUERY_MIN_LENGTH` and
+    // REFUSES a present-but-too-short term with a 400, so any caller comparing
+    // raw `.length` could ship `"a "` — two characters here, one there — and
+    // surface a server error from ordinary typing. Trimming at the boundary makes
+    // every caller agree with the route by construction; a caller's own gate then
+    // only decides WHETHER to search, not what counts as long enough.
+    const searchParams = buildSearchParams({ ...params, q: params.q.trim() })
     // `is_partial_window` declared, not merely surviving the spread below: the
     // route sets it when the candidate scan stops on its soft cap, and
     // `extractTotals` already reads that key for the search branch, so the "N+"
     // display works either way. Declaring it is what tells the next reader the
     // field is real rather than incidental.
     const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string; is_partial_window?: boolean }>(`/feedback/search?${searchParams}`)
+
     return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
