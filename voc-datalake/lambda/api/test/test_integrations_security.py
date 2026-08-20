@@ -561,7 +561,6 @@ class TestRuntimeWrittenConfigsArrays:
         assert body['app_reviews_ios']['credentials_set'] == ['configs']
         assert body['app_reviews_android']['configured'] is False
 
-
     @patch('integrations_handler.secretsmanager')
     def test_hand_edited_real_array_is_not_configured(
         self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
@@ -614,35 +613,30 @@ class TestIsConfiguredValue:
 
         assert _is_configured_value(value, default) is expected
 
-    @pytest.mark.parametrize(
-        ('value', 'expected'),
-        [
-            ([], False),                   # a real JSON array, not the string '[]'
-            ({}, False),                   # a real JSON object
-            (None, False),                 # an explicit JSON null
-            (0, False),
-            ([{'id': 'a1'}], True),        # populated array
-            ({'k': 'v'}, True),
-            (7, True),
-        ],
-    )
-    def test_non_string_empty_shapes_are_never_configured(self, value, expected):
-        """Emptiness decides these cases, whatever the seeded default says.
+    @pytest.mark.parametrize('value', [[], {}, None, 0])
+    def test_empty_non_string_values_are_never_configured(self, value):
+        """A real JSON array/object/null/zero is unset, whatever the default says."""
+        from integrations_handler import _is_configured_value
+
+        assert _is_configured_value(value, None) is False
+        # An unrelated default cannot rescue an empty shape.
+        assert _is_configured_value(value, 'unrelated-default') is False
+
+    @pytest.mark.parametrize('value', [[{'id': 'a1'}], {'k': 'v'}, 7])
+    def test_populated_non_string_values_are_configured(self, value):
+        """A non-empty JSON value counts, unless it matches its seeded default.
 
         The secret is parsed JSON, so a value need not be a string: a hand-edited
-        console entry can store a real array, object, number or null. This case
-        covers only the emptiness half of the rule — the default comparison also
-        applies to non-strings, which the sibling
-        test_non_string_value_still_compared_against_its_default pins. Both halves
-        run for every value; emptiness is what settles THESE inputs, because none
-        of them can equal the unrelated default passed below.
+        console entry can store a real array, object or number. The default
+        comparison still applies to these — see
+        test_non_string_value_still_compared_against_its_default — but none of
+        these values equals the unrelated default passed below, so being non-empty
+        is what settles them.
         """
         from integrations_handler import _is_configured_value
 
-        assert _is_configured_value(value, None) is expected
-        # An unrelated default cannot change the verdict on an empty shape, and
-        # cannot rescue a populated one.
-        assert _is_configured_value(value, 'unrelated-default') is expected
+        assert _is_configured_value(value, None) is True
+        assert _is_configured_value(value, 'unrelated-default') is True
 
     @pytest.mark.parametrize(
         ('value', 'default', 'expected'),
