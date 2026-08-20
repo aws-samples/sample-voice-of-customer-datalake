@@ -585,6 +585,51 @@ class TestRuntimeWrittenConfigsArrays:
 
         assert _is_configured_value(value, default) is expected
 
+    @pytest.mark.parametrize(
+        ('value', 'expected'),
+        [
+            ([], False),                   # a real JSON array, not the string '[]'
+            ({}, False),                   # a real JSON object
+            (None, False),                 # an explicit JSON null
+            (0, False),
+            ([{'id': 'a1'}], True),        # populated array
+            ({'k': 'v'}, True),
+            (7, True),
+        ],
+    )
+    def test_non_string_stored_values(self, value, expected):
+        """A value that is not a string is judged on emptiness alone.
+
+        The secret is parsed JSON, so a value need not be a string. Every writer
+        in this repo stores strings (`json.dumps` of the array, not the array),
+        but a secret edited by hand in the console — or a future writer that
+        stores a real array — lands here. Emptiness is the only test available,
+        since a seeded default is always a string and so never compares equal.
+        """
+        from integrations_handler import _is_configured_value
+
+        assert _is_configured_value(value, None) is expected
+        # A declared default cannot rescue or condemn a non-string value.
+        assert _is_configured_value(value, '[]') is expected
+
+    @patch('integrations_handler.secretsmanager')
+    def test_hand_edited_real_array_is_not_configured(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+    ):
+        """End-to-end: a real empty array in the secret does not flip a source."""
+        secret = freshly_deployed_secret()
+        secret['app_reviews_ios_configs'] = []  # not '[]' — an actual JSON array
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
+
+        from integrations_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
+        )
+        assert response['statusCode'] == 200
+        body = json.loads(response['body'])
+        assert body['app_reviews_ios']['configured'] is False
+
 
 class TestPluginSecretDefaultsParsing:
     """
