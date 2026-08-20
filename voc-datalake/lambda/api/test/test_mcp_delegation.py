@@ -174,12 +174,29 @@ _GENERATED_PERSONA: dict = {
         "tech_savviness": "medium-high",
         "decision_style": "Research-heavy at setup, habitual after",
     },
+    "context_environment": {
+        "usage_context": "First coffee of the day",
+        "devices": ["iPhone", "iPad"],
+        "time_constraints": "Ten minutes before the school run",
+    },
+    "scenario": {
+        "title": "The morning catch-up",
+        "narrative": "She opens the app while the kettle boils and wants the day in one screen.",
+        "trigger": "A push notification she did not ask for",
+        "outcome": "Knows what matters before she leaves the house",
+    },
     # Avatar keys, source ids and notes are present on real rows and must be
     # dropped by the projection — asserted in test_storage_layout_is_not_exposed.
     "avatar_url": "s3://bucket/avatars/p.png",
     "source_feedback_ids": ["1ae1eb6abcd7d3a2e364f46139f98466"],
     "research_notes": [{"note_id": "n1", "text": "seen twice", "created_at": "t"}],
-    "quotes": [{"text": "I just want the headlines.", "context": "onboarding"}],
+    "quotes": [{
+        "text": "I just want the headlines.",
+        "context": "onboarding",
+        # The quote's own citation, which IS reported: it is the id
+        # `get_feedback_detail` takes, unlike the row's `source_feedback_ids`.
+        "source_feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466",
+    }],
 }
 
 # `imported_from` rows: unpredictable keys, and `workarounds` is a STRING here
@@ -222,6 +239,35 @@ def _tool_output_schema(name: str) -> dict:
         if tool["name"] == name:
             return tool["outputSchema"]
     raise AssertionError(f"no tool named {name}")
+
+
+# The canonical persona declaration, read from the repo rather than restated, for
+# the same reason as `_tool_output_schema` above.
+_CANONICAL_PERSONA_SCHEMA = Path(__file__).resolve().parents[3] / "schemas" / "persona.schema.json"
+
+# The one canonical section `list_personas` deliberately does not report, with the
+# reason it does not. `research_notes` is researcher annotation added through
+# `/personas/{id}/notes` after the fact — a human's working notes about the
+# persona, not the persona — and it is asserted absent by
+# `test_storage_layout_is_not_exposed`.
+_UNREPORTED_SECTIONS = frozenset({"research_notes"})
+
+
+def _canonical_persona_sections() -> dict[str, str]:
+    """The canonical schema's own numbered sections, read from the schema file.
+
+    Keyed off the `Section N:` marker the schema itself writes in each
+    description, so this cannot drift from the file and a ninth section added
+    there fails this suite instead of quietly never reaching a client — which is
+    exactly how sections 5 and 7 went missing from the first version of the
+    projection.
+    """
+    schema = json.loads(_CANONICAL_PERSONA_SCHEMA.read_text(encoding="utf-8"))
+    return {
+        key: declared["description"]
+        for key, declared in schema["properties"].items()
+        if str(declared.get("description", "")).startswith("Section ")
+    }
 
 
 _JSON_TYPES: dict[str, type | tuple[type, ...]] = {
@@ -556,14 +602,19 @@ class TestProjections:
 
         assert "SECRET-BODY" not in json.dumps(result)
 
-    def test_personas_are_listed_in_full_by_the_persona_tool(self):
-        """The canonical 8-section shape, which is what every writer persists.
+    def test_every_reported_persona_section_carries_its_content(self):
+        """The seven content sections of `schemas/persona.schema.json`.
 
         The fixture this replaced was `{"goals": ["g"], "pain_points": ["pp"],
         "behaviors": ["b"], "quote": "q"}` — flat string lists and a `quote`
         string. No writer has ever produced that, and believing it is precisely
         what made `list_personas` uncallable against real data while this test
         passed.
+
+        One assertion per section, so a section that is declared but never
+        populated fails here. The first version of this projection declared
+        neither `context_environment` nor `scenario`, and a test that sampled
+        only some sections is what let that pass.
         """
         fake = _FakeLambda({f"/projects/{_PROJECT}": {
             "project": {"name": "P"},
@@ -579,7 +630,52 @@ class TestProjections:
         assert persona["goals_motivations"]["primary_goal"] == "Stay informed in ten minutes"
         assert persona["pain_points"]["current_challenges"] == ["Alerts bury the real news"]
         assert persona["behaviors"]["tech_savviness"] == "medium-high"
+        assert persona["context_environment"]["usage_context"] == "First coffee of the day"
+        assert persona["context_environment"]["devices"] == ["iPhone", "iPad"]
+        assert persona["scenario"]["title"] == "The morning catch-up"
         assert persona["quotes"][0]["text"] == "I just want the headlines."
+        assert persona["quotes"][0]["source_feedback_id"] == _FEEDBACK_ID
+
+    def test_every_canonical_persona_section_is_reported_or_excluded(self):
+        """The completeness claim, enforced against the schema instead of asserted.
+
+        `context_environment` and `scenario` are persisted by BOTH writers and
+        were declared by neither the tool's schema nor its projection, so a
+        client could not reach them while the docstrings claimed the canonical
+        shape. Prose cannot fail; this can. A ninth section added to
+        `persona.schema.json` now fails here until it is either reported or
+        listed as an exclusion with a reason.
+        """
+        sections = _canonical_persona_sections()
+        # The schema's own title says eight, so a marker that stopped matching
+        # would otherwise make this test vacuously true.
+        assert len(sections) == 8, f"expected 8 numbered sections, found {sorted(sections)}"
+
+        declared = set(mcp_handler._PERSONA_PROPERTIES)
+        missing = set(sections) - declared - _UNREPORTED_SECTIONS
+        assert not missing, f"canonical sections neither reported nor excluded: {sorted(missing)}"
+
+        # The exclusion list is not a dumping ground: every name in it must be a
+        # section that really exists, and must really not be reported.
+        assert _UNREPORTED_SECTIONS <= set(sections)
+        assert not _UNREPORTED_SECTIONS & declared
+
+    def test_a_quote_declares_every_field_the_canonical_schema_gives_it(self):
+        """Section 6's own fields, checked against the schema for the same reason.
+
+        An undeclared key still travels — the quote object is
+        `additionalProperties: true` — so the cost of leaving one out is not lost
+        data but a client that cannot rely on the citation being there.
+        `source_feedback_id` is the id `get_feedback_detail` takes, which makes it
+        the one worth relying on.
+        """
+        canonical = json.loads(_CANONICAL_PERSONA_SCHEMA.read_text(encoding="utf-8"))
+        quote_fields = set(canonical["properties"]["quotes"]["items"]["properties"])
+
+        assert quote_fields, "the canonical quote item declares no fields; marker moved?"
+        assert quote_fields <= set(mcp_handler._QUOTE_PROPERTIES), (
+            f"canonical quote fields not declared: {sorted(quote_fields - set(mcp_handler._QUOTE_PROPERTIES))}"
+        )
 
     def test_storage_layout_is_not_exposed(self):
         """Avatar keys, source ids and notes are dropped; the persona is the answer."""
@@ -657,6 +753,137 @@ class TestProjections:
         assert projected["pain_points"]["current_challenges"] == ["Just the one"]
         assert _schema_errors(payload, _tool_output_schema("list_personas")) == []
 
+    def test_a_list_in_a_DECLARED_STRING_slot_is_coerced(self):
+        """The mirror image, and the hole the first version of this fix left.
+
+        Coercing only the declared ARRAYS meant a list arriving in a declared
+        string — `emotional_impact`, `primary_goal`, or top-level `confidence` —
+        reproduced M1 exactly: a payload contradicting its own `outputSchema`.
+        Every one of these values is LLM-authored, so the boundary coerces
+        whatever type it declared, not the subset that happened to be listed.
+        """
+        persona = {
+            **_SPARSE_PERSONA,
+            "confidence": ["high"],
+            "feedback_count": "42",
+            "pain_points": {"emotional_impact": ["Tired", "Resigned"]},
+            "scenario": {"narrative": {"step": "Opens the app"}},
+        }
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [persona], "documents": [],
+        }})
+        payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        projected = payload["personas"][0]
+        assert projected["confidence"] == "high"
+        assert projected["feedback_count"] == 42
+        assert projected["pain_points"]["emotional_impact"] == "Tired; Resigned"
+        # A dict in a string slot is JSON, not a Python repr: the reader is a
+        # model, and `{'step': 'Opens the app'}` is not machine-readable.
+        assert projected["scenario"]["narrative"] == '{"step": "Opens the app"}'
+        assert _schema_errors(payload, _tool_output_schema("list_personas")) == []
+
+    def test_a_quote_stored_as_a_bare_string_still_reaches_the_client(self):
+        """`quotes` entries were filtered by `isinstance(q, dict)`.
+
+        That answered "this persona has no quotes" about a persona who had them.
+        The shape is not hypothetical: the import path's own test fixture models
+        the model returning `quotes: ["I spend too much time in meetings"]`, and
+        until this change nothing pinned the schema it was asked for.
+        """
+        persona = {**_SPARSE_PERSONA, "quotes": ["I cannot prove what changed.", ""]}
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [persona], "documents": [],
+        }})
+        payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        quotes = payload["personas"][0]["quotes"]
+        # The empty entry carried no content, so it is not reported as a quote.
+        assert quotes == [{"text": "I cannot prove what changed."}]
+        assert _schema_errors(payload, _tool_output_schema("list_personas")) == []
+
+    def test_a_section_that_cannot_be_reported_is_logged_not_swallowed(self):
+        """An absent section is normal; a section of the wrong shape is not.
+
+        No writer produces a non-object section and all five live rows are
+        objects, so there is nothing to salvage and guessing a destination key
+        would file content under a misleading heading. Dropping it silently is
+        still the wrong half of that: the operator gets a warning, and the
+        persona's own text is never logged because it is customer-derived.
+        """
+        persona = {**_SPARSE_PERSONA, "behaviors": ["Checks the app twice a day"]}
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [persona], "documents": [],
+        }})
+        with patch.object(mcp_handler.logger, "warning") as warned:
+            payload = _call("list_personas", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        assert payload["personas"][0]["behaviors"] == {}
+        assert warned.call_count == 1
+        logged = json.dumps(warned.call_args.kwargs.get("extra", {}))
+        assert "behaviors" in logged
+        assert "Checks the app twice a day" not in logged
+
+    def test_every_declared_persona_type_has_a_coercion(self):
+        """A declared type with no coercion is M1 waiting to happen again.
+
+        The projection coerces by DECLARED TYPE, so adding a `boolean` or
+        `number` field to the persona schema without teaching `_COERCIONS` about
+        it would publish a type the boundary does not enforce. This is the
+        structural version of the finding that `confidence` went uncoerced while
+        `feedback_count` was guarded.
+        """
+        declared = set(mcp_handler._PERSONA_SCALAR_TYPES.values())
+        declared |= set(mcp_handler._QUOTE_TYPES.values())
+        for section in mcp_handler._PERSONA_SECTION_TYPES.values():
+            declared |= set(section.values())
+
+        uncoerced = declared - set(mcp_handler._COERCIONS)
+        assert not uncoerced, f"declared but never coerced: {sorted(uncoerced)}"
+
+        # The array coercion produces a list of STRINGS, so a declared array of
+        # objects would be flattened into JSON strings — the same contradiction
+        # one level down. `quotes` is the only array of objects and it has its own
+        # projection, so every array declared INSIDE a section must be strings.
+        for section, properties in mcp_handler._PERSONA_SECTIONS.items():
+            for key, declared_property in properties.items():
+                if declared_property.get("type") == "array":
+                    assert declared_property.get("items") == {"type": "string"}, (
+                        f"{section}.{key} declares array items that "
+                        "_as_string_list would flatten into strings"
+                    )
+
+    def test_the_project_summary_coerces_the_persona_fields_it_declares(self):
+        """`get_project` reads the same LLM-authored rows and declares strings.
+
+        It is the tool that WAS callable, so this is the live half of the same
+        defect: `tagline` is new to this summary and comes from the writer that
+        pinned nothing, and `p.get('tagline', '')` cannot correct a list.
+        """
+        persona = {**_SPARSE_PERSONA, "tagline": ["Night-shift", "supervisor"]}
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [persona], "documents": [],
+        }})
+        payload = _call("get_project", {"project_id": _PROJECT}, fake)["result"]["structuredContent"]
+
+        assert payload["personas"][0]["tagline"] == "Night-shift; supervisor"
+        assert _schema_errors(payload, _tool_output_schema("get_project")) == []
+
+    def test_an_absent_section_is_not_logged(self):
+        """The positive control for the warning above.
+
+        Most live rows omit some sections entirely — the sparse row omits three —
+        so warning on absence would make the log useless and the previous test
+        would pass for the wrong reason.
+        """
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"}, "personas": [_SPARSE_PERSONA], "documents": [],
+        }})
+        with patch.object(mcp_handler.logger, "warning") as warned:
+            _call("list_personas", {"project_id": _PROJECT}, fake)
+
+        assert warned.call_count == 0
+
     def test_unpredicted_section_keys_are_preserved(self):
         """An imported persona's pain points live under keys this file never chose.
 
@@ -698,6 +925,12 @@ class TestProjections:
             broken(pain_points={"current_challenges": {"a": 1}}), schema)
         assert _schema_errors(broken(feedback_count="42"), schema)
         assert _schema_errors(broken(tagline=["not", "a", "string"]), schema)
+        # A list in a declared STRING slot, nested and top-level: the violation the
+        # scalar coercion prevents. Without these two the checker would pass a
+        # payload the string coercion is the only thing stopping.
+        assert _schema_errors(broken(confidence=["high"]), schema)
+        assert _schema_errors(
+            broken(pain_points={"emotional_impact": ["tired", "resigned"]}), schema)
         assert _schema_errors(broken(journey_stage="undeclared"), schema)
         assert _schema_errors({"count": "1", "personas": []}, schema)
 

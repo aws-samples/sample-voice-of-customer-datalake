@@ -195,10 +195,13 @@ class TestImportPromptComesFromTheTemplate:
         lambda_handler(text_import_event, lambda_context)
         prompt = self._prompt_text(mock_bedrock)
 
-        # One inner key per canonical section — the four sections MCP reports.
+        # One inner key per canonical section, covering every section
+        # `list_personas` reports: what the reader publishes, the writer must ask
+        # for, or the schema is honest about a shape nothing produces.
         for inner_key in ('age_range', 'primary_goal', 'current_challenges',
                           'blockers', 'workarounds', 'emotional_impact',
-                          'current_solutions', 'tech_savviness'):
+                          'current_solutions', 'tech_savviness',
+                          'usage_context', 'devices', 'narrative', 'trigger'):
             assert inner_key in prompt, f"the model was never told about {inner_key}"
 
         assert '{...}' not in prompt, "the inline placeholder schema is back"
@@ -248,13 +251,20 @@ class TestImportPromptComesFromTheTemplate:
 
         `validate_import_config` refuses it upstream, so a branch for it here would
         be unreachable code advertising a capability the product declines.
+
+        Asserted against the template's own `pdf` prompt rather than a phrase
+        copied out of it, so rewording the template cannot turn this green for a
+        reason that has nothing to do with wiring.
         """
         mock_bedrock.converse.return_value = mock_bedrock_persona_response
+        from shared.prompts import PERSONA_IMPORT_PROMPTS, load_prompt_file
+
         from jobs.persona_importer.handler import lambda_handler
 
         lambda_handler(text_import_event, lambda_context)
 
-        assert 'PDF document' not in self._prompt_text(mock_bedrock)
+        pdf_prompt = load_prompt_file(PERSONA_IMPORT_PROMPTS)['user_prompts']['pdf']
+        assert pdf_prompt not in self._prompt_text(mock_bedrock)
 
     def test_the_template_carries_every_key_the_handler_consumes(self):
         """The handler subscripts the template directly, so a dropped key must be

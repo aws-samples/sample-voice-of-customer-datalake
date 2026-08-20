@@ -68,23 +68,16 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
 
     logger.info(f"[IMPORT_PERSONA_JOB] Starting import from {input_type} for project {project_id}")
 
-    # 🔴 ROOT-CAUSE FIX: this handler used to hand-build its own prompt inline,
-    # with a schema string whose every section was the literal `{...}`:
+    # The prompt comes from `persona-import.json`, which carries the canonical key
+    # set with example values that pin the TYPES (`"workarounds": ["Workaround 1"]`)
+    # and enums (`low|medium|high`). It replaces a schema string built here whose
+    # every section was the literal `{...}`, which named the sections and nothing
+    # about their contents — so the model invented inner keys per document and
+    # `.get(k, {})` below persisted whatever came back.
     #
-    #   '{"identity": {...}, "goals_motivations": {...}, "pain_points": {...}, …}'
-    #
-    # so the model was told the SECTION names and nothing about their contents. It
-    # complied, inventing inner keys per document (`primary_frustration`,
-    # `frustration`, `tooling`, `current_practices`), and `.get(k, {})` below
-    # persisted whatever came back. That is why imported personas do not match
-    # `schemas/persona.schema.json` while generated ones do — the writer never
-    # asked them to.
-    #
-    # `persona-import.json` has carried the full canonical key set, with example
-    # values that also pin the TYPES (`"workarounds": ["Workaround 1"]`) and enums
-    # (`low|medium|high`), the whole time — and nothing loaded it. It is already
-    # packaged into this bundle: `createJobLambdaCode` copies `api/prompts` to the
-    # bundle root, so `get_prompts_dir()` resolves `/var/task/prompts` first.
+    # The template needs no bundling change: `createJobLambdaCode` copies
+    # `api/prompts` to the bundle root, so `get_prompts_dir()` resolves
+    # `/var/task/prompts` first.
     prompt_config = load_prompt_file(PERSONA_IMPORT_PROMPTS)
     system_prompt = prompt_config['system_prompt']
     # Dumped from the template rather than restated here, so the schema the model
