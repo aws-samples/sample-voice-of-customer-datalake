@@ -1112,7 +1112,6 @@ describe('the search fan-out fits the metrics timeout', () => {
     expect(worstCaseSeconds, `${budget}; API Gateway stops waiting at ${API_GATEWAY_INTEGRATION_CEILING_SECONDS}s`)
       .toBeLessThan(API_GATEWAY_INTEGRATION_CEILING_SECONDS);
   });
-
 });
 
 describe('mcp endpoint throttling', () => {

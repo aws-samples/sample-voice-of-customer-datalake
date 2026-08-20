@@ -917,9 +917,8 @@ MCP_TOOLS = [
                     #
                     # `minLength` forbids `""`, while `_tool_search_feedback` still
                     # treats a blank query as "no query" and answers from
-                    # `/feedback`. That tolerance is tested rather than incidental:
-                    # `test_mcp_delegation.py::TestRouteSelection`
-                    # `::test_a_blank_query_is_not_a_search`.
+                    # `/feedback`. That tolerance is tested rather than incidental,
+                    # by `test_mcp_delegation.py::TestRouteSelection::test_a_blank_query_is_not_a_search`.
                     #
                     # That asymmetry is safe in the direction it runs. A schema
                     # says what a caller MAY send, and a client that sends `""`
