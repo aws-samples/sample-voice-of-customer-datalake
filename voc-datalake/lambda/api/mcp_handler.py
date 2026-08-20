@@ -416,13 +416,31 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 #     made resolving it per resource (`GET` on the autoseed path, not `POST`)
 #     invisible to exactly the client class the expose list exists for.
 #
-# ⚠️ MINOR, decided by the rule at 3.3.0, and this entry is the easiest of the recent
-# ones: every part of it turns a refusal into an answer or ADDS a header name. Nothing
-# a client could hold is renamed or removed. The `Access-Control-Expose-Headers` value
-# GAINS an entry, which a client reads as more of its own answer becoming readable.
-# The one behaviour that changes for a message that used to be answered is the posted
-# response — from a 404 instructing a session teardown to the 202 the transport
-# mandates — and a client that was told to re-initialize was told wrongly.
+# Two more refusals join it, and both are the fail-closed reading applied where the
+# permissive one was picking between two things a caller said:
+#   • A HEADER SENT MORE THAN ONCE with different values is `-32020`. The reader saw
+#     one value — it read `headers` and never `multiValueHeaders`, and returned on the
+#     first case-insensitive match — so a request carrying two `Mcp-Method` values was
+#     answered according to dict order, which is the two-hops-disagree case the
+#     mismatch refusal exists for, reached through a duplicate. A duplicated `Origin`
+#     is a 403 (a rebinding guard must not pick one of two claimed origins) and a
+#     duplicated `Authorization` is a 401 (two credentials are not one). Two IDENTICAL
+#     values are still one value.
+#   • AN ID-LESS message on a non-notification method is `-32600` with the `id`
+#     OMITTED. This was the last place a RESULT carrying `id: null` was sent to a
+#     message that carries no id: `{"jsonrpc": "2.0", "method": "ping"}` got a 200 and
+#     a full result. By JSON-RPC's definition that message is a notification, so no
+#     reply may be sent; by MCP's it is nothing, since no id-less `ping` exists. Not a
+#     202 either — an id-less `tools/call` is a request a client is waiting on.
+#
+# ⚠️ MINOR, decided by the rule at 3.3.0. Nothing a client could hold is renamed or
+# removed: the `Access-Control-Expose-Headers` value GAINS an entry, which a client
+# reads as more of its own answer becoming readable, and every other part turns a
+# refusal into an answer or an ill-formed answer into a refusal. Three message shapes
+# that used to be answered are answered differently, and in each case what they got
+# was wrong under the revision they negotiated — a 404 instructing a session teardown
+# for a posted response, a result with a null id for an id-less request, and one of
+# two contradictory header values served as though the caller had sent one.
 #
 # No published tool declaration moved, so the fingerprinted catalogue is untouched a
 # third time.
@@ -920,6 +938,53 @@ def _accepted_no_content() -> dict:
     }
 
 
+def _header_values(event: dict, name: str) -> list[str]:
+    """EVERY value the request carries for one header, deduplicated, in order.
+
+    Both places a REST proxy event puts them are read, and reading only the first
+    was the gap this closes:
+
+      • `headers` keeps ONE value per header — API Gateway collapses duplicates
+        last-wins — but a DIRECT invoke can carry two keys that fold to the same
+        name (`Mcp-Method` and `mcp-method`), and a reader returning on the first
+        match then answered whichever key came first in the dict. The same wire
+        request got two different answers depending on how the event was built.
+      • `multiValueHeaders` keeps ALL of them, and nothing here looked at it. A
+        request with two `Mcp-Method` values was compared against one of them and
+        the other was never seen — which is exactly the two-hops-disagree case the
+        `-32020` refusal exists for, reached through a duplicate rather than
+        through a header/body disagreement.
+
+    Deduplicated, so two IDENTICAL values are one value: a client (or an
+    intermediary) restating the same thing twice has not contradicted itself, and
+    refusing that would refuse requests for no gain.
+
+    A non-dict `headers` or `multiValueHeaders` reads as absence rather than
+    raising: a Lambda proxy event always delivers a dict or null, so this needs a
+    direct invoke to reach, and `.get` on a list raised `AttributeError` from the
+    one caller that runs before the handler's try/except — a 502 with no JSON-RPC
+    envelope and no CORS headers.
+    """
+    values: list[str] = []
+    for source_key in ('headers', 'multiValueHeaders'):
+        source = event.get(source_key) or {}
+        if not isinstance(source, dict):
+            continue
+        for key, raw in source.items():
+            if not isinstance(key, str) or key.lower() != name:
+                continue
+            # A `multiValueHeaders` entry is a list; a `headers` entry is a scalar.
+            # A non-string value reads as the empty string for the reason
+            # `_request_header` documents: a header that arrived carrying something
+            # unusable said something, and it is not a valid value here.
+            candidates = raw if isinstance(raw, list) else [raw]
+            for candidate in candidates:
+                value = candidate if isinstance(candidate, str) else ''
+                if value not in values:
+                    values.append(value)
+    return values
+
+
 def _request_header(event: dict, name: str) -> str | None:
     """One header, matched case-insensitively, or None when absent.
 
@@ -928,6 +993,22 @@ def _request_header(event: dict, name: str) -> str | None:
     invoke (a test, a local driver) does not, and a guard has to hold for both.
     An empty value is NOT absence: a client that sent a header empty said
     something, and what it said is not a valid value for any header read here.
+
+    ⚠️ A header carrying TWO DIFFERENT VALUES RAISES rather than resolving to one
+    of them, and that is the fail-closed reading this module applies everywhere
+    else. It is the same fault `_validate_routing_headers` refuses — an
+    intermediary routing on the first `Mcp-Method` while this server acts on the
+    last is two hops serving different requests — and that guard's own words cover
+    it: "there is no way to know which of the two statements was the caller's
+    intent", which is as true of two headers as of a header and a body. Reported as
+    `-32020 HeaderMismatch` for the same reason.
+
+    Every caller must be able to answer the raise, and each answers in its own
+    currency rather than being made to speak JSON-RPC: `_origin_allowed` refuses
+    403 (a rebinding guard must not pick one of two claimed origins), the
+    credential read refuses 401 (two different credentials are not one credential),
+    and the transport headers reach the `InvalidTransportHeader` catch in
+    `lambda_handler` and become the spec's 400.
 
     A non-dict `headers` reads as absence. A Lambda proxy event always delivers a
     dict or null, so this needs a direct invoke or a non-API-Gateway trigger to
@@ -941,13 +1022,17 @@ def _request_header(event: dict, name: str) -> str | None:
     used to match `'origin'` and `'Origin'` by hand, so `ORIGIN:` or `oRigin:`
     walked past the DNS-rebinding guard on a direct invoke.
     """
-    headers = event.get('headers') or {}
-    if not isinstance(headers, dict):
+    values = _header_values(event, name)
+    if not values:
         return None
-    for key, value in headers.items():
-        if isinstance(key, str) and key.lower() == name:
-            return value if isinstance(value, str) else ''
-    return None
+    if len(values) > 1:
+        raise InvalidTransportHeader(
+            f'{_canonical_header_name(name)} was sent more than once with different '
+            f'values ({", ".join(repr(v) for v in values)}); there is no way to know '
+            f'which one was meant',
+            code=JSONRPC_HEADER_MISMATCH,
+        )
+    return values[0]
 
 
 def _origin_allowed(event: dict) -> bool:
@@ -969,8 +1054,20 @@ def _origin_allowed(event: dict) -> bool:
     `AttributeError`. This function runs FIRST in `lambda_handler`, outside its
     try/except, so that raise was a 502 with no JSON-RPC envelope and no CORS
     headers — the exact shape the `BotoCoreError` clause exists to avoid.
+
+    ⚠️ TWO DIFFERENT ORIGINS IS A REFUSAL, not a choice between them. `Origin` is
+    what this guard exists to compare, so picking one of two claimed origins is the
+    one thing a rebinding guard must not do: an intermediary that forwarded the
+    victim's origin alongside the attacker's would have this function compare
+    whichever it happened to read. The raise is CAUGHT here rather than propagated,
+    because this function's contract is a boolean and its caller's answer is a 403 —
+    which is the right status for a browser-presented Origin this server will not
+    serve, however many were presented.
     """
-    origin = _request_header(event, 'origin') or ''
+    try:
+        origin = _request_header(event, 'origin') or ''
+    except InvalidTransportHeader:
+        return False
     if not origin:
         return True
     if ALLOWED_ORIGIN == '*':
@@ -1436,7 +1533,18 @@ def _authenticate(event: dict, *, touch: bool = True) -> dict | None:
     # form this replaces missed `AUTHORIZATION` and every other casing, which on
     # the liveness check below would have let a dead credential through the very
     # gate it was added to close.
-    auth_header = _request_header(event, 'authorization') or ''
+    #
+    # TWO DIFFERENT `Authorization` values authenticate NOTHING, and this is the
+    # fail-closed reading rather than a tidy-up: two credentials are not one
+    # credential, and comparing whichever was read first would let a caller present
+    # a good token alongside a revoked one — or probe the store with two per
+    # request. Reported as this function's ordinary "no usable credential", which
+    # every caller already answers with a 401, because from here that is what it is.
+    try:
+        auth_header = _request_header(event, 'authorization') or ''
+    except InvalidTransportHeader:
+        logger.info("Authorization presented more than once with different values")
+        return None
 
     if not auth_header.startswith('Bearer '):
         return None
@@ -3617,6 +3725,19 @@ def _is_notification(body: Any, method: str) -> bool:
     `id` — a bare `[]`, a string, a number — is not promoted to a notification and
     accepted, which is what an id-only test would have done to precisely the input
     that used to crash this handler.
+
+    ⚠️ THE PREFIX HALF DRAWS A LINE, and what falls on the other side of it is
+    stated here rather than left to be discovered. An id-less message on a method
+    that is NOT `notifications/`-prefixed — `{"jsonrpc": "2.0", "method": "ping"}` —
+    is a notification by JSON-RPC's definition and nothing at all by MCP's, which
+    defines no id-less `ping`. This predicate says False for it, deliberately, and
+    `lambda_handler` refuses it `-32600` with the `id` member OMITTED rather than
+    doing either of the things that look adjacent: it used to be answered with a
+    RESULT carrying `id: null`, which replies to a message that gets no reply and
+    does it ill-formedly, and accepting it 202 would silently drop an id-less
+    `tools/call` that a client is waiting on. The argument in full is at that
+    branch; the boundary is recorded here because this is where a reader asks about
+    it.
     """
     if not isinstance(body, dict) or 'id' in body:
         return False
@@ -3982,6 +4103,50 @@ def lambda_handler(event: dict, context: Any) -> dict:
         logger.info(f"MCP notification accepted: method={method}")
         return _accepted_no_content()
 
+    # An ID-LESS message on a method that is NOT a notification is refused, with the
+    # `id` member OMITTED — and this is the last place a result carrying `id: null`
+    # was sent to a message that carries no id.
+    #
+    # ⚠️ Why it is not accepted 202 like a notification, and not answered like a
+    # request either. By JSON-RPC's own definition ("a Request object without an id
+    # member") this IS a notification, so a reply is forbidden; by MCP's, it is
+    # nothing at all, because MCP defines no id-less `ping` or `initialize`. Those
+    # two readings disagree, and the answer has to satisfy both:
+    #
+    #   • a RESULT is wrong under both. `{"id": null, "result": …}` — which is what
+    #     an id-less `ping`, `initialize` and `server/discover` used to get — replies
+    #     to a message JSON-RPC says gets no reply, and does it with an envelope
+    #     whose id must not be null. Exactly the pair of faults the 202 fix removed
+    #     from the notification path and the `_NO_ID` fix removed from the refusals;
+    #   • a 202 would be wrong too, and this is the half that decides it. 202 says
+    #     "accepted", and `_accepted_no_content` is reserved for a message this
+    #     server can honestly accept and drop. An id-less `tools/call` is a request
+    #     a client is WAITING on (which is why
+    #     test_a_non_notification_method_without_an_id_is_not_accepted pins it), and
+    #     answering silence to a caller expecting a result is the worse failure. The
+    #     shape cannot be decided per method without inventing an id-less variant of
+    #     each.
+    #
+    # So: `-32600 Invalid Request`, the code for a message that is not a well-formed
+    # request, with NO `id` — the transport's own allowance for a refusal whose
+    # subject carries none, and the same envelope a refused notification now gets.
+    # A client that meant a notification is not replied to in any way it correlates;
+    # a client that forgot an id learns the request was not served.
+    #
+    # Placed after the notification branch and before the dispatch, so a real
+    # notification still reaches its 202 and no handler is ever called without an id.
+    if isinstance(body, dict) and 'id' not in body:
+        logger.info(f"MCP id-less non-notification refused: method={method}")
+        return _cors_response(
+            _jsonrpc_error(
+                _NO_ID, JSONRPC_INVALID_REQUEST,
+                f'A request must carry an id: {method!r} is not a notification, and '
+                f'this server defines no id-less form of it. Send an id, or send one '
+                f'of the notifications/* methods.',
+            ),
+            status_code=400,
+        )
+
     # Handle the methods that need no credential (initialize, ping,
     # server/discover).
     if method in MCP_METHODS:
@@ -4127,8 +4292,21 @@ def _refuse_a_dead_credential(event: dict, req_id: Any, method: str) -> dict | N
     # Case-insensitive, via the same helper the transport headers use: a spelling
     # this failed to match would read as "no credential presented" and skip the
     # check entirely, which is the one way this guard can silently not run.
-    auth_header = _request_header(event, 'authorization') or ''
-    if not auth_header.startswith('Bearer '):
+    #
+    # A DUPLICATED `Authorization` is a credential that was presented and cannot be
+    # used, so it belongs on the refusing side of this branch rather than on the
+    # "nothing was presented" side. Falling through to `_authenticate` would reach
+    # the same 401, but only after this function had decided the caller presented
+    # nothing — and the raise would escape here, outside the transport-header catch,
+    # as a 502 with no JSON-RPC envelope.
+    try:
+        auth_header = _request_header(event, 'authorization') or ''
+    except InvalidTransportHeader:
+        auth_header = ''
+        presented = True
+    else:
+        presented = auth_header.startswith('Bearer ')
+    if not presented:
         return None
 
     try:

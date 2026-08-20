@@ -1511,6 +1511,46 @@ class TestOriginValidation:
             f"Origin spelled {spelling!r} bypassed the DNS-rebinding guard"
         )
 
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_two_claimed_origins_are_refused_rather_than_chosen_between(
+        self, lambda_context,
+    ):
+        """Picking one of two claimed origins is the one thing this guard must not do.
+
+        `Origin` is what this function exists to compare, so an intermediary that
+        forwarded the victim's origin alongside the attacker's would have it compare
+        whichever it happened to read first — and the allowed value is present here,
+        so a reader that stopped at the first match would SERVE this request. The
+        fail-closed reading is the refusal, which is the same reading the transport
+        headers apply to a duplicate (`-32020` there; a 403 here, because that is the
+        answer this guard's caller gives).
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"]["origin"] = "https://voc.example.com"
+        event["multiValueHeaders"] = {
+            "origin": ["https://voc.example.com", "https://evil.example.net"],
+        }
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_the_same_origin_twice_is_still_served(self, lambda_context):
+        """Anti-vacuity: restating one allowed origin is not two origins, and
+        refusing it would refuse a request nothing is wrong with."""
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"]["origin"] = "https://voc.example.com"
+        event["multiValueHeaders"] = {
+            "origin": ["https://voc.example.com", "https://voc.example.com"],
+        }
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 200, response["body"]
+
     @pytest.mark.parametrize("headers", [["x"], "origin", 7, [("origin", "x")]])
     @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
     def test_a_non_dict_headers_value_is_not_a_crash(self, headers, lambda_context):

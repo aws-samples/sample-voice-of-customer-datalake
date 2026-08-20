@@ -75,6 +75,19 @@ revert makes each assertion fail.
       test_no_advertised_revision_requires_a_body_grammar_this_server_refuses;
       deleting the `_is_batch` branch fails the rest.
 
+  TestADuplicatedHeaderIsRefused
+    — the header reader saw one value: it read `headers` and not `multiValueHeaders`,
+      and returned on the first case-insensitive match, so a request carrying two
+      `Mcp-Method` values was answered according to dict order. Deleting the duplicate
+      check in `_request_header` fails this class.
+
+  TestAnIdlessRequestIsRefused
+    — an id-less `ping` was answered 200 with a result carrying `id: null`: a reply to
+      a message JSON-RPC says gets no reply, in an envelope whose id must not be null.
+      Reverting the branch to fall through to the dispatch fails
+      test_an_idless_call_of_an_ordinary_method_is_refused; making it a 202 fails
+      test_an_idless_request_is_never_accepted.
+
   TestPostedResponsesAreAccepted
     — the 202 clause has two subjects ("a JSON-RPC response OR notification") and only
       the notification half was recognised: a posted response has no `method`, so it
@@ -1199,6 +1212,139 @@ class TestRoutingHeaders:
 
 
 # ===========================================================================
+# A header sent more than once — the same ambiguity, through a duplicate
+# ===========================================================================
+
+class TestADuplicatedHeaderIsRefused:
+    """Two different values for one header is the two-hops-disagree case again.
+
+    `_validate_routing_headers` refuses a routing echo that contradicts the BODY,
+    on the argument that an intermediary routes on the header while this server acts
+    on the body. A header sent TWICE is the same fault one layer down — a proxy
+    routing on the first `Mcp-Method` while this server compared the last — and that
+    guard's own words cover it: "there is no way to know which of the two statements
+    was the caller's intent".
+
+    The reader saw only one of them, in two ways, both verified:
+
+      • it read `event['headers']` alone, and a REST proxy event also carries
+        `multiValueHeaders` with every value — so the second was never compared;
+      • it returned on the FIRST case-insensitive match, so a direct invoke carrying
+        `Mcp-Method` and `mcp-method` was answered according to dict order. The same
+        wire request got two different answers depending on how the event was built.
+
+    Deleting the duplicate check in `_request_header` fails this class; reading only
+    `headers` again fails test_a_second_value_in_multi_value_headers_is_compared.
+    """
+
+    def _multi(self, name: str, values: list[str], *, method: str = "ping",
+               token: str | None = None) -> dict:
+        """An API-Gateway-shaped event: `headers` collapsed, `multiValueHeaders` full.
+
+        Both are populated because that is what the gateway delivers — `headers`
+        keeps the last value and `multiValueHeaders` keeps all of them — so a reader
+        that consults only the first sees a well-formed request.
+        """
+        event = _event(method, token=token, headers={name: values[-1]})
+        event["multiValueHeaders"] = {name.lower(): list(values)}
+        return event
+
+    def test_a_second_value_in_multi_value_headers_is_compared(self):
+        """The gateway-shaped case, and the one the old reader could not see."""
+        status, body = _call(self._multi("mcp-method", ["tools/list", "ping"]))
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32020
+        assert "more than once" in body["error"]["message"]
+
+    def test_two_identical_values_are_one_value(self):
+        """Restating the same thing twice is not a contradiction.
+
+        A client or an intermediary that sends the same value again has said nothing
+        new, and refusing that would refuse requests for no gain — the duplicate
+        check is about ambiguity, not about repetition.
+        """
+        status, body = _call(self._multi("mcp-method", ["ping", "ping"]))
+
+        assert status == 200, body
+        assert "result" in body
+
+    @pytest.mark.parametrize("order", [
+        ("Mcp-Method", "mcp-method"),
+        ("mcp-method", "Mcp-Method"),
+    ])
+    def test_two_casings_of_one_header_do_not_depend_on_dict_order(self, order):
+        """The answer must not depend on which key came first.
+
+        Parametrised over BOTH orders, because that is the defect: the reader
+        returned on the first match, so one order was served and the other refused.
+        A fix that merely picked the last value would pass one of these and fail the
+        other.
+        """
+        first, second = order
+        status, body = _call(_event(
+            "ping", headers={first: "ping", second: "tools/list"},
+        ))
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32020
+
+    def test_a_duplicated_version_header_is_refused_too(self):
+        """Every header read through the shared reader gets this, not just the
+        routing echoes: two claimed protocol revisions name no revision."""
+        status, body = _call(self._multi(
+            "mcp-protocol-version", ["2024-11-05", "2025-11-25"],
+        ))
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32020
+
+    def test_a_duplicate_is_refused_before_the_token_store_is_probed(self):
+        """Same property as every other malformed transport: an ambiguous request
+        buys no probe of the credential store."""
+        with patch("mcp_handler.projects_table") as table:
+            response = mcp_handler.lambda_handler(
+                self._multi("mcp-method", ["tools/list", "ping"], token=_TOKEN),
+                MagicMock(),
+            )
+
+        assert response["statusCode"] == 400
+        table.query.assert_not_called()
+
+    def test_a_duplicated_credential_authenticates_nothing(self):
+        """Two credentials are not one credential.
+
+        `Authorization` is read through the same helper, and the fail-closed reading
+        is a 401 rather than a choice between them: serving whichever was read first
+        would let a caller present a good token alongside a revoked one. It reaches
+        the ordinary "invalid or missing" refusal, because from the authenticator's
+        seat that is what an unusable credential is.
+        """
+        event = _event("tools/list", token=_TOKEN)
+        event["multiValueHeaders"] = {
+            "authorization": [f"Bearer {_TOKEN}", "Bearer something-else"],
+        }
+
+        status, body = _call(event)
+
+        assert status == 401, body
+        assert body["error"]["code"] == -32001
+
+    def test_a_single_header_is_unaffected(self):
+        """Anti-vacuity: a check that refused every present header would pass every
+        assertion above and break every client."""
+        status, body = _call(_event("ping", headers={"Mcp-Method": "ping"}))
+
+        assert status == 200, body
+        assert "result" in body
+
+    def test_an_absent_header_is_still_absent(self):
+        """And the empty case: no values is None, not a duplicate of nothing."""
+        assert mcp_handler._request_header(_event("ping"), "mcp-method") is None
+        assert mcp_handler._header_values(_event("ping"), "mcp-method") == []
+
+
+# ===========================================================================
 # The result discriminator: spec resultType, local shape in _meta
 # ===========================================================================
 
@@ -2061,6 +2207,119 @@ class TestNotificationsAreAccepted:
         assert "id" not in json.loads(response["body"])
 
 
+class TestAnIdlessRequestIsRefused:
+    """An id-less message on a non-notification method is -32600 with NO `id`.
+
+    This was the last place a RESULT carrying `id: null` was sent to a message that
+    carries no id: `{"jsonrpc": "2.0", "method": "ping"}` — and the same for
+    `initialize` and `server/discover` — was answered 200 with a full result and a
+    null id. Both faults the 202 fix removed from the notification path, one method
+    over: a reply to a message JSON-RPC says gets no reply, in an envelope whose id
+    must not be null.
+
+    The two definitions disagree about what this message IS, and the answer satisfies
+    both. By JSON-RPC's ("a Request object without an id member") it is a
+    notification, so no result may be sent. By MCP's it is nothing — there is no
+    id-less `ping` — so it cannot be dispatched. A refusal with the id omitted is
+    what is left: a client that meant a notification is not replied to in anything it
+    correlates, and a client that forgot an id learns the request was not served.
+
+    NOT 202, and that is the load-bearing half: an id-less `tools/call` is a request
+    a client is waiting on, and silence is the worse failure — which
+    test_a_non_notification_method_without_an_id_is_not_accepted has always pinned.
+    Answering the shape per method would mean inventing an id-less variant of each.
+
+    Reverting the branch to fall through to the dispatch fails
+    test_an_idless_call_of_an_ordinary_method_is_refused; changing it to
+    `_accepted_no_content` fails test_an_idless_request_is_never_accepted.
+    """
+
+    # Every dispatchable non-notification method, derived rather than listed: the
+    # answer must not depend on which half of the dispatch the method is in, and the
+    # unauthenticated ones are exactly where the `id: null` result was being sent.
+    METHODS: ClassVar[tuple[str, ...]] = tuple(sorted(
+        method for method in (*mcp_handler.MCP_METHODS, *mcp_handler.MCP_AUTH_METHODS)
+        if not method.startswith("notifications/")
+    ))
+
+    def test_the_derived_method_list_is_not_empty(self):
+        """Anti-vacuity for every parametrisation below."""
+        assert len(self.METHODS) >= 4, self.METHODS
+
+    @pytest.mark.parametrize("method", METHODS)
+    def test_an_idless_call_of_an_ordinary_method_is_refused(self, method):
+        """400 and -32600 — the code for a message that is not a well-formed
+        request, rather than -32601: the method exists, the envelope does not."""
+        response = _raw_call(_notification_event(method, token=_TOKEN))
+        body = json.loads(response["body"])
+
+        assert response["statusCode"] == 400, response["body"]
+        assert body["error"]["code"] == -32600
+
+    @pytest.mark.parametrize("method", METHODS)
+    def test_the_refusal_carries_no_id_member(self, method):
+        """The defect itself. Asserted with `not in` rather than against a value,
+        because the whole distinction is presence — the same distinction
+        `_is_notification` turns on and `_NO_ID` exists for."""
+        response = _raw_call(_notification_event(method, token=_TOKEN))
+
+        assert "id" not in json.loads(response["body"]), response["body"]
+
+    @pytest.mark.parametrize("method", METHODS)
+    def test_no_result_is_sent_for_a_message_that_gets_no_reply(self, method):
+        """Stated as the thing that must not happen: a RESULT is wrong under both
+        readings of this message, which is what made the old 200 a defect rather
+        than a stylistic choice."""
+        response = _raw_call(_notification_event(method, token=_TOKEN))
+
+        assert "result" not in json.loads(response["body"]), response["body"]
+
+    @pytest.mark.parametrize("method", METHODS)
+    def test_an_idless_request_is_never_accepted(self, method):
+        """Not 202 either, and this is the boundary against the notification path.
+
+        An id-less `tools/call` is a request a client is waiting on; accepting and
+        dropping it answers silence to a caller expecting a result.
+        """
+        response = _raw_call(_notification_event(method, token=_TOKEN))
+
+        assert response["statusCode"] != 202, response["body"]
+
+    def test_a_real_notification_still_reaches_its_202(self):
+        """Anti-overreach, and the ordering this branch depends on: it sits AFTER the
+        notification check, so a `notifications/`-prefixed message is unaffected."""
+        response = _raw_call(_notification_event("notifications/initialized"))
+
+        assert response["statusCode"] == 202, response["body"]
+        assert response["body"] == ""
+
+    def test_the_same_method_with_an_id_is_still_served(self):
+        """Anti-vacuity: the refusal is about the missing id, not about the method."""
+        status, body = _call(_event("ping"))
+
+        assert status == 200, body
+        assert body["id"] == 1
+
+    def test_an_idless_request_never_reaches_the_token_store(self):
+        """Refused before the dispatch and before authentication, like every other
+        malformed envelope: it buys no probe of the credential store."""
+        with patch("mcp_handler.projects_table") as table:
+            response = mcp_handler.lambda_handler(
+                _notification_event("tools/call", token=_TOKEN), MagicMock(),
+            )
+
+        assert response["statusCode"] == 400
+        table.query.assert_not_called()
+
+    def test_the_refusal_names_the_missing_id_rather_than_the_method(self):
+        """A caller reading this needs to know what to change. `Method not found` —
+        which an earlier shape of this path produced for some of these bodies — sends
+        it after a method name it spelled correctly."""
+        _status, body = _call(_notification_event("ping"))
+
+        assert "id" in body["error"]["message"].lower()
+
+
 class TestUnknownMethod:
     """An unknown JSON-RPC REQUEST is -32601 with a 404, and nothing else.
 
@@ -2416,15 +2675,21 @@ class TestPostedResponsesAreAccepted:
         assert body["error"]["code"] == -32600
         assert "batch" in body["error"]["message"].lower()
 
-    def test_a_body_that_is_neither_keeps_its_existing_answer(self):
-        """Anti-overreach for the other half: a bare `{"jsonrpc": "2.0"}` and a
-        `{"id": 1}` carry neither `result` nor `error`, so they are malformed
-        REQUESTS and keep the -32601 that `TestUnknownMethod` owns. Accepting them
-        202 would silently drop a request a client is waiting on."""
+    def test_a_body_that_is_neither_is_not_accepted(self):
+        """Anti-overreach for the other half: a body carrying neither `result` nor
+        `error` is not a response, and must not be accepted 202 — that would silently
+        drop a request a client is waiting on.
+
+        Which REFUSAL each gets is decided one layer down and is not this class's
+        subject: `{"id": 1}` names no method and is the -32601 `TestUnknownMethod`
+        owns, while `{"jsonrpc": "2.0"}` carries no id either and reaches the id-less
+        refusal (`TestAnIdlessRequestIsRefused`). Asserted as "not 202, and an error"
+        so this test states its own claim rather than restating theirs.
+        """
         for body_text in ('{"jsonrpc": "2.0"}', '{"id": 1}'):
-            status, body = _call(_event(body=body_text))
-            assert status == 404, f"{body_text} was answered {status}: {body}"
-            assert body["error"]["code"] == -32601
+            response = _raw_call(_event(body=body_text))
+            assert response["statusCode"] != 202, body_text
+            assert "error" in json.loads(response["body"]), body_text
 
     def test_an_ordinary_request_is_still_served(self):
         """Anti-vacuity: a branch that caught the ordinary object body would accept
