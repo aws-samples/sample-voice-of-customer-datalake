@@ -908,6 +908,21 @@ MCP_TOOLS = [
                     # `SEARCH_QUERY_MIN_LENGTH`, so the prose cannot drift from the
                     # rule the route actually enforces.
                     "minLength": SEARCH_QUERY_MIN_LENGTH,
+                    # ⚖️ The declaration is STRICTER than the server, on purpose.
+                    #
+                    # `minLength` forbids `""`, while `_tool_search_feedback` still
+                    # treats a blank query as "no query" and answers from
+                    # `/feedback` — pinned by `test_a_blank_query_is_not_a_search`,
+                    # so the tolerance is tested rather than incidental.
+                    #
+                    # That asymmetry is safe in the direction it runs. A schema
+                    # says what a caller MAY send, and a client that sends `""`
+                    # instead of omitting gets told to omit, which is the
+                    # documented spelling. The defect this file keeps fixing is
+                    # the OPPOSITE shape — a declaration LOOSER than reality, or a
+                    # promise reality ignores — because that one yields a WRONG
+                    # ANSWER. Being tolerant of an input the schema discourages
+                    # yields the right answer by another spelling.
                     "description": (
                         "Text to match in the verbatim, title or problem summary. "
                         f"Must be at least {SEARCH_QUERY_MIN_LENGTH} characters. "

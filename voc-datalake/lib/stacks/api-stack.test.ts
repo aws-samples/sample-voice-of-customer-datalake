@@ -1066,13 +1066,14 @@ describe('the search fan-out fits the metrics timeout', () => {
   const API_GATEWAY_INTEGRATION_CEILING_SECONDS = 29;
 
   const maxWindowDays = () => {
+    // Read from the NAMED constant, not from `validate_days`' signature default.
+    // The earlier two-step regex walked into the signature to find
+    // `max_val: int = 365`, which would have silently stopped matching the moment
+    // the ceiling moved to a constant or the parameter was renamed. It is a named
+    // declaration now precisely so this parse has something stable to aim at.
     const source = readRepoFile('lambda', 'shared', 'api.py');
-    // `validate_days`' own ceiling, read rather than restated — a copy here would
-    // keep passing after the real bound moved, which is the whole failure mode.
-    const block = source.match(/def validate_days\([\s\S]*?\)\s*->\s*int:/)?.[0];
-    expect(block, 'could not locate validate_days signature').toBeDefined();
-    const maxVal = block?.match(/max_val:\s*int\s*=\s*(\d+)/)?.[1];
-    expect(maxVal, 'could not read validate_days max_val').toBeDefined();
+    const maxVal = source.match(/^MAX_FEEDBACK_WINDOW_DAYS\s*=\s*(\d+)/m)?.[1];
+    expect(maxVal, 'could not read MAX_FEEDBACK_WINDOW_DAYS from shared/api.py').toBeDefined();
     return Number(maxVal);
   };
 
@@ -1096,14 +1097,34 @@ describe('the search fan-out fits the metrics timeout', () => {
     ).toBeGreaterThanOrEqual(worstCaseSeconds * SAFETY_FACTOR);
   });
 
-  it('keeps the budget inside what API Gateway will actually wait for', () => {
-    // Not redundant with the assertion above: that one could be satisfied by
-    // raising the Lambda timeout past the point where the caller still receives
-    // the response, which would trade a 502 for a slower 504.
+  it('keeps the projected worst case inside what API Gateway will wait for', () => {
+    // Asserted on the PROJECTION only, deliberately — NOT on the Lambda timeout.
+    //
+    // An earlier version of this test also asserted
+    // `metricsTimeout() <= CEILING + 1`, under a name claiming it kept the budget
+    // inside the integration limit. That `+1` existed solely to accommodate the
+    // current 30 s config, so the assertion permitted the very 30 > 29 case its
+    // own name said it prevented: an assertion shaped around the value it was
+    // supposed to constrain, which cannot fail for the reason it claims.
+    //
+    // The 30 s Lambda outliving the 29 s integration is CHOSEN, not an oversight.
+    // `MetricsApi` serves the browser across every `/metrics/*` and `/feedback/*`
+    // route, where 30 s is the right budget, and the sibling suite above records
+    // the same asymmetry for the delegation path. A Lambda that outlives the
+    // integration wastes tail compute on a response nobody receives; one that
+    // dies sooner turns a slow-but-valid answer into a 502. The second is worse,
+    // so the asymmetry stays and this test does not pretend otherwise.
+    //
+    // What genuinely must hold is that a full-window search is nowhere near the
+    // ceiling the CALLER is bounded by, since no Lambda timeout can rescue a
+    // request API Gateway has already abandoned.
     const worstCaseSeconds = (maxWindowDays() * MEASURED_MS_PER_DAY) / 1000;
 
-    expect(worstCaseSeconds).toBeLessThan(API_GATEWAY_INTEGRATION_CEILING_SECONDS);
-    expect(metricsTimeout()).toBeLessThanOrEqual(API_GATEWAY_INTEGRATION_CEILING_SECONDS + 1);
+    expect(
+      worstCaseSeconds,
+      `a ${maxWindowDays()}-day search projects to ~${worstCaseSeconds.toFixed(1)}s, ` +
+      `which must stay under API Gateway's ${API_GATEWAY_INTEGRATION_CEILING_SECONDS}s ceiling`,
+    ).toBeLessThan(API_GATEWAY_INTEGRATION_CEILING_SECONDS);
   });
 });
 

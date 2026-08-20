@@ -204,10 +204,10 @@ export const api = {
     // has one, and `test_search_minimum_lockstep.py` pins its constant to the
     // route's.
     //
-    // Deliberately NOT short-circuiting a too-short term into an empty result
-    // here, which was the reviewer's alternative: returning `count: 0` for a
-    // search that never ran is exactly the ambiguity the route was just fixed to
-    // stop producing. Better a loud 400 than a quiet zero.
+    // A too-short term is deliberately NOT short-circuited into an empty result
+    // here, because returning `count: 0` for a search that never ran is the same
+    // ambiguity the route was fixed to stop producing — moving it from the server
+    // to the client would not make it honest. A loud 400 beats a quiet zero.
     const searchParams = buildSearchParams({ ...params, q: params.q.trim() })
     // `is_partial_window` declared, not merely surviving the spread below: the
     // route sets it when the candidate scan stops on its soft cap, and

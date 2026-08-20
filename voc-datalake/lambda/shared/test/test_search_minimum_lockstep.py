@@ -39,13 +39,17 @@ def _frontend_minimum() -> int | None:
 
 
 class TestSearchMinimumMirror:
-    """The positive control stays LOUD; the comparison SKIPS when the tree is gone.
+    """The comparison SKIPS when the frontend tree is gone; the control does not.
 
     A checkout without `frontend/` (a backend-only sparse checkout, say) should
-    not report a mirror mismatch it cannot possibly have measured — that is a
-    `FileNotFoundError` masquerading as a finding. The control below is the one
-    test that must still fail in a normal checkout, so it is not skipped on the
-    file's contents, only on its absence.
+    not report a mirror mismatch it never measured — that is a
+    `FileNotFoundError` masquerading as a finding, so the equality test carries a
+    `skipif`.
+
+    `test_the_frontend_constant_is_findable` carries NO skip marker on purpose: it
+    asserts the file exists and the constant parses, which is exactly the check
+    that has to run. Skipping it would leave the equality test able to pass while
+    comparing against nothing.
     """
 
     def test_the_frontend_constant_is_findable(self):

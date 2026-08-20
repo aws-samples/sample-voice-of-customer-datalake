@@ -66,12 +66,23 @@ MAX_PERSONAS_PER_GENERATION = 10
 # mentioned this". A prose promise cannot fail CI.
 SEARCH_QUERY_MIN_LENGTH = 2
 
+# The longest window any route will honour, and `validate_days`' ceiling.
+#
+# Named rather than left as a bare default in the signature because it is now
+# COUPLED to infrastructure: `/feedback/search` walks one DynamoDB query per day
+# partition (gsi1-by-date is partitioned BY DAY), so the widest window a caller
+# can ask for decides the worst-case duration of that route — and therefore
+# whether the metrics Lambda's timeout and API Gateway's 29 s integration limit
+# still cover it. `api-stack.test.ts` § "the search fan-out fits the metrics
+# timeout" READS this value and fails if raising it outgrows the budget.
+MAX_FEEDBACK_WINDOW_DAYS = 365
+
 
 def validate_days(
     value: str | int | None,
     default: int = 7,
     min_val: int = 1,
-    max_val: int = 365
+    max_val: int = MAX_FEEDBACK_WINDOW_DAYS
 ) -> int:
     """Validate and bound days parameter. Convenience wrapper around validate_int."""
     return validate_int(value, default=default, min_val=min_val, max_val=max_val)
