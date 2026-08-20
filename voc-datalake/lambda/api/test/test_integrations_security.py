@@ -580,6 +580,7 @@ class TestRuntimeWrittenConfigsArrays:
         body = json.loads(response['body'])
         assert body['app_reviews_ios']['configured'] is False
 
+
 class TestIsConfiguredValue:
     """
     Unit truth table for _is_configured_value(value, seeded_default).
@@ -625,19 +626,22 @@ class TestIsConfiguredValue:
             (7, True),
         ],
     )
-    def test_non_string_stored_values_judged_on_emptiness(self, value, expected):
-        """A value that is not a string is judged on emptiness alone.
+    def test_non_string_empty_shapes_are_never_configured(self, value, expected):
+        """Emptiness decides these cases, whatever the seeded default says.
 
-        The secret is parsed JSON, so a value need not be a string. Every writer
-        in this repo stores strings (`json.dumps` of the array, not the array),
-        but a secret edited by hand in the console — or a future writer that
-        stores a real array — lands here. Emptiness is the only test available,
-        since a seeded default is always a string and so never compares equal.
+        The secret is parsed JSON, so a value need not be a string: a hand-edited
+        console entry can store a real array, object, number or null. This case
+        covers only the emptiness half of the rule — the default comparison also
+        applies to non-strings, which the sibling
+        test_non_string_value_still_compared_against_its_default pins. Both halves
+        run for every value; emptiness is what settles THESE inputs, because none
+        of them can equal the unrelated default passed below.
         """
         from integrations_handler import _is_configured_value
 
         assert _is_configured_value(value, None) is expected
-        # An unrelated default changes nothing about emptiness.
+        # An unrelated default cannot change the verdict on an empty shape, and
+        # cannot rescue a populated one.
         assert _is_configured_value(value, 'unrelated-default') is expected
 
     @pytest.mark.parametrize(
@@ -662,6 +666,7 @@ class TestIsConfiguredValue:
         from integrations_handler import _is_configured_value
 
         assert _is_configured_value(value, default) is expected
+
 
 class TestPluginSecretDefaultsParsing:
     """
