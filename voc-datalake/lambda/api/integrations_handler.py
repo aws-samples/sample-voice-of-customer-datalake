@@ -140,12 +140,23 @@ def _is_configured_value(value: object, seeded_default: str | None) -> bool:
          default — the runtime-written `<source>_configs` arrays — where there is
          nothing to compare against.
     """
+    # Trusts the annotation rather than re-checking isinstance: the only producer
+    # is _plugin_secret_defaults(), which keeps str -> str pairs and drops the rest,
+    # and .get() supplies the None for a key with no declared default.
+    default = seeded_default.strip() if seeded_default is not None else None
+
     if not isinstance(value, str):
-        return bool(value)
+        # The secret is parsed JSON, so a value need not be a string: a hand-edited
+        # console entry can store a real array, object, number or null. Emptiness is
+        # judged on the object (so 0, [], {} and None are all unset), then the
+        # default comparison is made on its text — an int 1440 beside the seeded
+        # '1440' is the same unconfigured state as the string, and skipping the
+        # comparison for non-strings would report it as configured.
+        return bool(value) and str(value) != default
     stripped = value.strip()
     if stripped in _EMPTY_STORED_VALUES:
         return False
-    return not (isinstance(seeded_default, str) and stripped == seeded_default.strip())
+    return stripped != default
 
 
 @lru_cache(maxsize=1)

@@ -704,8 +704,8 @@ describe('the integrations Lambda is handed its plugin secret defaults', () => {
     }),
   });
 
-  function integrationsEnv(): Record<string, unknown> {
-    const functions = apiTemplate().findResources('AWS::Lambda::Function');
+  function integrationsEnv(template: Template = apiTemplate()): Record<string, unknown> {
+    const functions = template.findResources('AWS::Lambda::Function');
     const fn = Object.values(functions).find(
       (f) => EnvSchema.safeParse(f).success
         && EnvSchema.parse(f).Properties.Environment.Variables.POWERTOOLS_SERVICE_NAME
@@ -754,14 +754,26 @@ describe('the integrations Lambda is handed its plugin secret defaults', () => {
     expect(nonEmpty.length).toBeGreaterThan(0);
   });
 
-  it('leaves the function env well under the 4 KB Lambda limit', () => {
+  it('leaves the function env well under the 4 KB Lambda limit, worst case', () => {
     // Lambda caps the TOTAL environment at 4096 bytes across all variables, and
     // this one grows with every plugin added. Blowing the budget fails at deploy,
     // not at synth, so measure it here.
-    const variables = integrationsEnv();
-    const total = Object.entries(variables)
-      .reduce((sum, [k, v]) => sum + Buffer.byteLength(`${k}=${String(v)}`), 0);
-    expect(total).toBeLessThan(4096);
+    //
+    // Measured on the LARGEST env this stack can produce, not the default synth:
+    // every plugin on disk enabled, AND a deploymentPrefix set, which is what adds
+    // the two INGESTOR_/INGEST_SCHEDULE_ name patterns via prefixOnlyEnv() and
+    // lengthens the values. The default no-prefix synth omits those entirely, so a
+    // budget measured there would pass while a real prefixed deployment failed.
+    for (const [label, variables] of [
+      ['default', integrationsEnv()],
+      ['all plugins + deploymentPrefix', integrationsEnv(
+        synthApiTemplate({ deploymentPrefix: 'x' }, discoverPluginIds()),
+      )],
+    ] as const) {
+      const total = Object.entries(variables)
+        .reduce((sum, [k, v]) => sum + Buffer.byteLength(`${k}=${String(v)}`), 0);
+      expect(total, `${label} env is ${total} bytes`).toBeLessThan(4096);
+    }
   });
 });
 

@@ -28,8 +28,10 @@ interface GeneratorConfigModalProps {
   readonly plugin: PluginManifest
   readonly onClose: () => void
   /** Whether the current user is an admin. The credentials endpoint is
-   *  admin-gated server-side; this flag prevents a 403 for non-admin users. */
-  readonly isAdmin?: boolean
+   *  admin-gated server-side; this flag prevents a 403 for non-admin users.
+   *  REQUIRED, not optional-with-default: a caller that forgot it would silently
+   *  get the non-admin path, i.e. a Generate button disabled for an admin. */
+  readonly isAdmin: boolean
 }
 
 type RunPhase = 'idle' | 'running' | 'completed' | 'error'
@@ -80,7 +82,7 @@ function RunStatusBanner({
 }
 
 export default function GeneratorConfigModal({
-  plugin, onClose, isAdmin = false,
+  plugin, onClose, isAdmin,
 }: GeneratorConfigModalProps) {
   const { t } = useTranslation('scrapers')
   const fieldKeys = plugin.config.map((f) => f.key)

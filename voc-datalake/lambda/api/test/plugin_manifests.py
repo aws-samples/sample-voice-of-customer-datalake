@@ -33,7 +33,14 @@ def _load_manifests() -> list[dict]:
         p for p in _PLUGINS_DIR.glob('*/manifest.json')
         if not p.parent.name.startswith('_')
     )
-    assert paths, f'no plugin manifests under {_PLUGINS_DIR}; checkout is incomplete'
+    if not paths:
+        # A real exception, not `assert`: this runs at IMPORT time, and `python -O`
+        # strips asserts — which would turn "checkout is incomplete" into every
+        # parametrized guard below silently collecting zero cases, the exact failure
+        # the hard check exists to prevent.
+        raise RuntimeError(
+            f'no plugin manifests under {_PLUGINS_DIR}; checkout is incomplete'
+        )
     return [json.loads(p.read_text()) for p in paths]
 
 

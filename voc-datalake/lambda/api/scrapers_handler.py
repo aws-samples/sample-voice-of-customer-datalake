@@ -169,6 +169,13 @@ def delete_scraper(scraper_id: str):
         secrets['webscraper_configs'] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True}
+    except ValidationError:
+        # A delete only ever SHRINKS this key, so the size guard cannot fire on
+        # what this route adds. It can still fire on a secret that was ALREADY
+        # over the limit — written before the guard existed — and that is exactly
+        # the caller who is deleting to get back under it. Flattening that into a
+        # 500 would hide the one message telling them what to do.
+        raise
     except Exception as e:
         logger.exception(f"Failed to delete scraper: {e}")
         raise ServiceError('Failed to delete scraper configuration')

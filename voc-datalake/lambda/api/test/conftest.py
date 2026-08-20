@@ -12,13 +12,17 @@ from datetime import datetime, timezone
 # and lambda/api directory for handler imports
 lambda_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 api_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# This directory too, so helper modules beside the tests (plugin_manifests.py)
-# import from conftest as well as from the test files. pytest adds it when it
-# imports a TEST module, but conftest.py is imported before that happens.
-test_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, lambda_dir)
 sys.path.insert(0, api_dir)
-sys.path.insert(0, test_dir)
+# This directory too, so helper modules beside the tests (plugin_manifests.py) are
+# importable from conftest as well as from the test files — pytest adds it when it
+# imports a TEST module, but conftest.py is imported before that happens.
+#
+# APPENDED, not inserted at 0: this directory holds files named for what they test,
+# so putting it first would let a future `json.py` or `logging.py` beside these tests
+# shadow the stdlib for the whole suite. Appending cannot shadow anything, and still
+# resolves plugin_manifests, which nothing else provides.
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Set environment variables BEFORE importing handlers
 os.environ['FEEDBACK_TABLE'] = 'test-feedback'
