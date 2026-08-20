@@ -505,6 +505,87 @@ class TestFreshDeployReportsNothingConfigured:
         assert body['webscraper']['configured'] is True
 
 
+class TestRuntimeWrittenConfigsArrays:
+    """
+    An empty `<source>_configs` array is not a configured source.
+
+    save_app_config() writes `<source>_configs` for the multi-instance app
+    plugins at RUNTIME, so no manifest declares those keys and there is no seeded
+    default to compare them against. An untouched one holds '[]', which is
+    truthy, so the default comparison alone still reported app_reviews_ios and
+    app_reviews_android as connected.
+
+    This shape is not hypothetical: it is what the deployed secret actually held
+    when this was measured — `app_reviews_ios_configs` and
+    `app_reviews_android_configs` present as '[]' beside nothing but seeded
+    defaults.
+    """
+
+    @patch('integrations_handler.secretsmanager')
+    def test_empty_runtime_configs_array_is_not_configured(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+    ):
+        secret = freshly_deployed_secret()
+        # Exactly what save_app_config leaves behind before any app is added.
+        secret['app_reviews_ios_configs'] = '[]'
+        secret['app_reviews_android_configs'] = '[]'
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
+
+        from integrations_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
+        )
+        body = json.loads(response['body'])
+
+        claiming = sorted(k for k, v in body.items() if v['configured'])
+        assert not claiming, f'{claiming} report configured on an empty configs array'
+
+    @patch('integrations_handler.secretsmanager')
+    def test_populated_runtime_configs_array_is_configured(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+    ):
+        """Adding an app instance does flip the source — the guard is not blanket."""
+        secret = freshly_deployed_secret()
+        secret['app_reviews_ios_configs'] = '[{"id": "a1", "app_name": "Example"}]'
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
+
+        from integrations_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
+        )
+        body = json.loads(response['body'])
+
+        assert body['app_reviews_ios']['configured'] is True
+        assert body['app_reviews_ios']['credentials_set'] == ['configs']
+        assert body['app_reviews_android']['configured'] is False
+
+    @pytest.mark.parametrize('value', ['', '[]', '{}', '  ', ' [] '])
+    def test_empty_shapes_are_never_configured(self, value):
+        """Whitespace, empty string and empty JSON containers all mean 'unset'."""
+        from integrations_handler import _is_configured_value
+
+        assert _is_configured_value(value, None) is False
+        assert _is_configured_value(value, 'some-default') is False
+
+    @pytest.mark.parametrize(
+        ('value', 'default', 'expected'),
+        [
+            ('imports/', 'imports/', False),   # untouched non-empty default
+            ('uploads/', 'imports/', True),    # edited away from the default
+            ('[{"id":1}]', '[]', True),        # webscraper with a scraper added
+            ('500', '500', False),             # untouched numeric default
+            ('750', '500', True),              # edited numeric default
+            ('a-value', None, True),           # no declared default at all
+        ],
+    )
+    def test_default_comparison(self, value, default, expected):
+        from integrations_handler import _is_configured_value
+
+        assert _is_configured_value(value, default) is expected
+
+
 class TestPluginSecretDefaultsParsing:
     """
     PLUGIN_SECRET_DEFAULTS is infrastructure-supplied, so the handler must not

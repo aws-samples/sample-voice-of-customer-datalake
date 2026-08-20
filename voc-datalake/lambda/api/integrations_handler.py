@@ -119,6 +119,35 @@ def _validate_source(source: str) -> None:
         )
 
 
+# Stored strings that carry no configuration, whatever key they sit under.
+# '[]' and '{}' matter because save_app_config() below writes `<source>_configs`
+# at RUNTIME for the multi-instance app plugins, so no manifest declares those
+# keys and there is no seeded default to compare them against — an untouched one
+# holds '[]', which is truthy.
+_EMPTY_STORED_VALUES = frozenset({'', '[]', '{}'})
+
+
+def _is_configured_value(value: object, seeded_default: str | None) -> bool:
+    """True when *value* holds configuration a human entered.
+
+    Two independent reasons a stored value means "nothing is set up here", and
+    neither subsumes the other:
+
+      1. It still equals the default CDK seeded for that key. Needed for the
+         non-empty defaults ('imports/', 'most_recent', '500', '1440') that a
+         content check cannot distinguish from a real choice.
+      2. It is empty or an empty JSON container. Needed for keys with NO declared
+         default — the runtime-written `<source>_configs` arrays — where there is
+         nothing to compare against.
+    """
+    if not isinstance(value, str):
+        return bool(value)
+    stripped = value.strip()
+    if stripped in _EMPTY_STORED_VALUES:
+        return False
+    return not (isinstance(seeded_default, str) and stripped == seeded_default.strip())
+
+
 @lru_cache(maxsize=1)
 def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
     """Parse PLUGIN_SECRET_DEFAULTS into {plugin_id: {key: seeded_default}}.
@@ -219,8 +248,7 @@ def get_integration_status():
                 for key, value in secrets.items()
                 if key.startswith(prefix)
                 and len(key) > len(prefix)
-                and value
-                and value != seeded.get(key[len(prefix):])
+                and _is_configured_value(value, seeded.get(key[len(prefix):]))
             )
             status[source] = {
                 'configured': len(configured_keys) > 0,
