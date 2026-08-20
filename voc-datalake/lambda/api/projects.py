@@ -1005,7 +1005,12 @@ def generate_prd(project_id: str, body: dict) -> dict:
     # Format personas for context. Migrated with the live sites even though this
     # function is unreached (see the LEGACY note above): leaving a phantom-key
     # builder in the file is what invites the next copy-paste.
-    personas_context = personas_prompt_context(personas)
+    #
+    # `or '(none)'` because the template hard-codes a `USER PERSONAS:` header
+    # before the placeholder. An empty value leaves that header with nothing under
+    # it, which is the same silent-empty-label defect this change removes, one
+    # layer up.
+    personas_context = personas_prompt_context(personas) or '(none)'
 
     feature_idea = body.get('feature_idea', 'Improve customer experience based on feedback')
 
@@ -1357,7 +1362,8 @@ def generate_prfaq(project_id: str, body: dict) -> dict:
     # reason. This one only ever lost the quote — `quote` is singular here while
     # rows store `quotes: [{text, context}]` — so it never had the empty
     # Goals/Frustrations lines the other builders did.
-    personas_context = personas_prompt_context(personas)
+    # `or '(none)'`: the template hard-codes a `USER PERSONAS:` header.
+    personas_context = personas_prompt_context(personas) or '(none)'
     
     feature_idea = body.get('feature_idea', 'New feature based on customer feedback')
 

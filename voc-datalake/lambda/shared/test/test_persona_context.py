@@ -105,6 +105,22 @@ class TestFieldPaths:
         assert persona_goals({'goals_motivations': ['not', 'a', 'dict']}) == []
         assert persona_frustrations({'pain_points': 'a string'}) == []
 
+    def test_an_object_list_entry_yields_its_text_not_a_python_repr(self):
+        """A dict where a string was expected must not reach a model as
+        `{'goal': 'x'}` — that is noise plus extra structure in a prompt whose
+        content comes from customer documents. A known text-ish key is read, and
+        an entry with none is dropped."""
+        persona = {'goals_motivations': {'secondary_goals': [
+            {'text': 'Read via text'},
+            {'description': 'Read via description'},
+            {'weight': 2},
+            'plain string',
+        ]}}
+        assert persona_goals(persona, max_items=4) == [
+            'Read via text', 'Read via description', 'plain string',
+        ]
+        assert '{' not in persona_prompt_block(persona)
+
 
 class TestBlockRendering:
     def test_a_generated_persona_renders_every_line(self):
@@ -142,8 +158,10 @@ class TestBlockRendering:
             'pain_points': {'current_challenges': [f'pain {i}' for i in range(50)]},
         }
         block = persona_prompt_block(crowded, max_items=2)
-        assert block.count('goal ') == 2
-        assert block.count('pain ') == 2
+        # Whole-line equality, not a substring count: `count('goal ')` would also
+        # match a goal whose own text contained the word.
+        assert '- Goals: goal 0; goal 1' in block
+        assert '- Frustrations: pain 0; pain 1' in block
 
 
 class TestMultiPersonaContext:

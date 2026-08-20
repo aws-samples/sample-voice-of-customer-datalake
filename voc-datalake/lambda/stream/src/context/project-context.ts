@@ -101,22 +101,24 @@ const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
   // read them, and both rendered empty Goals / Frustrations / Needs into the chat
   // and roundtable system prompts. Declaring them here is what makes a reader fix
   // possible at all; the boundary is the fix, per the workspace wire-shape rule.
-  quotes: z.array(z.union([
-    z.object({ text: z.string().optional(), context: z.string().optional() }).passthrough(),
-    z.string(),
-  ])).optional(),
-  goals_motivations: z.object({
-    primary_goal: z.string().optional(),
-    secondary_goals: z.array(z.string()).optional(),
-    success_definition: z.string().optional(),
-    underlying_motivations: z.array(z.string()).optional(),
-  }).passthrough().optional(),
-  pain_points: z.object({
-    current_challenges: z.array(z.string()).optional(),
-    blockers: z.array(z.string()).optional(),
-    workarounds: z.array(z.string()).optional(),
-    emotional_impact: z.string().optional(),
-  }).passthrough().optional(),
+  // 🪤 Declared as OPAQUE containers, and that is load-bearing rather than lazy.
+  //
+  // `projectItemSchema.parse()` THROWS, so any leaf declared here becomes a way
+  // for one malformed persona to take down the whole chat-context build — which is
+  // the exact incident the null-tolerance regression test below was written for.
+  // These three sections were previously undeclared, so Zod stripped them and
+  // never validated them; naming their inner types would have validated them for
+  // the FIRST time, and `nullsToUndefined` is SHALLOW (top-level only), so a
+  // `pain_points: {current_challenges: null}` row — DynamoDB stores empty
+  // attributes as null — would fail `z.array(z.string()).optional()` and throw.
+  //
+  // The contents are LLM-authored, so odd shapes are expected, not exceptional.
+  // `persona-fields.ts` validates every value it touches (`typeof === 'string'`,
+  // `Array.isArray`), which is where the checking belongs per the repo's
+  // wire-shape rule: normalize at the reader, never reject the row.
+  quotes: z.array(z.unknown()).optional(),
+  goals_motivations: z.record(z.unknown()).optional(),
+  pain_points: z.record(z.unknown()).optional(),
   behaviors: z.union([
     z.object({
       current_solutions: z.array(z.string()).optional(),

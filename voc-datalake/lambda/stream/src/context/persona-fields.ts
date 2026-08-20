@@ -20,6 +20,29 @@ import type { ProjectItem } from './project-context.js';
 /** Chat prompts have more room than the Python document paths, which cap at 3. */
 export const DEFAULT_PERSONA_ITEMS = 4;
 
+/**
+ * One key off a value that is only believed to be an object.
+ *
+ * The persona sections arrive as opaque records — `project-context.ts` declares
+ * them that way on purpose, because naming their leaves would let one malformed
+ * row throw and take down the whole context build. So every read goes through a
+ * guard here rather than trusting the declared type.
+ */
+/**
+ * Duplicated from `project-context.ts`'s `isPlainRecord` on purpose, three lines
+ * rather than an import: `project-context.ts` imports the readers in this module
+ * as VALUES, so importing a value back would be a real runtime cycle — the
+ * existing type-only import in `persona-prompt.ts` is erased at compile time and
+ * is not a precedent for one.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readKey(value: unknown, key: string): unknown {
+  return isRecord(value) ? value[key] : undefined;
+}
+
 function cleanStrings(values: unknown, limit: number): string[] {
   if (typeof values === 'string') {
     const single = values.trim();
@@ -45,7 +68,7 @@ export function personaVoice(persona: ProjectItem): string {
   const quotes = persona.quotes;
   if (!Array.isArray(quotes)) return '';
   for (const quote of quotes) {
-    const text = typeof quote === 'string' ? quote : quote?.text;
+    const text = typeof quote === 'string' ? quote : readKey(quote, 'text');
     if (typeof text === 'string' && text.trim()) return text.trim();
   }
   return '';
@@ -56,10 +79,9 @@ export function personaGoals(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS
   const section = persona.goals_motivations;
   if (!section) return [];
   const goals: string[] = [];
-  if (typeof section.primary_goal === 'string' && section.primary_goal.trim()) {
-    goals.push(section.primary_goal.trim());
-  }
-  goals.push(...cleanStrings(section.secondary_goals, limit));
+  const primary = readKey(section, 'primary_goal');
+  if (typeof primary === 'string' && primary.trim()) goals.push(primary.trim());
+  goals.push(...cleanStrings(readKey(section, 'secondary_goals'), limit));
   return goals.slice(0, limit);
 }
 
@@ -72,8 +94,8 @@ export function personaGoals(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS
 export function personaFrustrations(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS): string[] {
   const section = persona.pain_points;
   if (!section) return [];
-  const pains = cleanStrings(section.current_challenges, limit);
-  for (const blocker of cleanStrings(section.blockers, limit)) {
+  const pains = cleanStrings(readKey(section, 'current_challenges'), limit);
+  for (const blocker of cleanStrings(readKey(section, 'blockers'), limit)) {
     if (pains.length >= limit) break;
     if (!pains.includes(blocker)) pains.push(blocker);
   }
@@ -90,8 +112,8 @@ export function personaFrustrations(persona: ProjectItem, limit = DEFAULT_PERSON
  * (`goals_motivations.underlying_motivations`).
  */
 export function personaNeeds(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS): string[] {
-  const needs = cleanStrings(persona.goals_motivations?.underlying_motivations, limit);
-  for (const workaround of cleanStrings(persona.pain_points?.workarounds, limit)) {
+  const needs = cleanStrings(readKey(persona.goals_motivations, 'underlying_motivations'), limit);
+  for (const workaround of cleanStrings(readKey(persona.pain_points, 'workarounds'), limit)) {
     if (needs.length >= limit) break;
     if (!needs.includes(workaround)) needs.push(workaround);
   }

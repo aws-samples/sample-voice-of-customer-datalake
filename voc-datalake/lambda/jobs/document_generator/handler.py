@@ -145,7 +145,11 @@ def _gather_context(
             # empty while `used_persona_ids` below recorded provenance from
             # content the model never received. Field paths now live in
             # shared/persona_context.py.
-            personas_context = personas_prompt_context(personas)
+            # `or '(none)'`: prd-generation.json and prfaq-generation.json both
+            # hard-code a `USER PERSONAS:` header before the placeholder, so an
+            # empty value leaves a bare header — the same empty-label defect being
+            # removed here, one layer up.
+            personas_context = personas_prompt_context(personas) or '(none)'
             for p in personas:
                 pid = p.get('persona_id')
                 if pid:
