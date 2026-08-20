@@ -12,6 +12,7 @@ from the Authorization header against SHA-256 hashes in the projects table.
 import json
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -75,12 +76,23 @@ projects_table = get_projects_table()
 # meant two breaking output changes instead of one.
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
-# Semver on the SERVER, independent of the protocol revision above. 2.0.0
-# because tool output shapes changed: results now carry `structuredContent`
-# alongside the text block, sad paths that used to arrive as prose in a
-# successful result are now tool errors, and `get_project` reports the
-# documents it previously dropped.
-MCP_SERVER_VERSION = "2.0.0"
+# Semver on the SERVER, independent of the protocol revision above, and the only
+# signal a client gets that a tool's output shape moved — it is advertised in
+# `serverInfo` on every `initialize`.
+#
+# 2.0.0 carried `structuredContent` alongside the text block, turned sad paths
+# that used to arrive as prose in a successful result into tool errors, and made
+# `get_project` report the documents it had been dropping.
+#
+# 3.0.0 changes the persona shape both persona-reporting tools publish:
+# `list_personas` now mirrors `schemas/persona.schema.json` and no longer
+# declares `goals`, `age_range`, `occupation`, `quote`, `journey_stage` or
+# `type`, and `get_project`'s persona summary reports `tagline` in place of
+# `type`. Those six keys existed on no stored row and `list_personas` was
+# uncallable against real data, so nothing could have consumed them — but a
+# client coded against the NAMES loses them, which is a major bump by this
+# file's own rule rather than a judgement about how many clients exist.
+MCP_SERVER_VERSION = "3.0.0"
 
 
 # ============================================
@@ -683,17 +695,143 @@ _DOCUMENT_KINDS: dict[str, str] = {
     'PROTOTYPE#': 'prototype',
 }
 
+_STRING_LIST: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
+
+# The persona, mirroring `schemas/persona.schema.json` — the repo's canonical
+# declaration, what both writers persist, and what the frontend
+# `ProjectPersona` type already describes. Section numbers below are the
+# canonical schema's own: 1-5 and 7 are objects and are declared here, 6
+# (`quotes`) is an array declared under `_QUOTE_PROPERTIES`, and 8
+# (`research_notes`) is researcher annotation rather than persona content and is
+# deliberately not reported. That division is enforced against the schema file
+# by `test_every_canonical_persona_section_is_reported_or_excluded`, so a ninth
+# section cannot go missing here the way 5 and 7 first did.
+#
+# `additionalProperties` is deliberately OPEN on each section. These values are
+# LLM-authored, and a prompt is a request rather than enforcement: live rows
+# carry `primary_frustration`, `frustration`, `tooling`, `current_practices`,
+# `related_issues`. Declaring `false` would make the tool fail on its own
+# product; declaring the known keys and permitting the rest is the honest
+# contract, and the variance belongs to the writer.
+_PERSONA_SECTIONS: dict[str, dict[str, Any]] = {
+    # Section 1 — Identity & Demographics.
+    "identity": {
+        "age_range": {"type": "string"},
+        "location": {"type": "string"},
+        "occupation": {"type": "string"},
+        "income_bracket": {"type": "string"},
+        "education": {"type": "string"},
+        "family_status": {"type": "string"},
+        "bio": {"type": "string"},
+    },
+    # Section 2 — Goals & Motivations.
+    "goals_motivations": {
+        "primary_goal": {"type": "string"},
+        "secondary_goals": _STRING_LIST,
+        "success_definition": {"type": "string"},
+        "underlying_motivations": _STRING_LIST,
+    },
+    # Section 3 — Pain Points & Frustrations.
+    "pain_points": {
+        "current_challenges": _STRING_LIST,
+        "blockers": _STRING_LIST,
+        "workarounds": _STRING_LIST,
+        "emotional_impact": {"type": "string"},
+    },
+    # Section 4 — Behaviors & Habits.
+    "behaviors": {
+        "current_solutions": _STRING_LIST,
+        "tools_used": _STRING_LIST,
+        "activity_frequency": {"type": "string"},
+        "tech_savviness": {"type": "string"},
+        "decision_style": {"type": "string"},
+    },
+    # Section 5 — Context & Environment.
+    "context_environment": {
+        "usage_context": {"type": "string"},
+        "devices": _STRING_LIST,
+        "time_constraints": {"type": "string"},
+        "social_context": {"type": "string"},
+        "influencers": _STRING_LIST,
+    },
+    # Section 7 — Scenario / User Story.
+    "scenario": {
+        "title": {"type": "string"},
+        "narrative": {"type": "string"},
+        "trigger": {"type": "string"},
+        "outcome": {"type": "string"},
+    },
+}
+
+# Section 6 — Representative Quotes. Objects on the row, not strings, and the
+# old single `quote` key never existed. Named separately from the sections above
+# because it is an array, so it needs its own projection.
+#
+# `source_feedback_id` is the quote's own citation and is declared, unlike the
+# persona's top-level `source_feedback_ids`, which is dropped: one is where this
+# sentence came from and is the id `get_feedback_detail` takes, the other is the
+# row's provenance list.
+_QUOTE_PROPERTIES: dict[str, Any] = {
+    "text": {"type": "string"},
+    "context": {"type": "string"},
+    "source_feedback_id": {"type": "string"},
+}
+
 _PERSONA_PROPERTIES: dict[str, Any] = {
     "persona_id": {"type": "string"},
     "name": {"type": "string"},
-    "type": {"type": "string"},
-    "age_range": {"type": "string"},
-    "occupation": {"type": "string"},
-    "goals": {"type": "array", "items": {"type": "string"}},
-    "pain_points": {"type": "array", "items": {"type": "string"}},
-    "behaviors": {"type": "array", "items": {"type": "string"}},
-    "quote": {"type": "string"},
-    "journey_stage": {"type": "string"},
+    # `tagline` is the persona's one-line characterisation and is REQUIRED by the
+    # canonical schema. It replaces the old `type`, which no row has ever carried.
+    "tagline": {"type": "string"},
+    "confidence": {"type": "string"},
+    "feedback_count": {"type": "integer"},
+    **{
+        section: {
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": True,
+        }
+        for section, properties in _PERSONA_SECTIONS.items()
+    },
+    "quotes": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": _QUOTE_PROPERTIES,
+            "additionalProperties": True,
+        },
+    },
+}
+
+
+def _declared_types(properties: dict[str, Any]) -> dict[str, str]:
+    """The declared JSON type of each property, so the projection can coerce to it.
+
+    Read off the declarations by VALUE rather than by identity with
+    `_STRING_LIST`: an author who inlines a literal instead of reusing the
+    constant must still get coercion, or this derivation would have exactly the
+    silent-omission hole it exists to close. Deriving EVERY type rather than
+    only the arrays is what stops the next declared field from being the one
+    nobody coerces — `confidence` was that field.
+    """
+    return {
+        key: declared["type"]
+        for key, declared in properties.items()
+        if isinstance(declared.get("type"), str)
+    }
+
+
+_PERSONA_SECTION_TYPES: dict[str, dict[str, str]] = {
+    section: _declared_types(properties)
+    for section, properties in _PERSONA_SECTIONS.items()
+}
+_QUOTE_TYPES: dict[str, str] = _declared_types(_QUOTE_PROPERTIES)
+# The top-level scalars only: the sections and `quotes` are objects and arrays of
+# objects, each with its own projection below.
+_PERSONA_SCALAR_TYPES: dict[str, str] = {
+    key: declared_type
+    for key, declared_type in _declared_types(_PERSONA_PROPERTIES).items()
+    if declared_type not in ("object", "array")
 }
 
 # A window argument, stated once. `maximum` is the route's real ceiling
@@ -869,7 +1007,10 @@ MCP_TOOLS = [
                         "properties": {
                             "persona_id": {"type": "string"},
                             "name": {"type": "string"},
-                            "type": {"type": "string"},
+                            # `tagline`, not `type`: no stored persona has ever
+                            # carried a `type`, so this summary reported an empty
+                            # string for every persona in every project.
+                            "tagline": {"type": "string"},
                         },
                         "additionalProperties": False,
                     },
@@ -899,8 +1040,10 @@ MCP_TOOLS = [
     {
         "name": "list_personas",
         "description": (
-            "List all personas for a project with their demographics, "
-            "pain points, goals, and behavioral traits."
+            "List all personas for a project: identity and demographics, goals "
+            "and motivations, pain points, behaviors, context and environment, "
+            "representative quotes, and scenario. Researcher notes are not "
+            "included."
         ),
         "inputSchema": {
             "type": "object",
@@ -1124,26 +1267,159 @@ def _document_kind(item: dict) -> str:
     return ''
 
 
-def _project_persona(item: dict) -> dict:
-    """The persona fields the tools report, with typed defaults.
+def _as_string(value: Any) -> str:
+    """Coerce a declared-string persona field to the string it promises.
 
-    Shared by both project-shaped tools so a persona reads the same either way.
-    Everything else on the row — avatar keys, source feedback ids, notes,
-    timestamps — is dropped: a project's personas are the answer, not its
-    storage layout.
+    A list is joined rather than passed through: `emotional_impact` and
+    `primary_goal` are declared strings, and a list arriving in either would
+    reproduce the defect this schema fix is about — a payload contradicting its
+    own declaration. A dict becomes JSON rather than a Python `repr`, because
+    the reader is a model and `{'a': 'x'}` is not machine-readable.
     """
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        return '; '.join(_as_string(v) for v in value if v not in (None, ''))
+    if isinstance(value, dict):
+        return json.dumps(value, cls=DecimalEncoder)
+    return str(value)
+
+
+def _as_int(value: Any) -> int:
+    """Coerce a declared-integer persona field, defaulting rather than lying.
+
+    `feedback_count` arrives from DynamoDB as a `Decimal`, and not at all on
+    rows that predate it. An unparseable value becomes 0 instead of travelling
+    as the string it was.
+    """
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _as_string_list(value: Any) -> list[str]:
+    """Coerce a declared-array persona field to the list of strings it promises.
+
+    A writer that leaves a single value unwrapped (`workarounds` is a string on
+    some imported rows and a list on generated ones) must not make the payload
+    contradict its own schema, so the boundary coerces instead of passing the
+    scalar through. Non-string entries are stringified rather than dropped: the
+    value is a model's evidence, and silently losing it is worse than reporting
+    it in the declared type.
+    """
+    if value is None or value == '':
+        return []
+    if isinstance(value, (list, tuple)):
+        return [_as_string(v) for v in value if v not in (None, '')]
+    return [_as_string(value)]
+
+
+# One coercion per JSON type the persona schema declares. Objects are absent on
+# purpose: the sections and quotes have their own projections, which is also why
+# `_PERSONA_SCALAR_TYPES` excludes them.
+_COERCIONS: dict[str, Callable[[Any], Any]] = {
+    "string": _as_string,
+    "integer": _as_int,
+    "array": _as_string_list,
+}
+
+
+def _coerce_declared(value: Any, declared_type: str) -> Any:
+    """Coerce one value to the JSON type its own schema declares.
+
+    A type with no coercion passes through unchanged, so an undeclared key keeps
+    whatever the row holds — `additionalProperties: true` permits it and
+    rewriting it would claim a structure the row does not have.
+    """
+    coerce = _COERCIONS.get(declared_type)
+    return coerce(value) if coerce else value
+
+
+def _persona_section(name: str, value: Any, declared: dict[str, str]) -> dict:
+    """One canonical persona section, coerced to its declared types.
+
+    Unrecognised keys are PRESERVED, not dropped. The section's declared keys
+    are what the prompts pin; a prompt is a request, so real rows also carry
+    `primary_frustration`, `tooling`, `related_issues`. Dropping those would
+    make the tool answer "this persona has no pain points" about a persona whose
+    pain points are simply under a key this file did not predict — the same
+    class of silent under-report the surface is being fixed for.
+    """
+    if not isinstance(value, dict):
+        # Absent, or a shape no writer produces. Both writers persist an object
+        # (both default to `{}`) and all five live rows are objects, so there is
+        # no flat-list case to salvage — and guessing a destination key would
+        # file content under a misleading heading (`sorted()` would pick
+        # `blockers` for a list of pain points). An absent section is normal and
+        # silent; anything else is logged, because a section that cannot be
+        # reported should be visible rather than invisible. The value itself is
+        # never logged: it is customer-derived text.
+        if value not in (None, '', [], {}):
+            logger.warning(
+                "Persona section not reported: not an object",
+                extra={"section": name, "arrived_as": type(value).__name__},
+            )
+        return {}
     return {
-        "persona_id": item.get('persona_id', ''),
-        "name": item.get('name', ''),
-        "type": item.get('type', ''),
-        "age_range": item.get('age_range', ''),
-        "occupation": item.get('occupation', ''),
-        "goals": item.get('goals', []),
-        "pain_points": item.get('pain_points', []),
-        "behaviors": item.get('behaviors', []),
-        "quote": item.get('quote', ''),
-        "journey_stage": item.get('journey_stage', ''),
+        key: _coerce_declared(inner, declared[key]) if key in declared else inner
+        for key, inner in value.items()
     }
+
+
+def _as_quote(value: Any) -> dict | None:
+    """One representative quote, as the object the schema declares.
+
+    A bare string entry used to be filtered out, which answered "this persona
+    has no quotes" about a persona who had them — the same silent under-report
+    this file argues against everywhere else. These entries are LLM-authored on
+    a path that pinned nothing until now, so `quotes: ["…"]` is a plausible
+    stored shape and it becomes `{"text": …}`. `None` means the entry carried no
+    content, not that content was discarded.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _coerce_declared(inner, _QUOTE_TYPES[key]) if key in _QUOTE_TYPES else inner
+            for key, inner in value.items()
+        }
+    text = _as_string(value)
+    return {"text": text} if text else None
+
+
+def _project_persona(item: dict) -> dict:
+    """One persona in the canonical shape of `schemas/persona.schema.json`.
+
+    Used ONLY by `list_personas`. `get_project` deliberately renders a two-field
+    summary of its own — an earlier version of this docstring claimed the two
+    shared a projection, which was never true and is why the schema mismatch
+    went unnoticed for so long.
+
+    Every field is coerced to the type it is DECLARED as, driven by the
+    declarations rather than written out field by field. The bug this replaces
+    read each field with `item.get(key, default)`, and a default fires only when
+    a key is ABSENT: it cannot correct a value of the wrong TYPE, so the object
+    `pain_points` travelled unchanged under a schema declaring `array<string>`
+    and a validating client rejected the whole result. Driving it from the
+    declarations is the second half of that lesson — the field-by-field version
+    of this function guarded `feedback_count` and left `confidence` unchecked.
+
+    Everything not declared — avatar keys, source feedback ids, researcher
+    notes, timestamps, llm metadata — is still dropped: a project's personas are
+    the answer, not its storage layout.
+    """
+    projected: dict[str, Any] = {
+        key: _coerce_declared(item.get(key), declared_type)
+        for key, declared_type in _PERSONA_SCALAR_TYPES.items()
+    }
+    for section, declared in _PERSONA_SECTION_TYPES.items():
+        projected[section] = _persona_section(section, item.get(section), declared)
+
+    quotes = item.get('quotes')
+    entries = quotes if isinstance(quotes, (list, tuple)) else [quotes]
+    projected["quotes"] = [q for q in map(_as_quote, entries) if q is not None]
+    return projected
 
 
 def _get_project_payload(token_info: dict) -> tuple[dict, list[dict], list[dict]]:
@@ -1181,21 +1457,27 @@ def _tool_get_project(args: dict, token_info: dict) -> ToolResult:
     Bodies become resources in a later phase.
     """
     meta, personas, documents = _get_project_payload(token_info)
+    # Every field below is declared a string in this tool's own `outputSchema`, so
+    # every one is coerced. `.get(key, '')` defaults on an ABSENT key and cannot
+    # correct a value of the wrong TYPE — the mechanism behind `list_personas`
+    # being uncallable, and this tool reports a persona `tagline` from the same
+    # LLM-authored rows. Well-formed rows are unaffected: `_as_string` returns a
+    # string unchanged.
     return ToolResult({
         "project_id": token_info['project_id'],
-        "name": meta.get('name', ''),
-        "description": meta.get('description', ''),
-        "created_at": meta.get('created_at', ''),
+        "name": _as_string(meta.get('name')),
+        "description": _as_string(meta.get('description')),
+        "created_at": _as_string(meta.get('created_at')),
         "persona_count": len(personas),
         "document_count": len(documents),
         "personas": [
-            {"persona_id": p.get('persona_id', ''), "name": p.get('name', ''),
-             "type": p.get('type', '')}
+            {"persona_id": _as_string(p.get('persona_id')), "name": _as_string(p.get('name')),
+             "tagline": _as_string(p.get('tagline'))}
             for p in personas
         ],
         "documents": [
-            {"document_id": d.get('document_id', ''), "title": d.get('title', ''),
-             "type": d.get('type', ''), "kind": _document_kind(d)}
+            {"document_id": _as_string(d.get('document_id')), "title": _as_string(d.get('title')),
+             "type": _as_string(d.get('type')), "kind": _document_kind(d)}
             for d in documents
         ],
     })
