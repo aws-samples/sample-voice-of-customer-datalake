@@ -71,11 +71,16 @@ const CORS_ALLOW_HEADERS_VALUE = `'${CORS_ALLOW_HEADERS.join(',')}'`;
 /**
  * Response headers a browser-based client is allowed to READ.
  *
- * Neither of these is CORS-safelisted, so without this list a browser receives them
+ * None of these is CORS-safelisted, so without this list a browser receives them
  * and hides them from the page — the failure `WWW-Authenticate` already documents.
  * `Vary` joins it because `mcp_handler.py` now sends `Vary: Authorization` on every
  * response (its answers depend on the credential), and a header stating that fact
  * which the client cannot read states it to nobody.
+ *
+ * `Allow` is the same failure on the header that says what to RETRY WITH: the handler
+ * attaches it to every 405 and resolves it per resource, so a `DELETE` on the
+ * autoseed path is told `GET` rather than `POST` — and a browser-based client
+ * received the refusal with that instruction stripped out.
  *
  * `Content-Type` stays because the frontend reads it.
  *
@@ -84,7 +89,7 @@ const CORS_ALLOW_HEADERS_VALUE = `'${CORS_ALLOW_HEADERS.join(',')}'`;
  * responses carry its list and gateway-GENERATED ones carry this, so a header
  * exposed by one and not the other is readable on some answers and not others.
  */
-const CORS_EXPOSE_HEADERS = ['Content-Type', 'WWW-Authenticate', 'Vary'];
+const CORS_EXPOSE_HEADERS = ['Content-Type', 'WWW-Authenticate', 'Vary', 'Allow'];
 
 /** The same list in the single-quoted form an API Gateway response header takes. */
 const CORS_EXPOSE_HEADERS_VALUE = `'${CORS_EXPOSE_HEADERS.join(',')}'`;

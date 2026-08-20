@@ -1290,8 +1290,24 @@ describe('mcp transport headers reach a browser', () => {
     const block = source.match(/TRANSPORT_HEADERS:\s*tuple\[str, \.\.\.\]\s*=\s*\(([^)]*)\)/)?.[1];
     expect(block, 'could not read TRANSPORT_HEADERS from mcp_handler.py').toBeDefined();
     // The tuple holds the NAMED constants, so resolve each to its literal.
-    const names = [...(block ?? '').matchAll(/([A-Z_]+),/g)].map((m) => m[1]);
+    //
+    // The trailing comma is NOT required by the match, and that matters: requiring it
+    // meant a tuple written without one silently lost its LAST entry, and a partial
+    // parse fails in the permissive direction — fewer headers checked, with nothing
+    // saying so, guarded only by the `>= 3` control below. The recovered count is
+    // cross-checked against the declaration lines so a drifted parse fails outright.
+    const entryLines = (block ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'));
+    const names = [...(block ?? '').matchAll(/([A-Z_]+)\s*,?/g)].map((m) => m[1]);
     expect(names.length, 'TRANSPORT_HEADERS looks empty').toBeGreaterThan(0);
+    expect(
+      names.length,
+      `recovered ${names.length} names from ${entryLines.length} declaration lines in `
+      + 'TRANSPORT_HEADERS: the regex and the Python literal have drifted. Keep one '
+      + 'named constant per line, or update this parse.',
+    ).toBe(entryLines.length);
     return names.map((name) => {
       const value = source.match(new RegExp(`^${name} = '([^']+)'`, 'm'))?.[1];
       expect(value, `could not resolve ${name} in mcp_handler.py`).toBeDefined();
@@ -1383,6 +1399,12 @@ describe('mcp transport headers reach a browser', () => {
   // handler's own responses carry ITS expose list and gateway-GENERATED ones (the
   // authorizer's 401) carry the template's, so a header exposed by one and not the
   // other is readable on some of this endpoint's answers and not others.
+  //
+  // ⚠️ This parse reads a single-quoted STRING LITERAL, so it breaks if that value is
+  // ever rewritten as a `','.join((...))` expression the way `Access-Control-Allow-
+  // Headers` above it already is — which is the likelier of the two ways to break it,
+  // because making the two neighbouring keys consistent is an obvious tidy-up. The
+  // Python declaration carries a note saying so.
   const pythonExposeHeaders = (): string[] => {
     const source = readRepoFile('lambda', 'api', 'mcp_handler.py');
     const value = source.match(
@@ -1396,7 +1418,10 @@ describe('mcp transport headers reach a browser', () => {
   it('exposes every response header the handler expects a browser to read', () => {
     const declared = pythonExposeHeaders();
     // Positive control: a regex that matched nothing would make the loop vacuous.
+    // Both of the non-safelisted headers the handler adds are named, so a parse that
+    // recovered only part of the list fails here rather than checking less.
     expect(declared.map((h) => h.toLowerCase())).toContain('vary');
+    expect(declared.map((h) => h.toLowerCase())).toContain('allow');
 
     const responses = Object.values(
       apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),

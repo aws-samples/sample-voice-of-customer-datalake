@@ -392,7 +392,41 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 #
 # No published tool declaration moved, so the fingerprinted catalogue is untouched
 # again.
-MCP_SERVER_VERSION = "3.5.0"
+#
+# 3.6.0 makes three things REACHABLE that this envelope already claimed. Each was a
+# claim a client could act on and then find unhonoured:
+#   • `server/discover` no longer refuses the header its own revision mandates. The
+#     method and its `DiscoverResult` are defined only by 2026-07-28, so the only
+#     client that can know the name is one obliged to send
+#     `MCP-Protocol-Version: 2026-07-28` — and the version refusal was exempt on
+#     `initialize` alone, so discovery answered 200 for a header-less request and 400
+#     for the conforming one. The answer whose purpose is "everything a client would
+#     otherwise learn from a failed call" was itself learnable only from a failed
+#     call. The exemption is now `_PRE_HANDSHAKE_METHODS`, named for the position
+#     rather than for its members; `ping` and both `tools/*` still refuse.
+#   • A POSTED JSON-RPC RESPONSE is `202 Accepted` with no body. The transport clause
+#     the notification path is built on has two subjects ("a JSON-RPC response or
+#     notification") and only the second was recognised: a response carries no
+#     `method`, so it fell through to the unknown-method branch and was answered
+#     `404 -32601`, which on every advertised revision means the session was
+#     terminated and the client MUST re-initialize. Third route to the defect the
+#     notification and batch branches each closed.
+#   • `Allow` is EXPOSED to a browser. It is not CORS-safelisted, so a browser
+#     received the 405 and hid the one header that said what to retry with — which
+#     made resolving it per resource (`GET` on the autoseed path, not `POST`)
+#     invisible to exactly the client class the expose list exists for.
+#
+# ⚠️ MINOR, decided by the rule at 3.3.0, and this entry is the easiest of the recent
+# ones: every part of it turns a refusal into an answer or ADDS a header name. Nothing
+# a client could hold is renamed or removed. The `Access-Control-Expose-Headers` value
+# GAINS an entry, which a client reads as more of its own answer becoming readable.
+# The one behaviour that changes for a message that used to be answered is the posted
+# response — from a 404 instructing a session teardown to the 202 the transport
+# mandates — and a client that was told to re-initialize was told wrongly.
+#
+# No published tool declaration moved, so the fingerprinted catalogue is untouched a
+# third time.
+MCP_SERVER_VERSION = "3.6.0"
 
 
 # ============================================
@@ -651,6 +685,14 @@ PROTOCOL_VERSION_HEADER = 'mcp-protocol-version'
 METHOD_HEADER = 'mcp-method'
 NAME_HEADER = 'mcp-name'
 
+# ⚠️ A vitest READS THIS DECLARATION by regex — 'mcp transport headers reach a
+# browser' in api-stack.test.ts — because the gateway's preflight allow-list has to
+# name every header this handler validates, and a browser that cannot SEND one is a
+# rule with no reachable subject. The coupling is to the spelling as well as to the
+# contents: dropping the `: tuple[str, ...]` annotation, or reformatting the tuple
+# so the entries are not one NAMED CONSTANT per line, breaks the parse. The test
+# fails loudly rather than silently (it asserts the recovered names match the
+# entries it can see), but the fix is here as much as there.
 TRANSPORT_HEADERS: tuple[str, ...] = (
     PROTOCOL_VERSION_HEADER,
     METHOD_HEADER,
@@ -743,7 +785,21 @@ CORS_HEADERS = {
     # so. Pinned in lockstep with the gateway's `exposeHeaders` by
     # api-stack.test.ts, because a gateway-GENERATED response (the authorizer's 401)
     # carries the gateway's list and not this one.
-    'Access-Control-Expose-Headers': 'WWW-Authenticate,Vary',
+    #
+    # `Allow` is the third, and it is the header that says WHAT TO RETRY WITH. Also
+    # not CORS-safelisted, so a browser received the 405 and hid the one header that
+    # made it actionable — which made the per-resource work below
+    # (`_ALLOW_JSONRPC` vs `_ALLOW_AUTOSEED`, so a `DELETE` on the autoseed path is
+    # told `GET` rather than `POST`) invisible to exactly the client class this list
+    # exists for. The status alone says "not this verb"; `Allow` says which one.
+    #
+    # ⚠️ A vitest READS THIS LITERAL by regex — 'mcp transport headers reach a
+    # browser' in api-stack.test.ts — to pin the gateway's own `exposeHeaders`
+    # against it. Reformatting the value (double quotes, or a `','.join((...))`
+    # expression like the allow-list above) breaks that test rather than the
+    # contract; add the header to `CORS_EXPOSE_HEADERS` in api-stack.ts in the same
+    # commit.
+    'Access-Control-Expose-Headers': 'WWW-Authenticate,Vary,Allow',
     # 🔑 The HTTP-layer counterpart of `cacheScope`, and it is needed because those
     # two words live in the JSON-RPC BODY while every cache likely to sit in front of
     # this endpoint — API Gateway, a CDN, a corporate proxy — reads headers and never
@@ -1104,6 +1160,41 @@ def _negotiate_protocol_version(requested: Any) -> str:
     return PREFERRED_PROTOCOL_VERSION
 
 
+# The methods a client calls BEFORE it has negotiated anything, and therefore the
+# methods where an `MCP-Protocol-Version` this server does not implement is
+# answered rather than refused. The rule is one question: has this client had the
+# chance to learn what to send?
+#
+#   • `initialize` — the handshake itself. A current-generation client MUST put its
+#     own revision in the header on its very first POST (2026-07-28 requires the
+#     header on every request and has no handshake to learn a different value
+#     from), so a refusal here is a refusal of first contact.
+#   • `server/discover` — the same position without the handshake. This one is the
+#     sharper case, because the method is defined ONLY by 2026-07-28: a client that
+#     knows the name is by construction a client of that revision, which is
+#     obliged to send `MCP-Protocol-Version: 2026-07-28`. Refusing it meant the one
+#     client class that would ever call this method was served only when it
+#     VIOLATED its own revision's header rule, and the answer whose whole purpose is
+#     "everything a client would otherwise learn from a failed call" was itself
+#     learnable only from a failed call.
+#
+# ⚠️ NOT derived from `_LIVENESS_CHECKED_METHODS`, which today holds the same two
+# entries. That set means "the response depends on the credential"; this one means
+# "the client has nothing negotiated to send". The coincidence is real and is not a
+# shared fact: `ping` is in neither for two unrelated reasons, and a future method
+# that is credential-gated but post-handshake would have to be in one and not the
+# other. `test_the_two_sets_are_not_the_same_fact` records that they are separate
+# claims that happen to name the same pair.
+#
+# `ping` and `tools/*` keep the refusal, and that is the asymmetry: past the
+# handshake a client HAS a negotiated value, so one this server never offered is
+# the client contradicting itself.
+_PRE_HANDSHAKE_METHODS: frozenset[str] = frozenset({
+    'initialize',
+    'server/discover',
+})
+
+
 def _validated_protocol_version(event: dict, method: str = '') -> str:
     """The revision named by the transport header, refusing one we cannot speak.
 
@@ -1115,16 +1206,17 @@ def _validated_protocol_version(event: dict, method: str = '') -> str:
     silently upgrades precisely the clients that cannot be upgraded. A client that
     DOES send the header has made a claim this server can check.
 
-    ⚠️ `initialize` IS EXEMPT from the refusal, and this is the asymmetry the
-    docstring above points at. The earlier reading — "by then the handshake has
-    happened, so a version this server never offered can only be a client
-    contradicting itself" — is true of request N and false of request 1. A client
-    whose newest revision is 2026-07-28 MUST send that value on its very first
-    POST: that revision requires the header on every request and has no handshake
-    to learn a different value from. Refusing it here meant a current-generation
-    SDK's first contact was a hard 400 and `_negotiate_protocol_version` — the
-    counter-offer that exists for exactly this client — was unreachable, because
-    validation runs before dispatch and `initialize` never ran.
+    ⚠️ THE PRE-HANDSHAKE METHODS ARE EXEMPT from the refusal, and this is the
+    asymmetry the docstring above points at. The earlier reading — "by then the
+    handshake has happened, so a version this server never offered can only be a
+    client contradicting itself" — is true of request N and false of request 1. A
+    client whose newest revision is 2026-07-28 MUST send that value on its very
+    first POST: that revision requires the header on every request and has no
+    handshake to learn a different value from. Refusing it here meant a
+    current-generation SDK's first contact was a hard 400 and
+    `_negotiate_protocol_version` — the counter-offer that exists for exactly this
+    client — was unreachable, because validation runs before dispatch and
+    `initialize` never ran.
 
     So on the handshake an unsupported header value falls THROUGH to
     `_handle_initialize`, which counter-offers the newest revision this server
@@ -1133,13 +1225,30 @@ def _validated_protocol_version(event: dict, method: str = '') -> str:
     client reads as "possibly a legacy server", so the refusal cost a round trip
     and risked an era misdetection to enforce a rule the handshake already handles.
 
-    Every other method keeps the refusal, `ping` and `server/discover` included:
-    past the handshake a client has a negotiated value to send, and one this server
-    never offered is the client contradicting itself.
+    ⚠️ `server/discover` IS EXEMPT TOO, and confining the exemption to
+    `initialize` — as the first version of it did — left this method unreachable by
+    the only clients that can know it exists. The method and its `DiscoverResult`
+    are defined ONLY by 2026-07-28, so a client that calls it is a client of that
+    revision, which its own rules oblige to send
+    `MCP-Protocol-Version: 2026-07-28` on every POST. The result was that discovery
+    answered 200 for a header-less or a downlevel request and 400 for the
+    conforming one: served only to a client violating its own revision, and refused
+    to the client it was written for. This docstring's own justification for the
+    handshake exemption covers it verbatim — a client that STARTS at discovery has
+    negotiated nothing, which is exactly why the liveness check calls that method
+    "the same decision without the handshake".
+
+    The exemption is not "these two methods are special": it is the pre-handshake
+    POSITION, which is why the set is named for that rather than for its members.
+    See `_PRE_HANDSHAKE_METHODS`.
+
+    Every other method keeps the refusal, `ping` and both `tools/*` included: past
+    the handshake a client has a negotiated value to send, and one this server never
+    offered is the client contradicting itself.
 
     The exemption is narrow: it covers a well-formed value naming a revision this
     server does not implement, which is the case a counter-offer answers. Two
-    faults are still refused on `initialize`:
+    faults are still refused on the exempt methods too:
 
       • a malformed encoded-word sentinel, which raises from `_decoded_header`
         before this function compares anything — there is nothing to counter-offer
@@ -1153,10 +1262,17 @@ def _validated_protocol_version(event: dict, method: str = '') -> str:
         return ASSUMED_PROTOCOL_VERSION
     version = _decoded_header(raw, PROTOCOL_VERSION_HEADER)
     if version not in SUPPORTED_PROTOCOL_VERSIONS:
-        if method == 'initialize' and version:
+        if method in _PRE_HANDSHAKE_METHODS and version:
             # Not an error, and not the client's value either: the session speaks
-            # what the handshake negotiates, which is `PREFERRED_PROTOCOL_VERSION`
-            # for a header naming a revision this server does not implement.
+            # what this server implements, which is `PREFERRED_PROTOCOL_VERSION`
+            # for a header naming a revision it does not. On `initialize` that
+            # value IS the counter-offer the client is told; on `server/discover`
+            # nothing reads it and the client reads `supportedVersions` out of the
+            # answer instead — which is the whole point of that method.
+            #
+            # `and version` keeps an EMPTY header refused on both: a client that
+            # sent the header empty named no revision, so there is nothing to
+            # counter-offer.
             return PREFERRED_PROTOCOL_VERSION
         raise InvalidTransportHeader(
             f'Unsupported protocol version {version!r}. This server speaks: '
@@ -3523,6 +3639,43 @@ def _is_batch(body: Any) -> bool:
     return isinstance(body, list)
 
 
+def _is_response(body: Any) -> bool:
+    """True when the body is a JSON-RPC RESPONSE rather than a request.
+
+    The transport clause the notification branch is built on has TWO subjects —
+    "If the input is a JSON-RPC response or notification" — and only the second
+    was recognised. A single response fell through: it is a dict with no `method`,
+    so `method` became `''`, `_is_notification` was False (an `id` is present) and
+    `_is_batch` was False, and it landed on the unknown-method branch and was
+    answered `404 -32601 "Method not found: "`. On every advertised revision that
+    404 means the SESSION was terminated and the client MUST re-initialize, which
+    is the third route to the same defect the notification and batch branches each
+    closed.
+
+    Three conditions, and each excludes something:
+
+      • a dict — an ARRAY of responses is a batch, and `_is_batch` runs first and
+        refuses it naming batching. Two shapes, two answers, decided by the shape
+        rather than by what is inside it;
+      • NO `method` member — a body carrying both `method` and `result` is a
+        request that also happens to have a `result` key, and it stays a request.
+        A predicate that ignored `method` would swallow one;
+      • a `result` or an `error` member — JSON-RPC's own definition of a response,
+        and it is what separates a response from the malformed bodies
+        (`{"jsonrpc": "2.0"}`, `{"id": 1}`) that must keep their -32601.
+
+    Reachable in practice rather than theoretical: a response is what a client
+    sends after the SERVER has issued a request to it (sampling, elicitation,
+    `roots/list`). This server issues none, so no correct client sends one — but a
+    client with a shared outbound queue, or a misconfigured proxy, sends one to the
+    wrong endpoint, and the answer must not instruct it to tear down a working
+    session.
+    """
+    if not isinstance(body, dict) or 'method' in body:
+        return False
+    return 'result' in body or 'error' in body
+
+
 @tracer.capture_method
 def _handle_autoseed(event: dict) -> dict:
     """Handle GET /mcp/autoseed/{project_id} with Bearer token auth.
@@ -3722,6 +3875,40 @@ def lambda_handler(event: dict, context: Any) -> dict:
             status_code=400,
         )
 
+    # A posted JSON-RPC RESPONSE is accepted 202 with no body, exactly as a
+    # notification is — and for the same reason, from the same clause. The transport
+    # rule the notification branch quotes has two subjects: "If the input is a
+    # JSON-RPC response or notification: If the server accepts the input, the server
+    # MUST return HTTP status code 202 Accepted with no body." Only the second was
+    # recognised.
+    #
+    # A single response fell through to the unknown-method branch — it is a dict with
+    # no `method`, so `method` became `''` — and was answered
+    # `404 -32601 "Method not found: "`. That is the third route to the defect the
+    # notification and the batch branches each closed: on every advertised revision a
+    # 404 on this endpoint means the SESSION was terminated and the client MUST
+    # re-initialize, so a stray response tore down a working session, and the empty
+    # method name in the message told the caller nothing about what it had sent.
+    #
+    # ACCEPTED rather than refused, and the clause makes accepting the honest answer
+    # here in a way it does not for a batch. A batch is a body grammar this server
+    # does not implement, so refusing names a real constraint the caller can act on.
+    # A response is a message this server has NOTHING TO DO WITH: it issues no
+    # requests to clients (no sampling, no elicitation, no `roots/list`), so it holds
+    # no outstanding request to correlate one against, and "accept and ignore" is
+    # precisely what a server with no such requests outstanding does. Refusing would
+    # report a failure to a sender that, like a notification's, is not listening for
+    # one.
+    #
+    # Before the transport-header guards, for the reason the batch branch is: a
+    # response carries no `method` for `Mcp-Method` to be compared against, so
+    # validating the routing echoes first reported a header/body mismatch against
+    # `''` — an answer about a header, for a message that is not a request at all. It
+    # buys no probe of the token store either.
+    if _is_response(body):
+        logger.info("MCP response body accepted and ignored: this server issues no requests")
+        return _accepted_no_content()
+
     # Transport-header validation, BEFORE dispatch and before authentication.
     #
     # Before dispatch because a request whose transport and body disagree has not
@@ -3729,12 +3916,14 @@ def lambda_handler(event: dict, context: Any) -> dict:
     # authentication for the same reason `_origin_allowed` is — a malformed
     # request should not buy a probe of the token store.
     #
-    # The METHOD is passed to the version check because the handshake is exempt
-    # from the refusal: a current-generation client MUST send its own revision in
-    # the header on its very first request and has no negotiated value to send
-    # instead, so refusing there made `_handle_initialize`'s counter-offer
-    # unreachable for exactly the clients it exists for. Every other method keeps
-    # the refusal. The reasoning is at `_validated_protocol_version`.
+    # The METHOD is passed to the version check because the PRE-HANDSHAKE methods
+    # are exempt from the refusal: a current-generation client MUST send its own
+    # revision in the header on its very first request and has no negotiated value
+    # to send instead, so refusing there made `_handle_initialize`'s counter-offer
+    # unreachable for exactly the clients it exists for — and made
+    # `server/discover`, a method only a 2026-07-28 client knows, unreachable by any
+    # client obeying that revision's header rule. Every other method keeps the
+    # refusal. The reasoning is at `_PRE_HANDSHAKE_METHODS`.
     try:
         _validated_protocol_version(event, method)
         _validate_routing_headers(event, method, params)

@@ -75,6 +75,15 @@ revert makes each assertion fail.
       test_no_advertised_revision_requires_a_body_grammar_this_server_refuses;
       deleting the `_is_batch` branch fails the rest.
 
+  TestPostedResponsesAreAccepted
+    — the 202 clause has two subjects ("a JSON-RPC response OR notification") and only
+      the notification half was recognised: a posted response has no `method`, so it
+      fell through to the unknown-method branch and was answered 404 — the same
+      session-teardown instruction, reached by a third route. Deleting the
+      `_is_response` branch fails this class; dropping the `'method' in body` half of
+      the predicate fails
+      test_a_body_carrying_both_a_method_and_a_result_is_still_a_request.
+
   TestCacheScopeMatchesWhatTheResponseDependsOn
     — `server/discover` declared `cacheScope: public` while being liveness-checked, so
       a shared cache was licensed to replay its unauthenticated 200 across
@@ -776,7 +785,7 @@ class TestProtocolVersionHeader:
 
 
 class TestTheHandshakeIsExemptFromTheVersionRefusal:
-    """A client's FIRST request may name a revision this server does not have.
+    """A client's PRE-HANDSHAKE request may name a revision this server does not have.
 
     The header refusal and the `initialize` counter-offer are both right and they
     met in a place that served neither: a client whose newest revision is
@@ -786,9 +795,15 @@ class TestTheHandshakeIsExemptFromTheVersionRefusal:
     request was refused 400 and `_handle_initialize` never ran. The counter-offer
     that exists for exactly this client was unreachable by it.
 
-    Reverting the `method == 'initialize'` exemption in
-    `_validated_protocol_version` fails
-    test_a_current_generation_first_contact_is_counter_offered.
+    `server/discover` is the same case and was left behind by the first fix, which
+    exempted the literal string `'initialize'`. That method is defined ONLY by
+    2026-07-28, so the only client that can know its name is one obliged to send
+    that revision in the header: discovery answered 200 for a header-less request
+    and 400 for the conforming one. Narrowing `_PRE_HANDSHAKE_METHODS` back to
+    `{'initialize'}` fails test_discovery_answers_the_revision_that_defines_it;
+    widening it past the pre-handshake position fails
+    test_every_other_method_still_refuses_the_same_header, which is derived from the
+    dispatch tables minus the exempt set.
     """
 
     # The revision this server deliberately does not advertise, which is precisely
@@ -830,14 +845,54 @@ class TestTheHandshakeIsExemptFromTheVersionRefusal:
         assert status == 200, body
         assert body["result"]["protocolVersion"] == mcp_handler.PREFERRED_PROTOCOL_VERSION
 
-    @pytest.mark.parametrize("method", ["ping", "server/discover", "tools/list"])
+    def test_discovery_answers_the_revision_that_defines_it(self):
+        """The second half of the finding, and the sharper half.
+
+        `server/discover` and its `DiscoverResult` are defined ONLY by 2026-07-28, so
+        a client that knows the method name is a client of that revision — which its
+        own rules oblige to send `MCP-Protocol-Version: 2026-07-28` on every POST.
+        With the exemption confined to `initialize`, discovery answered 200 for a
+        header-less request and 400 for the conforming one: served only to a client
+        VIOLATING its own revision, and refused to the only client class that would
+        ever call it. The answer whose purpose is "everything a client would
+        otherwise learn from a failed call" was itself learnable only from a failed
+        call.
+
+        `supportedVersions` is asserted rather than just the status, because a 200
+        that did not carry the list would leave the client no better off.
+        """
+        status, body = _call(_event(
+            "server/discover", headers={"MCP-Protocol-Version": self._UNIMPLEMENTED},
+        ))
+
+        assert status == 200, body
+        assert "error" not in body, body
+        assert body["result"]["supportedVersions"] == list(
+            mcp_handler.SUPPORTED_PROTOCOL_VERSIONS
+        )
+
+    # Every dispatchable method that is NOT pre-handshake, derived from the dispatch
+    # tables minus the exempt set rather than restated — so a method added to either
+    # table, or to the exempt set, cannot slip past this without a decision.
+    _POST_HANDSHAKE_METHODS: ClassVar[tuple[str, ...]] = tuple(sorted(
+        method for method in (*mcp_handler.MCP_METHODS, *mcp_handler.MCP_AUTH_METHODS)
+        if method not in mcp_handler._PRE_HANDSHAKE_METHODS
+        and not method.startswith("notifications/")
+    ))
+
+    def test_the_derived_post_handshake_set_is_not_empty(self):
+        """Anti-vacuity for the parametrised test below: an exempt set that had
+        grown to cover every method would make it collect nothing and pass."""
+        assert len(self._POST_HANDSHAKE_METHODS) >= 3, self._POST_HANDSHAKE_METHODS
+
+    @pytest.mark.parametrize("method", _POST_HANDSHAKE_METHODS)
     def test_every_other_method_still_refuses_the_same_header(self, method):
-        """The asymmetry is the point, and it is not "initialize is special".
+        """The asymmetry is the point, and it is not "these two methods are special".
 
         Past the handshake a client HAS a negotiated value to send, so one this
-        server never offered is the client contradicting itself. Parametrized across
-        both halves of the dispatch so an exemption that leaked into the
-        unauthenticated methods generally, or into the authenticated path, fails.
+        server never offered is the client contradicting itself. Derived from both
+        halves of the dispatch so an exemption that leaked into the unauthenticated
+        methods generally, or into the authenticated path, fails.
         """
         status, body = _call(_event(
             method, headers={"MCP-Protocol-Version": self._UNIMPLEMENTED},
@@ -847,6 +902,39 @@ class TestTheHandshakeIsExemptFromTheVersionRefusal:
         assert status == 400, body
         assert body["error"]["code"] == -32022
         assert body["error"]["data"]["requested"] == self._UNIMPLEMENTED
+
+    def test_a_keepalive_is_not_a_pre_handshake_method(self):
+        """`ping` is the method the exemption must NOT reach, named explicitly.
+
+        It is the one that looks pre-handshake and is not: a client pings a session
+        it already has, so it has a negotiated value to send. The derived
+        parametrisation above covers it, and this states it directly so widening the
+        set to "everything unauthenticated" fails a test that says why.
+        """
+        assert "ping" not in mcp_handler._PRE_HANDSHAKE_METHODS
+
+    def test_the_two_sets_are_not_the_same_fact(self):
+        """`_PRE_HANDSHAKE_METHODS` and `_LIVENESS_CHECKED_METHODS` hold the same two
+        entries today and are not the same claim.
+
+        One means "the client has nothing negotiated to send"; the other means "the
+        response depends on the credential". Deriving either from the other would
+        make a future post-handshake credential-gated method — or a pre-handshake
+        method that is not liveness-checked — impossible to express. This test does
+        not assert they differ (they do not, yet); it asserts they are declared
+        separately, which is what keeps the coincidence from hardening into a
+        derivation.
+        """
+        pre_handshake = inspect.getsource(mcp_handler).split(
+            "_PRE_HANDSHAKE_METHODS: frozenset[str] = "
+        )[1].split("\n)")[0]
+        liveness = inspect.getsource(mcp_handler).split(
+            "_LIVENESS_CHECKED_METHODS: frozenset[str] = "
+        )[1].split("\n)")[0]
+
+        # Each is its own literal, not a reference to the other.
+        assert "_LIVENESS_CHECKED_METHODS" not in pre_handshake
+        assert "_PRE_HANDSHAKE_METHODS" not in liveness
 
     def test_the_exempted_handshake_still_negotiates_a_declared_version(self):
         """Exempt from the REFUSAL, not from the rule.
@@ -862,28 +950,40 @@ class TestTheHandshakeIsExemptFromTheVersionRefusal:
 
         assert negotiated in mcp_handler.SUPPORTED_PROTOCOL_VERSIONS
 
-    def test_a_malformed_sentinel_is_still_refused_on_the_handshake(self):
+    @pytest.mark.parametrize("method", sorted(mcp_handler._PRE_HANDSHAKE_METHODS))
+    def test_a_malformed_sentinel_is_still_refused_on_both(self, method):
         """The exemption is for an unsupported VERSION, not for a broken encoding.
 
         There is nothing to counter-offer about a value that does not decode: the
-        fault is the encoding and no negotiation fixes it.
+        fault is the encoding and no negotiation fixes it. Parametrised across the
+        exempt set so widening the exemption to "no version check at all on these
+        methods" fails.
         """
-        status, body = _call(_event("initialize", headers={
+        status, body = _call(_event(method, headers={
             "MCP-Protocol-Version": "=?base64?not-base64!!?=",
         }))
 
-        assert status == 400
+        assert status == 400, body
         assert body["error"]["code"] == -32600
         assert "base64" in body["error"]["message"]
 
-    def test_a_contradicting_routing_header_is_still_refused_on_the_handshake(self):
+    @pytest.mark.parametrize("method", sorted(mcp_handler._PRE_HANDSHAKE_METHODS))
+    def test_an_empty_version_header_is_still_refused_on_both(self, method):
+        """An empty header names no revision, so there is no claim to negotiate
+        against — and answering one would be answering a version question nobody
+        asked. The `and version` half of the exemption is what holds this."""
+        status, body = _call(_event(method, headers={"MCP-Protocol-Version": ""}))
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32022
+
+    @pytest.mark.parametrize("method", sorted(mcp_handler._PRE_HANDSHAKE_METHODS))
+    def test_a_contradicting_routing_header_is_still_refused_on_both(self, method):
         """And the exemption is confined to the VERSION check, not to header
         validation as a whole."""
-        status, body = _call(_event(
-            "initialize", headers={"MCP-Method": "tools/call"},
-        ))
+        status, body = _call(_event(method, headers={"MCP-Method": "tools/call"}))
 
-        assert status == 400
+        assert status == 400, body
         assert body["error"]["code"] == -32020
 
 
@@ -1639,6 +1739,33 @@ class TestMethodNotAllowed:
 
         assert jsonrpc["headers"]["Allow"] != autoseed["headers"]["Allow"]
 
+    @pytest.mark.parametrize("http_method", ["GET", "DELETE"])
+    def test_a_405_lets_a_browser_read_what_is_allowed(self, http_method):
+        """`Allow` is not CORS-safelisted, so a browser received the 405 and hid the
+        one header that made it actionable.
+
+        That is the same failure `WWW-Authenticate` and `Vary` already document on
+        this endpoint, on the header that says WHAT TO RETRY WITH — which is the whole
+        point of resolving it per resource. Split and lowercased rather than compared
+        as a whole string, because the expose list's completeness is
+        api-stack.test.ts's subject and this test's claim is only that `Allow` is in
+        it.
+        """
+        response = mcp_handler.lambda_handler(
+            _event(http_method=http_method), MagicMock(),
+        )
+
+        assert response["statusCode"] == 405
+        exposed = {
+            h.strip().lower()
+            for h in response["headers"]["Access-Control-Expose-Headers"].split(",")
+        }
+        assert "allow" in exposed, (
+            f"the 405 sends Allow but does not expose it: {sorted(exposed)}"
+        )
+        # Positive control: the header it is meant to make readable is actually sent.
+        assert "Allow" in response["headers"]
+
     def test_a_405_carries_a_json_rpc_envelope_and_cors_headers(self):
         """Every answer from this endpoint is parseable by the client that asked,
         including the refusals — the property the BotoCoreError clause records."""
@@ -2156,6 +2283,156 @@ class TestBatchBodiesAreRefused:
         for body_text in ('"a string"', "42", "null"):
             status, body = _call(_event(body=body_text))
             assert status == 404, f"{body_text} was answered {status}: {body}"
+
+
+# ===========================================================================
+# A posted JSON-RPC response — the other subject of the 202 clause
+# ===========================================================================
+
+class TestPostedResponsesAreAccepted:
+    """A JSON-RPC RESPONSE gets 202 with no body, not the session-teardown 404.
+
+    The transport clause the notification branch is built on names two subjects —
+    "If the input is a JSON-RPC response or notification: … the server MUST return
+    HTTP status code 202 Accepted with no body" — and only the second was
+    recognised. A single response is a dict with no `method`, so `method` became
+    `''`, `_is_notification` was False (an `id` is present) and `_is_batch` was
+    False: it landed on the unknown-method branch and was answered
+    `404 -32601 "Method not found: "`. On every advertised revision that 404 means
+    the session was terminated and the client MUST re-initialize, so a stray
+    response — a client with a shared outbound queue, a misconfigured proxy — was
+    told to tear down a working session.
+
+    Accepted rather than refused, unlike a batch, and the difference is what the
+    server can do about it: a batch is a body grammar it does not implement, so a
+    refusal names a constraint the caller can act on, while a response is a message
+    it has no outstanding request to correlate against at all.
+
+    Deleting the `_is_response` branch in `lambda_handler` fails every test here;
+    dropping the `'method' in body` half of the predicate fails
+    test_a_body_carrying_both_a_method_and_a_result_is_still_a_request.
+    """
+
+    A_RESULT: ClassVar[str] = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}})
+    AN_ERROR: ClassVar[str] = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "error": {"code": -1, "message": "x"},
+    })
+
+    @pytest.mark.parametrize("label", ["A_RESULT", "AN_ERROR"])
+    def test_a_posted_response_is_202_with_an_empty_body(self, label):
+        """Both halves of JSON-RPC's response definition, because a client that
+        forwards one to the wrong endpoint forwards whichever it received."""
+        response = _raw_call(_event(body=getattr(self, label)))
+
+        assert response["statusCode"] == 202, response["body"]
+        assert response["body"] == ""
+
+    @pytest.mark.parametrize("label", ["A_RESULT", "AN_ERROR"])
+    def test_a_posted_response_is_never_answered_404(self, label):
+        """The finding, stated as the thing that must not happen — the same shape as
+        the batch and notification assertions, because it is the same defect reached
+        by a third route."""
+        response = _raw_call(_event(body=getattr(self, label)))
+
+        assert response["statusCode"] != 404, (
+            "a posted response answered 404 tells the client its session died"
+        )
+
+    @pytest.mark.parametrize("label", ["A_RESULT", "AN_ERROR"])
+    def test_a_posted_response_never_reaches_the_token_store(self, label):
+        """Accepted before the transport guards and before authentication, so a
+        credential presented on one buys no probe of the store."""
+        with patch("mcp_handler.projects_table") as table:
+            response = mcp_handler.lambda_handler(
+                _event(body=getattr(self, label), token=_TOKEN), MagicMock(),
+            )
+
+        assert response["statusCode"] == 202
+        table.query.assert_not_called()
+
+    def test_a_posted_response_is_accepted_before_a_routing_header_is_compared(self):
+        """A response carries no `method`, so there is nothing for `Mcp-Method` to
+        contradict.
+
+        Validating the routing echoes first reported a header/body mismatch against
+        `''` — an answer about a header, for a message that is not a request at all.
+        Same ordering argument as the batch branch, and the same reason it is
+        asserted through the answer a client receives.
+        """
+        response = _raw_call(_event(
+            body=self.A_RESULT, headers={"Mcp-Method": "ping"},
+        ))
+
+        assert response["statusCode"] == 202, response["body"]
+
+    def test_a_posted_response_keeps_its_cors_headers(self):
+        """A browser-based client must be able to read the 202, and the endpoint's
+        statement about what its answers depend on travels on every response."""
+        response = _raw_call(_event(body=self.A_RESULT))
+
+        headers = response["headers"]
+        assert headers["Access-Control-Allow-Origin"] == "*"
+        assert "Content-Type" not in headers
+        assert headers["Vary"] == "Authorization"
+
+    def test_a_body_carrying_both_a_method_and_a_result_is_still_a_request(self):
+        """The anti-overreach control: the predicate must not swallow a request.
+
+        A body with a `method` is a request whatever else it carries, so this one is
+        dispatched — `ping` answers it — rather than being accepted 202 and dropped
+        on the floor. A predicate written on `result`/`error` alone would have eaten
+        it silently.
+        """
+        status, body = _call(_event(body=json.dumps({
+            "jsonrpc": "2.0", "id": 1, "method": "ping", "result": {},
+        })))
+
+        assert status == 200, body
+        assert "result" in body
+
+    def test_a_disallowed_origin_is_refused_before_a_response_is_accepted(self):
+        """The DNS-rebinding guard covers this path too: a 202 is still an answer to
+        a request a rebound page made."""
+        with patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com"):
+            response = mcp_handler.lambda_handler(
+                _event(body=self.A_RESULT, headers={"Origin": "https://evil.example.net"}),
+                MagicMock(),
+            )
+
+        assert response["statusCode"] == 403, response["body"]
+
+    def test_an_array_of_responses_is_still_the_batch_refusal(self):
+        """The two shapes get two answers, decided by the shape.
+
+        An array of responses is a legal 2025-03-26 batch body, so it belongs to the
+        branch that names batching — `_is_batch` runs first. Accepting it 202 would
+        tell a client its batch was processed.
+        """
+        status, body = _call(_event(body=json.dumps([
+            {"jsonrpc": "2.0", "id": 1, "result": {}},
+        ])))
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32600
+        assert "batch" in body["error"]["message"].lower()
+
+    def test_a_body_that_is_neither_keeps_its_existing_answer(self):
+        """Anti-overreach for the other half: a bare `{"jsonrpc": "2.0"}` and a
+        `{"id": 1}` carry neither `result` nor `error`, so they are malformed
+        REQUESTS and keep the -32601 that `TestUnknownMethod` owns. Accepting them
+        202 would silently drop a request a client is waiting on."""
+        for body_text in ('{"jsonrpc": "2.0"}', '{"id": 1}'):
+            status, body = _call(_event(body=body_text))
+            assert status == 404, f"{body_text} was answered {status}: {body}"
+            assert body["error"]["code"] == -32601
+
+    def test_an_ordinary_request_is_still_served(self):
+        """Anti-vacuity: a branch that caught the ordinary object body would accept
+        every request this server has ever served with a 202 and no answer."""
+        status, body = _call(_event("initialize"))
+
+        assert status == 200, body
+        assert "result" in body
 
 
 # ===========================================================================
