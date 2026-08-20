@@ -15,7 +15,7 @@ import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
-import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
+import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, aggregateSecretsByPlugin, capitalize, type PluginManifest } from '../plugin-loader';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, publicBallotEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
@@ -192,6 +192,18 @@ export class VocApiStack extends VocStack {
     });
 
     // Integrations API
+    //
+    // The plugin manifests are read here, at synth time, and the SECRET DEFAULTS
+    // they declare are handed to the integrations handler as one env var. That
+    // handler needs them for two things it cannot otherwise know: which sources
+    // exist, and which stored values a human actually entered rather than
+    // inherited from the deploy. `allPlugins`, not the enabled subset — this must
+    // mirror what ingestion-stack's createApiSecrets() actually seeded, and that
+    // seeds every plugin regardless of pluginStatus.
+    const pluginsDir = path.join(__dirname, '../../plugins');
+    const allPlugins = loadPlugins(pluginsDir);
+    const pluginSecretDefaults = aggregateSecretsByPlugin(allPlugins);
+
     const integrationsRole = this.createLambdaRole('IntegrationsLambdaRole');
     integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
@@ -228,7 +240,7 @@ export class VocApiStack extends VocStack {
       // the name in Python from DEPLOY_ACCOUNT_ID/DEPLOY_REGION would, under a
       // prefix, invoke a function that does not exist — a ResourceNotFound the
       // user experiences as "the scraper runs but pulls no reviews".
-      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, ...this.prefixOnlyEnv({
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, PLUGIN_SECRET_DEFAULTS: JSON.stringify(pluginSecretDefaults), ...this.prefixOnlyEnv({
         INGESTOR_FUNCTION_NAME_PATTERN: this.uniqueNamePattern(`voc-ingestor-${SOURCE_PLACEHOLDER}`),
         INGEST_SCHEDULE_RULE_NAME_PATTERN: this.uniqueNamePattern(`voc-ingest-${SOURCE_PLACEHOLDER}-schedule`),
       }), AGGREGATES_TABLE: aggregatesTable.tableName },
@@ -926,8 +938,8 @@ export class VocApiStack extends VocStack {
     // ============================================
     // WEBHOOKS
     // ============================================
-    const pluginsDir = path.join(__dirname, '../../plugins');
-    const allPlugins = loadPlugins(pluginsDir);
+    // allPlugins is loaded once, up where the integrations Lambda needs its
+    // secret defaults.
     const enabledPlugins = getEnabledPlugins(allPlugins, props.enabledSources);
     const webhookPlugins = getPluginsWithWebhook(enabledPlugins);
 

@@ -11,13 +11,20 @@ class TestGetIntegrationStatus:
 
     @patch('integrations_handler.secretsmanager')
     def test_returns_integration_status_for_all_sources(
-        self, mock_secrets, api_gateway_event, lambda_context
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
     ):
-        """Returns configuration status for all integrations."""
+        """Returns configuration status for all integrations.
+
+        The stored value is `webscraper_configs`, the key the webscraper manifest
+        declares and CDK actually seeds, set here to something a human would have
+        entered. This test previously used `webscraper_api_key` — a key no
+        manifest declares and nothing writes — so it asserted a status the
+        deployed system could never report.
+        """
         # Arrange
         mock_secrets.get_secret_value.return_value = {
             'SecretString': json.dumps({
-                'webscraper_api_key': 'key123',
+                'webscraper_configs': '[{"id": "s1", "url": "https://example.test"}]',
             })
         }
         
@@ -39,7 +46,7 @@ class TestGetIntegrationStatus:
 
     @patch('integrations_handler.secretsmanager')
     def test_returns_unconfigured_when_no_credentials(
-        self, mock_secrets, api_gateway_event, lambda_context
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
     ):
         """Returns unconfigured status when no credentials set."""
         # Arrange

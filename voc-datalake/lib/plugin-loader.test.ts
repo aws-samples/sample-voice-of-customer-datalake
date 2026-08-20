@@ -378,6 +378,58 @@ describe('Plugin Loader', () => {
       expect(result).toHaveProperty('custom_source_api_key');
     });
 
+    it('aggregateSecretsByPlugin keys the same defaults by plugin instead of flattening', async () => {
+      const { aggregateSecretsByPlugin, aggregateSecrets } = await import('./plugin-loader');
+
+      const plugins = [
+        { id: 'webscraper', secrets: { configs: '[]' } },
+        { id: 'app_reviews_ios', secrets: { app_id: '', sort_by: 'most_recent' } },
+      ] as unknown as Parameters<typeof aggregateSecretsByPlugin>[0];
+
+      expect(aggregateSecretsByPlugin(plugins)).toEqual({
+        webscraper: { configs: '[]' },
+        app_reviews_ios: { app_id: '', sort_by: 'most_recent' },
+      });
+
+      // The two shapes must describe the same defaults. This is what lets the
+      // integrations handler decide whether a stored value was seeded by the
+      // deploy or entered by a human: if the nested form ever drifted from the
+      // flat form that actually seeds the secret, every comparison it makes
+      // would be against the wrong baseline.
+      const flat = aggregateSecrets(plugins);
+      const flattenedAgain = Object.fromEntries(
+        Object.entries(aggregateSecretsByPlugin(plugins)).flatMap(([id, keys]) =>
+          Object.entries(keys).map(([key, value]) => [`${id}_${key}`, value])
+        )
+      );
+      expect(flattenedAgain).toEqual(flat);
+    });
+
+    it('aggregateSecretsByPlugin lists a plugin that declares no secrets', async () => {
+      const { aggregateSecretsByPlugin } = await import('./plugin-loader');
+
+      // The key set doubles as "which sources exist", so a plugin with nothing
+      // to configure must still appear — otherwise it silently vanishes from
+      // GET /integrations/status.
+      const plugins = [{ id: 'no_config_plugin' }] as unknown as Parameters<
+        typeof aggregateSecretsByPlugin
+      >[0];
+
+      expect(aggregateSecretsByPlugin(plugins)).toEqual({ no_config_plugin: {} });
+    });
+
+    it('aggregateSecretsByPlugin does not alias the manifest it read', async () => {
+      const { aggregateSecretsByPlugin } = await import('./plugin-loader');
+
+      const manifest = { id: 'p', secrets: { a: '1' } };
+      const result = aggregateSecretsByPlugin([manifest] as unknown as Parameters<
+        typeof aggregateSecretsByPlugin
+      >[0]);
+      result.p.a = 'mutated';
+
+      expect(manifest.secrets.a).toBe('1');
+    });
+
     it('getEnabledPlugins filters by enabled sources', async () => {
       const { getEnabledPlugins } = await import('./plugin-loader');
 

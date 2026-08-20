@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
-from shared.aws import get_secrets_client
+from shared.aws import get_secrets_client, put_secret_json
 from shared.api import create_api_resolver, api_handler
 from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
@@ -143,8 +143,13 @@ def save_scraper():
             configs.append(scraper)
         
         secrets['webscraper_configs'] = json.dumps(configs)
-        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True, 'scraper': scraper}
+    except ValidationError:
+        # put_secret_json refuses an over-limit secret. That is a 400 the user
+        # can act on ("remove some scrapers"), so it must not be flattened into
+        # the generic 500 below.
+        raise
     except Exception as e:
         logger.exception(f"Failed to save scraper: {e}")
         raise ServiceError('Failed to save scraper configuration')
@@ -162,7 +167,7 @@ def delete_scraper(scraper_id: str):
         configs = json.loads(secrets.get('webscraper_configs', '[]'))
         configs = [c for c in configs if c.get('id') != scraper_id]
         secrets['webscraper_configs'] = json.dumps(configs)
-        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True}
     except Exception as e:
         logger.exception(f"Failed to delete scraper: {e}")

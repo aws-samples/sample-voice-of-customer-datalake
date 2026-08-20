@@ -12,8 +12,13 @@ from datetime import datetime, timezone
 # and lambda/api directory for handler imports
 lambda_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 api_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# This directory too, so helper modules beside the tests (plugin_manifests.py)
+# import from conftest as well as from the test files. pytest adds it when it
+# imports a TEST module, but conftest.py is imported before that happens.
+test_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, lambda_dir)
 sys.path.insert(0, api_dir)
+sys.path.insert(0, test_dir)
 
 # Set environment variables BEFORE importing handlers
 os.environ['FEEDBACK_TABLE'] = 'test-feedback'
@@ -29,6 +34,26 @@ os.environ['SECRETS_ARN'] = 'arn:aws:secretsmanager:us-east-1:123456789012:secre
 os.environ['RAW_DATA_BUCKET'] = 'test-raw-data-bucket'
 os.environ['PROCESSING_QUEUE_URL'] = 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue'
 os.environ['USER_POOL_ID'] = 'us-east-1_testpool'
+
+
+# Imported after the sys.path setup above, which is what makes it resolvable.
+from plugin_manifests import PLUGIN_SECRET_DEFAULTS
+
+
+@pytest.fixture
+def plugin_secret_defaults(monkeypatch):
+    """Give the integrations handler the PLUGIN_SECRET_DEFAULTS that CDK sets.
+
+    Any test exercising GET /integrations/status needs this: without it the
+    handler knows of no sources and returns {}. The lru_cache is cleared on both
+    sides so neither this value nor a previous one leaks between tests.
+    """
+    import integrations_handler as h
+
+    monkeypatch.setenv(h.PLUGIN_SECRET_DEFAULTS_VAR, json.dumps(PLUGIN_SECRET_DEFAULTS))
+    h._plugin_secret_defaults.cache_clear()
+    yield PLUGIN_SECRET_DEFAULTS
+    h._plugin_secret_defaults.cache_clear()
 
 
 @pytest.fixture

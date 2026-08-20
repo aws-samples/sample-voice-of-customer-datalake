@@ -6,11 +6,12 @@ Manages API credentials and data source schedules.
 import json
 import os
 import re
+from functools import lru_cache
 from typing import Any
 
 import boto3
 from shared.api import api_handler, create_api_resolver, require_admin
-from shared.aws import get_secrets_client
+from shared.aws import get_secrets_client, put_secret_json
 from shared.exceptions import (
     ConfigurationError,
     ServiceError,
@@ -37,6 +38,29 @@ INGEST_SCHEDULE_RULE_NAME_PATTERN = os.environ.get("INGEST_SCHEDULE_RULE_NAME_PA
 
 SOURCE_PLACEHOLDER = "{source}"
 
+# Plugin secret DEFAULTS handed down by CDK as {plugin_id: {key: seeded_value}} —
+# the same data ingestion-stack's createApiSecrets() used to seed the shared
+# secret, just nested so the plugin id is recoverable.
+#
+# Two things this handler cannot otherwise know, both of which it needs:
+#
+#  1. WHICH SOURCES EXIST. Plugin manifests are read at CDK synth time, so an
+#     enumerated list in Python is a copy that goes stale the moment a plugin is
+#     added — the same reason the ingestor NAME is handed down above rather than
+#     rebuilt here. This replaces the hardcoded list that shipped earlier.
+#
+#  2. WHICH STORED VALUES A HUMAN ACTUALLY ENTERED. This is the load-bearing
+#     one. Every key is seeded at deploy time, and several defaults are NON-EMPTY
+#     ('[]' for webscraper configs, 'imports/', 'most_recent', '500', '1440'), so
+#     "the key holds a truthy value" is true for 4 of 5 sources on a fresh deploy
+#     with nothing configured. A seeded default is not an absent value; only a
+#     value that DIFFERS from its default tells you a human was here.
+#
+# Read inside _plugin_secret_defaults() rather than at module scope, so a test
+# can set it and clear the cache. It is parsed once per execution context either
+# way, which is what the lru_cache is for.
+PLUGIN_SECRET_DEFAULTS_VAR = "PLUGIN_SECRET_DEFAULTS"
+
 app = create_api_resolver()
 
 # ---------------------------------------------------------------------------
@@ -60,10 +84,6 @@ app = create_api_resolver()
 # re.fullmatch is used in _validate_credential_key so anchors are not needed.
 _CREDENTIAL_KEY_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
 MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
-# Maximum byte length of a single credential value written to Secrets Manager.
-# The shared secret is capped at 64 KiB; this bound prevents any one value
-# from dominating it (or triggering a 500 for other integrations).
-MAX_CREDENTIAL_VALUE_BYTES = 4096
 
 
 def _validate_credential_key(key: str) -> None:
@@ -97,6 +117,44 @@ def _validate_source(source: str) -> None:
             "lowercase letters, digits, and underscores, must start and end "
             "with a letter or digit, and must be 1–64 characters long."
         )
+
+
+@lru_cache(maxsize=1)
+def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
+    """Parse PLUGIN_SECRET_DEFAULTS into {plugin_id: {key: seeded_default}}.
+
+    Fails SOFT to an empty mapping: a malformed or absent variable must not turn
+    the Settings page into a 500. The visible consequence is that
+    /integrations/status reports no sources, which reads as "nothing is set up"
+    — wrong, but inert, and it is the same thing the route returned before any
+    source list existed.  A hard failure here would take out the enable/disable
+    and run routes in the same Lambda, which do not use this at all.
+
+    Entries that are not a str -> str mapping are dropped individually rather
+    than voiding the whole variable, so one bad plugin cannot hide the others.
+    """
+    raw = os.environ.get(PLUGIN_SECRET_DEFAULTS_VAR, "")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        logger.warning("PLUGIN_SECRET_DEFAULTS is not valid JSON; reporting no sources")
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning("PLUGIN_SECRET_DEFAULTS is not a JSON object; reporting no sources")
+        return {}
+
+    defaults: dict[str, dict[str, str]] = {}
+    for source, keys in parsed.items():
+        if not isinstance(source, str) or not isinstance(keys, dict):
+            logger.warning(f"Ignoring malformed PLUGIN_SECRET_DEFAULTS entry for {source!r}")
+            continue
+        defaults[source] = {
+            key: value for key, value in keys.items()
+            if isinstance(key, str) and isinstance(value, str)
+        }
+    return defaults
 
 
 def _deploy_suffix() -> str:
@@ -134,31 +192,36 @@ def get_integration_status():
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
 
-        # Report status for all known plugin sources.  For each source, scan the
-        # shared secret for keys whose name starts with "{source}_".  This is
-        # derived dynamically so new credential keys written via PUT
-        # /integrations/<source>/credentials are automatically reflected without
-        # any code change.
+        # Report status for every source CDK told us about.  For each one, scan
+        # the shared secret for keys named "{source}_*" — a prefix scan rather
+        # than an iteration over declared keys, so a key written via PUT
+        # /integrations/<source>/credentials shows up without a manifest change.
+        #
+        # A key counts as configured only when it holds a value that DIFFERS
+        # from the default CDK seeded.  Every key exists from the moment the
+        # stack deploys, and several defaults are non-empty, so mere presence
+        # (or truthiness) reports a source as connected before anyone has
+        # touched it — see the PLUGIN_SECRET_DEFAULTS comment at the top.
         #
         # The strip of the namespace prefix means the frontend sees bare field
-        # names ('configs', 'app_id') rather than prefixed ones ('webscraper_configs',
-        # 'app_reviews_ios_app_id').
-        known_sources = [
-            'app_reviews_android',
-            'app_reviews_ios',
-            's3_import',
-            'synthetic_reviews',
-            'webscraper',
-        ]
-
+        # names ('configs', 'app_id') rather than prefixed ones
+        # ('webscraper_configs', 'app_reviews_ios_app_id').
         status = {}
-        for source in known_sources:
+        for source, seeded in _plugin_secret_defaults().items():
             prefix = f"{source}_"
-            configured_keys = [
-                k[len(prefix):]
-                for k, v in secrets.items()
-                if k.startswith(prefix) and v
-            ]
+            # ponytail: plain prefix match, so if one plugin id were ever a
+            # prefix of another ('app_reviews' alongside 'app_reviews_ios') the
+            # shorter one would also list the longer one's keys. No current id
+            # pair does this. Upgrade path is to iterate `seeded` by declared
+            # key instead, which costs the write-through property above.
+            configured_keys = sorted(
+                key[len(prefix):]
+                for key, value in secrets.items()
+                if key.startswith(prefix)
+                and len(key) > len(prefix)
+                and value
+                and value != seeded.get(key[len(prefix):])
+            )
             status[source] = {
                 'configured': len(configured_keys) > 0,
                 'credentials_set': configured_keys,
@@ -282,19 +345,15 @@ def update_credentials(source: str):
         )
 
     # Validate every key and value before writing anything — fail fast,
-    # all-or-nothing.
+    # all-or-nothing.  Size is NOT checked per value: the bound that matters is
+    # the serialized total, enforced once in put_secret_json (see its docstring
+    # for why a per-value cap is wrong in both directions).
     for key, value in body.items():
         _validate_credential_key(key)
-        if value is not None:
-            if not isinstance(value, str):
-                raise ValidationError(
-                    f"Value for key {key[:40]!r} must be a string."
-                )
-            if len(value.encode()) > MAX_CREDENTIAL_VALUE_BYTES:
-                raise ValidationError(
-                    f"Value for key {key[:40]!r} exceeds the maximum "
-                    f"allowed size of {MAX_CREDENTIAL_VALUE_BYTES} bytes."
-                )
+        if value is not None and not isinstance(value, str):
+            raise ValidationError(
+                f"Value for key {key[:40]!r} must be a string."
+            )
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
@@ -308,7 +367,7 @@ def update_credentials(source: str):
             if value:
                 secrets[f"{prefix}{key}"] = value
 
-        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True, 'message': f'Credentials updated for {source}'}
     except (ConfigurationError, ValidationError):
         raise
@@ -385,7 +444,7 @@ def save_app_config(source: str):
             configs.append(app_config)
 
         secrets[configs_key] = json.dumps(configs)
-        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True, 'app': app_config}
     except (ConfigurationError, ValidationError):
         raise
@@ -410,7 +469,7 @@ def delete_app_config(source: str, app_id: str):
         configs = json.loads(secrets.get(configs_key, '[]'))
         configs = [c for c in configs if c.get('id') != app_id]
         secrets[configs_key] = json.dumps(configs)
-        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True}
     except (ConfigurationError, ValidationError):
         raise

@@ -36,6 +36,12 @@ import json
 from unittest.mock import patch
 
 import pytest
+from plugin_manifests import (
+    MANIFEST_KEYS,
+    PLUGIN_IDS,
+    PLUGIN_SECRET_DEFAULTS,
+    freshly_deployed_secret,
+)
 
 
 def _non_admin_event(api_gateway_event, **kwargs):
@@ -359,12 +365,17 @@ class TestAdminGateOnCredentialsRoutes:
         assert body.get('success') is False
 
     @patch('integrations_handler.secretsmanager')
-    def test_status_reports_all_known_plugins(self, mock_secrets, api_gateway_event, lambda_context):
+    def test_status_reports_all_known_plugins(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+    ):
         """GET /integrations/status returns an entry for every known plugin, not just webscraper.
 
         Regression guard for the previously hardcoded webscraper-only dict.
         If any plugin is missing, its 'Connected' badge in the Settings UI
         will never render regardless of what is stored in Secrets Manager.
+
+        The expected set is PLUGIN_IDS, read from the manifests, so adding a
+        plugin extends this guard without a test edit.
         """
         mock_secrets.get_secret_value.return_value = {
             'SecretString': json.dumps({
@@ -386,26 +397,172 @@ class TestAdminGateOnCredentialsRoutes:
         assert response['statusCode'] == 200
 
         body = json.loads(response['body'])
-        expected_plugins = {
-            'app_reviews_android',
-            'app_reviews_ios',
-            's3_import',
-            'synthetic_reviews',
-            'webscraper',
-        }
-        # Every known plugin must appear in the response.
-        missing = expected_plugins - set(body.keys())
+        missing = set(PLUGIN_IDS) - set(body.keys())
         assert not missing, (
             f"GET /integrations/status is missing entries for: {missing}. "
             "The 'Connected' badge will never render for these plugins."
         )
 
-        # Configured plugins must be reported as configured.
+        # Each value above differs from its seeded default, so each source is configured.
+        for plugin_id in PLUGIN_IDS:
+            assert body[plugin_id]['configured'] is True, plugin_id
+
+
+class TestFreshDeployReportsNothingConfigured:
+    """
+    A CDK-seeded default is not a configured value.
+
+    Every credential key exists from the moment the stack deploys, because
+    ingestion-stack.ts seeds the shared secret from each manifest's `secrets`
+    block. Several of those defaults are non-empty strings — '[]' for the
+    webscraper configs array, 'imports/' and 'processed/' for s3_import,
+    'most_recent'/'newest', '500', '1440' for the app-review plugins. So a
+    presence check, or any truthiness check, reports a source as connected
+    before a human has entered anything.
+
+    Measured on the real seeded secret, that was 4 of 5 sources claiming to be
+    configured on a fresh deploy, which lights SourceCard's "Connected" badge
+    and enables its Test button against an integration that cannot run.
+
+    Reverting the default comparison in get_integration_status turns
+    test_fresh_deploy_reports_nothing_configured red.
+    """
+
+    @patch('integrations_handler.secretsmanager')
+    def test_fresh_deploy_reports_nothing_configured(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+    ):
+        """Against the exact secret CDK seeds, every source reports configured=False."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps(freshly_deployed_secret())
+        }
+
+        from integrations_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
+        )
+        assert response['statusCode'] == 200
+        body = json.loads(response['body'])
+
+        # Sanity: the fixture must actually contain non-empty seeded values, or
+        # this test would pass for the wrong reason.
+        seeded = freshly_deployed_secret()
+        assert [k for k, v in seeded.items() if v and k != 'placeholder'], (
+            'fixture has no truthy seeded values, so it cannot detect the bug'
+        )
+
+        claiming_configured = sorted(k for k, v in body.items() if v['configured'])
+        assert not claiming_configured, (
+            f'{claiming_configured} report configured=True on a fresh deploy. '
+            'A seeded default is being counted as a value a human entered.'
+        )
+        for plugin_id in PLUGIN_IDS:
+            assert body[plugin_id]['credentials_set'] == [], plugin_id
+
+    @patch('integrations_handler.secretsmanager')
+    def test_value_differing_from_its_default_is_configured(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+    ):
+        """Editing one field flips exactly that source, and only that source."""
+        secret = freshly_deployed_secret()
+        secret['webscraper_configs'] = '[{"id": "s1", "url": "https://example.test"}]'
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
+
+        from integrations_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
+        )
+        body = json.loads(response['body'])
+
         assert body['webscraper']['configured'] is True
-        assert body['app_reviews_ios']['configured'] is True
-        assert body['app_reviews_android']['configured'] is True
-        assert body['s3_import']['configured'] is True
-        assert body['synthetic_reviews']['configured'] is True
+        assert body['webscraper']['credentials_set'] == ['configs']
+        others = sorted(k for k in PLUGIN_IDS if k != 'webscraper' and body[k]['configured'])
+        assert not others, f'{others} became configured without being touched'
+
+    @patch('integrations_handler.secretsmanager')
+    def test_key_with_no_declared_default_is_reported(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+    ):
+        """A key written via PUT that no manifest declares still shows up.
+
+        The scan is by prefix rather than over declared keys precisely so this
+        works — the write path accepts any well-formed key, and status must not
+        silently omit it.
+        """
+        secret = freshly_deployed_secret()
+        secret['webscraper_undeclared_key'] = 'some-value'
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
+
+        from integrations_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
+        )
+        body = json.loads(response['body'])
+        assert body['webscraper']['credentials_set'] == ['undeclared_key']
+        assert body['webscraper']['configured'] is True
+
+
+class TestPluginSecretDefaultsParsing:
+    """
+    PLUGIN_SECRET_DEFAULTS is infrastructure-supplied, so the handler must not
+    turn a bad value into a 500 on a route that has nothing to do with it.
+    """
+
+    def test_absent_variable_yields_no_sources(self, monkeypatch):
+        """Unset means an empty mapping, not a raise."""
+        import integrations_handler as h
+
+        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
+        h._plugin_secret_defaults.cache_clear()
+        assert h._plugin_secret_defaults() == {}
+
+    @pytest.mark.parametrize('bad', ['not json at all', '[]', '"a string"', '42'])
+    def test_malformed_variable_yields_no_sources(self, monkeypatch, bad):
+        """Invalid JSON, or valid JSON of the wrong shape, degrades to {}."""
+        import integrations_handler as h
+
+        monkeypatch.setenv(h.PLUGIN_SECRET_DEFAULTS_VAR, bad)
+        h._plugin_secret_defaults.cache_clear()
+        assert h._plugin_secret_defaults() == {}
+
+    def test_one_malformed_entry_does_not_hide_the_others(self, monkeypatch):
+        """A bad per-plugin entry is dropped individually."""
+        import integrations_handler as h
+
+        monkeypatch.setenv(
+            h.PLUGIN_SECRET_DEFAULTS_VAR,
+            json.dumps({'good': {'a': '1'}, 'bad': 'not-a-mapping'}),
+        )
+        h._plugin_secret_defaults.cache_clear()
+        assert h._plugin_secret_defaults() == {'good': {'a': '1'}}
+
+    def test_non_string_values_within_an_entry_are_dropped(self, monkeypatch):
+        """Only str -> str pairs survive, so the comparison below is total."""
+        import integrations_handler as h
+
+        monkeypatch.setenv(
+            h.PLUGIN_SECRET_DEFAULTS_VAR,
+            json.dumps({'p': {'ok': 'v', 'bad': 7}}),
+        )
+        h._plugin_secret_defaults.cache_clear()
+        assert h._plugin_secret_defaults() == {'p': {'ok': 'v'}}
+
+    def test_matches_what_cdk_would_hand_down(self, monkeypatch):
+        """Parsing the manifest-derived map round-trips to the same mapping.
+
+        Pins the contract between aggregateSecretsByPlugin() in
+        lib/plugin-loader.ts and this parser: both sides are derived from
+        plugins/*/manifest.json, so a shape change on either side shows up here.
+        """
+        import integrations_handler as h
+
+        monkeypatch.setenv(h.PLUGIN_SECRET_DEFAULTS_VAR, json.dumps(PLUGIN_SECRET_DEFAULTS))
+        h._plugin_secret_defaults.cache_clear()
+        assert h._plugin_secret_defaults() == PLUGIN_SECRET_DEFAULTS
+        assert set(h._plugin_secret_defaults()) == set(PLUGIN_IDS)
 
 
 class TestSourceParameterValidation:
@@ -641,77 +798,94 @@ class TestValueValidation:
         mock_secrets.put_secret_value.assert_not_called()
 
     @patch('integrations_handler.secretsmanager')
-    def test_oversized_value_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """A value exceeding MAX_CREDENTIAL_VALUE_BYTES returns 400."""
-        import json as _json
+    def test_value_larger_than_4kib_is_accepted(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """A single large value is stored, because size is bounded per SECRET, not per value.
 
-        from integrations_handler import MAX_CREDENTIAL_VALUE_BYTES, lambda_handler
+        This route is how the Settings webscraper card saves its `configs`
+        textarea — a JSON array that grows by roughly 500 bytes per scraper the
+        user adds. An earlier revision capped each value at 4096 bytes, which
+        made saving fail at around eight scrapers while the Scrapers page went
+        on growing the very same `webscraper_configs` key with no cap at all.
 
-        oversized_value = 'x' * (MAX_CREDENTIAL_VALUE_BYTES + 1)
+        Regression guard: reintroducing a per-value cap below the service limit
+        turns this 200 into a 400.
+        """
+        big_configs = json.dumps([{'id': f's{i}', 'url': 'https://e.test'} for i in range(400)])
+        assert len(big_configs) > 4096, 'fixture must exceed the cap this test retires'
+
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+
+        from integrations_handler import lambda_handler
+
         event = api_gateway_event(
             method='PUT',
             path='/integrations/webscraper/credentials',
             path_params={'source': 'webscraper'},
         )
-        event['body'] = _json.dumps({'app_name': oversized_value})
+        event['body'] = json.dumps({'configs': big_configs})
 
         response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 400
-        mock_secrets.get_secret_value.assert_not_called()
+        assert response['statusCode'] == 200, response['body']
+        written = json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
+        assert written['webscraper_configs'] == big_configs
+
+    @patch('integrations_handler.secretsmanager')
+    def test_write_exceeding_the_secret_limit_is_rejected(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """A write that would push the whole secret past the service limit returns 400.
+
+        Secrets Manager refuses a SecretString over 65,536 bytes with an opaque
+        error; catching it before the write turns a 500 into an actionable 400
+        AND leaves the stored secret untouched.
+        """
+        from shared.aws import SECRET_STRING_MAX_BYTES
+
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+        )
+        event['body'] = json.dumps({'configs': 'x' * (SECRET_STRING_MAX_BYTES + 1)})
+
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400, response['body']
+        # The read happens (the merge needs the current secret) but the WRITE must not.
         mock_secrets.put_secret_value.assert_not_called()
 
+    @patch('integrations_handler.secretsmanager')
+    def test_many_small_values_still_bounded_by_the_secret_limit(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """Values that each fit are still refused when their TOTAL does not.
 
-# ---------------------------------------------------------------------------
-# Manifest key acceptance tests
-#
-# These parametrized tests assert that every config key declared in the plugin
-# manifests passes _validate_credential_key.  A regression here means a real
-# field name would be rejected when the frontend tries to save it.
-#
-# The lists are loaded dynamically from the frontend manifests.json so that
-# new plugins and fields are automatically covered without any test update.
-# ---------------------------------------------------------------------------
+        This is the case a per-value cap structurally cannot catch, and the
+        reason the bound moved to the serialized secret.
+        """
+        from shared.aws import SECRET_STRING_MAX_BYTES
 
-import json as _json
-import pathlib as _pathlib
+        # An existing secret already near the limit, plus one modest addition.
+        existing = {'other_feature_blob': 'y' * (SECRET_STRING_MAX_BYTES - 200)}
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(existing)}
 
-_MANIFESTS_PATH = (
-    _pathlib.Path(__file__).parents[3]  # voc-datalake/
-    / 'frontend' / 'src' / 'plugins' / 'manifests.json'
-)
+        from integrations_handler import lambda_handler
 
-
-def _load_manifests():
-    """Load plugin manifests from the frontend source tree.
-
-    Emits a warning if the file is absent (e.g. in a minimal CI checkout that
-    does not include the frontend), so the gap is visible in CI output rather
-    than silently producing zero parametrized test cases.
-    """
-    if not _MANIFESTS_PATH.exists():
-        import warnings
-        warnings.warn(
-            f'manifests.json not found at {_MANIFESTS_PATH}; '
-            'TestManifestKeysAccepted will collect zero test cases and the '
-            'manifest-key acceptance guard will be inactive for this run.',
-            stacklevel=1,
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
         )
-        return []
-    return _json.loads(_MANIFESTS_PATH.read_text())
+        event['body'] = json.dumps({'configs': 'z' * 500})
 
-
-_MANIFESTS = _load_manifests()
-
-# All unique config keys across all plugins — deduplicated because several
-# plugins share field names like 'app_name', 'sort_by', 'frequency_minutes'.
-MANIFEST_KEYS = sorted({
-    field['key']
-    for manifest in _MANIFESTS
-    for field in manifest.get('config', [])
-})
-
-# Plugin IDs used as `source=` path parameters.
-PLUGIN_IDS = [m['id'] for m in _MANIFESTS]
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400, response['body']
+        mock_secrets.put_secret_value.assert_not_called()
 
 
 class TestManifestKeysAccepted:

@@ -327,6 +327,31 @@ export function aggregateSecrets(plugins: PluginManifest[]): Record<string, stri
   return secrets;
 }
 
+/**
+ * The same declared secret defaults as {@link aggregateSecrets}, keyed by plugin
+ * rather than flattened into `<plugin_id>_<key>`.
+ *
+ * Both shapes are needed and neither derives from the other at runtime. The flat
+ * form is what Secrets Manager stores, so that is what seeds the secret. The
+ * nested form is what a consumer needs to answer "which plugin owns this key, and
+ * what did it default to" — you cannot split `app_reviews_ios_app_id` back into
+ * plugin and key without already knowing the plugin ids, which is precisely the
+ * thing the consumer is missing.
+ *
+ * Plugins that declare no secrets still get an (empty) entry: the key set doubles
+ * as the list of sources that exist, and a plugin with nothing to configure is
+ * still a source.
+ */
+export function aggregateSecretsByPlugin(
+  plugins: PluginManifest[]
+): Record<string, Record<string, string>> {
+  const byPlugin: Record<string, Record<string, string>> = {};
+  for (const plugin of plugins) {
+    byPlugin[plugin.id] = { ...(plugin.secrets ?? {}) };
+  }
+  return byPlugin;
+}
+
 export function getPluginsWithIngestor(plugins: PluginManifest[]): PluginManifest[] {
   return plugins.filter(p => p.infrastructure.ingestor?.enabled);
 }
