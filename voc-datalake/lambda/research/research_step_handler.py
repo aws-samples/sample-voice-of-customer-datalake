@@ -15,6 +15,7 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
 from shared.api import api_handler
 from shared.converse import converse, BedrockThrottlingError
+from shared.persona_context import personas_prompt_context
 from shared.prompts import (
     get_research_step_config,
     get_response_language_instruction,
@@ -164,12 +165,14 @@ def step_initialize(event: dict) -> dict:
         selected_personas = [p for p in all_personas if p.get('persona_id') in selected_persona_ids]
         
         if selected_personas:
-            personas_context = "## Selected Personas\n\n"
+            # `goals`, `frustrations` and singular `quote` were all phantom keys,
+            # so this block reached the analysis step as headings with no content.
+            # Field paths live in shared/persona_context.py, which caps each list
+            # deliberately: this string crosses a Step Functions state boundary.
+            personas_context = personas_prompt_context(
+                selected_personas, header="## Selected Personas"
+            )
             for p in selected_personas:
-                personas_context += f"**{p.get('name')}** - {p.get('tagline', '')}\n"
-                personas_context += f"- Goals: {', '.join(p.get('goals', [])[:3])}\n"
-                personas_context += f"- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n"
-                personas_context += f"- Quote: \"{p.get('quote', '')}\"\n\n"
                 if p.get('persona_id'):
                     used_persona_ids.append(p['persona_id'])
     

@@ -33,16 +33,27 @@ const projectMeta = {
   document_count: 1,
 };
 
+// Canonical `schemas/persona.schema.json` shape, which is what every writer
+// persists. These fixtures previously used flat `quote` / `goals` / `frustrations`
+// / `needs` arrays — keys no writer produces — and that is precisely why the chat
+// prompt could render empty persona sections while these tests stayed green. The
+// value assertions below are the ones that now mean something.
 const persona1 = {
   pk: 'PROJECT#proj-1',
   sk: 'PERSONA#p1',
   persona_id: 'p1',
   name: 'Budget Buyer',
   tagline: 'Price-conscious shopper',
-  quote: 'I always look for the best deal',
-  goals: ['Save money', 'Find quality products'],
-  frustrations: ['Hidden fees', 'Poor value'],
-  needs: ['Transparent pricing'],
+  quotes: [{ text: 'I always look for the best deal', context: 'interview' }],
+  goals_motivations: {
+    primary_goal: 'Save money',
+    secondary_goals: ['Find quality products'],
+    underlying_motivations: ['Transparent pricing'],
+  },
+  pain_points: {
+    current_challenges: ['Hidden fees', 'Poor value'],
+    workarounds: ['Compares three sites before buying'],
+  },
 };
 
 const persona2 = {
@@ -51,10 +62,9 @@ const persona2 = {
   persona_id: 'p2',
   name: 'Power User',
   tagline: 'Tech enthusiast',
-  quote: 'I need advanced features',
-  goals: ['Efficiency'],
-  frustrations: ['Slow performance'],
-  needs: ['Speed'],
+  quotes: [{ text: 'I need advanced features' }],
+  goals_motivations: { primary_goal: 'Efficiency' },
+  pain_points: { current_challenges: ['Slow performance'], blockers: ['No bulk actions'] },
 };
 
 const document1 = {
@@ -262,17 +272,20 @@ describe('buildProjectChatContext', () => {
     // generated avatar has avatar_url: null, which previously failed Zod
     // validation (expected string, received null) and took down project chat
     // with an opaque "Unknown error".
+    // The nulled fields are the CANONICAL ones. They used to be `goals` /
+    // `frustrations` / `needs`, which the schema no longer declares — so this
+    // regression test would have kept passing while exercising nothing, because
+    // Zod strips undeclared keys before `nullsToUndefined` matters.
     const personaWithNulls = {
       pk: 'PROJECT#proj-1',
       sk: 'PERSONA#p3',
       persona_id: 'p3',
       name: 'No Avatar Persona',
       tagline: 'Generated without an avatar',
-      quote: 'I should still render',
       avatar_url: null,
-      goals: null,
-      frustrations: null,
-      needs: null,
+      quotes: null,
+      goals_motivations: null,
+      pain_points: null,
     } as unknown as Record<string, unknown>;
 
     const docClient = createMockDocClient([
