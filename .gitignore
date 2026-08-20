@@ -79,3 +79,7 @@ voc-datalake/Workshop/*
 .kiro/memory/
 .kiro/sessions/
 .kiro/NEW_SESSION_PROMPT.md
+# MCP client config — carries a live bearer token inline in headers.Authorization.
+# .kiro/settings/ is otherwise tracked (context-rules.json), so without this line
+# sharing an MCP config with the team publishes a working credential to a PUBLIC repo.
+.kiro/settings/mcp.json
