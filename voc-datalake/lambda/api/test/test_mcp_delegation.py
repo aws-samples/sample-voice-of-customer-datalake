@@ -1069,14 +1069,22 @@ class TestStructuredOutput:
         is reconsidered — the repo's lockstep pattern, applied to the one contract
         that leaves the account.
 
-        Key order does not count (`sort_keys`), so reordering a declaration is
-        free and only content moves the fingerprint.
+        OBJECT key order does not count (`sort_keys`), so reformatting a
+        declaration is free. LIST order does count, and `required` and `enum` are
+        lists: reordering their entries is semantically identical but will move
+        the fingerprint, so treat such a failure as a prompt to restore the order
+        rather than to bump the version.
         """
-        shapes = json.dumps(
-            {tool["name"]: tool["outputSchema"] for tool in mcp_handler.MCP_TOOLS},
-            sort_keys=True,
-        )
-        fingerprint = hashlib.sha256(shapes.encode("utf-8")).hexdigest()[:16]
+        shapes = {}
+        for tool in mcp_handler.MCP_TOOLS:
+            # Named rather than a KeyError from inside the fingerprint: presence is
+            # `test_every_tool_declares_an_output_schema`'s claim, and this test
+            # should say which tool broke it, not where it noticed.
+            assert "outputSchema" in tool, f"{tool['name']} declares no output shape"
+            shapes[tool["name"]] = tool["outputSchema"]
+
+        serialized = json.dumps(shapes, sort_keys=True)
+        fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
         assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.0.0", "6b78edcc4fed0723"), (
             "a tool's declared output shape changed. Move MCP_SERVER_VERSION — minor "
