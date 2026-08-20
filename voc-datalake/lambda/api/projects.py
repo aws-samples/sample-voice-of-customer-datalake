@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
 from shared.api import validate_days, MAX_PERSONAS_PER_GENERATION
+from shared.persona_context import personas_prompt_context
 from shared.converse import converse_chain
 from shared.exceptions import (
     ConfigurationError,
@@ -1001,15 +1002,10 @@ def generate_prd(project_id: str, body: dict) -> dict:
     feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PRD)
     feedback_context = format_feedback_for_llm(feedback_items)
 
-    # Format personas for context
-    personas_context = ""
-    for p in personas:
-        personas_context += f"""
-**{p.get('name')}** - {p.get('tagline', '')}
-- Quote: "{p.get('quote', '')}"
-- Goals: {', '.join(p.get('goals', [])[:3])}
-- Frustrations: {', '.join(p.get('frustrations', [])[:3])}
-"""
+    # Format personas for context. Migrated with the live sites even though this
+    # function is unreached (see the LEGACY note above): leaving a phantom-key
+    # builder in the file is what invites the next copy-paste.
+    personas_context = personas_prompt_context(personas)
 
     feature_idea = body.get('feature_idea', 'Improve customer experience based on feedback')
 
@@ -1091,14 +1087,12 @@ def autofill_prfaq_questions(project_id: str, body: dict) -> dict:
     feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_AUTOFILL)
     feedback_context = format_feedback_for_llm(feedback_items)
 
-    personas_context = ""
-    for p in personas:
-        personas_context += (
-            f"\n**{p.get('name')}** — {p.get('tagline', '')}\n"
-            f"Quote: \"{p.get('quote', '')}\"\n"
-            f"Goals: {', '.join(p.get('goals', [])[:3])}\n"
-            f"Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n"
-        )
+    # `goals`, `frustrations` and singular `quote` are keys no writer produces, so
+    # this block used to reach the model with every label present and every value
+    # empty. Worse than omitting the persona: `Goals: ` with nothing after it reads
+    # as an assertion that the persona has none. Field paths now live in
+    # shared/persona_context.py.
+    personas_context = personas_prompt_context(personas)
 
     feature_idea = (body or {}).get('feature_idea', '').strip()
     title = (body or {}).get('title', '').strip()
@@ -1359,13 +1353,11 @@ def generate_prfaq(project_id: str, body: dict) -> dict:
     feedback_items = get_feedback_context(filters, limit=FEEDBACK_LIMIT_PRFAQ)
     feedback_context = format_feedback_for_llm(feedback_items)
 
-    # Format personas
-    personas_context = ""
-    for p in personas:
-        personas_context += f"""
-**{p.get('name')}**: {p.get('tagline', '')}
-Quote: "{p.get('quote', '')}"
-"""
+    # Format personas. Also unreached (LEGACY note above), migrated for the same
+    # reason. This one only ever lost the quote — `quote` is singular here while
+    # rows store `quotes: [{text, context}]` — so it never had the empty
+    # Goals/Frustrations lines the other builders did.
+    personas_context = personas_prompt_context(personas)
     
     feature_idea = body.get('feature_idea', 'New feature based on customer feedback')
 

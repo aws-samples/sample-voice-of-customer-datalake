@@ -100,8 +100,18 @@ class TestDocumentGeneratorPersonasGathering:
 
         mock_projects_table.query.return_value = {
             'Items': [
-                {'sk': 'PERSONA#p1', 'persona_id': 'p1', 'name': 'Power User', 'tagline': 'Uses daily', 'goals': ['Speed'], 'frustrations': ['Bugs']},
-                {'sk': 'PERSONA#p2', 'persona_id': 'p2', 'name': 'Casual User', 'tagline': 'Occasional', 'goals': ['Simple'], 'frustrations': ['Complex']},
+                # Canonical `schemas/persona.schema.json` shape. These fixtures
+                # used flat `goals`/`frustrations`, keys no writer produces — which
+                # is why the assertion below (persona NAME only) passed while the
+                # generated PRD received empty Goals and Frustrations lines.
+                {'sk': 'PERSONA#p1', 'persona_id': 'p1', 'name': 'Power User',
+                 'tagline': 'Uses daily',
+                 'goals_motivations': {'primary_goal': 'Speed'},
+                 'pain_points': {'current_challenges': ['Bugs']}},
+                {'sk': 'PERSONA#p2', 'persona_id': 'p2', 'name': 'Casual User',
+                 'tagline': 'Occasional',
+                 'goals_motivations': {'primary_goal': 'Simple'},
+                 'pain_points': {'current_challenges': ['Complex']}},
             ]
         }
         mock_projects_table.put_item.return_value = {}
@@ -123,9 +133,17 @@ class TestDocumentGeneratorPersonasGathering:
 
         assert result['success'] is True
         call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
-        assert 'Power User' in call_kwargs['personas_context']
+        personas_context = call_kwargs['personas_context']
+        assert 'Power User' in personas_context
         # p2 should be filtered out
-        assert 'Casual User' not in call_kwargs['personas_context']
+        assert 'Casual User' not in personas_context
+
+        # 🔑 The assertions that make this test worth having. Asserting the NAME
+        # alone is what let a PRD be generated from persona blocks whose Goals and
+        # Frustrations lines were empty: the name is present either way. Reverting
+        # the builder to `p.get('goals', [])` fails these two.
+        assert 'Speed' in personas_context, 'the persona goal never reached the prompt'
+        assert 'Bugs' in personas_context, 'the persona frustration never reached the prompt'
 
 
 class TestDocumentGeneratorDocumentsGathering:

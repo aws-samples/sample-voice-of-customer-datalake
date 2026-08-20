@@ -8,6 +8,13 @@ import { signCloudFrontUrl } from '../lib/cloudfront-signing.js';
 import { ConfigurationError, NotFoundError } from '../lib/errors.js';
 import { fetchRecentFeedback } from './recent-feedback.js';
 import { buildSinglePersonaPrompt } from './persona-prompt.js';
+import {
+  bulletList,
+  personaFrustrations,
+  personaGoals,
+  personaNeeds,
+  personaVoice,
+} from './persona-fields.js';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
 
@@ -87,10 +94,29 @@ const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
   filters: z.record(z.unknown()).optional(),
   persona_id: z.string().optional(),
   tagline: z.string().optional(),
-  quote: z.string().optional(),
-  goals: z.array(z.string()).optional(),
-  frustrations: z.array(z.string()).optional(),
-  needs: z.array(z.string()).optional(),
+  // 🔴 `quote`, `goals`, `frustrations` and `needs` are keys NO writer produces.
+  // Stored personas follow `schemas/persona.schema.json`, and this schema omitted
+  // `goals_motivations`, `pain_points` and `quotes` entirely — so it STRIPPED the
+  // real fields before `buildPersonasContext` and `personaIdentitySection` could
+  // read them, and both rendered empty Goals / Frustrations / Needs into the chat
+  // and roundtable system prompts. Declaring them here is what makes a reader fix
+  // possible at all; the boundary is the fix, per the workspace wire-shape rule.
+  quotes: z.array(z.union([
+    z.object({ text: z.string().optional(), context: z.string().optional() }).passthrough(),
+    z.string(),
+  ])).optional(),
+  goals_motivations: z.object({
+    primary_goal: z.string().optional(),
+    secondary_goals: z.array(z.string()).optional(),
+    success_definition: z.string().optional(),
+    underlying_motivations: z.array(z.string()).optional(),
+  }).passthrough().optional(),
+  pain_points: z.object({
+    current_challenges: z.array(z.string()).optional(),
+    blockers: z.array(z.string()).optional(),
+    workarounds: z.array(z.string()).optional(),
+    emotional_impact: z.string().optional(),
+  }).passthrough().optional(),
   behaviors: z.union([
     z.object({
       current_solutions: z.array(z.string()).optional(),
@@ -179,25 +205,29 @@ function resolveActivePersonas(
 // ── Prompt building helpers ──
 
 function buildPersonasContext(personas: ProjectItem[]): string {
+  // Read through persona-fields, which knows where these values actually live.
+  // This used to read `p.goals` / `p.frustrations` / `p.needs` / `p.quote` —
+  // none of which any writer produces — so every section header was rendered
+  // with nothing beneath it.
   const sections = personas.map((p) => {
-    const goals = (p.goals ?? []).slice(0, 4).map((g) => `- ${g}`).join('\n');
-    const frustrations = (p.frustrations ?? []).slice(0, 4).map((f) => `- ${f}`).join('\n');
-    const needs = (p.needs ?? []).slice(0, 4).map((n) => `- ${n}`).join('\n');
-    return `
-### ${p.name} - ${p.tagline ?? ''}
+    const taglineSuffix = p.tagline ? ` - ${p.tagline}` : '';
+    const parts = [`### ${p.name}${taglineSuffix}`];
 
-**Their voice:** "${p.quote ?? ''}"
+    // A header is emitted only when it has content: an empty "**Goals:**" reads
+    // to the model as an assertion that the persona has none.
+    const voice = personaVoice(p);
+    if (voice) parts.push(`**Their voice:** "${voice}"`);
 
-**Goals:**
-${goals}
+    const goals = personaGoals(p);
+    if (goals.length) parts.push(`**Goals:**\n${bulletList(goals)}`);
 
-**Frustrations:**
-${frustrations}
+    const frustrations = personaFrustrations(p);
+    if (frustrations.length) parts.push(`**Frustrations:**\n${bulletList(frustrations)}`);
 
-**Needs:**
-${needs}
+    const needs = personaNeeds(p);
+    if (needs.length) parts.push(`**What they need:**\n${bulletList(needs)}`);
 
----`;
+    return `\n${parts.join('\n\n')}\n\n---`;
   });
   return `\n## 👤 ACTIVE PERSONAS (Respond from their perspective)\n${sections.join('\n')}`;
 }

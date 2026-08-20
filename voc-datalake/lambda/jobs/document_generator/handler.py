@@ -47,6 +47,7 @@ from shared.jobs import job_handler, JobContext, update_job_status
 from shared.aws import get_dynamodb_resource
 from shared.converse import converse_chain
 from shared.feedback import query_feedback_by_date
+from shared.persona_context import personas_prompt_context
 from shared.api import validate_date_basis
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 from shared.prototypes import prototype_s3_key
@@ -139,17 +140,16 @@ def _gather_context(
         if selected_ids:
             personas = [p for p in personas if p.get('persona_id') in selected_ids]
         if personas:
-            parts = []
+            # `goals`/`frustrations` were phantom keys — no writer produces them,
+            # so every PRD and PR/FAQ was generated with those labels present and
+            # empty while `used_persona_ids` below recorded provenance from
+            # content the model never received. Field paths now live in
+            # shared/persona_context.py.
+            personas_context = personas_prompt_context(personas)
             for p in personas:
-                parts.append(
-                    f"**{p.get('name')}**: {p.get('tagline', '')}\n"
-                    f"- Goals: {', '.join(p.get('goals', [])[:3])}\n"
-                    f"- Frustrations: {', '.join(p.get('frustrations', [])[:3])}"
-                )
                 pid = p.get('persona_id')
                 if pid:
                     used_persona_ids.append(pid)
-            personas_context = '\n\n'.join(parts)
 
     # Gather reference documents and append to feedback context
     if data_sources.get('documents') or data_sources.get('research'):
