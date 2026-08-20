@@ -56,6 +56,7 @@ removed. The revert map:
       raises KeyError at call time rather than at import. This walks the table.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -253,6 +254,11 @@ _CANONICAL_PERSONA_SCHEMA = Path(__file__).resolve().parents[3] / "schemas" / "p
 _UNREPORTED_SECTIONS = frozenset({"research_notes"})
 
 
+def _canonical_persona_properties() -> dict:
+    """The canonical persona declaration's `properties`, read from the schema file."""
+    return json.loads(_CANONICAL_PERSONA_SCHEMA.read_text(encoding="utf-8"))["properties"]
+
+
 def _canonical_persona_sections() -> dict[str, str]:
     """The canonical schema's own numbered sections, read from the schema file.
 
@@ -262,10 +268,9 @@ def _canonical_persona_sections() -> dict[str, str]:
     exactly how sections 5 and 7 went missing from the first version of the
     projection.
     """
-    schema = json.loads(_CANONICAL_PERSONA_SCHEMA.read_text(encoding="utf-8"))
     return {
         key: declared["description"]
-        for key, declared in schema["properties"].items()
+        for key, declared in _canonical_persona_properties().items()
         if str(declared.get("description", "")).startswith("Section ")
     }
 
@@ -647,9 +652,12 @@ class TestProjections:
         listed as an exclusion with a reason.
         """
         sections = _canonical_persona_sections()
-        # The schema's own title says eight, so a marker that stopped matching
-        # would otherwise make this test vacuously true.
-        assert len(sections) == 8, f"expected 8 numbered sections, found {sorted(sections)}"
+        # Anti-vacuity only: the schema's own title says eight sections, so a
+        # marker that stopped matching must fail rather than pass with an empty
+        # set. Deliberately `>=`, not `==` — a ninth section that IS correctly
+        # reported has to fail on the reporting check below, with a message that
+        # names it, rather than on a count that misdirects.
+        assert len(sections) >= 8, f"expected at least 8 numbered sections, found {sorted(sections)}"
 
         declared = set(mcp_handler._PERSONA_PROPERTIES)
         missing = set(sections) - declared - _UNREPORTED_SECTIONS
@@ -669,8 +677,7 @@ class TestProjections:
         `source_feedback_id` is the id `get_feedback_detail` takes, which makes it
         the one worth relying on.
         """
-        canonical = json.loads(_CANONICAL_PERSONA_SCHEMA.read_text(encoding="utf-8"))
-        quote_fields = set(canonical["properties"]["quotes"]["items"]["properties"])
+        quote_fields = set(_canonical_persona_properties()["quotes"]["items"]["properties"])
 
         assert quote_fields, "the canonical quote item declares no fields; marker moved?"
         assert quote_fields <= set(mcp_handler._QUOTE_PROPERTIES), (
@@ -1050,6 +1057,33 @@ class TestStructuredOutput:
         tell."""
         major = mcp_handler.MCP_SERVER_VERSION.split(".")[0]
         assert int(major) >= 2
+
+    def test_a_changed_tool_output_shape_moves_the_server_version(self):
+        """`serverInfo.version` is the only signal a client gets, so it is pinned
+        to the shapes it describes.
+
+        The check above (`major >= 2`) passes forever, which means it would have
+        let this PR's own persona-shape change ship under the version that
+        described the previous one. Fingerprinting the declared `outputSchema`s in
+        lockstep makes any edit to a published shape fail here until the version
+        is reconsidered — the repo's lockstep pattern, applied to the one contract
+        that leaves the account.
+
+        Key order does not count (`sort_keys`), so reordering a declaration is
+        free and only content moves the fingerprint.
+        """
+        shapes = json.dumps(
+            {tool["name"]: tool["outputSchema"] for tool in mcp_handler.MCP_TOOLS},
+            sort_keys=True,
+        )
+        fingerprint = hashlib.sha256(shapes.encode("utf-8")).hexdigest()[:16]
+
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.0.0", "6b78edcc4fed0723"), (
+            "a tool's declared output shape changed. Move MCP_SERVER_VERSION — minor "
+            "for an added field, MAJOR for a removal or a retype, because a client "
+            "validates structuredContent against these schemas — then update the "
+            "fingerprint here in the same commit."
+        )
 
 
 # ===========================================================================
