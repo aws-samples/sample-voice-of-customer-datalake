@@ -74,16 +74,11 @@ class TestSearchMinimumMirror:
             f'{SEARCH_QUERY_MIN_LENGTH}'
         )
 
-    # The client's trim is NOT asserted here any more.
+    # The client's TRIM is deliberately not asserted here.
     #
-    # It used to be, as the literal substring `q: params.q.trim()` in client.ts —
-    # which pins CHARACTERS, not behaviour: a Prettier reflow or an extracted
-    # local would have failed a green test with no change in what the code does.
-    # That is the "assert on structure, not text" rule this repo already learned
-    # elsewhere, and grepping another language's source for an expression was the
-    # weakest available form of it.
-    #
-    # The behaviour is pinned where it can be observed instead — `client.test.ts`
-    # § "searchFeedback trims the query at the boundary" asserts the trimmed term
-    # in the REQUEST URL. This file keeps only what genuinely needs cross-language
-    # parsing: the shared CONSTANT.
+    # Grepping another language's source for an expression pins CHARACTERS rather
+    # than behaviour: a reformat or an extracted local breaks such a test with no
+    # change in what the code does. This file keeps only what genuinely requires
+    # cross-language parsing — the shared CONSTANT — and the trim is pinned where
+    # it can be observed, in `client.test.ts` § "searchFeedback trims the query at
+    # the boundary", which asserts the trimmed term in the REQUEST URL.

@@ -1790,10 +1790,9 @@ describe('searchFeedback trims the query at the boundary', () => {
   // present-but-too-short term with a 400. Trimming here means the string that
   // is SENT is the string the route measures, whatever a caller passed in.
   //
-  // Asserted on the REQUEST URL rather than on the source text of client.ts. A
-  // sibling guard used to assert the literal substring `q: params.q.trim()`,
-  // which a Prettier reflow or an extracted local would break with no behaviour
-  // change — pinning characters instead of behaviour.
+  // Asserted on the REQUEST URL, not on the source text of client.ts. Matching a
+  // literal like `q: params.q.trim()` would pin characters rather than behaviour,
+  // and break on a reformat or an extracted local with nothing having changed.
   beforeEach(() => {
     ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue(DEFAULT_STORE_STATE)
     ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)

@@ -1054,11 +1054,20 @@ describe('the search fan-out fits the metrics timeout', () => {
   // undocumented `min(days, 30)` cap — which made most of the corpus unreachable
   // by text search — means the loop can now run for the FULL validated window.
   //
-  // So the window ceiling and the Lambda timeout became coupled, and nothing said
-  // so. This pins the arithmetic: raising `validate_days`' maximum, or lowering
-  // the metrics timeout, fails here instead of producing 502s on a year-long
-  // search. The measured cost is ~10-15 ms per day partition (p50, sparse days),
-  // so the upper bound is used.
+  // So the window ceiling and the Lambda timeout are coupled. This pins the
+  // arithmetic: raising the window maximum, or lowering the metrics timeout, fails
+  // here instead of producing 502s on a year-long search. The measured cost is
+  // ~10-15 ms per day partition (p50, sparse days), so the upper bound is used.
+  // Note this bounds a PROJECTION, not live latency — it guards config drift.
+  //
+  // 🔑 The Lambda timeout is deliberately NOT asserted against the API Gateway
+  // ceiling. `MetricsApi` serves the browser across every `/metrics/*` and
+  // `/feedback/*` route, where 30 s is the right budget, and the sibling suite
+  // above records the same asymmetry for the delegation path. A Lambda outliving
+  // the 29 s integration wastes tail compute on a response nobody receives; one
+  // that dies sooner turns a slow-but-valid answer into a 502, which is worse. Any
+  // assertion tying the two would have to be widened to fit the config it claims
+  // to constrain, and could then never fail for the reason it advertises.
   const MEASURED_MS_PER_DAY = 15;
   const SAFETY_FACTOR = 2;
   // API Gateway hard-caps a REST integration at 29 s regardless of the Lambda's
@@ -1066,11 +1075,10 @@ describe('the search fan-out fits the metrics timeout', () => {
   const API_GATEWAY_INTEGRATION_CEILING_SECONDS = 29;
 
   const maxWindowDays = () => {
-    // Read from the NAMED constant, not from `validate_days`' signature default.
-    // The earlier two-step regex walked into the signature to find
-    // `max_val: int = 365`, which would have silently stopped matching the moment
-    // the ceiling moved to a constant or the parameter was renamed. It is a named
-    // declaration now precisely so this parse has something stable to aim at.
+    // Aimed at the NAMED constant rather than at a function's parameter default,
+    // which a rename or a moved default would silently stop matching. The
+    // `toBeDefined` below turns any such drift into a loud failure rather than a
+    // vacuous pass.
     const source = readRepoFile('lambda', 'shared', 'api.py');
     const maxVal = source.match(/^MAX_FEEDBACK_WINDOW_DAYS\s*=\s*(\d+)/m)?.[1];
     expect(maxVal, 'could not read MAX_FEEDBACK_WINDOW_DAYS from shared/api.py').toBeDefined();
@@ -1094,12 +1102,8 @@ describe('the search fan-out fits the metrics timeout', () => {
       `a ${days}-day search projects to ~${worstCaseSeconds.toFixed(1)}s at ` +
       `${MEASURED_MS_PER_DAY}ms/day`;
 
-    // ONE guard, because there is one thing to guard: the projection has to fit
-    // inside both budgets. A separate test for the API Gateway ceiling was split
-    // out at first, but once the Lambda-config half of it was removed as
-    // misleading it reduced to arithmetic over two constants in this file and no
-    // longer touched infrastructure at all — a guard in name only. Folded back in
-    // as a second bound on the same number.
+    // One guard, two bounds on the same projected number: it must fit the Lambda's
+    // own budget with margin, and it must fit the ceiling the caller is bounded by.
     expect(metricsTimeout(), `${budget}; the metrics timeout must cover it with margin`)
       .toBeGreaterThanOrEqual(worstCaseSeconds * SAFETY_FACTOR);
 
@@ -1109,20 +1113,6 @@ describe('the search fan-out fits the metrics timeout', () => {
       .toBeLessThan(API_GATEWAY_INTEGRATION_CEILING_SECONDS);
   });
 
-  // 🔑 The Lambda timeout is NOT asserted against the API Gateway ceiling, and
-  // that omission is deliberate. An earlier version asserted
-  // `metricsTimeout() <= CEILING + 1` under a name claiming it kept the budget
-  // inside the integration limit — but the `+1` existed solely to fit the current
-  // 30 s config, so it permitted the very 30 > 29 case its own name said it
-  // prevented. An assertion shaped around the value it is meant to constrain
-  // cannot fail for the reason it advertises.
-  //
-  // The 30 s Lambda outliving the 29 s integration is CHOSEN. `MetricsApi` serves
-  // the browser across every `/metrics/*` and `/feedback/*` route where 30 s is
-  // the right budget, and the sibling suite above records the same asymmetry for
-  // the delegation path. A Lambda that outlives the integration wastes tail
-  // compute on a response nobody receives; one that dies sooner turns a
-  // slow-but-valid answer into a 502. The second is worse.
 });
 
 describe('mcp endpoint throttling', () => {
