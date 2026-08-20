@@ -307,10 +307,27 @@ class TestServerDiscover:
         assert not set(mcp_handler.MCP_AUTH_METHODS) & set(mcp_handler.MCP_METHODS)
 
     def test_it_reports_the_transport_headers_it_validates(self):
-        """A client cannot conform to a rule it cannot discover."""
+        """A client cannot conform to a rule it cannot discover.
+
+        Compared case-insensitively against what the handler READS, because the
+        two spellings are deliberately different: discovery reports the form a
+        client sends, the guard reads the form API Gateway delivers. Both must name
+        the same set of headers.
+        """
         result = self._discover()
 
-        assert set(result["transportHeaders"]) == set(mcp_handler.TRANSPORT_HEADERS)
+        assert {name.lower() for name in result["transportHeaders"]} == set(
+            mcp_handler.TRANSPORT_HEADERS
+        )
+
+    def test_it_reports_them_in_the_spelling_a_client_sends(self):
+        """The internal lowercase form is an artefact of API Gateway's
+        normalisation, and publishing it would document an implementation detail
+        as a contract."""
+        result = self._discover()
+
+        assert "MCP-Protocol-Version" in result["transportHeaders"]
+        assert result["transportHeaders"] == sorted(result["transportHeaders"])
 
     def test_it_reports_the_result_type_vocabulary(self):
         result = self._discover()
@@ -1016,6 +1033,36 @@ class TestToolCatalogueIsFilteredByAuthorization:
     def test_a_project_set_credential_with_no_projects_sees_no_project_tools(self):
         """Sealed to a set that names nothing reaches nothing."""
         listed = self._names(_token_row(read_reach=REACH_PROJECT_SET, projects=[]))
+
+        assert listed == []
+
+    def test_a_workspace_credential_with_no_projects_still_sees_the_project_tools(self):
+        """The asymmetry with the test above, and it is the honest one.
+
+        Workspace reach admits every project without consulting the id — a
+        workspace token reads a project it was not minted from, which
+        `test_workspace_token_reads_a_project_outside_its_own_set` pins on the
+        dispatch side. So an empty project set does not bound it, and a listing
+        that refused these tools would hide tools the dispatch allows.
+
+        This is the case the representative-project stand-in exists for: a listing
+        has to ask a project-shaped question with no project in hand.
+        """
+        listed = set(self._names(_token_row(projects=[])))
+        expected = set(mcp_handler.TOOL_HANDLERS)
+
+        assert listed == expected
+
+    def test_an_unusable_project_entry_does_not_pass_for_a_project(self):
+        """A row whose `projects` holds junk names no project.
+
+        `projects` is stored data and these values are what a `project-set` token
+        is bounded BY, so an entry that is not a usable id must not be counted as
+        one — the fail-closed reading, matching how a damaged `scopes` grants
+        nothing.
+        """
+        listed = self._names(_token_row(read_reach=REACH_PROJECT_SET,
+                                        projects=[None, "", 7, {}]))
 
         assert listed == []
 

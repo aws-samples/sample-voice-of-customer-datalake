@@ -85,13 +85,13 @@ SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
 # What an `initialize` that asks for nothing usable is answered with, and what a
 # request carrying no `MCP-Protocol-Version` header is read as. Derived rather
 # than restated so it cannot disagree with the tuple above.
+#
+# This replaces the `MCP_PROTOCOL_VERSION` constant outright rather than aliasing
+# it. An alias would have kept a name meaning "the only version this server
+# speaks" alive next to the tuple that makes that untrue — and nothing outside
+# this module read it, so keeping it would have been a second name for one fact,
+# maintained by nobody.
 PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
-
-# The name kept from the pinned-constant era, now meaning "the version this
-# server prefers" rather than "the only version it speaks". Kept because it is
-# the value `serverInfo`-adjacent tooling and the frontend docs refer to, and
-# because deleting it would be a rename with no behavioural content.
-MCP_PROTOCOL_VERSION = PREFERRED_PROTOCOL_VERSION
 
 # Semver on the SERVER, independent of the protocol revision above, and the only
 # signal a client gets that a tool's output shape moved — it is advertised in
@@ -395,6 +395,31 @@ TRANSPORT_HEADERS: tuple[str, ...] = (
     NAME_HEADER,
 )
 
+
+def _canonical_header_name(header: str) -> str:
+    """The wire spelling of a header this module reads in lowercase.
+
+    Derived rather than declared twice: the lowercase forms above exist only
+    because API Gateway normalises what it delivers, while a CORS allowlist and a
+    discovery answer are read by clients that spell headers the canonical way. Two
+    hand-written lists is how one gains a header the other does not.
+
+    `MCP` keeps its acronym casing; every other segment title-cases, which is what
+    makes `MCP-Protocol-Version`.
+    """
+    return '-'.join(
+        'MCP' if part == 'mcp' else part.capitalize()
+        for part in header.split('-')
+    )
+
+
+# Every transport header in the spelling a client sends, for the CORS allowlist and
+# for `server/discover`. Sorted so a client diffing two discoveries sees a change
+# only when one happened.
+CANONICAL_TRANSPORT_HEADERS: tuple[str, ...] = tuple(
+    sorted(_canonical_header_name(header) for header in TRANSPORT_HEADERS)
+)
+
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     # X-Project-Id is gone: the credential carries its own project reach, so a
@@ -405,14 +430,11 @@ CORS_HEADERS = {
     # that sends one would otherwise be stopped by its own preflight before this
     # function ever saw it — a header the server validates but a browser may not
     # send is a rule with no reachable subject. Derived from TRANSPORT_HEADERS so
-    # the two cannot drift; the canonical spelling is restored for the wire, since
-    # the lowercase forms above exist only to read API Gateway's own normalisation.
+    # the two cannot drift.
     'Access-Control-Allow-Headers': ','.join((
         'Content-Type',
         'Authorization',
-        *('-'.join(part.capitalize() if part != 'mcp' else 'MCP'
-                   for part in header.split('-'))
-          for header in TRANSPORT_HEADERS),
+        *CANONICAL_TRANSPORT_HEADERS,
     )),
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
     # Without this a BROWSER-based MCP client can receive the 401 challenge but
@@ -2192,7 +2214,10 @@ def _handle_discover(req_id: Any, _params: dict) -> dict:
         # diffing two discoveries should see a change only when one happened.
         "methods": sorted({*MCP_METHODS, *MCP_AUTH_METHODS}),
         "authenticatedMethods": sorted(MCP_AUTH_METHODS),
-        "transportHeaders": sorted(TRANSPORT_HEADERS),
+        # In the spelling a client SENDS, not the lowercase form this module reads
+        # after API Gateway has normalised it. Reporting the internal spelling
+        # would document an implementation detail as a contract.
+        "transportHeaders": list(CANONICAL_TRANSPORT_HEADERS),
         "resultTypes": sorted(RESULT_TYPES),
         "costClasses": list(COST_CLASSES),
         # The list varies by credential, so a client cannot conclude "these are
@@ -2200,6 +2225,14 @@ def _handle_discover(req_id: Any, _params: dict) -> dict:
         # letting it find out by calling one it was never granted.
         "toolsVaryByCredential": True,
     })
+
+
+# The stand-in a LISTING uses when it must ask a project-shaped question without
+# a project. Only ever reached under `workspace` reach, which admits every project
+# without consulting the id — so this value is never compared against anything and
+# never becomes a path. Named rather than inlined so that is legible at the one
+# place it is read.
+_ANY_PROJECT = 'any-project'
 
 
 def _tool_is_authorized(tool_name: str, token_info: dict) -> bool:
@@ -2222,32 +2255,29 @@ def _tool_is_authorized(tool_name: str, token_info: dict) -> bool:
         return False
     if not _scope_allows(token_info.get('scopes'), required_scope):
         return False
+
     token_projects = token_info.get('projects') or []
     read_reach = token_info.get('read_reach') or DEFAULT_READ_REACH
+    # `reach_allows` decides on a CONCRETE project, and a listing has none, so a
+    # project-shaped tool is asked about a representative one. A project from the
+    # token's own set is the honest representative under every reach; only
+    # `workspace` reach has no such set to draw on, and it is also the one reach
+    # that does not consult the id at all, which is what makes the sentinel safe
+    # rather than a guess. A `project-set` token with an empty set gets None here
+    # and `reach_allows` refuses it, which is right — it can reach no project.
+    representative = None
     if tool_reach_kind == REACH_KIND_PROJECT:
-        # `reach_allows` needs a concrete project, and a listing has none. Any
-        # project in the token's set is representative: `project-set` reach admits
-        # exactly those, and `workspace` admits everything, so a token whose set is
-        # empty and whose reach is `project-set` correctly lists nothing.
-        candidate = next((p for p in token_projects if isinstance(p, str) and p), None)
-        if read_reach == REACH_WORKSPACE:
-            # A sentinel project, so this asks "may this credential reach a
-            # project at all" without inventing one it can reach — workspace reach
-            # does not consult the id, which `reach_allows` is what decides.
-            candidate = candidate or 'any'
-        if not candidate:
-            return False
-        return reach_allows(
-            read_reach=read_reach,
-            token_projects=token_projects,
-            tool_reach_kind=tool_reach_kind,
-            project_id=candidate,
+        representative = next(
+            (p for p in token_projects if isinstance(p, str) and p), None,
         )
+        if representative is None and read_reach == REACH_WORKSPACE:
+            representative = _ANY_PROJECT
+
     return reach_allows(
         read_reach=read_reach,
         token_projects=token_projects,
         tool_reach_kind=tool_reach_kind,
-        project_id=None,
+        project_id=representative,
     )
 
 
