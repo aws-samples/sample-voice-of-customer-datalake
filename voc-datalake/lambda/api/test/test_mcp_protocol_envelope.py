@@ -280,6 +280,17 @@ class TestServerDiscover:
         assert status == 200, body
         return body["result"]
 
+    def _detail(self) -> dict:
+        """The vendor-prefixed sub-object carrying this server's own reporting.
+
+        Everything the SPEC does not define lives here rather than at the top
+        level, which is the correction this class exercises: a `DiscoverResult`
+        carrying undefined top-level keys is one a strict client cannot validate.
+        """
+        return self._discover()["_meta"][
+            f"{mcp_handler.VENDOR_META_PREFIX}serverDetail"
+        ]
+
     def test_discover_needs_no_credential(self):
         """It answers what the SERVER supports, which a client needs before it has
         decided what to present. It names no project, no tool and no data."""
@@ -291,17 +302,23 @@ class TestServerDiscover:
     def test_it_reports_every_protocol_version_the_server_speaks(self):
         result = self._discover()
 
-        assert result["protocolVersions"] == list(mcp_handler.SUPPORTED_PROTOCOL_VERSIONS)
-        assert result["preferredProtocolVersion"] == mcp_handler.PREFERRED_PROTOCOL_VERSION
+        # The SPEC's field name. A client calls this method precisely to learn the
+        # versions, so publishing them under a name of our own invention left it
+        # reading `supportedVersions`, finding nothing, and no better off than if
+        # the method did not exist.
+        assert result["supportedVersions"] == list(mcp_handler.SUPPORTED_PROTOCOL_VERSIONS)
+        assert self._detail()["preferredProtocolVersion"] == (
+            mcp_handler.PREFERRED_PROTOCOL_VERSION
+        )
 
     def test_it_reports_every_method_the_server_dispatches(self):
         """Derived from the dispatch tables, so a method that exists is listed and
         one that is only listed cannot exist."""
-        result = self._discover()
+        detail = self._detail()
         dispatched = {*mcp_handler.MCP_METHODS, *mcp_handler.MCP_AUTH_METHODS}
 
-        assert set(result["methods"]) == dispatched
-        assert set(result["authenticatedMethods"]) == set(mcp_handler.MCP_AUTH_METHODS)
+        assert set(detail["methods"]) == dispatched
+        assert set(detail["authenticatedMethods"]) == set(mcp_handler.MCP_AUTH_METHODS)
         # And the split is real: an authenticated method is not also served
         # without a credential.
         assert not set(mcp_handler.MCP_AUTH_METHODS) & set(mcp_handler.MCP_METHODS)
@@ -314,9 +331,9 @@ class TestServerDiscover:
         client sends, the guard reads the form API Gateway delivers. Both must name
         the same set of headers.
         """
-        result = self._discover()
+        detail = self._detail()
 
-        assert {name.lower() for name in result["transportHeaders"]} == set(
+        assert {name.lower() for name in detail["transportHeaders"]} == set(
             mcp_handler.TRANSPORT_HEADERS
         )
 
@@ -324,30 +341,90 @@ class TestServerDiscover:
         """The internal lowercase form is an artefact of API Gateway's
         normalisation, and publishing it would document an implementation detail
         as a contract."""
-        result = self._discover()
+        published = self._detail()["transportHeaders"]
 
-        assert "MCP-Protocol-Version" in result["transportHeaders"]
-        assert result["transportHeaders"] == sorted(result["transportHeaders"])
+        # The spec's own spellings, which are NOT one rule: the version header
+        # carries the acronym in caps and the two routing echoes title-case it.
+        # A single `MCP` rule published `MCP-Method`, a spelling the spec does not
+        # use.
+        assert set(published) == {"MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"}
+        assert published == sorted(published)
 
-    def test_it_reports_the_result_type_vocabulary(self):
-        result = self._discover()
+    def test_it_reports_the_result_shape_vocabulary_under_its_own_name(self):
+        """Named `resultShapes`, not `resultTypes`.
 
-        assert set(result["resultTypes"]) == set(mcp_handler.RESULT_TYPES)
+        The spec owns the `resultType` vocabulary and this list is not it, so
+        publishing it as `resultTypes` would have claimed otherwise — in the very
+        answer a client reads to learn what this server means.
+        """
+        detail = self._detail()
+
+        assert set(detail["resultShapes"]) == set(mcp_handler.RESULT_SHAPES)
+        assert "resultTypes" not in detail
 
     def test_it_reports_the_cost_class_vocabulary_in_order(self):
         """Cheapest first: an unordered set of adjectives does not say which of
         two classes is the expensive one."""
-        result = self._discover()
-
-        assert result["costClasses"] == list(mcp_handler.COST_CLASSES)
+        assert self._detail()["costClasses"] == list(mcp_handler.COST_CLASSES)
 
     def test_it_says_the_tool_list_varies_by_credential(self):
         """Cheaper than letting a client find out by calling a tool it was never
         granted — and it is why discovery does not list tools itself."""
         result = self._discover()
 
-        assert result["toolsVaryByCredential"] is True
+        assert self._detail()["toolsVaryByCredential"] is True
         assert "tools" not in result
+
+    def test_server_info_travels_under_the_spec_reserved_meta_key(self):
+        """`serverInfo` is a `_meta` field in this revision, not a top-level one.
+
+        Publishing it at the top level put a key the `DiscoverResult` schema does
+        not define into a result a strict client validates.
+        """
+        result = self._discover()
+
+        assert "serverInfo" not in result
+        info = result["_meta"]["io.modelcontextprotocol/serverInfo"]
+        assert info == {"name": "voc-datalake", "version": mcp_handler.MCP_SERVER_VERSION}
+
+    def test_discovery_carries_the_caching_hints_the_spec_requires(self):
+        """`server/discover` is in the spec's cacheable-results list, so the two
+        hints are REQUIRED rather than optional.
+
+        `ttlMs` is MILLISECONDS — asserted as a magnitude rather than against the
+        constant, because the unit was the actual defect: a seconds value in a
+        milliseconds field reads as 0.3s, and an absent one reads as 0 (immediately
+        stale) per the spec's own default.
+        """
+        result = self._discover()
+
+        assert isinstance(result["ttlMs"], int)
+        assert result["ttlMs"] >= 60_000, (
+            f"ttlMs={result['ttlMs']} looks like seconds, not milliseconds"
+        )
+        # `public` is honest for this answer specifically: it names no project, no
+        # tool and no data, so a shared cache reveals nothing credential-shaped.
+        assert result["cacheScope"] == "public"
+
+    def test_the_discovery_answer_carries_no_undefined_top_level_fields(self):
+        """The whole correction, stated once as a closed set.
+
+        A client validating a `DiscoverResult` rejects unknown top-level keys, so
+        every local field has to sit in `_meta`. Written as "nothing outside this
+        set" rather than as individual absences, so a future field added at the top
+        level fails here instead of being noticed by a client.
+        """
+        result = self._discover()
+
+        allowed = {
+            # Spec-defined members of DiscoverResult (`instructions` is optional
+            # and this server sends none).
+            "supportedVersions", "capabilities", "ttlMs", "cacheScope",
+            "resultType", "_meta",
+        }
+        assert set(result) <= allowed, (
+            f"undefined top-level fields in DiscoverResult: {sorted(set(result) - allowed)}"
+        )
 
     def test_the_declared_capabilities_match_the_handshake(self):
         """One statement of what this server can do, or the two answers disagree
@@ -389,18 +466,53 @@ class TestProtocolVersionHeader:
         assert "result" in body
 
     def test_an_unsupported_version_header_is_refused(self):
-        """400 and -32600, and the message names what the server does speak.
+        """400 and `-32022 UnsupportedProtocolVersion`, the spec's own code.
 
-        `-32600 Invalid Request` rather than `-32602 Invalid params`: the BODY may
-        be perfectly well formed, and it is the request as a whole that is not.
+        Not `-32600`: a generic invalid-request code makes the refusal
+        indistinguishable from a malformed body, and the transport's
+        backward-compatibility rules have a dual-era client read a 400 body for a
+        RECOGNIZED modern error to decide the server is modern. `-32600` there means
+        "legacy server", so the client falls back to `initialize` while this server
+        is advertising a modern revision.
         """
         status, body = _call(_event(
             "initialize", headers={"MCP-Protocol-Version": "1999-01-01"},
         ))
 
         assert status == 400
-        assert body["error"]["code"] == -32600
+        assert body["error"]["code"] == -32022
         assert mcp_handler.PREFERRED_PROTOCOL_VERSION in body["error"]["message"]
+
+    def test_the_refusal_carries_the_supported_list_a_client_can_retry_with(self):
+        """The spec's recovery path is "pick from `data.supported` and retry".
+
+        With the versions only in the prose message — as the first draft had them —
+        that recovery path requires parsing English.
+        """
+        _status, body = _call(_event(
+            "initialize", headers={"MCP-Protocol-Version": "1999-01-01"},
+        ))
+
+        data = body["error"]["data"]
+        assert data["supported"] == list(mcp_handler.SUPPORTED_PROTOCOL_VERSIONS)
+        # Echoed so a client with several requests in flight knows which one this
+        # answers, and can tell "I sent a bad version" from "a proxy rewrote it".
+        assert data["requested"] == "1999-01-01"
+
+    def test_a_malformed_encoding_is_not_reported_as_a_version_problem(self):
+        """The two faults are different codes because they have different fixes.
+
+        A sentinel that does not decode is `-32600`: the caller's version may be
+        perfectly supported and the ENCODING is what failed, so answering -32022
+        with a supported-version list would send them to change a version number
+        that was never the problem.
+        """
+        _status, body = _call(_event(
+            "initialize", headers={"MCP-Protocol-Version": "=?base64?not-base64!!?="},
+        ))
+
+        assert body["error"]["code"] == -32600
+        assert "data" not in body["error"]
 
     def test_an_absent_version_header_is_served(self):
         """The header postdates the first revisions of the transport, so requiring
@@ -418,7 +530,7 @@ class TestProtocolVersionHeader:
         ))
 
         assert status == 400
-        assert body["error"]["code"] == -32600
+        assert body["error"]["code"] == -32022
 
     def test_the_header_is_matched_case_insensitively(self):
         """API Gateway lowercases header names in proxy mode; a direct invoke does
@@ -453,7 +565,7 @@ class TestProtocolVersionHeader:
         ))
 
         assert status == 400
-        assert body["error"]["code"] == -32600
+        assert body["error"]["code"] == -32022
 
     def test_the_declared_headers_are_all_reachable_from_a_browser(self):
         """A header the server validates but a browser's preflight blocks is a
@@ -582,12 +694,37 @@ class TestRoutingHeaders:
         assert "result" in body
 
     def test_a_method_header_contradicting_the_body_is_refused(self):
-        status, body = _call(_event("ping", headers={"MCP-Method": "tools/call"}))
+        """400 and `-32020 HeaderMismatch`, which is the spec's code for exactly
+        this and carries the spec's own rationale: a load balancer routes on the
+        header while the server executes on the body. `-32600` made the refusal
+        indistinguishable, to a client, from a malformed JSON-RPC body."""
+        status, body = _call(_event("ping", headers={"Mcp-Method": "tools/call"}))
 
         assert status == 400
-        assert body["error"]["code"] == -32600
+        assert body["error"]["code"] == -32020
         assert "tools/call" in body["error"]["message"]
         assert "ping" in body["error"]["message"]
+
+    def test_the_refusal_is_worded_the_way_the_spec_words_it(self):
+        """`Header mismatch: Mcp-Name header value 'x' does not match body value 'y'`.
+
+        The spec gives this exact shape, and matching it is what lets an operator
+        reading two implementations' logs recognize one fault. It also pins the
+        canonical header SPELLING, which is the one the client actually sent.
+        """
+        _status, body = _call(_event(
+            "tools/call",
+            params={"name": "get_metrics_summary", "arguments": {}},
+            headers={"Mcp-Name": "search_feedback"},
+            token=_TOKEN,
+        ))
+
+        message = body["error"]["message"]
+        assert message.startswith("Header mismatch: Mcp-Name header value ")
+        assert "does not match body value" in message
+        # The spelling the spec uses, not the `MCP-Name` an over-general acronym
+        # rule produced.
+        assert "MCP-Name" not in message
 
     def test_an_absent_method_header_is_served(self):
         """Both echoes are optional; absence is silent."""
@@ -620,7 +757,7 @@ class TestRoutingHeaders:
             ), MagicMock())
 
         assert response["statusCode"] == 400, response["body"]
-        assert json.loads(response["body"])["error"]["code"] == -32600
+        assert json.loads(response["body"])["error"]["code"] == -32020
         client.assert_not_called()
 
     def test_a_name_header_on_a_method_that_names_no_tool_is_refused(self):
@@ -628,11 +765,11 @@ class TestRoutingHeaders:
         server cannot do — and answering the list would answer a different
         question."""
         status, body = _call(_event(
-            "tools/list", headers={"MCP-Name": "search_feedback"}, token=_TOKEN,
+            "tools/list", headers={"Mcp-Name": "search_feedback"}, token=_TOKEN,
         ))
 
         assert status == 400
-        assert body["error"]["code"] == -32600
+        assert body["error"]["code"] == -32020
         assert "tools/call" in body["error"]["message"]
 
     def test_a_name_header_with_no_name_in_the_body_is_refused(self):
@@ -641,20 +778,20 @@ class TestRoutingHeaders:
         read as agreement."""
         status, body = _call(_event(
             "tools/call", params={"arguments": {}},
-            headers={"MCP-Name": "search_feedback"}, token=_TOKEN,
+            headers={"Mcp-Name": "search_feedback"}, token=_TOKEN,
         ))
 
         assert status == 400
-        assert body["error"]["code"] == -32600
+        assert body["error"]["code"] == -32020
 
     def test_both_echoes_are_matched_case_insensitively(self):
-        for spelling in ("MCP-Method", "mcp-method"):
+        for spelling in ("Mcp-Method", "MCP-METHOD", "mcp-method"):
             status, _body = _call(_event("ping", headers={spelling: "tools/call"}))
             assert status == 400, f"{spelling} was not read"
 
 
 # ===========================================================================
-# The resultType discriminator
+# The result discriminator: spec resultType, local shape in _meta
 # ===========================================================================
 
 class TestResultDiscriminator:
@@ -665,6 +802,14 @@ class TestResultDiscriminator:
     happens to be present. A client switching on inferred shape re-derives that
     table from scratch and gets it subtly wrong — in the client, where nothing
     here can catch it.
+
+    The mechanism is split across two fields on purpose, and the split IS the
+    subject of this class: `resultType` carries the spec's `"complete"`, and the
+    local vocabulary lives in `_meta` under a vendor prefix. Putting the local
+    names in `resultType` — as the first draft did — obliged a conforming client
+    of the newest advertised revision to reject every result this server sends,
+    because the spec says an unrecognized `resultType` value MUST be considered
+    invalid and this server declares no capability-advertised extension.
     """
 
     # Every dispatchable method, with whatever it needs to reach an answer. Keyed
@@ -679,6 +824,56 @@ class TestResultDiscriminator:
         "tools/call": ({"name": "get_metrics_summary", "arguments": {}}, _TOKEN),
     }
 
+    def test_every_result_carries_the_spec_result_type(self):
+        """`complete` is the spec's value and the only one this server can mean.
+
+        Pinned as a literal rather than through the constant: the point is the
+        value a client on the wire sees, and a test that reads the constant would
+        keep passing if the constant were changed to something the spec does not
+        define.
+        """
+        for method, (params, token) in sorted(self.CASES.items()):
+            _status, body = _call(_event(method, params=params, token=token))
+            assert body["result"]["resultType"] == "complete", (
+                f"{method} answered resultType {body['result'].get('resultType')!r}"
+            )
+
+    def test_the_local_vocabulary_is_not_in_the_spec_field(self):
+        """The regression guard for the defect this class documents.
+
+        Every local shape name must be absent from `resultType` everywhere. Written
+        as a search over the whole vocabulary rather than one example, so a future
+        shape cannot be added straight back into the spec's field.
+        """
+        seen = set()
+        for method, (params, token) in sorted(self.CASES.items()):
+            _status, body = _call(_event(method, params=params, token=token))
+            seen.add(body["result"]["resultType"])
+
+        assert seen == {"complete"}
+        assert not (seen & mcp_handler.RESULT_SHAPES), (
+            f"local shape names are travelling in the spec's resultType field: "
+            f"{sorted(seen & mcp_handler.RESULT_SHAPES)}"
+        )
+
+    def test_the_vendor_prefix_is_not_one_the_spec_reserves(self):
+        """The prefix has to be legal, or the `_meta` move solves nothing.
+
+        The spec reserves any prefix whose SECOND LABEL is `modelcontextprotocol`
+        or `mcp`. Asserted as that property rather than by restating the literal,
+        so a future re-namespacing is still checked.
+        """
+        prefix = mcp_handler.VENDOR_META_PREFIX
+        assert prefix.endswith('/'), prefix
+        labels = prefix.rstrip('/').split('.')
+        assert len(labels) >= 2, f"a vendor prefix needs a second label: {prefix}"
+        assert labels[1] not in ('modelcontextprotocol', 'mcp'), (
+            f"{prefix} is reserved for MCP use"
+        )
+        # And every key this module publishes actually sits behind it.
+        for key in (mcp_handler.RESULT_SHAPE_KEY, mcp_handler.COST_CLASS_KEY):
+            assert key.startswith(prefix), key
+
     def test_every_dispatchable_method_is_covered(self):
         """Anti-vacuity for the parametrized test below."""
         dispatched = {*mcp_handler.MCP_METHODS, *mcp_handler.MCP_AUTH_METHODS}
@@ -689,48 +884,86 @@ class TestResultDiscriminator:
         )
 
     @pytest.mark.parametrize("method", sorted(CASES))
-    def test_every_method_answers_with_a_declared_result_type(self, method):
+    def test_every_method_answers_with_a_declared_result_shape(self, method):
         params, token = self.CASES[method]
         status, body = _call(_event(method, params=params, token=token))
 
         assert status == 200, body
-        result = body["result"]
-        declared = result.get(mcp_handler.RESULT_TYPE_KEY)
-        assert declared in mcp_handler.RESULT_TYPES, (
-            f"{method} answered with resultType {declared!r}"
+        declared = body["result"]["_meta"].get(mcp_handler.RESULT_SHAPE_KEY)
+        assert declared in mcp_handler.RESULT_SHAPES, (
+            f"{method} answered with result shape {declared!r}"
         )
 
-    def test_the_types_a_client_cannot_otherwise_tell_apart_differ(self):
+    def test_the_shapes_a_client_cannot_otherwise_tell_apart_differ(self):
         """The pairs that motivated the discriminator.
 
         A pong and an acknowledgement are both `{}` on the wire; a tool result and
         a tool error are the same object with one flag flipped. If either pair
-        shared a type the discriminator would not be discriminating.
+        shared a shape the discriminator would not be discriminating.
         """
         _s, pong = _call(_event("ping"))
         _s, ack = _call(_event("notifications/initialized"))
 
-        assert pong["result"][mcp_handler.RESULT_TYPE_KEY] != (
-            ack["result"][mcp_handler.RESULT_TYPE_KEY]
+        assert pong["result"]["_meta"][mcp_handler.RESULT_SHAPE_KEY] != (
+            ack["result"]["_meta"][mcp_handler.RESULT_SHAPE_KEY]
         )
+        # …while both still say `complete` in the spec's field, which is the whole
+        # reason the local discriminator had to move out of it.
+        assert pong["result"]["resultType"] == ack["result"]["resultType"] == "complete"
 
-    def test_a_tool_error_is_a_different_type_from_a_tool_result(self):
-        """A refusal carries no `structuredContent` to validate, and the type says
+    def test_a_tool_error_is_a_different_shape_from_a_tool_result(self):
+        """A refusal carries no `structuredContent` to validate, and the shape says
         so without the client testing for the key."""
         ok = mcp_handler._jsonrpc_result(
-            1, mcp_handler.RESULT_TYPE_TOOL_RESULT, {"isError": False},
+            1, mcp_handler.RESULT_SHAPE_TOOL_RESULT, {"isError": False},
         )
         bad = mcp_handler._tool_error(1, "nope")
 
-        assert ok["result"][mcp_handler.RESULT_TYPE_KEY] == (
-            mcp_handler.RESULT_TYPE_TOOL_RESULT
+        assert ok["result"]["_meta"][mcp_handler.RESULT_SHAPE_KEY] == (
+            mcp_handler.RESULT_SHAPE_TOOL_RESULT
         )
-        assert bad["result"][mcp_handler.RESULT_TYPE_KEY] == (
-            mcp_handler.RESULT_TYPE_TOOL_ERROR
+        assert bad["result"]["_meta"][mcp_handler.RESULT_SHAPE_KEY] == (
+            mcp_handler.RESULT_SHAPE_TOOL_ERROR
         )
-        # And the flag the spec defines is still there: the type describes the
+        # And the flag the spec defines is still there: the shape describes the
         # payload, it does not replace `isError`.
         assert bad["result"]["isError"] is True
+
+    def test_a_callers_meta_survives_alongside_the_shape(self):
+        """`_meta` is MERGED, not replaced.
+
+        The shape is injected into the same object the caller uses for its own
+        `_meta` (cache hints on `tools/list`, the cost class on a tool result), so
+        an implementation that assigned rather than merged would silently drop
+        whichever of the two was written second.
+        """
+        built = mcp_handler._jsonrpc_result(
+            1, mcp_handler.RESULT_SHAPE_TOOL_RESULT,
+            {"isError": False, "_meta": {"com.example/own": "kept"}},
+        )
+
+        meta = built["result"]["_meta"]
+        assert meta["com.example/own"] == "kept"
+        assert meta[mcp_handler.RESULT_SHAPE_KEY] == mcp_handler.RESULT_SHAPE_TOOL_RESULT
+
+    def test_a_payload_cannot_overwrite_the_discriminator(self):
+        """Refused rather than resolved, in EITHER direction.
+
+        The earlier builder spread the payload last, so a `result` carrying
+        `resultType` replaced the validated value and the "an undeclared value
+        cannot travel" guarantee was bypassed. Ordering the spread the other way
+        would have silently discarded the caller's value instead, which is the same
+        defect wearing the opposite sign — so both are a `ValueError`.
+        """
+        with pytest.raises(ValueError, match="already carries"):
+            mcp_handler._jsonrpc_result(
+                1, mcp_handler.RESULT_SHAPE_PONG, {"resultType": "input_required"},
+            )
+        with pytest.raises(ValueError, match="already carries"):
+            mcp_handler._jsonrpc_result(
+                1, mcp_handler.RESULT_SHAPE_PONG,
+                {"_meta": {mcp_handler.RESULT_SHAPE_KEY: "toolResult"}},
+            )
 
     def test_a_delegated_refusal_still_carries_the_tool_error_type(self):
         """End to end, through the route error path rather than the builder."""
@@ -753,13 +986,15 @@ class TestResultDiscriminator:
             ), MagicMock())
 
         result = json.loads(response["body"])["result"]
-        assert result[mcp_handler.RESULT_TYPE_KEY] == mcp_handler.RESULT_TYPE_TOOL_ERROR
+        assert result["_meta"][mcp_handler.RESULT_SHAPE_KEY] == (
+            mcp_handler.RESULT_SHAPE_TOOL_ERROR
+        )
         assert result["isError"] is True
 
-    def test_an_undeclared_result_type_cannot_be_sent(self):
+    def test_an_undeclared_result_shape_cannot_be_sent(self):
         """A client cannot switch on a typo, and finding out at the client is
         finding out too late."""
-        with pytest.raises(ValueError, match="undeclared resultType"):
+        with pytest.raises(ValueError, match="undeclared result shape"):
             mcp_handler._jsonrpc_result(1, "toolresult", {})
 
     def test_the_discriminator_is_required_not_optional(self):
@@ -772,11 +1007,11 @@ class TestResultDiscriminator:
         names the design rather than an arbitrary TypeError.
         """
         parameters = inspect.signature(mcp_handler._jsonrpc_result).parameters
-        result_type = parameters.get("result_type")
+        result_shape = parameters.get("result_shape")
 
-        assert result_type is not None, "_jsonrpc_result no longer takes a result type"
-        assert result_type.default is inspect.Parameter.empty, (
-            "result_type has a default, so a result can ship without naming its shape"
+        assert result_shape is not None, "_jsonrpc_result no longer takes a result shape"
+        assert result_shape.default is inspect.Parameter.empty, (
+            "result_shape has a default, so a result can ship without naming its shape"
         )
 
     def test_no_result_is_built_outside_the_builder(self):
@@ -930,14 +1165,19 @@ class TestUnknownMethod:
     """An unknown JSON-RPC method is -32601 and nothing else."""
 
     def test_an_unknown_method_is_method_not_found(self):
+        """-32601 with HTTP 404, which the Streamable HTTP transport REQUIRES.
+
+        The 200 this used to answer was not merely untidy: the status is what a
+        dual-era client's fallback probe reads, and the JSON-RPC body is what
+        distinguishes this 404 from the 404 of a legacy HTTP+SSE server that does
+        not host the modern endpoint at all. A 200 said "your request was fine"
+        about a method that does not exist.
+        """
         status, body = _call(_event("tools/teleport"))
 
         assert body["error"]["code"] == -32601
         assert "tools/teleport" in body["error"]["message"]
-        assert status == 200, (
-            "JSON-RPC transports a method-not-found in a 200 HTTP response: the "
-            "HTTP layer delivered the request fine"
-        )
+        assert status == 404, body
 
     def test_an_unknown_method_never_reaches_the_token_store(self):
         """A method that does not exist cannot need a credential, so asking for
@@ -952,7 +1192,7 @@ class TestUnknownMethod:
             body=json.dumps({"jsonrpc": "2.0", "id": 1, "params": {}}),
         ))
 
-        assert status == 200
+        assert status == 404
         assert body["error"]["code"] == -32601
 
     @pytest.mark.parametrize("body_text", ["[]", '"a string"', "42", "null"])
@@ -963,7 +1203,7 @@ class TestUnknownMethod:
         catch-all exists to prevent."""
         status, body = _call(_event(body=body_text))
 
-        assert status == 200, body
+        assert status == 404, body
         assert body["error"]["code"] == -32601
         assert body["id"] is None
 
@@ -1115,34 +1355,70 @@ class TestToolCatalogueIsFilteredByAuthorization:
             "this assertion deliberately"
         )
 
-    def test_the_list_carries_its_own_cache_hints(self):
-        """`listChanged: false` means nothing will tell the client the list moved,
-        so the answer says how long to hold it and how to detect staleness."""
+    def test_the_list_carries_the_caching_hints_the_spec_requires(self):
+        """The spec's own two fields, at the TOP LEVEL where a client reads them.
+
+        `tools/list` is in the spec's cacheable-results list, so these are required.
+        The earlier `_meta.cacheHints` object had the right semantics in a shape
+        nothing reads: a spec-reading client found no `ttlMs`, applied the spec's
+        default of 0, and cached nothing.
+
+        `ttlMs` is asserted as a MAGNITUDE rather than against the constant, because
+        the unit is the point — 300 in a milliseconds field is 0.3 seconds.
+        """
         status, body = _call(_event("tools/list", token=_TOKEN))
         assert status == 200, body
-        hints = body["result"]["_meta"]["cacheHints"]
+        result = body["result"]
 
-        assert hints["cacheable"] is True
-        assert isinstance(hints["maxAgeSeconds"], int) and hints["maxAgeSeconds"] > 0
-        assert hints["etag"]
-        assert hints["serverVersion"] == mcp_handler.MCP_SERVER_VERSION
-        assert hints["listChangedNotifications"] is False
+        assert isinstance(result["ttlMs"], int)
+        assert result["ttlMs"] >= 60_000, (
+            f"ttlMs={result['ttlMs']} looks like seconds, not milliseconds"
+        )
+        # And it is the same duration the seconds-denominated constant states,
+        # converted rather than restated.
+        assert result["ttlMs"] == mcp_handler._TOOL_LIST_MAX_AGE_SECONDS * 1000
 
-    def test_the_cache_scope_is_the_credential_not_the_endpoint(self):
-        """The load-bearing hint. A shared cache keyed on the endpoint alone would
-        serve one token's catalogue to another token — which only became possible
-        the moment the list started varying by credential."""
+        catalogue = result["_meta"][f"{mcp_handler.VENDOR_META_PREFIX}catalogue"]
+        assert catalogue["etag"]
+        assert catalogue["serverVersion"] == mcp_handler.MCP_SERVER_VERSION
+        assert catalogue["listChangedNotifications"] is False
+
+    def test_the_cache_scope_is_private_because_the_list_varies_by_credential(self):
+        """The load-bearing hint, in the spec's own encoding of it.
+
+        `private` is defined as "MAY be reused for the same authorization context;
+        caches MUST NOT be shared across authorization contexts" — exactly the
+        property that became necessary the moment the list started varying. With no
+        `cacheScope` at all, nothing told a gateway cache not to serve one token's
+        catalogue to another, which is the safety-relevant half of this fix.
+        """
         _status, body = _call(_event("tools/list", token=_TOKEN))
 
-        assert body["result"]["_meta"]["cacheHints"]["scope"] == "credential"
+        assert body["result"]["cacheScope"] == "private"
+
+    def test_the_two_cacheable_answers_scope_differently(self):
+        """Anti-vacuity, and the distinction is the whole point of the field.
+
+        Discovery is `public` (it names no project, tool or data) and the catalogue
+        is `private` (it is a function of the credential). A change that hard-coded
+        one value for both would pass each test above on its own.
+        """
+        _s, discovery = _call(_event("server/discover"))
+        _s, listing = _call(_event("tools/list", token=_TOKEN))
+
+        assert discovery["result"]["cacheScope"] == "public"
+        assert listing["result"]["cacheScope"] == "private"
 
     def test_the_cache_hint_agrees_with_the_declared_capability(self):
         """Two statements about notifications, from one fact."""
         _status, initialize = _call(_event("initialize"))
         _status, listing = _call(_event("tools/list", token=_TOKEN))
 
+        catalogue = listing["result"]["_meta"][
+            f"{mcp_handler.VENDOR_META_PREFIX}catalogue"
+        ]
         assert (
-            listing["result"]["_meta"]["cacheHints"]["listChangedNotifications"]
+            catalogue["listChangedNotifications"]
             is initialize["result"]["capabilities"]["tools"]["listChanged"]
         )
 
@@ -1153,9 +1429,10 @@ class TestToolCatalogueIsFilteredByAuthorization:
         _s, narrow = _call(_event("tools/list", token=_TOKEN),
                            row=_token_row(scopes=[SCOPE_METRICS_READ]))
 
+        key = f"{mcp_handler.VENDOR_META_PREFIX}catalogue"
         assert (
-            full["result"]["_meta"]["cacheHints"]["etag"]
-            != narrow["result"]["_meta"]["cacheHints"]["etag"]
+            full["result"]["_meta"][key]["etag"]
+            != narrow["result"]["_meta"][key]["etag"]
         )
 
     def test_the_etag_is_stable_across_identical_requests(self):
@@ -1163,9 +1440,10 @@ class TestToolCatalogueIsFilteredByAuthorization:
         _s, first = _call(_event("tools/list", token=_TOKEN))
         _s, second = _call(_event("tools/list", token=_TOKEN))
 
+        key = f"{mcp_handler.VENDOR_META_PREFIX}catalogue"
         assert (
-            first["result"]["_meta"]["cacheHints"]["etag"]
-            == second["result"]["_meta"]["cacheHints"]["etag"]
+            first["result"]["_meta"][key]["etag"]
+            == second["result"]["_meta"][key]["etag"]
         )
 
     def test_the_list_still_requires_a_credential(self):
@@ -1218,7 +1496,7 @@ class TestAnnotationsAndCostClass:
 
     def test_every_published_tool_carries_a_cost_class_from_the_vocabulary(self):
         for tool in mcp_handler.MCP_TOOLS:
-            cost = tool["_meta"]["costClass"]
+            cost = tool["_meta"][mcp_handler.COST_CLASS_KEY]
             assert cost in mcp_handler.COST_CLASSES, f"{tool['name']}: {cost!r}"
 
     def test_the_cost_class_table_covers_exactly_the_registered_tools(self):
@@ -1252,7 +1530,7 @@ class TestAnnotationsAndCostClass:
         for tool in mcp_handler.MCP_TOOLS:
             declares_truncation = "is_partial" in tool["outputSchema"].get("required", [])
             if declares_truncation:
-                assert tool["_meta"]["costClass"] == mcp_handler.COST_EXPENSIVE, (
+                assert tool["_meta"][mcp_handler.COST_CLASS_KEY] == mcp_handler.COST_EXPENSIVE, (
                     f"{tool['name']} can report truncation but is not the "
                     f"expensive class"
                 )
@@ -1266,14 +1544,15 @@ class TestAnnotationsAndCostClass:
         ))
 
         assert status == 200, body
-        assert body["result"]["_meta"]["costClass"] == (
+        assert body["result"]["_meta"][mcp_handler.COST_CLASS_KEY] == (
             mcp_handler.TOOL_COST_CLASSES["search_feedback"]
         )
 
     def test_the_advertised_and_the_reported_class_are_the_same_value(self):
         """Across every tool, not just the one an example exercises."""
         published = {
-            tool["name"]: tool["_meta"]["costClass"] for tool in mcp_handler.MCP_TOOLS
+            tool["name"]: tool["_meta"][mcp_handler.COST_CLASS_KEY]
+            for tool in mcp_handler.MCP_TOOLS
         }
         for name, advertised in published.items():
             arguments = {"dimension": "categories"} if name == "get_metrics_breakdown" else {}
@@ -1283,7 +1562,7 @@ class TestAnnotationsAndCostClass:
                 "tools/call", params={"name": name, "arguments": arguments}, token=_TOKEN,
             ))
             assert status == 200, body
-            assert body["result"]["_meta"]["costClass"] == advertised, name
+            assert body["result"]["_meta"][mcp_handler.COST_CLASS_KEY] == advertised, name
 
     def test_a_tool_error_carries_no_cost_class_to_misread(self):
         """A refusal did not perform the read, so reporting its class would
@@ -1291,10 +1570,14 @@ class TestAnnotationsAndCostClass:
 
         Same reasoning as `structuredContent` being absent on a refusal rather
         than empty.
+
+        `_meta` itself is PRESENT — it carries the result shape now — so the
+        assertion is about the cost key specifically rather than about the whole
+        object, which is what it used to be able to say.
         """
         error = mcp_handler._tool_error(1, "nope")
 
-        assert "_meta" not in error["result"]
+        assert mcp_handler.COST_CLASS_KEY not in error["result"]["_meta"]
 
     def test_the_declaration_the_annotations_wrap_is_not_mutated(self):
         """`_published_tool` composes; it must not edit the literal in place.
@@ -1326,15 +1609,86 @@ class TestADeadCredentialFailsTheHandshake:
         past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         return _token_row(expires_at=past)
 
-    @pytest.mark.parametrize("method", ["initialize", "ping", "server/discover",
-                                        "notifications/initialized"])
-    def test_an_expired_credential_is_refused_on_every_unauthenticated_method(self, method):
-        """Every method in the no-credential half, because a client may open with
-        any of them and each one would otherwise report a healthy server."""
+    @pytest.mark.parametrize("method", sorted(mcp_handler._LIVENESS_CHECKED_METHODS))
+    def test_an_expired_credential_is_refused_where_a_client_decides_it_connected(
+        self, method,
+    ):
+        """The methods a client uses to conclude it has a working session.
+
+        Parametrized over the live set rather than a restated list, so a method
+        added to it is covered here without an edit — and one that is listed but
+        not actually checked fails.
+        """
         status, body = _call(_event(method, token=_TOKEN), row=self._expired_row())
 
         assert status == 401, body
         assert body["error"]["code"] == -32001
+
+    def test_the_checked_set_is_the_handshake_shaped_methods_only(self):
+        """The scope of the check, stated as a property of the two halves.
+
+        It must be a strict subset of the unauthenticated methods — checking an
+        authenticated one would be redundant, and checking ALL of them is the
+        cost/notification problem below.
+        """
+        checked = set(mcp_handler._LIVENESS_CHECKED_METHODS)
+
+        assert checked < set(mcp_handler.MCP_METHODS), (
+            "the liveness check must cover unauthenticated methods, and not all of them"
+        )
+        assert not checked & set(mcp_handler.MCP_AUTH_METHODS)
+
+    @pytest.mark.parametrize("method", ["ping", "notifications/initialized"])
+    def test_a_keepalive_is_not_a_liveness_probe(self, method):
+        """`ping` and the notifications are deliberately NOT checked, and the
+        second reason is the stronger one.
+
+        Cost: `ping` is a keepalive, so checking it put a token-store read on every
+        heartbeat of every session — on a route throttled at 20 rps whose authorizer
+        caches for 300 s, which is how one valid-shaped token drives that stream
+        past the cache. Before this, `ping` touched nothing.
+
+        Protocol: a NOTIFICATION CARRIES NO ID, so a 401 to one is a response to a
+        message JSON-RPC says must not receive one. And nobody concludes "connected"
+        from an un-refused notification, so the honesty defect was never here.
+        """
+        status, body = _call(_event(method, token=_TOKEN), row=self._expired_row())
+
+        assert status == 200, body
+        assert "error" not in body
+
+    def test_the_liveness_check_never_stamps_last_used_at(self):
+        """"Last used" means "last used to read something".
+
+        Stamping it from a liveness probe would make a keepalive loop read as
+        "last used: continuously" on the MCP Access tab — a field an operator reads
+        to decide whether a credential is still wanted.
+        """
+        with patch("mcp_handler.projects_table") as table, \
+             patch.dict(os.environ, {"METRICS_FUNCTION": "m"}):
+            table.query.return_value = {"Items": [_token_row()]}
+            mcp_handler.lambda_handler(_event("initialize", token=_TOKEN), MagicMock())
+
+        table.update_item.assert_not_called()
+
+    def test_a_live_credential_reading_data_still_stamps_last_used_at(self):
+        """The positive control for the test above.
+
+        Without it, an `_authenticate` that never wrote `last_used_at` at all would
+        pass — and the field would silently stop meaning anything.
+        """
+        with patch("mcp_handler.projects_table") as table, \
+             patch("shared.mcp_delegate.get_delegate_lambda_client",
+                   return_value=_stub_domain_client()), \
+             patch.dict(os.environ, {"METRICS_FUNCTION": "m"}):
+            table.query.return_value = {"Items": [_token_row()]}
+            mcp_handler.lambda_handler(_event(
+                "tools/call",
+                params={"name": "get_metrics_summary", "arguments": {}},
+                token=_TOKEN,
+            ), MagicMock())
+
+        table.update_item.assert_called_once()
 
     def test_a_revoked_credential_is_refused_at_initialize(self):
         """Revocation deletes the row, so the credential parses and matches

@@ -1272,6 +1272,108 @@ describe('mcp endpoint throttling', () => {
 });
 
 
+describe('mcp transport headers reach a browser', () => {
+  // `mcp_handler.py` reads and VALIDATES three transport headers, and a browser's
+  // preflight on this API is answered by API Gateway's generated OPTIONS mock —
+  // not by the handler. So the handler allowing them in its own CORS response is
+  // not enough: omitted from the gateway's list, a browser-based client that sends
+  // `MCP-Protocol-Version` is blocked by its own preflight before the Lambda ever
+  // sees the request, and the server ends up enforcing a rule against a header no
+  // browser can deliver.
+  //
+  // Read out of the PYTHON source rather than re-listed here, which is this repo's
+  // convention for a contract two languages have to agree on (see the
+  // MCP_TOKEN_PK test above): a header added to the handler and not to the gateway
+  // fails here instead of at a browser.
+  const pythonTransportHeaders = (): string[] => {
+    const source = readRepoFile('lambda', 'api', 'mcp_handler.py');
+    const block = source.match(/TRANSPORT_HEADERS:\s*tuple\[str, \.\.\.\]\s*=\s*\(([^)]*)\)/)?.[1];
+    expect(block, 'could not read TRANSPORT_HEADERS from mcp_handler.py').toBeDefined();
+    // The tuple holds the NAMED constants, so resolve each to its literal.
+    const names = [...(block ?? '').matchAll(/([A-Z_]+),/g)].map((m) => m[1]);
+    expect(names.length, 'TRANSPORT_HEADERS looks empty').toBeGreaterThan(0);
+    return names.map((name) => {
+      const value = source.match(new RegExp(`^${name} = '([^']+)'`, 'm'))?.[1];
+      expect(value, `could not resolve ${name} in mcp_handler.py`).toBeDefined();
+      return value as string;
+    });
+  };
+
+  /** The allow-list the generated OPTIONS mock actually publishes. */
+  const preflightAllowHeaders = (): string[] => {
+    const methods = Object.values(apiTemplate().findResources('AWS::ApiGateway::Method'));
+    const MethodSchema = z.object({
+      Properties: z.object({
+        HttpMethod: z.string(),
+        Integration: z.object({
+          IntegrationResponses: z.array(z.object({
+            ResponseParameters: z.record(z.string(), z.string()).optional(),
+          })).optional(),
+        }).optional(),
+      }),
+    });
+    for (const method of methods) {
+      const props = MethodSchema.parse(method).Properties;
+      if (props.HttpMethod !== 'OPTIONS') continue;
+      for (const response of props.Integration?.IntegrationResponses ?? []) {
+        const raw = response.ResponseParameters?.[
+          'method.response.header.Access-Control-Allow-Headers'
+        ];
+        if (raw) return raw.replace(/^'|'$/g, '').split(',');
+      }
+    }
+    throw new Error('no generated OPTIONS method published an Allow-Headers list');
+  };
+
+  it('allows every header the handler validates through the preflight', () => {
+    const allowed = new Set(preflightAllowHeaders().map((h) => h.trim().toLowerCase()));
+    const declared = pythonTransportHeaders();
+
+    // Positive control: a regex that silently matched nothing would make the
+    // subset assertion below vacuously true.
+    expect(declared.length).toBeGreaterThanOrEqual(3);
+    for (const header of declared) {
+      // Case-insensitively, because CORS header matching is — the handler reads
+      // the lowercase form API Gateway delivers, the gateway publishes the wire
+      // spelling, and both must name the same header.
+      expect(allowed, `${header} is validated by the handler but blocked by the preflight`)
+        .toContain(header.toLowerCase());
+    }
+  });
+
+  it('allows them on the gateway error responses too', () => {
+    // A 4XX/5XX from the gateway itself carries its own CORS headers, and a
+    // browser that cannot read the error sees a network failure instead of the
+    // 401 or 400 the server actually sent.
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const declared = pythonTransportHeaders().map((h) => h.toLowerCase());
+    const parsed = responses.map((r) => ResponseSchema.parse(r).Properties);
+    expect(parsed.length, 'no gateway responses in the template').toBeGreaterThan(0);
+
+    for (const props of parsed) {
+      const raw = props.ResponseParameters?.[
+        'gatewayresponse.header.Access-Control-Allow-Headers'
+      ];
+      if (!raw) continue;
+      const allowed = new Set(
+        raw.replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase()),
+      );
+      for (const header of declared) {
+        expect(allowed, `${header} missing from the ${props.ResponseType} response`)
+          .toContain(header);
+      }
+    }
+  });
+});
+
 describe('unauthorized gateway response', () => {
   // The ONLY place a REST API can emit a true WWW-Authenticate on a 401:
   // Lambda-proxy responses have the header unconditionally remapped to

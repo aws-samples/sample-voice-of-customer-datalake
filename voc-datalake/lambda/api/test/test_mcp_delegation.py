@@ -1093,7 +1093,7 @@ class TestStructuredOutput:
         serialized = json.dumps(shapes, sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
-        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.2.0", "648e52b109dce9b8"), (
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.3.0", "7131e9e21c26a1ed"), (
             "a tool's published declaration changed. Move MCP_SERVER_VERSION — minor "
             "for an added field, MAJOR for a removal or a retype, because a client "
             "validates structuredContent against these schemas and caches the whole "

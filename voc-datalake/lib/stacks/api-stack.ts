@@ -24,6 +24,50 @@ import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { SOURCE_PLACEHOLDER } from '../utils/naming';
 
+/**
+ * The MCP transport headers a browser-based client may send.
+ *
+ * These are read and VALIDATED by `mcp_handler.py` (`TRANSPORT_HEADERS` there),
+ * and a browser's preflight on this API is answered by API Gateway's generated
+ * OPTIONS mock rather than by the Lambda — so the handler allowing them in its own
+ * CORS response was not enough. Omitted here, a browser-based client that sends
+ * `MCP-Protocol-Version` was blocked by its own preflight before the handler ever
+ * saw the request: a rule the server enforces against a header no browser could
+ * deliver.
+ *
+ * Spelled the way the spec spells them (`Mcp-Method`, not `MCP-Method`). CORS
+ * header matching is case-insensitive, so this is about agreeing with the spec
+ * rather than about function.
+ *
+ * Kept in lockstep with the Python constant by 'mcp transport headers' in
+ * api-stack.test.ts, which reads `TRANSPORT_HEADERS` out of the handler source —
+ * the same cross-language pattern the `MCP_TOKEN_PK` test already uses.
+ */
+const MCP_TRANSPORT_HEADERS = ['MCP-Protocol-Version', 'Mcp-Method', 'Mcp-Name'];
+
+/**
+ * Every header this API accepts on a cross-origin request, declared ONCE.
+ *
+ * The list was previously written out four times — the preflight options plus
+ * three gateway responses — which is how a header comes to be allowed on the
+ * preflight and refused on the error path, or vice versa. The string form below is
+ * derived from this array rather than typed again.
+ */
+const CORS_ALLOW_HEADERS = [
+  'Content-Type',
+  'Authorization',
+  'X-Requested-With',
+  'X-Amz-Date',
+  'X-Amz-Security-Token',
+  ...MCP_TRANSPORT_HEADERS,
+];
+
+/**
+ * The same list in the single-quoted form an API Gateway response header takes.
+ * Derived, so the four places that state it cannot disagree.
+ */
+const CORS_ALLOW_HEADERS_VALUE = `'${CORS_ALLOW_HEADERS.join(',')}'`;
+
 export interface VocApiStackProps extends VocStackProps {
   // Core stack resources
   feedbackTable: dynamodb.Table;
@@ -1029,7 +1073,7 @@ export class VocApiStack extends VocStack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Amz-Date', 'X-Amz-Security-Token'],
+        allowHeaders: CORS_ALLOW_HEADERS,
         exposeHeaders: ['Content-Type'],
       },
       cloudWatchRoleRemovalPolicy: cdk.RemovalPolicy.DESTROY
@@ -1040,11 +1084,11 @@ export class VocApiStack extends VocStack {
     // Gateway responses for CORS on errors
     this.api.addGatewayResponse('Default4XX', {
       type: apigateway.ResponseType.DEFAULT_4XX,
-      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'", 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
+      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE, 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
     });
     this.api.addGatewayResponse('Default5XX', {
       type: apigateway.ResponseType.DEFAULT_5XX,
-      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'", 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
+      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE, 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
     });
     // API-WIDE, deliberately: this fires on every gateway-GENERATED 401 —
     // the MCP token authorizer refusing a malformed Bearer shape, AND the
@@ -1062,7 +1106,7 @@ export class VocApiStack extends VocStack {
       type: apigateway.ResponseType.UNAUTHORIZED,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'",
+        'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE,
         'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
         'WWW-Authenticate': '\'Bearer error="invalid_token"\'',
         'Access-Control-Expose-Headers': "'WWW-Authenticate'",

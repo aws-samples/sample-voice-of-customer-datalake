@@ -174,6 +174,19 @@ def reach_allows(
     no project dimension in the feedback corpus to narrow, so "allow it" would
     silently hand a supposedly sealed token the entire verbatim history. A
     caller that needs both gets ``workspace`` and accepts what that means.
+
+    ``token_projects`` that is not a list or tuple reaches NO project, which is
+    the fail-closed reading and closes a real hole rather than tidying a type
+    hint. ``project_id in token_projects`` is a membership test against a sequence
+    but a SUBSTRING test against a string, so a damaged row storing ``projects``
+    as ``"proj1"`` instead of ``["proj1"]`` admitted ``project_id="p"``,
+    ``"proj"``, and every other substring of its own value. That value is stored
+    data and it is the thing a ``project-set`` token is bounded BY, so a shape
+    that changes what the bound MEANS must not be accepted.
+
+    Note ``workspace`` reach returns above without consulting the set at all —
+    which is what makes it safe for a caller to ask about a representative
+    project id under that reach (see ``_tool_is_authorized`` in the MCP handler).
     """
     if read_reach == REACH_NONE:
         return False
@@ -186,6 +199,8 @@ def reach_allows(
     if read_reach == REACH_WORKSPACE:
         return True
     if read_reach == REACH_PROJECT_SET:
+        if not isinstance(token_projects, (list, tuple)):
+            return False
         return project_id in token_projects
     return False
 

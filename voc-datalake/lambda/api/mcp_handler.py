@@ -130,7 +130,23 @@ PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
 # a session that cached `tools/list` before this deploy holds a catalogue with no
 # annotations and no cost classes, and `listChanged: false` means nothing will
 # tell it. Connected clients must reconnect.
-MCP_SERVER_VERSION = "3.2.0"
+#
+# 3.3.0 makes the envelope's field NAMES the spec's own, and the rename is why this
+# is a version bump rather than a patch: 3.2.0 published a local vocabulary in
+# spec-owned places, which a conforming client of the newest advertised revision had
+# to reject outright.
+#   • `resultType` now carries the spec's `"complete"`; the local shape vocabulary
+#     moved to `_meta['com.amazonaws.voc-datalake/resultShape']`.
+#   • `_meta.costClass` on each published tool became the vendor-prefixed key, and
+#     each tool gained the top-level `title` the current revision defines.
+#   • `tools/list` and `server/discover` carry the spec's `ttlMs`/`cacheScope`
+#     instead of a locally invented `_meta.cacheHints`.
+#   • `server/discover` answers `supportedVersions` and puts `serverInfo` under the
+#     spec's reserved `_meta` key.
+# Minor rather than major because no declared tool INPUT or OUTPUT shape moved: a
+# client validating `structuredContent` against a cached `outputSchema` is
+# unaffected. The reconnect caveat above applies with the same force.
+MCP_SERVER_VERSION = "3.3.0"
 
 
 # ============================================
@@ -396,20 +412,55 @@ TRANSPORT_HEADERS: tuple[str, ...] = (
 )
 
 
+# The wire spelling of each transport header, as the SPEC spells it. Not derivable
+# from the lowercase form by one rule, because the spec is not internally
+# consistent about it: `MCP-Protocol-Version` carries the acronym in caps while
+# `Mcp-Method` and `Mcp-Name` title-case it. An earlier version of this module
+# applied a single `MCP` rule to all three and published `MCP-Method` — harmless
+# on the wire (HTTP header names are case-insensitive, and this module matches
+# case-insensitively) but a discovery answer and a CORS allowlist stating a
+# spelling the spec does not use is a contract that quietly disagrees with it.
+#
+# Declared as a table rather than computed so the exception is visible, and
+# asserted against TRANSPORT_HEADERS below so the two cannot drift.
+_CANONICAL_HEADER_NAMES: dict[str, str] = {
+    PROTOCOL_VERSION_HEADER: 'MCP-Protocol-Version',
+    METHOD_HEADER: 'Mcp-Method',
+    NAME_HEADER: 'Mcp-Name',
+}
+
+
 def _canonical_header_name(header: str) -> str:
     """The wire spelling of a header this module reads in lowercase.
 
-    Derived rather than declared twice: the lowercase forms above exist only
-    because API Gateway normalises what it delivers, while a CORS allowlist and a
-    discovery answer are read by clients that spell headers the canonical way. Two
-    hand-written lists is how one gains a header the other does not.
+    Looked up rather than declared twice at each use: the lowercase forms exist
+    only because API Gateway normalises what it delivers, while a CORS allowlist,
+    a discovery answer and an error message are read by clients that spell headers
+    the way the spec does. Two hand-written lists is how one gains a header the
+    other does not.
 
-    `MCP` keeps its acronym casing; every other segment title-cases, which is what
-    makes `MCP-Protocol-Version`.
+    Unknown headers fall back to plain title-casing. Nothing reaches that path
+    today — the assertion below pins every declared transport header to the table
+    — and it exists so a future caller passing some other header name gets a
+    reasonable spelling rather than a KeyError.
     """
-    return '-'.join(
-        'MCP' if part == 'mcp' else part.capitalize()
-        for part in header.split('-')
+    known = _CANONICAL_HEADER_NAMES.get(header)
+    if known is not None:
+        return known
+    return '-'.join(part.capitalize() for part in header.split('-'))
+
+
+# Every transport header has a declared wire spelling. A header added above
+# without a spelling here would otherwise be published title-cased by the
+# fallback, silently, which is the drift the table exists to prevent.
+#
+# `raise` rather than `assert`, which this tree requires: a bare `assert` is
+# stripped under `python -O`, so the invariant would go unchecked exactly where it
+# matters, and an AssertionError bypasses this tree's logging.
+if set(_CANONICAL_HEADER_NAMES) != set(TRANSPORT_HEADERS):
+    raise RuntimeError(
+        'transport headers and their canonical spellings disagree: '
+        f'{sorted(set(TRANSPORT_HEADERS) ^ set(_CANONICAL_HEADER_NAMES))}'
     )
 
 
@@ -456,21 +507,41 @@ CORS_HEADERS = {
 _WWW_AUTHENTICATE_401 = 'Bearer error="invalid_token"'
 
 
-def _cors_response(body: dict, status_code: int = 200) -> dict:
+# What each endpoint of this function actually serves, which is what RFC 9110
+# §15.5.6 defines `Allow` to mean: "the set of methods supported by the TARGET
+# RESOURCE".
+#
+# ⚠️ This is per-resource and cannot be derived from `Access-Control-Allow-Methods`,
+# which the first draft of this change did. That header answers a different
+# question — "what may a browser preflight against this Lambda" — and it is one
+# constant for the whole function, so a `DELETE /v1/mcp/autoseed/p1` was refused
+# with `Allow: POST, OPTIONS`: an advertised set omitting the one method that
+# resource actually serves, sending a client to retry with `POST` on a path that
+# only handles `GET`. Deriving one from the other bought consistency at the cost of
+# being wrong.
+_ALLOW_JSONRPC: tuple[str, ...] = ('POST', 'OPTIONS')
+_ALLOW_AUTOSEED: tuple[str, ...] = ('GET', 'OPTIONS')
+
+
+def _cors_response(body: dict, status_code: int = 200,
+                   allow: tuple[str, ...] = _ALLOW_JSONRPC) -> dict:
     """Return a Lambda proxy response with CORS headers.
 
-    Every 401 gains the RFC 6750 challenge here, and every 405 gains the
-    `Allow` header RFC 9110 §15.5.6 REQUIRES, at the one choke point all
-    responses pass through, so no future path of either kind can forget it.
+    Every 401 gains the RFC 6750 challenge here, and every 405 gains the `Allow`
+    header RFC 9110 §15.5.6 REQUIRES, at the one choke point all responses pass
+    through, so no future path of either kind can forget it.
+
+    `allow` defaults to the JSON-RPC endpoint's set because that is what nearly
+    every caller is answering for; the autoseed path passes its own. The default
+    is safe to get wrong in only one direction — a caller that forgets it on a 405
+    for some future resource publishes the JSON-RPC set — so the two 405 call sites
+    are pinned by tests naming both paths.
     """
     headers = {**CORS_HEADERS, 'Content-Type': 'application/json'}
     if status_code == 401:
         headers['WWW-Authenticate'] = _WWW_AUTHENTICATE_401
     if status_code == 405:
-        # Derived from the CORS declaration rather than written out again: the
-        # two say the same thing to two audiences (a browser preflight and a
-        # 405), and a hand-written second copy is how they come to disagree.
-        headers['Allow'] = CORS_HEADERS['Access-Control-Allow-Methods'].replace(',', ', ')
+        headers['Allow'] = ', '.join(allow)
     return {
         'statusCode': status_code,
         'headers': headers,
@@ -529,13 +600,60 @@ def _origin_allowed(event: dict) -> bool:
 _ENCODED_WORD = re.compile(r'\A=\?base64\?(.*)\?=\Z', re.DOTALL)
 
 
+# The spec's own codes for the two transport faults this server can report.
+# `-32020`–`-32099` is reserved for spec-defined codes, so these are used with
+# EXACTLY the spec's meaning and no neighbour in the range is invented:
+#
+#   -32020 HeaderMismatch            — a routing header contradicts the body.
+#   -32022 UnsupportedProtocolVersion — with `data.supported` / `data.requested`.
+#
+# (-32021 MissingRequiredClientCapability is the third in the range and is not
+# used here: this server requires no client capability.)
+JSONRPC_HEADER_MISMATCH = -32020
+JSONRPC_UNSUPPORTED_PROTOCOL_VERSION = -32022
+
+# JSON-RPC's own code for a method this server does not implement. Paired with
+# HTTP 404 by the Streamable HTTP transport, which is what lets a client tell this
+# apart from the 404 of a legacy HTTP+SSE server that does not host the endpoint.
+JSONRPC_METHOD_NOT_FOUND = -32601
+
+# `-32600 Invalid Request` for a malformed transport that is neither of the two
+# spec-defined faults — a sentinel that claims base64 and does not decode. The
+# BODY may be perfectly well formed, and it is the REQUEST as a whole that is not;
+# `-32602 Invalid params` would send the caller looking at its arguments.
+JSONRPC_INVALID_REQUEST = -32600
+
+
 class InvalidTransportHeader(Exception):
     """A transport header is absent-or-fine, or it is malformed. Never ignored.
 
-    Reported as `-32600 Invalid Request` with HTTP 400: the JSON-RPC body may be
-    perfectly well formed, and it is the REQUEST — body plus transport — that is
-    not. `-32602 Invalid params` would send the caller looking at its arguments.
+    Carries the JSON-RPC code and `data` payload the SPEC defines for the fault,
+    rather than being flattened to one generic code at the handler. The first
+    draft of this change reported every one of these as `-32600` with the detail
+    only in the human-readable message, which broke two things:
+
+      • A client could not machine-read the recovery path. The spec's own rule for
+        an unsupported version is "select a mutually supported version from the
+        `supported` list and retry" — with the list only in an English sentence,
+        retrying means parsing prose.
+      • ERA DETECTION. The Streamable HTTP backward-compatibility rules say a
+        dual-era client sends a modern request and, on a 400, inspects the body: a
+        RECOGNIZED modern error means "modern server, retry with a supported
+        version", anything else means "legacy server, fall back to `initialize`".
+        `-32600` is not a recognized modern error, so a client that guessed the
+        version wrong concluded this server was legacy — while the server was
+        advertising a modern revision.
+
+    The HTTP status travels too, because the spec pins it per fault (400 for both
+    spec-defined codes here) and the status is half of what the era probe reads.
     """
+
+    def __init__(self, message: str, code: int = JSONRPC_INVALID_REQUEST,
+                 data: Any = None, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.code = code
+        self.data = data
+        self.status_code = status_code
 
 
 def _request_header(event: dict, name: str) -> str | None:
@@ -587,6 +705,20 @@ def _decoded_header(raw: str, name: str) -> str:
     return decoded
 
 
+def _header_mismatch_message(header: str, header_value: Any, body_value: Any) -> str:
+    """A header/body disagreement, worded the way the spec's own example words it.
+
+    `Header mismatch: Mcp-Name header value 'foo' does not match body value 'bar'`.
+    Matching the spec's phrasing is not cosmetic: it is the sentence an operator
+    reading two implementations' logs side by side has to recognize as the same
+    fault, and the canonical header spelling is what the client actually sent.
+    """
+    return (
+        f'Header mismatch: {_canonical_header_name(header)} header value '
+        f'{header_value!r} does not match body value {body_value!r}'
+    )
+
+
 def _negotiate_protocol_version(requested: Any) -> str:
     """The revision this session will speak.
 
@@ -621,14 +753,28 @@ def _validated_protocol_version(event: dict) -> str:
     version = _decoded_header(raw, PROTOCOL_VERSION_HEADER)
     if version not in SUPPORTED_PROTOCOL_VERSIONS:
         raise InvalidTransportHeader(
-            f'Unsupported MCP protocol version {version!r}. This server speaks: '
-            f'{", ".join(SUPPORTED_PROTOCOL_VERSIONS)}'
+            f'Unsupported protocol version {version!r}. This server speaks: '
+            f'{", ".join(SUPPORTED_PROTOCOL_VERSIONS)}',
+            code=JSONRPC_UNSUPPORTED_PROTOCOL_VERSION,
+            # The machine-readable half, and the reason this error has a `data`
+            # payload at all: `supported` is what the spec tells the client to
+            # retry with, and `requested` echoes the rejected value so a client
+            # with several in flight knows which request this answers.
+            data={
+                "supported": list(SUPPORTED_PROTOCOL_VERSIONS),
+                "requested": version,
+            },
         )
     return version
 
 
 def _validate_routing_headers(event: dict, method: str, params: Any) -> None:
     """Refuse a routing echo that contradicts the body it travels with.
+
+    Reported as `-32020 HeaderMismatch`, which is the spec's code for exactly this
+    and carries the spec's own rationale: a load balancer routes on the header
+    while the server executes on the body, so the two hops would be serving
+    different requests.
 
     Both headers are OPTIONAL, so absence is silent. A present one is compared
     against the body, and the comparison is exact: these are protocol tokens, not
@@ -644,8 +790,8 @@ def _validate_routing_headers(event: dict, method: str, params: Any) -> None:
         declared = _decoded_header(raw_method, METHOD_HEADER)
         if declared != method:
             raise InvalidTransportHeader(
-                f'{METHOD_HEADER} says {declared!r} but the request body calls '
-                f'{method!r}'
+                _header_mismatch_message(METHOD_HEADER, declared, method),
+                code=JSONRPC_HEADER_MISMATCH,
             )
 
     raw_name = _request_header(event, NAME_HEADER)
@@ -654,14 +800,15 @@ def _validate_routing_headers(event: dict, method: str, params: Any) -> None:
     declared_name = _decoded_header(raw_name, NAME_HEADER)
     if method != 'tools/call':
         raise InvalidTransportHeader(
-            f'{NAME_HEADER} names a tool, which is meaningful only on tools/call, '
-            f'not on {method!r}'
+            f'{_canonical_header_name(NAME_HEADER)} names a tool, which is meaningful '
+            f'only on tools/call, not on {method!r}',
+            code=JSONRPC_HEADER_MISMATCH,
         )
     body_name = params.get('name') if isinstance(params, dict) else None
     if declared_name != body_name:
         raise InvalidTransportHeader(
-            f'{NAME_HEADER} says {declared_name!r} but the request body calls '
-            f'{body_name!r}'
+            _header_mismatch_message(NAME_HEADER, declared_name, body_name),
+            code=JSONRPC_HEADER_MISMATCH,
         )
 
 
@@ -743,21 +890,31 @@ class AuthBackendUnavailable(Exception):
 
 
 @tracer.capture_method
-def _authenticate(event: dict) -> dict | None:
+def _authenticate(event: dict, *, touch: bool = True) -> dict | None:
     """
     Validate Bearer token from Authorization header.
 
     Returns the token DynamoDB item (with project_id, scope, etc.) on success,
     or None if authentication fails.
 
+    `touch=False` skips the `last_used_at` write. It exists for the pre-dispatch
+    liveness check on the unauthenticated methods: "last used" is a fact about
+    when a credential was USED to read something, and stamping it from a `ping`
+    would turn a keepalive loop into "last used: continuously" on the MCP Access
+    tab — a field an operator reads to decide whether a token is still wanted.
+
     Raises:
         AuthBackendUnavailable: the token store could not be consulted because
             of a permanent server-side fault.  Callers must answer with a
             server error, not a 401 — the credential was never checked.
     """
-    headers = event.get('headers', {})
-    # API Gateway lowercases header names in proxy mode
-    auth_header = headers.get('authorization') or headers.get('Authorization') or ''
+    # Matched case-insensitively rather than by trying two spellings: API Gateway
+    # lowercases in proxy mode and a direct invoke does not, and `Authorization`
+    # is no more exempt from that than the transport headers are. The two-spelling
+    # form this replaces missed `AUTHORIZATION` and every other casing, which on
+    # the liveness check below would have let a dead credential through the very
+    # gate it was added to close.
+    auth_header = _request_header(event, 'authorization') or ''
 
     if not auth_header.startswith('Bearer '):
         return None
@@ -870,14 +1027,15 @@ def _authenticate(event: dict) -> dict | None:
     if _credential_expired(item):
         return None
 
-    try:
-        projects_table.update_item(
-            Key={'pk': MCP_TOKEN_PK, 'sk': item['sk']},
-            UpdateExpression='SET last_used_at = :now',
-            ExpressionAttributeValues={':now': datetime.now(timezone.utc).isoformat()},
-        )
-    except Exception as e:
-        logger.warning(f"Failed to update last_used_at: {e}")
+    if touch:
+        try:
+            projects_table.update_item(
+                Key={'pk': MCP_TOKEN_PK, 'sk': item['sk']},
+                UpdateExpression='SET last_used_at = :now',
+                ExpressionAttributeValues={':now': datetime.now(timezone.utc).isoformat()},
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update last_used_at: {e}")
 
     return item
 
@@ -1153,6 +1311,25 @@ _DAYS_ARG: dict[str, Any] = {
 }
 
 # ---------------------------------------------------------------------------
+# The vendor `_meta` prefix
+# ---------------------------------------------------------------------------
+#
+# Every non-spec field this server publishes travels under `_meta` behind this
+# prefix. `_meta` is the spec's own extension point, and the prefix is what keeps
+# a local field from colliding with a future spec field of the same name — a
+# collision that is free to avoid now and awkward to fix once a client has cached
+# the declaration carrying it.
+#
+# Legal precisely because the second label is `amazonaws`: the spec reserves any
+# prefix whose second label is `modelcontextprotocol` or `mcp`.
+VENDOR_META_PREFIX = 'com.amazonaws.voc-datalake/'
+
+# The `_meta` keys this server publishes. Named rather than spelled at each use so
+# a test can read them, and so the prefix is applied in one place.
+COST_CLASS_KEY = f'{VENDOR_META_PREFIX}costClass'
+RESULT_SHAPE_KEY = f'{VENDOR_META_PREFIX}resultShape'
+
+# ---------------------------------------------------------------------------
 # Cost classes
 # ---------------------------------------------------------------------------
 #
@@ -1256,12 +1433,24 @@ def _published_tool(declaration: dict) -> dict:
         raise ValueError(f'{name} declares undeclared cost class {cost_class!r}')
     return {
         **declaration,
+        # BOTH spellings of the title, which is the compatible choice and costs one
+        # line. `title` is where the current revision defines it — a client written
+        # against that revision reads the top level and would otherwise show the raw
+        # `name` in its permission prompt, the exact failure `TOOL_TITLES` exists to
+        # prevent. `annotations.title` is the pre-2026 spelling and is what older
+        # clients read. One source value, so the two cannot disagree.
+        "title": TOOL_TITLES[name],
         "annotations": _tool_annotations(name),
-        # `_meta` is the spec's own extension point, which is where a
-        # non-standard signal belongs: a client that does not know `costClass`
-        # ignores `_meta` wholesale rather than failing to validate a tool
-        # declaration carrying a field its schema does not define.
-        "_meta": {"costClass": cost_class},
+        # `_meta` is the spec's own extension point, which is where a non-standard
+        # signal belongs: a client that does not know the key ignores `_meta`
+        # wholesale rather than failing to validate a tool declaration carrying a
+        # field its schema does not define.
+        #
+        # VENDOR-PREFIXED rather than a bare `costClass`. Bare is legal today, but it
+        # is also the name a future revision could take for the same idea with
+        # different semantics — and a prefix is free to adopt now and awkward once a
+        # client has cached the entry.
+        "_meta": {COST_CLASS_KEY: cost_class},
     }
 
 
@@ -1556,16 +1745,47 @@ _TOOL_DECLARATIONS = [
 # first client that asks for the catalogue.
 MCP_TOOLS = [_published_tool(declaration) for declaration in _TOOL_DECLARATIONS]
 
-# How long a client may reuse a cached `tools/list`, in seconds. Five minutes,
-# matching the MCP authorizer's own `resultsCacheTtl` in api-stack.ts — not
-# because the two caches interact, but because a client holding a catalogue longer
-# than the credential's authorization decision lives is holding the older of two
-# facts about the same token.
+# ---------------------------------------------------------------------------
+# Cache hints
+# ---------------------------------------------------------------------------
+#
+# The spec's own two fields, `ttlMs` and `cacheScope`, and it REQUIRES them on
+# every `resultType: "complete"` result from `server/discover` and `tools/list`.
+#
+# ⚠️ The first draft of this change invented a parallel `_meta.cacheHints` object
+# with `maxAgeSeconds` and `scope: "credential"`. The SEMANTICS were right and the
+# encoding was a reinvention, with two consequences: a spec-reading client found no
+# `ttlMs`, defaulted it to 0 (immediately stale) and cached nothing; and — the
+# safety-relevant half — with no `cacheScope`, nothing told a gateway cache it must
+# not serve one token's catalogue to another.
+#
+# `private` is the spec's own encoding of exactly the property the credential
+# filter makes load-bearing: "Cached responses MAY be reused for the same
+# authorization context. Caches MUST NOT be shared across authorization contexts."
+CACHE_SCOPE_PUBLIC = 'public'
+CACHE_SCOPE_PRIVATE = 'private'
+
+# How long a client may reuse a cached `tools/list`. Five minutes, matching the MCP
+# authorizer's own `resultsCacheTtl` in api-stack.ts — not because the two caches
+# interact, but because a client holding a catalogue longer than the credential's
+# authorization decision lives is holding the older of two facts about the same
+# token.
 #
 # It is a HINT, and the etag beside it is what makes staleness detectable rather
 # than merely time-bounded: `listChanged: false` means no notification is coming,
 # so the honest contract is "re-ask, compare the etag, and reconnect if it moved".
 _TOOL_LIST_MAX_AGE_SECONDS = 300
+
+# The same duration in the unit the spec's field uses. Converted here, at the one
+# boundary, rather than by writing `300000` next to `300` and trusting the two to
+# stay in step — the unit is the whole reason the reinvented `maxAgeSeconds` could
+# not simply be renamed.
+_TOOL_LIST_TTL_MS = _TOOL_LIST_MAX_AGE_SECONDS * 1000
+
+# Discovery is cacheable for longer than the catalogue, and for a different reason:
+# it is a function of the DEPLOYED BUILD (versions, methods, headers), not of any
+# credential, so the only thing that invalidates it is a deploy.
+_DISCOVER_TTL_MS = 3_600_000
 
 
 # ============================================
@@ -2082,72 +2302,125 @@ TOOL_REACH_KINDS: dict[str, str] = {
 # MCP JSON-RPC protocol handling
 # ============================================
 
-# The `resultType` vocabulary — one discriminator per SHAPE of result this server
-# returns.
+# `resultType` — the SPEC's field, carrying the spec's own value.
 #
-# 🔑 Why a discriminator rather than "look at which keys are present": every
-# result here is a bare JSON object, and telling them apart by key inference is
-# guesswork that gets worse as shapes grow. `{}` is both a `ping` answer and a
-# notification acknowledgement; a tool result and a tool ERROR differ only by a
-# boolean and by whether `structuredContent` happens to be there. A client
-# switching on inferred shape re-derives that table from scratch, gets it subtly
-# wrong, and the failure lands in the client rather than here.
+# ⚠️ This was the defect the first draft of this change shipped: the seven local
+# shape names below travelled in `resultType` itself. That field's value space is
+# owned by the spec, which defines `complete` and `input_required` (the MRTR
+# interim result) and says a value the client does not recognize "MUST be
+# considered invalid" — extension values are legal only when advertised through a
+# capability-declared extension, and this server declares none. So a strict
+# 2026-07-28 client had to reject EVERY result from this server, which made the
+# newest advertised revision less interoperable than the pinned 2024-11-05 it
+# replaced (where the field is absent and an absent value reads as `complete`).
 #
-# `toolError` is a distinct type rather than "a toolResult with isError" ON
-# PURPOSE, and `isError` is still sent: the flag is what the spec defines, the
-# type is what says the payload has no `structuredContent` to validate.
-RESULT_TYPE_INITIALIZE = 'initialize'
-RESULT_TYPE_DISCOVERY = 'discovery'
-RESULT_TYPE_TOOL_LIST = 'toolList'
-RESULT_TYPE_TOOL_RESULT = 'toolResult'
-RESULT_TYPE_TOOL_ERROR = 'toolError'
-RESULT_TYPE_PONG = 'pong'
-RESULT_TYPE_ACK = 'ack'
+# `complete` on every result here is the whole vocabulary this server needs:
+# `input_required` belongs to multi-round-trip requests, and no tool asks the
+# caller for more input mid-call.
+RESULT_TYPE_KEY = 'resultType'
+RESULT_TYPE_COMPLETE = 'complete'
 
-RESULT_TYPES: frozenset[str] = frozenset({
-    RESULT_TYPE_INITIALIZE,
-    RESULT_TYPE_DISCOVERY,
-    RESULT_TYPE_TOOL_LIST,
-    RESULT_TYPE_TOOL_RESULT,
-    RESULT_TYPE_TOOL_ERROR,
-    RESULT_TYPE_PONG,
-    RESULT_TYPE_ACK,
+# The local shape discriminator travels under `RESULT_SHAPE_KEY` (declared with the
+# other vendor `_meta` keys, above the tool catalogue) rather than in the spec's
+# field. Same reasoning the cost class already followed: a client that does not
+# know the key ignores `_meta` wholesale, instead of failing to validate a result
+# carrying a field its schema does not define.
+#
+# 🔑 Why a discriminator at all, rather than "look at which keys are present":
+# every result here is a bare JSON object, and telling them apart by key
+# inference is guesswork that gets worse as shapes grow. `{}` is both a `ping`
+# answer and a notification acknowledgement; a tool result and a tool ERROR
+# differ only by a boolean and by whether `structuredContent` happens to be
+# there. A client switching on inferred shape re-derives that table from scratch,
+# gets it subtly wrong, and the failure lands in the client rather than here.
+#
+# `toolError` is a distinct shape rather than "a toolResult with isError" ON
+# PURPOSE, and `isError` is still sent: the flag is what the spec defines, the
+# shape is what says the payload has no `structuredContent` to validate.
+RESULT_SHAPE_INITIALIZE = 'initialize'
+RESULT_SHAPE_DISCOVERY = 'discovery'
+RESULT_SHAPE_TOOL_LIST = 'toolList'
+RESULT_SHAPE_TOOL_RESULT = 'toolResult'
+RESULT_SHAPE_TOOL_ERROR = 'toolError'
+RESULT_SHAPE_PONG = 'pong'
+RESULT_SHAPE_ACK = 'ack'
+
+RESULT_SHAPES: frozenset[str] = frozenset({
+    RESULT_SHAPE_INITIALIZE,
+    RESULT_SHAPE_DISCOVERY,
+    RESULT_SHAPE_TOOL_LIST,
+    RESULT_SHAPE_TOOL_RESULT,
+    RESULT_SHAPE_TOOL_ERROR,
+    RESULT_SHAPE_PONG,
+    RESULT_SHAPE_ACK,
 })
 
-# The key the discriminator travels under. Named so a test can read it rather
-# than restate the string, and so the one-line change to namespace it later
-# touches one place.
-RESULT_TYPE_KEY = 'resultType'
 
+def _jsonrpc_error(req_id: Any, code: int, message: str, data: Any = None) -> dict:
+    """Build a JSON-RPC error response, optionally carrying machine-readable data.
 
-def _jsonrpc_error(req_id: Any, code: int, message: str) -> dict:
-    """Build a JSON-RPC error response."""
+    `data` is omitted entirely when absent rather than sent as `null`: the spec
+    makes the member optional, and a present-but-null member is a third state a
+    client has to handle for no gain.
+
+    It exists because two of the spec's own errors put the caller's recovery path
+    in `data` rather than in prose — `-32022` lists the versions this server does
+    speak, which is what the client retries with. Prose is not a recovery path.
+    """
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
     return {
         "jsonrpc": "2.0",
         "id": req_id,
-        "error": {"code": code, "message": message},
+        "error": error,
     }
 
 
-def _jsonrpc_result(req_id: Any, result_type: str, result: dict) -> dict:
-    """Build a JSON-RPC success response, discriminated by its shape.
+def _jsonrpc_result(req_id: Any, result_shape: str, result: dict) -> dict:
+    """Build a JSON-RPC success response: spec `resultType`, local shape in `_meta`.
 
-    The discriminator is a REQUIRED positional argument rather than an optional
-    keyword, which is the whole design: every result this server returns is built
-    here, so a new result shape cannot ship without naming itself. An optional
-    parameter would have made the discriminator a thing authors remember, which is
-    the same class of defect as a declaration nothing checks.
+    The shape is a REQUIRED positional argument rather than an optional keyword,
+    which is the whole design: every result this server returns is built here, so
+    a new result shape cannot ship without naming itself. An optional parameter
+    would have made the discriminator a thing authors remember, which is the same
+    class of defect as a declaration nothing checks.
 
-    An undeclared type raises rather than travelling: a client switching on the
+    An undeclared shape raises rather than travelling: a client switching on the
     value cannot switch on a typo, and finding out at the client is finding out
     too late.
+
+    A payload that already carries either key ALSO raises. Ordering the spread so
+    the injected value wins would have been the one-character fix, but silently
+    overwriting a caller's value is the same defect in the other direction — and
+    the earlier `{KEY: value, **result}` form let a payload replace the validated
+    discriminator outright, which is exactly the guarantee this function exists to
+    provide.
+
+    `_meta` is MERGED rather than replaced, because a caller's `_meta` (the cache
+    hints on `tools/list`, the cost class on a tool result) has to survive
+    alongside the shape.
     """
-    if result_type not in RESULT_TYPES:
-        raise ValueError(f'undeclared resultType {result_type!r}')
+    if result_shape not in RESULT_SHAPES:
+        raise ValueError(f'undeclared result shape {result_shape!r}')
+    if RESULT_TYPE_KEY in result:
+        raise ValueError(
+            f'result already carries {RESULT_TYPE_KEY!r}; it is set here, not by callers'
+        )
+    caller_meta = result.get('_meta') or {}
+    if RESULT_SHAPE_KEY in caller_meta:
+        raise ValueError(
+            f'result _meta already carries {RESULT_SHAPE_KEY!r}; it is set here, '
+            f'not by callers'
+        )
     return {
         "jsonrpc": "2.0",
         "id": req_id,
-        "result": {RESULT_TYPE_KEY: result_type, **result},
+        "result": {
+            **result,
+            RESULT_TYPE_KEY: RESULT_TYPE_COMPLETE,
+            "_meta": {**caller_meta, RESULT_SHAPE_KEY: result_shape},
+        },
     }
 
 
@@ -2174,7 +2447,7 @@ def _handle_initialize(req_id: Any, params: dict) -> dict:
     the same whatever was asked — a handshake in shape only.
     """
     requested = params.get('protocolVersion') if isinstance(params, dict) else None
-    return _jsonrpc_result(req_id, RESULT_TYPE_INITIALIZE, {
+    return _jsonrpc_result(req_id, RESULT_SHAPE_INITIALIZE, {
         "protocolVersion": _negotiate_protocol_version(requested),
         "capabilities": _server_capabilities(),
         "serverInfo": {
@@ -2201,29 +2474,60 @@ def _handle_discover(req_id: Any, _params: dict) -> dict:
     Deliberately does NOT list tools. `tools/list` does that, and it varies by
     credential — repeating a credential-shaped answer on an unauthenticated
     method would either leak the catalogue or contradict the other method.
+
+    ⚠️ The field names here are the SPEC's `DiscoverResult`, not this module's own
+    vocabulary. The first draft published `protocolVersions` and a top-level
+    `serverInfo`, which meant a client calling this method precisely to learn the
+    supported versions read `supportedVersions`, found it absent, and was no better
+    off than if the method did not exist. The extra facts this server can report
+    are still reported — under a vendor-prefixed `_meta` key, which is where the
+    cost class already lives and for the same reason.
     """
-    return _jsonrpc_result(req_id, RESULT_TYPE_DISCOVERY, {
-        "serverInfo": {
-            "name": "voc-datalake",
-            "version": MCP_SERVER_VERSION,
-        },
-        "protocolVersions": list(SUPPORTED_PROTOCOL_VERSIONS),
-        "preferredProtocolVersion": PREFERRED_PROTOCOL_VERSION,
+    return _jsonrpc_result(req_id, RESULT_SHAPE_DISCOVERY, {
+        # The spec's name for this list, and the one field a client calls this
+        # method to read.
+        "supportedVersions": list(SUPPORTED_PROTOCOL_VERSIONS),
         "capabilities": _server_capabilities(),
-        # Sorted, because this is a set rather than a sequence and a client
-        # diffing two discoveries should see a change only when one happened.
-        "methods": sorted({*MCP_METHODS, *MCP_AUTH_METHODS}),
-        "authenticatedMethods": sorted(MCP_AUTH_METHODS),
-        # In the spelling a client SENDS, not the lowercase form this module reads
-        # after API Gateway has normalised it. Reporting the internal spelling
-        # would document an implementation detail as a contract.
-        "transportHeaders": list(CANONICAL_TRANSPORT_HEADERS),
-        "resultTypes": sorted(RESULT_TYPES),
-        "costClasses": list(COST_CLASSES),
-        # The list varies by credential, so a client cannot conclude "these are
-        # the tools" from an unauthenticated discovery. Saying so is cheaper than
-        # letting it find out by calling one it was never granted.
-        "toolsVaryByCredential": True,
+        # `server/discover` is in the spec's cacheable-results list, so the hints
+        # are REQUIRED rather than a nicety. `public` is honest here: this answer
+        # names no project, no tool and no data, so a shared cache serving it to
+        # another caller reveals nothing that caller could not ask for itself.
+        "ttlMs": _DISCOVER_TTL_MS,
+        "cacheScope": CACHE_SCOPE_PUBLIC,
+        "_meta": {
+            # The spec's reserved key for server identity — self-reported, and the
+            # spec says clients SHOULD NOT make security decisions on it.
+            'io.modelcontextprotocol/serverInfo': {
+                "name": "voc-datalake",
+                "version": MCP_SERVER_VERSION,
+            },
+            # Everything below is this server's own reporting, not the spec's, so
+            # it travels under a vendor prefix: a client that does not know these
+            # keys ignores them, instead of failing to validate a `DiscoverResult`
+            # carrying fields its schema does not define.
+            f'{VENDOR_META_PREFIX}serverDetail': {
+                "preferredProtocolVersion": PREFERRED_PROTOCOL_VERSION,
+                # Sorted, because this is a set rather than a sequence and a client
+                # diffing two discoveries should see a change only when one happened.
+                "methods": sorted({*MCP_METHODS, *MCP_AUTH_METHODS}),
+                "authenticatedMethods": sorted(MCP_AUTH_METHODS),
+                # In the spelling a client SENDS, not the lowercase form this
+                # module reads after API Gateway has normalised it. Reporting the
+                # internal spelling would document an implementation detail as a
+                # contract.
+                "transportHeaders": list(CANONICAL_TRANSPORT_HEADERS),
+                # Named `resultShapes`, NOT `resultTypes`: the spec owns the
+                # `resultType` vocabulary and this is not it. Publishing this list
+                # as `resultTypes` would have claimed otherwise.
+                "resultShapes": sorted(RESULT_SHAPES),
+                "costClasses": list(COST_CLASSES),
+                # The list varies by credential, so a client cannot conclude "these
+                # are the tools" from an unauthenticated discovery. Saying so is
+                # cheaper than letting it find out by calling one it was never
+                # granted.
+                "toolsVaryByCredential": True,
+            },
+        },
     })
 
 
@@ -2233,6 +2537,29 @@ def _handle_discover(req_id: Any, _params: dict) -> dict:
 # never becomes a path. Named rather than inlined so that is legible at the one
 # place it is read.
 _ANY_PROJECT = 'any-project'
+
+
+def _token_projects(token_info: dict) -> list[str]:
+    """The project ids on this credential: usable strings only, junk dropped.
+
+    Read through one helper at every site that consults `projects`, because the
+    value is STORED data and every caller of it is deciding reach. Two shapes are
+    dropped here rather than downstream:
+
+      • Entries that are not non-empty strings. A `None`, a `7` or a `{}` names no
+        project, and counting one as a project would let a damaged row widen what
+        a `project-set` token reaches.
+      • A `projects` that is not a list at all — notably a bare STRING. `"proj1"`
+        is iterable, so the per-entry filter above happily yielded `'p'`, `'r'`,
+        `'o'`, … and the first of them passed as a project id; `reach_allows` then
+        compared it with `in`, which against a string is a substring test, so the
+        listing and the dispatch AGREED and both were wrong. `reach_allows` is
+        hardened too — this is the fail-closed reading applied at both ends.
+    """
+    projects = token_info.get('projects')
+    if not isinstance(projects, (list, tuple)):
+        return []
+    return [p for p in projects if isinstance(p, str) and p]
 
 
 def _tool_is_authorized(tool_name: str, token_info: dict) -> bool:
@@ -2256,7 +2583,7 @@ def _tool_is_authorized(tool_name: str, token_info: dict) -> bool:
     if not _scope_allows(token_info.get('scopes'), required_scope):
         return False
 
-    token_projects = token_info.get('projects') or []
+    token_projects = _token_projects(token_info)
     read_reach = token_info.get('read_reach') or DEFAULT_READ_REACH
     # `reach_allows` decides on a CONCRETE project, and a listing has none, so a
     # project-shaped tool is asked about a representative one. A project from the
@@ -2267,9 +2594,7 @@ def _tool_is_authorized(tool_name: str, token_info: dict) -> bool:
     # and `reach_allows` refuses it, which is right — it can reach no project.
     representative = None
     if tool_reach_kind == REACH_KIND_PROJECT:
-        representative = next(
-            (p for p in token_projects if isinstance(p, str) and p), None,
-        )
+        representative = next(iter(token_projects), None)
         if representative is None and read_reach == REACH_WORKSPACE:
             representative = _ANY_PROJECT
 
@@ -2323,20 +2648,26 @@ def _handle_tools_list(req_id: Any, _params: dict, token_info: dict) -> dict:
     caller cannot call is a catalogue that has to be tried to be believed.
 
     Cache hints travel with the answer because `listChanged: false` means the
-    client is on its own: nothing will tell it the list moved. `scope: credential`
-    is the load-bearing one — a shared cache keyed on the endpoint alone would
-    serve one token's catalogue to another token.
+    client is on its own: nothing will tell it the list moved. `cacheScope:
+    private` is the load-bearing one — a shared cache keyed on the endpoint alone
+    would serve one token's catalogue to another token, which only became possible
+    the moment the list started varying.
     """
     tools = _tools_for(token_info)
-    return _jsonrpc_result(req_id, RESULT_TYPE_TOOL_LIST, {
+    return _jsonrpc_result(req_id, RESULT_SHAPE_TOOL_LIST, {
         "tools": tools,
+        # The spec's caching fields, at the top level where a spec-reading client
+        # looks for them. `private` because this answer is a function of the
+        # CREDENTIAL rather than of the endpoint — the spec names this exact case
+        # ("filtered list results that vary per user").
+        "ttlMs": _TOOL_LIST_TTL_MS,
+        "cacheScope": CACHE_SCOPE_PRIVATE,
         "_meta": {
-            "cacheHints": {
-                # Cacheable, and the qualifier matters more than the flag: this
-                # answer is a function of the CREDENTIAL, not of the endpoint.
-                "cacheable": True,
-                "scope": "credential",
-                "maxAgeSeconds": _TOOL_LIST_MAX_AGE_SECONDS,
+            # Not spec fields, so vendor-prefixed. The etag is what makes staleness
+            # DETECTABLE rather than merely time-bounded, which matters more here
+            # than for most caches: `listChanged: false` means no notification is
+            # coming, so "re-ask and compare" is the only path a client has.
+            f'{VENDOR_META_PREFIX}catalogue': {
                 "etag": _tools_list_etag(tools),
                 "serverVersion": MCP_SERVER_VERSION,
                 # Stated rather than implied by the capability: a client reading
@@ -2409,10 +2740,13 @@ def _resolve_project_id(args: dict, token_info: dict) -> str | None:
                 f'{type(explicit).__name__}'
             )
         return explicit.strip()
-    token_projects = token_info.get('projects')
-    if isinstance(token_projects, (list, tuple)) and len(token_projects) == 1:
-        only = token_projects[0]
-        return only if isinstance(only, str) and only else None
+    # One usable project on the credential is an unambiguous default; anything
+    # else (none, or several) is not, and returns None rather than picking. The
+    # shape filtering lives in `_token_projects`, so a `projects` stored as a bare
+    # string cannot present its first character as "the only project".
+    token_projects = _token_projects(token_info)
+    if len(token_projects) == 1:
+        return token_projects[0]
     return None
 
 
@@ -2478,7 +2812,7 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
     # of data a token may read, reach says HOW FAR. A token can hold
     # `projects:read` and still be refused a particular project.
     read_reach = token_info.get('read_reach') or DEFAULT_READ_REACH
-    token_projects = token_info.get('projects') or []
+    token_projects = _token_projects(token_info)
     project_id = None
     if tool_reach_kind == REACH_KIND_PROJECT:
         try:
@@ -2556,7 +2890,7 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         logger.exception(f"Tool execution error: {tool_name}")
         return _tool_error(req_id, f"Error: {str(e)}")
 
-    return _jsonrpc_result(req_id, RESULT_TYPE_TOOL_RESULT, {
+    return _jsonrpc_result(req_id, RESULT_SHAPE_TOOL_RESULT, {
         "content": [{"type": "text", "text": result.text}],
         # Structured output alongside the text block, not instead of it: the
         # spec says a tool SHOULD keep sending the serialized form for clients
@@ -2574,7 +2908,9 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         # failure (`_published_tool` refuses to build the catalogue, and the
         # declaration tables are asserted to agree), so this decides only whether
         # the symptom is a red test or a dead tool.
-        **({"_meta": {"costClass": TOOL_COST_CLASSES[tool_name]}}
+        # Same vendor-prefixed key the catalogue publishes, so a client reading the
+        # class off a result and off the declaration reads one name.
+        **({"_meta": {COST_CLASS_KEY: TOOL_COST_CLASSES[tool_name]}}
            if tool_name in TOOL_COST_CLASSES else {}),
     })
 
@@ -2587,7 +2923,7 @@ def _tool_error(req_id: Any, message: str) -> dict:
     `structuredContent` to validate against the tool's `outputSchema`. A client
     switching on the type knows that without having to test for the key.
     """
-    return _jsonrpc_result(req_id, RESULT_TYPE_TOOL_ERROR, {
+    return _jsonrpc_result(req_id, RESULT_SHAPE_TOOL_ERROR, {
         "content": [{"type": "text", "text": message}],
         "isError": True,
     })
@@ -2595,7 +2931,7 @@ def _tool_error(req_id: Any, message: str) -> dict:
 
 def _handle_ping(req_id: Any, _params: dict) -> dict:
     """Handle MCP ping request."""
-    return _jsonrpc_result(req_id, RESULT_TYPE_PONG, {})
+    return _jsonrpc_result(req_id, RESULT_SHAPE_PONG, {})
 
 
 # Method → handler mapping.
@@ -2652,7 +2988,7 @@ def _handle_autoseed(event: dict) -> dict:
         )
     if not reach_allows(
         read_reach=token_info.get('read_reach') or DEFAULT_READ_REACH,
-        token_projects=token_info.get('projects') or [],
+        token_projects=_token_projects(token_info),
         tool_reach_kind=REACH_KIND_PROJECT,
         project_id=project_id,
     ):
@@ -2737,10 +3073,18 @@ def lambda_handler(event: dict, context: Any) -> dict:
     # `_cors_response`) naming what IS allowed, which is what tells a client to
     # stop trying rather than to retry differently. Everything else that is not
     # POST lands here too, for the same reason and with the same answer.
+    #
+    # The allowed set is the one belonging to the RESOURCE being refused, not to
+    # this Lambda: a non-GET verb on the autoseed path is refused with `GET,
+    # OPTIONS`, because that is what that path serves. `autoseed_match` has already
+    # been evaluated above, so the two answers cannot disagree about which path
+    # this is.
     if http_method != 'POST':
         return _cors_response(
-            _jsonrpc_error(None, -32600, f"Method not allowed: {http_method or 'unknown'}"),
+            _jsonrpc_error(None, JSONRPC_INVALID_REQUEST,
+                           f"Method not allowed: {http_method or 'unknown'}"),
             status_code=405,
+            allow=_ALLOW_AUTOSEED if autoseed_match else _ALLOW_JSONRPC,
         )
 
     # Parse JSON-RPC request
@@ -2773,28 +3117,36 @@ def lambda_handler(event: dict, context: Any) -> dict:
         _validated_protocol_version(event)
         _validate_routing_headers(event, method, params)
     except InvalidTransportHeader as exc:
+        # The code, the `data` payload and the status all come from the exception
+        # rather than being decided here: the spec pins a different code per fault
+        # (-32022 with the supported-version list, -32020 for a header/body
+        # disagreement), and a single generic code at this one catch site is how the
+        # first draft of this change lost both the client's recovery path and the
+        # era-detection signal.
         return _cors_response(
-            _jsonrpc_error(req_id, -32600, str(exc)),
-            status_code=400,
+            _jsonrpc_error(req_id, exc.code, str(exc), exc.data),
+            status_code=exc.status_code,
         )
 
     # Handle the methods that need no credential (initialize, ping,
     # server/discover, notifications).
     if method in MCP_METHODS:
-        # A PRESENTED credential is checked even here, and this is the honesty fix
-        # this envelope owes: a revoked or expired token used to complete the whole
-        # handshake and fail only at the first `tools/call`, so a dead credential
-        # presented as a connected server and whoever was debugging went looking
-        # at the tools. An ABSENT credential still passes — a client is entitled to
-        # ask what this server is before deciding what to present — so this
-        # refuses only a credential that was offered and does not work.
-        refusal = _refuse_a_dead_credential(event, req_id)
+        # A PRESENTED credential is checked on the methods a client uses to decide
+        # it is CONNECTED, and this is the honesty fix this envelope owes: a revoked
+        # or expired token used to complete the whole handshake and fail only at the
+        # first `tools/call`, so a dead credential presented as a connected server
+        # and whoever was debugging went looking at the tools. An ABSENT credential
+        # still passes — a client is entitled to ask what this server is before
+        # deciding what to present — so this refuses only a credential that was
+        # offered and does not work. The method is passed because the check is
+        # scoped: `ping` and the notifications are out (see the constant).
+        refusal = _refuse_a_dead_credential(event, req_id, method)
         if refusal is not None:
             return refusal
         handler = MCP_METHODS[method]
         if handler is None:
             # Notification — no response needed, but HTTP requires a body
-            return _cors_response(_jsonrpc_result(req_id, RESULT_TYPE_ACK, {}))
+            return _cors_response(_jsonrpc_result(req_id, RESULT_SHAPE_ACK, {}))
         return _cors_response(handler(req_id, params))
 
     # All other methods require authentication
@@ -2826,12 +3178,47 @@ def lambda_handler(event: dict, context: Any) -> dict:
     # probing for a method this server might have needs to be able to tell
     # "no such method here" from a refusal it could fix. `server/discover` exists
     # so the probe is unnecessary in the first place.
+    #
+    # HTTP 404 alongside it, which the Streamable HTTP transport REQUIRES and which
+    # is not merely decorative: it is what a dual-era client's fallback probe reads,
+    # and the JSON-RPC body is what distinguishes this 404 from the 404 of a legacy
+    # HTTP+SSE server that does not host the modern endpoint at all. Answering 200
+    # here — as this did — left the status saying "your request was fine" about a
+    # method that does not exist, while the 405 path in this same module already
+    # set a status for the same class of "this server does not do that".
     return _cors_response(
-        _jsonrpc_error(req_id, -32601, f"Method not found: {method}"),
+        _jsonrpc_error(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}"),
+        status_code=404,
     )
 
 
-def _refuse_a_dead_credential(event: dict, req_id: Any) -> dict | None:
+# The unauthenticated methods where a dead credential must be reported, and the
+# rule is "which method does a client use to decide it is CONNECTED":
+#
+#   • `initialize` — the handshake. A client that completes it believes it has a
+#     working session.
+#   • `server/discover` — the same decision without the handshake, for a client
+#     that starts here.
+#
+# `ping` and the notifications are deliberately NOT here. Two reasons, and the
+# second is the stronger one:
+#
+#   • Cost. `ping` is a keepalive, so checking it put a DynamoDB Query (and, before
+#     `touch=False`, an UpdateItem) on every heartbeat of every session — on a route
+#     throttled at 20 rps whose authorizer caches for 300 s, so a single valid-shaped
+#     token could drive that stream straight past the cache. `ping` previously
+#     touched nothing.
+#   • A NOTIFICATION CARRIES NO ID. JSON-RPC says a notification gets no response at
+#     all, so answering one with a 401 replies to a message that must not be replied
+#     to. The honesty defect was never about notifications anyway: nobody concludes
+#     "connected" from an un-refused notification.
+_LIVENESS_CHECKED_METHODS: frozenset[str] = frozenset({
+    'initialize',
+    'server/discover',
+})
+
+
+def _refuse_a_dead_credential(event: dict, req_id: Any, method: str) -> dict | None:
     """401 when a credential was presented and does not authenticate, else None.
 
     🔑 The honesty defect this closes: `initialize` needs no credential, so a
@@ -2839,6 +3226,10 @@ def _refuse_a_dead_credential(event: dict, req_id: Any) -> dict | None:
     the first `tools/call` was the first refusal. A client shows that as a
     connected server with failing tools, which sends whoever is debugging at the
     tools, at the scopes, at the routes — anywhere but the credential.
+
+    Scoped to `_LIVENESS_CHECKED_METHODS` — the methods a client uses to decide it
+    is connected — rather than to every unauthenticated method. See that constant
+    for why `ping` and the notifications are out.
 
     Only a PRESENTED credential is checked. No `Authorization` header is not a
     dead credential, it is no credential, and an unauthenticated `initialize` or
@@ -2848,15 +3239,20 @@ def _refuse_a_dead_credential(event: dict, req_id: Any) -> dict | None:
     "your token is invalid" for a table nobody could read sends an operator to
     re-mint a credential that was never compared.
     """
-    headers = event.get('headers') or {}
-    auth_header = ''
-    if isinstance(headers, dict):
-        auth_header = headers.get('authorization') or headers.get('Authorization') or ''
-    if not isinstance(auth_header, str) or not auth_header.startswith('Bearer '):
+    if method not in _LIVENESS_CHECKED_METHODS:
+        return None
+
+    # Case-insensitive, via the same helper the transport headers use: a spelling
+    # this failed to match would read as "no credential presented" and skip the
+    # check entirely, which is the one way this guard can silently not run.
+    auth_header = _request_header(event, 'authorization') or ''
+    if not auth_header.startswith('Bearer '):
         return None
 
     try:
-        token_info = _authenticate(event)
+        # `touch=False`: this is a liveness probe, not a use. Stamping
+        # `last_used_at` here would make the field mean "last pinged".
+        token_info = _authenticate(event, touch=False)
     except AuthBackendUnavailable:
         return _cors_response(
             _jsonrpc_error(req_id, -32603, "Internal error: token store unavailable"),
