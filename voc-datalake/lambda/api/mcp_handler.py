@@ -9,6 +9,9 @@ Public endpoint — no Cognito auth. Auth is handled by validating the Bearer to
 from the Authorization header against SHA-256 hashes in the projects table.
 """
 
+import base64
+import binascii
+import hashlib
 import json
 import os
 import re
@@ -36,6 +39,7 @@ from shared.mcp_tokens import (
     REACH_KIND_WORKSPACE,
     REACH_NONE,
     REACH_PROJECT_SET,
+    REACH_WORKSPACE,
     SCOPE_FEEDBACK_READ,
     SCOPE_METRICS_READ,
     SCOPE_PROJECTS_READ,
@@ -59,22 +63,35 @@ metrics = Metrics(namespace="VoC-MCP")
 # and its role no longer holds a grant on either.
 projects_table = get_projects_table()
 
-# MCP Protocol version
+# MCP protocol versions — a RANGE that is negotiated, not one pinned string.
 #
-# ⚠️ KNOWN SKEW, and it is temporary by plan rather than by oversight.
-# `structuredContent` and `outputSchema` (below) arrived in the 2025-06-18
-# revision, while this still advertises 2024-11-05 and `initialize` declares no
-# capability for them. The version range — negotiating 2026-07-28 / 2025-11-25 /
-# 2025-06-18 and answering `server/discover` — is the next phase of the plan, and
-# bumping the number here without that negotiation would claim conformance this
-# handler does not yet have (no `resultType`, no header validation).
+# The skew this replaces was real and was recorded here: `structuredContent` and
+# `outputSchema` arrived in the 2025-06-18 revision while the handler advertised
+# 2024-11-05, so it shipped fields the version it claimed does not define. The
+# honest fix is not to bump the number — it is to negotiate, because a number
+# alone claims a conformance the envelope has to actually provide (`resultType`,
+# transport-header validation, `server/discover`), which is what this change adds.
 #
-# Shipping the structured fields early is safe in the meantime because both are
-# ADDITIVE: a 2024-11-05 client reads `content[0].text`, which still carries the
-# same payload serialized, and JSON-RPC clients ignore result fields they do not
-# know. The reverse order — negotiate first, add the fields later — would have
-# meant two breaking output changes instead of one.
-MCP_PROTOCOL_VERSION = "2024-11-05"
+# Ordered NEWEST FIRST, and that order is load-bearing: `_negotiate_protocol_version`
+# answers with the client's version when it is one of these, and otherwise with
+# the first entry — the newest this server speaks — which is what the spec's
+# initialize handshake tells a client to expect when its request cannot be met.
+SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
+    "2026-07-28",
+    "2025-11-25",
+    "2025-06-18",
+)
+
+# What an `initialize` that asks for nothing usable is answered with, and what a
+# request carrying no `MCP-Protocol-Version` header is read as. Derived rather
+# than restated so it cannot disagree with the tuple above.
+PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
+
+# The name kept from the pinned-constant era, now meaning "the version this
+# server prefers" rather than "the only version it speaks". Kept because it is
+# the value `serverInfo`-adjacent tooling and the frontend docs refer to, and
+# because deleting it would be a rename with no behavioural content.
+MCP_PROTOCOL_VERSION = PREFERRED_PROTOCOL_VERSION
 
 # Semver on the SERVER, independent of the protocol revision above, and the only
 # signal a client gets that a tool's output shape moved — it is advertised in
@@ -99,7 +116,21 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # against the `tools/list` it cached at CONNECT, so a session that predates the
 # deploy rejects the new field until it reconnects. The server honestly declares
 # `tools.listChanged: false`, so there is no notification path to tell it.
-MCP_SERVER_VERSION = "3.1.0"
+#
+# 3.2.0 is the ENVELOPE change, and it is a minor bump for the same reason: every
+# part of it ADDS. Each published tool gains `annotations` and a `_meta.costClass`;
+# every result gains a `resultType`; `tools/list` gains a `_meta.cacheHints` and
+# is now FILTERED by the credential presented. No declared output shape moved, so
+# a client validating `structuredContent` is unaffected.
+#
+# ⚠️ The filtering is the part that is not merely additive from a caller's seat: a
+# credential holding one scope now sees fewer tools than it did, which is the
+# defect being fixed (it was shown tools it would be refused) rather than a
+# regression. And the same reconnect caveat as 3.1.0 applies with more force —
+# a session that cached `tools/list` before this deploy holds a catalogue with no
+# annotations and no cost classes, and `listChanged: false` means nothing will
+# tell it. Connected clients must reconnect.
+MCP_SERVER_VERSION = "3.2.0"
 
 
 # ============================================
@@ -343,12 +374,46 @@ ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '')
 # CORS helpers
 # ============================================
 
+# The transport headers this server reads, spelled once and lowercased because
+# API Gateway lowercases header names in proxy mode.
+#
+# `MCP-Protocol-Version` is the transport's own version statement, sent on every
+# request AFTER the initialize handshake — the spec's answer to "the session
+# negotiated 2025-06-18 but this request assumes 2026-07-28". The other two are
+# ROUTING ECHOES: a client (or an intermediary) that names the method and the
+# tool in headers has stated the same thing twice, and the two statements must
+# agree or the request is ambiguous about what it is asking for. Serving the body
+# and ignoring a contradicting header is the shape that lets a proxy route on one
+# value while the server acts on the other.
+PROTOCOL_VERSION_HEADER = 'mcp-protocol-version'
+METHOD_HEADER = 'mcp-method'
+NAME_HEADER = 'mcp-name'
+
+TRANSPORT_HEADERS: tuple[str, ...] = (
+    PROTOCOL_VERSION_HEADER,
+    METHOD_HEADER,
+    NAME_HEADER,
+)
+
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     # X-Project-Id is gone: the credential carries its own project reach, so a
     # client has no reason to send it and allowing it would keep a dead contract
     # looking alive.
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    #
+    # The three MCP transport headers ARE listed, because a browser-based client
+    # that sends one would otherwise be stopped by its own preflight before this
+    # function ever saw it — a header the server validates but a browser may not
+    # send is a rule with no reachable subject. Derived from TRANSPORT_HEADERS so
+    # the two cannot drift; the canonical spelling is restored for the wire, since
+    # the lowercase forms above exist only to read API Gateway's own normalisation.
+    'Access-Control-Allow-Headers': ','.join((
+        'Content-Type',
+        'Authorization',
+        *('-'.join(part.capitalize() if part != 'mcp' else 'MCP'
+                   for part in header.split('-'))
+          for header in TRANSPORT_HEADERS),
+    )),
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
     # Without this a BROWSER-based MCP client can receive the 401 challenge but
     # never read it: WWW-Authenticate is not a CORS-safelisted response header.
@@ -372,12 +437,18 @@ _WWW_AUTHENTICATE_401 = 'Bearer error="invalid_token"'
 def _cors_response(body: dict, status_code: int = 200) -> dict:
     """Return a Lambda proxy response with CORS headers.
 
-    Every 401 gains the RFC 6750 challenge here, at the one choke point all
-    responses pass through, so no future 401 path can forget it.
+    Every 401 gains the RFC 6750 challenge here, and every 405 gains the
+    `Allow` header RFC 9110 §15.5.6 REQUIRES, at the one choke point all
+    responses pass through, so no future path of either kind can forget it.
     """
     headers = {**CORS_HEADERS, 'Content-Type': 'application/json'}
     if status_code == 401:
         headers['WWW-Authenticate'] = _WWW_AUTHENTICATE_401
+    if status_code == 405:
+        # Derived from the CORS declaration rather than written out again: the
+        # two say the same thing to two audiences (a browser preflight and a
+        # 405), and a hand-written second copy is how they come to disagree.
+        headers['Allow'] = CORS_HEADERS['Access-Control-Allow-Methods'].replace(',', ', ')
     return {
         'statusCode': status_code,
         'headers': headers,
@@ -404,6 +475,172 @@ def _origin_allowed(event: dict) -> bool:
     if ALLOWED_ORIGIN == '*':
         return True
     return origin == ALLOWED_ORIGIN
+
+
+# ============================================
+# Transport headers
+# ============================================
+#
+# The transport carries three statements ALONGSIDE the JSON-RPC body, and a
+# server that reads the body and ignores them is not speaking the same protocol
+# as the client that sent them:
+#
+#   • `MCP-Protocol-Version` says which revision this request is written against.
+#     Unvalidated, a client speaking a revision this server does not implement is
+#     answered as though it spoke one that it does — the failure then surfaces as
+#     a field the client cannot parse, several calls later.
+#   • `MCP-Method` and `MCP-Name` echo the method and the tool name. They exist so
+#     an intermediary can route without parsing a body, which means the header and
+#     the body can DISAGREE — and serving the body while a proxy routed on the
+#     header is how one hop's view of a request stops matching the next hop's.
+#     A disagreement is refused rather than resolved in either direction: there is
+#     no way to know which of the two statements was the caller's intent.
+#
+# Every one of them may arrive in the ENCODED-WORD sentinel form below.
+
+# `=?base64?<payload>?=` — the sentinel form a conforming client may use for any
+# of these values. A header value is a constrained token on the wire, so a client
+# that cannot be sure its value survives an intermediary base64s it and marks it.
+# DOTALL because the payload is opaque: a newline inside it is malformed base64,
+# which is refused BELOW with a message about the encoding rather than silently
+# not matching the pattern and being compared as literal text.
+_ENCODED_WORD = re.compile(r'\A=\?base64\?(.*)\?=\Z', re.DOTALL)
+
+
+class InvalidTransportHeader(Exception):
+    """A transport header is absent-or-fine, or it is malformed. Never ignored.
+
+    Reported as `-32600 Invalid Request` with HTTP 400: the JSON-RPC body may be
+    perfectly well formed, and it is the REQUEST — body plus transport — that is
+    not. `-32602 Invalid params` would send the caller looking at its arguments.
+    """
+
+
+def _request_header(event: dict, name: str) -> str | None:
+    """One header, matched case-insensitively, or None when absent.
+
+    API Gateway lowercases header names in proxy mode, but a direct invoke (a
+    test, a local driver) does not, and the guard has to hold for both — the same
+    lesson `_origin_allowed` records for `Origin`. An empty value is NOT absence:
+    a client that sent the header empty said something, and what it said is not a
+    valid value for any of the three.
+    """
+    headers = event.get('headers') or {}
+    if not isinstance(headers, dict):
+        return None
+    for key, value in headers.items():
+        if isinstance(key, str) and key.lower() == name:
+            return value if isinstance(value, str) else ''
+    return None
+
+
+def _decoded_header(raw: str, name: str) -> str:
+    """A header value with the encoded-word sentinel resolved.
+
+    A value that is not in sentinel form is returned unchanged — the sentinel is
+    optional, and a plain `2025-06-18` is the ordinary spelling. A value that
+    CLAIMS the sentinel form and then does not decode is refused rather than
+    compared literally: treating `=?base64?not-base64?=` as a version string
+    would report "unsupported protocol version =?base64?…?=", which sends the
+    caller after a version number when the fault is the encoding.
+    """
+    match = _ENCODED_WORD.match(raw)
+    if not match:
+        return raw
+    try:
+        decoded = base64.b64decode(match.group(1), validate=True).decode('utf-8')
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise InvalidTransportHeader(
+            f'{name} is in encoded-word form but its payload is not base64-encoded UTF-8'
+        ) from exc
+    if not decoded:
+        # `=?base64??=` is well-formed base64 of nothing. Refused HERE, with the
+        # encoding named, rather than passed on as `''`: an empty payload is a
+        # client that meant to say something and encoded nothing, and letting it
+        # through would report "unsupported protocol version ''" — an answer about
+        # a version, for a fault in the encoding.
+        raise InvalidTransportHeader(
+            f'{name} is in encoded-word form but its base64 payload is empty'
+        )
+    return decoded
+
+
+def _negotiate_protocol_version(requested: Any) -> str:
+    """The revision this session will speak.
+
+    The client's own version when this server implements it, and otherwise the
+    NEWEST this server implements — which is what the spec's handshake defines,
+    and it is a counter-offer rather than a refusal: `initialize` is where a
+    client learns what it is talking to, so answering an unknown request with an
+    error would leave it with nothing to fall back to. A client that cannot live
+    with the counter-offer closes the connection, which is its decision to make.
+
+    Contrast the HEADER (`_validated_protocol_version` below), where an
+    unsupported value IS refused: by then the handshake has happened, so a
+    version this server never offered can only be a client contradicting itself.
+    """
+    if isinstance(requested, str) and requested in SUPPORTED_PROTOCOL_VERSIONS:
+        return requested
+    return PREFERRED_PROTOCOL_VERSION
+
+
+def _validated_protocol_version(event: dict) -> str:
+    """The revision named by the transport header, refusing one we cannot speak.
+
+    An ABSENT header reads as the preferred version. That is deliberate and it is
+    the spec's own backwards-compatibility rule: the header postdates the first
+    revisions of the transport, so requiring it would refuse every client written
+    against one of those — while a client that DOES send it has made a claim this
+    server can check.
+    """
+    raw = _request_header(event, PROTOCOL_VERSION_HEADER)
+    if raw is None:
+        return PREFERRED_PROTOCOL_VERSION
+    version = _decoded_header(raw, PROTOCOL_VERSION_HEADER)
+    if version not in SUPPORTED_PROTOCOL_VERSIONS:
+        raise InvalidTransportHeader(
+            f'Unsupported MCP protocol version {version!r}. This server speaks: '
+            f'{", ".join(SUPPORTED_PROTOCOL_VERSIONS)}'
+        )
+    return version
+
+
+def _validate_routing_headers(event: dict, method: str, params: Any) -> None:
+    """Refuse a routing echo that contradicts the body it travels with.
+
+    Both headers are OPTIONAL, so absence is silent. A present one is compared
+    against the body, and the comparison is exact: these are protocol tokens, not
+    prose, so there is no case folding or trimming to argue about.
+
+    `MCP-Name` names a TOOL, so it is meaningful only on `tools/call`. Sent with
+    any other method it is refused rather than ignored — a client that names a
+    tool on `tools/list` has asked for something this server cannot do, and
+    answering the list would be answering a different question.
+    """
+    raw_method = _request_header(event, METHOD_HEADER)
+    if raw_method is not None:
+        declared = _decoded_header(raw_method, METHOD_HEADER)
+        if declared != method:
+            raise InvalidTransportHeader(
+                f'{METHOD_HEADER} says {declared!r} but the request body calls '
+                f'{method!r}'
+            )
+
+    raw_name = _request_header(event, NAME_HEADER)
+    if raw_name is None:
+        return
+    declared_name = _decoded_header(raw_name, NAME_HEADER)
+    if method != 'tools/call':
+        raise InvalidTransportHeader(
+            f'{NAME_HEADER} names a tool, which is meaningful only on tools/call, '
+            f'not on {method!r}'
+        )
+    body_name = params.get('name') if isinstance(params, dict) else None
+    if declared_name != body_name:
+        raise InvalidTransportHeader(
+            f'{NAME_HEADER} says {declared_name!r} but the request body calls '
+            f'{body_name!r}'
+        )
 
 
 # ============================================
@@ -893,7 +1130,120 @@ _DAYS_ARG: dict[str, Any] = {
     "maximum": MAX_FEEDBACK_WINDOW_DAYS,
 }
 
-MCP_TOOLS = [
+# ---------------------------------------------------------------------------
+# Cost classes
+# ---------------------------------------------------------------------------
+#
+# What a call COSTS, so a model can choose between two tools that answer nearly
+# the same question without discovering the difference by waiting for one. The
+# axis is the shape of the underlying read, which is the thing a caller cannot
+# see and cannot infer from the tool's name:
+#
+#   cheap     — one keyed read. Bounded by the item, not by the window.
+#   moderate  — one Query over one partition, or a small set of aggregate rows.
+#               Bounded by the data the route already indexes for it.
+#   expensive — a candidate scan bounded by a soft cap rather than by an index,
+#               which is why `search_feedback` is the tool that can come back
+#               `is_partial`. Truncation IS the cost showing.
+#
+# Ordered cheapest first, and that order is the vocabulary's content: a client
+# comparing two classes needs to know which is which, and an unordered set of
+# adjectives does not say.
+COST_CHEAP = 'cheap'
+COST_MODERATE = 'moderate'
+COST_EXPENSIVE = 'expensive'
+
+COST_CLASSES: tuple[str, ...] = (COST_CHEAP, COST_MODERATE, COST_EXPENSIVE)
+
+# Per-tool, and fail-closed at publication time rather than defaulted: a tool
+# with no entry raises when the catalogue is built, because a MISSING cost class
+# would silently read as "cheap" to a model that expected every tool to carry one.
+TOOL_COST_CLASSES: dict[str, str] = {
+    # One GSI lookup by feedback id.
+    "get_feedback_detail": COST_CHEAP,
+    # One Query of the project's partition; personas and documents come back with
+    # the metadata, so listing personas costs the same read.
+    "get_project": COST_MODERATE,
+    "list_personas": COST_MODERATE,
+    # Pre-aggregated daily rows over the window.
+    "get_metrics_summary": COST_MODERATE,
+    "get_metrics_breakdown": COST_MODERATE,
+    # The candidate scan. Soft-capped, hence `is_partial`.
+    "search_feedback": COST_EXPENSIVE,
+}
+
+# A human-readable title per tool, which is what `annotations.title` is for: the
+# NAME is an identifier a model matches on, the title is what a client shows a
+# person in a permission prompt. Declared here rather than inline so the
+# annotation block below can be derived for every tool at once and no tool can
+# have one and not the other.
+TOOL_TITLES: dict[str, str] = {
+    "search_feedback": "Search customer feedback",
+    "get_feedback_detail": "Read one feedback item",
+    "get_metrics_summary": "Summarise feedback metrics",
+    "get_metrics_breakdown": "Break metrics down by one axis",
+    "get_project": "Read a project",
+    "list_personas": "List a project's personas",
+}
+
+
+def _tool_annotations(name: str) -> dict:
+    """The spec's behaviour hints for one tool.
+
+    Every tool in this server is a READ, and all four hints say so — which is
+    worth declaring rather than leaving to inference, because the hints are what a
+    client uses to decide whether a call needs a human's permission. A read-only
+    tool that does not declare itself read-only gets prompted for like a write.
+
+    ⚠️ These are HINTS, and the spec is explicit that a client must not treat them
+    as a security boundary. The enforcement is elsewhere and stays elsewhere: the
+    scope table, the reach axes, and the domain function's own rules. Phase 3's
+    first write tool must set `readOnlyHint: False` here AND require a write
+    scope; setting only the hint would be a label, and setting only the scope would
+    make a client prompt for a write as though it were a read.
+    """
+    return {
+        "title": TOOL_TITLES[name],
+        "readOnlyHint": True,
+        # No tool here deletes or overwrites anything. Meaningful only when
+        # `readOnlyHint` is false, and declared anyway so the block has one shape.
+        "destructiveHint": False,
+        # Same arguments, same answer — modulo the corpus changing underneath,
+        # which is true of any read and is not what this hint is about.
+        "idempotentHint": True,
+        # A closed world: every tool reads this workspace's own data lake. Nothing
+        # here reaches the internet, which is what a client would otherwise have
+        # to assume.
+        "openWorldHint": False,
+    }
+
+
+def _published_tool(declaration: dict) -> dict:
+    """One tool as `tools/list` publishes it: declaration plus envelope.
+
+    The annotations and the cost class are ADDED here rather than written into
+    each literal, so they cannot be forgotten for one tool out of six — the
+    failure mode a per-literal `annotations` block has, and the reason
+    `TOOL_COST_CLASSES` raises instead of defaulting.
+    """
+    name = declaration["name"]
+    if name not in TOOL_COST_CLASSES:
+        raise KeyError(f'{name} declares no cost class in TOOL_COST_CLASSES')
+    cost_class = TOOL_COST_CLASSES[name]
+    if cost_class not in COST_CLASSES:
+        raise ValueError(f'{name} declares undeclared cost class {cost_class!r}')
+    return {
+        **declaration,
+        "annotations": _tool_annotations(name),
+        # `_meta` is the spec's own extension point, which is where a
+        # non-standard signal belongs: a client that does not know `costClass`
+        # ignores `_meta` wholesale rather than failing to validate a tool
+        # declaration carrying a field its schema does not define.
+        "_meta": {"costClass": cost_class},
+    }
+
+
+_TOOL_DECLARATIONS = [
     {
         "name": "search_feedback",
         "description": (
@@ -1178,6 +1528,22 @@ MCP_TOOLS = [
         },
     },
 ]
+
+# What `tools/list` publishes: every declaration above, wrapped. Built at import
+# so a tool missing its cost class or its title fails the module rather than the
+# first client that asks for the catalogue.
+MCP_TOOLS = [_published_tool(declaration) for declaration in _TOOL_DECLARATIONS]
+
+# How long a client may reuse a cached `tools/list`, in seconds. Five minutes,
+# matching the MCP authorizer's own `resultsCacheTtl` in api-stack.ts — not
+# because the two caches interact, but because a client holding a catalogue longer
+# than the credential's authorization decision lives is holding the older of two
+# facts about the same token.
+#
+# It is a HINT, and the etag beside it is what makes staleness detectable rather
+# than merely time-bounded: `listChanged: false` means no notification is coming,
+# so the honest contract is "re-ask, compare the etag, and reconnect if it moved".
+_TOOL_LIST_MAX_AGE_SECONDS = 300
 
 
 # ============================================
@@ -1694,6 +2060,44 @@ TOOL_REACH_KINDS: dict[str, str] = {
 # MCP JSON-RPC protocol handling
 # ============================================
 
+# The `resultType` vocabulary — one discriminator per SHAPE of result this server
+# returns.
+#
+# 🔑 Why a discriminator rather than "look at which keys are present": every
+# result here is a bare JSON object, and telling them apart by key inference is
+# guesswork that gets worse as shapes grow. `{}` is both a `ping` answer and a
+# notification acknowledgement; a tool result and a tool ERROR differ only by a
+# boolean and by whether `structuredContent` happens to be there. A client
+# switching on inferred shape re-derives that table from scratch, gets it subtly
+# wrong, and the failure lands in the client rather than here.
+#
+# `toolError` is a distinct type rather than "a toolResult with isError" ON
+# PURPOSE, and `isError` is still sent: the flag is what the spec defines, the
+# type is what says the payload has no `structuredContent` to validate.
+RESULT_TYPE_INITIALIZE = 'initialize'
+RESULT_TYPE_DISCOVERY = 'discovery'
+RESULT_TYPE_TOOL_LIST = 'toolList'
+RESULT_TYPE_TOOL_RESULT = 'toolResult'
+RESULT_TYPE_TOOL_ERROR = 'toolError'
+RESULT_TYPE_PONG = 'pong'
+RESULT_TYPE_ACK = 'ack'
+
+RESULT_TYPES: frozenset[str] = frozenset({
+    RESULT_TYPE_INITIALIZE,
+    RESULT_TYPE_DISCOVERY,
+    RESULT_TYPE_TOOL_LIST,
+    RESULT_TYPE_TOOL_RESULT,
+    RESULT_TYPE_TOOL_ERROR,
+    RESULT_TYPE_PONG,
+    RESULT_TYPE_ACK,
+})
+
+# The key the discriminator travels under. Named so a test can read it rather
+# than restate the string, and so the one-line change to namespace it later
+# touches one place.
+RESULT_TYPE_KEY = 'resultType'
+
+
 def _jsonrpc_error(req_id: Any, code: int, message: str) -> dict:
     """Build a JSON-RPC error response."""
     return {
@@ -1703,22 +2107,54 @@ def _jsonrpc_error(req_id: Any, code: int, message: str) -> dict:
     }
 
 
-def _jsonrpc_result(req_id: Any, result: dict) -> dict:
-    """Build a JSON-RPC success response."""
+def _jsonrpc_result(req_id: Any, result_type: str, result: dict) -> dict:
+    """Build a JSON-RPC success response, discriminated by its shape.
+
+    The discriminator is a REQUIRED positional argument rather than an optional
+    keyword, which is the whole design: every result this server returns is built
+    here, so a new result shape cannot ship without naming itself. An optional
+    parameter would have made the discriminator a thing authors remember, which is
+    the same class of defect as a declaration nothing checks.
+
+    An undeclared type raises rather than travelling: a client switching on the
+    value cannot switch on a typo, and finding out at the client is finding out
+    too late.
+    """
+    if result_type not in RESULT_TYPES:
+        raise ValueError(f'undeclared resultType {result_type!r}')
     return {
         "jsonrpc": "2.0",
         "id": req_id,
-        "result": result,
+        "result": {RESULT_TYPE_KEY: result_type, **result},
     }
 
 
-def _handle_initialize(req_id: Any, _params: dict) -> dict:
-    """Handle MCP initialize request."""
-    return _jsonrpc_result(req_id, {
-        "protocolVersion": MCP_PROTOCOL_VERSION,
-        "capabilities": {
-            "tools": {"listChanged": False},
-        },
+def _server_capabilities() -> dict:
+    """What this server can do, stated once for `initialize` and `server/discover`.
+
+    `listChanged: false` is honest rather than lazy — there is no notification
+    path here, so a client that caches `tools/list` at connect holds it until it
+    reconnects. That is why an envelope change is a reconnect (see the
+    MCP_SERVER_VERSION notes) and why the list carries cache hints of its own.
+    """
+    return {
+        "tools": {"listChanged": False},
+    }
+
+
+def _handle_initialize(req_id: Any, params: dict) -> dict:
+    """Handle MCP initialize — the version handshake.
+
+    The client states the revision it wants in `params.protocolVersion` and this
+    answers with what the session will actually speak, which is the client's
+    version when this server implements it and the newest one it does implement
+    otherwise. Pinning a single string here, as this used to, meant the answer was
+    the same whatever was asked — a handshake in shape only.
+    """
+    requested = params.get('protocolVersion') if isinstance(params, dict) else None
+    return _jsonrpc_result(req_id, RESULT_TYPE_INITIALIZE, {
+        "protocolVersion": _negotiate_protocol_version(requested),
+        "capabilities": _server_capabilities(),
         "serverInfo": {
             "name": "voc-datalake",
             "version": MCP_SERVER_VERSION,
@@ -1726,9 +2162,160 @@ def _handle_initialize(req_id: Any, _params: dict) -> dict:
     })
 
 
-def _handle_tools_list(req_id: Any, _params: dict) -> dict:
-    """Handle MCP tools/list request."""
-    return _jsonrpc_result(req_id, {"tools": MCP_TOOLS})
+def _handle_discover(req_id: Any, _params: dict) -> dict:
+    """Handle `server/discover` — what this server supports, without guessing.
+
+    Everything a client would otherwise learn from a FAILED call: the protocol
+    revisions on offer, the methods that exist, the transport headers that are
+    read, the `resultType` vocabulary, and the cost classes tools are labelled
+    with. A client that has to discover a method by receiving -32601 for it cannot
+    tell "this server does not implement that" from "that method is spelled
+    differently here", and it pays a round trip per guess.
+
+    Every list is DERIVED from the registry that implements the thing, not
+    restated: a method added to the dispatch tables appears here, and one that is
+    only listed here cannot exist.
+
+    Deliberately does NOT list tools. `tools/list` does that, and it varies by
+    credential — repeating a credential-shaped answer on an unauthenticated
+    method would either leak the catalogue or contradict the other method.
+    """
+    return _jsonrpc_result(req_id, RESULT_TYPE_DISCOVERY, {
+        "serverInfo": {
+            "name": "voc-datalake",
+            "version": MCP_SERVER_VERSION,
+        },
+        "protocolVersions": list(SUPPORTED_PROTOCOL_VERSIONS),
+        "preferredProtocolVersion": PREFERRED_PROTOCOL_VERSION,
+        "capabilities": _server_capabilities(),
+        # Sorted, because this is a set rather than a sequence and a client
+        # diffing two discoveries should see a change only when one happened.
+        "methods": sorted({*MCP_METHODS, *MCP_AUTH_METHODS}),
+        "authenticatedMethods": sorted(MCP_AUTH_METHODS),
+        "transportHeaders": sorted(TRANSPORT_HEADERS),
+        "resultTypes": sorted(RESULT_TYPES),
+        "costClasses": list(COST_CLASSES),
+        # The list varies by credential, so a client cannot conclude "these are
+        # the tools" from an unauthenticated discovery. Saying so is cheaper than
+        # letting it find out by calling one it was never granted.
+        "toolsVaryByCredential": True,
+    })
+
+
+def _tool_is_authorized(tool_name: str, token_info: dict) -> bool:
+    """Whether this credential could actually call *tool_name*.
+
+    Both gates, in the same order `_handle_tools_call` applies them, and
+    fail-closed on a tool with no declaration for either — the listing must not
+    advertise a tool the dispatch would refuse as undeclared.
+
+    The reach half asks the question a LISTING can ask, which is weaker than the
+    per-call one by exactly one thing: a project-shaped tool is listed when the
+    credential can reach SOME project, not when it can reach the one a later call
+    will name. That is the honest bound — which project a call addresses is an
+    argument of that call — and it is why `_handle_tools_call` still checks reach
+    itself rather than trusting this.
+    """
+    required_scope = TOOL_SCOPE_REQUIREMENTS.get(tool_name)
+    tool_reach_kind = TOOL_REACH_KINDS.get(tool_name)
+    if required_scope is None or tool_reach_kind is None:
+        return False
+    if not _scope_allows(token_info.get('scopes'), required_scope):
+        return False
+    token_projects = token_info.get('projects') or []
+    read_reach = token_info.get('read_reach') or DEFAULT_READ_REACH
+    if tool_reach_kind == REACH_KIND_PROJECT:
+        # `reach_allows` needs a concrete project, and a listing has none. Any
+        # project in the token's set is representative: `project-set` reach admits
+        # exactly those, and `workspace` admits everything, so a token whose set is
+        # empty and whose reach is `project-set` correctly lists nothing.
+        candidate = next((p for p in token_projects if isinstance(p, str) and p), None)
+        if read_reach == REACH_WORKSPACE:
+            # A sentinel project, so this asks "may this credential reach a
+            # project at all" without inventing one it can reach — workspace reach
+            # does not consult the id, which `reach_allows` is what decides.
+            candidate = candidate or 'any'
+        if not candidate:
+            return False
+        return reach_allows(
+            read_reach=read_reach,
+            token_projects=token_projects,
+            tool_reach_kind=tool_reach_kind,
+            project_id=candidate,
+        )
+    return reach_allows(
+        read_reach=read_reach,
+        token_projects=token_projects,
+        tool_reach_kind=tool_reach_kind,
+        project_id=None,
+    )
+
+
+def _tools_for(token_info: dict) -> list[dict]:
+    """The tools this credential may call, in a deterministic order.
+
+    Sorted BY NAME rather than left in declaration order: the list is now
+    credential-shaped, so two callers see different subsets, and a stable order is
+    what makes a cached list comparable to a fresh one (and an `etag` over it
+    mean anything). Declaration order would make the answer depend on where
+    somebody inserted a literal.
+    """
+    return sorted(
+        (tool for tool in MCP_TOOLS if _tool_is_authorized(tool["name"], token_info)),
+        key=lambda tool: tool["name"],
+    )
+
+
+def _tools_list_etag(tools: list[dict]) -> str:
+    """A stable fingerprint of exactly what this answer published.
+
+    Over the SERIALIZED tools plus the server version, so it moves when a
+    declaration moves and also when the version does — a client comparing etags
+    is asking "is my cached catalogue still the one this server would send", and
+    the server version is part of that answer even for an unchanged shape.
+
+    `sort_keys` so reformatting a declaration is free, matching the convention the
+    published-shape fingerprint test states.
+    """
+    serialized = json.dumps(
+        {"version": MCP_SERVER_VERSION, "tools": tools}, sort_keys=True, cls=DecimalEncoder,
+    )
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()[:32]
+
+
+def _handle_tools_list(req_id: Any, _params: dict, token_info: dict) -> dict:
+    """Handle MCP tools/list — filtered by the authorization actually presented.
+
+    The spec blesses a tool set that varies by credential, and until now every
+    caller saw every tool regardless of the scopes on its token: a
+    `metrics:read`-only credential was shown `search_feedback` and `get_project`,
+    called one, and was refused with -32003. A catalogue that lists what the
+    caller cannot call is a catalogue that has to be tried to be believed.
+
+    Cache hints travel with the answer because `listChanged: false` means the
+    client is on its own: nothing will tell it the list moved. `scope: credential`
+    is the load-bearing one — a shared cache keyed on the endpoint alone would
+    serve one token's catalogue to another token.
+    """
+    tools = _tools_for(token_info)
+    return _jsonrpc_result(req_id, RESULT_TYPE_TOOL_LIST, {
+        "tools": tools,
+        "_meta": {
+            "cacheHints": {
+                # Cacheable, and the qualifier matters more than the flag: this
+                # answer is a function of the CREDENTIAL, not of the endpoint.
+                "cacheable": True,
+                "scope": "credential",
+                "maxAgeSeconds": _TOOL_LIST_MAX_AGE_SECONDS,
+                "etag": _tools_list_etag(tools),
+                "serverVersion": MCP_SERVER_VERSION,
+                # Stated rather than implied by the capability: a client reading
+                # the hints should not have to also read `initialize` to learn
+                # that nothing will notify it.
+                "listChangedNotifications": False,
+            },
+        },
+    })
 
 
 def _scope_allows(token_scopes: Any, required_scope: str) -> bool:
@@ -1939,7 +2526,7 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         logger.exception(f"Tool execution error: {tool_name}")
         return _tool_error(req_id, f"Error: {str(e)}")
 
-    return _jsonrpc_result(req_id, {
+    return _jsonrpc_result(req_id, RESULT_TYPE_TOOL_RESULT, {
         "content": [{"type": "text", "text": result.text}],
         # Structured output alongside the text block, not instead of it: the
         # spec says a tool SHOULD keep sending the serialized form for clients
@@ -1947,12 +2534,30 @@ def _handle_tools_call(req_id: Any, params: dict, token_info: dict) -> dict:
         # they cannot disagree.
         "structuredContent": result.structured,
         "isError": False,
+        # The cost the call actually carried, which is the same class the
+        # catalogue advertised — read from one table so an advertised `cheap` and
+        # a billed `expensive` cannot be two different facts.
+        #
+        # `.get` rather than `[...]`, for the same reason `_FEEDBACK_SOURCE_KEYS`
+        # is read with a fallback: a tool with no declared class must not turn
+        # into a `KeyError` that kills a working call. The omission is still a CI
+        # failure (`_published_tool` refuses to build the catalogue, and the
+        # declaration tables are asserted to agree), so this decides only whether
+        # the symptom is a red test or a dead tool.
+        **({"_meta": {"costClass": TOOL_COST_CLASSES[tool_name]}}
+           if tool_name in TOOL_COST_CLASSES else {}),
     })
 
 
 def _tool_error(req_id: Any, message: str) -> dict:
-    """A tool EXECUTION error: a successful JSON-RPC call reporting a failure."""
-    return _jsonrpc_result(req_id, {
+    """A tool EXECUTION error: a successful JSON-RPC call reporting a failure.
+
+    Its own `resultType`, distinct from a successful tool result, because the
+    payloads differ in a way `isError` alone does not describe: there is no
+    `structuredContent` to validate against the tool's `outputSchema`. A client
+    switching on the type knows that without having to test for the key.
+    """
+    return _jsonrpc_result(req_id, RESULT_TYPE_TOOL_ERROR, {
         "content": [{"type": "text", "text": message}],
         "isError": True,
     })
@@ -1960,14 +2565,20 @@ def _tool_error(req_id: Any, message: str) -> dict:
 
 def _handle_ping(req_id: Any, _params: dict) -> dict:
     """Handle MCP ping request."""
-    return _jsonrpc_result(req_id, {})
+    return _jsonrpc_result(req_id, RESULT_TYPE_PONG, {})
 
 
-# Method → handler mapping
-# initialize and ping don't require auth
+# Method → handler mapping.
+#
+# `initialize`, `ping` and `server/discover` require no credential, and
+# `server/discover` is deliberately in this half: it answers what the SERVER
+# supports, which a client needs before it has decided which credential to
+# present — and it names no project, no tool and no data. `tools/list` is in the
+# other half precisely because its answer IS credential-shaped.
 MCP_METHODS = {
     "initialize": _handle_initialize,
     "ping": _handle_ping,
+    "server/discover": _handle_discover,
     "notifications/initialized": None,  # notification, no response needed
 }
 
@@ -2090,9 +2701,15 @@ def lambda_handler(event: dict, context: Any) -> dict:
         event['pathParameters']['project_id'] = autoseed_match.group(1)
         return _handle_autoseed(event)
 
+    # GET and DELETE are the two the Streamable HTTP transport defines and this
+    # server does not implement — GET opens an SSE stream, DELETE terminates a
+    # session — so they get 405 with an `Allow` header (attached in
+    # `_cors_response`) naming what IS allowed, which is what tells a client to
+    # stop trying rather than to retry differently. Everything else that is not
+    # POST lands here too, for the same reason and with the same answer.
     if http_method != 'POST':
         return _cors_response(
-            _jsonrpc_error(None, -32600, "Only POST is supported"),
+            _jsonrpc_error(None, -32600, f"Method not allowed: {http_method or 'unknown'}"),
             status_code=405,
         )
 
@@ -2105,18 +2722,49 @@ def lambda_handler(event: dict, context: Any) -> dict:
             status_code=400,
         )
 
-    req_id = body.get('id')
-    method = body.get('method', '')
-    params = body.get('params', {})
+    req_id = body.get('id') if isinstance(body, dict) else None
+    method = body.get('method', '') if isinstance(body, dict) else ''
+    params = body.get('params', {}) if isinstance(body, dict) else {}
 
     logger.info(f"MCP request: method={method}, id={req_id}")
 
-    # Handle non-auth methods (initialize, ping)
+    # Transport-header validation, BEFORE dispatch and before authentication.
+    #
+    # Before dispatch because a request whose transport and body disagree has not
+    # said what it wants, so there is nothing to dispatch to; before
+    # authentication for the same reason `_origin_allowed` is — a malformed
+    # request should not buy a probe of the token store.
+    #
+    # The protocol version is validated even for `initialize`, which is not a
+    # contradiction: the HEADER is the transport's version, the handshake's
+    # `params.protocolVersion` is the session's, and a client may state a
+    # transport version it cannot be served on its very first request.
+    try:
+        _validated_protocol_version(event)
+        _validate_routing_headers(event, method, params)
+    except InvalidTransportHeader as exc:
+        return _cors_response(
+            _jsonrpc_error(req_id, -32600, str(exc)),
+            status_code=400,
+        )
+
+    # Handle the methods that need no credential (initialize, ping,
+    # server/discover, notifications).
     if method in MCP_METHODS:
+        # A PRESENTED credential is checked even here, and this is the honesty fix
+        # this envelope owes: a revoked or expired token used to complete the whole
+        # handshake and fail only at the first `tools/call`, so a dead credential
+        # presented as a connected server and whoever was debugging went looking
+        # at the tools. An ABSENT credential still passes — a client is entitled to
+        # ask what this server is before deciding what to present — so this
+        # refuses only a credential that was offered and does not work.
+        refusal = _refuse_a_dead_credential(event, req_id)
+        if refusal is not None:
+            return refusal
         handler = MCP_METHODS[method]
         if handler is None:
             # Notification — no response needed, but HTTP requires a body
-            return _cors_response(_jsonrpc_result(req_id, {}))
+            return _cors_response(_jsonrpc_result(req_id, RESULT_TYPE_ACK, {}))
         return _cors_response(handler(req_id, params))
 
     # All other methods require authentication
@@ -2138,14 +2786,59 @@ def lambda_handler(event: dict, context: Any) -> dict:
                 status_code=401,
             )
 
-        handler = MCP_AUTH_METHODS[method]
-        if method == 'tools/call':
-            result = handler(req_id, params, token_info)
-        else:
-            result = handler(req_id, params)
-        return _cors_response(result)
+        # Uniform arity across both authenticated methods: `tools/list` now needs
+        # the credential too, because the catalogue it publishes is filtered by it.
+        # The per-method branch this replaces was how a handler could be given the
+        # wrong arguments without anything saying so.
+        return _cors_response(MCP_AUTH_METHODS[method](req_id, params, token_info))
 
-    # Unknown method
+    # An unknown method is JSON-RPC's own -32601, and nothing else: a client
+    # probing for a method this server might have needs to be able to tell
+    # "no such method here" from a refusal it could fix. `server/discover` exists
+    # so the probe is unnecessary in the first place.
     return _cors_response(
         _jsonrpc_error(req_id, -32601, f"Method not found: {method}"),
+    )
+
+
+def _refuse_a_dead_credential(event: dict, req_id: Any) -> dict | None:
+    """401 when a credential was presented and does not authenticate, else None.
+
+    🔑 The honesty defect this closes: `initialize` needs no credential, so a
+    revoked or expired token completed the handshake, `tools/list` answered, and
+    the first `tools/call` was the first refusal. A client shows that as a
+    connected server with failing tools, which sends whoever is debugging at the
+    tools, at the scopes, at the routes — anywhere but the credential.
+
+    Only a PRESENTED credential is checked. No `Authorization` header is not a
+    dead credential, it is no credential, and an unauthenticated `initialize` or
+    `server/discover` is exactly how a client learns what to present.
+
+    A backend fault is a 500 here as it is on the authenticated path: reporting
+    "your token is invalid" for a table nobody could read sends an operator to
+    re-mint a credential that was never compared.
+    """
+    headers = event.get('headers') or {}
+    auth_header = ''
+    if isinstance(headers, dict):
+        auth_header = headers.get('authorization') or headers.get('Authorization') or ''
+    if not isinstance(auth_header, str) or not auth_header.startswith('Bearer '):
+        return None
+
+    try:
+        token_info = _authenticate(event)
+    except AuthBackendUnavailable:
+        return _cors_response(
+            _jsonrpc_error(req_id, -32603, "Internal error: token store unavailable"),
+            status_code=500,
+        )
+    if token_info:
+        return None
+    logger.info("Credential presented on an unauthenticated method does not authenticate")
+    return _cors_response(
+        _jsonrpc_error(
+            req_id, -32001,
+            "Unauthorized: the presented API token is invalid, revoked or expired",
+        ),
+        status_code=401,
     )

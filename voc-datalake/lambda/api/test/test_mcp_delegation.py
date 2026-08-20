@@ -1058,16 +1058,23 @@ class TestStructuredOutput:
         major = mcp_handler.MCP_SERVER_VERSION.split(".")[0]
         assert int(major) >= 2
 
-    def test_a_changed_tool_output_shape_moves_the_server_version(self):
+    def test_a_changed_published_tool_shape_moves_the_server_version(self):
         """`serverInfo.version` is the only signal a client gets, so it is pinned
         to the shapes it describes.
 
         The check above (`major >= 2`) passes forever, which means it would have
-        let this PR's own persona-shape change ship under the version that
-        described the previous one. Fingerprinting the declared `outputSchema`s in
+        let #356's own persona-shape change ship under the version that described
+        the previous one. Fingerprinting the PUBLISHED tool declarations in
         lockstep makes any edit to a published shape fail here until the version
         is reconsidered — the repo's lockstep pattern, applied to the one contract
         that leaves the account.
+
+        The fingerprint covers the WHOLE published entry, not just `outputSchema`,
+        and that widening is deliberate: a client caches `tools/list` at connect,
+        so its `inputSchema`, its `annotations` and its `_meta` are as much of the
+        cached contract as the output shape is. Fingerprinting only the output half
+        let the envelope change (annotations, cost classes) move what clients cache
+        without moving the number that tells them to re-fetch it.
 
         OBJECT key order does not count (`sort_keys`), so reformatting a
         declaration is free. LIST order does count, and `required` and `enum` are
@@ -1081,16 +1088,17 @@ class TestStructuredOutput:
             # `test_every_tool_declares_an_output_schema`'s claim, and this test
             # should say which tool broke it, not where it noticed.
             assert "outputSchema" in tool, f"{tool['name']} declares no output shape"
-            shapes[tool["name"]] = tool["outputSchema"]
+            shapes[tool["name"]] = tool
 
         serialized = json.dumps(shapes, sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
-        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.1.0", "95dc5ca05354367b"), (
-            "a tool's declared output shape changed. Move MCP_SERVER_VERSION — minor "
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.2.0", "648e52b109dce9b8"), (
+            "a tool's published declaration changed. Move MCP_SERVER_VERSION — minor "
             "for an added field, MAJOR for a removal or a retype, because a client "
-            "validates structuredContent against these schemas — then update the "
-            "fingerprint here in the same commit."
+            "validates structuredContent against these schemas and caches the whole "
+            "declaration at connect — then update the fingerprint here in the same "
+            "commit."
         )
 
 
