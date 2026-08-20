@@ -204,6 +204,61 @@ class TestVersionNegotiation:
             mcp_handler.SUPPORTED_PROTOCOL_VERSIONS
         ), "a repeated revision would make the preference order meaningless"
 
+    def test_only_handshake_based_revisions_are_advertised(self):
+        """This server advertises only revisions it actually implements.
+
+        The 2026-07-28 revision REMOVES the `initialize` handshake: every request
+        carries its protocol version and client capabilities in `_meta` as required
+        fields, a request missing them must be refused with -32602, and the header
+        must match the `_meta` value. This handler does none of that — it reads the
+        version from the header alone, ignores request `_meta`, and dispatches
+        `initialize`. Advertising that revision would counter-offer it to any client
+        whose version this server does not know, and a client that took the offer at
+        face value would then send modern requests to a handler that ignores the
+        metadata the spec told it to trust.
+
+        Written as "the handshake is what we implement, so the handshake is what we
+        advertise" — a bare `!= '2026-07-28'` would pass again the moment somebody
+        added 2027-xx-xx to the tuple without implementing it either.
+        """
+        assert 'initialize' in mcp_handler.MCP_METHODS, (
+            "this server is handshake-based; if that changed, this test's premise did"
+        )
+        # The handshake-based revisions, which is every published revision up to and
+        # including 2025-11-25. Anything later removed the handshake.
+        handshake_era = {
+            "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05",
+        }
+        advertised = set(mcp_handler.SUPPORTED_PROTOCOL_VERSIONS)
+
+        assert advertised <= handshake_era, (
+            f"advertising a post-handshake revision this envelope does not "
+            f"implement: {sorted(advertised - handshake_era)}. Implementing the "
+            f"per-request `_meta` era is a phase, not a tuple entry."
+        )
+
+    def test_the_revisions_the_deployed_server_negotiated_are_still_accepted(self):
+        """A client that handshook against the DEPLOYED server must keep working.
+
+        The deployed handler pinned 2024-11-05, so every connected client sends
+        `MCP-Protocol-Version: 2024-11-05` on every subsequent request. Dropping it
+        from the accepted set — while the header validator refuses anything not in
+        that set — turns each of those clients into a 400 at the next call.
+        2025-03-26 is here for the same reason: it is widely deployed, and it is the
+        value the spec tells a server to assume when the header is absent.
+
+        Accepting a revision is not preferring it: neither is the counter-offer.
+        """
+        for version in ("2024-11-05", "2025-03-26"):
+            assert version in mcp_handler.SUPPORTED_PROTOCOL_VERSIONS, (
+                f"{version} was negotiable against a deployed build; refusing it "
+                f"now breaks every client that handshook on it"
+            )
+            status, _body = _call(_event(
+                "initialize", headers={"MCP-Protocol-Version": version},
+            ))
+            assert status == 200, f"{version} header refused"
+
     def test_the_supported_versions_are_ordered_newest_first(self):
         """The order is load-bearing: the first entry is the counter-offer.
 
@@ -520,6 +575,24 @@ class TestProtocolVersionHeader:
         status, body = _call(_event("initialize"))
 
         assert status == 200, body
+
+    def test_an_absent_header_reads_as_the_revision_the_spec_names(self):
+        """2025-03-26, not the newest revision this server speaks.
+
+        The header arrived in 2025-06-18, so a request without it comes from a
+        client written against something earlier. Reading absence as the NEWEST
+        supported revision silently upgrades exactly the clients that cannot be
+        upgraded — to a value the client never claimed.
+        """
+        assert mcp_handler.ASSUMED_PROTOCOL_VERSION == "2025-03-26"
+        assert mcp_handler._validated_protocol_version(_event("initialize")) == (
+            mcp_handler.ASSUMED_PROTOCOL_VERSION
+        )
+        # And it must be one this server actually serves, or the default would
+        # refuse every header-less client on the next line of the guard.
+        assert mcp_handler.ASSUMED_PROTOCOL_VERSION in (
+            mcp_handler.SUPPORTED_PROTOCOL_VERSIONS
+        )
 
     def test_an_empty_version_header_is_refused(self):
         """A client that sent the header empty said something, and what it said is
@@ -1096,11 +1169,12 @@ class TestMethodNotAllowed:
         assert allowed == {"POST", "OPTIONS"}
         assert http_method not in allowed
 
-    def test_the_allow_header_agrees_with_the_cors_declaration(self):
-        """One statement of which methods this endpoint serves, to two audiences.
+    def test_the_json_rpc_endpoint_allows_what_it_serves(self):
+        """`Allow` names the methods of the TARGET RESOURCE (RFC 9110 §15.5.6).
 
-        A hand-written second copy is how a preflight and a 405 come to disagree
-        about the same endpoint.
+        For this endpoint that happens to coincide with the CORS declaration, and
+        the coincidence is why deriving one from the other looked safe. It is not
+        safe in general — see the autoseed test below.
         """
         response = mcp_handler.lambda_handler(
             _event(http_method="PUT"), MagicMock(),
@@ -1108,12 +1182,49 @@ class TestMethodNotAllowed:
         allowed = {
             m.strip() for m in response["headers"]["Allow"].split(",")
         }
-        declared = {
-            m.strip()
-            for m in mcp_handler.CORS_HEADERS["Access-Control-Allow-Methods"].split(",")
-        }
 
-        assert allowed == declared
+        assert allowed == {"POST", "OPTIONS"}
+
+    @pytest.mark.parametrize("http_method", ["DELETE", "PUT", "PATCH"])
+    def test_the_autoseed_path_allows_the_method_it_actually_serves(self, http_method):
+        """The defect that made `Allow` per-path instead of per-function.
+
+        `Access-Control-Allow-Methods` is one constant for the whole Lambda and
+        answers "what may a browser preflight here"; `Allow` answers "what does
+        THIS RESOURCE support". Deriving the second from the first refused
+        `DELETE /v1/mcp/autoseed/{id}` with `Allow: POST, OPTIONS` — advertising a
+        set that omits the one method that path serves, and sending a client to
+        retry with POST on a path that only handles GET.
+
+        POST is NOT among these: a POST to this path is still routed to JSON-RPC
+        dispatch by the catch-all proxy route, so it answers -32601/404 rather than
+        405. That is existing routing behaviour and not this header's subject.
+        """
+        response = mcp_handler.lambda_handler({
+            "httpMethod": http_method,
+            "path": f"/v1/mcp/autoseed/{_PROJECT}",
+            "headers": {},
+        }, MagicMock())
+
+        assert response["statusCode"] == 405, response["body"]
+        allowed = {m.strip() for m in response["headers"]["Allow"].split(",")}
+        assert allowed == {"GET", "OPTIONS"}
+        assert http_method not in allowed
+
+    def test_the_two_paths_advertise_different_allow_sets(self):
+        """Stated as a difference, because that IS the property.
+
+        A single hard-coded set would satisfy each test above on its own; only
+        comparing the two answers shows the header is resolved per resource.
+        """
+        jsonrpc = mcp_handler.lambda_handler(_event(http_method="PUT"), MagicMock())
+        autoseed = mcp_handler.lambda_handler({
+            "httpMethod": "PUT",
+            "path": f"/v1/mcp/autoseed/{_PROJECT}",
+            "headers": {},
+        }, MagicMock())
+
+        assert jsonrpc["headers"]["Allow"] != autoseed["headers"]["Allow"]
 
     def test_a_405_carries_a_json_rpc_envelope_and_cors_headers(self):
         """Every answer from this endpoint is parseable by the client that asked,

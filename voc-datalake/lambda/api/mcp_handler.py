@@ -72,19 +72,45 @@ projects_table = get_projects_table()
 # alone claims a conformance the envelope has to actually provide (`resultType`,
 # transport-header validation, `server/discover`), which is what this change adds.
 #
+# ⚠️ 2026-07-28 IS DELIBERATELY ABSENT, and this is the same argument the previous
+# `MCP_PROTOCOL_VERSION` comment used to defer the bump in the first place. That
+# revision REMOVES the `initialize` handshake and protocol-level sessions: every
+# request instead carries `io.modelcontextprotocol/protocolVersion` and
+# `clientCapabilities` in `_meta` as REQUIRED fields, a request missing them must
+# be refused with -32602, and the `MCP-Protocol-Version` header must match the
+# `_meta` value. This handler implements none of that — it reads the version from
+# the header alone, ignores request `_meta`, and still routes the handshake through
+# `initialize`, which the spec's own compatibility matrix calls a "legacy server"
+# and where it notes a modern client FAILS. Advertising it would have been the
+# exact dishonesty this range was created to end: a client that took the
+# counter-offer at face value and then sent modern requests would be served by a
+# handler ignoring the metadata it was told to trust.
+#
+# So this is the honest range: every revision here is handshake-based and is one
+# this envelope really implements. 2026-07-28 is the next phase's work, and it is
+# a real phase (per-request `_meta`, the -32602 refusal, the header/`_meta` match)
+# rather than an entry in this tuple.
+#
+# The two OLDEST entries are here for compatibility rather than because they
+# define anything this server needs, and leaving them out was a live client break:
+# the deployed handler pinned 2024-11-05, so every client that has completed a
+# handshake against it sends `MCP-Protocol-Version: 2024-11-05` on every
+# subsequent request — which a header validator that only knew the newer revisions
+# refused with a 400. Accepting a revision is not the same as preferring it.
+#
 # Ordered NEWEST FIRST, and that order is load-bearing: `_negotiate_protocol_version`
 # answers with the client's version when it is one of these, and otherwise with
 # the first entry — the newest this server speaks — which is what the spec's
 # initialize handshake tells a client to expect when its request cannot be met.
 SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
-    "2026-07-28",
     "2025-11-25",
     "2025-06-18",
+    "2025-03-26",
+    "2024-11-05",
 )
 
-# What an `initialize` that asks for nothing usable is answered with, and what a
-# request carrying no `MCP-Protocol-Version` header is read as. Derived rather
-# than restated so it cannot disagree with the tuple above.
+# What an `initialize` that asks for nothing usable is answered with. Derived
+# rather than restated so it cannot disagree with the tuple above.
 #
 # This replaces the `MCP_PROTOCOL_VERSION` constant outright rather than aliasing
 # it. An alias would have kept a name meaning "the only version this server
@@ -92,6 +118,14 @@ SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
 # this module read it, so keeping it would have been a second name for one fact,
 # maintained by nobody.
 PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
+
+# What a request carrying NO `MCP-Protocol-Version` header is read as, which is
+# not the preferred version and is the spec's own backwards-compatibility rule:
+# the header was introduced in 2025-06-18, so a request without it comes from a
+# client written against an earlier revision, and 2025-03-26 is the value the spec
+# names for that case. Reading absence as the NEWEST supported revision — as this
+# did — silently upgrades exactly the clients that cannot be upgraded.
+ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 
 # Semver on the SERVER, independent of the protocol revision above, and the only
 # signal a client gets that a tool's output shape moved — it is advertised in
@@ -143,6 +177,10 @@ PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
 #     instead of a locally invented `_meta.cacheHints`.
 #   • `server/discover` answers `supportedVersions` and puts `serverInfo` under the
 #     spec's reserved `_meta` key.
+#   • The advertised protocol range became the revisions this envelope actually
+#     implements — the handshake-based ones — and REGAINED `2024-11-05` and
+#     `2025-03-26`, which the deployed build negotiated and which a header
+#     validator knowing only the newer revisions refused with a 400.
 # Minor rather than major because no declared tool INPUT or OUTPUT shape moved: a
 # client validating `structuredContent` against a cached `outputSchema` is
 # unaffected. The reconnect caveat above applies with the same force.
@@ -741,15 +779,17 @@ def _negotiate_protocol_version(requested: Any) -> str:
 def _validated_protocol_version(event: dict) -> str:
     """The revision named by the transport header, refusing one we cannot speak.
 
-    An ABSENT header reads as the preferred version. That is deliberate and it is
-    the spec's own backwards-compatibility rule: the header postdates the first
-    revisions of the transport, so requiring it would refuse every client written
-    against one of those — while a client that DOES send it has made a claim this
-    server can check.
+    An ABSENT header reads as `ASSUMED_PROTOCOL_VERSION` (2025-03-26), which is
+    the spec's own backwards-compatibility rule rather than a guess: the header
+    was introduced in 2025-06-18, so a request without it comes from a client
+    written against an earlier revision. Requiring it would refuse every one of
+    those clients; reading it as the NEWEST supported revision — as this did —
+    silently upgrades precisely the clients that cannot be upgraded. A client that
+    DOES send the header has made a claim this server can check.
     """
     raw = _request_header(event, PROTOCOL_VERSION_HEADER)
     if raw is None:
-        return PREFERRED_PROTOCOL_VERSION
+        return ASSUMED_PROTOCOL_VERSION
     version = _decoded_header(raw, PROTOCOL_VERSION_HEADER)
     if version not in SUPPORTED_PROTOCOL_VERSIONS:
         raise InvalidTransportHeader(
