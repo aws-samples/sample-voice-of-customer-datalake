@@ -27,6 +27,11 @@ import type { PluginManifest } from '../../plugins/types'
 interface GeneratorConfigModalProps {
   readonly plugin: PluginManifest
   readonly onClose: () => void
+  /** Whether the current user is an admin. The credentials endpoint is
+   *  admin-gated server-side; this flag prevents a 403 for non-admin users.
+   *  REQUIRED, not optional-with-default: a caller that forgot it would silently
+   *  get the non-admin path, i.e. a Generate button disabled for an admin. */
+  readonly isAdmin: boolean
 }
 
 type RunPhase = 'idle' | 'running' | 'completed' | 'error'
@@ -77,7 +82,7 @@ function RunStatusBanner({
 }
 
 export default function GeneratorConfigModal({
-  plugin, onClose,
+  plugin, onClose, isAdmin,
 }: GeneratorConfigModalProps) {
   const { t } = useTranslation('scrapers')
   const fieldKeys = plugin.config.map((f) => f.key)
@@ -86,9 +91,12 @@ export default function GeneratorConfigModal({
   const [phase, setPhase] = useState<RunPhase>('idle')
   const [itemsFound, setItemsFound] = useState(0)
 
+  // GET /integrations/<source>/credentials is admin-gated server-side; only
+  // issue the query for admin users to prevent a 403 for regular users.
   const { data: savedConfig } = useQuery({
     queryKey: ['generator-config', plugin.id],
     queryFn: () => api.getIntegrationCredentials(plugin.id, fieldKeys),
+    enabled: isAdmin,
   })
 
   // Derive form values from saved config + local edits (no init effect needed).
@@ -168,7 +176,8 @@ export default function GeneratorConfigModal({
         <div className="p-4 border-t flex items-center gap-2">
           <button
             onClick={() => generateMutation.mutate()}
-            disabled={isBusy || !hasRequired}
+            disabled={isBusy || !hasRequired || !isAdmin}
+            title={!isAdmin ? 'Admin access required' : undefined}
             className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}

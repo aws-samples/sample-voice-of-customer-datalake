@@ -71,20 +71,20 @@ describe('GeneratorConfigModal', () => {
   })
 
   it('renders the plugin name and config fields from the manifest', () => {
-    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} isAdmin={true} />, { wrapper: createWrapper() })
     expect(screen.getByText('Synthetic Data Review Generator')).toBeInTheDocument()
     expect(screen.getByText('Company / Brand Name')).toBeInTheDocument()
     expect(screen.getByText('Product / Service Name')).toBeInTheDocument()
   })
 
   it('disables Generate until required fields are filled', () => {
-    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} isAdmin={true} />, { wrapper: createWrapper() })
     expect(screen.getByRole('button', { name: /generat/i })).toBeDisabled()
   })
 
   it('saves config and triggers a run when Generate is clicked', async () => {
     const user = userEvent.setup()
-    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} isAdmin={true} />, { wrapper: createWrapper() })
 
     await user.type(screen.getByPlaceholderText('Acme Corp'), 'Acme Corp')
     await user.type(screen.getByPlaceholderText('Acme App'), 'Acme App')
@@ -104,8 +104,21 @@ describe('GeneratorConfigModal', () => {
 
   it('calls onClose when the Close button is clicked', async () => {
     const user = userEvent.setup()
-    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} isAdmin={true} />, { wrapper: createWrapper() })
     await user.click(screen.getByRole('button', { name: /close/i }))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables Generate button and does not issue credentials query when isAdmin is false', async () => {
+    render(<GeneratorConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
+
+    // The Generate button must be disabled for non-admins regardless of field state.
+    const generateButton = screen.getByRole('button', { name: /generat/i })
+    expect(generateButton).toBeDisabled()
+    expect(generateButton).toHaveAttribute('title', 'Admin access required')
+
+    // Give queries time to fire if they were going to.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(mockGetIntegrationCredentials).not.toHaveBeenCalled()
   })
 })

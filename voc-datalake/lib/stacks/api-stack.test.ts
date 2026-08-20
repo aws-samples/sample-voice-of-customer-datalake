@@ -687,6 +687,97 @@ describe('the public ballot routes', () => {
 });
 
 
+describe('the integrations Lambda is handed its plugin secret defaults', () => {
+  // PLUGIN_SECRET_DEFAULTS is how the handler learns two things it cannot read
+  // at runtime: which sources exist, and what value each key was SEEDED with.
+  // The second one is load-bearing. Every key exists from the moment the stack
+  // deploys and several defaults are non-empty, so without this the handler's
+  // only available test is "does the key hold something", which reports a
+  // source as connected before anybody configured it.
+  //
+  // If this variable goes missing the handler degrades quietly — it reports no
+  // sources at all, and no Python test can see the cause, because the cause is
+  // in the CDK. Hence the guard lives here.
+  const EnvSchema = z.object({
+    Properties: z.object({
+      Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }),
+    }),
+  });
+
+  function integrationsEnv(template: Template = apiTemplate()): Record<string, unknown> {
+    const functions = template.findResources('AWS::Lambda::Function');
+    const fn = Object.values(functions).find(
+      (f) => EnvSchema.safeParse(f).success
+        && EnvSchema.parse(f).Properties.Environment.Variables.POWERTOOLS_SERVICE_NAME
+          === 'voc-integrations-api',
+    );
+    expect(fn, 'no Lambda with POWERTOOLS_SERVICE_NAME voc-integrations-api').toBeDefined();
+    return EnvSchema.parse(fn).Properties.Environment.Variables;
+  }
+
+  it('sets PLUGIN_SECRET_DEFAULTS to a plugin-keyed map of declared defaults', () => {
+    const raw = integrationsEnv().PLUGIN_SECRET_DEFAULTS;
+    expect(typeof raw).toBe('string');
+
+    const parsed = z.record(z.string(), z.record(z.string(), z.string()))
+      .parse(JSON.parse(raw as string));
+
+    // Every real plugin on disk must be present. Read from the manifests rather
+    // than listed here, so adding a plugin extends the guard for free.
+    const pluginsDir = join(__dirname, '../../plugins');
+    const onDisk = readdirSync(pluginsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
+      .filter((e) => existsSync(join(pluginsDir, e.name, 'manifest.json')))
+      .map((e) => e.name)
+      .sort();
+
+    expect(Object.keys(parsed).sort()).toEqual(onDisk);
+
+    // And the values must be the manifests' own declared defaults, since that is
+    // the baseline the handler compares stored values against.
+    for (const id of onDisk) {
+      const manifest = ManifestSchema.parse(
+        JSON.parse(readFileSync(join(pluginsDir, id, 'manifest.json'), 'utf-8')),
+      );
+      expect(parsed[id]).toEqual(manifest.secrets ?? {});
+    }
+  });
+
+  it('carries a non-empty default, so the comparison it enables is not vacuous', () => {
+    // The whole point is distinguishing seeded from entered. If every seeded
+    // default were the empty string, a plain truthiness check would have been
+    // correct and this variable pointless — so assert the premise holds.
+    const parsed: Record<string, Record<string, string>> = JSON.parse(
+      integrationsEnv().PLUGIN_SECRET_DEFAULTS as string,
+    );
+    const nonEmpty = Object.values(parsed).flatMap((keys) => Object.values(keys)).filter(Boolean);
+    expect(nonEmpty.length).toBeGreaterThan(0);
+  });
+
+  it('leaves the function env well under the 4 KB Lambda limit, worst case', () => {
+    // Lambda caps the TOTAL environment at 4096 bytes across all variables, and
+    // this one grows with every plugin added. Blowing the budget fails at deploy,
+    // not at synth, so measure it here.
+    //
+    // Measured on the LARGEST env this stack can produce, not the default synth:
+    // every plugin on disk enabled, AND a deploymentPrefix set, which is what adds
+    // the two INGESTOR_/INGEST_SCHEDULE_ name patterns via prefixOnlyEnv() and
+    // lengthens the values. The default no-prefix synth omits those entirely, so a
+    // budget measured there would pass while a real prefixed deployment failed.
+    for (const [label, variables] of [
+      ['default', integrationsEnv()],
+      ['all plugins + deploymentPrefix', integrationsEnv(
+        synthApiTemplate({ deploymentPrefix: 'x' }, discoverPluginIds()),
+      )],
+    ] as const) {
+      const total = Object.entries(variables)
+        .reduce((sum, [k, v]) => sum + Buffer.byteLength(`${k}=${String(v)}`), 0);
+      expect(total, `${label} env is ${total} bytes`).toBeLessThan(4096);
+    }
+  });
+});
+
+
 describe('mcp Lambda IAM grants', () => {
   // The MCP function is the ONE function in this stack reachable with a bearer
   // token instead of a Cognito session, and its role once held
