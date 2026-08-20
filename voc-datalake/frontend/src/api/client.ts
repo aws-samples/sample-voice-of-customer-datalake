@@ -189,8 +189,33 @@ export const api = {
   },
   
   searchFeedback: async (params: { q: string; days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
-    const searchParams = buildSearchParams(params)
-    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    // `q` trimmed HERE, at the single boundary every caller goes through, so the
+    // string that is SENT is the string the route measures.
+    //
+    // `/feedback/search` trims before applying `SEARCH_QUERY_MIN_LENGTH` and
+    // refuses a present-but-too-short term with a 400, so a caller passing `"a "`
+    // through untrimmed would have the server measure something different from
+    // what the caller measured.
+    //
+    // ⚠️ Precisely what this does and does not buy: it normalises the VALUE, not
+    // the DECISION. A caller that gates on raw `.length` will still let `"a "`
+    // past its own gate, and this boundary will faithfully send `q=a` and get a
+    // 400. Only a caller's own TRIMMED gate prevents that — `useFeedbackListData`
+    // has one, and `test_search_minimum_lockstep.py` pins its constant to the
+    // route's.
+    //
+    // A too-short term is deliberately NOT short-circuited into an empty result
+    // here, because returning `count: 0` for a search that never ran is the same
+    // ambiguity the route was fixed to stop producing — moving it from the server
+    // to the client would not make it honest. A loud 400 beats a quiet zero.
+    const searchParams = buildSearchParams({ ...params, q: params.q.trim() })
+    // `is_partial_window` declared, not merely surviving the spread below: the
+    // route sets it when the candidate scan stops on its soft cap, and
+    // `extractTotals` already reads that key for the search branch, so the "N+"
+    // display works either way. Declaring it is what tells the next reader the
+    // field is real rather than incidental.
+    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string; is_partial_window?: boolean }>(`/feedback/search?${searchParams}`)
+
     return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   

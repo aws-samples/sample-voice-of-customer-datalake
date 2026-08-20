@@ -53,12 +53,36 @@ def decimal_default(obj):
 # raising this ceiling used to silently halve the fan-out benefit while every test passed.
 MAX_PERSONAS_PER_GENERATION = 10
 
+# The shortest text search `/feedback/search` will run. Lives here, beside
+# MAX_PERSONAS_PER_GENERATION and for the same reason, because THREE places size
+# themselves against it and two of them are in other files: the route that
+# enforces it, the MCP tool's `inputSchema.minLength` plus the sentence in its
+# description that states it, and the frontend's own `SEARCH_MIN_CHARS` gate.
+#
+# 🔑 The bound was previously the bare literal `2` in the route and a claim in
+# English in the MCP tool description, with nothing declaring it — so the tool
+# advertised "must be at least 2 characters" while its schema accepted `"a"`, the
+# route answered `{'count': 0}` to it, and a model read that as "no customer
+# mentioned this". A prose promise cannot fail CI.
+SEARCH_QUERY_MIN_LENGTH = 2
+
+# The longest window any route will honour, and `validate_days`' ceiling.
+#
+# Named rather than left as a bare default in the signature because it is now
+# COUPLED to infrastructure: `/feedback/search` walks one DynamoDB query per day
+# partition (gsi1-by-date is partitioned BY DAY), so the widest window a caller
+# can ask for decides the worst-case duration of that route — and therefore
+# whether the metrics Lambda's timeout and API Gateway's 29 s integration limit
+# still cover it. `api-stack.test.ts` § "the search fan-out fits the metrics
+# timeout" READS this value and fails if raising it outgrows the budget.
+MAX_FEEDBACK_WINDOW_DAYS = 365
+
 
 def validate_days(
     value: str | int | None,
     default: int = 7,
     min_val: int = 1,
-    max_val: int = 365
+    max_val: int = MAX_FEEDBACK_WINDOW_DAYS
 ) -> int:
     """Validate and bound days parameter. Convenience wrapper around validate_int."""
     return validate_int(value, default=default, min_val=min_val, max_val=max_val)

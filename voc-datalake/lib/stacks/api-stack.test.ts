@@ -1138,6 +1138,73 @@ describe('the delegation timeout budget', () => {
   });
 });
 
+describe('the search fan-out fits the metrics timeout', () => {
+  // `/feedback/search` walks ONE DynamoDB query per day partition, because
+  // gsi1-by-date is partitioned BY DAY (`gsi1pk = DATE#YYYY-MM-DD`) and no index
+  // supports a bounded multi-day query with a usable projection. Removing the old
+  // undocumented `min(days, 30)` cap — which made most of the corpus unreachable
+  // by text search — means the loop can now run for the FULL validated window.
+  //
+  // So the window ceiling and the Lambda timeout are coupled. This pins the
+  // arithmetic: raising the window maximum, or lowering the metrics timeout, fails
+  // here instead of producing 502s on a year-long search. The measured cost is
+  // ~10-15 ms per day partition (p50, sparse days), so the upper bound is used.
+  // Note this bounds a PROJECTION, not live latency — it guards config drift.
+  //
+  // 🔑 The Lambda timeout is deliberately NOT asserted against the API Gateway
+  // ceiling. `MetricsApi` serves the browser across every `/metrics/*` and
+  // `/feedback/*` route, where 30 s is the right budget, and the sibling suite
+  // above records the same asymmetry for the delegation path. A Lambda outliving
+  // the 29 s integration wastes tail compute on a response nobody receives; one
+  // that dies sooner turns a slow-but-valid answer into a 502, which is worse. Any
+  // assertion tying the two would have to be widened to fit the config it claims
+  // to constrain, and could then never fail for the reason it advertises.
+  const MEASURED_MS_PER_DAY = 15;
+  const SAFETY_FACTOR = 2;
+  // API Gateway hard-caps a REST integration at 29 s regardless of the Lambda's
+  // own timeout, so a budget above this is unreachable however it is configured.
+  const API_GATEWAY_INTEGRATION_CEILING_SECONDS = 29;
+
+  const maxWindowDays = () => {
+    // Aimed at the NAMED constant rather than at a function's parameter default,
+    // which a rename or a moved default would silently stop matching. The
+    // `toBeDefined` below turns any such drift into a loud failure rather than a
+    // vacuous pass.
+    const source = readRepoFile('lambda', 'shared', 'api.py');
+    const maxVal = source.match(/^MAX_FEEDBACK_WINDOW_DAYS\s*=\s*(\d+)/m)?.[1];
+    expect(maxVal, 'could not read MAX_FEEDBACK_WINDOW_DAYS from shared/api.py').toBeDefined();
+    return Number(maxVal);
+  };
+
+  const metricsTimeout = () => {
+    const fn = Object.values(apiTemplate().findResources('AWS::Lambda::Function'))
+      .map((f) => z.object({
+        Properties: z.object({ Handler: z.string().optional(), Timeout: z.number().optional() }),
+      }).parse(f).Properties)
+      .find((p) => p.Handler === 'metrics_handler.lambda_handler');
+    expect(fn, 'no Lambda with the metrics_handler entry point').toBeDefined();
+    return fn?.Timeout ?? 0;
+  };
+
+  it('leaves the metrics function time for a full-window search', () => {
+    const days = maxWindowDays();
+    const worstCaseSeconds = (days * MEASURED_MS_PER_DAY) / 1000;
+    const budget =
+      `a ${days}-day search projects to ~${worstCaseSeconds.toFixed(1)}s at ` +
+      `${MEASURED_MS_PER_DAY}ms/day`;
+
+    // One guard, two bounds on the same projected number: it must fit the Lambda's
+    // own budget with margin, and it must fit the ceiling the caller is bounded by.
+    expect(metricsTimeout(), `${budget}; the metrics timeout must cover it with margin`)
+      .toBeGreaterThanOrEqual(worstCaseSeconds * SAFETY_FACTOR);
+
+    // And the caller's own ceiling, which no Lambda timeout can rescue a request
+    // from once API Gateway has abandoned it.
+    expect(worstCaseSeconds, `${budget}; API Gateway stops waiting at ${API_GATEWAY_INTEGRATION_CEILING_SECONDS}s`)
+      .toBeLessThan(API_GATEWAY_INTEGRATION_CEILING_SECONDS);
+  });
+});
+
 describe('mcp endpoint throttling', () => {
   // The former McpUsagePlan never bound: a usage plan's throttle applies per
   // API KEY and no MCP client sends one (SEC-10's fourth sub-claim, open since

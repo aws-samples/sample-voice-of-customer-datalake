@@ -839,3 +839,216 @@ class TestMetricsRequestCountIsIndependentOfWindow:
         body = json.loads(response['body'])
 
         assert body['urgent_count'] == 12
+
+
+class TestSearchQueryMinimumLength:
+    """GET /feedback/search and a query shorter than the documented minimum.
+
+    The route answered `{'count': 0, 'items': []}` with HTTP 200, which is a
+    claim about the CORPUS ("nothing matches") standing in for a fact about the
+    REQUEST ("that search was never run"). A human typing in a search box infers
+    the difference from their own one-character input; a model calling the MCP
+    tool receives a successful empty result and reports that no customer
+    mentioned the thing.
+    """
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_one_character_query_is_refused_rather_than_answered_empty(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(path='/feedback/search', query_params={'q': 'a'})
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert json.loads(response['body'])['success'] is False
+        assert mock_fb.query.call_count == 0, "a refused search must not scan the corpus"
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_the_refusal_states_the_minimum_so_a_caller_can_correct_itself(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The adapter relays this message verbatim to the model, so it has to
+        say what the rule is rather than merely that a rule was broken."""
+        from metrics_handler import lambda_handler
+        from shared.api import SEARCH_QUERY_MIN_LENGTH
+        event = api_gateway_event(path='/feedback/search', query_params={'q': 'a'})
+
+        error = json.loads(lambda_handler(event, lambda_context)['body'])['error']
+
+        assert str(SEARCH_QUERY_MIN_LENGTH) in error
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_whitespace_that_trims_below_the_minimum_is_refused(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The route trims before measuring, so `' a '` is one character.
+
+        This is the case the frontend can actually produce: its own gate counts
+        raw `.length`, so two typed spaces around one letter passes the client
+        check and arrives here as a single character.
+        """
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(path='/feedback/search', query_params={'q': '  a  '})
+
+        assert lambda_handler(event, lambda_context)['statusCode'] == 400
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_blank_query_is_still_a_successful_empty_answer(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """Deliberately NOT an error: no search term means no search was asked
+        for, and the filter-only answer belongs to `/feedback` — which is where
+        the MCP adapter routes such a call. Only a term that is PRESENT and too
+        short is a refusal.
+        """
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(path='/feedback/search', query_params={'q': '   '})
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['count'] == 0
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_query_at_the_minimum_is_accepted(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The boundary itself, so the guard cannot drift into off-by-one."""
+        from metrics_handler import lambda_handler
+        from shared.api import SEARCH_QUERY_MIN_LENGTH
+        mock_fb.query.return_value = {'Items': []}
+        event = api_gateway_event(
+            path='/feedback/search',
+            query_params={'q': 'a' * SEARCH_QUERY_MIN_LENGTH, 'days': '1'},
+        )
+
+        assert lambda_handler(event, lambda_context)['statusCode'] == 200
+
+
+class TestSearchScansTheRequestedWindow:
+    """GET /feedback/search read `min(days, 30)` while its cutoff used `days`.
+
+    The two disagreed, so at `days=365` the filter admitted a year of items and
+    the candidate set only ever held thirty days of them. Anything older was
+    unreachable by text search at ANY `days` value, and the answer was a plain
+    `count: 0` — indistinguishable from "no customer said that".
+    """
+
+    @staticmethod
+    def _day_partitions(mock_fb):
+        """The `DATE#` partitions the route actually queried, in order."""
+        return [
+            call.kwargs['KeyConditionExpression']._values[1]
+            for call in mock_fb.query.call_args_list
+        ]
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_match_older_than_thirty_days_is_now_reachable(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The reported symptom, as a test: on the corpus this was found on, a
+        5,240-item import sat 37 days back and no text search could see it."""
+        old_day = (datetime.now(timezone.utc) - timedelta(days=37)).strftime('%Y-%m-%d')
+
+        def by_day(**kwargs):
+            queried = kwargs['KeyConditionExpression']._values[1]
+            if queried == f'DATE#{old_day}':
+                return {'Items': [{
+                    'feedback_id': 'old-hit', 'original_text': 'slow delivery',
+                    # `date` is the import date and mirrors the gsi1 partition, so
+                    # a row living in `DATE#{old_day}` carries that same day. It is
+                    # what the default `imported` basis filters on — omitting it
+                    # makes `basis_date` return `''`, which is below every cutoff.
+                    'date': old_day,
+                    'source_created_at': f'{old_day}T00:00:00Z', 'category': 'delivery',
+                }]}
+            return {'Items': []}
+
+        mock_fb.query.side_effect = by_day
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/feedback/search', query_params={'q': 'delivery', 'days': '90'}
+        )
+
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert [i['feedback_id'] for i in body['items']] == ['old-hit']
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_the_scan_covers_every_requested_day_not_thirty(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """Asserted on the PARTITIONS queried rather than on a call count, so it
+        says which window was read instead of merely how many reads happened."""
+        mock_fb.query.return_value = {'Items': []}
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/feedback/search', query_params={'q': 'delivery', 'days': '60'}
+        )
+
+        lambda_handler(event, lambda_context)
+
+        assert len(self._day_partitions(mock_fb)) == 60, "the requested window, not a hidden 30"
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_complete_scan_reports_itself_as_complete(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        mock_fb.query.return_value = {'Items': []}
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/feedback/search', query_params={'q': 'delivery', 'days': '7'}
+        )
+
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['is_partial_window'] is False
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_scan_that_stops_on_the_soft_cap_says_so(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The load-bearing half of the fix.
+
+        The soft cap still bounds how many candidates are collected, so widening
+        the window without reporting an early stop would only make an incomplete
+        answer slower. `count: 0` and "the scan gave up" must be distinguishable.
+        """
+        from metrics_handler import CANDIDATES_SOFT_CAP
+        # `date` is OMITTED on purpose, and that is load-bearing: the default
+        # `imported` basis reads `item['date']`, so `basis_date` returns `''`,
+        # every row falls below the cutoff, and `count` is 0 for a reason that has
+        # nothing to do with the search term. That is exactly the state under test
+        # — zero matches out of a scan that also truncated. Adding `date` here
+        # would make the rows pass the cutoff and test something else.
+        dense_day = [
+            {'feedback_id': f'f{i}', 'original_text': 'nothing to match here',
+             'source_created_at': '2026-08-01T00:00:00Z'}
+            for i in range(300)
+        ]
+        mock_fb.query.return_value = {'Items': dense_day}
+        from metrics_handler import lambda_handler
+        event = api_gateway_event(
+            path='/feedback/search', query_params={'q': 'delivery', 'days': '365'}
+        )
+
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+
+        assert body['count'] == 0, "no item contains the term"
+        assert body['is_partial_window'] is True, (
+            "zero matches out of a truncated scan must not read as zero matches in the window"
+        )
+        assert len(self._day_partitions(mock_fb)) < 365, (
+            f"the soft cap of {CANDIDATES_SOFT_CAP} should have stopped the scan early"
+        )

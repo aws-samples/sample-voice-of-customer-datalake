@@ -1086,7 +1086,7 @@ class TestStructuredOutput:
         serialized = json.dumps(shapes, sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
-        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.0.0", "6b78edcc4fed0723"), (
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.1.0", "95dc5ca05354367b"), (
             "a tool's declared output shape changed. Move MCP_SERVER_VERSION — minor "
             "for an added field, MAJOR for a removal or a retype, because a client "
             "validates structuredContent against these schemas — then update the "
@@ -1438,3 +1438,228 @@ class TestDocumentKindLockstep:
 
     def test_a_document_without_a_sort_key_reports_no_kind_rather_than_guessing(self):
         assert mcp_handler._document_kind({"document_id": "d1"}) == ""
+
+
+# ===========================================================================
+# The feedback projection's declared types — the M1 class, second instance
+# ===========================================================================
+
+_DETAIL_ROUTE = "/feedback/1ae1eb6abcd7d3a2e364f46139f98466"
+_DETAIL_ARGS = {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"}
+
+
+def _detail(row: dict) -> dict:
+    fake = _FakeLambda({_DETAIL_ROUTE: row})
+    return _call("get_feedback_detail", _DETAIL_ARGS, fake)["result"]["structuredContent"]
+
+
+def _summary(row: dict) -> dict:
+    fake = _FakeLambda({"/feedback/search": {"items": [row]}})
+    return _call("search_feedback", {"query": "late"}, fake)["result"]["structuredContent"]["items"][0]
+
+
+class TestFeedbackDeclaredTypes:
+    """`_project_feedback` read every field with `item.get(key, default)`.
+
+    A default fires only when a key is ABSENT — it cannot correct a value of the
+    WRONG TYPE. That is precisely the defect that made `list_personas` uncallable
+    (M1), living a second time in the feedback projection, and #356's PR body
+    named it as the owed follow-on.
+    """
+
+    def test_a_dict_where_a_string_is_declared_does_not_kill_the_tool(self):
+        """The sharp end: `date` and `text` are SLICED, so a wrong type RAISED.
+
+        A list answer clips `date[:10]` and `text[:_SUMMARY_TEXT_LIMIT]`. Read
+        with `item.get(key, '') or ''`, a dict or a number passes straight
+        through and the slice then raises `TypeError` — which is not one bad
+        field in one entry, it is the whole `search_feedback` call failing on
+        account of a single malformed row. Coercing first makes both slices safe
+        by construction. Reverting the coercion fails this test.
+        """
+        item = _summary(_feedback_row(source_created_at={"S": "2026-08-01"}, original_text=12345))
+
+        assert isinstance(item["date"], str), "a dict in a declared-string field must not survive"
+        assert isinstance(item["text"], str)
+        assert item["text"] == "12345"
+
+    def test_a_number_in_a_declared_string_field_is_stringified(self):
+        item = _detail(_feedback_row(category=7, problem_summary=42))
+
+        assert item["category"] == "7"
+        assert item["problem_summary"] == "42"
+
+    def test_a_bare_string_in_the_declared_keywords_array_becomes_a_list(self):
+        """`keywords` is the one declared array, and a writer may leave it flat."""
+        item = _detail(_feedback_row(keywords="late"))
+
+        assert item["keywords"] == ["late"]
+
+    def test_a_zero_rating_reports_as_zero_rather_than_as_unrated(self):
+        """Presence, not truthiness: 0 is a rating a customer actually gave.
+
+        `_row_value` tests `is not None and != ''` for exactly this reason. A
+        truthiness test here would report a zero rating as `'N/A'`.
+        """
+        assert _detail(_feedback_row(rating=0))["rating"] == "0"
+
+    def test_a_stored_null_rating_reads_as_not_applicable(self):
+        """`str(None)` used to put the literal `'None'` in front of a model.
+
+        DynamoDB stores nulls, so this is a live shape, and `'None'` reads as a
+        value rather than as an absence.
+        """
+        assert _detail(_feedback_row(rating=None))["rating"] == "N/A"
+
+    def test_a_row_of_entirely_wrong_types_still_conforms_to_its_own_schema(self):
+        """The M1 assertion, applied to feedback: no payload may contradict its
+        own declaration, whatever the row holds."""
+        hostile = _feedback_row(
+            source_platform=["webscraper"], source_created_at={"S": "x"},
+            sentiment_label=None, sentiment_score={"N": "-0.8"}, category=7,
+            urgency=["high"], persona_type={"a": "b"}, original_text=12345,
+            problem_summary=[1, 2], journey_stage=9,
+            problem_root_cause_hypothesis={"k": "v"}, direct_customer_quote=3.5,
+            keywords="late",
+        )
+        payload = _detail(hostile)
+
+        errors = _schema_errors(payload, _tool_output_schema("get_feedback_detail"))
+        assert errors == [], f"payload violates its own outputSchema: {errors}"
+
+    def test_source_key_map_covers_every_declared_field(self):
+        """A declared property with no entry in the map reads the row key of its
+        own name — a silent wrong-key read, which is the same silent
+        under-report class. The runtime fallback keeps it from being a dead tool;
+        this test is what keeps it from being invisible.
+        """
+        detail = set(mcp_handler._FEEDBACK_DETAIL_TYPES)
+        summary = set(mcp_handler._FEEDBACK_SUMMARY_TYPES)
+        mapped = set(mcp_handler._FEEDBACK_SOURCE_KEYS)
+
+        assert detail - mapped == set(), "declared but unmapped: reads its own name"
+        assert mapped - detail == set(), "mapped but undeclared: dead entry"
+        # BOTH declaration sets, asserted separately. Detail is built as
+        # `{**summary, ...}` so it is a superset today and covering it covers
+        # summary — but that is an implementation detail of one dict literal, and
+        # if it ever stops holding, a summary-only property would fall through to
+        # the `.get(key, (key,))` self-name read with nothing failing. The
+        # superset relation is asserted too, so the redundancy is visible rather
+        # than accidental.
+        assert summary <= detail, "detail is expected to extend summary"
+        assert summary - mapped == set(), "summary-only declaration would read its own name"
+
+
+class TestSearchQueryMinimumIsDeclared:
+    """M2: the tool's description promised a minimum its schema did not declare.
+
+    The sentence "Must be at least 2 characters" has always been in the tool
+    description, so a model reading the catalogue was told the rule — while the
+    `inputSchema` accepted `"a"`, the route answered it with `{'count': 0}`, and
+    nothing anywhere failed. A prose promise cannot fail CI.
+    """
+
+    @staticmethod
+    def _query_schema() -> dict:
+        """The tool's OWN declared `query` argument, read from the live registry
+        for the same reason `_tool_output_schema` is."""
+        for tool in mcp_handler.MCP_TOOLS:
+            if tool["name"] == "search_feedback":
+                return tool["inputSchema"]["properties"]["query"]
+        raise AssertionError("no search_feedback tool")
+
+    def test_the_query_argument_declares_the_minimum_the_route_enforces(self):
+        """Lockstep: one constant, read by the schema and by the route.
+
+        Read from `shared.api` rather than restated as `2`, so a change to the
+        bound cannot leave the declaration behind.
+        """
+        from shared.api import SEARCH_QUERY_MIN_LENGTH
+
+        assert self._query_schema()["minLength"] == SEARCH_QUERY_MIN_LENGTH
+
+    def test_the_description_states_the_same_minimum_it_declares(self):
+        """The prose and the constraint are generated from one value, so this
+        pins that they cannot disagree again."""
+        schema = self._query_schema()
+
+        assert f"at least {schema['minLength']} characters" in schema["description"]
+
+    def test_a_short_query_reaches_the_model_as_an_error_not_as_no_matches(self):
+        """The harm, end to end.
+
+        A non-validating client can still send `"a"`. The route refuses, and the
+        adapter must surface that refusal as an MCP error carrying the route's
+        own message — NOT as a successful `count: 0`, which a model reports as
+        "no customer mentioned that". The body shape is the one
+        `shared.exceptions.ValidationError` actually produces.
+        """
+        fake = _FakeLambda(
+            {"/feedback/search": {
+                "success": False,
+                "error": "Search query must be at least 2 characters after trimming; received 1.",
+            }},
+            status=400,
+        )
+
+        result = _call("search_feedback", {"query": "a"}, fake)["result"]
+
+        assert result["isError"] is True, "a refused search must not read as empty"
+        assert "at least 2 characters" in result["content"][0]["text"]
+        assert "structuredContent" not in result, "a refusal carries no count to misread"
+
+
+class TestSearchReportsItsTruncation:
+    """M5: the tool most likely to truncate was the only one hiding it.
+
+    `get_metrics_breakdown` has always published `is_partial`. `search_feedback`
+    collected the same flag from the route and discarded it (`candidates, _ =`),
+    so a caller could not tell "nothing in your window matches" from "the scan
+    stopped before it reached the end of your window".
+    """
+
+    def test_a_truncated_search_reports_is_partial(self):
+        fake = _FakeLambda({"/feedback/search": {
+            "items": [_feedback_row()], "is_partial_window": True,
+        }})
+
+        payload = _call("search_feedback", {"query": "late"}, fake)["result"]["structuredContent"]
+
+        assert payload["is_partial"] is True
+
+    def test_a_complete_search_reports_is_partial_false(self):
+        fake = _FakeLambda({"/feedback/search": {
+            "items": [_feedback_row()], "is_partial_window": False,
+        }})
+
+        payload = _call("search_feedback", {"query": "late"}, fake)["result"]["structuredContent"]
+
+        assert payload["is_partial"] is False
+
+    def test_the_filter_only_branch_reports_it_too(self):
+        """`/feedback` publishes the same flag under the same name, so the
+        no-query branch is covered by the same read."""
+        fake = _FakeLambda({"/feedback": {
+            "items": [_feedback_row()], "is_partial_window": True,
+        }})
+
+        payload = _call("search_feedback", {"days": 7}, fake)["result"]["structuredContent"]
+
+        assert payload["is_partial"] is True
+
+    def test_a_route_that_omits_the_flag_reports_false_rather_than_null(self):
+        """The declaration says boolean and it is REQUIRED, so a missing flag has
+        to become `False` — a `null` here would reproduce M1 inside the field
+        added to fix M5."""
+        fake = _FakeLambda({"/feedback/search": {"items": [_feedback_row()]}})
+
+        payload = _call("search_feedback", {"query": "late"}, fake)["result"]["structuredContent"]
+
+        assert payload["is_partial"] is False
+        assert _schema_errors(payload, _tool_output_schema("search_feedback")) == []
+
+    def test_the_flag_is_declared_required_so_absence_cannot_read_as_complete(self):
+        schema = _tool_output_schema("search_feedback")
+
+        assert "is_partial" in schema["required"]
+        assert schema["properties"]["is_partial"]["type"] == "boolean"
