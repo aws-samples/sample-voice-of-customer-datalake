@@ -43,6 +43,29 @@ function readKey(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
 }
 
+/**
+ * Keys worth reading off an entry that turned up as an object where a string was
+ * expected. Mirrors `_TEXTUAL_KEYS` in `shared/persona_context.py` — the twins
+ * must not disagree about whether content survives, or the same persona yields a
+ * goal in a PRD and silence in chat.
+ */
+const TEXTUAL_KEYS = ['text', 'description', 'value', 'name'] as const;
+
+/** The readable text of one list entry, or '' when it holds none. */
+function entryText(entry: unknown): string {
+  if (typeof entry === 'string') return entry.trim();
+  if (typeof entry === 'number' && Number.isFinite(entry)) return String(entry);
+  if (isRecord(entry)) {
+    for (const key of TEXTUAL_KEYS) {
+      const candidate = entry[key];
+      if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+    }
+  }
+  // Deliberately NOT `String(entry)`: an object renders as "[object Object]",
+  // which is worse in a prompt than saying nothing.
+  return '';
+}
+
 function cleanStrings(values: unknown, limit: number): string[] {
   if (typeof values === 'string') {
     const single = values.trim();
@@ -51,7 +74,7 @@ function cleanStrings(values: unknown, limit: number): string[] {
   if (!Array.isArray(values)) return [];
   const out: string[] = [];
   for (const value of values) {
-    const text = typeof value === 'string' ? value.trim() : '';
+    const text = entryText(value);
     if (text) out.push(text);
     if (out.length >= limit) break;
   }

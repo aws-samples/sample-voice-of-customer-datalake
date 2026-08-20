@@ -198,6 +198,19 @@ def test_the_caps_differ_on_purpose_and_are_both_pinned():
     )
 
 
+def test_both_runtimes_read_the_same_text_keys_off_an_object_entry():
+    """A list entry that is an object must survive identically in both runtimes.
+
+    Caught in review: Python read a text-ish key while TypeScript dropped the
+    entry, so the same persona produced a goal in a PRD and silence in chat —
+    the content-silently-lost defect this whole change removes, reintroduced
+    between the twins.
+    """
+    ts = _ts_code()
+    for key in persona_context._TEXTUAL_KEYS:
+        assert f"'{key}'" in ts, f'TS entryText stopped reading {key!r}'
+
+
 def test_every_python_reader_has_a_typescript_counterpart():
     """The exported surfaces mirror each other by name."""
     ts = _ts_code()

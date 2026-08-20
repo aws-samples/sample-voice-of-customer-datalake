@@ -154,10 +154,18 @@ describe('tolerance for shapes the boundary no longer validates', () => {
     expect(personaGoals(persona)).toStrictEqual(['just one']);
   });
 
-  it('drops non-string list entries instead of rendering an object', () => {
-    // The Python reader stringifies; here they are dropped, because a JS object
-    // renders as "[object Object]" rather than anything a model can use.
-    const persona = asPersona({ goals_motivations: { secondary_goals: [{ goal: 'x' }, 'real'] } });
+  it('reads a text-ish key off an object entry, matching the Python reader', () => {
+    // The twins must agree about whether content survives, or the same persona
+    // yields a goal in a PRD and silence in chat.
+    const persona = asPersona({ goals_motivations: { secondary_goals: [
+      { text: 'via text' }, { description: 'via description' }, 'plain',
+    ] } });
+    expect(personaGoals(persona)).toStrictEqual(['via text', 'via description', 'plain']);
+  });
+
+  it('drops an object entry holding no readable text rather than rendering it', () => {
+    // `String({})` is "[object Object]", which is worse in a prompt than silence.
+    const persona = asPersona({ goals_motivations: { secondary_goals: [{ weight: 2 }, 'real'] } });
     expect(personaGoals(persona)).toStrictEqual(['real']);
   });
 });
