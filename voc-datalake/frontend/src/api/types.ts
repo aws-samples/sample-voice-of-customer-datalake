@@ -107,9 +107,22 @@ export interface MetricsSummary {
   avg_sentiment: number
   urgent_count: number
   /**
-   * True when the metrics were computed from a truncated raw-item scan
-   * (review-date basis or source filter on a very large window) and the
-   * counts are a lower bound rather than exact aggregates.
+   * True when the window could not be read in full, so the counts are a lower
+   * bound rather than a total. THE canonical statement of this flag on the
+   * frontend — the sibling breakdown types point here rather than repeat it.
+   *
+   * Three independent reasons, reported under one name because the caller's
+   * response to all three is the same:
+   *
+   * - the raw-item scan was truncated (review-date basis, or a source filter on
+   *   a very large window);
+   * - a metric partition read stopped before the end of its window;
+   * - the requested window is wider than aggregates are retained for (~90 days),
+   *   so the older rows are already deleted and no complete answer exists.
+   *
+   * Optional only for backward compatibility with a deployed API that omitted it
+   * on the aggregates path; treat an absent value as `false` (which is what
+   * `?? false` at the call site does) rather than as unknown.
    */
   is_partial?: boolean
   daily_totals: {
@@ -126,18 +139,38 @@ export interface MetricsSummary {
 export interface SentimentBreakdown {
   period_days: number
   total: number
+  /** See {@link MetricsSummary.is_partial} — same flag, same three reasons. */
+  is_partial?: boolean
   breakdown: Record<string, number>
   percentages: Record<string, number>
 }
 
 export interface CategoryBreakdown {
   period_days: number
+  /** See {@link MetricsSummary.is_partial} — same flag, same three reasons. */
+  is_partial?: boolean
   categories: Record<string, number>
 }
 
 export interface SourceBreakdown {
   period_days: number
+  /** See {@link MetricsSummary.is_partial} — same flag, same three reasons. */
+  is_partial?: boolean
   sources: Record<string, number>
+}
+
+/**
+ * Response envelope for `/metrics/personas`.
+ *
+ * Named rather than inlined at the call site so the route's `is_partial` has
+ * somewhere to be declared: an inline generic is where a field goes to be
+ * invisible, which is the same defect this flag exists to close one layer down.
+ */
+export interface PersonaBreakdown {
+  period_days: number
+  /** See {@link MetricsSummary.is_partial} — same flag, same three reasons. */
+  is_partial?: boolean
+  personas: Record<string, number>
 }
 
 export interface IntegrationStatus {
@@ -203,6 +236,16 @@ export interface ScraperTemplate {
 export interface EntitiesResponse {
   period_days: number
   feedback_count: number
+  /**
+   * See {@link MetricsSummary.is_partial} — same flag, same three reasons.
+   *
+   * Describes the COUNTS (`feedback_count` and the category/source/persona maps).
+   * `entities.issues` is a deliberate sample on both of the route's paths — the
+   * newest rows of at most seven days, capped at `limit` — so it is not what this
+   * flag is about, and folding it in would make the flag true on nearly every
+   * call and therefore worth nothing.
+   */
+  is_partial?: boolean
   entities: {
     keywords: Record<string, number>
     categories: Record<string, number>

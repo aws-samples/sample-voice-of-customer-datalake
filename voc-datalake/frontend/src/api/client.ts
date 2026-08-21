@@ -10,6 +10,7 @@ import type {
   SentimentBreakdown,
   CategoryBreakdown,
   SourceBreakdown,
+  PersonaBreakdown,
   IntegrationStatus,
   ScraperConfig,
   ScraperTemplate,
@@ -42,6 +43,7 @@ export type {
   SentimentBreakdown,
   CategoryBreakdown,
   SourceBreakdown,
+  PersonaBreakdown,
   IntegrationStatus,
   ScraperConfig,
   ScraperTemplate,
@@ -250,7 +252,7 @@ export const api = {
   },
   getPersonas: (range: DateRangeParams, source?: string) => {
     const searchParams = buildSearchParams({ ...range, source })
-    return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${searchParams}`)
+    return fetchApi<PersonaBreakdown>(`/metrics/personas?${searchParams}`)
   },
   
   // Chat

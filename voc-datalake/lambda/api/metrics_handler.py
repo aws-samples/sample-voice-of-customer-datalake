@@ -16,7 +16,8 @@ from shared.aws import get_dynamodb_resource
 from shared.api import (
     create_api_resolver, validate_days, validate_limit, validate_int,
     validate_date_basis, DATE_BASIS_REVIEW, SEARCH_QUERY_MIN_LENGTH,
-    get_configured_categories, api_handler, DEFAULT_CATEGORIES
+    get_configured_categories, api_handler, DEFAULT_CATEGORIES,
+    AGGREGATE_RETENTION_DAYS,
 )
 from shared.exceptions import ValidationError
 from shared.feedback import basis_date, window_cutoff
@@ -184,8 +185,15 @@ def _scan_window_items(
     return items, is_partial
 
 
-def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dict]:
+def _query_metric_window(
+    pk: str, days: int, current_date: datetime
+) -> tuple[list[dict], bool]:
     """Read one metric partition's trailing `days` window, newest date first.
+
+    Returns ``(items, truncated)`` — the same shape, and the same meaning of the
+    second element, as :func:`_scan_recent_items` and :func:`_scan_window_items`,
+    so a caller that may take either the aggregates path or the scan path ORs one
+    kind of flag rather than reconciling two conventions.
 
     `sk` is 'YYYY-MM-DD' and ISO dates sort lexicographically, so a window is a
     contiguous sort-key range that `between()` bounds server-side: a fixed
@@ -207,28 +215,77 @@ def _query_metric_window(pk: str, days: int, current_date: datetime) -> list[dic
     items: list[dict] = []
     kwargs: dict = {'KeyConditionExpression': condition, 'ScanIndexForward': False}
     # A 365-day window of counter items sits far inside one 1 MB page today, but
-    # that rests on item width the aggregator controls, and these endpoints have
-    # no is_partial signal with which to report a truncated window. So follow the
-    # cursor -- but bounded, never `while True`: one date yields at most one item
-    # and an unfiltered page yields at least one, so a window of `days` dates
-    # cannot span more than `days` pages. A bound also means a surprising
-    # response shape degrades to a short read instead of spinning.
+    # that rests on item width the aggregator controls. So follow the cursor --
+    # but bounded, never `while True`: one date yields at most one item and an
+    # unfiltered page yields at least one, so a window of `days` dates cannot
+    # span more than `days` pages. A bound also means a surprising response
+    # shape degrades to a short read instead of spinning.
     for _ in range(days):
         response = aggregates_table.query(**kwargs)
         items.extend(response.get('Items', []))
         last_key = response.get('LastEvaluatedKey')
         if not last_key:
-            return items
+            return items, False
         kwargs['ExclusiveStartKey'] = last_key
     # Exhausting the bound with a cursor still open means the invariant above no
-    # longer holds, so the window really is partial. Nothing in the response
-    # shape can express that -- these endpoints have no is_partial flag -- so log
-    # it rather than return a quietly short answer that reads as authoritative.
+    # longer holds, so the window really is partial. This used to be logged and
+    # nothing more, on the argument that "nothing in the response shape can
+    # express that" -- which was false even then: six response sites in this file
+    # publish `is_partial`, and they were publishing a hardcoded False on this
+    # path. The flag is now RETURNED as well as logged, so an endpoint reporting a
+    # short read says so to its caller instead of only to CloudWatch.
     logger.warning(
         'Metric window paging hit its bound; returning a partial window',
         extra={'pk': pk, 'days': days, 'items': len(items)},
     )
-    return items
+    return items, True
+
+
+def _window_exceeds_aggregate_retention(days: int) -> bool:
+    """True when `days` reaches further back than stored aggregates survive.
+
+    A SECOND, independent reason an aggregates answer can be incomplete, and not
+    a variant of the paging one above: paging truncation is a property of one
+    read that may or may not happen, while this is a property of the request
+    itself and holds even when every read succeeds and returns every row it can.
+
+    Why the horizon exists at all, and why it is narrower than the widest window
+    a caller may request, is argued once where the value is declared —
+    `AGGREGATE_RETENTION_DAYS` in `shared/api.py`. The consequence here: past that
+    horizon the rows are already deleted, so the query succeeds, the totals
+    under-report by whatever expired, and nothing in the read notices. Such a
+    window simply CANNOT be answered completely from aggregates, which is exactly
+    the claim `is_partial` exists to make.
+
+    Strictly greater-than: a window equal to the retention is the widest one the
+    rows still cover, so flagging it would cry partial over a complete answer and
+    teach callers to ignore the flag.
+
+    The boundary is the GUARANTEE, not the observed state: DynamoDB deletes
+    expired items on its own schedule, typically within 48 hours of the TTL, so a
+    window just past the horizon will sometimes still be answerable in full and
+    get reported partial anyway. That is the safe direction to be wrong in — a
+    lower bound presented as a lower bound — and the alternative is asking the
+    table whether the rows are still there, which is a read per date and answers
+    a question the caller did not ask.
+    """
+    return days > AGGREGATE_RETENTION_DAYS
+
+
+def _index_read_was_truncated(response: dict) -> bool:
+    """True when a single unpaged query left rows behind.
+
+    `/metrics/sources`, `/metrics/personas` and `/feedback/entities` read the
+    `gsi1-by-metric-type` index with ONE query and no cursor, so DynamoDB's 1 MB
+    page limit is the real bound on how many aggregate rows they see. That is the
+    same class of fact as the paging bound in `_query_metric_window` — rows exist
+    that were not counted — and it was being discarded in the same way.
+
+    REPORTED, not followed: paging these reads would change which data the answer
+    is computed from, and this change is about saying whether the window is
+    complete, not about widening it.
+    """
+    return bool(response.get('LastEvaluatedKey'))
 
 
 # ============================================
@@ -466,23 +523,28 @@ def get_entities():
             }
         }
     
+    # The aggregates path. `is_partial` is computed here, exactly as the scan
+    # path above computes it, rather than left to the `False` this response used
+    # to omit its way into: a reader cannot tell an absent flag from a false one.
+    is_partial = _window_exceeds_aggregate_retention(days)
+
     # Get categories from aggregates
     categories_list = get_configured_categories(aggregates_table)
     category_counts = {}
     for category in categories_list:
-        total = sum(
-            int(item.get('count', 0))
-            for item in _query_metric_window(
-                f'METRIC#daily_category#{category}', days, current_date)
-        )
+        window, truncated = _query_metric_window(
+            f'METRIC#daily_category#{category}', days, current_date)
+        is_partial = is_partial or truncated
+        total = sum(int(item.get('count', 0)) for item in window)
         if total > 0:
             category_counts[category] = total
-    
+
     # Get sources from aggregates
     source_response = aggregates_table.query(
         IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('source')
     )
+    is_partial = is_partial or _index_read_was_truncated(source_response)
     source_totals = {}
     date_range = set((current_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days))
     for item in source_response.get('Items', []):
@@ -495,18 +557,19 @@ def get_entities():
         IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('persona')
     )
+    is_partial = is_partial or _index_read_was_truncated(persona_response)
     persona_counts = {}
     for item in persona_response.get('Items', []):
         if item.get('sk') in date_range:
             persona_name = item['pk'].replace('METRIC#persona#', '')
             persona_counts[persona_name] = persona_counts.get(persona_name, 0) + int(item.get('count', 0))
-    
+
     # Get feedback count
-    feedback_count = sum(
-        int(item.get('count', 0))
-        for item in _query_metric_window('METRIC#daily_total', days, current_date)
-    )
-    
+    total_window, total_truncated = _query_metric_window(
+        'METRIC#daily_total', days, current_date)
+    is_partial = is_partial or total_truncated
+    feedback_count = sum(int(item.get('count', 0)) for item in total_window)
+
     # Extract issues from recent feedback
     issues = {}
     feedback_items = []
@@ -528,9 +591,15 @@ def get_entities():
             problem_key = problem[:100].lower().strip()
             issues[problem_key] = issues.get(problem_key, 0) + 1
     
+    # `is_partial` describes the COUNTS (categories, sources, personas,
+    # feedback_count), which is what the scan branch's flag describes too. The
+    # `issues` map is a deliberate sample on both branches — the newest rows of
+    # at most seven days, capped at `limit` — and is not what this flag is about;
+    # folding that in would make it true on nearly every call and so mean nothing.
     return {
         'period_days': days,
         'feedback_count': feedback_count,
+        'is_partial': is_partial,
         'entities': {
             'keywords': {},
             'categories': dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)),
@@ -768,31 +837,44 @@ def get_summary():
         return _summary_from_items(days)
     
     current_date = datetime.now(timezone.utc)
-    
+
+    # Three partitions, one flag: a short read of ANY of them makes the summary
+    # incomplete, so they OR rather than each reporting for themselves. The
+    # review-basis branch above already returns `is_partial` from its scan; this
+    # branch used to omit the key entirely, which a caller reads as "complete".
+    is_partial = _window_exceeds_aggregate_retention(days)
+
+    total_items, total_truncated = _query_metric_window(
+        'METRIC#daily_total', days, current_date)
+    is_partial = is_partial or total_truncated
     totals = [
         {'date': item['sk'], 'count': item.get('count', 0)}
-        for item in _query_metric_window('METRIC#daily_total', days, current_date)
+        for item in total_items
     ]
-    
+
+    sentiment_items, sentiment_truncated = _query_metric_window(
+        'METRIC#daily_sentiment_avg', days, current_date)
+    is_partial = is_partial or sentiment_truncated
     sentiment_data = []
-    for item in _query_metric_window('METRIC#daily_sentiment_avg', days, current_date):
+    for item in sentiment_items:
         if item.get('count', 0) > 0:
             avg = float(item.get('sum', 0)) / float(item.get('count', 1))
             sentiment_data.append({'date': item['sk'], 'avg_sentiment': round(avg, 3), 'count': item.get('count')})
-    
-    urgent_count = sum(
-        item.get('count', 0)
-        for item in _query_metric_window('METRIC#urgent', days, current_date)
-    )
-    
+
+    urgent_items, urgent_truncated = _query_metric_window(
+        'METRIC#urgent', days, current_date)
+    is_partial = is_partial or urgent_truncated
+    urgent_count = sum(item.get('count', 0) for item in urgent_items)
+
     total_feedback = sum(int(t.get('count', 0)) for t in totals)
     avg_sentiment = sum(float(s.get('avg_sentiment', 0)) * int(s.get('count', 0)) for s in sentiment_data) / max(total_feedback, 1)
-    
+
     return {
         'period_days': days,
         'total_feedback': total_feedback,
         'avg_sentiment': round(avg_sentiment, 3),
         'urgent_count': urgent_count,
+        'is_partial': is_partial,
         'daily_totals': totals,
         'daily_sentiment': sentiment_data
     }
@@ -820,13 +902,16 @@ def get_sentiment_metrics():
             if sentiment in result:
                 result[sentiment] += 1
     else:
+        # One partition per label, and a short read of any one of them leaves the
+        # breakdown (and therefore `total` and every percentage) understated, so
+        # truncation ORs across labels rather than being attributed to one.
+        is_partial = _window_exceeds_aggregate_retention(days)
         for sentiment in sentiments:
-            result[sentiment] = sum(
-                int(item.get('count', 0))
-                for item in _query_metric_window(
-                    f'METRIC#daily_sentiment#{sentiment}', days, current_date)
-            )
-    
+            window, truncated = _query_metric_window(
+                f'METRIC#daily_sentiment#{sentiment}', days, current_date)
+            is_partial = is_partial or truncated
+            result[sentiment] = sum(int(item.get('count', 0)) for item in window)
+
     total = sum(result.values())
     return {
         'period_days': days,
@@ -861,15 +946,19 @@ def get_category_metrics():
             category = item.get('category', 'other')
             result[category] = result.get(category, 0) + 1
     else:
+        # The reviewer-flagged instance (finding M4): this branch reported the
+        # `is_partial = False` initialised above without ever computing it, so 99
+        # of 6,239 items came back as a complete answer. One partition per
+        # category, so truncation in ANY of them makes the breakdown partial.
+        is_partial = _window_exceeds_aggregate_retention(days)
         for category in categories:
-            total = sum(
-                int(item.get('count', 0))
-                for item in _query_metric_window(
-                    f'METRIC#daily_category#{category}', days, current_date)
-            )
+            window, truncated = _query_metric_window(
+                f'METRIC#daily_category#{category}', days, current_date)
+            is_partial = is_partial or truncated
+            total = sum(int(item.get('count', 0)) for item in window)
             if total > 0:
                 result[category] = total
-    
+
     return {
         'period_days': days,
         'is_partial': is_partial,
@@ -902,18 +991,23 @@ def get_source_metrics():
         IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('source')
     )
-    
+    is_partial = (
+        _window_exceeds_aggregate_retention(days)
+        or _index_read_was_truncated(response)
+    )
+
     source_totals = {}
     current_date = datetime.now(timezone.utc)
     date_range = set((current_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days))
-    
+
     for item in response.get('Items', []):
         if item.get('sk') in date_range:
             source = item['pk'].replace('METRIC#daily_source#', '')
             source_totals[source] = source_totals.get(source, 0) + int(item.get('count', 0))
-    
+
     return {
         'period_days': days,
+        'is_partial': is_partial,
         'sources': dict(sorted(source_totals.items(), key=lambda x: x[1], reverse=True))
     }
 
@@ -944,18 +1038,23 @@ def get_persona_metrics():
         IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('persona')
     )
-    
+    is_partial = (
+        _window_exceeds_aggregate_retention(days)
+        or _index_read_was_truncated(response)
+    )
+
     personas = {}
     current_date = datetime.now(timezone.utc)
     date_range = set((current_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days))
-    
+
     for item in response.get('Items', []):
         if item.get('sk') in date_range:
             persona_name = item['pk'].replace('METRIC#persona#', '')
             personas[persona_name] = personas.get(persona_name, 0) + int(item.get('count', 0))
-    
+
     return {
         'period_days': days,
+        'is_partial': is_partial,
         'personas': dict(sorted(personas.items(), key=lambda x: x[1], reverse=True))
     }
 
