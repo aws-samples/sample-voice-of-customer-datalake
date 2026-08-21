@@ -84,10 +84,22 @@ AGGREGATOR_COUNTER_WRITERS = ('update_counter', 'update_average')
 # (`update_counter(pk, date, field)` serves both the increment and the reversal).
 AGGREGATOR_KEY_PRODUCER = 'counter_keys'
 
-# The expressions allowed to produce the `date` a counter is keyed by: the
-# accessor that returns the item's own `date` field, and the unpacking of a triple
+# The expressions allowed to produce the `date` a counter is keyed by: the two
+# accessors that return the item's own `date` field, and the unpacking of a triple
 # this module already built. Nothing else may reach a sort key.
-AGGREGATOR_DATE_ACCESSOR = '_image_date'
+#
+# TWO accessors because the insert path and the reversal path may not answer the
+# same way for an image carrying no `date`: an arrival may fall back to today (it
+# arrived today), a reversal may not guess at all — a `-1` aimed at a day the item
+# never named corrupts a legitimate aggregate, and no condition expression can
+# catch it. Both return the `date` FIELD when there is one, which is all this file
+# is pinning; the difference between them is what they do when there is not.
+AGGREGATOR_DATE_ACCESSORS = ('_image_date', '_image_date_or_none')
+
+# The one iteration that hands a counter its sort key, matched EXACTLY. A prefix
+# test (`startswith('sorted(')`) would exempt any sorted() call at all —
+# `date = sorted(some_composite_list)[0]` would have passed it.
+AGGREGATOR_KEY_ITERATION = 'sorted(keys)'
 
 # The names the aggregator spends as a counter sort key. Three rather than one
 # because rebucketing an edited item writes to the date it LEFT and the date it
@@ -406,7 +418,32 @@ def _aggregator_counter_writes() -> list[tuple[str, str]]:
     return writes
 
 
-def _aggregator_sort_key_bindings() -> list[str]:
+def _explains_a_counter_date(value: ast.expr) -> bool:
+    """True when this expression is one of the shapes allowed to produce a sort key.
+
+    Matched on the PARSED expression, not on its text, because the two textual
+    tests this replaces admitted shapes the assertion did not mean to allow:
+
+      * `AGGREGATOR_KEY_PRODUCER not in binding` was a SUBSTRING test, so any
+        expression merely containing `counter_keys` was exempt —
+        `f'{counter_keys(item)}-{project}'` would have passed while binding a
+        composite sort key, which is exactly what this file exists to fail on;
+      * `startswith('sorted(')` exempted any `sorted(...)` call at all, so
+        `date = sorted(some_composite_list)[0]` would have passed too.
+
+    Here a call is a call: the accessors and the key producer must be the WHOLE
+    expression, and the one iteration that hands out sort keys is matched by exact
+    text. An f-string containing any of them is a JoinedStr, not a Call, and fails.
+    """
+    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
+        if value.func.id in AGGREGATOR_DATE_ACCESSORS:
+            return True
+        if value.func.id == AGGREGATOR_KEY_PRODUCER:
+            return True
+    return ast.unparse(value) == AGGREGATOR_KEY_ITERATION
+
+
+def _aggregator_sort_key_bindings() -> list[ast.expr]:
     """Every expression the aggregator binds the name `date` to.
 
     Since the aggregator learned to REVERSE a deletion, its counter calls are
@@ -415,16 +452,17 @@ def _aggregator_sort_key_bindings() -> list[str]:
     the sibling assertion — every call site passes something spelled `date` —
     nearly free to satisfy, so it no longer carries the guarantee on its own. This
     helper follows the sort key to where it is now PRODUCED, and pins the small
-    set of expressions allowed to produce it: the accessor `_image_date`, which
-    returns the item's `date` field unmodified, or the unpacking of a triple built
-    by `counter_keys`. An f-string, a concatenation, a project id appended — any
-    of them appears here as an unrecognized binding and fails.
+    set of expressions allowed to produce it: one of the two accessors in
+    AGGREGATOR_DATE_ACCESSORS, which return the item's `date` field unmodified, or
+    the unpacking of a triple this module already built. An f-string, a
+    concatenation, a project id appended — any of them appears here as an
+    unrecognized binding and fails.
 
     `for` targets are read as well as assignments, because
     `for pk, date, field in sorted(keys)` is how the call sites now get theirs.
     """
     tree = ast.parse(_read(AGGREGATOR_SOURCE))
-    bindings: list[str] = []
+    bindings: list[ast.expr] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             targets, value = node.targets, node.value
@@ -448,7 +486,7 @@ def _aggregator_sort_key_bindings() -> list[str]:
                 pairs = [(target, value)]
             for name_node, value_node in pairs:
                 if isinstance(name_node, ast.Name) and name_node.id in AGGREGATOR_DATE_NAMES:
-                    bindings.append(ast.unparse(value_node))
+                    bindings.append(value_node)
     return bindings
 
 
@@ -697,21 +735,28 @@ class TestCounterSortKeyShapeLockstep:
         # form needs — unlike a pattern, it cannot read SOME of the call sites, so
         # there is no partial-blindness case left to count against.
         #
-        # The floor is FOUR, not the eight it was before the aggregator learned to
-        # reverse a deletion. The eight hardcoded `update_counter` calls became one
-        # generic call driven by a list of dimensions, deliberately: the increment
-        # and the decrement path must not be able to drift apart, which an inverted
-        # copy of eight call sites guarantees they eventually would. Lowering the
-        # floor is therefore not a weakening of this pin — the pin moved, and
-        # test_the_only_sort_key_the_aggregator_builds_is_the_item_date below is
-        # where the guarantee now lives, reading the one function that builds the
-        # keys those four call sites spend.
-        assert len(writes) >= 4, (
-            f'Found only {len(writes)} counter writes in {AGGREGATOR_SOURCE}; this '
-            f'module writes at least four (insert, delete, and both halves of a '
-            f'rebucketing edit). If the writers were renamed, update '
-            f'AGGREGATOR_COUNTER_WRITERS in this file — do not lower the floor, '
-            f'because the assertion below proves nothing without it.'
+        # The floor is ONE, and it used to be eight. It was eight while the
+        # aggregator had eight hardcoded `update_counter` calls and the count of
+        # them was the only thing standing between this assertion and vacuous
+        # truth. Those eight became one generic call driven by a list of dimensions
+        # when the aggregator learned to reverse a deletion — deliberately, because
+        # the increment and the decrement path must not be able to drift apart, and
+        # an inverted copy of eight call sites guarantees they eventually would.
+        #
+        # So the number of call sites is no longer a fact about anything: it is a
+        # refactoring artifact, and any further legitimate consolidation (folding
+        # the two `update_average` calls in `process_modified_feedback` into one
+        # helper, say) would fail a test whose subject had not changed. What this
+        # floor is FOR is only that the helper read something — the guarantee itself
+        # moved to test_the_only_sort_key_the_aggregator_builds_is_the_item_date
+        # below, which reads the one function that BUILDS the keys these call sites
+        # spend, and to its sibling pinning what may produce that key's date.
+        assert writes, (
+            f'Found no counter writes in {AGGREGATOR_SOURCE}, so the assertion '
+            f'below would pass on an empty list. If the writers were renamed or '
+            f'moved, update AGGREGATOR_COUNTER_WRITERS in this file — this floor '
+            f'exists so that a helper reading nothing fails loudly rather than '
+            f'silently satisfying its own assertion.'
         )
         composite = sorted({sk for _, sk in writes if sk not in AGGREGATOR_DATE_NAMES})
         assert not composite, (
@@ -743,25 +788,77 @@ class TestCounterSortKeyShapeLockstep:
     def test_that_date_can_only_have_come_from_the_item_field(self):
         """And the name itself is only ever bound to the item's date.
 
-        Two producers are legal: `_image_date(item)`, which returns the `date`
-        field or today's date and nothing else, and unpacking a triple this module
-        already built. Any third — an f-string, a concatenation, a project id
-        appended — is what this fails on, and it fails BEFORE the value reaches a
-        sort key that a range query would then silently over-count.
+        Three producers are legal: either accessor in AGGREGATOR_DATE_ACCESSORS,
+        which return the `date` field and nothing else, the key producer itself, and
+        the one iteration that hands out sort keys. Any fourth — an f-string, a
+        concatenation, a project id appended — is what this fails on, and it fails
+        BEFORE the value reaches a sort key that a range query would then silently
+        over-count.
+
+        Matched as parsed calls (`_explains_a_counter_date`) rather than by prefix
+        or substring, so an expression that merely CONTAINS a legal producer is not
+        exempt by containing it.
         """
+        bindings = _aggregator_sort_key_bindings()
+        assert bindings, (
+            f'No counter sort-key binding found in {AGGREGATOR_SOURCE}, so this '
+            f'assertion would pass on an empty list. If the names changed, update '
+            f'AGGREGATOR_DATE_NAMES rather than leaving the sort key unpinned.'
+        )
         unexplained = sorted({
-            binding for binding in _aggregator_sort_key_bindings()
-            if not binding.startswith(f'{AGGREGATOR_DATE_ACCESSOR}(')
-            and AGGREGATOR_KEY_PRODUCER not in binding
-            and not binding.startswith('sorted(')
+            ast.unparse(binding) for binding in bindings
+            if not _explains_a_counter_date(binding)
         })
         assert not unexplained, (
             f'{AGGREGATOR_SOURCE} binds a counter sort key from {unexplained}. '
-            f'Only {AGGREGATOR_DATE_ACCESSOR}() and the unpacking of a '
-            f'{AGGREGATOR_KEY_PRODUCER}() triple may produce one, because '
+            f'Only {list(AGGREGATOR_DATE_ACCESSORS)}, {AGGREGATOR_KEY_PRODUCER}() '
+            f'and `{AGGREGATOR_KEY_ITERATION}` may produce one, because '
             f'{STREAM_SOURCE} reads these sort keys as bare dates. If a new '
             f'source is genuinely right, add it here deliberately.'
         )
+
+
+class TestTheSortKeyAllowlistItself:
+    """The allowlist decides whether the pin above passes, so what it ADMITS is
+    the thing to check — a hatch wide enough to walk a composite sort key through
+    leaves the pin green while unpinned, which is the outcome the rest of this file
+    goes to some length to prevent.
+
+    Both cases below are the two the previous textual form really did admit: it
+    exempted any expression CONTAINING `counter_keys`, and any expression starting
+    `sorted(`. Neither is a hypothetical shape.
+    """
+
+    @staticmethod
+    def _explains(source: str) -> bool:
+        return _explains_a_counter_date(ast.parse(source, mode='eval').body)
+
+    def test_each_declared_accessor_explains_a_date(self):
+        for accessor in AGGREGATOR_DATE_ACCESSORS:
+            assert self._explains(f'{accessor}(item)'), (
+                f'{accessor} is declared legal in AGGREGATOR_DATE_ACCESSORS but the '
+                f'allowlist does not recognise it, so a correct aggregator fails.'
+            )
+
+    def test_the_key_iteration_and_producer_explain_a_date(self):
+        assert self._explains(AGGREGATOR_KEY_ITERATION)
+        assert self._explains(f'{AGGREGATOR_KEY_PRODUCER}(item, date)')
+
+    def test_an_fstring_merely_containing_the_producer_is_not_explained(self):
+        # The substring hatch. `counter_keys` appears in the text, and the value is
+        # a composite sort key.
+        assert not self._explains(f"f'{{{AGGREGATOR_KEY_PRODUCER}(item)}}-{{project}}'")
+
+    def test_an_fstring_merely_containing_an_accessor_is_not_explained(self):
+        assert not self._explains(f"f'{{{AGGREGATOR_DATE_ACCESSORS[0]}(item)}}#{{project_id}}'")
+
+    def test_some_other_sorted_call_is_not_explained(self):
+        # The prefix hatch: `startswith('sorted(')` exempted this, and it binds
+        # whatever the first element of an unrelated list happens to be.
+        assert not self._explains('sorted(some_composite_list)[0]')
+
+    def test_a_concatenation_is_not_explained(self):
+        assert not self._explains(f"{AGGREGATOR_DATE_ACCESSORS[0]}(item) + '#' + project")
 
 
 class TestNotConfiguredFallbackLockstep:
