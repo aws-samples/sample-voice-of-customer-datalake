@@ -48,6 +48,18 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       `urgency == 'high'` guard fails five tests across three classes, including
       `test_urgency_raised_to_high_adds_the_urgent_count`.
 
+  TestBothDirectionsAgreeOnThePersonaBucket
+    — the persona axis buckets by `persona_type` (the archetype), not by
+      `persona_name`: a null name is correct output for anonymous feedback, which is
+      most of this corpus, so the name-based axis put 99.97% of it in one `Unknown`
+      bucket. Pointing `PERSONA_FIELD` back at `persona_name` fails
+      `test_an_anonymous_items_insert_writes_the_bucket_counter_dimensions_names`
+      and its delete counterpart — the subject item carries an archetype and NO
+      name, the production shape. Naming the bucket in a second place instead of
+      through `counter_dimensions` fails
+      `test_the_two_directions_name_one_row_and_only_the_sign_differs` as soon as
+      the two copies disagree, which is what a half-moved field name is.
+
   TestAReversalRefusesToGuessTheDay
     — `_image_date`'s today-fallback is safe for an arrival and arbitrary for a
       reversal. Having `process_deleted_feedback` or `process_modified_feedback`
@@ -311,7 +323,7 @@ class TestGetMetricType:
         """Returns 'persona' for persona metric pk."""
         from aggregator.handler import get_metric_type
         
-        result = get_metric_type('METRIC#persona#Happy Customer')
+        result = get_metric_type('METRIC#persona#advocate')
         
         assert result == 'persona'
 
@@ -387,7 +399,7 @@ class TestUpdateCounter:
         """Includes metric_type for persona metrics (for GSI)."""
         from aggregator.handler import update_counter
         
-        update_counter('METRIC#persona#Happy Customer', '2025-01-15', 'count')
+        update_counter('METRIC#persona#advocate', '2025-01-15', 'count')
         
         call_kwargs = mock_table.update_item.call_args.kwargs
         assert ':metric_type' in call_kwargs['ExpressionAttributeValues']
@@ -517,13 +529,13 @@ class TestProcessNewFeedback:
     @patch('aggregator.handler.update_average')
     @patch('aggregator.handler.update_counter')
     def test_updates_persona_counter(self, mock_counter, mock_avg, sample_feedback_item):
-        """Updates persona counter."""
+        """Updates the persona counter, under the item's ARCHETYPE."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         calls = mock_counter.call_args_list
-        persona_call = [c for c in calls if 'persona#Happy Customer' in c.args[0]]
+        persona_call = [c for c in calls if 'persona#advocate' in c.args[0]]
         assert len(persona_call) == 1
 
     @patch('aggregator.handler.update_average')
@@ -1027,6 +1039,89 @@ class TestCounterDimensions:
 
         assert counter_dimensions({}) == counter_dimensions({'date': '2025-01-15'})
         assert ('METRIC#daily_source#unknown', 'count') in counter_dimensions({})
+
+
+class TestBothDirectionsAgreeOnThePersonaBucket:
+    """The persona row an insert creates is the row a delete comes back for.
+
+    A dimension read out of the NEW image on the way in and out of the OLD image on
+    the way back is the one place a field name can be changed on half the axis: the
+    increment lands on `METRIC#persona#<new field's value>` while the decrement
+    looks for `METRIC#persona#<old field's value>`, so the counter goes up and never
+    comes down. That is the bug this module was repaired for, and moving the field
+    is exactly the edit that could reintroduce it in this one dimension.
+
+    Both the EXPECTED bucket and the OBSERVED ones are derived — the expectation
+    from `counter_dimensions`, the observations from the writes the handler issued —
+    so nothing here restates the pk, and a second place naming the persona bucket
+    cannot pass by agreeing with a literal in this file.
+
+    The subject is the ANONYMOUS fixture (an archetype, no name), because that is
+    the shape of nearly every item in production and the shape the old field
+    bucketed as `Unknown`.
+    """
+
+    @staticmethod
+    def _expected_persona_pk(item: dict) -> str:
+        from aggregator.handler import counter_dimensions
+
+        personas = [pk for pk, _ in counter_dimensions(item)
+                    if pk.startswith('METRIC#persona#')]
+        assert len(personas) == 1, personas
+        return personas[0]
+
+    @staticmethod
+    def _persona_writes(mock_table) -> list[tuple[str, str, str, int]]:
+        return [w for w in _writes(mock_table) if w[0].startswith('METRIC#persona#')]
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_an_anonymous_items_insert_writes_the_bucket_counter_dimensions_names(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_anonymous_feedback_item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._expected_persona_pk(sample_anonymous_feedback_item),
+             '2025-01-15', 'count', 1)
+        ]
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_its_delete_decrements_that_same_bucket(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        from aggregator.handler import record_handler
+
+        record_handler(_record('REMOVE', old=sample_anonymous_feedback_item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._expected_persona_pk(sample_anonymous_feedback_item),
+             '2025-01-15', 'count', -1)
+        ]
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_the_two_directions_name_one_row_and_only_the_sign_differs(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        """The property, stated without either side being written down.
+
+        Compared as sets of (pk, sk, field) so the assertion is about WHICH row,
+        which is the thing a half-moved field name gets wrong; the signs are checked
+        separately, so a reversal that incremented could not pass either.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_anonymous_feedback_item))
+        inserted = self._persona_writes(mock_table)
+        mock_table.reset_mock()
+
+        record_handler(_record('REMOVE', old=sample_anonymous_feedback_item))
+        removed = self._persona_writes(mock_table)
+
+        assert _dimensions(inserted) == _dimensions(removed)
+        assert [delta for *_, delta in inserted] == [1]
+        assert [delta for *_, delta in removed] == [-1]
 
 
 class TestAReversalRefusesToGuessTheDay:

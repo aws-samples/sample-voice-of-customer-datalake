@@ -38,6 +38,39 @@ def validate_date_basis(value: str | None) -> str:
         return value.strip().lower()
     return DATE_BASIS_IMPORTED
 
+# --- The persona metrics axis ------------------------------------------------
+# WHICH FIELD "PERSONA" MEANS WHEN IT IS A DIMENSION, and what an item with no
+# value for it is called. Two Lambdas bucket the same items by these values and
+# must agree, so they live here, in the data layer, beside the date-basis
+# constants and for the same reason: `aggregator/handler.py` writes the
+# `METRIC#persona#<value>` counter rows from a stream, `metrics_handler`'s scan
+# path buckets raw items itself when the caller asks for a review-date window or a
+# source filter, and neither Lambda can import the other (each asset excludes the
+# other's directory). One window read two ways answering two different things is
+# the defect class this repo has now fixed twice; a shared constant is what makes
+# "both paths read the same field" a fact rather than an intention.
+#
+# 🔑 `persona_type`, NOT `persona_name`. The processor writes both
+# (`processor/handler.py`), and the counter bucketed by `persona_name` until an
+# audit found 99.97% of a 6,239-item corpus under a single `Unknown` — an axis
+# useless while looking populated. The cause was NOT a field nothing writes: the
+# enrichment contract declares `persona.name` as "string or null" because this
+# platform ingests scraped reviews and mostly anonymous form submissions, so an
+# anonymous item HAS no name to give; the processor strips None before writing and
+# `persona_name` is simply absent. A null name is correct output for anonymous
+# feedback, so the field was not the bug — the AXIS was. `persona_type` is
+# populated and is a closed enum, which is what a dimension you group by has to
+# be; a person's name is an identifier, not an archetype.
+PERSONA_FIELD = 'persona_type'
+
+# The bucket an item with no archetype lands in, spelled as the enum spells it
+# (`existing_customer|prospect|churn_risk|advocate|unknown`) rather than as a
+# bespoke `Unknown`: the contract already defines a value for this exact idea, so
+# every bucket name is one the contract declares. Aggregate rows written before the
+# field moved keep their old `Unknown` bucket and age out on their 90-day TTL
+# (`AGGREGATE_RETENTION_DAYS`); the transition is forward-only by design.
+PERSONA_UNKNOWN = 'unknown'
+
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90
 

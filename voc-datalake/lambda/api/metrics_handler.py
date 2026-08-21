@@ -20,7 +20,7 @@ from shared.api import (
     AGGREGATE_RETENTION_DAYS,
 )
 from shared.exceptions import ValidationError
-from shared.feedback import basis_date, window_cutoff
+from shared.feedback import PERSONA_FIELD, PERSONA_UNKNOWN, basis_date, window_cutoff
 from shared.indexes import (
     AGGREGATES_BY_METRIC_TYPE_INDEX,
     FEEDBACK_BY_CATEGORY_INDEX,
@@ -288,6 +288,32 @@ def _index_read_was_truncated(response: dict) -> bool:
     return bool(response.get('LastEvaluatedKey'))
 
 
+def _persona_bucket(item: dict) -> str:
+    """The persona bucket one RAW FEEDBACK item belongs to, on the scan path.
+
+    The scan path exists because aggregates are bucketed by import date only, so a
+    review-date window or a source filter has to be computed from raw items — and
+    that makes this function the read side's answer to the same question
+    `aggregator/handler.py::counter_dimensions` answers when it names a
+    `METRIC#persona#<value>` row. The two must agree, or `/metrics/personas`
+    reports one thing for `?date_basis=review` and another for the default basis
+    over the same items. One window, two code paths, two different answers is the
+    defect class this file has now been repaired for twice, so the field and the
+    empty-bucket name are IMPORTED from `shared/feedback.py` rather than spelled
+    here: the aggregator imports the same two constants, and
+    test_persona_dimension_lockstep.py fails if either side reads anything else.
+
+    Why the field is the archetype and not the name is argued where the constant is
+    declared. The short of it: `persona_name` is legitimately null for anonymous
+    feedback, which is most of this corpus, so bucketing by it put 99.97% of a
+    6,239-item corpus in one bucket.
+
+    `or`, not a `.get` default, and for the aggregator's reason: an item can carry
+    an explicit None, which a default would not replace.
+    """
+    return item.get(PERSONA_FIELD) or PERSONA_UNKNOWN
+
+
 # ============================================
 # Feedback Endpoints
 # ============================================
@@ -502,9 +528,13 @@ def get_entities():
             category_counts[category] = category_counts.get(category, 0) + 1
             src = item.get('source_platform', 'unknown')
             source_counts[src] = source_counts.get(src, 0) + 1
-            persona_name = item.get('persona_name')
-            if persona_name:
-                persona_counts[persona_name] = persona_counts.get(persona_name, 0) + 1
+            # Counted for EVERY item, including the ones with no archetype, because
+            # the aggregates branch below counts every item too — the aggregator
+            # writes exactly one persona counter per item. Skipping the empty ones
+            # here would make the two branches of one route disagree about the same
+            # window, which is what `_persona_bucket` exists to prevent.
+            persona = _persona_bucket(item)
+            persona_counts[persona] = persona_counts.get(persona, 0) + 1
             problem = item.get('problem_summary', '')
             if problem and len(problem) > 5:
                 problem_key = problem[:100].lower().strip()
@@ -1025,9 +1055,12 @@ def get_persona_metrics():
         items, is_partial = _scan_window_items(days, date_basis)
         personas = {}
         for item in items:
-            persona_name = item.get('persona_name')
-            if persona_name:
-                personas[persona_name] = personas.get(persona_name, 0) + 1
+            # Every item, empty archetype included — see `_persona_bucket` and the
+            # note in `/feedback/entities`: the aggregates branch below counts one
+            # persona row per item, so a scan branch that dropped the empty ones
+            # would answer a different question over the same window.
+            persona = _persona_bucket(item)
+            personas[persona] = personas.get(persona, 0) + 1
         return {
             'period_days': days,
             'is_partial': is_partial,

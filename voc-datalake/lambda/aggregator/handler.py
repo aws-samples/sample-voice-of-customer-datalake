@@ -127,6 +127,9 @@ from botocore.exceptions import ClientError
 # Shared module imports
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
+# The persona axis, declared in the data layer because BOTH sides of it spend the
+# same two values — see the note above `counter_dimensions`.
+from shared.feedback import PERSONA_FIELD, PERSONA_UNKNOWN
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -166,21 +169,9 @@ REBUCKETED_METRIC = "AggregatesRebucketed"
 REFUSED_METRIC = "AggregateWriteRefused"
 DECLINED_METRIC = "AggregateWriteDeclined"
 
-# The feedback field the persona counter buckets by, as a constant so that
-# test_persona_field_lockstep.py can pin it against the field the PROCESSOR
-# writes. It is a constant rather than an inline `item.get('persona_name')` for
-# one reason: this name has to change on both sides of the stream at once. A
-# decrement reads it out of the OLD image of an item whose insert read it out of
-# the new one, so "fix" it here alone and every reversal misses the row its own
-# insert created — the counter goes up and never comes down, which is the shape of
-# the bug this module was just repaired for. The processor writes `persona_name`
-# AND `persona_type` (`processor/handler.py`), so either is a real field; the
-# lockstep is about the two sides agreeing, not about which of the two wins.
-PERSONA_FIELD = 'persona_name'
-
 # The two aggregate rows this module names outside `counter_dimensions`, hoisted
-# for the reason PERSONA_FIELD is: a second unmarked copy of one of these strings
-# is what makes an argument elsewhere in the file true or false.
+# for the reason PERSONA_FIELD is named: a second unmarked copy of one of these
+# strings is what makes an argument elsewhere in the file true or false.
 #
 # DAILY_TOTAL_PK is the sentinel `_day_has_aggregates` reads, and that read is only
 # a sound test of "is this day still here?" because this is the ONE counter every
@@ -482,6 +473,28 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     different field here than the insert path read makes every DECREMENT miss the
     row its insert created, so the two must move together, and "fix it in one
     place" is only true while something fails when they diverge.
+
+    🔑 THE PERSONA AXIS BUCKETS BY ARCHETYPE (`persona_type`), NOT BY NAME. It
+    bucketed by `persona_name` until an audit found 99.97% of a 6,239-item corpus
+    in one `Unknown` bucket — a dimension useless while looking populated. The
+    cause was NOT a field nothing writes: the processor writes both persona fields,
+    and the enrichment contract declares `persona.name` as "string or null"
+    precisely because this platform's corpus is scraped reviews and mostly
+    anonymous form submissions. An anonymous item HAS no name to give, the
+    processor strips None before writing, and so `persona_name` is legitimately
+    absent on almost every item. A null name is therefore correct model output, and
+    the axis was the thing that was wrong: `persona_type` is populated, and it is a
+    closed enum (`existing_customer|prospect|churn_risk|advocate|unknown`), which
+    is what a dimension you group by has to be — a person's name is an identifier,
+    not an archetype. The `METRIC#persona#` prefix is deliberately unchanged, so
+    `get_metric_type`, the `metric_type` GSI and every read path are untouched;
+    only the source field moved.
+
+    That move is FORWARD-ONLY. Rows already written keep their `Unknown` bucket, so
+    a window spanning the deploy shows old `Unknown` alongside the new enum values;
+    aggregate rows carry a 90-day TTL, so the axis becomes fully correct within 90
+    days with no backfill. Nothing rewrites stored rows — a rewrite would have to
+    re-derive each row from feedback the row no longer references.
     """
     source_platform = item.get('source_platform', 'unknown')
     category = item.get('category', 'other')
@@ -489,7 +502,7 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     urgency = item.get('urgency', 'low')
     # `or`, not a `.get` default: a stripped item can carry an explicit None, and
     # `METRIC#persona#None` is a bucket nothing else would ever write to.
-    persona = item.get(PERSONA_FIELD) or 'Unknown'
+    persona = item.get(PERSONA_FIELD) or PERSONA_UNKNOWN
 
     dimensions = [
         # DAILY_TOTAL_PK, not the literal: `_day_has_aggregates` reads this same

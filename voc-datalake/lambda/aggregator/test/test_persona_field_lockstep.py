@@ -23,41 +23,53 @@ WHY THIS IS A TEST AND NOT A COMMENT
 
 WHAT IS PINNED, AND WHAT IS DELIBERATELY NOT
     Pinned: the field `aggregator/handler.py::PERSONA_FIELD` names is one the
-    processor's item literal really writes. NOT pinned: WHICH of the processor's two
-    persona fields it should be. `persona_name` (the LLM's free-text name) and
-    `persona_type` (a small enum) are both real fields, and bucketing by either is
-    a defensible product decision — one gives many partitions, the other a handful.
-    Asserting a specific choice here would be this file inventing a requirement.
+    processor's item literal really writes, and the empty-bucket name is a value
+    the enrichment contract's own enum declares. NOT pinned: WHICH of the
+    processor's two persona fields it should be. That is a product decision, and
+    asserting it here would be this file inventing a requirement; what it must not
+    be is a field production does not produce.
 
-    That leaves one thing worth naming out loud, because it is the reason the
-    deferral in the PR was contentious: `persona_name` is `null` whenever the model
-    returns no name, and the processor strips None values before writing, so those
-    items carry NO `persona_name` and bucket as `Unknown`. That is a data-quality
-    property of the enrichment output, not a lockstep violation — the counter is
-    genuinely counting "items whose persona we could not name". If the product
-    decision becomes "bucket by type instead", changing PERSONA_FIELD is the whole
-    change, and this test keeps passing because `persona_type` is written too.
+    The decision itself, for the record, because it is the reason the field moved:
+    the axis buckets by `persona_type` (the archetype) and not by `persona_name`
+    (the LLM's free-text name). `persona_name` is `null` whenever the model returns
+    no name, the processor strips None values before writing, and this platform's
+    corpus is scraped reviews and mostly anonymous form submissions — so an
+    anonymous item HAS no name to give and carries no `persona_name` at all. An
+    audit found 99.97% of a 6,239-item corpus in one `Unknown` bucket as a result.
+    That was not a data-quality defect in the enrichment output (a null name for
+    anonymous feedback is correct) and not a field nothing writes; it was the wrong
+    field for the question. `persona_type` is populated and is a closed enum, which
+    is what a dimension you group by has to be.
 
 REVERT MAP
     * Point PERSONA_FIELD at a field the processor does not write (`persona`,
       `persona_label`) — fails
       test_the_persona_field_is_one_the_processor_writes.
-    * Inline `item.get('persona_name')` back into `counter_dimensions` and drop the
+    * Inline `item.get('persona_type')` back into `counter_dimensions` and drop the
       constant — fails test_the_persona_field_is_read_through_the_constant, which
       is what keeps the two directions reading ONE name rather than two literals
       that happen to match today.
     * Have the processor stop writing the field this reads — fails the first test,
       from the other side.
+    * Spell the empty bucket as a bespoke `Unknown` again (or anything else outside
+      the contract's enum) — fails
+      test_the_empty_bucket_is_a_value_the_enrichment_enum_declares.
+    * Point PERSONA_FIELD back at `persona_name` — fails
+      test_an_item_with_an_archetype_and_no_name_buckets_under_its_archetype, which
+      is the 99.97% case, and (from the API side)
+      test_the_scan_path_and_the_aggregates_path_agree_on_one_item in
+      lambda/api/test/test_persona_dimension_lockstep.py.
 """
 import ast
 import re
 from pathlib import Path
 
-from aggregator.handler import PERSONA_FIELD, counter_dimensions
+from aggregator.handler import PERSONA_FIELD, PERSONA_UNKNOWN, counter_dimensions
 
 PROCESSOR_SOURCE = 'lambda/processor/handler.py'
 AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
 DIMENSIONS_FUNCTION = 'counter_dimensions'
+PERSONA_PREFIX = 'METRIC#persona#'
 
 
 def _read(relative: str) -> str:
@@ -85,6 +97,27 @@ def _processor_persona_fields() -> set[str]:
         f'below pass for the wrong reason.'
     )
     return fields
+
+
+def _processor_persona_type_enum() -> set[str]:
+    """The values the enrichment prompt's `persona.type` contract admits.
+
+    Read out of the prompt template, because that string IS the contract: it is
+    what the model is told to return, so it is the only place that says which
+    archetype names can ever reach the counter. `null` is dropped — it is the
+    JSON contract's way of saying "no value", which is the case the bucket name
+    below stands in for, not a value the bucket could be named after.
+    """
+    source = _read(PROCESSOR_SOURCE)
+    declarations = re.findall(r'"persona":.*?"type":"([^"]+)"', source)
+    assert len(declarations) == 1, (
+        f'Expected exactly one `persona.type` declaration in the enrichment prompt '
+        f'in {PROCESSOR_SOURCE}; found {len(declarations)}. Two contracts for one '
+        f'field is drift of its own; if the prompt was restructured, follow it here '
+        f'rather than loosening the pattern — an empty match would make the '
+        f'assertion below pass for the wrong reason.'
+    )
+    return {value for value in declarations[0].split('|') if value != 'null'}
 
 
 def _aggregator_persona_reads() -> list[str]:
@@ -147,29 +180,100 @@ class TestThePersonaCounterReadsAFieldThatExists:
         )
 
 
+class TestTheAxisMeasuresTheArchetype:
+    """The 99.97% case: an anonymous item still lands in a bucket that means
+    something.
+
+    Written as an item carrying an archetype and NO name, because that is the shape
+    of nearly every item this platform ingests — scraped reviews and anonymous form
+    submissions, for which the enrichment contract returns a null `persona.name` and
+    the processor writes no `persona_name` key at all. Under the old field every one
+    of them bucketed as `Unknown`, and no assertion anywhere noticed, because the
+    fixtures agreed with the aggregator about a field production rarely produces.
+    """
+
+    def test_an_item_with_an_archetype_and_no_name_buckets_under_its_archetype(self):
+        anonymous = {'persona_type': 'churn_risk'}
+        assert 'persona_name' not in anonymous, (
+            'the arrangement is the point: this item must carry no name at all, the '
+            'way a stripped item from an anonymous review arrives'
+        )
+
+        assert (f'{PERSONA_PREFIX}churn_risk', 'count') in counter_dimensions(anonymous)
+
+    def test_a_name_alone_does_not_decide_the_bucket(self):
+        """The negative half of the same fact.
+
+        An item carrying ONLY a name has no archetype, so it belongs in the empty
+        bucket — and must not resurrect the old axis by being counted under the
+        name. Without this, pointing PERSONA_FIELD back at `persona_name` would
+        leave the test above failing but nothing asserting that the name is no
+        longer what a bucket can be called.
+        """
+        named_only = {'persona_name': 'Veronica Chen'}
+        personas = [pk for pk, _ in counter_dimensions(named_only)
+                    if pk.startswith(PERSONA_PREFIX)]
+
+        assert personas == [f'{PERSONA_PREFIX}{PERSONA_UNKNOWN}'], (
+            f'{named_only} produced {personas}. A free-text name is an identifier, '
+            f'not an archetype, and must not name a metrics bucket.'
+        )
+
+
 class TestTheDefaultBucketIsStable:
     """An item with no persona must land in a NAMED bucket, the same one in both
     directions — and never in one built out of `None`.
 
-    `METRIC#persona#None` is the failure a `.get(field, 'Unknown')` default does not
+    `METRIC#persona#None` is the failure a `.get(field, DEFAULT)` default does not
     prevent: the processor strips None values, but a stream image edited by hand, or
     any writer that stores an explicit null, delivers the key present and empty. The
-    default then does not apply, `Unknown` is not used, and the counter goes to a
-    partition nothing else writes to or reads from — invisible, and unreachable by
-    the reversal if the field is ever repopulated.
+    default then does not apply, the empty bucket name is not used, and the counter
+    goes to a partition nothing else writes to or reads from — invisible, and
+    unreachable by the reversal if the field is ever repopulated.
     """
 
-    def test_a_missing_persona_buckets_under_unknown(self):
-        assert ('METRIC#persona#Unknown', 'count') in counter_dimensions({})
+    def test_a_missing_persona_buckets_under_the_empty_value(self):
+        assert (f'{PERSONA_PREFIX}{PERSONA_UNKNOWN}', 'count') in counter_dimensions({})
 
-    def test_an_explicitly_null_persona_buckets_under_unknown_too(self):
-        assert ('METRIC#persona#Unknown', 'count') in counter_dimensions(
+    def test_an_explicitly_null_persona_buckets_under_it_too(self):
+        assert (f'{PERSONA_PREFIX}{PERSONA_UNKNOWN}', 'count') in counter_dimensions(
             {PERSONA_FIELD: None}
         )
 
-    def test_an_empty_persona_name_buckets_under_unknown_too(self):
-        assert ('METRIC#persona#Unknown', 'count') in counter_dimensions(
+    def test_an_empty_persona_value_buckets_under_it_too(self):
+        assert (f'{PERSONA_PREFIX}{PERSONA_UNKNOWN}', 'count') in counter_dimensions(
             {PERSONA_FIELD: ''}
+        )
+
+    def test_a_populated_item_does_not_bucket_under_the_empty_value(self):
+        """The POSITIVE CONTROL for the three above.
+
+        Without it, all three pass just as well if everything collapses into one
+        bucket — which is precisely the defect this change repairs, so an
+        empty-bucket assertion with no populated counterexample would be asserting
+        the bug.
+        """
+        personas = [pk for pk, _ in counter_dimensions({PERSONA_FIELD: 'prospect'})
+                    if pk.startswith(PERSONA_PREFIX)]
+
+        assert personas == [f'{PERSONA_PREFIX}prospect'], personas
+
+    def test_the_empty_bucket_is_a_value_the_enrichment_enum_declares(self):
+        """Not a bespoke label: a value the contract already defines.
+
+        The bucket was `Unknown`, which appears in no contract — so a caller reading
+        the axis got one value that was not from the enum and could not tell whether
+        it meant "the model said unknown" or "we had nothing". Spelling it the
+        enum's way makes every bucket name, once the pre-deploy rows have aged out,
+        a value the contract declares.
+        """
+        admitted = _processor_persona_type_enum()
+
+        assert PERSONA_UNKNOWN in admitted, (
+            f'the empty persona bucket is `{PERSONA_UNKNOWN}`, which the enrichment '
+            f'contract in {PROCESSOR_SOURCE} does not admit — it admits '
+            f'{sorted(admitted)}. Name it with a value the contract defines, so the '
+            f'axis has no values invented outside it.'
         )
 
     def test_the_persona_dimension_is_never_absent(self):
@@ -180,9 +284,9 @@ class TestTheDefaultBucketIsStable:
         for a reason other than the item's own value, is how one direction writes a
         row the other never comes back for.
         """
-        for item in ({}, {PERSONA_FIELD: None}, {PERSONA_FIELD: 'Happy Customer'}):
+        for item in ({}, {PERSONA_FIELD: None}, {PERSONA_FIELD: 'advocate'}):
             personas = [pk for pk, _ in counter_dimensions(item)
-                        if pk.startswith('METRIC#persona#')]
+                        if pk.startswith(PERSONA_PREFIX)]
             assert len(personas) == 1, (
                 f'{item} produced {personas}; exactly one persona counter must be '
                 f'written for every item, in both directions.'
