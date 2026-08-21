@@ -74,12 +74,35 @@ decisions inside it that a naive implementation gets wrong. The revert map:
 
   TestTheAveragesTwoHalvesCannotSplit
     — the average is two conditional writes to ONE row, so unlike the counters it
-      can split: dropping `not reversal_refused` fails
+      can split: dropping the pairing fails
       `test_a_refused_reversal_does_not_let_its_increment_land`, and skipping the
       re-application unconditionally (the over-correction) fails four tests
       including `test_an_item_gaining_a_score_it_never_had_is_applied`. Moto-backed
       of necessity — a mock cannot refuse the reversal, so the pairing rule would
       never be exercised against one.
+
+  TestThePairingIsPerRowAndNotPerEdit
+    — the pairing above is keyed on the ROW, not on one flag consulted however far
+      apart the two writes are aimed. Restoring the flag (`if blocked_row is not
+      None`) fails `test_a_cross_day_edit_still_reaches_the_new_days_average` and
+      nothing else, which is why that test exists: every test in the class above
+      passes with the defect present. Removing the block altogether fails three,
+      including `test_the_same_day_block_is_not_weakened_by_that`, so neither
+      direction can be got wrong silently. Treating a reversal refused for a
+      MISSING row as blocking — collapsing AverageWrite back to a bool — fails
+      `test_a_reversal_refused_for_a_missing_row_does_not_block_the_new_score`, and
+      making the decline silent fails
+      `test_a_declined_re_application_is_counted_rather_than_silent` (REFUSED_METRIC
+      counts DynamoDB's refusals, so a write never issued is invisible to it).
+
+  TestUpdateAverageReportsWhichConditionFailed
+    — the signal the class above spends, pinned on its own. Deleting
+      `ReturnValuesOnConditionCheckFailure` fails four tests across both classes,
+      because without it a refusal carries no `Item` and every refused reversal
+      reads as ROW_ABSENT. Removing `AverageWrite.__bool__` fails
+      `test_only_the_landed_outcome_is_truthy` — an Enum is otherwise truthy in all
+      three states, which would make `if update_average(...)` a tautology and count
+      refused writes as landed.
 
   TestTheDaySentinelIsTheCounterEveryItemWrites
     — `_day_has_aggregates`'s soundness is a fact about `counter_dimensions`, so it
@@ -1453,6 +1476,281 @@ class TestTheAveragesTwoHalvesCannotSplit:
                                         'sentiment_score': Decimal('0.10')}))
 
         assert REFUSED_METRIC in [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
+
+
+class TestThePairingIsPerRowAndNotPerEdit:
+    """A refusal on one day's average row says nothing about another day's.
+
+    The pairing rule above is right for a SAME-DAY edit, where both writes hit one
+    (SENTIMENT_AVG_PK, date). An edited `date` makes them two writes to two rows, and
+    consulting a single `reversal_refused` flag across that gap dropped the item from
+    the new day's average while every one of its counters — `daily_total` included —
+    moved onto that day. The row and the counters then describe different sets of
+    items, which is the split the pairing exists to prevent, moved to the day that
+    UNDERSTATES: `get_summary` weights each date's `sum/count` by that same count.
+
+    So the block is keyed on the ROW, and these tests are what tell the two
+    formulations apart — the flag version passes every test in the class above.
+
+    Moto-backed throughout: a mock cannot refuse the reversal, so against one the
+    reversal always "lands", `blocked_row` stays None and the distinction is never
+    exercised.
+    """
+
+    @staticmethod
+    def _avg(table, date):
+        item = table.get_item(Key={'pk': 'METRIC#daily_sentiment_avg', 'sk': date}).get('Item')
+        return None if item is None else (item['count'], item['sum'])
+
+    @staticmethod
+    def _count(table, pk, date):
+        item = table.get_item(Key={'pk': pk, 'sk': date}).get('Item')
+        return None if item is None else item['count']
+
+    def test_a_cross_day_edit_still_reaches_the_new_days_average(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """The reproduction. The old day's row is at zero; the new day's is not.
+
+        An insert then a delete leaves `(daily_sentiment_avg, 2025-01-15)` present and
+        empty — so the old day reads live and its reversal is refused by the floor —
+        while an unrelated scored item keeps 2025-02-01 live with a real average. The
+        edit moves the first item onto that day. With the pairing keyed on a flag the
+        new day's average stayed at one item while its `daily_total` reached two.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('REMOVE', old=sample_feedback_item))
+        assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(0), Decimal(0))
+
+        other = {**sample_feedback_item, 'feedback_id': 'other', 'date': '2025-02-01',
+                 'sentiment_score': Decimal('0.90')}
+        record_handler(_record('INSERT', new=other))
+        assert self._avg(real_aggregates_table, '2025-02-01') == (Decimal(1), Decimal('0.90'))
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'date': '2025-02-01'}))
+
+        # Both halves of the day now describe the same two items.
+        assert self._avg(real_aggregates_table, '2025-02-01') == (Decimal(2), Decimal('1.75'))
+        assert self._count(real_aggregates_table, 'METRIC#daily_total', '2025-02-01') == Decimal(2)
+
+    def test_the_same_day_block_is_not_weakened_by_that(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """The other direction: keying on the row must still block the same row.
+
+        Without this, dropping the pairing altogether would pass the test above. It is
+        the same reproduction as
+        `TestTheAveragesTwoHalvesCannotSplit::test_a_refused_reversal_does_not_let_its_increment_land`,
+        restated here so the per-row formulation is pinned from both sides in one place.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('REMOVE', old=sample_feedback_item))
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+
+        assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(0), Decimal(0))
+
+    def test_a_score_edit_on_a_live_day_with_no_average_row_creates_it(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """A day can be live and have NO average row, without any race.
+
+        `apply_feedback` writes the average only `if sentiment_score`, so a day whose
+        items are all unscored has a `daily_total` (it reads live) and no
+        `daily_sentiment_avg` at all. The reversal of a zero old score is never
+        attempted, and the re-application must create the row — the same latitude a
+        counter increment has for a brand-new bucket on a live day.
+        """
+        from aggregator.handler import record_handler
+
+        unscored = {**sample_feedback_item, 'sentiment_score': Decimal(0)}
+        record_handler(_record('INSERT', new=unscored))
+        assert self._avg(real_aggregates_table, '2025-01-15') is None
+
+        record_handler(_record('MODIFY', old=unscored,
+                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.30')}))
+
+        assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(1), Decimal('0.30'))
+
+    def test_a_reversal_refused_for_a_missing_row_does_not_block_the_new_score(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """ROW_ABSENT is not ROW_AT_FLOOR, and only the second may block.
+
+        The day is live (a `daily_total` is planted directly) while the average row is
+        absent, and the OLD score is non-zero — so the reversal is really attempted and
+        really refused, by `attribute_exists(pk)` rather than by the floor. Nothing was
+        reversed, so nothing dangles and the re-application must land. Treating both
+        refusals alike leaves the edited score nowhere.
+        """
+        from aggregator.handler import record_handler
+
+        real_aggregates_table.put_item(
+            Item={'pk': 'METRIC#daily_total', 'sk': '2025-01-15', 'count': Decimal(1)}
+        )
+        assert self._avg(real_aggregates_table, '2025-01-15') is None
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+
+        assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(1), Decimal('0.10'))
+
+    def test_a_declined_re_application_is_counted_rather_than_silent(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """A write we decline to make cannot be counted by DynamoDB refusing it.
+
+        REFUSED_METRIC is emitted from an `except ClientError`, so it can only ever
+        count refusals of writes that were ISSUED. The pairing skip issues none, and
+        without its own metric an operator would see REBUCKETED_METRIC — the counters
+        did move — and no anomaly at all, while the day's average had lost an item.
+        """
+        from aggregator.handler import (
+            DECLINED_METRIC,
+            REBUCKETED_METRIC,
+            record_handler,
+        )
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('REMOVE', old=sample_feedback_item))
+
+        with patch('aggregator.handler.metrics') as mock_metrics:
+            record_handler(_record('MODIFY', old=sample_feedback_item,
+                                   new={**sample_feedback_item,
+                                        'sentiment_score': Decimal('0.10')}))
+
+        names = [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
+        assert DECLINED_METRIC in names
+        # And it is not confused with the rebucket having moved something.
+        assert REBUCKETED_METRIC not in names
+
+    def test_nothing_is_declined_when_the_pair_is_left_alone(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """Positive control: an ordinary score edit declines nothing.
+
+        Without this, emitting DECLINED_METRIC unconditionally would pass the test
+        above while making the new signal meaningless.
+        """
+        from aggregator.handler import DECLINED_METRIC, record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+
+        with patch('aggregator.handler.metrics') as mock_metrics:
+            record_handler(_record('MODIFY', old=sample_feedback_item,
+                                   new={**sample_feedback_item,
+                                        'sentiment_score': Decimal('0.10')}))
+
+        names = [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
+        assert DECLINED_METRIC not in names
+        assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(1), Decimal('0.10'))
+
+
+class TestUpdateAverageReportsWhichConditionFailed:
+    """`update_average`'s three outcomes, against a real DynamoDB implementation.
+
+    The enum exists so `_rebucket_average` can tell "this row is claiming zero items"
+    from "there is no row", because re-applying is wrong for the first and right for
+    the second. A bool erased that distinction and a bool is what the first version
+    returned, so these pin the signal itself rather than only its consequence.
+    """
+
+    def test_a_landed_write_reports_landed(self, real_aggregates_table):
+        from aggregator.handler import AverageWrite, update_average
+
+        outcome = update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
+
+        assert outcome is AverageWrite.LANDED
+
+    def test_a_reversal_against_an_empty_row_reports_the_floor(self, real_aggregates_table):
+        from aggregator.handler import AverageWrite, update_average
+
+        update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
+        update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1)
+
+        outcome = update_average(
+            'METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1
+        )
+
+        assert outcome is AverageWrite.ROW_AT_FLOOR
+
+    def test_a_reversal_against_a_missing_row_reports_absent(self, real_aggregates_table):
+        from aggregator.handler import AverageWrite, update_average
+
+        outcome = update_average(
+            'METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1
+        )
+
+        assert outcome is AverageWrite.ROW_ABSENT
+
+    def test_only_the_landed_outcome_is_truthy(self):
+        """Existing callers ask `if update_average(...)`, and an Enum is truthy.
+
+        Without `__bool__` every such check would pass in all three states, silently
+        counting refused writes as landed — the reverse of the landed-not-attempted
+        distinction REBUCKETED_METRIC depends on.
+        """
+        from aggregator.handler import AverageWrite
+
+        assert bool(AverageWrite.LANDED)
+        assert not bool(AverageWrite.ROW_AT_FLOOR)
+        assert not bool(AverageWrite.ROW_ABSENT)
+
+    def test_an_unreadable_refusal_is_read_as_the_blocking_outcome(self):
+        """A refusal whose response cannot be read at all must not permit the write.
+
+        ROW_ABSENT is the outcome that LICENSES a re-application, so it must never be
+        the answer arrived at by default. Here the response is not a mapping — the
+        shape no reading can interpret — and the outcome is the one that declines, so
+        the pairing rule cannot be made conditional on an error's shape.
+
+        A response that IS readable and simply carries no `Item` is a different case
+        and genuinely means the row was absent; that is
+        `test_a_reversal_against_a_missing_row_reports_absent`, against moto.
+
+        The exception is shaped the way `shared/aws.py::is_conditional_check_failure`
+        documents one arriving: a ClientError subclass NAMED
+        ConditionalCheckFailedException — which is how boto3's resource layer really
+        raises it — carrying no readable response, so the predicate recognises it by
+        type name and this branch is reached rather than the error re-raised.
+        """
+        from aggregator.handler import AverageWrite, update_average
+
+        class ConditionalCheckFailedException(ClientError):
+            """Named like boto3's own, with an unreadable `response`."""
+
+            def __init__(self):
+                super().__init__(
+                    {'Error': {'Code': 'ConditionalCheckFailedException'}}, 'UpdateItem'
+                )
+                self.response = None  # type: ignore[assignment]
+
+        with patch('aggregator.handler.aggregates_table') as mock_table:
+            mock_table.update_item.side_effect = ConditionalCheckFailedException()
+            outcome = update_average(
+                'METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1
+            )
+
+        assert outcome is AverageWrite.ROW_AT_FLOOR
+
+    def test_an_increment_asks_for_no_return_values(self, mock_aggregates_table):
+        """`ReturnValuesOnConditionCheckFailure` belongs only to the conditional half.
+
+        An increment carries no condition, so the parameter would be meaningless on
+        it — and DynamoDB rejects it without one.
+        """
+        from aggregator.handler import update_average
+
+        with patch('aggregator.handler.aggregates_table') as mock_table:
+            update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
+
+        assert 'ReturnValuesOnConditionCheckFailure' not in mock_table.update_item.call_args.kwargs
 
 
 class TestRedeliveryMovesACounterTwice:

@@ -50,12 +50,24 @@ Which writes may create a row, and which may not
   SIDE, because an edit can move an item from a live day onto a dead one and every
   increment then lands on the dead day.
 
-A rebucket's two halves of the AVERAGE stand or fall together. The counters cannot
-split (a symmetric difference never sends `-1` and `+1` to one key), but the average
-is two conditional writes to one row: a reversal refused against a row at
-`count == 0` while the re-application applies would leave that row asserting an item
-no feedback justifies, and `get_summary` divides `sum/count` into the day's average
-and weights it into the headline number. See `_rebucket_average`.
+A rebucket's two halves of the AVERAGE stand or fall together WHEN THEY TARGET ONE
+ROW. The counters cannot split (a symmetric difference never sends `-1` and `+1` to
+one key), but the average is two conditional writes to (SENTIMENT_AVG_PK, date): a
+reversal refused against a row at `count == 0` while the re-application applies would
+leave that row asserting an item no feedback justifies, and `get_summary` divides
+`sum/count` into the day's average and weights it into the headline number.
+
+The pairing is keyed on the ROW rather than on the edit, because an edited `date`
+sends the two writes to two different days and a refusal on one says nothing about the
+other — pairing across that gap dropped the item from the new day's average while
+every one of its counters moved there, the same split relocated to the day that
+UNDERSTATES. And the two ways a reversal can be refused mean opposite things: a row
+present at zero must not be added to, while a row that is ABSENT was never reversed
+and so may be created on a live day, exactly as a counter's first bucket of the day
+is. `update_average` therefore reports WHICH of its condition's clauses failed rather
+than a bare success flag. A write declined by that rule is counted as
+DECLINED_METRIC — REFUSED_METRIC cannot cover it, since a write never issued gives
+DynamoDB nothing to refuse. See `_rebucket_average` and `AverageWrite`.
 
 A reversal also refuses to GUESS a date. `_image_date` falls back to today when an
 image carries no `date` field, which is defensible for an INSERT (today is at
@@ -94,6 +106,7 @@ import os
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from decimal import Decimal
+from enum import Enum
 from typing import Any
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
@@ -124,10 +137,22 @@ processor = BatchProcessor(event_type=EventType.DynamoDBStreams)
 # REFUSED_METRIC is the one that matters when something is wrong: a steady trickle
 # is ordinary (deletions of aged-out days), a spike means either a redelivery
 # storm or that rows are expiring while their feedback is still being edited.
+#
+# DECLINED_METRIC is its counterpart for a write this module chose NOT to attempt.
+# REFUSED_METRIC can only ever count DynamoDB's refusals — `_log_refusal` runs in an
+# `except ClientError`, so a write never issued is invisible to it by construction.
+# The average's pairing rule declines exactly such a write, and without its own
+# metric that skip would be unobservable while REBUCKETED_METRIC still fired for the
+# counter writes that landed: an operator would see a healthy rebucket and no
+# anomaly, with the day's average having quietly lost an item. Distinct from REFUSED
+# because the two need different responses — a refusal is DynamoDB reporting there
+# was nothing to correct, a decline is this code declining to make a row
+# inconsistent, and only the second is a decision an operator can argue with.
 UPDATED_METRIC = "AggregatesUpdated"
 REVERSED_METRIC = "AggregatesReversed"
 REBUCKETED_METRIC = "AggregatesRebucketed"
 REFUSED_METRIC = "AggregateWriteRefused"
+DECLINED_METRIC = "AggregateWriteDeclined"
 
 # The feedback field the persona counter buckets by, as a constant so that
 # test_persona_field_lockstep.py can pin it against the field the PROCESSOR
@@ -171,6 +196,40 @@ _TRANSIENT_READ_ERRORS = frozenset({
 })
 
 
+class AverageWrite(Enum):
+    """How an `update_average` call ended.
+
+    Three outcomes rather than a bool because a rebucket's re-application has to
+    branch on WHICH refusal it received, and a bool erases that: re-applying to a
+    row that is present and claiming zero items corrupts it, while re-applying to a
+    row that does not exist is the ordinary creation of a fresh bucket. Collapsing
+    the two is the defect this enum exists to make unavailable — see
+    `_rebucket_average`.
+
+    An Enum and not two bools, because `landed=False, absent=True` has a fourth
+    state (`landed=True, absent=True`) that means nothing, and a reader would have
+    to know it never occurs.
+    """
+    LANDED = 'landed'
+    # Refused: the row exists and its `count` is already at the floor. Nothing was
+    # reversed, and this row must not be re-applied to.
+    ROW_AT_FLOOR = 'row_at_floor'
+    # Refused: no row. Nothing was reversed, and nothing is left dangling — a
+    # re-application on a live day may create it.
+    ROW_ABSENT = 'row_absent'
+
+    def __bool__(self) -> bool:
+        """True only for LANDED, so `if update_average(...)` still reads correctly.
+
+        Every existing caller asks "did this write land?", and an Enum is otherwise
+        truthy in all three states — which would silently turn every such check into
+        a tautology, counting refused writes as landed. That is the reverse of the
+        landed-not-attempted distinction the metrics depend on, so the truthiness is
+        defined rather than left to Python's default.
+        """
+        return self is AverageWrite.LANDED
+
+
 def get_metric_type(pk: str) -> str | None:
     """Extract metric type from pk for GSI indexing."""
     if pk.startswith('METRIC#daily_source#'):
@@ -189,6 +248,18 @@ def _log_refusal(what: str, pk: str, sk: str):
     """
     logger.info(f"Refused {what} on {pk}/{sk}: nothing to correct")
     metrics.add_metric(name=REFUSED_METRIC, unit="Count", value=1)
+
+
+def _log_decline(what: str, pk: str, sk: str, because: str):
+    """A write this module chose not to ATTEMPT. Counted, for the same reason.
+
+    `_log_refusal` cannot cover this: it runs inside an `except ClientError`, so a
+    write never issued produces no refusal to count and the skip would be invisible
+    to REFUSED_METRIC while REBUCKETED_METRIC still claimed the edit moved
+    aggregates. A guard that silently declines work is one that gets debugged twice.
+    """
+    logger.info(f"Declined {what} on {pk}/{sk}: {because}")
+    metrics.add_metric(name=DECLINED_METRIC, unit="Count", value=1)
 
 
 def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: int = 90) -> bool:
@@ -260,11 +331,27 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: i
     return True
 
 
-def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90, sign: int = 1) -> bool:
+def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90,
+                   sign: int = 1) -> 'AverageWrite':
     """Update running average in aggregates table.
 
-    Returns whether the write LANDED, like `update_counter` and for the same
-    reasons — the rebucket's reversal and re-application must not be able to split.
+    Returns HOW the write ended, not merely whether it landed, because the rebucket
+    cannot act on a refusal it cannot explain. `update_counter` answers a bool
+    because its callers only ever ask "did this move?"; the two refusals of a
+    reversal mean opposite things here:
+
+    * ROW_AT_FLOOR — the row is present and claims zero items. Re-applying to THIS
+      row would make it claim one that no feedback justifies, so the paired
+      re-application is declined (see `_rebucket_average`);
+    * ROW_ABSENT — there is no row. Nothing was reversed, so nothing is left
+      dangling, and a re-application on a LIVE day may create it exactly as a
+      counter's increment creates a brand-new bucket.
+
+    Told apart by `ReturnValuesOnConditionCheckFailure`, which returns the old item
+    with the ConditionalCheckFailedException when one existed — so the distinction
+    costs no extra read and cannot race a second look at the row. It needs
+    botocore >= 1.31.60; the pinned floor is boto3 >= 1.35 (requirements-dev.txt)
+    and the Python 3.14 Lambda runtime ships far newer.
 
     `sign=-1` reverses a previously recorded value (subtract from `sum`, decrement
     `count`), under the same condition as an `update_counter` decrement and for the
@@ -300,6 +387,11 @@ def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90, sign: i
         # A distinct :floor rather than reusing :one, which is -1 here.
         kwargs['ConditionExpression'] = 'attribute_exists(pk) AND #count >= :floor'
         attr_values[':floor'] = 1
+        # Ask for the old item ALONGSIDE the refusal, so a refused reversal can say
+        # which of its two clauses failed. Without this the caller has to either
+        # re-read the row (racing itself) or treat both refusals alike, and they
+        # call for opposite decisions — see this function's docstring.
+        kwargs['ReturnValuesOnConditionCheckFailure'] = 'ALL_OLD'
 
     try:
         aggregates_table.update_item(
@@ -318,8 +410,19 @@ def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90, sign: i
         if 'ConditionExpression' not in kwargs or not is_conditional_check_failure(e):
             raise
         _log_refusal('reversal of average', pk, sk)
-        return False
-    return True
+        # `Item` rides along with the refusal only when a row existed to fail the
+        # `#count >= :floor` half; its absence means `attribute_exists(pk)` failed,
+        # so the row is gone. That reading needs the request to have ASKED for it,
+        # which the branch above always does.
+        if not isinstance(e.response, Mapping):
+            # Nothing readable at all. ROW_AT_FLOOR is the answer that DECLINES the
+            # paired write, so an unreadable refusal cannot license re-applying to a
+            # row that may be present and empty. Erring the other way would make the
+            # pairing rule silently conditional on the shape of an error response.
+            return AverageWrite.ROW_AT_FLOOR
+        return (AverageWrite.ROW_AT_FLOOR if 'Item' in e.response
+                else AverageWrite.ROW_ABSENT)
+    return AverageWrite.LANDED
 
 
 def _day_has_aggregates(date: str) -> bool:
@@ -660,21 +763,42 @@ def _rebucket_average(
     """Move one item's contribution to the running average, as a PAIR.
 
     Split out because the pairing rule is the whole content: reverse first, and
-    re-apply only if that reversal landed. A refused reversal means the row is
-    already at `count == 0` — it is claiming no items — and adding the new score
-    anyway makes it claim one, at the edited score, that no feedback justifies.
-    `get_summary` serves `sum/count` per date and weights it by count into the
-    headline average, so that is served-data corruption rather than a skew nobody
-    reads.
+    re-apply only if that reversal left the TARGET ROW able to accept it. A reversal
+    refused against a row already at `count == 0` means that row is claiming no
+    items, and adding the new score makes it claim one, at the edited score, that no
+    feedback justifies. `get_summary` serves `sum/count` per date and weights it by
+    count into the headline average, so that is served-data corruption rather than a
+    skew nobody reads.
 
-    Two cases have NO reversal to pair with, and the increment is right in both:
+    THE PAIRING IS PER ROW, NOT PER EDIT. This is the correction to the first
+    version, which consulted one `reversal_refused` flag however far apart the two
+    writes were aimed. When `date` is edited the reversal and the re-application are
+    writes to TWO DIFFERENT rows, and a refusal on the old day says nothing whatever
+    about the new day's row — but the flag skipped it anyway, so the item vanished
+    from the new day's average while all of its counters, `daily_total` included,
+    moved onto that day. The two then describe different sets of items: exactly the
+    split this pairing exists to prevent, relocated to the day that UNDERSTATES,
+    since `get_summary` weights each date's average by its own count. So the
+    re-application is blocked only when it targets the very row whose reversal was
+    refused, which for a single row is the original rule unchanged.
+
+    Three cases have NO reversal to pair with, and the increment is right in all:
 
       * an old score of zero contributed nothing to the average, so nothing was
         reversed and nothing is left dangling;
       * an aged-out old day was never asked (`old_live` is False). Its row is gone,
         so there is no half to be inconsistent with, and refusing the increment
         would lose the item from the metrics surface entirely — which is the
-        count-dropping failure `_day_has_aggregates` exists to avoid.
+        count-dropping failure `_day_has_aggregates` exists to avoid;
+      * the reversal found NO ROW (`ROW_ABSENT`) on a live day. Nothing was
+        reversed, so again nothing dangles, and the re-application is the ordinary
+        creation of a bucket on a day that is live — the same latitude every counter
+        increment already has, and the reason `update_average` reports which of its
+        two condition clauses failed rather than a bare False. That case is reachable
+        without any race: `apply_feedback` writes the average only `if
+        sentiment_score`, so a day whose items are all unscored has a `daily_total`
+        (the day reads live) and no average row at all, and an ordinary score edit on
+        it would otherwise write nothing anywhere.
 
     WHY THE COUNTERS ARE NOT PAIRED THIS WAY, though they look symmetrical: a
     refused counter decrement and its increment go to DIFFERENT keys (that is what
@@ -688,21 +812,30 @@ def _rebucket_average(
     Returns how many of the two writes landed.
     """
     landed = 0
-    reversal_refused = False
+    # The ROW whose reversal was refused as already-empty, if any — not a bare flag.
+    # `None` covers every other outcome: landed, never attempted, or refused for the
+    # row being absent.
+    blocked_row: str | None = None
     if old_score and old_live:
-        if update_average(SENTIMENT_AVG_PK, old_date, old_score, sign=-1):
+        outcome = update_average(SENTIMENT_AVG_PK, old_date, old_score, sign=-1)
+        if outcome is AverageWrite.LANDED:
             landed += 1
-        else:
-            reversal_refused = True
-            logger.info(
-                f"Refused reversal of the average on {old_date}, so the paired "
-                f"re-application on {new_date} is skipped: applying it alone would "
-                f"leave the row claiming an item that is not there"
-            )
+        elif outcome is AverageWrite.ROW_AT_FLOOR:
+            blocked_row = old_date
 
-    if (new_score and new_live and not reversal_refused
-            and update_average(SENTIMENT_AVG_PK, new_date, new_score, sign=1)):
-        landed += 1
+    if new_score and new_live:
+        if new_date == blocked_row:
+            # Same row, refused as empty: applying alone would make it claim an item
+            # that is not there. Declined rather than attempted, so counted as such —
+            # DynamoDB never sees this write and cannot refuse it on our behalf.
+            _log_decline(
+                're-application of the average', SENTIMENT_AVG_PK, new_date,
+                f'its reversal on {old_date} was refused against a row already at '
+                f'zero, so applying the new score alone would leave that row '
+                f'claiming an item no feedback justifies',
+            )
+        elif update_average(SENTIMENT_AVG_PK, new_date, new_score, sign=1):
+            landed += 1
     return landed
 
 
