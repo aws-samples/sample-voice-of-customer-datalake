@@ -77,6 +77,8 @@
     "description": "Bewerten Sie jedes Dokument nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
     "title": "Priorisierungsrahmen"
   },
+  "headingCount_one": "{{count}} Vorschlag",
+  "headingCount_other": "{{count}} Vorschläge",
   "loading": "Dokumente werden geladen...",
   "noteTooLong": {
     "description": "Notizen sind auf {{max}} Zeichen begrenzt, und eine längere Notiz wird nicht gekürzt, sondern abgelehnt. Kürzen Sie die Notiz in der bearbeiteten Zeile und speichern Sie dann erneut. Es wurde noch nichts gespeichert.",

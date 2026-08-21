@@ -77,6 +77,8 @@
     "description": "各ドキュメントを次の基準で評価: <strong>インパクト</strong>、<strong>市場投入時間</strong>、<strong>戦略的適合性</strong>、<strong>確信度</strong>。",
     "title": "優先順位付けフレームワーク"
   },
+  "headingCount_one": "提案 {{count}} 件",
+  "headingCount_other": "提案 {{count}} 件",
   "loading": "ドキュメントを読み込み中...",
   "noteTooLong": {
     "description": "メモは{{max}}文字までで、これを超えるメモは切り詰められずに拒否されます。編集した行のメモを短くしてから、もう一度保存してください。まだ何も保存されていません。",

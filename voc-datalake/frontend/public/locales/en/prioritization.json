@@ -77,6 +77,8 @@
     "description": "Score each document on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
     "title": "Prioritization Framework"
   },
+  "headingCount_one": "{{count}} proposal",
+  "headingCount_other": "{{count}} proposals",
   "loading": "Loading documents...",
   "noteTooLong": {
     "description": "Notes are limited to {{max}} characters, and a longer note is refused rather than shortened. Trim the note on the row you edited, then save again. Nothing has been saved yet.",

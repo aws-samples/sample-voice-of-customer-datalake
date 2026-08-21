@@ -77,6 +77,8 @@
     "description": "Évaluez chaque document sur : <strong>Impact</strong>, <strong>Délai de mise sur le marché</strong>, <strong>Adéquation stratégique</strong> et <strong>Confiance</strong>.",
     "title": "Cadre de priorisation"
   },
+  "headingCount_one": "{{count}} proposition",
+  "headingCount_other": "{{count}} propositions",
   "loading": "Chargement des documents...",
   "noteTooLong": {
     "description": "Les notes sont limitées à {{max}} caractères, et une note plus longue est refusée plutôt que tronquée. Raccourcissez la note de la ligne modifiée, puis enregistrez de nouveau. Rien n'a encore été enregistré.",

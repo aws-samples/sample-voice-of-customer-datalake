@@ -396,10 +396,25 @@ function PRFAQList({
 }
 
 function PrioritizationHeader({
-  hasChanges, isPending, saveBlocked, onReset, onSave,
+  hasChanges, isPending, isLoading, rowCount, saveBlocked, onReset, onSave,
 }: {
   readonly hasChanges: boolean
   readonly isPending: boolean
+  /**
+   * Is the list below still being fetched? Counts the difference between "nothing
+   * is here" and "nothing has arrived yet", which is the whole point of putting a
+   * number next to the heading: a bare `0` beside a spinner would be the page
+   * claiming an empty backlog it has not read.
+   */
+  readonly isLoading: boolean
+  /**
+   * How many rows the list below renders — `allRows.length`, the SAME array
+   * `PRFAQList` maps over and the same one "Total Proposals" counts, so the badge
+   * cannot disagree with either. Not the project count: a project holding a PRD and
+   * a PR/FAQ about one idea is one row, and this number is offered to a reader
+   * checking whether the list they can see finished loading.
+   */
+  readonly rowCount: number
   /**
    * True while a save cannot honestly be made, for either of two reasons.
    *
@@ -446,7 +461,31 @@ function PrioritizationHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          {/* How long the list below is, next to the heading, so a reader can tell at a
+              glance whether everything loaded rather than scrolling to find out.
+
+              Withheld while the read is in flight: a `0` here would be a claim about a
+              backlog nobody has read yet, and it is the one number on this page a reader
+              would take as "the list finished and it is empty". The list below already
+              shows a spinner for that state, so nothing is lost by staying quiet.
+
+              Renders the COUNT WITH ITS NOUN ("3 proposals") rather than a bare numeral:
+              beside a heading, a lone number has no subject, and a screen reader
+              announcing "Prioritization 3" says nothing. `count` interpolation picks the
+              plural form, and every locale carries both `_one` and `_other` (see
+              `stats.unreadable`) so no reader gets a raw key path.
+
+              `text-gray-600` per the measured contrast table in `BAND_STYLE`: gray-500
+              fails AA below 18.5px on a gray background, and this badge is text-sm on
+              the page's gray-50. */}
+          {isLoading ? null : (
+            <span id="prioritization-row-count" className="rounded-full bg-gray-100 px-2 py-0.5 text-xs sm:text-sm font-medium text-gray-600">
+              {t('headingCount', { count: rowCount })}
+            </span>
+          )}
+        </div>
         <p className="text-sm sm:text-base text-gray-500 mt-1">{t('subtitle')}</p>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
@@ -871,6 +910,9 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
+        isLoading={isLoading}
+        // The list's own array, so the badge counts exactly the rows rendered below.
+        rowCount={allRows.length}
         saveBlocked={!ownBallots.inHand || overLongNotes.length > 0}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}

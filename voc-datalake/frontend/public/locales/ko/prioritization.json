@@ -77,6 +77,8 @@
     "description": "각 문서를 다음 항목으로 평가하세요: <strong>영향도</strong>, <strong>출시 시간</strong>, <strong>전략적 부합도</strong>, <strong>신뢰도</strong>.",
     "title": "우선순위 지정 프레임워크"
   },
+  "headingCount_one": "제안 {{count}}건",
+  "headingCount_other": "제안 {{count}}건",
   "loading": "문서 로드 중...",
   "noteTooLong": {
     "description": "메모는 {{max}}자까지 입력할 수 있으며, 이를 넘는 메모는 잘리지 않고 거부됩니다. 수정한 행의 메모를 줄인 후 다시 저장하세요. 아직 저장된 내용은 없습니다.",

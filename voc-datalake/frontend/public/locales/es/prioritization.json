@@ -77,6 +77,8 @@
     "description": "Puntúe cada documento en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
     "title": "Marco de priorización"
   },
+  "headingCount_one": "{{count}} propuesta",
+  "headingCount_other": "{{count}} propuestas",
   "loading": "Cargando documentos...",
   "noteTooLong": {
     "description": "Las notas están limitadas a {{max}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",
