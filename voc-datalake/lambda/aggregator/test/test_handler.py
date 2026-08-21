@@ -99,6 +99,10 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       fails `test_an_absent_row_is_still_created_when_no_reversal_was_attempted`.
       Those two differ only in whether a reversal was attempted, so neither
       direction can be got wrong silently either.
+      `test_a_cross_day_arrival_onto_an_expired_average_still_fragments_it` is the
+      RESIDUAL of that rule, pinned rather than fixed: the increment on the far side
+      of a cross-day edit lands where no reversal went, so an expired row there is
+      invisible. It fails if the residual is ever closed, which is deliberate.
 
   TestUpdateAverageReportsWhetherItLanded
     — the signal the class above spends, pinned on its own. Returning True from the
@@ -1564,6 +1568,47 @@ class TestThePairingIsPerRowAndNotPerEdit:
                                new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
 
         assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(0), Decimal(0))
+
+    def test_a_cross_day_arrival_onto_an_expired_average_still_fragments_it(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """THE RESIDUAL, pinned at what the code really does rather than what is nice.
+
+        The rule blocks a re-application only on a row whose OWN reversal was refused,
+        so it cannot see an expired row on the far side of a cross-day edit: the
+        increment lands where no reversal went. The arrival day therefore gets a
+        one-score average row exactly as the same-day case used to.
+
+        Left unfixed because it is undecidable from the two images. A live day with no
+        average row is the same observation whether the row expired or the day is
+        taking its first scored item — and the second must be created, which
+        `test_an_absent_row_is_still_created_when_no_reversal_was_attempted` pins. It
+        needs a per-day "has ever held a scored item" marker, i.e. new state.
+
+        This test FAILS if that residual is ever closed, which is the point: whoever
+        closes it should have to change this assertion deliberately.
+        """
+        from aggregator.handler import record_handler
+
+        for n, score in enumerate([Decimal('0.90'), Decimal('0.60'), Decimal('0.30')]):
+            record_handler(_record('INSERT', new={
+                **sample_feedback_item, 'feedback_id': f'e{n}',
+                'date': '2025-02-01', 'sentiment_score': score,
+            }))
+        mover = {**sample_feedback_item, 'feedback_id': 'mover', 'date': '2025-01-15',
+                 'sentiment_score': Decimal('0.50')}
+        record_handler(_record('INSERT', new=mover))
+
+        # The arrival day's average row ages out; its daily_total does not.
+        real_aggregates_table.delete_item(
+            Key={'pk': 'METRIC#daily_sentiment_avg', 'sk': '2025-02-01'}
+        )
+
+        record_handler(_record('MODIFY', old=mover, new={**mover, 'date': '2025-02-01'}))
+
+        # One score, beside a daily_total of four. Named, not defended.
+        assert self._avg(real_aggregates_table, '2025-02-01') == (Decimal(1), Decimal('0.50'))
+        assert self._count(real_aggregates_table, 'METRIC#daily_total', '2025-02-01') == Decimal(4)
 
     def test_an_absent_row_is_still_created_when_no_reversal_was_attempted(
         self, real_aggregates_table, sample_feedback_item

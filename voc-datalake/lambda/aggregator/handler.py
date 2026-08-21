@@ -104,6 +104,16 @@ Known residuals
   note and the code cannot drift apart.
 * `update_average` FLOORS `count`, NOT `sum` — see its docstring for why adding a
   bound on `sum` would refuse legitimate reversals rather than fix anything.
+* AN EDIT THAT MOVES AN ITEM ONTO A LIVE DAY WHOSE AVERAGE ROW HAS EXPIRED still
+  creates that row holding the one arriving score. The pairing rule learns a row is
+  gone only from a reversal aimed at it, and a cross-day increment lands where no
+  reversal went. It is undecidable from the two images: a live day with no average
+  row looks identical whether the row expired or the day is taking its first scored
+  item, and the second must be created. Closing it needs a per-day marker for "has
+  ever held a scored item", i.e. new state, so it is left as a residual with
+  `test_a_cross_day_arrival_onto_an_expired_average_still_fragments_it` pinning
+  today's behaviour. The same-day case IS closed, because there the refused reversal
+  is the evidence.
 """
 import os
 from collections.abc import Mapping
@@ -733,6 +743,18 @@ def _rebucket_average(
         so there is no half to be inconsistent with, and refusing the increment
         would lose the item from the metrics surface entirely — which is the
         count-dropping failure `_day_has_aggregates` exists to avoid;
+    WHAT THIS RULE CANNOT SEE, since it is the failure direction of the rule itself:
+    it learns that a row is gone only from a reversal AIMED AT THAT ROW. A cross-day
+    edit's increment lands on a day no reversal touched, so an item arriving on a live
+    day whose average row has expired still creates it holding one score — the same
+    fragment, on the arrival side. Closing that needs evidence this module does not
+    have: a live day with no average row is indistinguishable from a day taking its
+    FIRST scored item, which must be created, and nothing in the two images tells them
+    apart. It would need a per-day marker for "has ever held a scored item", i.e. new
+    state. Recorded as a residual in the module docstring and pinned by
+    `test_a_cross_day_arrival_onto_an_expired_average_still_fragments_it` so the note
+    and the behaviour cannot drift apart.
+
     A REVERSAL THAT WAS REFUSED BLOCKS ITS OWN ROW EITHER WAY, and the reason the
     absent case is not the exception it looks like is the guard above: a reversal is
     attempted only when the OLD image carried a score, and `apply_feedback` writes
