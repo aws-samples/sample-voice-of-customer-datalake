@@ -80,6 +80,22 @@ PYTHON_WRITER_SK_PATTERN = rf'^CATEGORIES_SK = {_Q}([^\'"]+){_Q}'
 # The counter writers whose sort key the streaming window predicate depends on.
 AGGREGATOR_COUNTER_WRITERS = ('update_counter', 'update_average')
 
+# The one function that BUILDS a counter key, now that the call sites are generic
+# (`update_counter(pk, date, field)` serves both the increment and the reversal).
+AGGREGATOR_KEY_PRODUCER = 'counter_keys'
+
+# The expressions allowed to produce the `date` a counter is keyed by: the
+# accessor that returns the item's own `date` field, and the unpacking of a triple
+# this module already built. Nothing else may reach a sort key.
+AGGREGATOR_DATE_ACCESSOR = '_image_date'
+
+# The names the aggregator spends as a counter sort key. Three rather than one
+# because rebucketing an edited item writes to the date it LEFT and the date it
+# arrived at, and calling both `date` in one function would be worse than naming
+# them. Every one of them is pinned to the accessor above, so the list being
+# longer costs nothing — an unpinned fourth name fails the sibling assertion.
+AGGREGATOR_DATE_NAMES = ('date', 'old_date', 'new_date')
+
 # The never-written key streaming chat used to ask for, assembled rather than
 # written out so that a repository-wide search for it keeps returning nothing
 # outside build artifacts — which is itself part of the fix.
@@ -390,6 +406,87 @@ def _aggregator_counter_writes() -> list[tuple[str, str]]:
     return writes
 
 
+def _aggregator_sort_key_bindings() -> list[str]:
+    """Every expression the aggregator binds the name `date` to.
+
+    Since the aggregator learned to REVERSE a deletion, its counter calls are
+    generic: one `update_counter(pk, date, field)` serves the increment and the
+    decrement, which is what stops the two paths from drifting apart. That makes
+    the sibling assertion — every call site passes something spelled `date` —
+    nearly free to satisfy, so it no longer carries the guarantee on its own. This
+    helper follows the sort key to where it is now PRODUCED, and pins the small
+    set of expressions allowed to produce it: the accessor `_image_date`, which
+    returns the item's `date` field unmodified, or the unpacking of a triple built
+    by `counter_keys`. An f-string, a concatenation, a project id appended — any
+    of them appears here as an unrecognized binding and fails.
+
+    `for` targets are read as well as assignments, because
+    `for pk, date, field in sorted(keys)` is how the call sites now get theirs.
+    """
+    tree = ast.parse(_read(AGGREGATOR_SOURCE))
+    bindings: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.For):
+            targets, value = [node.target], node.iter
+        else:
+            continue
+        for target in targets:
+            # A parallel assignment is read ELEMENT BY ELEMENT where both sides are
+            # tuples — `old_date, new_date = _image_date(a), _image_date(b)` binds
+            # each name to one accessor call, and reporting the whole right-hand
+            # side would make a correct aggregator look unexplained.
+            if (isinstance(target, ast.Tuple) and isinstance(value, ast.Tuple)
+                    and len(target.elts) == len(value.elts)):
+                pairs = list(zip(target.elts, value.elts))
+            elif isinstance(target, ast.Tuple):
+                # Unpacking something that is not a literal tuple (a triple built
+                # elsewhere): the whole iterable explains every name in it.
+                pairs = [(element, value) for element in target.elts]
+            else:
+                pairs = [(target, value)]
+            for name_node, value_node in pairs:
+                if isinstance(name_node, ast.Name) and name_node.id in AGGREGATOR_DATE_NAMES:
+                    bindings.append(ast.unparse(value_node))
+    return bindings
+
+
+def _aggregator_counter_key_sort_keys() -> list[str]:
+    """The sort-key element of every triple `counter_keys` builds.
+
+    `counter_keys` is the single producer of counter keys, so its comprehension
+    is the one expression that decides whether a counter's sort key is a bare
+    date. Read as the SECOND element of the built tuple, by the writer's own
+    name, so a restructuring that stops producing a 3-tuple fails loudly here
+    rather than leaving the sort key unpinned.
+    """
+    tree = ast.parse(_read(AGGREGATOR_SOURCE))
+    producers = [node for node in ast.walk(tree)
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                 and node.name == AGGREGATOR_KEY_PRODUCER]
+    assert len(producers) == 1, (
+        f'Expected exactly one {AGGREGATOR_KEY_PRODUCER} in {AGGREGATOR_SOURCE}; '
+        f'found {len(producers)}. This helper reads the ONE place counter sort '
+        f'keys are built — if that moved or was renamed, follow it here rather '
+        f'than deleting the assertion that depends on it.'
+    )
+    sort_keys: list[str] = []
+    # The BODY only. The return annotation `set[tuple[str, str, str]]` is a
+    # three-element tuple too, and reading it would report the type name `str` as
+    # a sort key — a correct aggregator failing on its own type hint.
+    for statement in producers[0].body:
+        for node in ast.walk(statement):
+            if isinstance(node, ast.Tuple) and len(node.elts) == 3:
+                sort_keys.append(ast.unparse(node.elts[1]))
+    assert sort_keys, (
+        f'{AGGREGATOR_SOURCE}::{AGGREGATOR_KEY_PRODUCER} no longer builds a '
+        f'(pk, sk, field) triple, so its sort key cannot be read here and the '
+        f'assertion below would pass on an empty list.'
+    )
+    return sort_keys
+
+
 def _processor_default_categories() -> list[str]:
     """The default taxonomy as the ENRICHMENT PROMPT spells it: one pipe-delimited
     string, not a list.
@@ -599,13 +696,24 @@ class TestCounterSortKeyShapeLockstep:
         # assertion below for the wrong reason. This is the only guard the parsed
         # form needs — unlike a pattern, it cannot read SOME of the call sites, so
         # there is no partial-blindness case left to count against.
-        assert len(writes) >= 8, (
+        #
+        # The floor is FOUR, not the eight it was before the aggregator learned to
+        # reverse a deletion. The eight hardcoded `update_counter` calls became one
+        # generic call driven by a list of dimensions, deliberately: the increment
+        # and the decrement path must not be able to drift apart, which an inverted
+        # copy of eight call sites guarantees they eventually would. Lowering the
+        # floor is therefore not a weakening of this pin — the pin moved, and
+        # test_the_only_sort_key_the_aggregator_builds_is_the_item_date below is
+        # where the guarantee now lives, reading the one function that builds the
+        # keys those four call sites spend.
+        assert len(writes) >= 4, (
             f'Found only {len(writes)} counter writes in {AGGREGATOR_SOURCE}; this '
-            f'module writes at least eight. If the writers were renamed, update '
+            f'module writes at least four (insert, delete, and both halves of a '
+            f'rebucketing edit). If the writers were renamed, update '
             f'AGGREGATOR_COUNTER_WRITERS in this file — do not lower the floor, '
             f'because the assertion below proves nothing without it.'
         )
-        composite = sorted({sk for _, sk in writes if sk != 'date'})
+        composite = sorted({sk for _, sk in writes if sk not in AGGREGATOR_DATE_NAMES})
         assert not composite, (
             f'{AGGREGATOR_SOURCE} keys a counter by {composite} rather than by '
             f'the bare `date`. {STREAM_SOURCE} sums these partitions with '
@@ -613,6 +721,46 @@ class TestCounterSortKeyShapeLockstep:
             f'inside a date window — so streaming chat would silently count rows '
             f'that are not days. If a composite sort key is really wanted here, '
             f'the streaming reader needs a different predicate, not a wider one.'
+        )
+
+    def test_the_only_sort_key_the_aggregator_builds_is_the_item_date(self):
+        """Where the guarantee lives now that the call sites are generic.
+
+        A generic `update_counter(pk, date, field)` says nothing about what `date`
+        holds, so the sibling assertion above would stay green while the value
+        bound to that name grew a suffix. `counter_keys` is the single producer,
+        and its sort key must be the accessor that returns the item's own `date`
+        field — nothing appended.
+        """
+        sort_keys = sorted(set(_aggregator_counter_key_sort_keys()))
+        assert sort_keys == ['date'], (
+            f'{AGGREGATOR_SOURCE}::{AGGREGATOR_KEY_PRODUCER} builds counter keys '
+            f'whose sort key is {sort_keys} rather than the bare `date`. '
+            f'{STREAM_SOURCE} sums these partitions with a range predicate over '
+            f'dates, so anything else sorts inside a window it is unrelated to.'
+        )
+
+    def test_that_date_can_only_have_come_from_the_item_field(self):
+        """And the name itself is only ever bound to the item's date.
+
+        Two producers are legal: `_image_date(item)`, which returns the `date`
+        field or today's date and nothing else, and unpacking a triple this module
+        already built. Any third — an f-string, a concatenation, a project id
+        appended — is what this fails on, and it fails BEFORE the value reaches a
+        sort key that a range query would then silently over-count.
+        """
+        unexplained = sorted({
+            binding for binding in _aggregator_sort_key_bindings()
+            if not binding.startswith(f'{AGGREGATOR_DATE_ACCESSOR}(')
+            and AGGREGATOR_KEY_PRODUCER not in binding
+            and not binding.startswith('sorted(')
+        })
+        assert not unexplained, (
+            f'{AGGREGATOR_SOURCE} binds a counter sort key from {unexplained}. '
+            f'Only {AGGREGATOR_DATE_ACCESSOR}() and the unpacking of a '
+            f'{AGGREGATOR_KEY_PRODUCER}() triple may produce one, because '
+            f'{STREAM_SOURCE} reads these sort keys as bare dates. If a new '
+            f'source is genuinely right, add it here deliberately.'
         )
 
 
