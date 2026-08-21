@@ -68,6 +68,20 @@ npm run deploy:all
 
 See [Deployment Guide](docs/deployment.md) for detailed instructions.
 
+## 🧪 Running the Tests
+
+```bash
+npm run install:all   # once, installs root + CDK + frontend dependencies
+npm run test          # frontend Vitest suite
+```
+
+Other suites live behind their own scripts: `npm run test:cdk` (CDK),
+`npm run test:stream` (streaming chat Lambda), and `npm run test:backend`
+(Python pytest — needs the Python venv, which `install:all` does not create;
+see the [Deployment Guide](docs/deployment.md#quality-checks)).
+`npm run check` runs the full quality gate before you open a pull request. See
+[Quality Checks](docs/deployment.md#quality-checks) for what each script covers.
+
 ## 🔐 Initial Login
 
 After deployment, an initial admin user is created automatically:
