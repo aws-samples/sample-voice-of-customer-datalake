@@ -88,21 +88,24 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       nothing else, which is why that test exists: every test in the class above
       passes with the defect present. Removing the block altogether fails three,
       including `test_the_same_day_block_is_not_weakened_by_that`, so neither
-      direction can be got wrong silently. Treating a reversal refused for a
-      MISSING row as blocking — collapsing AverageWrite back to a bool — fails
-      `test_a_reversal_refused_for_a_missing_row_does_not_block_the_new_score`, and
-      making the decline silent fails
+      direction can be got wrong silently. Making the decline silent fails
       `test_a_declined_re_application_is_counted_rather_than_silent` (REFUSED_METRIC
       counts DynamoDB's refusals, so a write never issued is invisible to it).
+      Within ONE row EITHER refusal blocks, because a reversal is attempted only for
+      an old image that carried a score, so an absent row is one that EXPIRED:
+      letting that case through fails
+      `test_a_reversal_refused_for_an_expired_row_does_not_recreate_it`, and
+      over-correcting to block on the row's absence rather than on a refused reversal
+      fails `test_an_absent_row_is_still_created_when_no_reversal_was_attempted`.
+      Those two differ only in whether a reversal was attempted, so neither
+      direction can be got wrong silently either.
 
-  TestUpdateAverageReportsWhichConditionFailed
-    — the signal the class above spends, pinned on its own. Deleting
-      `ReturnValuesOnConditionCheckFailure` fails four tests across both classes,
-      because without it a refusal carries no `Item` and every refused reversal
-      reads as ROW_ABSENT. Removing `AverageWrite.__bool__` fails
-      `test_only_the_landed_outcome_is_truthy` — an Enum is otherwise truthy in all
-      three states, which would make `if update_average(...)` a tautology and count
-      refused writes as landed.
+  TestUpdateAverageReportsWhetherItLanded
+    — the signal the class above spends, pinned on its own. Returning True from the
+      refusal branch fails `test_a_reversal_against_an_empty_row_reports_false` and
+      `test_a_reversal_against_a_missing_row_reports_false`; re-raising instead of
+      swallowing an unreadable refusal fails
+      `test_an_unreadable_refusal_is_still_a_refusal`.
 
   TestTheDaySentinelIsTheCounterEveryItemWrites
     — `_day_has_aggregates`'s soundness is a fact about `counter_dimensions`, so it
@@ -1492,6 +1495,12 @@ class TestThePairingIsPerRowAndNotPerEdit:
     So the block is keyed on the ROW, and these tests are what tell the two
     formulations apart — the flag version passes every test in the class above.
 
+    Keyed on the row is not the same as keyed on the row's EXISTENCE. Within one row
+    either refusal blocks, and the two tests at the end of this class are the pair
+    that pins it: an absent row whose reversal was refused expired and must not be
+    recreated, while an absent row nobody tried to reverse belongs to a day taking
+    its first scored item and must be.
+
     Moto-backed throughout: a mock cannot refuse the reversal, so against one the
     reversal always "lands", `blocked_row` stays None and the distinction is never
     exercised.
@@ -1556,16 +1565,17 @@ class TestThePairingIsPerRowAndNotPerEdit:
 
         assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(0), Decimal(0))
 
-    def test_a_score_edit_on_a_live_day_with_no_average_row_creates_it(
+    def test_an_absent_row_is_still_created_when_no_reversal_was_attempted(
         self, real_aggregates_table, sample_feedback_item
     ):
-        """A day can be live and have NO average row, without any race.
+        """The other side of the test above, and what keeps its guard from over-reaching.
 
-        `apply_feedback` writes the average only `if sentiment_score`, so a day whose
-        items are all unscored has a `daily_total` (it reads live) and no
-        `daily_sentiment_avg` at all. The reversal of a zero old score is never
-        attempted, and the re-application must create the row — the same latitude a
-        counter increment has for a brand-new bucket on a live day.
+        Both tests act on a live day with no average row; only the ATTEMPTED REVERSAL
+        tells them apart. Here the old score is zero, so `apply_feedback` never wrote
+        the row and there is nothing to have expired — the day genuinely has its first
+        scored item, and the write must land. Blocking on the row's absence rather than
+        on a refused reversal would fail this while still passing the test above, which
+        is the over-correction this pins.
         """
         from aggregator.handler import record_handler
 
@@ -1578,28 +1588,45 @@ class TestThePairingIsPerRowAndNotPerEdit:
 
         assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(1), Decimal('0.30'))
 
-    def test_a_reversal_refused_for_a_missing_row_does_not_block_the_new_score(
+    def test_a_reversal_refused_for_an_expired_row_does_not_recreate_it(
         self, real_aggregates_table, sample_feedback_item
     ):
-        """ROW_ABSENT is not ROW_AT_FLOOR, and only the second may block.
+        """A row that is ABSENT on a live day is absent because it EXPIRED.
 
-        The day is live (a `daily_total` is planted directly) while the average row is
-        absent, and the OLD score is non-zero — so the reversal is really attempted and
-        really refused, by `attribute_exists(pk)` rather than by the floor. Nothing was
-        reversed, so nothing dangles and the re-application must land. Treating both
-        refusals alike leaves the edited score nowhere.
+        The reversal is attempted only for an old image that carried a score, and
+        `apply_feedback` writes the average whenever a score is set — so the insert did
+        write this row, and its absence is the 90-day TTL, not a day that never had
+        one. The two rows of a day expire independently: `daily_total` is refreshed by
+        every item of the date, the average only by scored ones, and TTL deletion is
+        best-effort besides. So the day still reads live.
+
+        THE FIXTURE IS THE POINT. Three scored items make the day's real average cover
+        three, so re-creating the row from the one edited item is visibly a fragment:
+        `count == 1` beside a `daily_total` of 3, which `get_summary` would serve as
+        that whole day's figure. Planting a one-item day instead makes `count == 1`
+        look consistent and hides exactly this.
         """
         from aggregator.handler import record_handler
 
-        real_aggregates_table.put_item(
-            Item={'pk': 'METRIC#daily_total', 'sk': '2025-01-15', 'count': Decimal(1)}
+        items = [
+            {**sample_feedback_item, 'feedback_id': f'f{n}', 'sentiment_score': score}
+            for n, score in enumerate([Decimal('0.90'), Decimal('0.60'), Decimal('0.30')])
+        ]
+        for item in items:
+            record_handler(_record('INSERT', new=item))
+        assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(3), Decimal('1.80'))
+
+        real_aggregates_table.delete_item(
+            Key={'pk': 'METRIC#daily_sentiment_avg', 'sk': '2025-01-15'}
         )
+        assert self._count(real_aggregates_table, 'METRIC#daily_total', '2025-01-15') == Decimal(3)
+
+        record_handler(_record('MODIFY', old=items[0],
+                               new={**items[0], 'sentiment_score': Decimal('0.10')}))
+
+        # No row at all is the honest outcome: `get_summary` skips what is absent
+        # rather than reporting one item's score as the day's average.
         assert self._avg(real_aggregates_table, '2025-01-15') is None
-
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
-
-        assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(1), Decimal('0.10'))
 
     def test_a_declined_re_application_is_counted_rather_than_silent(
         self, real_aggregates_table, sample_feedback_item
@@ -1652,75 +1679,51 @@ class TestThePairingIsPerRowAndNotPerEdit:
         assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(1), Decimal('0.10'))
 
 
-class TestUpdateAverageReportsWhichConditionFailed:
-    """`update_average`'s three outcomes, against a real DynamoDB implementation.
+class TestUpdateAverageReportsWhetherItLanded:
+    """`update_average`'s contract, against a real DynamoDB implementation.
 
-    The enum exists so `_rebucket_average` can tell "this row is claiming zero items"
-    from "there is no row", because re-applying is wrong for the first and right for
-    the second. A bool erased that distinction and a bool is what the first version
-    returned, so these pin the signal itself rather than only its consequence.
+    It answers a bool, like `update_counter`, because its one branching caller treats
+    both refusals alike: neither a row sitting at the floor nor a row that has expired
+    may take a re-application on its own. These pin the signal itself rather than only
+    its consequence in `_rebucket_average`.
     """
 
-    def test_a_landed_write_reports_landed(self, real_aggregates_table):
-        from aggregator.handler import AverageWrite, update_average
+    def test_a_landed_write_reports_true(self, real_aggregates_table):
+        from aggregator.handler import update_average
 
-        outcome = update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
+        assert update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
 
-        assert outcome is AverageWrite.LANDED
-
-    def test_a_reversal_against_an_empty_row_reports_the_floor(self, real_aggregates_table):
-        from aggregator.handler import AverageWrite, update_average
+    def test_a_reversal_against_an_empty_row_reports_false(self, real_aggregates_table):
+        from aggregator.handler import update_average
 
         update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
         update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1)
 
-        outcome = update_average(
+        assert not update_average(
             'METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1
         )
 
-        assert outcome is AverageWrite.ROW_AT_FLOOR
+    def test_a_reversal_against_a_missing_row_reports_false(self, real_aggregates_table):
+        """And writes nothing — the row must not be resurrected holding a negative."""
+        from aggregator.handler import update_average
 
-    def test_a_reversal_against_a_missing_row_reports_absent(self, real_aggregates_table):
-        from aggregator.handler import AverageWrite, update_average
-
-        outcome = update_average(
+        assert not update_average(
             'METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1
         )
+        assert real_aggregates_table.get_item(
+            Key={'pk': 'METRIC#daily_sentiment_avg', 'sk': '2025-01-15'}
+        ).get('Item') is None
 
-        assert outcome is AverageWrite.ROW_ABSENT
-
-    def test_only_the_landed_outcome_is_truthy(self):
-        """Existing callers ask `if update_average(...)`, and an Enum is truthy.
-
-        Without `__bool__` every such check would pass in all three states, silently
-        counting refused writes as landed — the reverse of the landed-not-attempted
-        distinction REBUCKETED_METRIC depends on.
-        """
-        from aggregator.handler import AverageWrite
-
-        assert bool(AverageWrite.LANDED)
-        assert not bool(AverageWrite.ROW_AT_FLOOR)
-        assert not bool(AverageWrite.ROW_ABSENT)
-
-    def test_an_unreadable_refusal_is_read_as_the_blocking_outcome(self):
-        """A refusal whose response cannot be read at all must not permit the write.
-
-        ROW_ABSENT is the outcome that LICENSES a re-application, so it must never be
-        the answer arrived at by default. Here the response is not a mapping — the
-        shape no reading can interpret — and the outcome is the one that declines, so
-        the pairing rule cannot be made conditional on an error's shape.
-
-        A response that IS readable and simply carries no `Item` is a different case
-        and genuinely means the row was absent; that is
-        `test_a_reversal_against_a_missing_row_reports_absent`, against moto.
+    def test_an_unreadable_refusal_is_still_a_refusal(self):
+        """A refusal whose response cannot be read is swallowed, not re-raised.
 
         The exception is shaped the way `shared/aws.py::is_conditional_check_failure`
         documents one arriving: a ClientError subclass NAMED
         ConditionalCheckFailedException — which is how boto3's resource layer really
         raises it — carrying no readable response, so the predicate recognises it by
-        type name and this branch is reached rather than the error re-raised.
+        type name and the refusal branch is reached rather than the error re-raised.
         """
-        from aggregator.handler import AverageWrite, update_average
+        from aggregator.handler import update_average
 
         class ConditionalCheckFailedException(ClientError):
             """Named like boto3's own, with an unreadable `response`."""
@@ -1733,24 +1736,11 @@ class TestUpdateAverageReportsWhichConditionFailed:
 
         with patch('aggregator.handler.aggregates_table') as mock_table:
             mock_table.update_item.side_effect = ConditionalCheckFailedException()
-            outcome = update_average(
+            landed = update_average(
                 'METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'), sign=-1
             )
 
-        assert outcome is AverageWrite.ROW_AT_FLOOR
-
-    def test_an_increment_asks_for_no_return_values(self, mock_aggregates_table):
-        """`ReturnValuesOnConditionCheckFailure` belongs only to the conditional half.
-
-        An increment carries no condition, so the parameter would be meaningless on
-        it — and DynamoDB rejects it without one.
-        """
-        from aggregator.handler import update_average
-
-        with patch('aggregator.handler.aggregates_table') as mock_table:
-            update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
-
-        assert 'ReturnValuesOnConditionCheckFailure' not in mock_table.update_item.call_args.kwargs
+        assert landed is False
 
 
 class TestRedeliveryMovesACounterTwice:
