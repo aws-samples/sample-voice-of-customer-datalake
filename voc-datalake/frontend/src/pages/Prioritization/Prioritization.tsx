@@ -438,6 +438,19 @@ function PrioritizationHeader({
    * that a reader cannot infer from the sliders has words above the list.
    */
   readonly saveBlocked: boolean
+  /**
+   * How many rows the list below is showing, or `null` while that is not yet known.
+   *
+   * `null` for the loading pass rather than `0`: the list renders a spinner until the
+   * projects and their documents are in hand, and a badge reading "0 proposals" over
+   * that spinner would assert an empty backlog the page has not established. It appears
+   * once there is a list to count, which is the moment the number means anything.
+   *
+   * Counts ROWS, the same unit as the "Total Proposals" card and the list itself, so the
+   * two numbers on the page cannot disagree. Deliberately not the number of documents:
+   * one row can hold a PRD and a PR/FAQ describing one idea.
+   */
+  readonly rowCount: number | null
   readonly onReset: () => void
   readonly onSave: () => void
 }) {
@@ -446,7 +459,21 @@ function PrioritizationHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+        {/* The count sits BESIDE the heading, not inside it: a screen reader
+            announcing the page's only h1 should read "Prioritization", and the
+            heading is what the breadcrumb and the document outline name. Its own
+            text is self-describing ("12 proposals"), so it needs no extra label. */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          {rowCount === null ? null : (
+            <span
+              data-testid="prioritization-row-count"
+              className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs sm:text-sm font-medium text-gray-600"
+            >
+              {t('rowCount', { count: rowCount })}
+            </span>
+          )}
+        </div>
         <p className="text-sm sm:text-base text-gray-500 mt-1">{t('subtitle')}</p>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
@@ -872,6 +899,9 @@ export default function Prioritization() {
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
         saveBlocked={!ownBallots.inHand || overLongNotes.length > 0}
+        // The list's OWN length, so the badge and the rows below it are one number.
+        // Withheld while the list is still loading — see `rowCount` there.
+        rowCount={isLoading ? null : sortedRows.length}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />
