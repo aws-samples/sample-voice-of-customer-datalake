@@ -173,8 +173,11 @@ class TestGetSentimentEndpoint:
         counts = {'positive': 60, 'negative': 20, 'neutral': 15, 'mixed': 5}
         
         def window_side_effect(pk, days, current_date):
+            # `(items, truncated)` — the helper reports truncation to its caller
+            # now, so a stub returning a bare list would report the tuple itself
+            # as the window.
             label = pk.rsplit('#', 1)[-1]
-            return [{'sk': '2026-01-07', 'count': counts[label]}]
+            return [{'sk': '2026-01-07', 'count': counts[label]}], False
         
         import sys
         import os
@@ -504,8 +507,9 @@ class TestGetCategoryMetrics:
         counts = {'product': 50, 'delivery': 30}
         
         def window_side_effect(pk, days, current_date):
+            # `(items, truncated)`; see the sentiment stub above.
             category = pk.rsplit('#', 1)[-1]
-            return [{'sk': '2026-01-07', 'count': counts[category]}]
+            return [{'sk': '2026-01-07', 'count': counts[category]}], False
         
         import sys
         import os
@@ -626,7 +630,7 @@ class TestQueryMetricWindow:
         current = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
         with patch('metrics_handler.aggregates_table') as mock_table:
             mock_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 2}]}
-            items = _query_metric_window('METRIC#urgent', 7, current)
+            items, truncated = _query_metric_window('METRIC#urgent', 7, current)
 
         assert mock_table.query.call_count == 1
         assert mock_table.get_item.call_count == 0
@@ -638,6 +642,7 @@ class TestQueryMetricWindow:
             Key('pk').eq('METRIC#urgent') & Key('sk').between('2026-03-04', '2026-03-10')
         )
         assert items == [{'sk': '2026-03-10', 'count': 2}]
+        assert truncated is False
 
     def test_requests_newest_first_because_the_charts_read_that_order(self):
         """ScanIndexForward=False: a default query would silently reverse charts.
@@ -659,9 +664,9 @@ class TestQueryMetricWindow:
         """Paged windows are concatenated, in order, and the cursor is passed on.
 
         A 365-day window of counter items fits one 1 MB page today, but that
-        rests on item width the aggregator controls. If a page boundary ever
-        appears these endpoints have no is_partial signal, so a dropped page
-        would be a silently wrong total.
+        rests on item width the aggregator controls, so a dropped page would be
+        a silently wrong total. A window that PAGED to completion is not partial:
+        every row was read, just not in one request.
         """
         from metrics_handler import _query_metric_window
 
@@ -671,14 +676,15 @@ class TestQueryMetricWindow:
         ]
         with patch('metrics_handler.aggregates_table') as mock_table:
             mock_table.query.side_effect = pages
-            items = _query_metric_window('METRIC#urgent', 7,
-                                         datetime(2026, 3, 10, tzinfo=timezone.utc))
+            items, truncated = _query_metric_window(
+                'METRIC#urgent', 7, datetime(2026, 3, 10, tzinfo=timezone.utc))
 
         assert mock_table.query.call_count == 2
         assert items == [
             {'sk': '2026-03-10', 'count': 1},
             {'sk': '2026-03-09', 'count': 2},
         ]
+        assert truncated is False
         # Second call resumes from the first page's cursor.
         assert mock_table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == {
             'pk': 'p', 'sk': '2026-03-10'
@@ -691,8 +697,10 @@ class TestQueryMetricWindow:
 
         By the bound's own invariant this is unreachable (a window of `days`
         dates cannot span more than `days` pages), so if it ever happens an
-        assumption has broken and that needs to be visible — these endpoints
-        have no is_partial field to carry the fact.
+        assumption has broken and that needs to be visible. The warning is now
+        the OPERATOR's copy of the fact; `truncated` is the caller's, and
+        `TestAggregatePathReportsPagingTruncation` covers what the endpoints do
+        with it.
         """
         from metrics_handler import _query_metric_window
 
@@ -703,11 +711,12 @@ class TestQueryMetricWindow:
                 'Items': [{'sk': '2026-03-10', 'count': 1}],
                 'LastEvaluatedKey': {'pk': 'p', 'sk': '2026-03-10'},
             }
-            items = _query_metric_window('METRIC#urgent', 3,
-                                         datetime(2026, 3, 10, tzinfo=timezone.utc))
+            items, truncated = _query_metric_window(
+                'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=timezone.utc))
 
         assert mock_table.query.call_count == 3, 'bound should cap pages at `days`'
         assert len(items) == 3
+        assert truncated is True, 'the caller must be told, not just CloudWatch'
         assert mock_logger.warning.called, 'a partial window must not be silent'
 
     def test_does_not_warn_when_the_window_completes(self):
@@ -717,10 +726,11 @@ class TestQueryMetricWindow:
         with patch('metrics_handler.aggregates_table') as mock_table, \
              patch('metrics_handler.logger') as mock_logger:
             mock_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 1}]}
-            _query_metric_window('METRIC#urgent', 3,
-                                 datetime(2026, 3, 10, tzinfo=timezone.utc))
+            _, truncated = _query_metric_window(
+                'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=timezone.utc))
 
         assert mock_table.query.call_count == 1
+        assert truncated is False
         assert not mock_logger.warning.called
 
     def test_a_single_day_window_is_the_current_date_alone(self):

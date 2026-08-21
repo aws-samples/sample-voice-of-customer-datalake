@@ -77,6 +77,7 @@
     },
     "settings": "设置"
   },
+  "partialCountsHint": "近似值：无法读取完整时间范围，计数为下限",
   "partialWindowHint": "缩小筛选范围以查看全部",
   "problemAnalysisPage": {
     "emptyHint": "请尝试扩大时间范围或调整筛选条件",

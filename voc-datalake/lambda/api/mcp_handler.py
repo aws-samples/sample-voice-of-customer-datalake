@@ -444,7 +444,28 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 #
 # No published tool declaration moved, so the fingerprinted catalogue is untouched a
 # third time.
-MCP_SERVER_VERSION = "3.6.0"
+#
+# 3.7.0 ADDS `is_partial` to `get_metrics_summary`'s output, which is a minor bump by
+# the rule above — but the reason it has to be declared is not "a field appeared".
+# `/metrics/summary` and the four breakdown routes now MEASURE window completeness on
+# their aggregates path instead of reporting a hardcoded `False`, and these tools pass
+# the route body through unprojected, so the flag reaches a client whether or not it
+# is declared. Publishing it is what makes it readable: `additionalProperties` is
+# absent from these two output shapes (not `false`), so an undeclared field would have
+# validated and then been invisible to a model reading the catalogue to decide what
+# the answer contains — a truncated total presented as authoritative, which is exactly
+# the defect being closed.
+#
+# `get_metrics_breakdown` already declared the field; what changed there is its
+# DESCRIPTION, which said "an aggregate read failed" and now names both reasons the
+# window can be short (a truncated read, and a window wider than the ~90 days
+# aggregates are retained for). A description is what a model reasons about, so one
+# that omits half the cause is the same class of untruth in prose.
+#
+# Declared but deliberately NOT `required` on either tool; the argument is at
+# `_IS_PARTIAL_DESCRIPTION`, where the declaration is, and it turns on these two
+# tools forwarding the route body unprojected.
+MCP_SERVER_VERSION = "3.7.0"
 
 
 # ============================================
@@ -1779,6 +1800,35 @@ _SUMMARY_TEXT_LIMIT = 500
 # so declaring `false` there would make this file the thing that breaks when a
 # route grows a field, which is precisely the coupling delegation removes.
 
+# What `is_partial` means on the two metrics tools, stated once because they mean
+# the same thing by it and a model reads the DESCRIPTION to decide how much weight
+# a number carries. It names both reasons an aggregates answer can be short — they
+# are independent, and a description mentioning one taught a reader that the other
+# could not happen:
+#
+#   • a metric partition read stopped before the end of its window, or
+#   • the requested window reaches further back than the ~90 days of aggregate
+#     rows DynamoDB still holds, in which case no complete answer exists to give.
+#
+# Either way the counts are a LOWER BOUND, which is the operative fact and so is
+# said in those words rather than left to be inferred from "incomplete".
+#
+# DECLARED BUT NOT `required`, unlike `search_feedback`'s copy of the same flag,
+# and the difference is the projection: `search_feedback` BUILDS its body (`items`
+# from `_FEEDBACK_SUMMARY_PROPERTIES`), so every key it promises is a key it
+# writes, and a missing `is_partial` there really would be a bug. These two
+# forward the route body unprojected and fall back to `{}` when the delegated
+# payload is not a dict — so a `required` list here would make that honest empty
+# answer a schema violation in a validating client, reporting a transport-level
+# degradation as a malformed tool. Optional-and-declared is what these shapes can
+# truthfully say: the field is readable when present, and absent means the route
+# did not send it, not that the window was complete.
+_IS_PARTIAL_DESCRIPTION = (
+    "True when the window could not be answered in full — a metric read stopped "
+    "short, or the window is wider than aggregates are retained for. The counts "
+    "are then a lower bound, not a total."
+)
+
 _FEEDBACK_SUMMARY_PROPERTIES: dict[str, Any] = {
     "id": {"type": "string"},
     "source": {"type": "string", "description": "Source platform"},
@@ -2285,6 +2335,7 @@ _TOOL_DECLARATIONS = [
                 "total_feedback": {"type": "integer"},
                 "avg_sentiment": {"type": "number", "description": "Weighted mean, -1..1"},
                 "urgent_count": {"type": "integer"},
+                "is_partial": {"type": "boolean", "description": _IS_PARTIAL_DESCRIPTION},
                 "daily_totals": {"type": "array", "items": {"type": "object"}},
                 "daily_sentiment": {"type": "array", "items": {"type": "object"}},
             },
@@ -2313,10 +2364,7 @@ _TOOL_DECLARATIONS = [
             "type": "object",
             "properties": {
                 "period_days": {"type": "integer"},
-                "is_partial": {
-                    "type": "boolean",
-                    "description": "True when an aggregate read failed and counts are incomplete",
-                },
+                "is_partial": {"type": "boolean", "description": _IS_PARTIAL_DESCRIPTION},
                 "breakdown": {"type": "object", "description": "Counts, when dimension=sentiment"},
                 "percentages": {"type": "object", "description": "Shares, when dimension=sentiment"},
                 "categories": {"type": "object", "description": "When dimension=categories"},
