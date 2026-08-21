@@ -782,9 +782,9 @@ def _rebucket_average(
     Returns how many of the two writes landed.
     """
     landed = 0
-    # The ROW whose reversal was refused as already-empty, if any — not a bare flag.
-    # `None` covers every other outcome: landed, never attempted, or refused for the
-    # row being absent.
+    # The ROW whose reversal was refused, if any — not a bare flag, so a refusal on
+    # one day cannot suppress a write aimed at another. `None` means no reversal was
+    # refused: it landed, or none was attempted at all.
     blocked_row: str | None = None
     if old_score and old_live:
         if update_average(SENTIMENT_AVG_PK, old_date, old_score, sign=-1):
