@@ -1093,7 +1093,7 @@ class TestStructuredOutput:
         serialized = json.dumps(shapes, sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
-        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.6.0", "7131e9e21c26a1ed"), (
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.7.0", "941e33f48bcca829"), (
             "a tool's published declaration changed. Move MCP_SERVER_VERSION — minor "
             "for an added field, MAJOR for a removal or a retype, because a client "
             "validates structuredContent against these schemas and caches the whole "
@@ -1671,3 +1671,66 @@ class TestSearchReportsItsTruncation:
 
         assert "is_partial" in schema["required"]
         assert schema["properties"]["is_partial"]["type"] == "boolean"
+
+
+class TestMetricsToolsDeclareTheFlagTheyPassThrough:
+    """M4: the metrics routes now MEASURE window completeness on their aggregates
+    path instead of reporting a hardcoded `False`, and these tools forward the
+    route body unprojected — so the flag arrives whether or not it is declared.
+
+    Declaring it is what makes it READABLE. `additionalProperties` is absent
+    (not `false`) from these two output shapes, so an undeclared `is_partial`
+    validates and is then invisible to a model reading the catalogue to decide
+    what the answer contains: a truncated total presented as authoritative, which
+    is the defect itself.
+
+    Deleting either declaration below fails these tests; nothing else in the
+    suite notices, because a pass-through tool cannot fail on a field it does not
+    reshape.
+    """
+
+    @pytest.mark.parametrize("tool", ["get_metrics_summary", "get_metrics_breakdown"])
+    def test_the_flag_is_declared_on_both_metrics_tools(self, tool):
+        declared = _tool_output_schema(tool)["properties"]
+
+        assert "is_partial" in declared, f"{tool} forwards is_partial without declaring it"
+        assert declared["is_partial"]["type"] == "boolean"
+
+    @pytest.mark.parametrize("tool", ["get_metrics_summary", "get_metrics_breakdown"])
+    def test_the_description_names_both_reasons_a_window_can_be_short(self, tool):
+        """The two causes are independent, so a description naming one teaches a
+        reader that the other cannot happen. This is prose a model reasons about,
+        not a comment."""
+        description = _tool_output_schema(tool)["properties"]["is_partial"]["description"]
+
+        assert "stopped short" in description, description
+        assert "retained" in description, description
+        assert "lower bound" in description, description
+
+    @pytest.mark.parametrize("tool,route", [
+        ("get_metrics_summary", "/metrics/summary"),
+        ("get_metrics_breakdown", "/metrics/categories"),
+    ])
+    def test_a_partial_route_answer_reaches_the_client_intact(self, tool, route):
+        args = {"dimension": "categories"} if tool == "get_metrics_breakdown" else {}
+        fake = _FakeLambda({route: {"period_days": 365, "is_partial": True,
+                                    "total_feedback": 99, "categories": {"delivery": 99}}})
+
+        payload = _call(tool, args, fake)["result"]["structuredContent"]
+
+        assert payload["is_partial"] is True
+        assert _schema_errors(payload, _tool_output_schema(tool)) == []
+
+    @pytest.mark.parametrize("tool,route", [
+        ("get_metrics_summary", "/metrics/summary"),
+        ("get_metrics_breakdown", "/metrics/categories"),
+    ])
+    def test_a_complete_route_answer_is_not_reported_partial(self, tool, route):
+        """The positive control: a flag that is always true says nothing."""
+        args = {"dimension": "categories"} if tool == "get_metrics_breakdown" else {}
+        fake = _FakeLambda({route: {"period_days": 7, "is_partial": False,
+                                    "total_feedback": 6239, "categories": {"delivery": 12}}})
+
+        payload = _call(tool, args, fake)["result"]["structuredContent"]
+
+        assert payload["is_partial"] is False

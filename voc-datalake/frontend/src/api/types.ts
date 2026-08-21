@@ -107,9 +107,20 @@ export interface MetricsSummary {
   avg_sentiment: number
   urgent_count: number
   /**
-   * True when the metrics were computed from a truncated raw-item scan
-   * (review-date basis or source filter on a very large window) and the
-   * counts are a lower bound rather than exact aggregates.
+   * True when the window could not be read in full, so the counts are a lower
+   * bound rather than a total. Three independent reasons, and the route reports
+   * all of them under this one name:
+   *
+   * - the raw-item scan was truncated (review-date basis, or a source filter on
+   *   a very large window);
+   * - a metric partition read stopped before the end of its window;
+   * - the requested window is wider than aggregates are retained for (~90 days),
+   *   in which case the older rows have already been deleted and no complete
+   *   answer exists to give.
+   *
+   * Optional only for backward compatibility with a deployed API that omitted it
+   * on the aggregates path; treat an absent value as `false` (which is what
+   * `?? false` at the call site does) rather than as unknown.
    */
   is_partial?: boolean
   daily_totals: {

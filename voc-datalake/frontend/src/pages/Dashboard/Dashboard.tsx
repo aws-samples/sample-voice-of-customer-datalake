@@ -81,11 +81,15 @@ function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
   const avgSentiment = summary ? Number(summary.avg_sentiment) : 0
   const sentimentTrend = avgSentiment > 0 ? 'up' : 'down'
   const sentimentColor = avgSentiment > 0 ? 'green' : 'red'
-  // Review-basis metrics come from a budget-bounded scan; when truncated the
-  // counts are lower bounds and the cards must say so instead of look exact.
+  // The route reports this on BOTH of its paths now, and the hint no longer names
+  // only one of them: a review-basis or source-filtered answer comes from a
+  // budget-bounded scan, and an aggregates answer is short when a metric read
+  // stopped early or when the window reaches past the ~90 days aggregates are
+  // retained for. Either way the counts are lower bounds and the cards must say so
+  // instead of looking exact.
   const isPartial = summary?.is_partial ?? false
   const partialHint = isPartial
-    ? 'Approximate: the window exceeded the scan budget, counts are a lower bound'
+    ? 'Approximate: the full window could not be read, counts are a lower bound'
     : undefined
   const approx = (n: number | string) => (isPartial ? `~${n}` : n)
 
