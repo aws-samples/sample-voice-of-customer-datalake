@@ -26,9 +26,33 @@ def get_dynamodb_resource():
     return _dynamodb_resource
 
 
+def is_conditional_check_failure(error: Exception) -> bool:
+    """True for DynamoDB's ConditionalCheckFailedException, however it arrives.
+
+    The error CODE in the response is the dependable signal — boto3's resource
+    layer raises a dynamically-built ClientError subclass, so its type name is a
+    botocore implementation detail. The type name is checked as well because a
+    test double raises the named exception with no response payload.
+
+    ONE copy, here, because every conditional write in this app needs the same
+    predicate and each caller reaches it through a different failure path: a
+    refused write is the EXPECTED outcome of a guarded update (a decrement with
+    nothing to decrement, a status write against a record already terminal), so
+    misclassifying it swallows a real error or raises on a benign one. A second
+    copy is how the next arrival path for this exception gets fixed in one place
+    and missed in the other. `product_doc_extractor/handler.py` cannot import
+    this — it is stdlib+boto3 only by design, see its module docstring — and
+    keeps its own copy with a comment pointing here.
+    """
+    response = getattr(error, 'response', None)
+    code = (response.get('Error') or {}).get('Code') if isinstance(response, dict) else None
+    return (code == 'ConditionalCheckFailedException'
+            or type(error).__name__ == 'ConditionalCheckFailedException')
+
+
 def get_s3_client():
     """Get shared S3 client with connection reuse.
-    
+
     Configured with Signature Version 4 for KMS-encrypted bucket compatibility.
     """
     global _s3_client

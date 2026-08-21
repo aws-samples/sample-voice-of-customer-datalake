@@ -27,14 +27,16 @@ WHY NO aws_lambda_powertools, AND NO `lambda/shared/` IMPORTS
     needs Docker). Stdlib + boto3 only, like the two Python handlers CoreStack
     already ships (`lambda/custom_resources/admin_bootstrap.py`, `model_pin.py`).
 
-    The cost of that isolation is this file re-implements three small things that
+    The cost of that isolation is this file re-implements four small things that
     exist in `shared/`: model resolution (see _resolve_model_id, which mirrors
     `shared/model_config.py::get_active_model_id` exactly), the reserved-word
-    aliasing in the status writes (pattern from `shared/jobs.py`), and structured
+    aliasing in the status writes (pattern from `shared/jobs.py`), structured
     JSON logging with per-record context (see JsonFormatter — powertools' output
     shape and `append_keys` behaviour, in a stdlib Formatter subclass, on a named
     logger that does not propagate, which is the shape powertools' own Logger
-    takes). All three are pinned by tests.
+    takes), and the conditional-check-failure predicate (see
+    _is_conditional_check_failure, which mirrors
+    `shared/aws.py::is_conditional_check_failure`). All four are pinned by tests.
 
     WHAT THE ISOLATION DOES NOT COST is structured logs. Emitting plain text
     because powertools is unavailable would be a non-sequitur: the JSON shape is
@@ -552,6 +554,11 @@ def _is_conditional_check_failure(error: Exception) -> bool:
     layer raises a dynamically-built ClientError subclass, so its type name is a
     botocore implementation detail. The type name is checked as well because a
     test double raises the named exception with no response payload.
+
+    A copy of `shared/aws.py::is_conditional_check_failure`, which is where every
+    other handler gets this predicate. This file cannot import `shared/` — see
+    the module docstring — so the duplication is the price of that isolation and
+    not a preference. Change both, or neither.
     """
     response = getattr(error, 'response', None)
     code = (response.get('Error') or {}).get('Code') if isinstance(response, dict) else None
