@@ -1352,6 +1352,26 @@ class TestADuplicatedHeaderIsRefused:
         # `''` — the diagnostic the coerce-first ordering used to produce.
         assert "does not match body value" not in body["error"]["message"]
 
+    def test_the_duplicate_message_shows_what_was_sent_not_the_coercion(self):
+        """A message asserting two values differ has to show two things that
+        differ.
+
+        Built from the coerced side, `{'mcp-method': [None, 42]}` produced
+        `different values ('', '')` — a sentence contradicting itself, telling
+        the reader nothing about what was actually sent. The display halves are
+        the dedup key, so what is shown as different is exactly what was judged
+        different.
+        """
+        event = _event("ping")
+        event["multiValueHeaders"] = {"mcp-method": [None, 42]}
+
+        _status, body = _call(event)
+        message = body["error"]["message"]
+
+        assert "None" in message, message
+        assert "42" in message, message
+        assert "'', ''" not in message, message
+
     def test_a_single_unusable_value_still_reads_as_the_empty_value(self):
         """Anti-overreach: the fix is about TWO values, not about non-strings.
 

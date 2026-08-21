@@ -938,8 +938,15 @@ def _accepted_no_content() -> dict:
     }
 
 
-def _header_values(event: dict, name: str) -> list[str]:
+def _header_values(event: dict, name: str) -> list[tuple[str, str]]:
     """EVERY value the request carries for one header, deduplicated, in order.
+
+    Each entry is a `(value, display)` pair: the USABLE value (non-strings coerce
+    to `''`, the reading `_request_header` documents) and the `repr` of what the
+    request actually carried. The display exists because a refusal about two
+    values has to show the two values — building the message from the coerced
+    side produced `('', '')`, a sentence asserting the values differ while
+    displaying two identical ones.
 
     Both places a REST proxy event puts them are read, and reading only the first
     was the gap this closes:
@@ -955,21 +962,31 @@ def _header_values(event: dict, name: str) -> list[str]:
         `-32020` refusal exists for, reached through a duplicate rather than
         through a header/body disagreement.
 
-    Deduplicated ON THE RAW CANDIDATE, so two IDENTICAL values are one value: a
-    client (or an intermediary) restating the same thing twice has not
-    contradicted itself, and refusing that would refuse requests for no gain.
-    Raw, not coerced, and the ordering is the point: coercing non-strings to `''`
-    BEFORE the dedup collapsed two DIFFERENT unusable values into one, so
-    `multiValueHeaders={'origin': [None, 42]}` reached `_request_header` as a
-    single `''` and never hit its `len(values) > 1` refusal — and `''` is how this
-    module spells ABSENT, so the DNS-rebinding guard read two contradictory
-    origins as no origin at all and served the request. Two distinct unusable
-    values now stay two values and are refused as a duplicate (their coerced
-    reprs may coincide as `'', ''` in the message, which is honest: what was sent
-    twice is two things, neither of them a usable value).
+    Deduplicated ON THE DISPLAY — the `repr` of the raw candidate — so two
+    IDENTICAL values are one value: a client (or an intermediary) restating the
+    same thing twice has not contradicted itself, and refusing that would refuse
+    requests for no gain. Not on the coerced value, and not on the raw candidate
+    either, and each rejection has its own defect behind it:
+
+      • coercing non-strings to `''` BEFORE the dedup collapsed two DIFFERENT
+        unusable values into one, so `multiValueHeaders={'origin': [None, 42]}`
+        reached `_request_header` as a single `''` and never hit its
+        `len(values) > 1` refusal — and `''` is how this module spells ABSENT, so
+        the DNS-rebinding guard read two contradictory origins as no origin at
+        all and served the request;
+      • deduplicating on the raw candidate with `in` (i.e. `==`) refolded the
+        pairs Python equates across types — `True`/`1`, `False`/`0`, `1`/`1.0` —
+        so `multiValueHeaders={'origin': [True, 1]}` was the same fail-open one
+        equality quirk deeper. `repr` distinguishes exactly what a reader of the
+        refusal message can distinguish, which makes the dedup identity and the
+        displayed identity THE SAME FACT: the message can never again assert two
+        values differ while displaying two identical ones.
+
     `test_two_unusable_values_for_one_header_are_still_a_duplicate` and
     `test_two_unusable_origins_are_refused_not_read_as_absent` fail if the
-    coercion moves back inside the dedup.
+    coercion moves back inside the dedup;
+    `test_equatable_but_distinct_unusable_origins_are_still_two_values` fails if
+    the dedup key goes back to `==` on the raw candidate.
 
     ⚠️ The guard's REACH is tied to the REST proxy event shape read here. An
     HTTP API (payload 2.0) event carries no `multiValueHeaders` at all and
@@ -985,13 +1002,12 @@ def _header_values(event: dict, name: str) -> list[str]:
     one caller that runs before the handler's try/except — a 502 with no JSON-RPC
     envelope and no CORS headers.
     """
-    values: list[str] = []
-    # The raw candidates already seen, kept SEPARATELY from the coerced values:
-    # identity is decided on what the request actually carried, and only the
-    # answer is coerced. `list` rather than `set` because a direct-invoke
-    # candidate need not be hashable, and `in` on a list compares by equality,
-    # which is the identity a duplicate check wants.
-    seen: list[Any] = []
+    values: list[tuple[str, str]] = []
+    # The displays already seen. `repr` of the raw candidate, decided BEFORE any
+    # coercion: identity is what the request actually carried, and the repr is a
+    # plain string, so a `set` needs no hashability caveat and `==` on it has no
+    # cross-type equalities to fold (`repr(True) != repr(1)`, where `True == 1`).
+    seen: set[str] = set()
     for source_key in ('headers', 'multiValueHeaders'):
         source = event.get(source_key) or {}
         if not isinstance(source, dict):
@@ -1008,10 +1024,13 @@ def _header_values(event: dict, name: str) -> list[str]:
             # resulting single `''` as an absent Origin (see the docstring).
             candidates = raw if isinstance(raw, list) else [raw]
             for candidate in candidates:
-                if candidate in seen:
+                display = repr(candidate)
+                if display in seen:
                     continue
-                seen.append(candidate)
-                values.append(candidate if isinstance(candidate, str) else '')
+                seen.add(display)
+                values.append(
+                    (candidate if isinstance(candidate, str) else '', display)
+                )
     return values
 
 
@@ -1056,13 +1075,18 @@ def _request_header(event: dict, name: str) -> str | None:
     if not values:
         return None
     if len(values) > 1:
+        # The DISPLAY halves, not the coerced values: a message asserting two
+        # values differ has to show the two things that differ, and the coerced
+        # side of two unusable values reads `'', ''` — a sentence contradicting
+        # itself. The display is the dedup key, so what is shown as different is
+        # exactly what was judged different.
         raise InvalidTransportHeader(
             f'{_canonical_header_name(name)} was sent more than once with different '
-            f'values ({", ".join(repr(v) for v in values)}); there is no way to know '
-            f'which one was meant',
+            f'values ({", ".join(display for _value, display in values)}); there is '
+            f'no way to know which one was meant',
             code=JSONRPC_HEADER_MISMATCH,
         )
-    return values[0]
+    return values[0][0]
 
 
 def _origin_allowed(event: dict) -> bool:

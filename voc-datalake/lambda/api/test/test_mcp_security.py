@@ -1559,6 +1559,28 @@ class TestOriginValidation:
         assert response["statusCode"] == 403, response["body"]
 
     @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_equatable_but_distinct_unusable_origins_are_still_two_values(
+        self, lambda_context,
+    ):
+        """`==` folds the pairs Python equates across types, and the dedup must
+        not.
+
+        Deduplicating the raw candidates with `in` (i.e. `==`) collapsed
+        `[True, 1]` into one value — `True == 1` — which then coerced to `''`
+        and read as an absent Origin: the same fail-open the raw-candidate fix
+        closed, one equality quirk deeper. The dedup key is now the `repr`, and
+        `repr(True) != repr(1)`. Reverting the key to `==` on the raw candidate
+        fails this test and only this test.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["multiValueHeaders"] = {"origin": [True, 1]}
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
     def test_a_single_unusable_origin_still_reads_as_absent(self, lambda_context):
         """Anti-overreach: the fix is about TWO values, not about non-strings.
 
