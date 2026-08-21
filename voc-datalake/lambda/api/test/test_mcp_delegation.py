@@ -71,6 +71,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import mcp_handler
+# The set of metrics routes that publish `is_partial`, derived from the handler
+# source. Shared with `test_metrics_partial_window` so there is one derivation and
+# not two copies to drift apart.
+from metrics_publishing_routes import routes_publishing_is_partial
 from shared.mcp_delegate import DelegationUnavailable
 from shared.mcp_tokens import ALL_READ_SCOPES, REACH_WORKSPACE, mint_token
 
@@ -1750,9 +1754,12 @@ class TestMetricsToolsDeclareTheFlagTheyPassThrough:
         """
         schema = _tool_output_schema(tool)
 
-        assert "required" not in schema, (
+        # Scoped to THIS field, not to `required` being absent: `period_days` is
+        # sent by every one of these routes on every path, so requiring it later
+        # would be a correct change and must not fail here.
+        assert "is_partial" not in schema.get("required", []), (
             f"{tool} forwards the route body unprojected, so it cannot promise "
-            "keys it does not build; see _IS_PARTIAL_DESCRIPTION for the argument"
+            "is_partial is present; see _IS_PARTIAL_DESCRIPTION for the argument"
         )
         assert schema["properties"]["is_partial"]["type"] == "boolean"
 
@@ -1762,18 +1769,17 @@ class TestMetricsToolsDeclareTheFlagTheyPassThrough:
         They check the tools this change touched. This one asks the other
         direction: of the six routes that publish `is_partial`, which are reachable
         through MCP at all, and does something declare the flag for each? The
-        route set is DERIVED from `metrics_handler`'s source (shared with
-        `test_metrics_partial_window`, so there is one derivation, not two) and the
-        reachable set from the live `DOMAIN_ROUTES` table, so neither is a copy.
+        route set is DERIVED from `metrics_handler`'s source (via
+        `metrics_publishing_routes`, the helper `test_metrics_partial_window` reads
+        too, so there is one derivation and not two) and the reachable set from the
+        live `DOMAIN_ROUTES` table, so neither is a copy.
 
         `/feedback/entities` publishes the flag and is deliberately NOT exposed —
         it is in `_RESERVED_PATH_SEGMENTS` precisely so it cannot be reached. If it
         or another publishing route is ever added to `DOMAIN_ROUTES`, this fails,
         and the fix is to declare `is_partial` on whichever tool serves it.
         """
-        from test_metrics_partial_window import PUBLISHING_ROUTES
-
-        publishing = set(PUBLISHING_ROUTES)
+        publishing = set(routes_publishing_is_partial())
         assert len(publishing) == 6, f"derivation looks wrong: {sorted(publishing)}"
 
         reachable = {path for _domain, _method, path in mcp_handler.DOMAIN_ROUTES.values()}
@@ -1787,6 +1793,11 @@ class TestMetricsToolsDeclareTheFlagTheyPassThrough:
             f"{unaccounted} publish is_partial and are reachable through MCP, but no "
             "tool known to declare the flag serves them"
         )
-        # Anti-vacuous: the intersection must not be empty, or the check above
-        # passes by there being nothing to account for.
-        assert publishing & reachable == served_by_the_metrics_tools
+        # Anti-vacuous, and no more than that: the intersection must be non-empty
+        # or the check above passes by having nothing to account for. Deliberately
+        # NOT asserting equality with the served set — a future breakdown axis over
+        # a route that legitimately does not publish the flag is a correct change.
+        assert publishing & reachable, (
+            "no publishing route is reachable through MCP, so the check above "
+            "proved nothing"
+        )

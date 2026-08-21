@@ -50,63 +50,18 @@ from unittest.mock import patch
 
 import pytest
 
+from metrics_publishing_routes import (
+    HANDLER_SOURCE as _HANDLER_SOURCE,
+    handler_tree,
+    routes_publishing_is_partial,
+)
 from shared.api import AGGREGATE_RETENTION_DAYS, MAX_FEEDBACK_WINDOW_DAYS, clear_categories_cache
 
-_HANDLER_SOURCE = Path(__file__).resolve().parents[1] / 'metrics_handler.py'
-
-_ROUTE_VERBS = frozenset({'get', 'post', 'put', 'patch', 'delete', 'route'})
-
-
-def _route_path(decorator: ast.expr) -> str | None:
-    """`'/metrics/categories'` from `@app.get("/metrics/categories")`, else None."""
-    if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
-        return None
-    target = decorator.func.value
-    if not isinstance(target, ast.Name) or target.id != 'app':
-        return None
-    if decorator.func.attr not in _ROUTE_VERBS or not decorator.args:
-        return None
-    first = decorator.args[0]
-    return first.value if isinstance(first, ast.Constant) else None
-
-
-def _publishes_is_partial(func: ast.FunctionDef) -> bool:
-    """True when this function's own body builds a dict carrying `is_partial`.
-
-    Walked over the function body ONLY, so a sibling route's response cannot
-    answer for this one — the mistake that would make the parametrization below
-    look complete while covering nothing.
-    """
-    for node in ast.walk(func):
-        if isinstance(node, ast.Dict) and any(
-            isinstance(key, ast.Constant) and key.value == 'is_partial'
-            for key in node.keys
-        ):
-            return True
-    return False
-
-
-def _routes_publishing_is_partial() -> dict[str, str]:
-    """`{route path: handler name}` for every route that publishes the flag.
-
-    DERIVED from the handler source rather than listed here: a list would be a
-    copy that goes stale the moment a seventh endpoint starts publishing
-    `is_partial`, and the failure that copy produces is silence — the new
-    endpoint simply never gets tested, which is how the flag came to be a
-    hardcoded `False` on six of them.
-    """
-    tree = ast.parse(_HANDLER_SOURCE.read_text(encoding='utf-8'))
-    found: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        paths = [p for p in (_route_path(d) for d in node.decorator_list) if p]
-        if paths and _publishes_is_partial(node):
-            found[paths[0]] = node.name
-    return found
-
-
-PUBLISHING_ROUTES = _routes_publishing_is_partial()
+# DERIVED from the handler source rather than listed here — see
+# `metrics_publishing_routes`, which `test_mcp_delegation` reads too so there is
+# one derivation and not two. `test_the_derivation_finds_the_routes_that_publish
+# _the_flag` below is its positive control.
+PUBLISHING_ROUTES = routes_publishing_is_partial()
 
 _HELPER = '_query_metric_window'
 # test/ → api/ → lambda/. Every Lambda package lives under here, so this is the
@@ -241,7 +196,7 @@ class TestEveryCallerUnpacksTheTruncationFlag:
     def test_the_derivation_sees_the_calls(self):
         """The positive control: an empty derivation would make the check below
         pass by never running."""
-        tree = ast.parse(_HANDLER_SOURCE.read_text(encoding='utf-8'))
+        tree = handler_tree()
 
         callers = sorted(
             node.name
@@ -254,7 +209,7 @@ class TestEveryCallerUnpacksTheTruncationFlag:
         ], callers
 
     def test_no_call_site_drops_the_flag(self):
-        tree = ast.parse(_HANDLER_SOURCE.read_text(encoding='utf-8'))
+        tree = handler_tree()
         all_calls = _calls_to_helper(tree)
         unpacked = {id(call) for call in _calls_unpacking_two_values(tree)}
 

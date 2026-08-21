@@ -6,6 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
+// The copy under test, read from the locale file the app itself renders from —
+// the same source src/test/setup.ts loads into i18next.
+import enCommon from '../../../public/locales/en/common.json'
 
 // Mock API before importing component
 const mockGetSummary = vi.fn()
@@ -158,17 +161,20 @@ describe('Dashboard', () => {
         expect(screen.getByText('~1,234')).toBeInTheDocument()
       })
       expect(screen.getByText('~5')).toBeInTheDocument()
-      // The `~` alone does not say WHY, so the hint carries the meaning. Asserted
-      // as the resolved English copy rather than the key, because a missing or
-      // misspelled key renders as the key name and would otherwise pass: the test
-      // setup loads the real public/locales/en/common.json.
-      // getAllByTestId: both counted cards carry the hint, and a getByTestId
-      // would fail on the second rather than on the thing under test.
+      // The `~` alone does not say WHY, so the hint carries the meaning. The
+      // expected copy is READ from the English locale file rather than pasted
+      // here — the repo's lockstep idiom — so editing the wording is one change
+      // instead of two. A missing or misspelled key still fails, because i18next
+      // renders the key name and that is not what the file says.
+      //
+      // getAllByTestId, and no assertion on how MANY: more than one card carries
+      // the hint, a getByTestId would fail on the second rather than on the thing
+      // under test, and a count would be a tripwire on unrelated card edits.
       const hints = screen.getAllByTestId('metric-hint')
-      expect(hints).toHaveLength(2)
-      expect(hints[0]).toHaveTextContent(
-        'Approximate: the full window could not be read, counts are a lower bound'
-      )
+      expect(hints.length).toBeGreaterThan(0)
+      for (const hint of hints) {
+        expect(hint).toHaveTextContent(enCommon.partialCountsHint)
+      }
     })
 
     it('does not hint at approximation when the window was read in full', async () => {

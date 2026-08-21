@@ -74,12 +74,25 @@ def _ttl_parameter_position(function: ast.FunctionDef) -> int:
     Needed twice over: to line the parameter up with its default (defaults are
     right-aligned in the AST), and to spot a call that overrides it POSITIONALLY,
     which a keyword-only search would miss.
+
+    Positional parameters only, so the two failures are told apart: the parameter
+    being gone is one thing, and it becoming keyword-only is another — the latter
+    moves its default into `kw_defaults` and makes a positional override
+    impossible, so both readers here would need rewriting rather than a message
+    about a parameter that is in fact still present.
     """
     names = [argument.arg for argument in function.args.args]
-    assert _TTL_PARAMETER in names, (
-        f'{function.name} no longer takes {_TTL_PARAMETER}; the horizon is then '
-        'decided somewhere this test cannot see'
-    )
+    if _TTL_PARAMETER not in names:
+        keyword_only = [argument.arg for argument in function.args.kwonlyargs]
+        assert _TTL_PARAMETER not in keyword_only, (
+            f'{function.name} takes {_TTL_PARAMETER} keyword-only now: its default '
+            'lives in kw_defaults and no call can override it positionally, so this '
+            'helper and test_no_call_site_overrides_the_ttl both need updating'
+        )
+        raise AssertionError(
+            f'{function.name} no longer takes {_TTL_PARAMETER}; the horizon is then '
+            'decided somewhere this test cannot see'
+        )
     return names.index(_TTL_PARAMETER)
 
 
@@ -122,6 +135,13 @@ class TestAggregateRetentionLockstep:
         that site writes expire two months earlier than the metrics routes claim.
         Positional overrides count too, which is why the parameter's INDEX is
         derived rather than the keyword alone being searched for.
+
+        SCOPE: calls written as a bare name inside `aggregator/handler.py`. A
+        `handler.update_counter(..., ttl_days=30)` from another module is not seen,
+        and neither is one reached through an alias. That is the safe direction —
+        every production writer of aggregate rows is in this file, and a new caller
+        elsewhere would be the change that has to justify itself — but the check is
+        not a proof about the whole repo.
         """
         tree = _aggregator_tree()
         positions = {name: _ttl_parameter_position(_writer(name)) for name in _WRITERS}
