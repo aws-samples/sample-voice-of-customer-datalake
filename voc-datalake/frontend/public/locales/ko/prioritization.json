@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "문서 {{documents}}건, 표 1장"
   },
+  "rowCount_one": "제안 {{count}}건",
+  "rowCount_other": "제안 {{count}}건",
   "scores": {
     "confidence": "신뢰도",
     "confidenceDescription": "영향도 및 출시 시간 추정의 확실성",

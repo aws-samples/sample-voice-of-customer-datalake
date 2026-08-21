@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "{{documents}} documents, un seul bulletin"
   },
+  "rowCount_one": "{{count}} proposition",
+  "rowCount_other": "{{count}} propositions",
   "scores": {
     "confidence": "Confiance",
     "confidenceDescription": "Certitude dans les estimations d'impact et de DmM",

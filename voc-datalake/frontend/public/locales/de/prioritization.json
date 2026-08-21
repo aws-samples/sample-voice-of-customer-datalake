@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "{{documents}} Dokumente, ein Stimmzettel"
   },
+  "rowCount_one": "{{count}} Vorschlag",
+  "rowCount_other": "{{count}} Vorschläge",
   "scores": {
     "confidence": "Konfidenz",
     "confidenceDescription": "Sicherheit bei Auswirkungs- und MeZ-Schätzungen",
