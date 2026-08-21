@@ -108,6 +108,44 @@ def _routes_publishing_is_partial() -> dict[str, str]:
 
 PUBLISHING_ROUTES = _routes_publishing_is_partial()
 
+_HELPER = '_query_metric_window'
+# test/ → api/ → lambda/. Every Lambda package lives under here, so this is the
+# scope in which "nobody else calls the helper" can be checked at all.
+_LAMBDA_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _calls_to_helper(tree: ast.Module) -> list[ast.Call]:
+    return [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == _HELPER
+    ]
+
+
+def _calls_unpacking_two_values(tree: ast.Module) -> list[ast.Call]:
+    """Helper calls assigned straight into a two-name tuple target.
+
+    `a, b = _query_metric_window(...)` qualifies. A call inside a `sum(...)`, a
+    comprehension, or a single-name assignment does not — which is the point: the
+    helper's return type changed from `list[dict]` to `tuple[list[dict], bool]`,
+    and every one of those forms still parses, runs, and produces a wrong answer
+    (iterating the 2-tuple, or counting the boolean as a row).
+    """
+    found: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        if not (isinstance(call.func, ast.Name) and call.func.id == _HELPER):
+            continue
+        if all(
+            isinstance(target, ast.Tuple) and len(target.elts) == 2
+            for target in node.targets
+        ):
+            found.append(call)
+    return found
+
 # Every one of them reaches its aggregates path on a plain `?days=N`: no
 # `source`, and the default 'imported' date basis. That is the path that used to
 # assert completeness, and the only extra parameter any of them needs.
@@ -187,6 +225,65 @@ class TestEveryPublishingRouteIsWired:
 
         assert 'is_partial' in body, f'{path} publishes no is_partial'
         assert isinstance(body['is_partial'], bool)
+
+
+class TestEveryCallerUnpacksTheTruncationFlag:
+    """A caller that ignores the second return value is a NEW silent defect.
+
+    The parametrized suites above can only see routes that publish `is_partial`,
+    so a caller that does not publish it — a future route, or a helper reading the
+    same partitions — is exactly the case they cannot catch. And the failure is
+    not a crash at the call: `sum(int(i.get('count', 0)) for i in helper(...))`
+    over a 2-tuple raises inside the generator, while `items = helper(...)`
+    followed by `len(items)` silently answers 2.
+    """
+
+    def test_the_derivation_sees_the_calls(self):
+        """The positive control: an empty derivation would make the check below
+        pass by never running."""
+        tree = ast.parse(_HANDLER_SOURCE.read_text(encoding='utf-8'))
+
+        callers = sorted(
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and _calls_to_helper(ast.Module(body=node.body, type_ignores=[]))
+        )
+        assert callers == [
+            'get_category_metrics', 'get_entities', 'get_sentiment_metrics', 'get_summary',
+        ], callers
+
+    def test_no_call_site_drops_the_flag(self):
+        tree = ast.parse(_HANDLER_SOURCE.read_text(encoding='utf-8'))
+        all_calls = _calls_to_helper(tree)
+        unpacked = {id(call) for call in _calls_unpacking_two_values(tree)}
+
+        dropped = sorted(call.lineno for call in all_calls if id(call) not in unpacked)
+        assert dropped == [], (
+            f'{_HELPER} returns (items, truncated); the call(s) at '
+            f'{_HANDLER_SOURCE.name} line(s) {dropped} do not unpack both, so a '
+            'truncated read is either reported as rows or dropped on the floor'
+        )
+
+    def test_nothing_outside_this_handler_calls_the_helper(self):
+        """The helper is private to `metrics_handler`, and its return type changed.
+
+        An importer in another Lambda package would iterate the 2-tuple and blow
+        up on `item.get(...)` at runtime, not in this suite — nothing else here
+        looks outside this file.
+        """
+        importers = sorted(
+            str(path.relative_to(_LAMBDA_ROOT))
+            for path in _LAMBDA_ROOT.rglob('*.py')
+            if path != _HANDLER_SOURCE
+            and 'test' not in path.parts
+            and not path.name.startswith('test_')
+            and _HELPER in path.read_text(encoding='utf-8')
+        )
+        assert importers == [], (
+            f'{_HELPER} is called outside metrics_handler.py ({importers}); those '
+            'call sites are not covered by the AST check above'
+        )
 
 
 class TestAggregatePathReportsPagingTruncation:

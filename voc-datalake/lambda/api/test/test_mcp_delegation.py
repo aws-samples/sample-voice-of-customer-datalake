@@ -1734,3 +1734,59 @@ class TestMetricsToolsDeclareTheFlagTheyPassThrough:
         payload = _call(tool, args, fake)["result"]["structuredContent"]
 
         assert payload["is_partial"] is False
+
+    @pytest.mark.parametrize("tool", ["get_metrics_summary", "get_metrics_breakdown"])
+    def test_the_flag_is_declared_optional_because_the_body_is_not_projected(self, tool):
+        """The opposite choice from `search_feedback`, and deliberately so.
+
+        `search_feedback` BUILDS its body, so it can promise every key it declares
+        and `is_partial` is in its `required`. These two forward the route body
+        unprojected and fall back to `{}` when the delegated payload is not a dict.
+        A `required` list here would turn that honest empty answer into a schema
+        violation at a validating client — an error where the truthful reading is
+        "no data" — so the field is declared and optional. Changing that means
+        projecting the body first; this test is here so the choice is made rather
+        than copied from the tool next door.
+        """
+        schema = _tool_output_schema(tool)
+
+        assert "required" not in schema, (
+            f"{tool} forwards the route body unprojected, so it cannot promise "
+            "keys it does not build; see _IS_PARTIAL_DESCRIPTION for the argument"
+        )
+        assert schema["properties"]["is_partial"]["type"] == "boolean"
+
+    def test_every_mcp_reachable_route_that_publishes_the_flag_has_a_tool_declaring_it(self):
+        """The completeness question the two tests above cannot answer.
+
+        They check the tools this change touched. This one asks the other
+        direction: of the six routes that publish `is_partial`, which are reachable
+        through MCP at all, and does something declare the flag for each? The
+        route set is DERIVED from `metrics_handler`'s source (shared with
+        `test_metrics_partial_window`, so there is one derivation, not two) and the
+        reachable set from the live `DOMAIN_ROUTES` table, so neither is a copy.
+
+        `/feedback/entities` publishes the flag and is deliberately NOT exposed —
+        it is in `_RESERVED_PATH_SEGMENTS` precisely so it cannot be reached. If it
+        or another publishing route is ever added to `DOMAIN_ROUTES`, this fails,
+        and the fix is to declare `is_partial` on whichever tool serves it.
+        """
+        from test_metrics_partial_window import PUBLISHING_ROUTES
+
+        publishing = set(PUBLISHING_ROUTES)
+        assert len(publishing) == 6, f"derivation looks wrong: {sorted(publishing)}"
+
+        reachable = {path for _domain, _method, path in mcp_handler.DOMAIN_ROUTES.values()}
+        served_by_the_metrics_tools = {
+            "/metrics/summary",
+            *mcp_handler._BREAKDOWN_DIMENSIONS.values(),
+        }
+
+        unaccounted = sorted((publishing & reachable) - served_by_the_metrics_tools)
+        assert unaccounted == [], (
+            f"{unaccounted} publish is_partial and are reachable through MCP, but no "
+            "tool known to declare the flag serves them"
+        )
+        # Anti-vacuous: the intersection must not be empty, or the check above
+        # passes by there being nothing to account for.
+        assert publishing & reachable == served_by_the_metrics_tools

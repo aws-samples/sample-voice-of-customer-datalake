@@ -13,10 +13,19 @@ already been deleted. Lengthen it and the routes cry partial over answers they
 could give in full. Neither shows up as an error, in a log, or in any other test
 — which is precisely the shape of the defect `is_partial` exists to close.
 
-The value is read out of the aggregator with `inspect.signature` rather than
-re-stated here, so this test cannot itself become the stale copy. Same lockstep
-pattern as `test_feedback_page_limit_lockstep.py` (frontend page size ↔ endpoint
-maximum) and `shared/test/test_search_minimum_lockstep.py`.
+The value is read out of the aggregator rather than re-stated here, so this test
+cannot itself become the stale copy. Same lockstep pattern as
+`test_feedback_page_limit_lockstep.py` (frontend page size ↔ endpoint maximum) and
+`shared/test/test_search_minimum_lockstep.py`.
+
+Read by PARSING the aggregator, not by importing it. `inspect.signature` was the
+first implementation and it reaches the same value, but importing
+`aggregator.handler` from an api test executes another Lambda package's module
+scope — which creates a DynamoDB resource and reads `AGGREGATES_TABLE` — so the
+test would fail for an environmental reason (no region, no env var) in exactly the
+same red as real drift, and the two are not the same problem. `ast` reads the
+source without running it, and it is also what lets the call sites be checked at
+all.
 
 Which mutation makes each assertion fail: change `ttl_days`' default in
 `aggregator/handler.py`, or `AGGREGATE_RETENTION_DAYS` in `shared/api.py`,
@@ -25,28 +34,73 @@ without changing the other, and
 numbers. `test_both_writers_stamp_the_same_horizon` fails if only one of the two
 aggregator functions is changed — half the rows would then outlive the other
 half and no single constant could describe the window.
+`test_no_call_site_overrides_the_ttl` fails if a writer is called with an explicit
+`ttl_days`, which would make the default true and the rows' real horizon something
+else; `test_each_writer_applies_the_parameter_it_takes` fails if a writer accepts
+`ttl_days` and stamps something else, the same lie one level down.
 """
-import inspect
+import ast
+from pathlib import Path
 
 from shared.api import AGGREGATE_RETENTION_DAYS, MAX_FEEDBACK_WINDOW_DAYS
 
+# test/ → api/ → lambda/, then the sibling package that owns the value.
+_AGGREGATOR_SOURCE = (
+    Path(__file__).resolve().parents[2] / 'aggregator' / 'handler.py'
+)
+_TTL_PARAMETER = 'ttl_days'
+# The two functions that write aggregate rows. Both, because one TTL per writer
+# would mean two horizons over partitions a single window read spans.
+_WRITERS = ('update_counter', 'update_average')
+
+
+def _aggregator_tree() -> ast.Module:
+    return ast.parse(_AGGREGATOR_SOURCE.read_text(encoding='utf-8'))
+
+
+def _writer(function_name: str) -> ast.FunctionDef:
+    for node in ast.walk(_aggregator_tree()):
+        if isinstance(node, ast.FunctionDef) and node.name == function_name:
+            return node
+    raise AssertionError(
+        f'{function_name} is gone from {_AGGREGATOR_SOURCE.name}; the retention '
+        'horizon the metrics routes report is no longer stamped by it'
+    )
+
+
+def _ttl_parameter_position(function: ast.FunctionDef) -> int:
+    """Index of `ttl_days` among the positional parameters.
+
+    Needed twice over: to line the parameter up with its default (defaults are
+    right-aligned in the AST), and to spot a call that overrides it POSITIONALLY,
+    which a keyword-only search would miss.
+    """
+    names = [argument.arg for argument in function.args.args]
+    assert _TTL_PARAMETER in names, (
+        f'{function.name} no longer takes {_TTL_PARAMETER}; the horizon is then '
+        'decided somewhere this test cannot see'
+    )
+    return names.index(_TTL_PARAMETER)
+
 
 def _aggregator_ttl_default(function_name: str) -> int:
-    """The `ttl_days` default of one aggregator writer, read from its signature.
-
-    Imported inside the helper rather than at module scope so an aggregator that
-    cannot be imported fails these tests rather than collection of the file.
-    """
-    from aggregator import handler as aggregator_handler
-
-    parameter = inspect.signature(
-        getattr(aggregator_handler, function_name)
-    ).parameters['ttl_days']
-    assert parameter.default is not inspect.Parameter.empty, (
-        f'{function_name} no longer defaults ttl_days; the retention horizon the '
-        'metrics routes report is then decided per call site and cannot be a constant'
+    """The `ttl_days` default of one aggregator writer, read from its source."""
+    function = _writer(function_name)
+    position = _ttl_parameter_position(function)
+    defaults = function.args.defaults
+    # Defaults cover the LAST len(defaults) positional parameters.
+    offset = len(function.args.args) - len(defaults)
+    assert position >= offset, (
+        f'{function_name} no longer defaults {_TTL_PARAMETER}; the retention '
+        'horizon the metrics routes report is then decided per call site and '
+        'cannot be a constant'
     )
-    return parameter.default
+    default = defaults[position - offset]
+    assert isinstance(default, ast.Constant) and isinstance(default.value, int), (
+        f"{function_name}'s {_TTL_PARAMETER} default is no longer a literal int, "
+        'so a constant cannot describe it'
+    )
+    return default.value
 
 
 class TestAggregateRetentionLockstep:
@@ -59,6 +113,53 @@ class TestAggregateRetentionLockstep:
             'that survive, so a mismatch makes them either assert completeness over '
             'deleted data or report partial over data they have. Change both.'
         )
+
+    def test_no_call_site_overrides_the_ttl(self):
+        """A default is only the real horizon if nothing overrides it.
+
+        `update_counter(..., ttl_days=30)` at one call site would leave this
+        lockstep green — the default still matches the constant — while the rows
+        that site writes expire two months earlier than the metrics routes claim.
+        Positional overrides count too, which is why the parameter's INDEX is
+        derived rather than the keyword alone being searched for.
+        """
+        tree = _aggregator_tree()
+        positions = {name: _ttl_parameter_position(_writer(name)) for name in _WRITERS}
+
+        overrides = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            position = positions.get(node.func.id)
+            if position is None:
+                continue
+            if len(node.args) > position or any(
+                keyword.arg == _TTL_PARAMETER for keyword in node.keywords
+            ):
+                overrides.append(f'{node.func.id} at line {node.lineno}')
+
+        assert overrides == [], (
+            f'{overrides} pass an explicit {_TTL_PARAMETER}, so the rows they write '
+            f'do not live for AGGREGATE_RETENTION_DAYS and the metrics routes '
+            'report a horizon those partitions do not have'
+        )
+
+    def test_each_writer_applies_the_parameter_it_takes(self):
+        """The same lie one level down: a writer could accept `ttl_days` and stamp
+        a hardcoded number, in which case every assertion above is about a value
+        no row ever sees. `aggregator/test/test_handler.py` covers the arithmetic;
+        this only insists the parameter reaches it.
+        """
+        for name in _WRITERS:
+            function = _writer(name)
+            uses = [
+                node for node in ast.walk(function)
+                if isinstance(node, ast.Name) and node.id == _TTL_PARAMETER
+            ]
+            assert uses, (
+                f'{name} takes {_TTL_PARAMETER} and never reads it, so the TTL it '
+                'stamps is not the horizon this lockstep is about'
+            )
 
     def test_both_writers_stamp_the_same_horizon(self):
         """`update_counter` and `update_average` write into the SAME partitions
