@@ -1487,6 +1487,155 @@ class TestOriginValidation:
         response = mcp_handler.lambda_handler(event, lambda_context)
         assert response["statusCode"] == 403
 
+    @pytest.mark.parametrize("spelling", ["Origin", "origin", "ORIGIN", "oRigin"])
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_every_casing_of_the_header_is_checked(self, spelling, lambda_context):
+        """A guard that reads two spellings by hand is bypassed by the third.
+
+        This function matched only `'origin'` and `'Origin'`, so `ORIGIN:` and
+        `oRigin:` walked past the DNS-rebinding guard entirely on a direct invoke or
+        any non-API-Gateway trigger — a check that fails OPEN. It now reads through
+        `_request_header`, the module's one case-insensitive header reader, which is
+        the same helper `_authenticate` and the transport headers use.
+
+        HTTP header names are case-insensitive, so all four of these are the same
+        header and a browser or a proxy may send any of them.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"][spelling] = "https://evil.example.net"
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, (
+            f"Origin spelled {spelling!r} bypassed the DNS-rebinding guard"
+        )
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_two_claimed_origins_are_refused_rather_than_chosen_between(
+        self, lambda_context,
+    ):
+        """Picking one of two claimed origins is the one thing this guard must not do.
+
+        `Origin` is what this function exists to compare, so an intermediary that
+        forwarded the victim's origin alongside the attacker's would have it compare
+        whichever it happened to read first — and the allowed value is present here,
+        so a reader that stopped at the first match would SERVE this request. The
+        fail-closed reading is the refusal, which is the same reading the transport
+        headers apply to a duplicate (`-32020` there; a 403 here, because that is the
+        answer this guard's caller gives).
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"]["origin"] = "https://voc.example.com"
+        event["multiValueHeaders"] = {
+            "origin": ["https://voc.example.com", "https://evil.example.net"],
+        }
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_two_unusable_origins_are_refused_not_read_as_absent(self, lambda_context):
+        """Two DIFFERENT unusable Origin values must not collapse into no Origin.
+
+        `_header_values` coerces a non-string candidate to `''` — and coercing
+        BEFORE deduplicating turned `[None, 42]` into a single `''`, which is how
+        this module spells ABSENT, and absent Origin passes the rebinding guard. So
+        the one guard whose whole subject is "do not pick between two claimed
+        origins" resolved two claimed origins to no origin at all and SERVED the
+        request — a fail-open, on the same direct-invoke event shape the non-dict
+        `headers` guard below already defends. Deduplicating on the raw candidate
+        keeps the two values two, and two values for `Origin` is the 403 the test
+        above pins. Moving the coercion back inside the dedup fails this test.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["multiValueHeaders"] = {"origin": [None, 42]}
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_equatable_but_distinct_unusable_origins_are_still_two_values(
+        self, lambda_context,
+    ):
+        """`==` folds the pairs Python equates across types, and the dedup must
+        not.
+
+        Deduplicating the raw candidates with `in` (i.e. `==`) collapsed
+        `[True, 1]` into one value — `True == 1` — which then coerced to `''`
+        and read as an absent Origin: the same fail-open the raw-candidate fix
+        closed, one equality quirk deeper. The dedup key is now the `repr`, and
+        `repr(True) != repr(1)`. Reverting the key to `==` on the raw candidate
+        fails this test and only this test.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["multiValueHeaders"] = {"origin": [True, 1]}
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_a_single_unusable_origin_still_reads_as_absent(self, lambda_context):
+        """Anti-overreach: the fix is about TWO values, not about non-strings.
+
+        A single unusable value keeps its existing reading — the empty string,
+        which the guard treats as no Origin presented. Refusing it would refuse
+        every direct invoke whose builder put something odd in one header, which
+        is a different (and unclaimed) policy.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["multiValueHeaders"] = {"origin": [None]}
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 200, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_the_same_origin_twice_is_still_served(self, lambda_context):
+        """Anti-vacuity: restating one allowed origin is not two origins, and
+        refusing it would refuse a request nothing is wrong with."""
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"]["origin"] = "https://voc.example.com"
+        event["multiValueHeaders"] = {
+            "origin": ["https://voc.example.com", "https://voc.example.com"],
+        }
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 200, response["body"]
+
+    @pytest.mark.parametrize("headers", [["x"], "origin", 7, [("origin", "x")]])
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_a_non_dict_headers_value_is_not_a_crash(self, headers, lambda_context):
+        """`event['headers']` is a dict or null from API Gateway — and this is not
+        the only way in.
+
+        `headers.get('origin')` on a list raised `AttributeError`, and this guard
+        runs FIRST in `lambda_handler`, outside its try/except: the result was a 502
+        with no JSON-RPC envelope and no CORS headers, which is precisely the failure
+        shape the `BotoCoreError` clause documents as the thing to avoid. A truthy
+        non-dict was needed to reach it, so `or {}` hid the falsy cases.
+
+        Reads as absence, which passes the guard — the same answer as no Origin at
+        all, and the only honest one: a malformed headers structure states no origin.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["headers"] = headers
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] != 502, response.get("body")
+        assert response["statusCode"] == 200, response["body"]
+
     @patch("mcp_handler.ALLOWED_ORIGIN", "*")
     def test_wildcard_config_disables_the_guard(self, lambda_context):
         """Dev deployments set ALLOWED_ORIGIN='*'; any Origin then passes."""

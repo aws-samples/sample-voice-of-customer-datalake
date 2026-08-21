@@ -1272,6 +1272,215 @@ describe('mcp endpoint throttling', () => {
 });
 
 
+describe('mcp transport headers reach a browser', () => {
+  // `mcp_handler.py` reads and VALIDATES three transport headers, and a browser's
+  // preflight on this API is answered by API Gateway's generated OPTIONS mock —
+  // not by the handler. So the handler allowing them in its own CORS response is
+  // not enough: omitted from the gateway's list, a browser-based client that sends
+  // `MCP-Protocol-Version` is blocked by its own preflight before the Lambda ever
+  // sees the request, and the server ends up enforcing a rule against a header no
+  // browser can deliver.
+  //
+  // Read out of the PYTHON source rather than re-listed here, which is this repo's
+  // convention for a contract two languages have to agree on (see the
+  // MCP_TOKEN_PK test above): a header added to the handler and not to the gateway
+  // fails here instead of at a browser.
+  const pythonTransportHeaders = (): string[] => {
+    const source = readRepoFile('lambda', 'api', 'mcp_handler.py');
+    const block = source.match(/TRANSPORT_HEADERS:\s*tuple\[str, \.\.\.\]\s*=\s*\(([^)]*)\)/)?.[1];
+    expect(block, 'could not read TRANSPORT_HEADERS from mcp_handler.py').toBeDefined();
+    // The tuple holds the NAMED constants, so resolve each to its literal.
+    //
+    // The trailing comma is NOT required by the match, and that matters: requiring it
+    // meant a tuple written without one silently lost its LAST entry, and a partial
+    // parse fails in the permissive direction — fewer headers checked, with nothing
+    // saying so, guarded only by the `>= 3` control below. The recovered count is
+    // cross-checked against the declaration lines so a drifted parse fails outright.
+    const entryLines = (block ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'));
+    const names = [...(block ?? '').matchAll(/([A-Z_]+)\s*,?/g)].map((m) => m[1]);
+    expect(names.length, 'TRANSPORT_HEADERS looks empty').toBeGreaterThan(0);
+    expect(
+      names.length,
+      `recovered ${names.length} names from ${entryLines.length} declaration lines in `
+      + 'TRANSPORT_HEADERS: the regex and the Python literal have drifted. Keep one '
+      + 'named constant per line, or update this parse.',
+    ).toBe(entryLines.length);
+    return names.map((name) => {
+      const value = source.match(new RegExp(`^${name} = '([^']+)'`, 'm'))?.[1];
+      expect(value, `could not resolve ${name} in mcp_handler.py`).toBeDefined();
+      return value as string;
+    });
+  };
+
+  /** The allow-list the generated OPTIONS mock actually publishes. */
+  const preflightAllowHeaders = (): string[] => {
+    const methods = Object.values(apiTemplate().findResources('AWS::ApiGateway::Method'));
+    const MethodSchema = z.object({
+      Properties: z.object({
+        HttpMethod: z.string(),
+        Integration: z.object({
+          IntegrationResponses: z.array(z.object({
+            ResponseParameters: z.record(z.string(), z.string()).optional(),
+          })).optional(),
+        }).optional(),
+      }),
+    });
+    for (const method of methods) {
+      const props = MethodSchema.parse(method).Properties;
+      if (props.HttpMethod !== 'OPTIONS') continue;
+      for (const response of props.Integration?.IntegrationResponses ?? []) {
+        const raw = response.ResponseParameters?.[
+          'method.response.header.Access-Control-Allow-Headers'
+        ];
+        if (raw) return raw.replace(/^'|'$/g, '').split(',');
+      }
+    }
+    throw new Error('no generated OPTIONS method published an Allow-Headers list');
+  };
+
+  it('allows every header the handler validates through the preflight', () => {
+    const allowed = new Set(preflightAllowHeaders().map((h) => h.trim().toLowerCase()));
+    const declared = pythonTransportHeaders();
+
+    // Positive control: a regex that silently matched nothing would make the
+    // subset assertion below vacuously true.
+    expect(declared.length).toBeGreaterThanOrEqual(3);
+    for (const header of declared) {
+      // Case-insensitively, because CORS header matching is — the handler reads
+      // the lowercase form API Gateway delivers, the gateway publishes the wire
+      // spelling, and both must name the same header.
+      expect(allowed, `${header} is validated by the handler but blocked by the preflight`)
+        .toContain(header.toLowerCase());
+    }
+  });
+
+  it('allows them on the gateway error responses too', () => {
+    // A 4XX/5XX from the gateway itself carries its own CORS headers, and a
+    // browser that cannot read the error sees a network failure instead of the
+    // 401 or 400 the server actually sent.
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const declared = pythonTransportHeaders().map((h) => h.toLowerCase());
+    const parsed = responses.map((r) => ResponseSchema.parse(r).Properties);
+    expect(parsed.length, 'no gateway responses in the template').toBeGreaterThan(0);
+
+    for (const props of parsed) {
+      const raw = props.ResponseParameters?.[
+        'gatewayresponse.header.Access-Control-Allow-Headers'
+      ];
+      if (!raw) continue;
+      const allowed = new Set(
+        raw.replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase()),
+      );
+      for (const header of declared) {
+        expect(allowed, `${header} missing from the ${props.ResponseType} response`)
+          .toContain(header);
+      }
+    }
+  });
+
+  // `mcp_handler.py` now sends `Vary: Authorization` on every response, because its
+  // answers depend on the credential and the caches in front of this endpoint read
+  // headers rather than the JSON-RPC body's `cacheScope`. `Vary` is not
+  // CORS-safelisted, so a browser receives it and hides it from the page unless the
+  // endpoint says otherwise — the same failure `WWW-Authenticate` already documents.
+  //
+  // Read out of the Python source for the same reason as the allow-list above: the
+  // handler's own responses carry ITS expose list and gateway-GENERATED ones (the
+  // authorizer's 401) carry the template's, so a header exposed by one and not the
+  // other is readable on some of this endpoint's answers and not others.
+  //
+  // ⚠️ This parse reads a single-quoted STRING LITERAL, so it breaks if that value is
+  // ever rewritten as a `','.join((...))` expression the way `Access-Control-Allow-
+  // Headers` above it already is — which is the likelier of the two ways to break it,
+  // because making the two neighbouring keys consistent is an obvious tidy-up. The
+  // Python declaration carries a note saying so.
+  const pythonExposeHeaders = (): string[] => {
+    const source = readRepoFile('lambda', 'api', 'mcp_handler.py');
+    const value = source.match(
+      /^\s*'Access-Control-Expose-Headers':\s*'([^']+)',/m,
+    )?.[1];
+    expect(value, "could not read Access-Control-Expose-Headers from mcp_handler.py")
+      .toBeDefined();
+    return (value ?? '').split(',').map((h) => h.trim());
+  };
+
+  it('exposes every response header the handler expects a browser to read', () => {
+    const declared = pythonExposeHeaders();
+    // Positive control: a regex that matched nothing would make the loop vacuous.
+    // Both of the non-safelisted headers the handler adds are named, so a parse that
+    // recovered only part of the list fails here rather than checking less.
+    expect(declared.map((h) => h.toLowerCase())).toContain('vary');
+    expect(declared.map((h) => h.toLowerCase())).toContain('allow');
+
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const parsed = responses.map((r) => ResponseSchema.parse(r).Properties);
+    const withExpose = parsed.filter((props) => props.ResponseParameters?.[
+      'gatewayresponse.header.Access-Control-Expose-Headers'
+    ]);
+    expect(withExpose.length, 'no gateway response publishes an expose list')
+      .toBeGreaterThan(0);
+
+    for (const props of withExpose) {
+      const raw = props.ResponseParameters?.[
+        'gatewayresponse.header.Access-Control-Expose-Headers'
+      ] as string;
+      const exposed = new Set(
+        raw.replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase()),
+      );
+      for (const header of declared) {
+        expect(
+          exposed,
+          `${header} is exposed by the handler but not by the ${props.ResponseType} response`,
+        ).toContain(header.toLowerCase());
+      }
+    }
+  });
+
+  it('tells a cache the authorizer 401 varies by credential', () => {
+    // The 401 is the most credential-dependent answer this API gives, and the
+    // authorizer produces it — so the `Vary` the handler sends never reaches it.
+    // Without this, an intermediary could cache that refusal against the endpoint
+    // alone and serve it to a request carrying a perfectly good credential.
+    const responses = Object.values(
+      apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'),
+    );
+    const ResponseSchema = z.object({
+      Properties: z.object({
+        ResponseType: z.string(),
+        ResponseParameters: z.record(z.string(), z.string()).optional(),
+      }),
+    });
+    const unauthorized = responses
+      .map((r) => ResponseSchema.parse(r).Properties)
+      .filter((props) => props.ResponseType === 'UNAUTHORIZED');
+
+    expect(unauthorized.length, 'no UNAUTHORIZED gateway response in the template')
+      .toBe(1);
+    const vary = unauthorized[0].ResponseParameters?.['gatewayresponse.header.Vary'];
+    expect(vary, 'the UNAUTHORIZED response sends no Vary').toBeDefined();
+    expect((vary ?? '').toLowerCase()).toContain('authorization');
+  });
+});
+
 describe('unauthorized gateway response', () => {
   // The ONLY place a REST API can emit a true WWW-Authenticate on a 401:
   // Lambda-proxy responses have the header unconditionally remapped to
@@ -1294,6 +1503,13 @@ describe('unauthorized gateway response', () => {
     expect(unauthorized, 'no UNAUTHORIZED gateway response in the template').toBeDefined();
     const params = unauthorized?.ResponseParameters ?? {};
     expect(params['gatewayresponse.header.WWW-Authenticate']).toBe('\'Bearer error="invalid_token"\'');
-    expect(params['gatewayresponse.header.Access-Control-Expose-Headers']).toBe("'WWW-Authenticate'");
+    // The challenge must be READABLE, which is the property this line is about —
+    // asserted as membership rather than as the whole list, because the list also
+    // carries `Content-Type` and `Vary` and pinning it exactly made this test fail
+    // when an unrelated header was exposed. 'mcp transport headers reach a browser'
+    // owns the completeness of the list; this owns the challenge being in it.
+    const exposed = (params['gatewayresponse.header.Access-Control-Expose-Headers'] ?? '')
+      .replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase());
+    expect(exposed).toContain('www-authenticate');
   });
 });
