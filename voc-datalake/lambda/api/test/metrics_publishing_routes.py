@@ -7,10 +7,12 @@ file would be a copy, and the failure a stale copy produces is silence — a new
 endpoint publishing the flag simply never gets tested, which is how the flag came
 to be a hardcoded `False` on six of them.
 
-A plain helper module rather than an import between test modules: it is importable
-because `conftest.py` puts this directory on `sys.path` (the same reason
-`plugin_manifests.py` works), which does not depend on pytest's import mode or on
-which module pytest happened to load first.
+A plain helper module rather than an import between test modules. What makes it
+importable is one explicit line in `conftest.py` —
+`sys.path.append(os.path.dirname(os.path.abspath(__file__)))`, added so
+`plugin_manifests.py` resolves — not pytest's own path handling, so it does not
+turn on the import mode or on which test module pytest happened to load first.
+Importing a sibling TEST module would depend on both.
 
 Nothing here asserts. `test_metrics_partial_window` owns the positive control that
 the derivation is not empty, because a derivation that silently returns nothing
@@ -60,12 +62,21 @@ def _publishes_is_partial(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 
 def routes_publishing_is_partial() -> dict[str, str]:
-    """`{route path: handler name}` for every route that publishes the flag."""
+    """`{route path: handler name}` for every route that publishes the flag.
+
+    EVERY path of a multi-decorator handler is recorded, not just the first. One
+    function answering two paths is legal in Powertools, and keeping only
+    `decorator_list[0]` would leave the other path publishing the flag with no
+    suite parametrized over it — silence again, in the same shape.
+    """
     found: dict[str, str] = {}
     for node in ast.walk(handler_tree()):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        paths = [p for p in (_route_path(d) for d in node.decorator_list) if p]
-        if paths and _publishes_is_partial(node):
-            found[paths[0]] = node.name
+        if not _publishes_is_partial(node):
+            continue
+        for decorator in node.decorator_list:
+            path = _route_path(decorator)
+            if path:
+                found[path] = node.name
     return found
