@@ -1067,6 +1067,88 @@ describe('Prioritization', () => {
     })
   })
 
+  describe('the heading says how long the list is', () => {
+    /** The badge beside the `<h1>`, or null while it is withheld. */
+    const countBadge = () => document.getElementById('prioritization-row-count')
+
+    it('counts the rows the list below renders, with their noun', async () => {
+      // Two projects in the default harness, so two rows — p1's PRD and PR/FAQ are
+      // ONE row. Counting documents would say three, which is the miscount the stats
+      // cards already fixed once; this badge reads the same array the list maps over.
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(countBadge()).toHaveTextContent('2 proposals')
+      })
+      // Adjacent to the heading, not floated somewhere else on the page: the point is
+      // that a reader looking at the title can see the size without scrolling.
+      const heading = screen.getByRole('heading', { name: 'Prioritization' })
+      expect(heading.parentElement).toContainElement(countBadge())
+    })
+
+    it('agrees with the Total Proposals card', async () => {
+      // Two numbers for one quantity is how a page loses a reader's trust, which is
+      // the whole reason this badge exists. Both read `allRows`, and this is what
+      // holds them to it.
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(countBadge()).toBeInTheDocument()
+      })
+      const grid = screen.getByText('Total Proposals').closest<HTMLElement>('div.grid')
+      const total = within(grid as HTMLElement).getByText('Total Proposals')
+        .previousElementSibling?.textContent
+      expect(countBadge()?.textContent).toContain(total ?? '')
+    })
+
+    it('says nothing while the list is still being read', async () => {
+      // A `0` here would be a claim about a backlog nobody has read yet — and it is
+      // the one number a reader would take as "the list finished and it is empty".
+      // The list's own spinner already covers this state.
+      mockGetProjects.mockReturnValue(new Promise(() => {}))
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('Loading documents...')).toBeInTheDocument()
+      })
+      expect(countBadge()).toBeNull()
+      // The heading itself is never withheld — only the count.
+      expect(screen.getByText('Prioritization')).toBeInTheDocument()
+    })
+
+    it('reads zero once the read lands empty', async () => {
+      // The opposite state, and the one the badge is most use in: the read finished
+      // and there is genuinely nothing, which a reader can now tell apart from a read
+      // that never landed.
+      mockGetProjects.mockResolvedValue({ projects: [] })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(screen.getByText('No Documents Found')).toBeInTheDocument()
+      })
+      expect(countBadge()).toHaveTextContent('0 proposals')
+    })
+
+    it('counts a single row in the singular', async () => {
+      // `count` interpolation, so an English reader gets "1 proposal" rather than
+      // "1 proposals" — and every locale carries an `_other` form, so no reader gets
+      // a raw key path.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Only One', created_at: '2025-01-01' },
+      ]))
+      mockGetPrioritizationScores.mockResolvedValue({ rows: DEFAULT_ROWS, scores: {}, aggregates: {} })
+
+      renderPrioritization()
+
+      await waitFor(() => {
+        expect(countBadge()).toHaveTextContent('1 proposal')
+      })
+      expect(countBadge()).not.toHaveTextContent('1 proposals')
+    })
+  })
+
   describe('loading state', () => {
     it('shows loading spinner while fetching', async () => {
       mockGetProjects.mockReturnValue(new Promise(() => {})) // Never resolves

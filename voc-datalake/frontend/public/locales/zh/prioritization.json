@@ -77,6 +77,8 @@
     "description": "对每个文档进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
     "title": "优先级排序框架"
   },
+  "headingCount_one": "{{count}} 个提案",
+  "headingCount_other": "{{count}} 个提案",
   "loading": "加载文档中...",
   "noteTooLong": {
     "description": "备注最多 {{max}} 个字符，超出长度的备注会被拒绝，而不会被截断。请缩短所编辑行的备注，然后重新保存。目前尚未保存任何内容。",
