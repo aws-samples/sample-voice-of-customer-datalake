@@ -461,6 +461,10 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 # window can be short (a truncated read, and a window wider than the ~90 days
 # aggregates are retained for). A description is what a model reasons about, so one
 # that omits half the cause is the same class of untruth in prose.
+#
+# Declared but deliberately NOT `required` on either tool; the argument is at
+# `_IS_PARTIAL_DESCRIPTION`, where the declaration is, and it turns on these two
+# tools forwarding the route body unprojected.
 MCP_SERVER_VERSION = "3.7.0"
 
 
@@ -1808,6 +1812,17 @@ _SUMMARY_TEXT_LIMIT = 500
 #
 # Either way the counts are a LOWER BOUND, which is the operative fact and so is
 # said in those words rather than left to be inferred from "incomplete".
+#
+# DECLARED BUT NOT `required`, unlike `search_feedback`'s copy of the same flag,
+# and the difference is the projection: `search_feedback` BUILDS its body (`items`
+# from `_FEEDBACK_SUMMARY_PROPERTIES`), so every key it promises is a key it
+# writes, and a missing `is_partial` there really would be a bug. These two
+# forward the route body unprojected and fall back to `{}` when the delegated
+# payload is not a dict — so a `required` list here would make that honest empty
+# answer a schema violation in a validating client, reporting a transport-level
+# degradation as a malformed tool. Optional-and-declared is what these shapes can
+# truthfully say: the field is readable when present, and absent means the route
+# did not send it, not that the window was complete.
 _IS_PARTIAL_DESCRIPTION = (
     "True when the window could not be answered in full — a metric read stopped "
     "short, or the window is wider than aggregates are retained for. The counts "

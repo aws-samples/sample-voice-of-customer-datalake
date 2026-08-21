@@ -249,23 +249,30 @@ def _window_exceeds_aggregate_retention(days: int) -> bool:
     read that may or may not happen, while this is a property of the request
     itself and holds even when every read succeeds and returns every row it can.
 
-    The aggregator gives each aggregate row a TTL of AGGREGATE_RETENTION_DAYS
-    days, so DynamoDB has already deleted the rows older than that. `validate_days`
-    admits up to MAX_FEEDBACK_WINDOW_DAYS (365), so `?days=365` queries a
-    sort-key range whose early part cannot exist any more: the query succeeds,
-    the totals under-report by whatever expired, and nothing in the read notices.
-    A window wider than the retention horizon simply CANNOT be answered
-    completely from aggregates, which is exactly the claim `is_partial` exists to
-    make.
+    Why the horizon exists at all, and why it is narrower than the widest window
+    a caller may request, is argued once where the value is declared —
+    `AGGREGATE_RETENTION_DAYS` in `shared/api.py`. The consequence here: past that
+    horizon the rows are already deleted, so the query succeeds, the totals
+    under-report by whatever expired, and nothing in the read notices. Such a
+    window simply CANNOT be answered completely from aggregates, which is exactly
+    the claim `is_partial` exists to make.
 
     Strictly greater-than: a window equal to the retention is the widest one the
     rows still cover, so flagging it would cry partial over a complete answer and
     teach callers to ignore the flag.
+
+    The boundary is the GUARANTEE, not the observed state: DynamoDB deletes
+    expired items on its own schedule, typically within 48 hours of the TTL, so a
+    window just past the horizon will sometimes still be answerable in full and
+    get reported partial anyway. That is the safe direction to be wrong in — a
+    lower bound presented as a lower bound — and the alternative is asking the
+    table whether the rows are still there, which is a read per date and answers
+    a question the caller did not ask.
     """
     return days > AGGREGATE_RETENTION_DAYS
 
 
-def _read_was_truncated(response: dict) -> bool:
+def _index_read_was_truncated(response: dict) -> bool:
     """True when a single unpaged query left rows behind.
 
     `/metrics/sources`, `/metrics/personas` and `/feedback/entities` read the
@@ -537,7 +544,7 @@ def get_entities():
         IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('source')
     )
-    is_partial = is_partial or _read_was_truncated(source_response)
+    is_partial = is_partial or _index_read_was_truncated(source_response)
     source_totals = {}
     date_range = set((current_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days))
     for item in source_response.get('Items', []):
@@ -550,7 +557,7 @@ def get_entities():
         IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
         KeyConditionExpression=Key('metric_type').eq('persona')
     )
-    is_partial = is_partial or _read_was_truncated(persona_response)
+    is_partial = is_partial or _index_read_was_truncated(persona_response)
     persona_counts = {}
     for item in persona_response.get('Items', []):
         if item.get('sk') in date_range:
@@ -986,7 +993,7 @@ def get_source_metrics():
     )
     is_partial = (
         _window_exceeds_aggregate_retention(days)
-        or _read_was_truncated(response)
+        or _index_read_was_truncated(response)
     )
 
     source_totals = {}
@@ -1033,7 +1040,7 @@ def get_persona_metrics():
     )
     is_partial = (
         _window_exceeds_aggregate_retention(days)
-        or _read_was_truncated(response)
+        or _index_read_was_truncated(response)
     )
 
     personas = {}
