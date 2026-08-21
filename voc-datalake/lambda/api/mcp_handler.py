@@ -977,10 +977,22 @@ def _header_values(event: dict, name: str) -> list[tuple[str, str]]:
       • deduplicating on the raw candidate with `in` (i.e. `==`) refolded the
         pairs Python equates across types — `True`/`1`, `False`/`0`, `1`/`1.0` —
         so `multiValueHeaders={'origin': [True, 1]}` was the same fail-open one
-        equality quirk deeper. `repr` distinguishes exactly what a reader of the
-        refusal message can distinguish, which makes the dedup identity and the
-        displayed identity THE SAME FACT: the message can never again assert two
-        values differ while displaying two identical ones.
+        equality quirk deeper. The dedup identity and the displayed identity are
+        now THE SAME FACT: the message can never again assert two values differ
+        while displaying two identical ones.
+
+    The precise claim, and its limit: `repr` never folds two values a reader
+    could tell apart IN THE MESSAGE. It does fold two values that merely compare
+    unequal while spelling the same — two `float('nan')` candidates
+    (`nan != nan`, identical repr) fold to one, coerce to `''`, and an
+    all-unusable `Origin` reads as absent. Accepted deliberately rather than
+    patched with an identity-based key: the ambiguity this guard refuses is two
+    DISTINGUISHABLE claims (an intermediary acting on one while this server acts
+    on the other), and two indistinguishable spellings of one unusable value are
+    the single-unusable-value case restated — which the anti-overreach tests pin
+    as keeping its existing empty-value reading. A refusal here would display
+    `nan, nan`: the self-contradicting message again, for values no reader and
+    no intermediary could route apart.
 
     `test_two_unusable_values_for_one_header_are_still_a_duplicate` and
     `test_two_unusable_origins_are_refused_not_read_as_absent` fail if the
