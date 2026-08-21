@@ -64,6 +64,28 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       form was found to DROP counts rather than protect anything. Making the
       unreadable-day case fail closed fails
       `test_an_unreadable_day_is_treated_as_live`.
+      The check is PER SIDE: restoring `old_live or new_live` fails
+      `test_an_edit_moving_an_item_onto_a_dead_day_creates_no_row_there`, and
+      over-correcting it to `old_live and new_live` fails
+      `test_that_edit_still_decrements_the_live_day_it_left` plus two others — so
+      neither direction of that guard can be got wrong silently. Evaluating the
+      sentinel once per SIDE rather than per distinct DATE fails
+      `test_a_same_day_rebucket_reads_the_sentinel_once`.
+
+  TestTheAveragesTwoHalvesCannotSplit
+    — the average is two conditional writes to ONE row, so unlike the counters it
+      can split: dropping `not reversal_refused` fails
+      `test_a_refused_reversal_does_not_let_its_increment_land`, and skipping the
+      re-application unconditionally (the over-correction) fails four tests
+      including `test_an_item_gaining_a_score_it_never_had_is_applied`. Moto-backed
+      of necessity — a mock cannot refuse the reversal, so the pairing rule would
+      never be exercised against one.
+
+  TestTheDaySentinelIsTheCounterEveryItemWrites
+    — `_day_has_aggregates`'s soundness is a fact about `counter_dimensions`, so it
+      is asserted rather than commented. Spelling the sentinel as a second literal
+      fails 13 tests; logging a non-transient read failure at `warning` fails
+      `test_a_denied_day_read_fails_open_but_is_logged_as_an_error`.
 
   TestRedeliveryMovesACounterTwice
     — the KNOWN RESIDUAL, pinned at what the code really does rather than at what
@@ -87,7 +109,17 @@ decisions inside it that a naive implementation gets wrong. The revert map:
   TestEachBehaviourEmitsItsOwnMetric
     — collapsing the three metrics back into one fails all of these. Emitting the
       rebucket metric unconditionally fails
-      `test_an_edit_that_moved_nothing_counts_as_nothing`.
+      `test_an_edit_that_moved_nothing_counts_as_nothing`. Counting writes
+      ATTEMPTED rather than LANDED — in `apply_counter_keys`, or by having
+      `update_counter` always report success — fails
+      `test_an_edit_whose_every_write_was_refused_counts_as_nothing`, whose whole
+      subject is that "aggregates moved" is a claim about writes that landed.
+
+  TestAReversalRefusesToGuessTheDay::test_a_dateless_insert_still_buckets_under_today
+    — freezes the clock the HANDLER reads (`_frozen_clock`) rather than reading
+      `datetime.now()` a second time in the test. Restoring the second read fails
+      the test whenever the two clocks disagree, which across UTC midnight they do;
+      deleting the fallback it is a positive control for fails it always.
 
 Each of those reverts was RUN, not predicted. Two more were run for the same
 reason:
@@ -104,7 +136,8 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime
 from moto import mock_aws
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
@@ -163,6 +196,31 @@ def _writes(mock_table) -> list[tuple[str, str, str, int]]:
 def _dimensions(writes) -> set[tuple[str, str, str]]:
     """The (pk, sk, field) triples written, dropping the direction."""
     return {(pk, sk, field) for pk, sk, field, _ in writes}
+
+
+@contextmanager
+def _frozen_clock(instant: str):
+    """Freeze the clock the HANDLER reads, yielding the date it will bucket under.
+
+    Any test whose expected value is "today" has to read the same clock the code
+    does, or the two disagree across UTC midnight and the test fails for no defect.
+    Yielding the date rather than letting the caller compute one is what makes that
+    impossible to get wrong here.
+
+    A `datetime` SUBCLASS, not a MagicMock: the handler also calls `.timestamp()`
+    for the TTL and `.isoformat()` for `updated_at`, and a mock would answer those
+    with mocks that DynamoDB then refuses — so the frozen clock has to be a real
+    datetime in every respect but `now`.
+    """
+    fixed = datetime.fromisoformat(instant)
+
+    class _Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    with patch('aggregator.handler.datetime', _Frozen):
+        yield fixed.strftime('%Y-%m-%d')
 
 
 @pytest.fixture
@@ -1005,15 +1063,25 @@ class TestAReversalRefusesToGuessTheDay:
 
     @patch('aggregator.handler.aggregates_table')
     def test_a_dateless_insert_still_buckets_under_today(self, mock_table):
-        """The today-fallback is KEPT for the insert path — behaviour preserved."""
+        """The today-fallback is KEPT for the insert path — behaviour preserved.
+
+        The clock is FROZEN rather than read twice. Reading
+        `datetime.now(timezone.utc)` here and letting the handler read its own
+        compares two independent clocks, so an invocation that straddles UTC
+        midnight fails for a non-defect reason — one run in ~86400, and CI at
+        midnight UTC is not exotic. This test is a deliberate positive control
+        against someone tidying up the insert path's fallback after the reversal
+        paths stopped using it, so it has to be unconditionally reliable rather
+        than nearly so. Deleting the fallback still fails it: without one an
+        undated insert writes nothing at all.
+        """
         from aggregator.handler import record_handler
 
-        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-
-        result = record_handler(_record('INSERT', new={'source_platform': 'webscraper'}))
+        with _frozen_clock('2025-06-01T12:00:00+00:00') as frozen:
+            result = record_handler(_record('INSERT', new={'source_platform': 'webscraper'}))
 
         assert result == {"status": "success"}
-        assert {sk for _, sk, _, _ in _writes(mock_table)} == {today}
+        assert {sk for _, sk, _, _ in _writes(mock_table)} == {frozen}
 
 
 class TestARebucketCannotResurrectAnAgedOutDay:
@@ -1035,6 +1103,17 @@ class TestARebucketCannotResurrectAnAgedOutDay:
     the test that failed when this was first written as `attribute_exists(pk)` per
     increment: the obvious form drops the count of every edit that moves an item
     into a category no item has used that day yet.
+
+    WHY IT IS ASKED PER SIDE. `old_live or new_live` reads as a reasonable "is this
+    edit a real correction?", and an edit whose `date` moves an item FROM a live day
+    TO a dead one satisfies it — after which every increment, which carries no
+    condition by design, lands on the dead day and recreates the whole fragment,
+    `daily_total` included, so the sentinel afterwards calls the dead day live for
+    every later edit. Both directions of that are pinned:
+    `test_an_edit_moving_an_item_onto_a_dead_day_creates_no_row_there` fails on the
+    permissive form, and `test_that_edit_still_decrements_the_live_day_it_left`
+    fails on the over-correction (`and`) that would refuse the whole edit and leave
+    the item counted on a day it has left.
 
     Deleting the `_day_has_aggregates` check fails the first three here. All run
     against moto, because a mock can neither refuse a write nor answer a get_item.
@@ -1135,6 +1214,84 @@ class TestARebucketCannotResurrectAnAgedOutDay:
         assert counts[('METRIC#daily_total', '2025-02-01')] == Decimal(2)
         assert ('METRIC#daily_total', '2024-01-01') not in counts
 
+    def test_an_edit_moving_an_item_onto_a_dead_day_creates_no_row_there(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """The direction `old_live or new_live` let through.
+
+        The item leaves a LIVE day for one whose aggregates are gone. A guard that
+        asks only whether EITHER side is live passes this, and then every increment
+        — which carries no condition, deliberately, so a new bucket on a live day can
+        be created — lands on the dead day: seven freshly 90-day-TTL'd rows for a
+        date whose real totals were collected months ago, `daily_sentiment_avg` among
+        them. Worse than the pre-guard behaviour in one respect, because
+        `METRIC#daily_total` is recreated too and the sentinel then reports the dead
+        day as LIVE for every subsequent edit.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'date': '2024-01-01'}))
+
+        dead_day = [i for i in real_aggregates_table.scan()['Items'] if i['sk'] == '2024-01-01']
+        assert dead_day == []
+
+    def test_that_edit_still_decrements_the_live_day_it_left(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """Per SIDE, not all-or-nothing: the live half of that edit is real.
+
+        The item genuinely left 2025-01-15, and that day's aggregates are still
+        there to correct. Refusing the whole edit because its destination is gone
+        would leave the item counted on a day it is no longer on — the overstatement
+        this module exists to remove.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'date': '2024-01-01'}))
+
+        counts = {(i['pk'], i['sk']): i['count'] for i in real_aggregates_table.scan()['Items']}
+        assert counts[('METRIC#daily_total', '2025-01-15')] == Decimal(0)
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_same_day_rebucket_reads_the_sentinel_once(self, mock_table, sample_feedback_item):
+        """One read per DISTINCT date, not one per side.
+
+        `date` is not in the Data Explorer's updatable_fields, so both dates being
+        equal is the common case — and the short-circuit `or` this replaced only
+        skipped the second read when the FIRST answered True, so the dead-day path
+        (the one that ends in a skip) read the identical key twice.
+        """
+        from aggregator.handler import record_handler
+
+        mock_table.get_item.return_value = {}
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'category': 'billing'}))
+
+        assert mock_table.get_item.call_count == 1
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_cross_day_rebucket_reads_both_days(self, mock_table, sample_feedback_item):
+        """Positive control for the test above: two dates really are two reads.
+
+        Without this, collapsing the check to a single read of one side would pass
+        the same-day assertion while leaving the other side unchecked.
+        """
+        from aggregator.handler import record_handler
+
+        mock_table.get_item.return_value = {}
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'date': '2025-02-01'}))
+
+        assert sorted(c.kwargs['Key']['sk'] for c in mock_table.get_item.call_args_list) == [
+            '2025-01-15', '2025-02-01',
+        ]
+
     @patch('aggregator.handler.aggregates_table')
     def test_an_edit_touching_no_dimension_costs_no_read(self, mock_table, sample_feedback_item):
         """The common case pays for nothing: no writes AND no day check.
@@ -1169,6 +1326,133 @@ class TestARebucketCannotResurrectAnAgedOutDay:
                                new={**sample_feedback_item, 'category': 'billing'}))
 
         assert mock_table.update_item.call_count > 0
+
+
+class TestTheAveragesTwoHalvesCannotSplit:
+    """A rebucket's average reversal and re-application stand or fall together.
+
+    The counter dimensions are moved as a symmetric difference so that `-1` and `+1`
+    never land on one key. The average gets no such protection from that argument: it
+    is TWO conditional writes to (SENTIMENT_AVG_PK, date), and `#count >= :floor` can
+    refuse the reversal against a row already at zero while the re-application
+    applies unconditionally. The row then claims one item, at the edited score, that
+    no present feedback justifies — and `get_summary` divides `sum/count` per date and
+    weights it by count into the headline `avg_sentiment`, so it is served-data
+    corruption rather than a skew nobody reads.
+
+    Distinct from the `sum`-vs-`count` residual in `update_average`'s docstring, which
+    is about a reversal quoting the WRONG score. Here both scores are right and it is
+    the pairing that breaks.
+
+    All moto-backed: a mock cannot refuse a write, so against one the reversal would
+    always "land" and the pairing rule would never be exercised.
+    """
+
+    @staticmethod
+    def _avg(table, date='2025-01-15'):
+        item = table.get_item(Key={'pk': 'METRIC#daily_sentiment_avg', 'sk': date}).get('Item')
+        return None if item is None else (item['count'], item['sum'])
+
+    def test_a_refused_reversal_does_not_let_its_increment_land(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """The reproduction: a LIVE day whose average row sits at count == 0.
+
+        An insert then a delete leaves the row present (so the day is live and the
+        rebucket proceeds) and empty. The score edit's reversal is refused by the
+        floor; its re-application must not apply alone.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('REMOVE', old=sample_feedback_item))
+        assert self._avg(real_aggregates_table) == (Decimal(0), Decimal(0))
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+
+        assert self._avg(real_aggregates_table) == (Decimal(0), Decimal(0))
+
+    def test_an_edit_on_a_day_with_items_still_moves_the_average(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """Positive control: the pairing must not refuse an ordinary edit.
+
+        Without this, skipping the increment unconditionally would pass the test
+        above while silently dropping every legitimate score correction.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+
+        assert self._avg(real_aggregates_table) == (Decimal(1), Decimal('0.10'))
+
+    def test_an_item_gaining_a_score_it_never_had_is_applied(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """No reversal to pair with, so nothing is left dangling by applying.
+
+        A zero old score contributed nothing to the average, so there is no half that
+        could have been refused — the increment is unconditional and correct.
+        """
+        from aggregator.handler import record_handler
+
+        scoreless = {**sample_feedback_item, 'sentiment_score': Decimal(0)}
+        record_handler(_record('INSERT', new=scoreless))
+        record_handler(_record('MODIFY', old=scoreless,
+                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.40')}))
+
+        assert self._avg(real_aggregates_table) == (Decimal(1), Decimal('0.4'))
+
+    def test_an_item_losing_its_score_is_reversed_with_nothing_to_re_apply(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'sentiment_score': Decimal(0)}))
+
+        assert self._avg(real_aggregates_table) == (Decimal(0), Decimal(0))
+
+    def test_a_score_edit_moving_off_a_dead_day_still_lands_on_the_live_one(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """A dead old day has no reversal to pair with either, and must not block.
+
+        The old row is gone, so there is no half to be inconsistent with; refusing
+        the increment would lose the item from the average altogether — the
+        count-dropping failure `_day_has_aggregates` exists to avoid.
+        """
+        from aggregator.handler import record_handler
+
+        arrived = {**sample_feedback_item, 'date': '2025-02-01'}
+        record_handler(_record('INSERT', new=arrived))
+        record_handler(_record('MODIFY',
+                               old={**sample_feedback_item, 'date': '2024-01-01',
+                                    'sentiment_score': Decimal('0.20')},
+                               new=arrived))
+
+        assert self._avg(real_aggregates_table, '2025-02-01') == (Decimal(2), Decimal('1.70'))
+        assert self._avg(real_aggregates_table, '2024-01-01') is None
+
+    def test_a_refused_reversal_is_still_counted_as_refused(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """Skipping the pair must not also hide it: the refusal stays visible."""
+        from aggregator.handler import REFUSED_METRIC, record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        record_handler(_record('REMOVE', old=sample_feedback_item))
+
+        with patch('aggregator.handler.metrics') as mock_metrics:
+            record_handler(_record('MODIFY', old=sample_feedback_item,
+                                   new={**sample_feedback_item,
+                                        'sentiment_score': Decimal('0.10')}))
+
+        assert REFUSED_METRIC in [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
 
 
 class TestRedeliveryMovesACounterTwice:
@@ -1309,6 +1593,85 @@ class TestTtlExpiryIsReadFromTheEventNotFromPowertools:
         assert is_ttl_expiry(record) is False
 
 
+class TestTheDaySentinelIsTheCounterEveryItemWrites:
+    """`_day_has_aggregates`'s argument depends on a fact about another function.
+
+    Reading `METRIC#daily_total` is only a sound test of "is this day still here?"
+    because that is the ONE counter every item writes unconditionally. That premise
+    lives in `counter_dimensions`, so the two read one constant — and this class
+    asserts the premise rather than trusting the comment that states it.
+    """
+
+    def test_the_sentinel_is_a_dimension_every_item_writes(self):
+        from aggregator.handler import DAILY_TOTAL_PK, counter_dimensions
+
+        for item in ({}, {'date': '2025-01-15'}, {'urgency': 'high', 'category': 'billing'}):
+            assert (DAILY_TOTAL_PK, 'count') in counter_dimensions(item), (
+                f'{item} writes no {DAILY_TOTAL_PK} counter, so its presence no '
+                f'longer means "this day was ingested" and _day_has_aggregates is '
+                f'reading a sentinel that can be absent for a live day.'
+            )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_the_day_check_reads_that_same_pk(self, mock_table, sample_feedback_item):
+        """One constant, so the sentinel and the dimension cannot drift apart."""
+        from aggregator.handler import DAILY_TOTAL_PK, record_handler
+
+        mock_table.get_item.return_value = {}
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'category': 'billing'}))
+
+        assert [c.kwargs['Key']['pk'] for c in mock_table.get_item.call_args_list] == [
+            DAILY_TOTAL_PK,
+        ]
+
+    @patch('aggregator.handler.logger')
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_throttled_day_read_warns_and_fails_open(
+        self, mock_table, mock_logger, sample_feedback_item
+    ):
+        """A blip: survive it, and say so at the level a blip deserves."""
+        from aggregator.handler import record_handler
+
+        mock_table.get_item.side_effect = ClientError(
+            {'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}},
+            'GetItem',
+        )
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'category': 'billing'}))
+
+        assert mock_table.update_item.call_count > 0
+        assert mock_logger.warning.called
+        assert not mock_logger.error.called
+
+    @patch('aggregator.handler.logger')
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_denied_day_read_fails_open_but_is_logged_as_an_error(
+        self, mock_table, mock_logger, sample_feedback_item
+    ):
+        """A misconfiguration is not a bad afternoon.
+
+        `AccessDeniedException` means this guard is PERMANENTLY inert: every edit to
+        an aged-out day plants the fragments it exists to prevent, indefinitely. The
+        fail-open direction is still right — dropping every edit is worse — but at
+        `warning` it is indistinguishable from the throttle the fail-open was
+        designed for, so nothing would ever surface it.
+        """
+        from aggregator.handler import record_handler
+
+        mock_table.get_item.side_effect = ClientError(
+            {'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'GetItem',
+        )
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'category': 'billing'}))
+
+        assert mock_table.update_item.call_count > 0
+        assert mock_logger.error.called
+
+
 class TestEachBehaviourEmitsItsOwnMetric:
     """Three materially different behaviours, three metrics.
 
@@ -1393,6 +1756,49 @@ class TestEachBehaviourEmitsItsOwnMetric:
                                new={**sample_feedback_item, 'category': 'billing'}))
 
         assert self._names(mock_metrics) == []
+
+    @patch('aggregator.handler.metrics')
+    def test_an_edit_whose_every_write_was_refused_counts_as_nothing(
+        self, mock_metrics, real_aggregates_table, sample_feedback_item
+    ):
+        """"Aggregates moved" is a claim about writes that LANDED.
+
+        A live day, and an edit whose only changed dimension is a decrement of
+        `METRIC#urgent` — a row that never existed, because the item was never
+        urgent. One write attempted, refused by its condition, zero aggregates
+        moved. Counting attempts would put a datapoint on the one metric an operator
+        reads to confirm reversals are happening, for an edit that moved nothing.
+
+        Moto-backed of necessity: a mock cannot refuse the write, so against one this
+        would pass with the landed/attempted distinction deleted.
+        """
+        from aggregator.handler import REFUSED_METRIC, record_handler
+
+        # A live day (daily_total present) with no `METRIC#urgent` row on it.
+        real_aggregates_table.put_item(
+            Item={'pk': 'METRIC#daily_total', 'sk': '2025-01-15', 'count': Decimal(1)}
+        )
+
+        record_handler(_record('MODIFY', old={**sample_feedback_item, 'urgency': 'high'},
+                               new={**sample_feedback_item, 'urgency': 'low'}))
+
+        # The refusal is visible; the rebucket is not claimed.
+        assert self._names(mock_metrics) == [REFUSED_METRIC]
+
+    @patch('aggregator.handler.metrics')
+    def test_an_edit_that_did_move_a_counter_still_counts_as_rebucketed(
+        self, mock_metrics, real_aggregates_table, sample_feedback_item
+    ):
+        """Positive control: counting LANDED writes must not stop counting at all."""
+        from aggregator.handler import REBUCKETED_METRIC, record_handler
+
+        record_handler(_record('INSERT', new=sample_feedback_item))
+        mock_metrics.reset_mock()
+
+        record_handler(_record('MODIFY', old=sample_feedback_item,
+                               new={**sample_feedback_item, 'category': 'billing'}))
+
+        assert REBUCKETED_METRIC in self._names(mock_metrics)
 
     @patch('aggregator.handler.metrics')
     @patch('aggregator.handler.aggregates_table')

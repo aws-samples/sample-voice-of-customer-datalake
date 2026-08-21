@@ -46,7 +46,16 @@ Which writes may create a row, and which may not
   ago. `validate_days` admits windows up to 365 days, so `/metrics/summary` and
   `/metrics/trends` would serve those fragments as the day's totals. The check is
   on the DAY, not per row — see `_day_has_aggregates` for why the per-row form
-  drops legitimate counts instead of protecting anything.
+  drops legitimate counts instead of protecting anything — and it is applied PER
+  SIDE, because an edit can move an item from a live day onto a dead one and every
+  increment then lands on the dead day.
+
+A rebucket's two halves of the AVERAGE stand or fall together. The counters cannot
+split (a symmetric difference never sends `-1` and `+1` to one key), but the average
+is two conditional writes to one row: a reversal refused against a row at
+`count == 0` while the re-application applies would leave that row asserting an item
+no feedback justifies, and `get_summary` divides `sum/count` into the day's average
+and weights it into the headline number. See `_rebucket_average`.
 
 A reversal also refuses to GUESS a date. `_image_date` falls back to today when an
 image carries no `date` field, which is defensible for an INSERT (today is at
@@ -132,6 +141,35 @@ REFUSED_METRIC = "AggregateWriteRefused"
 # lockstep is about the two sides agreeing, not about which of the two wins.
 PERSONA_FIELD = 'persona_name'
 
+# The two aggregate rows this module names outside `counter_dimensions`, hoisted
+# for the reason PERSONA_FIELD is: a second unmarked copy of one of these strings
+# is what makes an argument elsewhere in the file true or false.
+#
+# DAILY_TOTAL_PK is the sentinel `_day_has_aggregates` reads, and that read is only
+# a sound test of "is this day still here?" because this is the ONE counter every
+# item writes unconditionally — see that docstring. Spelling it twice would leave a
+# reader of the sentinel having to know that the copy in `counter_dimensions` is
+# what licenses the argument.
+DAILY_TOTAL_PK = 'METRIC#daily_total'
+SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
+
+# Client error codes worth failing OPEN for without shouting: a blip, a throttle, a
+# retryable server-side fault. Anything outside this set is a misconfiguration
+# (`AccessDeniedException`, `ValidationException`, `ResourceNotFoundException`), and
+# `_day_has_aggregates` still fails open on it — but says so at `error`, because a
+# permanently inert guard must not look like a bad afternoon. See that docstring.
+_TRANSIENT_READ_ERRORS = frozenset({
+    'ProvisionedThroughputExceededException',
+    'ThrottlingException',
+    'ThrottlingException.TooManyRequests',
+    'RequestLimitExceeded',
+    'InternalServerError',
+    'ServiceUnavailable',
+    'RequestTimeout',
+    'RequestTimeoutException',
+    'TransactionConflictException',
+})
+
 
 def get_metric_type(pk: str) -> str | None:
     """Extract metric type from pk for GSI indexing."""
@@ -153,8 +191,15 @@ def _log_refusal(what: str, pk: str, sk: str):
     metrics.add_metric(name=REFUSED_METRIC, unit="Count", value=1)
 
 
-def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: int = 90):
+def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: int = 90) -> bool:
     """Atomically update a counter in the aggregates table.
+
+    Returns whether the write LANDED. False means a condition refused it, which is
+    an ordinary outcome for a decrement and never happens to an increment (they
+    carry no condition). Callers that must know the difference: the rebucket, whose
+    two halves have to stand or fall together, and the metric that claims
+    "aggregates moved" — a count of writes ATTEMPTED would make that claim false
+    for an edit whose every write was refused.
 
     An increment may create the row — that is how a date's first item registers,
     and it stays true for a REBUCKET, because the first item edited into a category
@@ -211,10 +256,15 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: i
         if 'ConditionExpression' not in kwargs or not is_conditional_check_failure(e):
             raise
         _log_refusal(f'decrement of {field}', pk, sk)
+        return False
+    return True
 
 
-def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90, sign: int = 1):
+def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90, sign: int = 1) -> bool:
     """Update running average in aggregates table.
+
+    Returns whether the write LANDED, like `update_counter` and for the same
+    reasons — the rebucket's reversal and re-application must not be able to split.
 
     `sign=-1` reverses a previously recorded value (subtract from `sum`, decrement
     `count`), under the same condition as an `update_counter` decrement and for the
@@ -268,6 +318,8 @@ def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90, sign: i
         if 'ConditionExpression' not in kwargs or not is_conditional_check_failure(e):
             raise
         _log_refusal('reversal of average', pk, sk)
+        return False
+    return True
 
 
 def _day_has_aggregates(date: str) -> bool:
@@ -283,22 +335,47 @@ def _day_has_aggregates(date: str) -> bool:
     repaired for, so the per-row form is not the conservative choice it appears to
     be. (A moto test caught it: `test_rebucketing_a_day_that_does_have_rows_...`.)
 
-    `METRIC#daily_total` is the right sentinel because EVERY item writes it — it is
-    the one counter with no condition attached to its presence, so it exists if and
-    only if some item of that date was ingested and the row has not yet aged out.
-    If it is gone, the whole day is gone, and an edit to an item of that day must
-    leave no trace rather than plant a one-count fragment under a fresh 90-day TTL
-    that a 365-day metrics window would serve as the day's totals.
+    DAILY_TOTAL_PK is the right sentinel because EVERY item writes it — it is the
+    one counter with no condition attached to its presence, so it exists if and only
+    if some item of that date was ingested and the row has not yet aged out. If it is
+    gone, the whole day is gone, and an edit to an item of that day must leave no
+    trace rather than plant a one-count fragment under a fresh 90-day TTL that a
+    365-day metrics window would serve as the day's totals. That argument depends on
+    `counter_dimensions` writing this same pk unconditionally, which is why the two
+    read one constant rather than two matching literals.
 
-    A read per rebucket, on a day whose edits are rare, against a table this
-    function already holds read access to. A failed read answers True: a rebucket
-    that cannot check is treated as a live day, which risks one fragment rather than
-    silently dropping every edit if the table is briefly unreadable.
+    A read per rebucket, on a day whose edits are rare, against a table the shared
+    `processingRole` already holds read access to (`aggregatesTable.grantReadWriteData`
+    in processing-stack-consolidated.ts).
+
+    A FAILED READ ANSWERS TRUE: a rebucket that cannot check is treated as a live
+    day, which risks one recoverable fragment rather than silently dropping every
+    edit while the table is briefly unreadable. But the two reasons a read fails are
+    not equally survivable, so they are not logged alike. A throttle is a bad
+    afternoon; `AccessDeniedException` or `ValidationException` is a
+    misconfiguration, under which this guard is PERMANENTLY inert and every edit to
+    an aged-out day plants the fragments the guard exists to prevent — indefinitely,
+    and with `logger.warning` indistinguishable from the blip it was designed for.
+    Hence `logger.error` for anything outside `_TRANSIENT_READ_ERRORS`: the fail-open
+    direction is unchanged, its cause is not silent.
     """
     try:
-        response = aggregates_table.get_item(Key={'pk': 'METRIC#daily_total', 'sk': date})
+        response = aggregates_table.get_item(Key={'pk': DAILY_TOTAL_PK, 'sk': date})
     except ClientError as e:
-        logger.warning(f"Could not read the daily total for {date}: {e}; treating the day as live")
+        code = e.response.get('Error', {}).get('Code', '') if isinstance(e.response, Mapping) else ''
+        message = (
+            f"Could not read the daily total for {date}: {e}; treating the day as live"
+        )
+        if code in _TRANSIENT_READ_ERRORS:
+            logger.warning(message)
+        else:
+            # Not a blip. Until this is fixed the aged-out-day guard cannot refuse
+            # anything, so say so at a level an operator is alerted on.
+            logger.error(
+                f"{message}. `{code}` is not transient, so this guard is INERT until "
+                f"it is fixed and every edit to an aged-out day will plant aggregate "
+                f"fragments for it."
+            )
         return True
     return 'Item' in response
 
@@ -359,7 +436,10 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     persona = item.get(PERSONA_FIELD) or 'Unknown'
 
     dimensions = [
-        ('METRIC#daily_total', 'count'),
+        # DAILY_TOTAL_PK, not the literal: `_day_has_aggregates` reads this same
+        # constant as its sentinel, and its argument for doing so is that this line
+        # is unconditional. Two spellings would leave that dependency unmarked.
+        (DAILY_TOTAL_PK, 'count'),
         (f'METRIC#daily_source#{source_platform}', 'count'),
         (f'METRIC#daily_category#{category}', 'count'),
         (f'METRIC#daily_sentiment#{sentiment_label}', 'count'),
@@ -395,15 +475,20 @@ def counter_keys(item: dict, date: str) -> set[tuple[str, str, str]]:
     return {(pk, date, field) for pk, field in counter_dimensions(item)}
 
 
-def apply_counter_keys(keys: set[tuple[str, str, str]], sign: int):
-    """Move every named counter by `sign`.
+def apply_counter_keys(keys: set[tuple[str, str, str]], sign: int) -> int:
+    """Move every named counter by `sign`, returning how many writes LANDED.
 
     The ONE place a counter key is unpacked into an `update_counter` call, so
     there is exactly one line in this module deciding what a counter's sort key
     is. Sorted only to make the write order deterministic for tests and logs.
+
+    Landed, not attempted: a caller counting attempts would report that aggregates
+    moved for an edit whose every write was refused by its condition.
     """
-    for pk, date, field in sorted(keys):
-        update_counter(pk, date, field, increment=sign)
+    return sum(
+        1 for pk, date, field in sorted(keys)
+        if update_counter(pk, date, field, increment=sign)
+    )
 
 
 def apply_feedback(item: dict, sign: int, date: str):
@@ -413,7 +498,7 @@ def apply_feedback(item: dict, sign: int, date: str):
     # Daily sentiment score average
     sentiment_score = _image_score(item)
     if sentiment_score:
-        update_average('METRIC#daily_sentiment_avg', date, sentiment_score, sign=sign)
+        update_average(SENTIMENT_AVG_PK, date, sentiment_score, sign=sign)
 
     verb = 'Updated' if sign > 0 else 'Reversed'
     logger.info(
@@ -491,10 +576,33 @@ def process_modified_feedback(old_item: dict, new_item: dict) -> int | None:
     total. Trading one inconsistency for another is not a fix, so the two cases have
     to be told apart, and only the day can tell them apart.
 
-    Returns the number of writes attempted (0 when the day is gone or the edit
-    touched no dimension), or None when either image named no date — a rebucket
-    needs both days, and guessing one of them moves a counter that has nothing to do
-    with the item.
+    THE DAY IS CHECKED PER SIDE, not once for the pair. `old_live or new_live` reads
+    as a reasonable "is this edit a real correction?" and is not: an edit whose
+    `date` moves an item FROM a live day TO a dead one would pass it, and then every
+    unconditional increment lands on the dead day — recreating the whole seven-row
+    fragment, `daily_total` included, so the sentinel afterwards reports the dead day
+    as live for every subsequent edit. So decrements are applied only when the day
+    they leave is live, increments only when the day they arrive at is live. Each
+    distinct date is read once, which also stops the common same-day rebucket paying
+    for two identical reads of one key.
+
+    THE AVERAGE'S TWO HALVES STAND OR FALL TOGETHER. The counter dimensions are a
+    symmetric difference precisely so a `-1` and a `+1` never land on the same key,
+    but the average has no such protection: it is two conditional writes to
+    (SENTIMENT_AVG_PK, date), and `#count >= :floor` can refuse the reversal against
+    a row sitting at zero while the re-application applies unconditionally — leaving
+    the row asserting one item, at the new score, that no present feedback justifies,
+    which `get_summary` then divides into the day's average and weights into the
+    headline `avg_sentiment`. So the increment half is applied only if the reversal
+    half LANDED, or if there was no reversal to pair with (an old score of zero has
+    nothing to reverse, and a dead old day has nothing to correct).
+
+    Returns the number of writes that LANDED (0 when both days are gone, when the
+    edit touched no dimension, or when every write was refused), or None when either
+    image named no date — a rebucket needs both days, and guessing one of them moves
+    a counter that has nothing to do with the item. Landed rather than attempted
+    because `record_handler` spends this as REBUCKETED_METRIC, whose claim is that
+    aggregates MOVED.
     """
     old_date, new_date = _image_date_or_none(old_item), _image_date_or_none(new_item)
     if old_date is None or new_date is None:
@@ -512,34 +620,90 @@ def process_modified_feedback(old_item: dict, new_item: dict) -> int | None:
         # no counter buckets on.
         return 0
 
-    # Checked once for the pair. An edited `date` makes these two different days,
-    # and a live day on either side is enough to make the edit a real correction
-    # rather than an attempt to rewrite history — the half that lands on the dead
-    # day is refused (decrement) or plants nothing anyone asked for.
-    if not (_day_has_aggregates(old_date) or _day_has_aggregates(new_date)):
+    # One read per DISTINCT date: a same-day edit — the common case, since `date` is
+    # not in the Data Explorer's updatable_fields — asks the one question once.
+    liveness = {date: _day_has_aggregates(date) for date in {old_date, new_date}}
+    old_live, new_live = liveness[old_date], liveness[new_date]
+    if not (old_live or new_live):
         logger.info(
             f"Skipping rebucket of an aged-out day ({old_date} -> {new_date}): "
             f"its aggregates have expired and must not be partially recreated"
         )
         return 0
 
-    apply_counter_keys(decrements, -1)
-    apply_counter_keys(increments, 1)
+    writes = 0
+    if old_live:
+        writes += apply_counter_keys(decrements, -1)
+    elif decrements:
+        logger.info(f"Not decrementing {len(decrements)} counter(s) on the aged-out {old_date}")
+    if new_live:
+        writes += apply_counter_keys(increments, 1)
+    elif increments:
+        # The half the `or` used to let through. These are unconditional writes, so
+        # nothing but this branch stops them creating the day.
+        logger.info(f"Not incrementing {len(increments)} counter(s) on the aged-out {new_date}")
 
-    writes = len(decrements) + len(increments)
     if moves_the_average:
-        if old_score:
-            update_average('METRIC#daily_sentiment_avg', old_date, old_score, sign=-1)
-            writes += 1
-        if new_score:
-            update_average('METRIC#daily_sentiment_avg', new_date, new_score, sign=1)
-            writes += 1
+        writes += _rebucket_average(old_date, old_score, old_live, new_date, new_score, new_live)
 
     logger.info(
         f"Rebucketed aggregates: {len(decrements)} decrement(s), "
-        f"{len(increments)} increment(s)"
+        f"{len(increments)} increment(s), {writes} landed"
     )
     return writes
+
+
+def _rebucket_average(
+    old_date: str, old_score: Decimal, old_live: bool,
+    new_date: str, new_score: Decimal, new_live: bool,
+) -> int:
+    """Move one item's contribution to the running average, as a PAIR.
+
+    Split out because the pairing rule is the whole content: reverse first, and
+    re-apply only if that reversal landed. A refused reversal means the row is
+    already at `count == 0` — it is claiming no items — and adding the new score
+    anyway makes it claim one, at the edited score, that no feedback justifies.
+    `get_summary` serves `sum/count` per date and weights it by count into the
+    headline average, so that is served-data corruption rather than a skew nobody
+    reads.
+
+    Two cases have NO reversal to pair with, and the increment is right in both:
+
+      * an old score of zero contributed nothing to the average, so nothing was
+        reversed and nothing is left dangling;
+      * an aged-out old day was never asked (`old_live` is False). Its row is gone,
+        so there is no half to be inconsistent with, and refusing the increment
+        would lose the item from the metrics surface entirely — which is the
+        count-dropping failure `_day_has_aggregates` exists to avoid.
+
+    WHY THE COUNTERS ARE NOT PAIRED THIS WAY, though they look symmetrical: a
+    refused counter decrement and its increment go to DIFFERENT keys (that is what
+    makes them a symmetric difference), so each row is left internally consistent
+    and the only cost is a bucket that reads one high and another one low. This row
+    holds `sum` and `count` for the same day, and a split leaves the two describing
+    different sets of items — a state no per-row floor can express, and the one
+    `get_summary` divides. Pairing here and not there is that difference, not an
+    inconsistency.
+
+    Returns how many of the two writes landed.
+    """
+    landed = 0
+    reversal_refused = False
+    if old_score and old_live:
+        if update_average(SENTIMENT_AVG_PK, old_date, old_score, sign=-1):
+            landed += 1
+        else:
+            reversal_refused = True
+            logger.info(
+                f"Refused reversal of the average on {old_date}, so the paired "
+                f"re-application on {new_date} is skipped: applying it alone would "
+                f"leave the row claiming an item that is not there"
+            )
+
+    if (new_score and new_live and not reversal_refused
+            and update_average(SENTIMENT_AVG_PK, new_date, new_score, sign=1)):
+        landed += 1
+    return landed
 
 
 def deserialize_image(image: dict) -> dict:
@@ -631,8 +795,11 @@ def record_handler(record: DynamoDBRecord) -> dict:
 
     One metric per behaviour, because the three now do materially different things
     and a single `AggregatesUpdated` would leave reversals invisible from outside
-    the table — see the metric constants at the top of this module. A rebucket that
-    wrote nothing emits nothing, so the count means "aggregates moved".
+    the table — see the metric constants at the top of this module. A rebucket emits
+    nothing unless a write LANDED, so the count means "aggregates moved" rather than
+    "a rebucket was attempted": `process_modified_feedback` returns writes that
+    landed, and an edit whose every write was refused by its condition moved nothing
+    while still being separately visible as REFUSED_METRIC.
     """
     event_name = _event_name(record)
     logger.info(f"Processing record: event_name={event_name}")
