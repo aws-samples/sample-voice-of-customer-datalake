@@ -14,6 +14,22 @@ boto3-stubs[dynamodb,s3,sqs,secretsmanager,bedrock-runtime]>=1.35.0
 # Lambda Powertools (same as production)
 aws-lambda-powertools>=3.0.0
 
+# JSON Schema validation, TEST-ONLY — deliberately not in any Lambda layer.
+#
+# `test_mcp_output_schema_conformance.py` validates each MCP tool's declared
+# `outputSchema` against a payload the tool really produces, and it must use the
+# same kind of validator a CLIENT uses: a validating MCP client rejects a whole
+# response with -32602 when `structuredContent` disagrees with the declaration,
+# which is how `list_personas` came to be uncallable in production while every
+# test passed. A hand-rolled subset validator is what that suite used to have,
+# and a partial implementation ignoring `additionalProperties` or never
+# descending into `items` passes exactly the declarations that are wrong.
+#
+# Nothing at runtime validates against these schemas — the server PUBLISHES them
+# and the client checks them — so this stays out of `lambda/layers/*` and out of
+# the deployed bundle.
+jsonschema>=4.23.0,<5
+
 # Code quality — ruff is the only Python linter; the root gate runs
 # `ruff check lambda plugins` (config in ruff.toml, issue #201)
 ruff>=0.15.0
