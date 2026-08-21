@@ -77,6 +77,7 @@
     },
     "settings": "設定"
   },
+  "partialCountsHint": "概算値: 期間全体を読み取れなかったため、件数は下限値です",
   "partialWindowHint": "すべて表示するにはフィルターを絞り込んでください",
   "problemAnalysisPage": {
     "emptyHint": "期間を広げるかフィルターを調整してください",

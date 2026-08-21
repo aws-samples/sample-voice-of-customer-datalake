@@ -35,12 +35,19 @@ vi.mock('../../store/configStore', () => ({
   })),
 }))
 
-// Mock child components to simplify testing
+// Mock child components to simplify testing.
+//
+// `hint` is forwarded, not dropped: it is the only user-visible statement that a
+// total is a lower bound rather than exact, and a mock that swallows it lets the
+// hint be deleted — or left as an untranslated literal — with this suite green.
+// MetricCard's own test covers what it DOES with the value (title + aria-label);
+// here it just has to be reachable.
 vi.mock('../../components/MetricCard', () => ({
-  default: ({ title, value }: { title: string; value: string | number }) => (
+  default: ({ title, value, hint }: { title: string; value: string | number; hint?: string }) => (
     <div data-testid={`metric-${title.toLowerCase().replace(/\s/g, '-')}`}>
       <span>{title}</span>
       <span>{value}</span>
+      {hint && <span data-testid="metric-hint">{hint}</span>}
     </div>
   ),
 }))
@@ -151,6 +158,29 @@ describe('Dashboard', () => {
         expect(screen.getByText('~1,234')).toBeInTheDocument()
       })
       expect(screen.getByText('~5')).toBeInTheDocument()
+      // The `~` alone does not say WHY, so the hint carries the meaning. Asserted
+      // as the resolved English copy rather than the key, because a missing or
+      // misspelled key renders as the key name and would otherwise pass: the test
+      // setup loads the real public/locales/en/common.json.
+      // getAllByTestId: both counted cards carry the hint, and a getByTestId
+      // would fail on the second rather than on the thing under test.
+      const hints = screen.getAllByTestId('metric-hint')
+      expect(hints).toHaveLength(2)
+      expect(hints[0]).toHaveTextContent(
+        'Approximate: the full window could not be read, counts are a lower bound'
+      )
+    })
+
+    it('does not hint at approximation when the window was read in full', async () => {
+      // The positive control for the case above. Without it the hint could be
+      // rendered unconditionally — a permanent "approximate" is as uninformative
+      // as never showing it, and both read as "ignore this".
+      render(<Dashboard />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('1,234')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('metric-hint')).not.toBeInTheDocument()
     })
 
     it('displays average sentiment metric', async () => {

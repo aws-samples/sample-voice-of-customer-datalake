@@ -78,19 +78,20 @@ interface MetricsGridProps {
 }
 
 function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
+  // 'common', matching the namespace this file already reads, and where the
+  // sibling partial-window copy lives (`partialWindowHint`, used by the
+  // Categories results line): the hint is about counts being a lower bound, not
+  // about the dashboard.
+  const { t } = useTranslation('common')
   const avgSentiment = summary ? Number(summary.avg_sentiment) : 0
   const sentimentTrend = avgSentiment > 0 ? 'up' : 'down'
   const sentimentColor = avgSentiment > 0 ? 'green' : 'red'
-  // The route reports this on BOTH of its paths now, and the hint no longer names
-  // only one of them: a review-basis or source-filtered answer comes from a
-  // budget-bounded scan, and an aggregates answer is short when a metric read
-  // stopped early or when the window reaches past the ~90 days aggregates are
-  // retained for. Either way the counts are lower bounds and the cards must say so
-  // instead of looking exact.
+  // The route reports this on BOTH of its paths now, so the hint names neither
+  // cause — see `MetricsSummary.is_partial` in api/types.ts for the three of
+  // them. Whichever fired, the counts are a lower bound and the cards must say
+  // so instead of looking exact.
   const isPartial = summary?.is_partial ?? false
-  const partialHint = isPartial
-    ? 'Approximate: the full window could not be read, counts are a lower bound'
-    : undefined
+  const partialHint = isPartial ? t('partialCountsHint') : undefined
   const approx = (n: number | string) => (isPartial ? `~${n}` : n)
 
   return (
