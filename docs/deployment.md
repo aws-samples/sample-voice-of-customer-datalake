@@ -66,14 +66,16 @@ npm run check        # lint + typecheck:all + test + test:cdk + test:stream + te
 | `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
 | `npm run test:stream` | Streaming chat Lambda Vitest |
 | `npm run test:backend` | Python pytest via `.venv/bin/python` |
-| `npm run check` | All of the above, chained with `&&` |
+| `npm run check` | All of the above — every leg runs, and the failures are listed together |
 | `npm run test:coverage` | Frontend tests with coverage report |
 
 Two things to know about the gate:
 
-- **`check` chains with `&&`, so the first failure hides every later step.** If
-  `lint:python` fails you never find out whether the CDK or backend tests pass.
-  When triaging, run the individual scripts rather than inferring from `check`.
+- **`check` runs every leg and lists all the failures**, so one broken leg no
+  longer hides the state of the others. It exits with the first failing leg's own
+  status, and names the failed legs on stderr as `Failed legs: …`. It used to be
+  an `&&` chain that stopped at the first failure, which is why triaging meant
+  re-running each script by hand.
 - **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
   only by `typecheck:cdk`, so "lint is clean" says nothing about the CDK app.
 

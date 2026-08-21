@@ -51,7 +51,7 @@ npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins
 npm run typecheck    # frontend ONLY (use typecheck:all for frontend + CDK + stream)
 npm run test         # frontend ONLY
 
-npm run check        # lint && typecheck:all && test && test:cdk && test:stream && test:backend
+npm run check        # lint · typecheck:all · test · test:cdk · test:stream · test:backend (every leg runs)
 ```
 
 ### What Each Check Does
@@ -63,13 +63,15 @@ npm run check        # lint && typecheck:all && test && test:cdk && test:stream 
 | `npm run typecheck:all` | Frontend + CDK (`typecheck:cdk`) + stream |
 | `npm run test` | Frontend Vitest |
 | `npm run test:cdk` / `test:stream` / `test:backend` | CDK Vitest / stream Vitest / pytest via `.venv/bin/python` |
-| `npm run check` | All of the above, chained with `&&` |
+| `npm run check` | All of the above — every leg runs, failures listed together |
 
-**Two traps when using `check` as a gate:**
+**One trap when using `check` as a gate, and one thing it now does for you:**
 
-- **It chains with `&&`, so the first failure hides every later step.** A
-  `lint:python` failure means you never learn whether the CDK or backend tests
-  pass. When triaging, run the individual scripts.
+- ✅ **Every leg runs, so one failure no longer hides the rest.** `check` reports
+  each leg as it finishes and ends with `Failed legs: …` on stderr, exiting with
+  the first failing leg's own status. You no longer have to re-run the individual
+  scripts to find out what else is broken. (It used to be an `&&` chain that
+  stopped at the first failure.)
 - **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
   only by `typecheck:cdk` — "lint is clean" says nothing about the CDK app.
 
