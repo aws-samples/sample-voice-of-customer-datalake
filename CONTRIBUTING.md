@@ -23,9 +23,7 @@ reported the issue. Please try to include as much information as you can. Detail
 ## Contributing via Pull Requests
 Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 
-1. You are working against the latest source on the *development* branch. This is the branch that
-   integrates all incoming work, so both your branch point and your pull request base should be
-   *development*, not *main*.
+1. You are working against the latest source on the *development* branch, which is also the base for your pull request.
 2. You check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
 3. You open an issue to discuss any significant work - we would hate for your time to be wasted.
 
