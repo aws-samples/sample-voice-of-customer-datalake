@@ -1077,6 +1077,66 @@ class TestEncodedWordHeaders:
         assert body["error"]["code"] == -32600
         assert "base64" in body["error"]["message"]
 
+    @pytest.mark.parametrize("lowercase", sorted(mcp_handler.TRANSPORT_HEADERS))
+    def test_a_sentinel_refusal_names_the_wire_spelling(self, lowercase):
+        """The refusal must name the header the CLIENT sent, not this module's
+        internal lowercase form.
+
+        `_decoded_header` interpolated `name` directly — the spelling API Gateway
+        normalisation forced on this module — so a client sending
+        `Mcp-Name: =?base64?!!!?=` was told about `mcp-name`, a header it never
+        sent. The module's own argument is two functions up at
+        `_canonical_header_name`: an error message is read by clients that spell
+        headers the way the spec does. Reverting `_decoded_header` to interpolate
+        `name` fails this test.
+
+        The event map is keyed by the derived parametrisation, so a transport
+        header added without a case here fails as a KeyError rather than passing
+        vacuously.
+        """
+        canonical = mcp_handler._canonical_header_name(lowercase)
+        # Positive control for the not-in assertion below: if the canonical and
+        # internal spellings ever coincided, `lowercase not in message` would be
+        # unsatisfiable and this test would be asserting nothing.
+        assert canonical != lowercase
+        bad = "=?base64?not-base64!!?="
+        events = {
+            "mcp-protocol-version": _event("initialize", headers={canonical: bad}),
+            "mcp-method": _event("ping", headers={canonical: bad}),
+            "mcp-name": _event(
+                "tools/call",
+                params={"name": "get_metrics_summary", "arguments": {}},
+                headers={canonical: bad},
+            ),
+        }
+
+        status, body = _call(events[lowercase])
+        message = body["error"]["message"]
+
+        assert status == 400, body
+        assert canonical in message, message
+        assert lowercase not in message, message
+
+    @pytest.mark.parametrize("payload", ["not-base64!!", ""])
+    def test_every_sentinel_refusal_names_the_canonical_spelling(self, payload):
+        """Unit-level and DERIVED from the tables rather than restating the names,
+        so a future refusal added to `_decoded_header` cannot reintroduce the
+        internal spelling for any header, present or future.
+
+        The two payloads reach the two refusals: one that does not decode, and the
+        well-formed encoding of nothing.
+        """
+        for lowercase in mcp_handler.TRANSPORT_HEADERS:
+            canonical = mcp_handler._canonical_header_name(lowercase)
+            assert canonical != lowercase  # the control the not-in below needs
+
+            with pytest.raises(mcp_handler.InvalidTransportHeader) as excinfo:
+                mcp_handler._decoded_header(f"=?base64?{payload}?=", lowercase)
+            message = str(excinfo.value)
+
+            assert canonical in message, (lowercase, message)
+            assert lowercase not in message, (lowercase, message)
+
     def test_a_plain_value_is_not_treated_as_encoded(self):
         """The sentinel is optional and a plain value is the ordinary spelling.
 
@@ -1268,6 +1328,49 @@ class TestADuplicatedHeaderIsRefused:
 
         assert status == 200, body
         assert "result" in body
+
+    def test_two_unusable_values_for_one_header_are_still_a_duplicate(self):
+        """Coercion must not erase the identity the dedup runs on.
+
+        `_header_values` reads a non-string candidate as `''` — and coercing BEFORE
+        deduplicating collapsed two DIFFERENT unusable values into one `''`, so this
+        request sailed past the duplicate refusal and was answered as a header/body
+        mismatch against `''` instead: a diagnostic about a value, for a fault that
+        is two values. Moving the coercion back inside the dedup fails this test.
+        The header was sent twice; that it was sent twice unusably does not make it
+        sent once.
+        """
+        event = _event("ping")
+        event["multiValueHeaders"] = {"mcp-method": [None, 42]}
+
+        status, body = _call(event)
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32020
+        assert "more than once" in body["error"]["message"], body["error"]["message"]
+        # The fault named is the duplication, not a mismatch against the coerced
+        # `''` — the diagnostic the coerce-first ordering used to produce.
+        assert "does not match body value" not in body["error"]["message"]
+
+    def test_a_single_unusable_value_still_reads_as_the_empty_value(self):
+        """Anti-overreach: the fix is about TWO values, not about non-strings.
+
+        One unusable value keeps its existing reading — the empty string, which for
+        a routing echo is a mismatch against the body's method. A fix that started
+        refusing single non-strings as duplicates would have changed a documented
+        answer this module already gives.
+        """
+        event = _event("ping")
+        event["multiValueHeaders"] = {"mcp-method": [None]}
+
+        status, body = _call(event)
+
+        assert status == 400, body
+        assert body["error"]["code"] == -32020
+        assert "does not match body value" in body["error"]["message"], (
+            body["error"]["message"]
+        )
+        assert "more than once" not in body["error"]["message"]
 
     @pytest.mark.parametrize("order", [
         ("Mcp-Method", "mcp-method"),
@@ -1922,6 +2025,43 @@ class TestMethodNotAllowed:
         assert body["error"]["code"] == -32600
         assert response["headers"]["Access-Control-Allow-Origin"] == "*"
 
+    @pytest.mark.parametrize("http_method", ["GET", "DELETE", "PUT"])
+    def test_a_405_omits_the_id_member(self, http_method):
+        """A `GET` or a `DELETE` typically carries no body: there is no JSON-RPC
+        message at all, so there is no id to have failed to detect.
+
+        `id: null` is JSON-RPC's spelling for an id that COULD NOT BE DETECTED in a
+        message that was claimed — and the 405 sent it for a request that never
+        claimed to carry a message. The rule at `_NO_ID` puts the 405 on the same
+        side as the Origin 403 (no subject → member omitted); the test below pins
+        the other side so this fix cannot creep onto it.
+        """
+        response = mcp_handler.lambda_handler(
+            _event(http_method=http_method), MagicMock(),
+        )
+        body = json.loads(response["body"])
+
+        assert response["statusCode"] == 405
+        assert "id" not in body, body
+
+    def test_a_parse_error_still_reports_a_null_id(self):
+        """The boundary of the 405 fix, pinned deliberately: a body that does not
+        parse DID claim to be a message, and JSON-RPC's own rule reports an id it
+        could not detect as `null` — not as omission.
+
+        Lives here rather than with the parse tests because it exists to stop the
+        405's `_NO_ID` from creeping one branch down: the two refusals are
+        neighbours in `lambda_handler` and the rule at `_NO_ID` names them as
+        opposite cases.
+        """
+        response = mcp_handler.lambda_handler(_event(body="{oops"), MagicMock())
+        body = json.loads(response["body"])
+
+        assert response["statusCode"] == 400
+        assert body["error"]["code"] == -32700
+        assert "id" in body, body
+        assert body["id"] is None, body
+
     def test_a_405_never_reaches_the_token_store(self):
         with patch("mcp_handler.projects_table") as table:
             mcp_handler.lambda_handler(
@@ -2285,6 +2425,37 @@ class TestAnIdlessRequestIsRefused:
 
         assert response["statusCode"] != 202, response["body"]
 
+    @pytest.mark.parametrize("headers,code", [
+        ({"MCP-Protocol-Version": "2099-01-01"}, -32022),
+        ({"Mcp-Method": "tools/list"}, -32020),
+        ({"Mcp-Name": "get_metrics_summary"}, -32020),
+    ])
+    def test_an_idless_request_refused_by_a_transport_guard_omits_the_id(
+        self, headers, code,
+    ):
+        """The transport guards run BEFORE this class's branch, and they must give
+        the same answer about the same message.
+
+        The guard catch used to ask `_is_notification` — deliberately False for an
+        id-less `ping`, as its docstring records — so the same id-less message got
+        the `id` member OMITTED from a clean refusal and `id: null` from one that
+        also tripped a header guard: the exact defect this class exists to pin,
+        reached one guard earlier. Both branches now ask `_carries_no_id`, whose
+        subject is the only condition the transport's no-id allowance turns on.
+
+        Parametrised over the three faults that can refuse first: an unsupported
+        version, a routing echo contradicting the body, and a tool name on a
+        method that takes none. Reverting the catch to `_is_notification` fails
+        all three; `test_a_refused_request_still_carries_its_id` is the
+        anti-overreach guard (a body WITH an id keeps it, header fault or not).
+        """
+        response = _raw_call(_notification_event("ping", headers=headers))
+        body = json.loads(response["body"])
+
+        assert response["statusCode"] == 400, response["body"]
+        assert body["error"]["code"] == code, body
+        assert "id" not in body, body
+
     def test_a_real_notification_still_reaches_its_202(self):
         """Anti-overreach, and the ordering this branch depends on: it sits AFTER the
         notification check, so a `notifications/`-prefixed message is unaffected."""
@@ -2314,10 +2485,18 @@ class TestAnIdlessRequestIsRefused:
     def test_the_refusal_names_the_missing_id_rather_than_the_method(self):
         """A caller reading this needs to know what to change. `Method not found` —
         which an earlier shape of this path produced for some of these bodies — sends
-        it after a method name it spelled correctly."""
-        _status, body = _call(_notification_event("ping"))
+        it after a method name it spelled correctly.
 
-        assert "id" in body["error"]["message"].lower()
+        Asserted on the phrase, not on the substring `"id"`: `"id" in message`
+        was satisfied by the `id` inside "invalid", so the exact regression this
+        test claims to guard against — a message about the method, not the id —
+        could have passed it.
+        """
+        _status, body = _call(_notification_event("ping"))
+        message = body["error"]["message"].lower()
+
+        assert "must carry an id" in message, message
+        assert "method not found" not in message, message
 
 
 class TestUnknownMethod:

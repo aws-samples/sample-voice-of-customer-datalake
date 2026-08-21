@@ -955,9 +955,29 @@ def _header_values(event: dict, name: str) -> list[str]:
         `-32020` refusal exists for, reached through a duplicate rather than
         through a header/body disagreement.
 
-    Deduplicated, so two IDENTICAL values are one value: a client (or an
-    intermediary) restating the same thing twice has not contradicted itself, and
-    refusing that would refuse requests for no gain.
+    Deduplicated ON THE RAW CANDIDATE, so two IDENTICAL values are one value: a
+    client (or an intermediary) restating the same thing twice has not
+    contradicted itself, and refusing that would refuse requests for no gain.
+    Raw, not coerced, and the ordering is the point: coercing non-strings to `''`
+    BEFORE the dedup collapsed two DIFFERENT unusable values into one, so
+    `multiValueHeaders={'origin': [None, 42]}` reached `_request_header` as a
+    single `''` and never hit its `len(values) > 1` refusal — and `''` is how this
+    module spells ABSENT, so the DNS-rebinding guard read two contradictory
+    origins as no origin at all and served the request. Two distinct unusable
+    values now stay two values and are refused as a duplicate (their coerced
+    reprs may coincide as `'', ''` in the message, which is honest: what was sent
+    twice is two things, neither of them a usable value).
+    `test_two_unusable_values_for_one_header_are_still_a_duplicate` and
+    `test_two_unusable_origins_are_refused_not_read_as_absent` fail if the
+    coercion moves back inside the dedup.
+
+    ⚠️ The guard's REACH is tied to the REST proxy event shape read here. An
+    HTTP API (payload 2.0) event carries no `multiValueHeaders` at all and
+    comma-joins duplicated headers into one `headers` value, so the ambiguity
+    this refuses would arrive pre-collapsed as a single value and be served.
+    This endpoint is declared on a REST API in `api-stack.ts`, so that shape
+    does not reach it today — but a migration to an HTTP API must revisit this
+    reader, because none of the duplicate refusals downstream of it would fire.
 
     A non-dict `headers` or `multiValueHeaders` reads as absence rather than
     raising: a Lambda proxy event always delivers a dict or null, so this needs a
@@ -966,6 +986,12 @@ def _header_values(event: dict, name: str) -> list[str]:
     envelope and no CORS headers.
     """
     values: list[str] = []
+    # The raw candidates already seen, kept SEPARATELY from the coerced values:
+    # identity is decided on what the request actually carried, and only the
+    # answer is coerced. `list` rather than `set` because a direct-invoke
+    # candidate need not be hashable, and `in` on a list compares by equality,
+    # which is the identity a duplicate check wants.
+    seen: list[Any] = []
     for source_key in ('headers', 'multiValueHeaders'):
         source = event.get(source_key) or {}
         if not isinstance(source, dict):
@@ -976,12 +1002,16 @@ def _header_values(event: dict, name: str) -> list[str]:
             # A `multiValueHeaders` entry is a list; a `headers` entry is a scalar.
             # A non-string value reads as the empty string for the reason
             # `_request_header` documents: a header that arrived carrying something
-            # unusable said something, and it is not a valid value here.
+            # unusable said something, and it is not a valid value here. The
+            # coercion runs AFTER the dedup — coercing first erased the identity
+            # of two DIFFERENT unusable values, and `_origin_allowed` read the
+            # resulting single `''` as an absent Origin (see the docstring).
             candidates = raw if isinstance(raw, list) else [raw]
             for candidate in candidates:
-                value = candidate if isinstance(candidate, str) else ''
-                if value not in values:
-                    values.append(value)
+                if candidate in seen:
+                    continue
+                seen.append(candidate)
+                values.append(candidate if isinstance(candidate, str) else '')
     return values
 
 
@@ -1209,8 +1239,13 @@ def _decoded_header(raw: str, name: str) -> str:
     try:
         decoded = base64.b64decode(match.group(1), validate=True).decode('utf-8')
     except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        # `_canonical_header_name`, as in every neighbouring refusal: `name` is
+        # the lowercase form API Gateway normalisation forced on this module, and
+        # interpolating it told a client about a header it never sent. The
+        # fallback branch covers callers passing a non-transport name.
         raise InvalidTransportHeader(
-            f'{name} is in encoded-word form but its payload is not base64-encoded UTF-8'
+            f'{_canonical_header_name(name)} is in encoded-word form but its '
+            f'payload is not base64-encoded UTF-8'
         ) from exc
     if not decoded:
         # `=?base64??=` is well-formed base64 of nothing. Refused HERE, with the
@@ -1219,7 +1254,8 @@ def _decoded_header(raw: str, name: str) -> str:
         # through would report "unsupported protocol version ''" — an answer about
         # a version, for a fault in the encoding.
         raise InvalidTransportHeader(
-            f'{name} is in encoded-word form but its base64 payload is empty'
+            f'{_canonical_header_name(name)} is in encoded-word form but its '
+            f'base64 payload is empty'
         )
     return decoded
 
@@ -3062,6 +3098,25 @@ RESULT_SHAPES: frozenset[str] = frozenset({
 # So "no id at all" and "an id of null" are two different answers and cannot share
 # one spelling — which is the same distinction `_is_notification` turns on, one
 # layer down.
+#
+# ⚠️ THE RULE FOR WHICH REFUSALS USE WHICH, stated here because it was previously
+# only inferable from which call sites happened to be changed:
+#
+#   • `_NO_ID` — NO JSON-RPC message could have carried an id. A notification and
+#     an id-less request (their bodies carry no `id` member, by `_carries_no_id`);
+#     the Origin 403 (it runs before the body is parsed, and its subject may
+#     legitimately be a notification); and the 405 (a `GET` or `DELETE` typically
+#     carries no body — there is no message at all, so there is no id to have
+#     failed to detect).
+#   • `None`, i.e. `"id": null` — a message WAS claimed and its id could not be
+#     DETECTED. The parse error, the non-object body, and the batch (many
+#     messages, no single id): JSON-RPC's own rule for an undetectable id is
+#     `null`, and `test_a_non_object_body_is_not_a_crash` pins it deliberately.
+#
+# The discriminator is whether "there is an id, and what is it?" was a question
+# this server can honestly say it could not answer (null), or a question that has
+# no subject (omitted). A future refusal that runs before `json.loads` should ask
+# which of those two it is, not copy its nearest neighbour.
 _NO_ID = object()
 
 
@@ -3744,6 +3799,31 @@ def _is_notification(body: Any, method: str) -> bool:
     return method.startswith(_NOTIFICATION_METHOD_PREFIX)
 
 
+def _carries_no_id(body: Any) -> bool:
+    """True when the message body carries NO `id` member at all.
+
+    The condition the transport's no-id allowance actually turns on. A refusal's
+    envelope omits the `id` when its subject carries none — and that is true of a
+    notification AND of an id-less non-notification alike, which is why this is a
+    separate predicate from `_is_notification` rather than a call to it.
+
+    It exists because the transport-guard refusal used to ask the narrower
+    question: `_is_notification` is deliberately False for an id-less `ping`
+    (MCP defines no id-less form of it), so an id-less `ping` that tripped a
+    header guard was answered `id: null` — the exact defect the id-less `-32600`
+    branch removes, reached one guard earlier. The two branches were disagreeing
+    about the same message. Both now ask this predicate, so they cannot.
+
+    `not in` rather than truthiness, for the same reason `_is_notification`
+    documents: `"id": 0` and `"id": null` are PRESENT members, and a refusal must
+    echo them (`test_a_refused_request_still_carries_its_id` pins the echo).
+    A non-dict body answers False — its id is UNDETECTABLE rather than absent,
+    and JSON-RPC's own rule spells an undetectable id as `null`, not as omission
+    (the distinction `_NO_ID`'s comment records).
+    """
+    return isinstance(body, dict) and 'id' not in body
+
+
 def _is_batch(body: Any) -> bool:
     """True when the body is a JSON-RPC BATCH — an array of messages.
 
@@ -3928,9 +4008,16 @@ def lambda_handler(event: dict, context: Any) -> dict:
     # OPTIONS`, because that is what that path serves. `autoseed_match` has already
     # been evaluated above, so the two answers cannot disagree about which path
     # this is.
+    #
+    # `_NO_ID`, not `None`: a `GET` or a `DELETE` typically carries no body, so
+    # this is not a message whose id could not be detected — it is no JSON-RPC
+    # message at all, and `id: null` claimed an undetectable id for a request
+    # that never claimed to carry one. Same side of the rule at `_NO_ID` as the
+    # Origin 403; the parse error below stays `null`, because there a message WAS
+    # claimed and its id is genuinely undetectable.
     if http_method != 'POST':
         return _cors_response(
-            _jsonrpc_error(None, JSONRPC_INVALID_REQUEST,
+            _jsonrpc_error(_NO_ID, JSONRPC_INVALID_REQUEST,
                            f"Method not allowed: {http_method or 'unknown'}"),
             status_code=405,
             allow=_ALLOW_AUTOSEED if autoseed_match else _ALLOW_JSONRPC,
@@ -4056,19 +4143,31 @@ def lambda_handler(event: dict, context: Any) -> dict:
         # first draft of this change lost both the client's recovery path and the
         # era-detection signal.
         #
-        # ⚠️ The MESSAGE KIND is consulted here even though this runs before the
-        # notification branch, and it has to be: a notification that fails a guard is
-        # still a notification, and its refusal was the last place `id: null` was
-        # sent to a message that carries no id. The advertised revisions say a
-        # notification the server cannot accept gets an HTTP error status whose body
-        # "MAY comprise a JSON-RPC error response that has NO id" — so the STATUS and
-        # the code stay exactly as they were and only the envelope changes. This
-        # branch is not the notification's acceptance path (that is the 202 below,
-        # and it is deliberately still after the guards); it is the refusal path
-        # learning what it is refusing.
+        # ⚠️ WHETHER THE BODY CARRIES AN ID is consulted here even though this runs
+        # before the notification branch, and it has to be: a message that fails a
+        # guard still carries (or does not carry) whatever id it carried, and this
+        # refusal was the last place `id: null` was sent to a message that carries
+        # no id. The advertised revisions say a notification the server cannot
+        # accept gets an HTTP error status whose body "MAY comprise a JSON-RPC
+        # error response that has NO id" — so the STATUS and the code stay exactly
+        # as they were and only the envelope changes.
+        #
+        # `_carries_no_id`, NOT `_is_notification`: the condition the transport's
+        # allowance turns on is "the subject carries no id", and an id-less `ping`
+        # is exactly as id-less as a notification. Asking the narrower question
+        # here answered `id: null` to an id-less non-notification that tripped a
+        # header guard — the defect the id-less `-32600` branch below removes,
+        # reached one guard earlier — so the two branches disagreed about the same
+        # message. `test_an_idless_request_refused_by_a_transport_guard_omits_the_id`
+        # fails if `_is_notification` comes back;
+        # `test_a_refused_request_still_carries_its_id` fails if the id stops
+        # being echoed for a body that has one. This branch is not the
+        # notification's acceptance path (that is the 202 below, and it is
+        # deliberately still after the guards); it is the refusal path learning
+        # what it is refusing.
         return _cors_response(
             _jsonrpc_error(
-                _NO_ID if _is_notification(body, method) else req_id,
+                _NO_ID if _carries_no_id(body) else req_id,
                 exc.code, str(exc), exc.data,
             ),
             status_code=exc.status_code,
@@ -4135,7 +4234,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
     #
     # Placed after the notification branch and before the dispatch, so a real
     # notification still reaches its 202 and no handler is ever called without an id.
-    if isinstance(body, dict) and 'id' not in body:
+    if _carries_no_id(body):
         logger.info(f"MCP id-less non-notification refused: method={method}")
         return _cors_response(
             _jsonrpc_error(

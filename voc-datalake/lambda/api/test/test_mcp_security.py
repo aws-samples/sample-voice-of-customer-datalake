@@ -1537,6 +1537,45 @@ class TestOriginValidation:
         assert response["statusCode"] == 403, response["body"]
 
     @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_two_unusable_origins_are_refused_not_read_as_absent(self, lambda_context):
+        """Two DIFFERENT unusable Origin values must not collapse into no Origin.
+
+        `_header_values` coerces a non-string candidate to `''` — and coercing
+        BEFORE deduplicating turned `[None, 42]` into a single `''`, which is how
+        this module spells ABSENT, and absent Origin passes the rebinding guard. So
+        the one guard whose whole subject is "do not pick between two claimed
+        origins" resolved two claimed origins to no origin at all and SERVED the
+        request — a fail-open, on the same direct-invoke event shape the non-dict
+        `headers` guard below already defends. Deduplicating on the raw candidate
+        keeps the two values two, and two values for `Origin` is the 403 the test
+        above pins. Moving the coercion back inside the dedup fails this test.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["multiValueHeaders"] = {"origin": [None, 42]}
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 403, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
+    def test_a_single_unusable_origin_still_reads_as_absent(self, lambda_context):
+        """Anti-overreach: the fix is about TWO values, not about non-strings.
+
+        A single unusable value keeps its existing reading — the empty string,
+        which the guard treats as no Origin presented. Refusing it would refuse
+        every direct invoke whose builder put something odd in one header, which
+        is a different (and unclaimed) policy.
+        """
+        import mcp_handler
+        event = self._initialize_event(None)
+        event["multiValueHeaders"] = {"origin": [None]}
+
+        response = mcp_handler.lambda_handler(event, lambda_context)
+
+        assert response["statusCode"] == 200, response["body"]
+
+    @patch("mcp_handler.ALLOWED_ORIGIN", "https://voc.example.com")
     def test_the_same_origin_twice_is_still_served(self, lambda_context):
         """Anti-vacuity: restating one allowed origin is not two origins, and
         refusing it would refuse a request nothing is wrong with."""
