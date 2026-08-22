@@ -21,10 +21,9 @@ from shared.api import (
 )
 from shared.exceptions import ValidationError
 from shared.feedback import (
-    PERSONA_FIELD,
     PERSONA_PREFIX,
-    PERSONA_UNKNOWN,
     basis_date,
+    persona_bucket,
     window_cutoff,
 )
 from shared.indexes import (
@@ -297,34 +296,34 @@ def _index_read_was_truncated(response: dict) -> bool:
 def _persona_bucket(item: dict) -> str:
     """The persona bucket one RAW FEEDBACK item belongs to, on the scan path.
 
+    A one-line delegation to `shared.feedback.persona_bucket`, kept as a named
+    function here only so that the reason the scan path needs one at all lives beside
+    the two branches that call it.
+
     The scan path exists because aggregates are bucketed by import date only, so a
     review-date window or a source filter has to be computed from raw items — and
-    that makes this function the read side's answer to the same question
+    that makes this the read side's answer to the same question
     `aggregator/handler.py::counter_dimensions` answers when it names a
     `METRIC#persona#<value>` row. The two must agree, or `/metrics/personas`
     reports one thing for `?date_basis=review` and another for the default basis
     over the same items. One window, two code paths, two different answers is the
-    defect class this file has now been repaired for twice, so the field and the
-    empty-bucket name are IMPORTED from `shared/feedback.py` rather than spelled
-    here: the aggregator imports the same two constants, and
-    test_persona_dimension_lockstep.py fails if either side reads anything else.
+    defect class this file has now been repaired for twice.
+
+    🔑 IT IS ONE FUNCTION IN `shared/`, NOT TWO EXPRESSIONS THAT AGREE. An earlier
+    round of this change duplicated the expression and pinned the two copies to each
+    other, on the reasoning that a constant two Lambdas must SPELL alike is a fact to
+    share while an expression they must COMPUTE alike is a behaviour to pin. What
+    ended that was the derivation growing a branch: it now buckets a value outside
+    PERSONA_ARCHETYPES as the empty value, so the axis is CLOSED — and "closed" is a
+    property of the derivation, which two copies could widen independently. See
+    `persona_bucket`.
 
     Why the field is the archetype and not the name is argued where the constant is
     declared. The short of it: `persona_name` is legitimately null for anonymous
     feedback, which is most of this corpus, so bucketing by it put 99.97% of a
     6,239-item corpus in one bucket.
-
-    `or`, not a `.get` default, and for the aggregator's reason: an item can carry
-    an explicit None, which a default would not replace.
-
-    WHY THE DERIVATION IS DUPLICATED HERE rather than shared alongside the two
-    constants — considered, and rejected: that `or` reasoning is a property of this
-    one expression and reads differently on each side (there, what a stream image
-    can hold; here, what the scan path answers), so a shared helper would move it
-    one import away from both readers to remove two lines that are already pinned to
-    each other. See the note beside PERSONA_UNKNOWN in `shared/feedback.py`.
     """
-    return item.get(PERSONA_FIELD) or PERSONA_UNKNOWN
+    return persona_bucket(item)
 
 
 # ============================================

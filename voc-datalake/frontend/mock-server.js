@@ -453,10 +453,26 @@ const handlers = {
         keywords: {},
         categories: countBy(i => i.category),
         issues: countBy(i => i.problem_summary),
-        // The ARCHETYPE, matching metrics_handler's `_persona_bucket`: both of the
+        // The ARCHETYPE, matching `shared/feedback.py::persona_bucket`: both of the
         // real route's branches bucket by `persona_type`, and an item with none
         // counts as `unknown` rather than being dropped, so the persona map sums to
         // `feedback_count`.
+        //
+        // 🔑 THIS COPY IS DELIBERATELY NOT PINNED, and may be edited freely. The
+        // Python side declares the field, the empty value and the archetype enum once
+        // in `shared/feedback.py` and forbids either Lambda from spelling them inline,
+        // because a drift there is a WRONG NUMBER served to a caller. A Node dev stub
+        // serves no production traffic, so a drift here costs a confusing afternoon —
+        // not a wrong answer — and it cannot import from `lambda/shared/`. The trade
+        // is that this file has to be followed by hand when the axis moves, which is
+        // what happened to it: it bucketed on `persona_name` for one round, so local
+        // dev was written against a value space production had stopped producing.
+        //
+        // The one thing it does NOT reproduce is the enum closure — an out-of-contract
+        // `persona_type` gets its own bucket here and would be counted as `unknown` by
+        // the real route. Every fixture above uses a declared archetype, so the two
+        // agree in practice; if a fixture ever needs an out-of-contract value, add the
+        // membership test rather than leaving the stub disagreeing.
         personas: countBy(i => i.persona_type || 'unknown'),
         sources: countBy(i => i.source_platform),
       },

@@ -45,10 +45,15 @@ REVERT MAP
     * Point PERSONA_FIELD at a field the processor does not write (`persona`,
       `persona_label`) — fails
       test_the_persona_field_is_one_the_processor_writes.
-    * Inline `item.get('persona_type')` back into `counter_dimensions` and drop the
-      constant — fails test_the_persona_field_is_read_through_the_constant, which
-      is what keeps the two directions reading ONE name rather than two literals
+    * Inline `item.get('persona_type')` into `shared/feedback.py::persona_bucket` and
+      drop the constant — fails test_the_persona_field_is_read_through_the_constant,
+      which is what keeps the two directions reading ONE name rather than two literals
       that happen to match today.
+    * Have `counter_dimensions` derive the bucket itself rather than calling
+      `persona_bucket` — fails test_the_aggregator_buckets_through_that_same_function,
+      and (from the API side)
+      test_neither_side_derives_the_bucket_for_itself. That pairing is what stops the
+      pin above passing over a `shared/feedback.py` nothing consults.
     * Have the processor stop writing the field this reads — fails the first test,
       from the other side.
     * Spell the empty bucket as a bespoke `Unknown` again (or anything else outside
@@ -66,6 +71,13 @@ REVERT MAP
       (`_reverse_a_pre_deploy_persona_row`) — fails
       TestAPreDeployImageIsReversedOnTheRowItsInsertCreated in test_handler.py, which
       is where the cross-deploy case is pinned.
+    * Open the axis — have `persona_bucket` interpolate `persona_type` verbatim
+      instead of bucketing a value outside PERSONA_ARCHETYPES as the empty one — fails
+      test_the_rows_this_deploy_writes_are_all_in_the_enum in test_handler.py and
+      test_an_out_of_contract_archetype_is_counted_as_unclassified in
+      lambda/api/test/test_persona_dimension_lockstep.py. That closure is what makes
+      the reversal's collision guard a COMPLETE test of "is this row live?" rather
+      than one that misses every out-of-contract value.
     * Add a value to `shared/feedback.py::PERSONA_ARCHETYPES` that the enrichment
       prompt does not admit, or drop one it does — fails
       test_the_shared_archetypes_are_the_ones_the_enrichment_enum_declares. That set
@@ -87,15 +99,17 @@ import ast
 import re
 from pathlib import Path
 
-from aggregator.handler import (
-    PERSONA_FIELD,
-    PERSONA_PREFIX,
-    PERSONA_UNKNOWN,
-    counter_dimensions,
-)
+from shared.feedback import PERSONA_FIELD, PERSONA_PREFIX, PERSONA_UNKNOWN
+
+from aggregator.handler import counter_dimensions
 
 PROCESSOR_SOURCE = 'lambda/processor/handler.py'
 AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
+# The one derivation both Lambdas call, and so the one place the field is READ. The
+# pin below follows it here rather than staying on `counter_dimensions`, which no
+# longer names the field at all — see that function for why it moved.
+SHARED_SOURCE = 'lambda/shared/feedback.py'
+BUCKET_FUNCTION = 'persona_bucket'
 DIMENSIONS_FUNCTION = 'counter_dimensions'
 
 
@@ -156,20 +170,26 @@ def _processor_persona_type_enum() -> set[str]:
     return {value for value in declarations[0].split('|') if value != 'null'}
 
 
-def _aggregator_persona_reads() -> list[str]:
-    """Every `item.get(...)` argument inside `counter_dimensions`, unparsed.
+def _persona_field_reads() -> list[str]:
+    """Every `item.get(...)` argument inside the shared `persona_bucket`, unparsed.
 
     Parsed with `ast`, scoped to the one function, so a mention in a docstring or
     another function cannot answer for it — the convention the rest of this repo's
     locksteps follow, and for the usual reason: a pattern that reads a comment as
     code fails a correct module.
+
+    Scoped to `shared/feedback.py::persona_bucket` rather than to the aggregator's
+    `counter_dimensions`, because that is where the read went when the derivation was
+    shared. The pin is unchanged in what it asserts — the field is read through the
+    constant, once — and it now covers BOTH Lambdas rather than one, since the read
+    side calls the same function.
     """
-    tree = ast.parse(_read(AGGREGATOR_SOURCE))
+    tree = ast.parse(_read(SHARED_SOURCE))
     functions = [node for node in ast.walk(tree)
                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                 and node.name == DIMENSIONS_FUNCTION]
+                 and node.name == BUCKET_FUNCTION]
     assert len(functions) == 1, (
-        f'Expected exactly one {DIMENSIONS_FUNCTION} in {AGGREGATOR_SOURCE}; found '
+        f'Expected exactly one {BUCKET_FUNCTION} in {SHARED_SOURCE}; found '
         f'{len(functions)}. A second copy is the drift this file exists to prevent.'
     )
     reads: list[str] = []
@@ -179,6 +199,27 @@ def _aggregator_persona_reads() -> list[str]:
                     and node.func.attr == 'get' and node.args):
                 reads.append(ast.unparse(node.args[0]))
     return reads
+
+
+def _aggregator_derives_the_bucket_through_the_shared_function() -> bool:
+    """Does `counter_dimensions` get its persona bucket from `persona_bucket`?
+
+    The other half of the pin above: moving the read into `shared/` only helps while
+    the aggregator actually calls it. A `counter_dimensions` that re-derived the
+    bucket itself would leave that pin passing over a module that had drifted.
+    """
+    tree = ast.parse(_read(AGGREGATOR_SOURCE))
+    functions = [node for node in ast.walk(tree)
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                 and node.name == DIMENSIONS_FUNCTION]
+    assert len(functions) == 1, (
+        f'Expected exactly one {DIMENSIONS_FUNCTION} in {AGGREGATOR_SOURCE}; found '
+        f'{len(functions)}.'
+    )
+    body = functions[0].body[1:]  # drop the docstring; a mention is not a call
+    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id == BUCKET_FUNCTION
+               for statement in body for node in ast.walk(statement))
 
 
 class TestThePersonaCounterReadsAFieldThatExists:
@@ -195,24 +236,38 @@ class TestThePersonaCounterReadsAFieldThatExists:
     def test_the_persona_field_is_read_through_the_constant(self):
         """One name, not two literals that happen to agree.
 
-        The increment and the decrement path both come through this function, so a
-        literal here is only one copy — but a literal is also what makes it
+        The increment and the decrement path both come through one derivation, so a
+        literal there is only one copy — but a literal is also what makes it
         possible to "fix" the field in a way that changes what the reversal looks
         for without changing what the insert created. The constant is the seam this
         lockstep and the handler share; reading the field any other way puts the
         pin and the code back out of contact.
         """
-        reads = _aggregator_persona_reads()
+        reads = _persona_field_reads()
         assert 'PERSONA_FIELD' in reads, (
-            f'{AGGREGATOR_SOURCE}::{DIMENSIONS_FUNCTION} reads {reads} — none of '
+            f'{SHARED_SOURCE}::{BUCKET_FUNCTION} reads {reads} — none of '
             f'them the PERSONA_FIELD constant this test pins. Read the field '
             f'through the constant so that changing it changes both directions at '
             f'once and this lockstep still has something to hold.'
         )
         assert PERSONA_FIELD not in reads, (
-            f'{AGGREGATOR_SOURCE}::{DIMENSIONS_FUNCTION} also reads the literal '
+            f'{SHARED_SOURCE}::{BUCKET_FUNCTION} also reads the literal '
             f'"{PERSONA_FIELD}" alongside the constant. Two spellings of one field '
             f'is the drift, whichever of them is currently right.'
+        )
+
+    def test_the_aggregator_buckets_through_that_same_function(self):
+        """The pin above only holds while the writer actually calls the derivation.
+
+        Without this, re-deriving the bucket inside `counter_dimensions` — the drift
+        that sharing the derivation exists to prevent — would leave the test above
+        passing on a `shared/feedback.py` nothing consults.
+        """
+        assert _aggregator_derives_the_bucket_through_the_shared_function(), (
+            f'{AGGREGATOR_SOURCE}::{DIMENSIONS_FUNCTION} does not call '
+            f'{BUCKET_FUNCTION}. The write side and `metrics_handler`\'s scan path '
+            f'must compute the bucket with ONE function, or the closed value space '
+            f'the reversal\'s collision guard depends on is only true on one side.'
         )
 
 

@@ -22,13 +22,12 @@ WHY THE AXIS BUCKETS BY `persona_type`
     closed enum, which is what a dimension you group by has to be.
 
 WHAT IS PINNED HERE, AND WHAT LIVES IN THE AGGREGATOR'S OWN LOCKSTEP
-    Here: that the READ side buckets on the shared field, that the two branches of
-    one route bucket one item identically, and that neither side spells the field
-    or the empty bucket as its own literal.
+    Here: that the two branches of one route bucket one item identically, that the
+    read side gets its bucket from the SHARED derivation rather than one of its own,
+    and that the value space is closed on this side too.
     There (`lambda/aggregator/test/test_persona_field_lockstep.py`): that the field
-    is one the PROCESSOR really writes, and that `counter_dimensions` — the single
-    description the increment and the decrement path share — reads it through the
-    constant.
+    that derivation reads is one the PROCESSOR really writes, that it is read through
+    the constant, and that the aggregator calls the same derivation.
 
     The aggregator is READ AS SOURCE TEXT, not imported, following
     test_aggregate_retention_lockstep.py: importing `aggregator.handler` from an api
@@ -54,9 +53,14 @@ WHICH MUTATION MAKES EACH ASSERTION FAIL
       `feedback_count` beside. The route has two branches too, and only one of them
       was pinned until review found this.
     * Drop either side's import of the shared declaration — fails
-      test_both_sides_read_the_field_from_one_declaration. Re-spell the bucket as a
-      literal beside the constant, or derive it in a second statement, and
-      test_neither_side_spells_the_bucket_out_beside_the_constant fails.
+      test_both_sides_read_the_field_from_one_declaration. Have either side derive the
+      bucket itself instead of calling `persona_bucket` and
+      test_neither_side_derives_the_bucket_for_itself fails.
+    * Open the axis (have `persona_bucket` interpolate `persona_type` verbatim) —
+      fails test_an_out_of_contract_archetype_is_counted_as_unclassified, whose
+      positive control is test_a_populated_item_is_not_counted_under_the_empty_value.
+      That property is what makes PERSONA_ARCHETYPES the whole space of buckets either
+      branch can produce, which the aggregator's collision guard depends on.
     * Change the `METRIC#persona#` key prefix in the code of either handler — fails
       test_neither_side_spells_the_persona_partition_in_its_own_code, which is what
       keeps `get_metric_type`, the `metric_type` GSI and the read paths working while
@@ -82,13 +86,12 @@ WHAT REVIEW FOUND WRONG WITH TWO OF THESE PINS, recorded because the failures we
 """
 import ast
 import json
-import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-from shared.feedback import PERSONA_FIELD, PERSONA_PREFIX, PERSONA_UNKNOWN
+from shared.feedback import PERSONA_PREFIX, PERSONA_UNKNOWN, persona_bucket
 
 # test/ → api/ → lambda/ → voc-datalake/, then the two files that share the axis.
 _REPO = Path(__file__).resolve().parents[3]
@@ -96,13 +99,21 @@ AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
 METRICS_SOURCE = 'lambda/api/metrics_handler.py'
 SHARED_MODULE = 'shared.feedback'
 
-# The three names both sides must read from ONE declaration. PERSONA_PREFIX joined
-# the two after review found the structural pin on it was inert: it was a file-wide
-# substring search, and both files MENTION the prefix in prose, so the docstrings
-# alone satisfied it — the pin passed with both files' real code drifted to
-# `METRIC#DRIFT#`. A shared constant plus "no side spells it in code" is a pin that
-# cannot be satisfied by a comment.
-SHARED_NAMES = ('PERSONA_FIELD', 'PERSONA_UNKNOWN', 'PERSONA_PREFIX')
+# The names both sides must read from ONE declaration. PERSONA_PREFIX joined
+# PERSONA_FIELD and PERSONA_UNKNOWN after review found the structural pin on it was
+# inert: it was a file-wide substring search, and both files MENTION the prefix in
+# prose, so the docstrings alone satisfied it — the pin passed with both files' real
+# code drifted to `METRIC#DRIFT#`. A shared constant plus "no side spells it in code"
+# is a pin that cannot be satisfied by a comment.
+#
+# `persona_bucket` then replaced the two VALUE constants here, because the derivation
+# itself moved into `shared/feedback.py`: a side that calls the shared function is
+# reading the shared field and the shared empty value by construction, and it is also
+# respecting the CLOSED value space, which two copies of the expression could widen
+# independently. Neither Lambda names PERSONA_FIELD at all now — the pin on the field
+# lives where the read does, in
+# aggregator/test/test_persona_field_lockstep.py::test_the_persona_field_is_read_through_the_constant.
+SHARED_NAMES = ('persona_bucket', 'PERSONA_PREFIX')
 
 # Every function that names the persona partition, listed per side because the pin
 # below is that NONE of them spells it as its own literal. Four rather than two: the
@@ -127,13 +138,14 @@ def _read(relative: str) -> str:
     return path.read_text(encoding='utf-8')
 
 
-def _statements_deriving_the_bucket(relative: str, function: str) -> list[str]:
-    """Every statement inside `function` that reads PERSONA_FIELD, unparsed.
+def _calls_the_shared_derivation(relative: str, function: str) -> bool:
+    """Does the CODE of `function` get its persona bucket by calling `persona_bucket`?
 
     Parsed with `ast` and scoped to the one function, the convention this repo's
     other locksteps follow, and for the usual two reasons: a pattern cannot tell a
-    call from a MENTION of one (this file's own docstrings name both constants), and
-    a pattern reads only the shapes it anticipated.
+    call from a MENTION of one (this file's own docstrings name the function), and
+    a pattern reads only the shapes it anticipated. The docstring is dropped for that
+    first reason.
     """
     tree = ast.parse(_read(relative))
     functions = [node for node in ast.walk(tree)
@@ -143,12 +155,20 @@ def _statements_deriving_the_bucket(relative: str, function: str) -> list[str]:
         f'Expected exactly one {function} in {relative}; found {len(functions)}. A '
         f'second copy is the drift this file exists to prevent.'
     )
-    found: list[str] = []
-    for statement in functions[0].body:
-        names = {node.id for node in ast.walk(statement) if isinstance(node, ast.Name)}
-        if 'PERSONA_FIELD' in names:
-            found.append(ast.unparse(statement))
-    return found
+    body = functions[0].body[1:]
+    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id == 'persona_bucket'
+               for statement in body for node in ast.walk(statement))
+
+
+def _persona_field_literals_in(relative: str, function: str) -> list[str]:
+    """Any persona FIELD name spelled as a literal in the code of `function`.
+
+    The negative half of the pin: a side that calls the shared derivation AND reads
+    a persona field itself is a side with two answers, which is the drift.
+    """
+    return sorted(value for value in _string_constants_in(relative, (function,))
+                  if value.startswith('persona_'))
 
 
 def _names_imported_from_the_shared_module(relative: str) -> set[str]:
@@ -249,12 +269,12 @@ def _feedback_item(**overrides) -> dict:
 def _aggregate_row_for(item: dict) -> dict:
     """The persona counter row the aggregator writes for `item`.
 
-    Assembled from the SHARED field constant plus the partition prefix both sides
-    spell — not from a hand-written pk — so that a scan path reading some other
-    field disagrees with this row instead of with a literal chosen to match it.
+    Assembled from the SHARED derivation plus the partition prefix both sides spell —
+    not from a hand-written pk — so that a scan path answering something else
+    disagrees with this row instead of with a literal chosen to match it.
     """
     return {
-        'pk': f'{PERSONA_PREFIX}{item.get(PERSONA_FIELD) or PERSONA_UNKNOWN}',
+        'pk': f'{PERSONA_PREFIX}{persona_bucket(item)}',
         'sk': _day(0),
         'count': 1,
     }
@@ -439,6 +459,32 @@ class TestTheScanPathMeasuresTheArchetype:
 
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
+    def test_an_out_of_contract_archetype_is_counted_as_unclassified(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The axis is CLOSED, and the read side has to agree that it is.
+
+        Nothing validates `persona_type` on the way in — this repo's own frontend
+        fixtures use `loyal`, and `PUT /data-explorer/feedback` accepts the field with
+        no allowlist — so a value the enrichment contract never declares can reach a
+        stored item. `persona_bucket` counts it as the empty value, which is what makes
+        PERSONA_ARCHETYPES the whole space of buckets either branch can produce, and
+        the aggregator's collision guard depends on that being true of BOTH sides.
+
+        The positive control is its sibling below: a contract-declared archetype must
+        still get its own bucket, or "everything is unclassified" would pass this.
+        """
+        personas = _scan_personas([_feedback_item(persona_type='loyal')], mock_fb,
+                                  mock_agg, api_gateway_event, lambda_context)
+
+        assert personas == {PERSONA_UNKNOWN: 1}, (
+            f'{personas}: a `persona_type` outside the contract must not name a bucket '
+            f'of its own. A caller grouping by this axis can only enumerate its value '
+            f'space if the contract is the value space.'
+        )
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
     def test_a_populated_item_is_not_counted_under_the_empty_value(
         self, mock_agg, mock_fb, api_gateway_event, lambda_context
     ):
@@ -476,34 +522,37 @@ class TestNeitherSideKeepsItsOwnCopy:
                 f'half of it.'
             )
 
-    def test_neither_side_spells_the_bucket_out_beside_the_constant(self):
-        """The bucket is derived in ONE statement per side, and it quotes nothing.
+    def test_neither_side_derives_the_bucket_for_itself(self):
+        """Both sides CALL one derivation; neither computes an answer of its own.
 
-        Scoped to that statement rather than searched for across the file, because
-        `'unknown'` is also the `source_platform` default a few lines above the
-        aggregator's persona line: a file-wide search for the value would report a
-        correct module, which is the one thing a lockstep must never do.
+        Stronger than the pin it replaces, which required one statement per side
+        naming PERSONA_UNKNOWN and quoting nothing — that held the two expressions to
+        the same SHAPE, and shape was enough while the derivation was
+        `item.get(PERSONA_FIELD) or PERSONA_UNKNOWN`. It stopped being enough when the
+        derivation grew a membership test: the axis is now CLOSED (a value outside
+        PERSONA_ARCHETYPES buckets as the empty value), and "closed" is a property two
+        independent expressions of the same shape could each widen. So the pin is now
+        that there is one function, and each side calls it.
+
+        Scoped with `ast` to the one function and with the docstring dropped, because
+        both of these functions NAME `persona_bucket` in prose — a file-wide search
+        would report a module that had stopped calling it, which is the one thing a
+        lockstep must never do.
         """
         for relative, function in ((AGGREGATOR_SOURCE, 'counter_dimensions'),
                                    (METRICS_SOURCE, '_persona_bucket')):
-            statements = _statements_deriving_the_bucket(relative, function)
-            assert len(statements) == 1, (
-                f'{relative}::{function} derives the persona bucket in '
-                f'{len(statements)} statements: {statements}. One statement, so that '
-                f'moving the field is one edit — a second is where the two directions '
-                f'of the stream, or the two branches of the route, come apart.'
+            assert _calls_the_shared_derivation(relative, function), (
+                f'{relative}::{function} does not call `persona_bucket`. One window '
+                f'is read by both of these, so a second derivation is where the two '
+                f'directions of the stream, or the two branches of the route, come '
+                f'apart — and where the closed value space the reversal\'s collision '
+                f'guard depends on stops being true on one side.'
             )
-            statement = statements[0]
-            assert 'PERSONA_UNKNOWN' in statement, (
-                f'{relative}::{function} derives the persona bucket as `{statement}`, '
-                f'which does not name PERSONA_UNKNOWN. The empty case has to come '
-                f'from the shared declaration too, or one side keeps calling it '
-                f'something the other does not recognise.'
-            )
-            assert not re.search(r"""['"]""", statement), (
-                f'{relative}::{function} derives the persona bucket as '
-                f'`{statement}`, which quotes a value alongside the constants. Two '
-                f'spellings of one value is the drift, whichever is currently right.'
+            spelled = _persona_field_literals_in(relative, function)
+            assert not spelled, (
+                f'{relative}::{function} spells the persona field(s) {spelled} as '
+                f'literals as well as calling the shared derivation. Two answers to '
+                f'one question is the drift, whichever is currently right.'
             )
 
     def test_neither_side_spells_the_persona_partition_in_its_own_code(self):

@@ -73,8 +73,10 @@ PERSONA_FIELD = 'persona_type'
 #
 # WHAT THIS BUCKET CANNOT TELL YOU, said out loud because the next person to ask
 # "is enrichment healthy?" will look exactly here: it merges "the enrichment
-# classified the archetype as `unknown`" with "the field is absent, so no
-# classification was recorded at all". Both land in this one partition, so a rising
+# classified the archetype as `unknown`", "the field is absent, so no classification
+# was recorded at all", and — since `persona_bucket` closed the axis to
+# PERSONA_ARCHETYPES — "the field held a value the contract does not declare". All
+# three land in this one partition, so a rising
 # `unknown` does not distinguish an enrichment regression from a corpus that
 # genuinely resists classification — a quieter variant of the blindness this axis
 # was just repaired for. The trade was accepted because the alternative, a second
@@ -88,12 +90,29 @@ PERSONA_UNKNOWN = 'unknown'
 # The archetypes the enrichment contract admits, which is the whole value space
 # this axis can produce — `PERSONA_UNKNOWN` included, since the contract declares it.
 #
-# Declared here only because a WRITE-side guard needs it: the reversal's pre-deploy
-# compatibility (`aggregator/handler.py::_reverse_a_pre_deploy_persona_row`) builds a
-# partition key out of a free-text `persona_name`, and a name that happens to equal
-# one of these values would aim a `-1` at a row THIS deploy actively writes. The
-# guard needs to recognise its own value space to refuse that, and a set membership
-# test is the only way to say "this is not a legacy row".
+# 🔑 THIS SET IS WHAT MAKES THE AXIS CLOSED, and `persona_bucket` below is what makes
+# that true rather than hoped for. A value outside it buckets as PERSONA_UNKNOWN, so
+# the rows this deploy writes are exactly `PERSONA_PREFIX + <a member of this set>`
+# and nothing else. Two things depend on that being a FACT:
+#
+#   * the reversal's pre-deploy compatibility
+#     (`aggregator/handler.py::_reverse_a_pre_deploy_persona_row`) builds a partition
+#     key out of a free-text `persona_name` and must refuse to aim its `-1` at a row
+#     this deploy actively writes. Membership of this set is the only way it can know
+#     — and while an arbitrary `persona_type` could still reach a pk, that test was
+#     WRONG: review demonstrated a live `METRIC#persona#loyal` row (this repo's own
+#     fixtures use `persona_type: 'loyal'`, and `PUT /data-explorer/feedback` accepts
+#     the field with no allowlist) decremented 500 → 499 for an item counted
+#     elsewhere, because `loyal` is not in this set and so passed the guard;
+#   * a dimension a caller GROUPS BY is only useful if its value space is knowable.
+#     An MCP client reading these keys can enumerate them from the contract.
+#
+# WHAT CLOSING IT COSTS, stated where the closing happens: an out-of-contract
+# `persona_type` (an LLM ignoring the enum, or a hand edit through the Data Explorer)
+# is counted as unclassified rather than under its own name, so the axis cannot show
+# that the model returned something the contract does not declare. That is the same
+# trade PERSONA_UNKNOWN already makes, and the same place to look for the
+# distinction: the raw `persona_type` on the feedback items.
 #
 # 🔑 THE PROMPT IS STILL THE CONTRACT; this is a copy, and it is pinned as one.
 # `processor/handler.py`'s `USER_PROMPT_TEMPLATE` is what the model is told to
@@ -125,19 +144,42 @@ PERSONA_ARCHETYPES = frozenset({
 # "persona"; only where its value comes from changed.
 PERSONA_PREFIX = 'METRIC#persona#'
 
-# WHY THE DERIVATION (`item.get(PERSONA_FIELD) or PERSONA_UNKNOWN`) IS NOT ALSO
-# HERE, since the argument above for sharing the constants seems to apply one level
-# up as well. It was considered and rejected: the `or`-rather-than-a-`.get`-default
-# reasoning is a property of that one expression, and both call sites carry it in a
-# docstring where the code is — `counter_dimensions` explains it as part of what a
-# stream image can hold, `_persona_bucket` as part of what the scan path answers. A
-# shared helper would put that reasoning one import away from both readers to
-# remove a two-line duplication that is already PINNED:
-# test_persona_dimension_lockstep.py::test_neither_side_spells_the_bucket_out_beside_the_constant
-# requires exactly one statement per side, naming PERSONA_UNKNOWN and quoting
-# nothing, so the two cannot drift while agreeing to. A constant that two Lambdas
-# must spell identically is a fact; an expression they must compute identically is
-# a behaviour, and this repo pins behaviours with tests.
+
+def persona_bucket(item: dict) -> str:
+    """The persona bucket one feedback item belongs to. THE only derivation.
+
+    🔑 SHARED, THOUGH AN EARLIER ROUND OF THIS CHANGE ARGUED IT SHOULD NOT BE, and
+    the argument that moved it is worth keeping because it is the general one. That
+    round's reasoning was: a constant two Lambdas must SPELL alike is a fact (share
+    it), while an expression they must COMPUTE alike is a behaviour (pin it with a
+    test) — and the `or`-not-a-`.get`-default reasoning read differently on each
+    side, so each side carried it where its code was.
+
+    That held while the derivation was `item.get(PERSONA_FIELD) or PERSONA_UNKNOWN`,
+    two tokens and one operator. It stopped holding when the membership test below
+    was added: a derivation with a BRANCH in it is no longer a spelling that two
+    docstrings can keep aligned. The property the axis now rests on — every row this
+    deploy writes is named by a member of PERSONA_ARCHETYPES — is a property of the
+    DERIVATION, not of the constants, so a second copy of it is a second place the
+    value space can be widened. The write side's collision guard would then be
+    reasoning about a set the read side no longer respects.
+
+    `or`, not a `.get` default: the processor strips None before writing, but a
+    stream image edited by hand, or any writer storing an explicit null, delivers the
+    key present and empty — and a default does not apply to a present key, so
+    `METRIC#persona#None` would be a partition nothing else ever writes to or reads
+    from. Invisible, and unreachable by a later reversal.
+
+    Membership, not just non-emptiness, and the two call sites need it for different
+    halves of one reason. On the WRITE side it is what makes the rows this deploy
+    creates enumerable, which the pre-deploy collision guard depends on. On the READ
+    side it is what stops the scan branch reporting a bucket the aggregates branch
+    could not have produced for the same item — one window, two branches, two value
+    spaces, which is the defect class this axis has now been repaired for twice.
+    """
+    persona = item.get(PERSONA_FIELD) or PERSONA_UNKNOWN
+    return persona if persona in PERSONA_ARCHETYPES else PERSONA_UNKNOWN
+
 
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90
