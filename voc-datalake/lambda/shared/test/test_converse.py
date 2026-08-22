@@ -508,8 +508,8 @@ class TestConverseChain:
         ]
 
     @patch('shared.converse.converse')
-    def test_step_model_overrides_chain_model_id(self, mock_converse):
-        """Uses the step model when both chain and step models are set."""
+    def test_chain_model_id_overrides_step_model(self, mock_converse):
+        """A pinned chain model keeps every step on the recorded model."""
         mock_converse.side_effect = ['First output', 'Second output']
 
         from shared.converse import converse_chain
@@ -522,7 +522,7 @@ class TestConverseChain:
 
         assert [c.kwargs['model_id'] for c in mock_converse.call_args_list] == [
             'chain-model',
-            'step-model',
+            'chain-model',
         ]
 
 
@@ -1129,3 +1129,44 @@ class TestConverseSurfaceRouting:
         )
 
         mock_resolve.assert_called_once_with('prototype')
+
+    @patch('shared.converse.logger')
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_step_surface_under_pinned_model_id_is_flagged(
+        self, mock_get_client, mock_resolve, mock_logger,
+    ):
+        """A pinned chain model_id beats a per-step surface (explicit model >
+        surface resolution); the inert override is logged, not eaten quietly."""
+        mock_get_client.return_value = self._client()
+
+        from shared.converse import converse_chain
+        result = converse_chain(
+            [{'system': '', 'user': 'a', 'surface': 'prototype'}],
+            surface='documents',
+            model_id='pinned-model',
+        )
+
+        assert result == ['R']
+        mock_resolve.assert_not_called()
+        flagged = [c for c in mock_logger.warning.call_args_list if 'model wins' in str(c)]
+        assert flagged, 'expected a warning naming the ignored surface override'
+
+    @patch('shared.converse.logger')
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_step_surface_under_step_model_id_is_flagged(
+        self, mock_get_client, mock_resolve, mock_logger,
+    ):
+        """A step model also beats that step's surface, even with no chain pin."""
+        mock_get_client.return_value = self._client()
+
+        from shared.converse import converse_chain
+        converse_chain(
+            [{'system': '', 'user': 'a', 'surface': 'prototype', 'model': 'step-model'}],
+            surface='documents',
+        )
+
+        mock_resolve.assert_not_called()
+        flagged = [c for c in mock_logger.warning.call_args_list if 'model wins' in str(c)]
+        assert flagged, 'expected a warning naming the ignored surface override'

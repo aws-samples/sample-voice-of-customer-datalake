@@ -462,6 +462,22 @@ describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
 
 
 describe('persona Bedrock IAM grants', () => {
+  // These three roles are the CLOSED set of Lambdas whose runtime code can
+  // reach shared/avatar.py, so each needs bedrock:InvokeModel on the whole
+  // allowlist: avatar prompt generation resolves the utility surface at
+  // runtime and persona synthesis the documents surface, and either can be
+  // repointed to any allowlisted id via the picker.
+  //   ProjectsLambdaRole    api/projects_handler.py -> api/projects.py -> shared/avatar.py
+  //   PersonaGeneratorRole
+  //     jobs/persona_generator/handler.py
+  //       -> api/projects.generate_personas -> shared/avatar.py
+  //   PersonaImporterRole
+  //     jobs/persona_importer/handler.py
+  //       -> api/projects.generate_persona_avatar -> shared/avatar.py
+  // document_merger and document_generator ship shared/ inside their bundles
+  // (createJobLambdaCode stages it for every job) but never import avatar.py:
+  // they call shared.converse directly. If a future job starts importing
+  // avatar.py transitively, its role belongs in `roles` below.
   const StatementSchema = z.object({
     Action: z.union([z.string(), z.array(z.string())]),
     Resource: z.unknown(),

@@ -46,8 +46,11 @@ class TestAllowlist:
         assert ALLOWED_MODEL_IDS == {SONNET5, SONNET46, OPUS5, OPUS48, HAIKU45}
 
     def test_allowlist_is_anthropic_only_for_raw_invoke_model_callers(self):
+        """Matches any regional prefix on purpose: the constraint the raw
+        Anthropic invoke_model body cares about is the vendor shape, not which
+        cross-region inference profile an id sits behind."""
         assert all(
-            model_id.startswith('global.anthropic.')
+            model_id.startswith('anthropic.') or '.anthropic.' in model_id
             for model_id in ALLOWED_MODEL_IDS
         )
 
@@ -121,6 +124,16 @@ class TestGetActiveModelId:
         assert get_active_model_id('prototype') == OPUS5
         assert get_active_model_id('enrichment') == HAIKU45
         assert get_active_model_id() == BEDROCK_MODEL_ID
+
+    def test_persona_and_avatar_surfaces_resolve_to_registered_defaults(self, monkeypatch):
+        """projects.py resolves surface='documents' and avatar.py resolves
+        surface='utility'. Both names only ever appear as mock kwargs in those
+        callers' own tests, so nothing else would catch a typo: an
+        unregistered name silently falls back to the legacy global here."""
+        monkeypatch.delenv('AGGREGATES_TABLE', raising=False)
+        for surface in ('documents', 'utility'):
+            assert surface in SURFACE_DEFAULTS, f'{surface} is not a registered default'
+            assert get_active_model_id(surface=surface) == SURFACE_DEFAULTS[surface]
 
     def test_returns_per_surface_override(self, monkeypatch):
         monkeypatch.setenv('AGGREGATES_TABLE', 'agg')

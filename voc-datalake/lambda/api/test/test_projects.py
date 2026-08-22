@@ -289,6 +289,15 @@ class TestGenerateAvatarPromptWithLlm:
 class TestGeneratePersonasModelMetadata:
     """Tests for persona generation model metadata."""
 
+    @staticmethod
+    def _put_item_payload(table):
+        call = table.put_item.call_args
+        assert call is not None, 'expected put_item to be called'
+        if call.kwargs.get('Item') is not None:
+            return call.kwargs['Item']
+        assert call.args, 'expected put_item Item as kwargs or first positional arg'
+        return call.args[0]
+
     def test_stores_resolved_model_id(self):
         """Stamps the resolved model, not the global fallback constant."""
         import projects
@@ -307,24 +316,25 @@ class TestGeneratePersonasModelMetadata:
                 patch('projects.converse_chain', return_value=[
                     json.dumps([{'name': 'Ada'}]),
                 ]) as mock_chain, \
-                patch('projects.get_active_model_id', return_value='resolved-model') as mock_model_id:
+                patch(
+                    'projects.get_active_model_id',
+                    return_value='resolved-model',
+                ) as mock_model_id:
             projects.generate_personas(
                 'proj-1',
                 {'persona_count': 1, 'generate_avatars': False},
             )
 
-        assert table.put_item.called
-        stored = table.put_item.call_args.kwargs['Item']
+        stored = self._put_item_payload(table)
         assert stored['llm_metadata']['model'] == 'resolved-model'
         # One resolution per invocation, and the chain is PINNED to it: the
         # model converse() invokes is the one llm_metadata records.
         mock_model_id.assert_called_once_with(surface='documents')
         assert mock_chain.call_args.kwargs['model_id'] == 'resolved-model'
 
-    def test_rejects_persona_step_model_override(self):
-        """llm_metadata records one model, so persona steps must not override it."""
+    def test_persona_chain_pin_tolerates_step_model_override(self):
+        """The resolved chain pin keeps metadata aligned without failing the job."""
         import projects
-        from shared.exceptions import ServiceError
 
         table = MagicMock()
         table.query.return_value = {'Items': []}
@@ -340,12 +350,16 @@ class TestGeneratePersonasModelMetadata:
                         'model': 'other-model',
                     },
                 ]), \
-                patch('projects.converse_chain') as mock_chain, \
+                patch('projects.converse_chain', return_value=[
+                    json.dumps([{'name': 'Ada'}]),
+                ]) as mock_chain, \
                 patch('projects.get_active_model_id', return_value='resolved-model'):
-            with pytest.raises(ServiceError, match='Failed to generate personas'):
-                projects.generate_personas(
-                    'proj-1',
-                    {'persona_count': 1, 'generate_avatars': False},
-                )
+            projects.generate_personas(
+                'proj-1',
+                {'persona_count': 1, 'generate_avatars': False},
+            )
 
-        mock_chain.assert_not_called()
+        stored = self._put_item_payload(table)
+        assert stored['llm_metadata']['model'] == 'resolved-model'
+        assert mock_chain.call_args.kwargs['model_id'] == 'resolved-model'
+        assert 'surface' not in mock_chain.call_args.kwargs

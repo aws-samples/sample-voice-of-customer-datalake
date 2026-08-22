@@ -564,7 +564,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
     # lookups (chain + metadata stamp) could drift if an admin repointed the
     # 'documents' surface mid-run; one resolution cannot.
     resolved_model_id = get_active_model_id(surface='documents')
-    logger.info(f"[PERSONA] Resolved persona model: {resolved_model_id}")
+    logger.info("[PERSONA] Resolved persona model", extra={'model_id': resolved_model_id})
 
     # Get feedback data
     try:
@@ -636,16 +636,6 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 response_language=filters.get('response_language'),
                 sample_chars=context_budget,
             )
-            model_overrides = [
-                step.get('step_name', f'persona_step_{idx}')
-                for idx, step in enumerate(chain_steps, 1)
-                if step.get('model_id') or step.get('model')
-            ]
-            if model_overrides:
-                raise ValueError(
-                    'Persona generation steps must not override model_id: '
-                    + ', '.join(model_overrides)
-                )
             logger.info(f"[PERSONA] Built {len(chain_steps)} chain steps")
         except Exception as e:
             logger.error(f"[PERSONA] Failed to build chain steps: {e}")
@@ -678,7 +668,6 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             results = converse_chain(
                 chain_steps,
                 progress_callback=lambda p, s: update_progress(p, s),
-                surface='documents',
                 model_id=resolved_model_id,
             )
             logger.info(f"[PERSONA] LLM chain returned {len(results)} results")

@@ -12,6 +12,8 @@ import boto3
 
 from shared.logging import logger, tracer
 from shared.prompts import get_avatar_prompt_config, format_prompt
+# Lightweight runtime picker; it lazy-loads DynamoDB only when called.
+from shared.model_config import get_active_model_id
 
 # `shared.cloudfront_signing` (and through it `cryptography`) is imported LAZILY
 # inside get_avatar_cdn_url — the only function here that signs. The rest of this
@@ -214,27 +216,27 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         'soft studio lighting, neutral background, photorealistic'
     )
 
+    model_id = get_active_model_id(surface='utility')
+
+    # Load prompt config before the Bedrock fallback boundary, preserving the
+    # old behaviour: prompt file problems are configuration errors, while model
+    # invocation problems degrade to a deterministic static prompt.
+    config = get_avatar_prompt_config()
+    system_prompt = config.get('system_prompt', '')
+    user_template = config.get('user_prompt_template', '')
+    fallback_template = config.get('fallback_prompt_template', fallback_template)
+
+    user_msg = format_prompt(
+        user_template,
+        name=name,
+        tagline=tagline,
+        age_range=age_range,
+        occupation=occupation,
+        location=location,
+        bio=bio[:300] if bio else 'N/A'
+    )
+
     try:
-        from shared.model_config import get_active_model_id
-
-        model_id = get_active_model_id(surface='utility')
-
-        # Load prompt config from external file
-        config = get_avatar_prompt_config()
-        system_prompt = config.get('system_prompt', '')
-        user_template = config.get('user_prompt_template', '')
-        fallback_template = config.get('fallback_prompt_template', fallback_template)
-
-        user_msg = format_prompt(
-            user_template,
-            name=name,
-            tagline=tagline,
-            age_range=age_range,
-            occupation=occupation,
-            location=location,
-            bio=bio[:300] if bio else 'N/A'
-        )
-
         request_body = {
             'anthropic_version': 'bedrock-2023-05-31',
             'max_tokens': config.get('max_tokens', 200),

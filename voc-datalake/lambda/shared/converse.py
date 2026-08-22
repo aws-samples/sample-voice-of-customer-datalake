@@ -566,11 +566,14 @@ def converse_chain(
         - max_tokens: Max output tokens (default 4096)
         - thinking_budget: Extended thinking budget (default 0 = disabled)
         - step_name: Optional name for progress reporting
-        - model_id/model: Optional explicit model for this step. It wins over
-          the chain-level `model_id` because step-specific configs are more
-          precise.
+        - model_id/model: Optional explicit model for this step. Used only
+          when the chain itself is not pinned with `model_id`.
         - surface: Optional per-step AI surface override (defaults to the
-          chain-level `surface`)
+          chain-level `surface`). Inert whenever the step's model ends up
+          explicit, because converse() gives an explicit model precedence
+          over surface resolution; that includes every step of a chain
+          called with a pinned `model_id`. Give a step a model or a
+          surface, never both.
 
     Args:
         steps: List of step configurations
@@ -579,7 +582,8 @@ def converse_chain(
         surface: AI surface whose configured model the steps resolve to when
             they don't set their own model (default: the neutral fallback).
         model_id: Explicit model ID pinned across every step (forwarded to
-            converse(), where it takes precedence over surface resolution).
+            converse(), where it takes precedence over step-level model and
+            surface resolution).
             Callers that stamp "which model ran" into stored metadata resolve
             once and pin it here, so what was invoked and what was recorded
             cannot drift. When None, each step resolves from ``surface`` as
@@ -613,7 +617,25 @@ def converse_chain(
         user = step.get('user', '').replace('{previous}', context)
         thinking_budget = step.get('thinking_budget', 0)
         max_tokens = step.get('max_tokens', 4096)
-        step_model_id = step.get('model_id') or step.get('model') or model_id
+        step_explicit_model_id = step.get('model_id') or step.get('model')
+        step_model_id = model_id or step_explicit_model_id
+        if step_model_id is not None and step.get('surface'):
+            # An explicit model wins over surface resolution inside
+            # converse(), whether that model came from this step or from a
+            # pinned chain model_id. Say so instead of silently eating an
+            # inert per-step surface.
+            model_source = 'chain model_id' if model_id else 'step model_id/model'
+            logger.warning(
+                f"[CHAIN] Step '{step_name}' sets surface='{step['surface']}' "
+                f"but {model_source} is explicit: that model wins and this "
+                "surface override is ignored"
+            )
+        if model_id is not None and step_explicit_model_id:
+            logger.warning(
+                f"[CHAIN] Step '{step_name}' sets model_id/model but the "
+                "chain pins model_id: the chain model wins and the step "
+                "model override is ignored"
+            )
         
         logger.info(f"[CHAIN] Step '{step_name}' config: max_tokens={max_tokens}, thinking_budget={thinking_budget}")
         logger.info(f"[CHAIN] Step '{step_name}' system_prompt length: {len(system)} chars")
