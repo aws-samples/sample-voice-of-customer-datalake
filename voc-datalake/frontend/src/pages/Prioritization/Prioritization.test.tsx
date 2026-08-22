@@ -1114,15 +1114,15 @@ describe('Prioritization', () => {
     // beneath it from disagreeing.
 
     /**
-     * Everything the heading area says, as one string.
+     * The count badge, or null when the heading is showing none.
      *
-     * The h1's own wrapper, which holds the heading and the count and nothing else. Read
-     * as a whole so a test can assert what the area does NOT say: a count withheld is
-     * this reading back exactly the title, which stays true however a future plural form
-     * spells zero — whereas querying for the literal "0 proposals" only rules out one
-     * spelling of the claim.
+     * By testid, which is the only handle that holds for the ABSENCE cases in both of
+     * the directions they can rot. Querying for the text "0 proposals" rules out one
+     * spelling of the claim, so a later `rowCount_zero` form would pass unnoticed;
+     * reading the heading wrapper's whole text is spelling-proof but goes vacuous the
+     * moment anything is nested around the h1, which is a test that fails open.
      */
-    const headingArea = () => screen.getByRole('heading', { level: 1 }).parentElement
+    const rowCountBadge = () => screen.queryByTestId('prioritization-row-count')
 
     it('counts the rows beside the heading', async () => {
       // Two projects in the shared fixture, so TWO rows — p1's PRD and PR/FAQ are one
@@ -1144,9 +1144,11 @@ describe('Prioritization', () => {
       renderPrioritization()
 
       expect(await screen.findByText('2 proposals')).toBeInTheDocument()
-      const grid = screen.getByText('Total Proposals').closest<HTMLElement>('div.grid')
-      expect(within(grid ?? document.body).getByText('Total Proposals').previousElementSibling)
-        .toHaveTextContent('2')
+      // `toBe` on the text, not `toHaveTextContent`: that matcher is a SUBSTRING test
+      // for a string argument, so a card reading "12" or "20" would satisfy the very
+      // assertion this case exists to make.
+      expect(screen.getByText('Total Proposals').previousElementSibling?.textContent)
+        .toBe('2')
     })
 
     it('uses the singular form for a list of one', async () => {
@@ -1173,27 +1175,29 @@ describe('Prioritization', () => {
       renderPrioritization()
 
       expect(await screen.findByText('Loading documents...')).toBeInTheDocument()
-      expect(headingArea()).toHaveTextContent(/^Prioritization$/)
+      expect(rowCountBadge()).toBeNull()
     })
 
-    // Both empty branches, because the count is withheld for a reason that names them:
-    // the list says WHICH emptiness this is, and a bare zero cannot. The badge takes the
-    // same path through either, so this is one case run twice rather than two cases.
+    // EVERY empty branch, because the count is withheld for a reason that names them:
+    // the list says which emptiness this is, and a bare zero cannot. The badge takes one
+    // path through all three, so this is one case run three times — and `projects` is
+    // its own column rather than inferred from `documents`, so "a project that has no
+    // documents yet" is expressible instead of silently collapsing into "no projects".
     it.each([
-      ['no projects at all', 'No Documents Found', []],
-      ['only non-scorable documents', 'No Scorable Documents', [
-        { document_id: 'r1', document_type: 'research', title: 'Research Only', content: '', created_at: '2025-01-01' },
-      ]],
-    ])('does not claim "0 proposals" over the empty state for %s', async (_case, emptyTitle, documents) => {
-      mockGetProjects.mockResolvedValue({
-        projects: documents.length === 0 ? [] : [mockProjects[0]],
-      })
+      { emptiness: 'no projects at all', title: 'No Documents Found', projects: [], documents: [] },
+      { emptiness: 'a project with no documents yet', title: 'No Documents Found', projects: [mockProjects[0]], documents: [] },
+      {
+        emptiness: 'only non-scorable documents', title: 'No Scorable Documents', projects: [mockProjects[0]],
+        documents: [{ document_id: 'r1', document_type: 'research', title: 'Research Only', content: '', created_at: '2025-01-01' }],
+      },
+    ])('shows no count over the empty state for $emptiness', async ({ title, projects, documents }) => {
+      mockGetProjects.mockResolvedValue({ projects })
       mockGetProject.mockResolvedValue({ project_id: 'p1', documents })
 
       renderPrioritization()
 
-      expect(await screen.findByText(emptyTitle)).toBeInTheDocument()
-      expect(headingArea()).toHaveTextContent(/^Prioritization$/)
+      expect(await screen.findByText(title)).toBeInTheDocument()
+      expect(rowCountBadge()).toBeNull()
     })
 
     it('counts the rows still on screen when the score read fails', async () => {

@@ -1612,6 +1612,11 @@ export function sortRows(
     }
     return SORT_BLOCK[view.kind]
   }
+  // REORDERS, never narrows — and something now depends on that beyond the list. The
+  // heading's count is taken from this function's output while the "Total Proposals"
+  // card counts its input, so the two agree only while every row given comes back. A
+  // filter belongs in a separate step the count can be pointed at deliberately, not in
+  // this comparator.
   return [...rows].sort((a, b) => {
     const blockA = blockOf(a)
     const blockB = blockOf(b)

@@ -474,7 +474,15 @@ function PrioritizationHeader({
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
           {rowCount === 0 ? null : (
-            <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs sm:text-sm font-medium text-gray-600">
+            // The testid is what lets a test assert this is ABSENT without depending on
+            // how a zero would have been spelled or on where the badge sits. Querying
+            // for the text "0 proposals" only rules out one wording — a later
+            // `rowCount_zero` form would walk straight past it — and reading the
+            // wrapper's text depends on nothing being nested around the heading.
+            <span
+              data-testid="prioritization-row-count"
+              className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs sm:text-sm font-medium text-gray-600"
+            >
               {t('rowCount', { count: rowCount })}
             </span>
           )}
