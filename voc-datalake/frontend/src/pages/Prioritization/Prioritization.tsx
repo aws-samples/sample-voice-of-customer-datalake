@@ -468,9 +468,12 @@ function PrioritizationHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        {/* BESIDE the heading, not inside it: a screen reader announcing the page's
-            only h1 should read "Prioritization", which is also what the breadcrumb and
-            the document outline name. The count's own text is self-describing. */}
+        {/* BESIDE the heading, not inside it: a screen reader announcing this page's
+            heading should read "Prioritization", which is also what the breadcrumb and
+            the document outline name. The count's own text is self-describing.
+            (Not "the only h1" — the app shell's brand is an h1 too, so the deployed
+            page has two. That is pre-existing and separate; the point here is only
+            that THIS heading's accessible name stays the page's name.) */}
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
           {rowCount === 0 ? null : (
