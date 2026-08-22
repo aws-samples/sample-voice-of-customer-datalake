@@ -1129,7 +1129,13 @@ describe('Prioritization', () => {
       // row, which is why this is not "three documents".
       renderPrioritization()
 
-      expect(await screen.findByText('2 proposals')).toBeInTheDocument()
+      // Read off the BADGE, not merely found somewhere on the page. The two cases below
+      // assert this node is absent, and if nothing ever asserts it is present, deleting
+      // the testid leaves those two passing for the wrong reason and the zero-gate
+      // unguarded. Keeping the string in the assertion still proves the plural resolved
+      // through the real locale JSON rather than falling back to the key.
+      expect((await screen.findByTestId('prioritization-row-count')).textContent)
+        .toBe('2 proposals')
       // Beside the h1, not inside it: the page's only level-1 heading has to keep
       // reading as the page's name to a screen reader and the document outline, and it
       // is what the breadcrumb names.
@@ -1185,7 +1191,10 @@ describe('Prioritization', () => {
     // documents yet" is expressible instead of silently collapsing into "no projects".
     it.each([
       { emptiness: 'no projects at all', title: 'No Documents Found', projects: [], documents: [] },
-      { emptiness: 'a project with no documents yet', title: 'No Documents Found', projects: [mockProjects[0]], documents: [] },
+      // Named for the state it actually reaches: the shared fixture's rows still name
+      // `d1`/`d2`, which this project no longer has, so `collectRows` drops every row.
+      // The one case where a detail IS loaded and holds no documents at all.
+      { emptiness: 'a project whose documents are gone', title: 'No Documents Found', projects: [mockProjects[0]], documents: [] },
       {
         emptiness: 'only non-scorable documents', title: 'No Scorable Documents', projects: [mockProjects[0]],
         documents: [{ document_id: 'r1', document_type: 'research', title: 'Research Only', content: '', created_at: '2025-01-01' }],
