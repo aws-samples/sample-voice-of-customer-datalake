@@ -12,8 +12,6 @@ import boto3
 
 from shared.logging import logger, tracer
 from shared.prompts import get_avatar_prompt_config, format_prompt
-# Lightweight runtime picker; it lazy-loads DynamoDB only when called.
-from shared.model_config import get_active_model_id
 
 # `shared.cloudfront_signing` (and through it `cryptography`) is imported LAZILY
 # inside get_avatar_cdn_url — the only function here that signs. The rest of this
@@ -238,7 +236,9 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         # Inside the boundary on purpose: before the per-surface picker this was
         # a constant that could never fail, so a transient picker (DynamoDB)
         # problem must degrade to the static fallback prompt exactly like an
-        # invocation failure instead of becoming a new hard-failure path.
+        # invocation failure instead of becoming a new hard-failure path. Import
+        # here too, matching this module's deliberately narrow import graph.
+        from shared.model_config import get_active_model_id
         model_id = get_active_model_id(surface='utility')
         request_body = {
             'anthropic_version': 'bedrock-2023-05-31',

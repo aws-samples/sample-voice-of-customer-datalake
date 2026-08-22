@@ -294,10 +294,9 @@ class TestGeneratePersonasModelMetadata:
         """Every persona put_item payload, not just the final one: a
         persona_count > 1 run writes one row per persona and asserting only
         the last call would silently skip the earlier ones. Filtered on
-        llm_metadata so a hypothetical future non-persona row fails as
-        'no persona rows' instead of a bare KeyError, and pinned to
-        expected_count so a change that stops stamping llm_metadata on a
-        persona row fails loudly instead of dropping it from the list."""
+        llm_metadata so a hypothetical future non-persona row is ignored,
+        while expected_count makes any missing persona metadata stamp fail
+        loudly as a row-count mismatch."""
         calls = table.put_item.call_args_list
         assert calls, 'expected put_item to be called'
         payloads = [
