@@ -290,12 +290,14 @@ class TestGeneratePersonasModelMetadata:
     """Tests for persona generation model metadata."""
 
     @staticmethod
-    def _put_item_payloads(table):
+    def _put_item_payloads(table, expected_count):
         """Every persona put_item payload, not just the final one: a
         persona_count > 1 run writes one row per persona and asserting only
         the last call would silently skip the earlier ones. Filtered on
         llm_metadata so a hypothetical future non-persona row fails as
-        'no persona rows' instead of a bare KeyError."""
+        'no persona rows' instead of a bare KeyError, and pinned to
+        expected_count so a change that stops stamping llm_metadata on a
+        persona row fails loudly instead of dropping it from the list."""
         calls = table.put_item.call_args_list
         assert calls, 'expected put_item to be called'
         payloads = [
@@ -303,7 +305,10 @@ class TestGeneratePersonasModelMetadata:
             for c in calls
         ]
         persona_rows = [p for p in payloads if p.get('llm_metadata')]
-        assert persona_rows, 'expected put_item to write at least one persona row'
+        assert len(persona_rows) == expected_count, (
+            f'expected {expected_count} persona rows, '
+            f'found {len(persona_rows)}'
+        )
         return persona_rows
 
     def test_stores_resolved_model_id(self):
@@ -333,7 +338,8 @@ class TestGeneratePersonasModelMetadata:
                 {'persona_count': 1, 'generate_avatars': False},
             )
 
-        for stored in self._put_item_payloads(table):
+        # persona_count is 1 in this run: exactly one persona row expected.
+        for stored in self._put_item_payloads(table, 1):
             assert stored['llm_metadata']['model'] == 'resolved-model'
         # One resolution per invocation, and the chain is PINNED to it: the
         # model converse() invokes is the one llm_metadata records.
@@ -367,7 +373,8 @@ class TestGeneratePersonasModelMetadata:
                 {'persona_count': 1, 'generate_avatars': False},
             )
 
-        for stored in self._put_item_payloads(table):
+        # persona_count is 1 in this run: exactly one persona row expected.
+        for stored in self._put_item_payloads(table, 1):
             assert stored['llm_metadata']['model'] == 'resolved-model'
         assert mock_chain.call_args.kwargs['model_id'] == 'resolved-model'
         assert mock_chain.call_args.kwargs['surface'] == 'documents'
