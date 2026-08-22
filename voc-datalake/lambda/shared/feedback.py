@@ -85,6 +85,32 @@ PERSONA_FIELD = 'persona_type'
 # `unknown` are still different.
 PERSONA_UNKNOWN = 'unknown'
 
+# The archetypes the enrichment contract admits, which is the whole value space
+# this axis can produce — `PERSONA_UNKNOWN` included, since the contract declares it.
+#
+# Declared here only because a WRITE-side guard needs it: the reversal's pre-deploy
+# compatibility (`aggregator/handler.py::_reverse_a_pre_deploy_persona_row`) builds a
+# partition key out of a free-text `persona_name`, and a name that happens to equal
+# one of these values would aim a `-1` at a row THIS deploy actively writes. The
+# guard needs to recognise its own value space to refuse that, and a set membership
+# test is the only way to say "this is not a legacy row".
+#
+# 🔑 THE PROMPT IS STILL THE CONTRACT; this is a copy, and it is pinned as one.
+# `processor/handler.py`'s `USER_PROMPT_TEMPLATE` is what the model is told to
+# return, so it is the only place that DEFINES the value space, and
+# test_persona_field_lockstep.py::test_the_shared_archetypes_are_the_ones_the_enrichment_enum_declares
+# reads the enum back out of that prompt and fails if the two disagree. Without that
+# pin this would be a second declaration of the contract, which is the drift the
+# rest of this block exists to prevent. `null` is not a member: it is the contract's
+# way of saying "no value", and PERSONA_UNKNOWN is the bucket that case lands in.
+PERSONA_ARCHETYPES = frozenset({
+    'existing_customer',
+    'prospect',
+    'churn_risk',
+    'advocate',
+    PERSONA_UNKNOWN,
+})
+
 # The partition prefix the persona counter rows are keyed by. Shared for the same
 # reason as the two above, and one more particular to it: it is spent by FOUR
 # call sites in two Lambdas that cannot import each other —

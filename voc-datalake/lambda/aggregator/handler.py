@@ -132,6 +132,7 @@ import os
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from decimal import Decimal
+from enum import Enum
 from typing import Any
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
@@ -142,7 +143,12 @@ from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 # The persona axis, declared in the data layer because BOTH sides of it spend the
 # same three values — see the note above `counter_dimensions`.
-from shared.feedback import PERSONA_FIELD, PERSONA_PREFIX, PERSONA_UNKNOWN
+from shared.feedback import (
+    PERSONA_ARCHETYPES,
+    PERSONA_FIELD,
+    PERSONA_PREFIX,
+    PERSONA_UNKNOWN,
+)
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -216,15 +222,22 @@ SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
 # `attribute_exists(pk) AND #field >= :floor`, so a decrement against an absent or
 # already-zero row is refused, swallowed and counted as REFUSED_METRIC.
 #
-# THE FALLBACK, and why it is on this side only. That refusal is a SIGNAL, and
-# `update_counter` returns a bool precisely so a caller can tell a write that
-# landed from one that was declined: an absent archetype row is the evidence that
-# this image's insert did not create one, so the reversal then aims at the row the
-# old derivation names. That is self-limiting — it costs one extra conditional
-# write only when the archetype decrement was refused, it needs no new stored
-# field, and it stops mattering on its own as the pre-deploy rows age out, at
-# which point BOTH constants below and `_reverse_a_pre_deploy_persona_row` can be
-# deleted with no other change.
+# THE FALLBACK, and why it is on this side only. The ABSENCE OF THE ROW is a
+# signal, and `update_counter` reports it (`CounterWrite.ROW_ABSENT`, told from a
+# refusal at the floor by DynamoDB itself) precisely so a caller can spend it: a
+# missing archetype row is the evidence that this image's insert did not create one,
+# so the reversal then aims at the row the old derivation names. That is
+# self-limiting — it costs one extra conditional write only when the archetype row
+# is absent, it needs no new stored field, and it stops mattering on its own as the
+# pre-deploy rows age out, at which point BOTH constants below and
+# `_reverse_a_pre_deploy_persona_row` can be deleted with no other change.
+#
+# THE EVIDENCE IS THE ROW, NOT THE ITEM'S SHAPE. Worth stating because the shape
+# test suggests itself and is false: `processor/handler.py` has written BOTH persona
+# fields since the initial commit, so "no `persona_type` but a `persona_name`" is
+# NOT the pre-deploy shape — an anonymous pre-deploy item carries a `persona_type`
+# and no name, exactly like a post-deploy one, and that is the 99.97% case. The
+# deploy boundary left its mark on the ROWS, so only a row can testify to it.
 #
 # A permanent dual-READ on the increment path was rejected, and the reason is
 # recorded: this repo has already refused that shape once (the MCP legacy-token
@@ -237,6 +250,17 @@ LEGACY_PERSONA_FIELD = 'persona_name'
 # way it was written, because this constant's whole job is to name rows that ALREADY
 # EXIST. It is not a value anything writes fresh: `counter_dimensions` spells the
 # empty bucket PERSONA_UNKNOWN, the enum's way.
+#
+# 🔑 THE CASE IS A CORRECTNESS PROPERTY, not only fidelity to how the old rows were
+# spelled. `PERSONA_UNKNOWN` is `unknown`; unify the two and every reversal of an
+# anonymous pre-deploy image — the majority shape — would decrement the LIVE
+# `unknown` archetype row instead of the legacy bucket, which is the largest bucket
+# on the current axis. The two are also not symmetric in kind: `unknown` is a value
+# the enrichment contract declares, while `Unknown` was a label the old derivation
+# invented, so the new one must never be substituted for the old. Asserted by
+# test_a_post_deploy_image_whose_row_is_gone_writes_nothing_more, and the collision
+# it protects against is the general case
+# `_reverse_a_pre_deploy_persona_row` refuses via PERSONA_ARCHETYPES.
 LEGACY_PERSONA_UNKNOWN = 'Unknown'
 
 # Client error codes worth failing OPEN for without shouting: a blip, a throttle, a
@@ -255,6 +279,49 @@ _TRANSIENT_READ_ERRORS = frozenset({
     'RequestTimeoutException',
     'TransactionConflictException',
 })
+
+
+class CounterWrite(Enum):
+    """How one `update_counter` call ended.
+
+    🔑 THREE OUTCOMES, NOT TWO, because "the write was refused" is two different
+    facts and the difference is load-bearing for exactly one caller. A decrement's
+    condition is `attribute_exists(pk) AND #field >= :floor`, so a refusal means
+    EITHER there was no row at all OR the row is at zero — and
+    `_reverse_a_pre_deploy_persona_row` acts only on the first. A bool cannot carry
+    that, which is what made the fallback fire on a redelivered REMOVE of an
+    ordinary post-deploy item whose row had merely reached zero.
+
+    DynamoDB is the one that knows, and it will say so for free:
+    `ReturnValuesOnConditionCheckFailure='ALL_OLD'` returns the refused item, or no
+    item when there was none. So this distinction is OBSERVED rather than inferred
+    — which matters, because the plausible-looking alternative is to infer it from
+    the item's shape ("no `persona_type` but a `persona_name` means pre-deploy"),
+    and that inference is simply false: `processor/handler.py` has written BOTH
+    persona fields since the initial commit, so a pre-deploy anonymous item — the
+    99.97% case this compatibility exists for — is shape-identical to a post-deploy
+    one. Only the ROW's existence separates them.
+    """
+
+    LANDED = 'landed'
+    # The row exists; the floor refused this decrement because the counter is at
+    # zero. An ordinary outcome of a redelivered REMOVE, and NOT evidence about
+    # which deploy the item's insert ran under: the row being there is proof its
+    # insert created it.
+    REFUSED_AT_FLOOR = 'refused_at_floor'
+    # There is no such row: `attribute_exists(pk)` failed. Either it aged out under
+    # its TTL, or this item's insert never created it — which is the evidence the
+    # persona compatibility runs on.
+    ROW_ABSENT = 'row_absent'
+
+    def __bool__(self) -> bool:
+        """`LANDED` is truthy, both refusals falsy.
+
+        So that `if update_counter(...)` keeps reading as "did it land?" at the call
+        sites that only need that, and so that widening the return from a bool could
+        not silently invert a caller that had not been updated.
+        """
+        return self is CounterWrite.LANDED
 
 
 def get_metric_type(pk: str) -> str | None:
@@ -296,15 +363,21 @@ def _log_decline(what: str, pk: str, sk: str, because: str):
     metrics.add_metric(name=DECLINED_METRIC, unit="Count", value=1)
 
 
-def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: int = 90) -> bool:
+def update_counter(pk: str, sk: str, field: str, increment: int = 1,
+                   ttl_days: int = 90) -> 'CounterWrite':
     """Atomically update a counter in the aggregates table.
 
-    Returns whether the write LANDED. False means a condition refused it, which is
-    an ordinary outcome for a decrement and never happens to an increment (they
-    carry no condition). Callers that must know the difference: the rebucket, whose
-    two halves have to stand or fall together, and the metric that claims
-    "aggregates moved" — a count of writes ATTEMPTED would make that claim false
-    for an edit whose every write was refused.
+    Returns HOW the write ended, as one of the three `CounterWrite` outcomes —
+    landed, or refused for one of the two distinguishable reasons. Not a bool,
+    because "refused" is two different facts and one caller has to tell them apart:
+    see that enum. Callers that only need landed-or-not compare against
+    `CounterWrite.LANDED`.
+
+    A refusal is an ordinary outcome for a decrement and never happens to an
+    increment (they carry no condition). Callers that must know the difference: the
+    rebucket, whose two halves have to stand or fall together, and the metric that
+    claims "aggregates moved" — a count of writes ATTEMPTED would make that claim
+    false for an edit whose every write was refused.
 
     An increment may create the row — that is how a date's first item registers,
     and it stays true for a REBUCKET, because the first item edited into a category
@@ -326,6 +399,12 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: i
 
     ConditionalCheckFailedException is therefore an expected, benign outcome of a
     decrement with nothing to decrement, and is swallowed (and counted).
+
+    `ReturnValuesOnConditionCheckFailure='ALL_OLD'` is what makes the two refusals
+    distinguishable: on a conditional failure DynamoDB returns the item it refused
+    to write, or nothing at all if there was no item. That is the ONE authoritative
+    answer to "was this row absent, or merely at the floor?", and it costs no extra
+    request — see `CounterWrite.ROW_ABSENT` for the caller that needs it.
     """
     ttl = int(datetime.now(timezone.utc).timestamp() + ttl_days * 24 * 60 * 60)
 
@@ -348,6 +427,9 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: i
     if increment < 0:
         kwargs['ConditionExpression'] = 'attribute_exists(pk) AND #field >= :floor'
         attr_values[':floor'] = -increment
+        # Ask for the refused item, so a refusal can say WHICH half of the condition
+        # failed. Only on the conditional path: an increment cannot be refused.
+        kwargs['ReturnValuesOnConditionCheckFailure'] = 'ALL_OLD'
 
     try:
         aggregates_table.update_item(
@@ -361,8 +443,14 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1, ttl_days: i
         if 'ConditionExpression' not in kwargs or not is_conditional_check_failure(e):
             raise
         _log_refusal(f'decrement of {field}', pk, sk)
-        return False
-    return True
+        # `Item` present means the row exists and the FLOOR refused this; absent
+        # means there was no row. DynamoDB reports it, so nothing here infers it
+        # from the item's shape — see `CounterWrite.ROW_ABSENT`.
+        response = e.response if isinstance(e.response, Mapping) else {}
+        if response.get('Item'):
+            return CounterWrite.REFUSED_AT_FLOOR
+        return CounterWrite.ROW_ABSENT
+    return CounterWrite.LANDED
 
 
 def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90,
@@ -636,29 +724,35 @@ def apply_counter_keys(keys: set[tuple[str, str, str]], sign: int) -> tuple[int,
     there is exactly one line in this module deciding what a counter's sort key
     is. Sorted only to make the write order deterministic for tests and logs.
 
-    Returns `(writes that LANDED, the keys whose write was REFUSED)`.
+    Returns `(writes that LANDED, the keys whose row was found to be ABSENT)`.
 
     Landed, not attempted: a caller counting attempts would report that aggregates
     moved for an edit whose every write was refused by its condition.
 
-    The refusals are returned rather than only counted because for one dimension a
-    refusal is EVIDENCE, not merely an outcome: an absent persona row on a reversal
-    says this image's insert ran before the axis moved, which is the one thing that
-    distinguishes a pre-deploy item from a post-deploy one — see
-    `_reverse_a_pre_deploy_persona_row`. Reported as the KEYS rather than as a
-    count so that caller cannot guess which row was refused, and cannot aim its
-    follow-up write at a day the refusal did not concern.
+    🔑 THE SECOND MEMBER IS NARROWER THAN "REFUSED", and the narrowing is the point.
+    Only `CounterWrite.ROW_ABSENT` is collected — not a refusal at the floor —
+    because the one caller that reads these keys treats them as EVIDENCE that this
+    image's insert never created the row, and a row sitting at zero is proof of the
+    opposite: it exists, so its insert did create it. Handing that caller every
+    refusal made it act on a redelivered REMOVE of an ordinary post-deploy item,
+    which is the defect this signature now makes unrepresentable. See
+    `_reverse_a_pre_deploy_persona_row` and `CounterWrite`.
+
+    Reported as the KEYS rather than as a count so that caller cannot guess which
+    row was absent, and cannot aim its follow-up write at a day the refusal did not
+    concern.
     """
-    landed, refused = 0, set()
+    landed, absent = 0, set()
     for pk, date, field in sorted(keys):
-        if update_counter(pk, date, field, increment=sign):
+        outcome = update_counter(pk, date, field, increment=sign)
+        if outcome is CounterWrite.LANDED:
             landed += 1
-        else:
-            refused.add((pk, date, field))
-    return landed, refused
+        elif outcome is CounterWrite.ROW_ABSENT:
+            absent.add((pk, date, field))
+    return landed, absent
 
 
-def _reverse_a_pre_deploy_persona_row(item: dict, refused: set[tuple[str, str, str]]) -> int:
+def _reverse_a_pre_deploy_persona_row(item: dict, absent: set[tuple[str, str, str]]) -> int:
     """Bring down the persona row an item's PRE-DEPLOY insert really created.
 
     The whole of the persona axis's write-side compatibility, and the only place
@@ -668,50 +762,89 @@ def _reverse_a_pre_deploy_persona_row(item: dict, refused: set[tuple[str, str, s
     `counter_dimensions` is one description spent by both directions, so a reversal
     names `METRIC#persona#<persona_type>`. For an item inserted before the axis
     moved, no such row was ever created — the insert counted it under the old
-    derivation's bucket — and `update_counter`'s
-    `attribute_exists(pk) AND #field >= :floor` condition refuses the decrement.
-    That refusal is the evidence, and the follow-up write is aimed at the row the
-    old derivation names, on the DAY the refusal concerned (read out of the refused
-    key, not re-derived, so a follow-up can never land on another day).
+    derivation's bucket — and `update_counter`'s `attribute_exists(pk)` half refuses
+    the decrement, reporting `CounterWrite.ROW_ABSENT`. That is the evidence, and
+    the follow-up write is aimed at the row the old derivation names, on the DAY the
+    refusal concerned (read out of the refused key, not re-derived, so a follow-up
+    can never land on another day).
 
-    It is CONDITIONAL like every other decrement, so the compatibility cannot
-    resurrect a legacy row or drive one negative either: if the old row has also
-    aged out, this is refused in turn and counted as REFUSED_METRIC.
+    🔑 THE TRIGGER IS "THE ROW WAS ABSENT", NOT "THE WRITE WAS REFUSED". Those are
+    different propositions, and this function only ever had a right to the first.
+    A decrement is also refused when the row EXISTS at zero, which is the ordinary
+    outcome of a redelivered REMOVE of a post-deploy item — and acting on that took
+    a `-1` off a legacy row the item never contributed to, silently and on a healthy
+    corpus. `apply_counter_keys` therefore hands this function absent-row keys only;
+    a row at the floor is proof its insert DID create it, so it is proof this
+    function must do nothing. That the distinction is observed from DynamoDB rather
+    than inferred from the item's shape matters — see `CounterWrite`, since the
+    shape-based test that suggests itself is false for the majority case.
 
-    WHEN THE TWO DERIVATIONS NAME ONE ROW, nothing is attempted. That is not a
-    saving; it is required. A second write to the row whose decrement was just
+    NOTHING IS ATTEMPTED AGAINST A ROW THIS DEPLOY WRITES. `legacy_pk` is built from
+    a free-text, LLM-produced name, so it is the one pk in this module not derived
+    from a closed value space, and a name that happens to equal an archetype
+    (`unknown` is entirely plausible for anonymous feedback, and is the axis's
+    largest bucket) would aim this `-1` at a LIVE row for an item counted under a
+    different archetype. Conditional writes cannot catch that: the row exists and is
+    above the floor, so the write lands cleanly and corrupts a current number. A
+    missed legacy `-1` is the right way to be wrong here, which is the judgement
+    `process_deleted_feedback` already makes for a dateless image.
+
+    WHEN THE TWO DERIVATIONS NAME ONE ROW, nothing is attempted either. That is not
+    a saving; it is required. A second write to the row whose decrement was just
     refused would be the identical refused write (harmless), and if it were not
     refused it would be a SECOND decrement of one row for one deletion.
 
-    THE RESIDUAL, which is the redelivery residual this module already documents,
-    relocated rather than added: Streams are at-least-once, so a REMOVE redelivered
-    after the archetype row has reached zero is refused there too, and this then
-    takes one count off the legacy row instead. The direction of that error is
-    toward the truth — the legacy row is inflated by exactly the pre-deploy items
-    being deleted — and it is bounded by the same 90-day TTL as the rows themselves.
-    A redelivered REMOVE already moved counters twice before this existed; what is
-    new is only which row the second one lands on.
+    It is CONDITIONAL like every other decrement, so the compatibility cannot
+    resurrect a legacy row or drive one negative: if the old row has also aged out,
+    this is refused in turn and counted as REFUSED_METRIC.
 
-    Returns how many writes landed (0 or 1 per refused persona key).
+    REDELIVERY, now that the trigger is the absent row: a redelivered REMOVE reaches
+    this only while the archetype row is still ABSENT, i.e. only for an item whose
+    insert really did predate the move, and every such delivery is draining a row
+    that is inflated by exactly those items. It is bounded by the floor and by the
+    same 90-day TTL as the rows themselves. The module's general redelivery residual
+    is unchanged and unrelocated: a post-deploy item's redelivered REMOVE now does
+    here what it did before this function existed, which is nothing.
+
+    Returns how many writes landed (0 or 1 per absent persona key).
     """
     # `keys`, and `sorted(keys)` below, because these ARE counter keys and
     # test_streaming_categories_lockstep.py pins the small set of expressions
     # allowed to produce a counter's sort key — the bare item date, never anything
     # composite, because the streaming reader sums a window with `sk BETWEEN`.
-    keys = {key for key in refused if key[0].startswith(PERSONA_PREFIX)}
+    keys = {key for key in absent if key[0].startswith(PERSONA_PREFIX)}
     if not keys:
         return 0
 
     # The old derivation, reproduced exactly — including its bespoke `Unknown`,
     # which is a row name that already EXISTS rather than one anything writes fresh.
-    legacy_pk = f'{PERSONA_PREFIX}{item.get(LEGACY_PERSONA_FIELD) or LEGACY_PERSONA_UNKNOWN}'
+    legacy_value = item.get(LEGACY_PERSONA_FIELD) or LEGACY_PERSONA_UNKNOWN
+    if legacy_value in PERSONA_ARCHETYPES:
+        # A free-text name that collides with the current value space. This deploy
+        # writes that row, so a `-1` on it is a live number corrupted rather than a
+        # legacy one corrected — and it cannot be told apart from a legitimate
+        # legacy row by anything at this point. Declined, and counted as such: a
+        # write never issued gives DynamoDB nothing to refuse, so REFUSED_METRIC
+        # could not see it.
+        _log_decline(
+            'the pre-deploy persona reversal', f'{PERSONA_PREFIX}{legacy_value}',
+            # The earliest day the refusal concerned, so the decline names a real
+            # day rather than one recomputed here.
+            min(keys)[1],
+            f'`{LEGACY_PERSONA_FIELD}` is `{legacy_value}`, which is one of the '
+            f'archetypes this deploy actively writes, so that row cannot be '
+            f'distinguished from a live one and must not be decremented',
+        )
+        return 0
+
+    legacy_pk = f'{PERSONA_PREFIX}{legacy_value}'
     landed = 0
     for pk, date, field in sorted(keys):
         if pk == legacy_pk:
             # One row, two derivations agreeing on it: see the docstring.
             continue
         logger.info(
-            f"Persona decrement on {pk}/{date} was refused; reversing "
+            f"Persona decrement on {pk}/{date} found no row; reversing "
             f"{legacy_pk} instead, the row this item's pre-deploy insert created"
         )
         if update_counter(legacy_pk, date, field, increment=-1):
@@ -721,14 +854,14 @@ def _reverse_a_pre_deploy_persona_row(item: dict, refused: set[tuple[str, str, s
 
 def apply_feedback(item: dict, sign: int, date: str):
     """Add (`sign=1`) or reverse (`sign=-1`) one item's contribution on `date`."""
-    _, refused = apply_counter_keys(counter_keys(item, date), sign)
+    _, absent = apply_counter_keys(counter_keys(item, date), sign)
     if sign < 0:
         # Reversal only. Reading the old persona field on the INCREMENT path would
         # make the axis permanently dual-sourced to serve a path with a sunset date,
         # which this repo has rejected before; here the refusal makes it free and
         # confines it to a direction that cannot change which bucket anything is
         # COUNTED in. See `_reverse_a_pre_deploy_persona_row`.
-        _reverse_a_pre_deploy_persona_row(item, refused)
+        _reverse_a_pre_deploy_persona_row(item, absent)
 
     # Daily sentiment score average
     sentiment_score = _image_score(item)
@@ -868,7 +1001,7 @@ def process_modified_feedback(old_item: dict, new_item: dict) -> int | None:
 
     writes = 0
     if old_live:
-        landed, refused = apply_counter_keys(decrements, -1)
+        landed, absent = apply_counter_keys(decrements, -1)
         writes += landed
         # The same pre-deploy compatibility the REMOVE path gets, for the same
         # reason: this decrement reads an OLD IMAGE, which may be an image whose
@@ -877,7 +1010,21 @@ def process_modified_feedback(old_item: dict, new_item: dict) -> int | None:
         # alone cancels in the symmetric difference and issues no persona write at
         # all, so there is nothing to be refused. Derived from `old_item`, because
         # the row to bring down is the one the OLD image's insert created.
-        writes += _reverse_a_pre_deploy_persona_row(old_item, refused)
+        #
+        # 🔑 DELIBERATELY NOT ADDED TO `writes`, which is this function's claim that
+        # THIS EDIT moved aggregates — `record_handler` gates REBUCKETED_METRIC on
+        # it. This write is not one the edit asked for: it corrects a row a previous
+        # deploy created. Folding it in would let that metric fire for an edit whose
+        # own decrements and increments were every one refused, which is the same
+        # distinction DECLINED_METRIC and REFUSED_METRIC exist to keep — a metric
+        # that gates on a count is a consumer of the count, not just a reader.
+        # Logged instead, so the compatibility is observable without being conflated.
+        compatibility_writes = _reverse_a_pre_deploy_persona_row(old_item, absent)
+        if compatibility_writes:
+            logger.info(
+                f"Also brought down {compatibility_writes} pre-deploy persona row(s) "
+                f"for this edit; not counted as aggregates the edit itself moved"
+            )
     elif decrements:
         logger.info(f"Not decrementing {len(decrements)} counter(s) on the aged-out {old_date}")
     if new_live:

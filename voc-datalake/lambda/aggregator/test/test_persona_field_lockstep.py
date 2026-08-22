@@ -64,15 +64,24 @@ REVERT MAP
       file, which reads the parsed CODE of the four functions that spend it.
     * Delete the reversal's pre-deploy fallback
       (`_reverse_a_pre_deploy_persona_row`) — fails
-      TestAPreDeployImageIsReversedOnTheArchetype in test_handler.py, which is where
-      the cross-deploy case is pinned.
+      TestAPreDeployImageIsReversedOnTheRowItsInsertCreated in test_handler.py, which
+      is where the cross-deploy case is pinned.
+    * Add a value to `shared/feedback.py::PERSONA_ARCHETYPES` that the enrichment
+      prompt does not admit, or drop one it does — fails
+      test_the_shared_archetypes_are_the_ones_the_enrichment_enum_declares. That set
+      is a COPY of the contract, kept for a write-side guard, so it is pinned to the
+      prompt the way the empty bucket already is.
 
-    Every name cited above was grepped against the repo and resolves. That check is
-    worth repeating on edit: review found this map naming a test
-    (`..._agree_on_one_item`) that existed nowhere, and in a repo where the REVERT
-    MAP is the index from mutation to failing test, a citation that resolves to
-    nothing is the one kind of staleness these files cannot absorb — the next reader
-    greps for it, finds nothing, and has to reconstruct whether the coverage exists.
+    Every name cited above was grepped against the repo and resolves — as of this
+    edit, by running the grep rather than by intending to. That check is worth
+    repeating on every edit, and NOT worth asserting in prose without doing: review
+    found this map naming a test (`..._agree_on_one_item`) that existed nowhere, then
+    found a class name (`...OnTheArchetype`) stale three lines above a sentence
+    claiming the check had been done. In a repo where the REVERT MAP is the index from
+    mutation to failing test, a citation that resolves to nothing is the one kind of
+    staleness these files cannot absorb — the next reader greps for it, finds nothing,
+    and has to reconstruct whether the coverage exists at all. A false assurance is
+    worse, because it stops them checking.
 """
 import ast
 import re
@@ -301,6 +310,32 @@ class TestTheDefaultBucketIsStable:
             f'contract in {PROCESSOR_SOURCE} does not admit — it admits '
             f'{sorted(admitted)}. Name it with a value the contract defines, so the '
             f'axis has no values invented outside it.'
+        )
+
+    def test_the_shared_archetypes_are_the_ones_the_enrichment_enum_declares(self):
+        """`PERSONA_ARCHETYPES` is a COPY of the contract, so it is pinned to it.
+
+        The prompt is the contract — it is what the model is told to return — and this
+        set exists only because a WRITE-side guard needs to recognise the value space
+        in code: `_reverse_a_pre_deploy_persona_row` refuses to aim its `-1` at a row
+        this deploy actively writes, which it can only know by membership. A copy that
+        drifted would break that guard in the more dangerous direction, admitting a
+        legacy decrement onto a live archetype row.
+
+        Compared as a whole set, not by membership of one value, so a value ADDED
+        here that the contract never declares fails just as loudly as one dropped.
+        """
+        from shared.feedback import PERSONA_ARCHETYPES
+
+        admitted = _processor_persona_type_enum()
+
+        assert set(PERSONA_ARCHETYPES) == admitted, (
+            f'PERSONA_ARCHETYPES is {sorted(PERSONA_ARCHETYPES)} while the enrichment '
+            f'contract in {PROCESSOR_SOURCE} admits {sorted(admitted)}. The set is a '
+            f'copy of the contract kept for the reversal\'s collision guard; if the '
+            f'prompt\'s enum moved, follow it here, and if a value was added here that '
+            f'the model is never told to return, remove it — the guard would refuse a '
+            f'legitimate legacy decrement, or admit one onto a live row.'
         )
 
     def test_the_persona_dimension_is_never_absent(self):

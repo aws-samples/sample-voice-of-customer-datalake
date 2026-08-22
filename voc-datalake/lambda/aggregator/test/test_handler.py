@@ -1147,12 +1147,28 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
     delete leaves that row inflated for up to 90 days while decrementing an archetype
     row the item never contributed to.
 
-    WHAT IS NOT WRONG WITH IT, since a review of this PR claimed otherwise: it cannot
-    drive a counter negative or resurrect an expired row. `update_counter` guards
-    every decrement with `attribute_exists(pk) AND #field >= :floor`, pinned by
-    TestADecrementCannotCreateOrGoNegative against a real DynamoDB. The damage was a
-    persistent OVER-count of a legacy row, not a negative one — and that refusal is
-    also the evidence the fallback runs on.
+    NO COUNTER GOES NEGATIVE AND NO EXPIRED ROW IS RESURRECTED, here or anywhere
+    else on this path: `update_counter` guards every decrement with
+    `attribute_exists(pk) AND #field >= :floor`, pinned against a real DynamoDB by
+    TestADecrementCannotCreateOrGoNegative. The damage this fallback repairs was a
+    persistent OVER-count of a legacy row, not a negative one.
+
+    🔑 THE TRIGGER IS THE ABSENCE OF THE ARCHETYPE ROW, WHICH IS NARROWER THAN A
+    REFUSED WRITE, and the difference is the whole subject of half this class. A
+    decrement is refused for two distinguishable reasons — no row, or a row at zero
+    — and only the first is evidence that this image's insert predated the axis move.
+    A row sitting at zero is proof of the opposite: it exists, so its insert created
+    it, and that is the ordinary state of a REDELIVERED remove of a healthy
+    post-deploy item. Acting on it took a `-1` off a legacy row the item never
+    contributed to. `CounterWrite` carries the distinction, DynamoDB supplies it, and
+    test_a_redelivered_remove_of_a_post_deploy_item_leaves_the_legacy_row_alone is
+    the case that would go wrong without it.
+
+    IT IS ALSO NOT ALLOWED TO NAME A ROW THIS DEPLOY WRITES. `legacy_pk` is built out
+    of a free-text LLM-produced name, the one pk in the module not drawn from a
+    closed value space, so a name equal to an archetype would aim the `-1` at a LIVE
+    bucket — and a conditional write cannot catch that, because the row exists and is
+    above the floor. PERSONA_ARCHETYPES is what refuses it.
 
     The fallback is CONFINED to the reversal direction. Reading the old field on the
     increment path would make the axis permanently dual-sourced to serve a path with
@@ -1163,10 +1179,17 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
       * Delete `_reverse_a_pre_deploy_persona_row`'s call in `apply_feedback` — fails
         test_the_row_the_pre_deploy_insert_created_is_the_one_brought_down and
         test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too.
-      * Run it for a POST-deploy image whose archetype row merely sat at zero — that
-        is what test_a_post_deploy_image_does_not_touch_the_legacy_row is the
-        positive control against; it is the case that makes the fallback's trigger
-        "the row was refused" rather than "a decrement happened".
+      * Trigger on any refusal rather than on the absent row — i.e. have
+        `apply_counter_keys` collect `CounterWrite.REFUSED_AT_FLOOR` keys too, or
+        make `update_counter` return one undifferentiated refusal — fails
+        test_a_redelivered_remove_of_a_post_deploy_item_leaves_the_legacy_row_alone
+        and
+        test_a_redelivered_remove_of_an_anonymous_item_does_not_drain_the_legacy_default.
+      * Drop the PERSONA_ARCHETYPES guard — fails
+        test_a_name_equal_to_an_archetype_does_not_aim_the_reversal_at_a_live_row.
+      * Run it for a POST-deploy image whose archetype decrement LANDED — that is
+        what test_a_post_deploy_image_does_not_touch_the_legacy_row is the positive
+        control against.
       * Make the axis dual-SOURCED on the way in
         (`item.get(PERSONA_FIELD) or item.get(LEGACY_PERSONA_FIELD) or ...` in
         `counter_dimensions`) — fails
@@ -1179,16 +1202,26 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         test_the_fallback_cannot_resurrect_an_aged_out_legacy_row, which is
         moto-backed of necessity: a mock cannot refuse a write.
 
+    WHY THE TRIGGER IS NOT THE ITEM'S SHAPE, recorded because it is the fix that
+    suggests itself for the redelivery case above and it does not work: "no
+    `persona_type`, but a `persona_name`" looks like a pre-deploy image and is not
+    one. `processor/handler.py` has written BOTH persona fields since the initial
+    commit, so the axis move changed only the READER — an anonymous pre-deploy item
+    carries a `persona_type` and no name, exactly like a post-deploy one, and that is
+    the 99.97% case this compatibility exists for. A shape test would therefore be
+    silently inert for the majority of the corpus while looking like a tightening;
+    test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current
+    is the case that fails under it.
+
     TWO MUTATIONS THAT DO NOT FAIL ANYTHING, run and recorded rather than asserted
-    into existence, since a REVERT MAP naming a failure that does not happen is the
-    defect this PR's review found in the sibling file:
-      * `if sign < 0` → `if True` in `apply_feedback`: 130 passed. An increment
-        carries no ConditionExpression, so it cannot be refused, so `refused` is
-        empty and the fallback has nothing to act on. The guard STATES that rather
+    into existence, because a REVERT MAP is only worth what its citations are:
+      * `if sign < 0` → `if True` in `apply_feedback`: passes. An increment carries
+        no ConditionExpression, so it cannot be refused, so no key is ever reported
+        absent and the fallback has nothing to act on. The guard STATES that rather
         than depending on it — cheaper to read than to re-derive, and it keeps the
         compatibility legible as reversal-only.
       * reading the date from `_image_date(item)` instead of out of the refused key:
-        130 passed, because for one reversal every refused key carries the very date
+        passes, because for one reversal every refused key carries the very date
         `counter_keys` was given. Reading it out of the key is structural rather than
         observable: it makes it impossible for a future caller to hand this function
         keys from one day and an item naming another, which is the failure
@@ -1226,20 +1259,32 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         return personas[0]
 
     @staticmethod
-    def _refuse(mock_table, *, unless_pk: str | None = None):
+    def _refuse(mock_table, *, unless_pk: str | None = None, at_floor: bool = False):
         """Make the mocked table refuse EVERY conditional write, or all but one.
 
         A decrement against a row that does not exist is what production really
         answers with, and an unconfigured mock accepts everything — so without this
         the fallback could never be reached and the tests below would pass with it
         deleted.
+
+        `at_floor` picks WHICH refusal is mimicked, and the two are not
+        interchangeable. DynamoDB reports a conditional failure with the refused item
+        attached when there was one (`ReturnValuesOnConditionCheckFailure='ALL_OLD'`),
+        and with no item when the row was absent — which is how `update_counter`
+        tells a row that never existed from one sitting at zero. A helper that
+        answered only one of the two would make one of those cases untestable, and it
+        is the difference the fallback's trigger now turns on.
         """
+        floor_item = {'pk': {'S': 'set-below'}, 'sk': {'S': 'd'}, 'count': {'N': '0'}}
+
         def update_item(**kwargs):
             if 'ConditionExpression' in kwargs and kwargs['Key']['pk'] != unless_pk:
-                raise ClientError(
-                    {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'gone'}},
-                    'UpdateItem',
-                )
+                response = {
+                    'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'no'},
+                }
+                if at_floor:
+                    response['Item'] = {**floor_item, 'pk': {'S': kwargs['Key']['pk']}}
+                raise ClientError(response, 'UpdateItem')
             return {}
 
         mock_table.update_item.side_effect = update_item
@@ -1385,6 +1430,140 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         days = {sk for pk, sk, _, _ in self._persona_writes(mock_table)}
         assert days == {'2024-11-02'}, days
 
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_redelivered_remove_of_a_post_deploy_item_leaves_the_legacy_row_alone(
+        self, mock_table, sample_feedback_item
+    ):
+        """A refused decrement is not evidence of a pre-deploy insert.
+
+        Streams are at-least-once, so a REMOVE is redelivered after its counters have
+        already come down — and the archetype row then sits at ZERO, where the floor
+        refuses the second decrement. That row EXISTS, which is proof its insert
+        created it, so this image owes the legacy bucket nothing. Triggering on "the
+        write was refused" instead of "the row was absent" took a `-1` off a free-text
+        row belonging to a different customer, on a healthy post-deploy corpus.
+        """
+        from aggregator.handler import record_handler
+
+        # Every conditional write refused BY THE FLOOR: the rows are all there.
+        self._refuse(mock_table, at_floor=True)
+        item = sample_feedback_item
+        assert item.get('persona_name') and item.get('persona_type'), (
+            'the subject must carry BOTH fields, or the two derivations agree and '
+            'the `pk == legacy_pk` branch would hide the defect'
+        )
+
+        record_handler(_record('REMOVE', old=item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._archetype_pk(item), '2025-01-15', 'count', -1)
+        ], (
+            'a redelivered REMOVE of a post-deploy item must attempt its archetype '
+            'row and stop there. The row being at zero says the row exists, so the '
+            'insert created it, so there is no pre-deploy row to bring down.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_redelivered_remove_of_an_anonymous_item_does_not_drain_the_legacy_default(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        """The same case in the shape production actually has, which is the costly one.
+
+        An anonymous item derives the legacy bucket from the OLD DEFAULT, so a stray
+        decrement lands on `METRIC#persona#Unknown` — the single row holding ~99.97%
+        of the pre-deploy corpus. Every redelivered REMOVE would have taken a count
+        off it, for items it never held.
+        """
+        from aggregator.handler import (
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_PREFIX,
+            record_handler,
+        )
+
+        self._refuse(mock_table, at_floor=True)
+
+        record_handler(_record('REMOVE', old=sample_anonymous_feedback_item))
+
+        legacy_default = f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}'
+        written = [pk for pk, *_ in self._persona_writes(mock_table)]
+        assert legacy_default not in written, written
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_name_equal_to_an_archetype_does_not_aim_the_reversal_at_a_live_row(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """`legacy_pk` is the one pk built out of free text, so it can collide.
+
+        `persona_name` is an LLM-produced person name, and nothing constrains it to
+        the value space this axis now uses — `unknown` is entirely plausible for
+        anonymous feedback, and it names the axis's LARGEST live bucket. A `-1` there
+        is a current number corrupted rather than a legacy one corrected, and no
+        condition expression can refuse it: that row exists and is above the floor.
+        A missed legacy decrement is the right way to be wrong, the judgement
+        `process_deleted_feedback` already makes for a dateless image.
+        """
+        from aggregator.handler import (
+            PERSONA_ARCHETYPES,
+            PERSONA_PREFIX,
+            record_handler,
+        )
+
+        self._refuse(mock_table)
+        colliding = {**sample_pre_deploy_feedback_item,
+                     'persona_name': 'unknown', 'persona_type': 'advocate'}
+        assert 'unknown' in PERSONA_ARCHETYPES, (
+            'the arrangement depends on this name being a value the current axis '
+            'writes; if the enum changes, pick another member of it'
+        )
+
+        record_handler(_record('REMOVE', old=colliding))
+
+        written = [pk for pk, *_ in self._persona_writes(mock_table)]
+        assert written == [f'{PERSONA_PREFIX}advocate'], (
+            f'{written}: only the archetype decrement may be attempted. The name '
+            f'`unknown` names a bucket THIS deploy writes, so it cannot be told '
+            f'apart from a live row and must be left alone.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        """The 99.97% case, and the reason the trigger cannot be the item's SHAPE.
+
+        `processor/handler.py` has written both persona fields since the initial
+        commit, so the axis move changed only the reader: a pre-deploy anonymous item
+        carries a `persona_type` and no name, which is byte-identical to a post-deploy
+        one. Only the ROW tells them apart — here the archetype row is ABSENT, because
+        that insert counted the item under the old default instead.
+
+        A shape test (`PERSONA_FIELD not in item and LEGACY_PERSONA_FIELD in item`)
+        would fail this, which is what makes it worth pinning: it looks like a
+        tightening and would silently switch the compatibility off for the majority
+        of the corpus it exists for.
+        """
+        from aggregator.handler import (
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_FIELD,
+            PERSONA_PREFIX,
+            record_handler,
+        )
+
+        self._refuse(mock_table)
+        item = sample_anonymous_feedback_item
+        assert PERSONA_FIELD in item and 'persona_name' not in item, (
+            'the arrangement is the point: this is the shape a shape-based trigger '
+            'would read as post-deploy'
+        )
+
+        record_handler(_record('REMOVE', old=item))
+
+        assert (f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}', '2025-01-15', 'count', -1) \
+            in self._persona_writes(mock_table), (
+            'an anonymous item deleted after the deploy must bring down the old '
+            'default bucket its insert really incremented.'
+        )
+
     def test_the_fallback_cannot_resurrect_an_aged_out_legacy_row(
         self, real_aggregates_table
     ):
@@ -1407,6 +1586,35 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
             'every write of this reversal — the archetype decrement and the legacy '
             'fallback alike — is conditional, so a day whose rows have expired must '
             'come out of it with no rows at all.'
+        )
+
+    def test_a_real_dynamodb_tells_a_row_at_zero_from_a_row_that_is_not_there(
+        self, real_aggregates_table
+    ):
+        """The distinction the trigger rests on, against the thing that supplies it.
+
+        `update_counter` reads it out of `ReturnValuesOnConditionCheckFailure`, so it
+        is a property of DynamoDB's response rather than of this repo's code — and a
+        mock cannot establish it: the mocked refusals elsewhere in this class are
+        hand-built to carry an item or not, which pins how the two are HANDLED but
+        assumes DynamoDB draws the distinction at all. This is the assumption.
+        """
+        from aggregator.handler import CounterWrite, update_counter
+
+        real_aggregates_table.put_item(
+            Item={'pk': 'METRIC#persona#advocate', 'sk': '2025-01-15', 'count': Decimal(0)}
+        )
+
+        at_floor = update_counter('METRIC#persona#advocate', '2025-01-15', 'count',
+                                  increment=-1)
+        absent = update_counter('METRIC#persona#nothing_here', '2025-01-15', 'count',
+                                increment=-1)
+
+        assert at_floor is CounterWrite.REFUSED_AT_FLOOR, at_floor
+        assert absent is CounterWrite.ROW_ABSENT, absent
+        assert not at_floor and not absent, (
+            'both are refusals, so both must stay falsy — the callers that only ask '
+            '"did it land?" read this value as a boolean.'
         )
 
     def test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too(
@@ -2526,6 +2734,65 @@ class TestEachBehaviourEmitsItsOwnMetric:
 
         # The refusal is visible; the rebucket is not claimed.
         assert self._names(mock_metrics) == [REFUSED_METRIC]
+
+    @patch('aggregator.handler.metrics')
+    def test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing(
+        self, mock_metrics, real_aggregates_table, sample_pre_deploy_feedback_item
+    ):
+        """REBUCKETED_METRIC claims THIS EDIT moved aggregates.
+
+        The pre-deploy persona compatibility is a write the edit did not ask for: it
+        corrects a row a previous deploy created. Folding it into the same total would
+        make the metric fire for an edit whose own decrements and increments were
+        every one refused — so an operator reading it would see an edit that moved
+        nothing reported as one that did, which is the distinction REFUSED_METRIC and
+        DECLINED_METRIC already exist to keep.
+
+        Moto-backed of necessity: the arrangement needs a live day whose archetype row
+        is genuinely ABSENT while the legacy row is genuinely present, and a mock
+        cannot refuse the one and accept the other on the strength of the real
+        condition.
+
+        THE ARRANGEMENT, because it takes some doing to leave an edit with no landing
+        write of its own: increments carry no condition, so they always land — the
+        edit therefore has to move the item ONTO AN AGED-OUT DAY, where the increments
+        are declined rather than attempted. On the day it leaves, `daily_total` is
+        present at ZERO, which keeps the day live for `_day_has_aggregates` while the
+        floor refuses its decrement; every other row it names is absent.
+        """
+        from aggregator.handler import (
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_PREFIX,
+            REBUCKETED_METRIC,
+            record_handler,
+        )
+
+        old = {k: v for k, v in sample_pre_deploy_feedback_item.items()
+               if k != 'persona_name'}
+        real_aggregates_table.put_item(
+            Item={'pk': 'METRIC#daily_total', 'sk': '2025-01-15', 'count': Decimal(0)}
+        )
+        real_aggregates_table.put_item(Item={
+            'pk': f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}', 'sk': '2025-01-15',
+            'count': Decimal(3),
+        })
+        mock_metrics.reset_mock()
+
+        record_handler(_record('MODIFY', old=old, new={**old, 'date': '2024-01-01'}))
+
+        legacy = real_aggregates_table.get_item(Key={
+            'pk': f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}', 'sk': '2025-01-15',
+        })['Item']
+        assert legacy['count'] == Decimal(2), (
+            'the arrangement requires the compatibility write to have LANDED, or this '
+            'test would pass for want of anything to count'
+        )
+        assert REBUCKETED_METRIC not in self._names(mock_metrics), (
+            f'{self._names(mock_metrics)}: the edit moved none of the aggregates it '
+            f'names, so it must not be reported as having rebucketed. The only write '
+            f'that landed was the pre-deploy compatibility, which the edit did not '
+            f'ask for.'
+        )
 
     @patch('aggregator.handler.metrics')
     def test_an_edit_that_did_move_a_counter_still_counts_as_rebucketed(
