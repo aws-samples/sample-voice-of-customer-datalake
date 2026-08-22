@@ -47,14 +47,38 @@ WHICH MUTATION MAKES EACH ASSERTION FAIL
       sibling test_a_populated_item_is_not_counted_under_the_empty_value is the
       positive control that stops the pair passing by everything collapsing into
       one bucket.
+    * Have `/feedback/entities` skip items with no value while `/metrics/personas`
+      counts them — fails
+      test_the_entities_persona_map_sums_to_the_corpus_it_reports, which drives the
+      OTHER scan branch and asserts the sum invariant the route publishes
+      `feedback_count` beside. The route has two branches too, and only one of them
+      was pinned until review found this.
     * Drop either side's import of the shared declaration — fails
       test_both_sides_read_the_field_from_one_declaration. Re-spell the bucket as a
       literal beside the constant, or derive it in a second statement, and
       test_neither_side_spells_the_bucket_out_beside_the_constant fails.
-    * Change the `METRIC#persona#` key prefix on one side only — fails
-      test_both_sides_spell_the_persona_partition_the_same_way, which is what keeps
-      `get_metric_type`, the `metric_type` GSI and the read paths working while the
-      source field moves underneath them.
+    * Change the `METRIC#persona#` key prefix in the code of either handler — fails
+      test_neither_side_spells_the_persona_partition_in_its_own_code, which is what
+      keeps `get_metric_type`, the `metric_type` GSI and the read paths working while
+      the source field moves underneath them.
+
+WHAT REVIEW FOUND WRONG WITH TWO OF THESE PINS, recorded because the failures were
+    of the two kinds a lockstep must not have, and because the same mistakes are
+    easy to make again:
+    (Both names below are DELETED tests, named only to say what was wrong with them
+    — every live citation in the map above resolves, which is worth re-checking on
+    edit: review found this file's sibling naming a test that existed nowhere.)
+    * test_both_sides_spell_the_persona_partition_the_same_way [removed] was a file-wide
+      substring search for `METRIC#persona#`. Both handlers MENTION the prefix in
+      prose, so the docstrings satisfied it: with both files' real code drifted to
+      `METRIC#DRIFT#` and only the comments untouched, it passed. Replaced by a
+      negative pin over the parsed code of the four functions that spend the prefix,
+      plus the prefix hoisted into `shared/feedback.py` beside the other two.
+    * test_both_sides_read_the_field_from_one_declaration matched the import with a
+      line-anchored regex, so a parenthesised multi-line import — what a formatter
+      produces once the line grows — FAILED A CORRECT MODULE. Replaced by
+      `ast.ImportFrom`. That direction is the more dangerous one: a false red trains
+      the next contributor to deform correct code to appease a test.
 """
 import ast
 import json
@@ -64,7 +88,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-from shared.feedback import PERSONA_FIELD, PERSONA_UNKNOWN
+from shared.feedback import PERSONA_FIELD, PERSONA_PREFIX, PERSONA_UNKNOWN
 
 # test/ → api/ → lambda/ → voc-datalake/, then the two files that share the axis.
 _REPO = Path(__file__).resolve().parents[3]
@@ -72,10 +96,21 @@ AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
 METRICS_SOURCE = 'lambda/api/metrics_handler.py'
 SHARED_MODULE = 'shared.feedback'
 
-# The axis's key prefix, which deliberately did NOT move when the source field did:
-# `get_metric_type`, the `metric_type` GSI and every read path key off it, and the
-# axis is still "persona" — only where its value comes from changed.
-PERSONA_PREFIX = 'METRIC#persona#'
+# The three names both sides must read from ONE declaration. PERSONA_PREFIX joined
+# the two after review found the structural pin on it was inert: it was a file-wide
+# substring search, and both files MENTION the prefix in prose, so the docstrings
+# alone satisfied it — the pin passed with both files' real code drifted to
+# `METRIC#DRIFT#`. A shared constant plus "no side spells it in code" is a pin that
+# cannot be satisfied by a comment.
+SHARED_NAMES = ('PERSONA_FIELD', 'PERSONA_UNKNOWN', 'PERSONA_PREFIX')
+
+# Every function that names the persona partition, listed per side because the pin
+# below is that NONE of them spells it as its own literal. Four rather than two: the
+# aggregator both BUILDS the pk (`counter_dimensions`) and recognises it for the
+# `metric_type` GSI (`get_metric_type`), and metrics_handler strips it back off in
+# BOTH of its aggregates branches — `/metrics/personas` and `/feedback/entities`.
+AGGREGATOR_PREFIX_USERS = ('counter_dimensions', 'get_metric_type')
+METRICS_PREFIX_USERS = ('get_persona_metrics', 'get_entities')
 
 # An archetype and a name that cannot be confused for one another, so a response
 # says WHICH field produced it rather than merely how many items were counted.
@@ -114,6 +149,78 @@ def _statements_deriving_the_bucket(relative: str, function: str) -> list[str]:
         if 'PERSONA_FIELD' in names:
             found.append(ast.unparse(statement))
     return found
+
+
+def _names_imported_from_the_shared_module(relative: str) -> set[str]:
+    """Every name `relative` imports from `shared.feedback`, read by `ast`.
+
+    Parsed rather than pattern-matched, because the first version of this was
+    `^from shared.feedback import (.+)$` with re.MULTILINE — which reads only a
+    single-line import and so FAILED A CORRECT MODULE the moment the import was
+    wrapped across lines. That is the worse direction of wrong: a false red trains
+    the next contributor to unwrap an import to appease a test rather than to read
+    what it means, and this file's own docstring argues against exactly the pattern
+    that produced it. `ast.ImportFrom` is immune to wrapping, to aliasing and to a
+    comment in the middle of the list alike.
+    """
+    tree = ast.parse(_read(relative))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == SHARED_MODULE:
+            imported.update(alias.name for alias in node.names)
+    return imported
+
+
+def _string_constants_in(relative: str, functions: tuple[str, ...]) -> set[str]:
+    """Every string literal appearing in the CODE of the named functions.
+
+    Docstrings excluded, and that exclusion is the whole point: the pin this
+    replaces was `PERSONA_PREFIX in _read(relative)`, a file-wide substring search,
+    and both handlers name `METRIC#persona#` in prose — so the DOCSTRINGS satisfied
+    it and it passed with both files' real code drifted to `METRIC#DRIFT#`. Verified
+    by that mutation. A lockstep that cannot fail for the drift it names is worse
+    than none, so this reads the literals a function actually evaluates.
+    """
+    tree = ast.parse(_read(relative))
+    wanted = [node for node in ast.walk(tree)
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+              and node.name in functions]
+    assert len(wanted) == len(functions), (
+        f'Expected {list(functions)} in {relative}; found '
+        f'{sorted(node.name for node in wanted)}. If one was renamed or moved, '
+        f'follow it here — a helper that reads nothing satisfies its own assertion.'
+    )
+    found: set[str] = set()
+    for function in wanted:
+        body = function.body
+        # Drop the docstring statement, which is a bare string expression first in
+        # the body. Everything after it is code.
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            body = body[1:]
+        for statement in body:
+            for node in ast.walk(statement):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    found.add(node.value)
+    return found
+
+
+def _names_read_in(relative: str, function: str) -> set[str]:
+    """Every name the CODE of `function` reads. The positive half of the prefix pin.
+
+    Docstrings excluded for the reason `_string_constants_in` gives: a mention is
+    not a use, and this file's siblings have already been caught once by a pin a
+    comment could satisfy.
+    """
+    tree = ast.parse(_read(relative))
+    wanted = [node for node in ast.walk(tree)
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+              and node.name == function]
+    assert len(wanted) == 1, (
+        f'Expected exactly one {function} in {relative}; found {len(wanted)}.'
+    )
+    return {node.id for node in ast.walk(wanted[0]) if isinstance(node, ast.Name)}
 
 
 def _day(days_ago: int) -> str:
@@ -180,6 +287,87 @@ def _aggregate_personas(rows, mock_agg, event_factory, context) -> dict:
     response = lambda_handler(event, context)
     assert response['statusCode'] == 200, response['body']
     return json.loads(response['body'])['personas']
+
+
+def _scan_entities(items, mock_fb, mock_agg, event_factory, context) -> dict:
+    """`/feedback/entities` down its SCAN branch (review basis), parsed whole.
+
+    The WHOLE body rather than just the persona map, because this route publishes
+    `feedback_count` next to it — which makes "the persona map sums to the corpus"
+    an invariant a caller can check and a test can assert, and it is the invariant
+    the decision to count empty-archetype items is justified by.
+    """
+    days = 7
+    mock_fb.query.side_effect = [{'Items': items}] + [{'Items': []}] * (days - 1)
+    from metrics_handler import lambda_handler
+
+    event = event_factory(
+        method='GET', path='/feedback/entities',
+        query_params={'days': str(days), 'date_basis': 'review'},
+    )
+    response = lambda_handler(event, context)
+    assert response['statusCode'] == 200, response['body']
+    return json.loads(response['body'])
+
+
+class TestBothScanBranchesCountEveryItem:
+    """`/feedback/entities` is a branch too, and it was the unpinned one.
+
+    The one behavioural change beyond the field move is that a scan path counts
+    items with NO archetype instead of dropping them — required so the scan and the
+    aggregates branches of one window answer the same question, since the aggregator
+    writes exactly one persona row per item. That was pinned for `/metrics/personas`
+    and not for this route, and review demonstrated the gap: reinstating the
+    `if persona != PERSONA_UNKNOWN` guard in `get_entities` ALONE left the whole
+    `lambda/api` suite green, because every fixture in TestEntitiesDateBasis carries
+    a `persona_type` and the empty case never reached the line.
+    """
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_the_entities_persona_map_sums_to_the_corpus_it_reports(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The positive control and the sum invariant in one assertion.
+
+        One archetype-bearing item and one carrying neither persona field, so the
+        map cannot pass by everything collapsing into one bucket; and the sum
+        checked against the `feedback_count` the same response publishes, so a
+        dropped item is visible as the two disagreeing rather than only as a smaller
+        number nothing is compared to.
+
+        Fails if `get_entities` guards its `persona_counts` increment with
+        `if persona != PERSONA_UNKNOWN` (or `if persona:`) again.
+        """
+        body = _scan_entities(
+            [_feedback_item(persona_type=ARCHETYPE),
+             _feedback_item(sk='FEEDBACK#f2', feedback_id='f2')],
+            mock_fb, mock_agg, api_gateway_event, lambda_context,
+        )
+        personas = body['entities']['personas']
+
+        assert personas == {ARCHETYPE: 1, PERSONA_UNKNOWN: 1}, personas
+        assert sum(personas.values()) == body['feedback_count'], (
+            f'{personas} sums to {sum(personas.values())} over a corpus this same '
+            f'response reports as {body["feedback_count"]} items. Every item gets '
+            f'exactly one persona row from the aggregator, so this route\'s two '
+            f'branches only agree while the scan branch counts every item too.'
+        )
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_the_entities_scan_branch_buckets_on_the_archetype_not_the_name(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The field move, on this branch. Subject carries BOTH fields, so the two
+        are distinguishable — an item with only one would bucket the same either
+        way and this would pass over a branch left on the old field."""
+        body = _scan_entities(
+            [_feedback_item(persona_type=ARCHETYPE, persona_name=FREE_TEXT_NAME)],
+            mock_fb, mock_agg, api_gateway_event, lambda_context,
+        )
+
+        assert body['entities']['personas'] == {ARCHETYPE: 1}, body['entities']
 
 
 class TestOneRouteGivesOneAnswer:
@@ -280,13 +468,9 @@ class TestNeitherSideKeepsItsOwnCopy:
 
     def test_both_sides_read_the_field_from_one_declaration(self):
         for relative in (AGGREGATOR_SOURCE, METRICS_SOURCE):
-            source = _read(relative)
-            imports = re.findall(
-                rf'^from {re.escape(SHARED_MODULE)} import (.+)$', source, re.MULTILINE
-            )
-            imported = {name.strip() for line in imports for name in line.split(',')}
-            assert {'PERSONA_FIELD', 'PERSONA_UNKNOWN'} <= imported, (
-                f'{relative} does not import PERSONA_FIELD and PERSONA_UNKNOWN from '
+            imported = _names_imported_from_the_shared_module(relative)
+            assert set(SHARED_NAMES) <= imported, (
+                f'{relative} does not import {list(SHARED_NAMES)} from '
                 f'{SHARED_MODULE}; it imports {sorted(imported)}. Both sides of the '
                 f'axis have to read one declaration, or moving the field moves only '
                 f'half of it.'
@@ -322,17 +506,42 @@ class TestNeitherSideKeepsItsOwnCopy:
                 f'spellings of one value is the drift, whichever is currently right.'
             )
 
-    def test_both_sides_spell_the_persona_partition_the_same_way(self):
-        """The key prefix did not move, and must not move on one side alone.
+    def test_neither_side_spells_the_persona_partition_in_its_own_code(self):
+        """The key prefix did not move, and must not be movable on one side alone.
 
         `get_metric_type` tags these rows for the `metric_type` GSI by this prefix
         and both read paths strip it back off, so a prefix changed where the rows
         are WRITTEN and not where they are read leaves the GSI untagged and the
-        dimension empty — while every count is still computed correctly.
+        dimension empty — while every count is still computed correctly. No error,
+        no log, an empty axis.
+
+        This is a NEGATIVE pin — no side may spell the prefix as its own literal —
+        rather than the positive one it replaces. Review demonstrated the positive
+        form was inert: `PERSONA_PREFIX in _read(relative)` is a file-wide substring
+        search, and both handlers name the prefix in prose, so the DOCSTRINGS
+        satisfied it and it passed with both files' real code drifted to
+        `METRIC#DRIFT#`. Asserting the absence of a literal in the parsed CODE of
+        the four functions that spend the prefix is the form that cannot be
+        satisfied by a comment: with nowhere to write it, one-sided drift has to go
+        through the shared declaration, which moves both sides at once.
         """
-        for relative in (AGGREGATOR_SOURCE, METRICS_SOURCE):
-            assert PERSONA_PREFIX in _read(relative), (
-                f'{relative} no longer spells `{PERSONA_PREFIX}`. The axis is still '
-                f'"persona"; only its source field moved. If the prefix really is '
-                f'changing, it changes on both sides and here in the same commit.'
+        for relative, functions in ((AGGREGATOR_SOURCE, AGGREGATOR_PREFIX_USERS),
+                                    (METRICS_SOURCE, METRICS_PREFIX_USERS)):
+            literals = _string_constants_in(relative, functions)
+            spelled = sorted(value for value in literals if 'persona#' in value.lower())
+            assert not spelled, (
+                f'{relative} spells the persona partition as the literal(s) '
+                f'{spelled} inside {list(functions)}. It has to come from '
+                f'{SHARED_MODULE}.PERSONA_PREFIX: the aggregator builds these pks '
+                f'and tags them for the metric_type GSI, metrics_handler strips '
+                f'them back off, and the two Lambdas cannot import each other — a '
+                f'prefix changed on one side empties the dimension while every '
+                f'count stays right.'
             )
+            for function in functions:
+                assert 'PERSONA_PREFIX' in _names_read_in(relative, function), (
+                    f'{relative}::{function} does not read PERSONA_PREFIX. Every '
+                    f'place the persona partition is named must come through the '
+                    f'shared declaration, or the assertion above passes by that '
+                    f'function no longer naming the partition at all.'
+                )

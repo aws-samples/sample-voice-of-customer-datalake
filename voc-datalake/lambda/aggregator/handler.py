@@ -72,6 +72,19 @@ average row's is refreshed only by scored ones. A write declined by that rule is
 counted as DECLINED_METRIC — REFUSED_METRIC cannot cover it, since a write never
 issued gives DynamoDB nothing to refuse. See `_rebucket_average`.
 
+A reversal may also have to reverse a row THIS DEPLOY WOULD NOT HAVE WRITTEN. The
+persona axis moved from `persona_name` to `persona_type`, and a decrement reads the
+OLD IMAGE of an item whose insert may predate that move — so the row named by
+today's derivation was never created for it, while the row that WAS created is left
+inflated. The floor-and-existence condition means this cannot go negative or
+resurrect anything, but it would leave a persistent over-count in one dimension for
+every delete or edit of pre-deploy feedback. The refusal is the evidence, so the
+reversal path (and the decrement half of a rebucket) follows a refused persona
+decrement with one conditional write to the row the old derivation names. It is
+confined to the reversal direction, needs no stored state, and is deletable once the
+pre-deploy rows have aged out — see `LEGACY_PERSONA_FIELD` and
+`_reverse_a_pre_deploy_persona_row`.
+
 A reversal also refuses to GUESS a date. `_image_date` falls back to today when an
 image carries no `date` field, which is defensible for an INSERT (today is at
 least the day the row was created) and arbitrary for a REMOVE: an undated item
@@ -128,8 +141,8 @@ from botocore.exceptions import ClientError
 from shared.logging import logger, tracer, metrics
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 # The persona axis, declared in the data layer because BOTH sides of it spend the
-# same two values — see the note above `counter_dimensions`.
-from shared.feedback import PERSONA_FIELD, PERSONA_UNKNOWN
+# same three values — see the note above `counter_dimensions`.
+from shared.feedback import PERSONA_FIELD, PERSONA_PREFIX, PERSONA_UNKNOWN
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -181,6 +194,51 @@ DECLINED_METRIC = "AggregateWriteDeclined"
 DAILY_TOTAL_PK = 'METRIC#daily_total'
 SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
 
+# --- Reversing an item whose INSERT ran before the persona axis moved ---------
+# 🔑 THE ONE PLACE THE OLD PERSONA AXIS IS STILL READ, and only in the direction
+# that cannot be got wrong by reading it.
+#
+# `counter_dimensions` is a single description spent by BOTH directions, which is
+# what stops the increment and the decrement from drifting — but the decrement
+# reads the OLD IMAGE of an item whose insert may have run under the previous
+# deploy. That insert created `METRIC#persona#<persona_name, or Unknown>`; this
+# deploy's decrement names `METRIC#persona#<persona_type>`, a row that item never
+# contributed to. Two things follow, and neither is read staleness:
+#
+#   * the row the insert DID create is never brought down, so it stays inflated
+#     until its 90-day TTL expires — a delete or an edit of pre-deploy feedback
+#     leaves a persistent OVER-count in this dimension;
+#   * the archetype row is decremented for an item it never counted, which
+#     UNDERSTATES it while post-deploy items are populating it.
+#
+# What this is NOT: it cannot drive a counter negative or resurrect an expired
+# row. `update_counter` guards every decrement with
+# `attribute_exists(pk) AND #field >= :floor`, so a decrement against an absent or
+# already-zero row is refused, swallowed and counted as REFUSED_METRIC.
+#
+# THE FALLBACK, and why it is on this side only. That refusal is a SIGNAL, and
+# `update_counter` returns a bool precisely so a caller can tell a write that
+# landed from one that was declined: an absent archetype row is the evidence that
+# this image's insert did not create one, so the reversal then aims at the row the
+# old derivation names. That is self-limiting — it costs one extra conditional
+# write only when the archetype decrement was refused, it needs no new stored
+# field, and it stops mattering on its own as the pre-deploy rows age out, at
+# which point BOTH constants below and `_reverse_a_pre_deploy_persona_row` can be
+# deleted with no other change.
+#
+# A permanent dual-READ on the increment path was rejected, and the reason is
+# recorded: this repo has already refused that shape once (the MCP legacy-token
+# decision), because preserving a legacy path there would have meant carrying a
+# permanent extra field to serve a path with a sunset date. Here the absent-row
+# signal makes the compatibility free and confines it to the reversal, where
+# reading the old field cannot affect which bucket anything is COUNTED in.
+LEGACY_PERSONA_FIELD = 'persona_name'
+# The bespoke empty bucket the old derivation used — deliberately capitalised the
+# way it was written, because this constant's whole job is to name rows that ALREADY
+# EXIST. It is not a value anything writes fresh: `counter_dimensions` spells the
+# empty bucket PERSONA_UNKNOWN, the enum's way.
+LEGACY_PERSONA_UNKNOWN = 'Unknown'
+
 # Client error codes worth failing OPEN for without shouting: a blip, a throttle, a
 # retryable server-side fault. Anything outside this set is a misconfiguration
 # (`AccessDeniedException`, `ValidationException`, `ResourceNotFoundException`), and
@@ -200,10 +258,17 @@ _TRANSIENT_READ_ERRORS = frozenset({
 
 
 def get_metric_type(pk: str) -> str | None:
-    """Extract metric type from pk for GSI indexing."""
+    """Extract metric type from pk for GSI indexing.
+
+    The persona prefix comes from PERSONA_PREFIX rather than a literal: this tag is
+    what puts the row on the `metric_type` GSI that both of `metrics_handler`'s
+    aggregates branches query, so a prefix spelled here and differently where the pk
+    is BUILT would leave every persona row untagged and the dimension empty with
+    every count still computed correctly.
+    """
     if pk.startswith('METRIC#daily_source#'):
         return 'source'
-    elif pk.startswith('METRIC#persona#'):
+    elif pk.startswith(PERSONA_PREFIX):
         return 'persona'
     return None
 
@@ -490,11 +555,28 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     `get_metric_type`, the `metric_type` GSI and every read path are untouched;
     only the source field moved.
 
-    That move is FORWARD-ONLY. Rows already written keep their `Unknown` bucket, so
-    a window spanning the deploy shows old `Unknown` alongside the new enum values;
-    aggregate rows carry a 90-day TTL, so the axis becomes fully correct within 90
-    days with no backfill. Nothing rewrites stored rows — a rewrite would have to
+    That move is FORWARD-ONLY on the READ side. Rows already written keep their
+    `Unknown` bucket, so a window spanning the deploy shows old `Unknown` alongside
+    the new enum values; aggregate rows carry a 90-day TTL
+    (`AGGREGATE_RETENTION_DAYS`), so the axis becomes fully correct within 90 days
+    with no backfill. Nothing rewrites stored rows — a rewrite would have to
     re-derive each row from feedback the row no longer references.
+
+    THE WRITE SIDE HAS ONE EXCEPTION, because forward-only is not enough there. A
+    REMOVE (or the decrement half of a rebucket) reads the OLD IMAGE of an item
+    whose insert may have run before this deploy, and that insert counted it under
+    the row the OLD derivation names. A decrement derived from this function alone
+    would therefore name a row the item never contributed to: the row its insert
+    really created is never brought down and stays inflated for up to 90 days, while
+    the archetype row is decremented for an item it never counted. `update_counter`
+    keeps that from being worse than wrong-by-one — its
+    `attribute_exists(pk) AND #field >= :floor` condition refuses a decrement
+    against an absent or zeroed row, so no counter goes negative and no expired row
+    is resurrected; the refusal is counted as REFUSED_METRIC. But a refusal is also
+    the EVIDENCE that this image's insert wrote no archetype row, and
+    `apply_counter_keys` spends it: see LEGACY_PERSONA_FIELD and
+    `_reverse_a_pre_deploy_persona_row`, which is the whole of the compatibility and
+    is deletable once the pre-deploy rows have aged out.
     """
     source_platform = item.get('source_platform', 'unknown')
     category = item.get('category', 'other')
@@ -512,7 +594,10 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
         (f'METRIC#daily_source#{source_platform}', 'count'),
         (f'METRIC#daily_category#{category}', 'count'),
         (f'METRIC#daily_sentiment#{sentiment_label}', 'count'),
-        (f'METRIC#persona#{persona}', 'count'),
+        # PERSONA_PREFIX, not the literal: `get_metric_type` tags this row for the
+        # `metric_type` GSI by the same prefix and `metrics_handler` strips it back
+        # off, across two Lambdas that cannot import each other.
+        (f'{PERSONA_PREFIX}{persona}', 'count'),
     ]
 
     # Urgency counts (for alerts) — only urgent items have a row at all, so a
@@ -544,25 +629,106 @@ def counter_keys(item: dict, date: str) -> set[tuple[str, str, str]]:
     return {(pk, date, field) for pk, field in counter_dimensions(item)}
 
 
-def apply_counter_keys(keys: set[tuple[str, str, str]], sign: int) -> int:
-    """Move every named counter by `sign`, returning how many writes LANDED.
+def apply_counter_keys(keys: set[tuple[str, str, str]], sign: int) -> tuple[int, set[tuple[str, str, str]]]:
+    """Move every named counter by `sign`.
 
     The ONE place a counter key is unpacked into an `update_counter` call, so
     there is exactly one line in this module deciding what a counter's sort key
     is. Sorted only to make the write order deterministic for tests and logs.
 
+    Returns `(writes that LANDED, the keys whose write was REFUSED)`.
+
     Landed, not attempted: a caller counting attempts would report that aggregates
     moved for an edit whose every write was refused by its condition.
+
+    The refusals are returned rather than only counted because for one dimension a
+    refusal is EVIDENCE, not merely an outcome: an absent persona row on a reversal
+    says this image's insert ran before the axis moved, which is the one thing that
+    distinguishes a pre-deploy item from a post-deploy one — see
+    `_reverse_a_pre_deploy_persona_row`. Reported as the KEYS rather than as a
+    count so that caller cannot guess which row was refused, and cannot aim its
+    follow-up write at a day the refusal did not concern.
     """
-    return sum(
-        1 for pk, date, field in sorted(keys)
-        if update_counter(pk, date, field, increment=sign)
-    )
+    landed, refused = 0, set()
+    for pk, date, field in sorted(keys):
+        if update_counter(pk, date, field, increment=sign):
+            landed += 1
+        else:
+            refused.add((pk, date, field))
+    return landed, refused
+
+
+def _reverse_a_pre_deploy_persona_row(item: dict, refused: set[tuple[str, str, str]]) -> int:
+    """Bring down the persona row an item's PRE-DEPLOY insert really created.
+
+    The whole of the persona axis's write-side compatibility, and the only place
+    LEGACY_PERSONA_FIELD is read. See that constant for the argument; the mechanism
+    is:
+
+    `counter_dimensions` is one description spent by both directions, so a reversal
+    names `METRIC#persona#<persona_type>`. For an item inserted before the axis
+    moved, no such row was ever created — the insert counted it under the old
+    derivation's bucket — and `update_counter`'s
+    `attribute_exists(pk) AND #field >= :floor` condition refuses the decrement.
+    That refusal is the evidence, and the follow-up write is aimed at the row the
+    old derivation names, on the DAY the refusal concerned (read out of the refused
+    key, not re-derived, so a follow-up can never land on another day).
+
+    It is CONDITIONAL like every other decrement, so the compatibility cannot
+    resurrect a legacy row or drive one negative either: if the old row has also
+    aged out, this is refused in turn and counted as REFUSED_METRIC.
+
+    WHEN THE TWO DERIVATIONS NAME ONE ROW, nothing is attempted. That is not a
+    saving; it is required. A second write to the row whose decrement was just
+    refused would be the identical refused write (harmless), and if it were not
+    refused it would be a SECOND decrement of one row for one deletion.
+
+    THE RESIDUAL, which is the redelivery residual this module already documents,
+    relocated rather than added: Streams are at-least-once, so a REMOVE redelivered
+    after the archetype row has reached zero is refused there too, and this then
+    takes one count off the legacy row instead. The direction of that error is
+    toward the truth — the legacy row is inflated by exactly the pre-deploy items
+    being deleted — and it is bounded by the same 90-day TTL as the rows themselves.
+    A redelivered REMOVE already moved counters twice before this existed; what is
+    new is only which row the second one lands on.
+
+    Returns how many writes landed (0 or 1 per refused persona key).
+    """
+    # `keys`, and `sorted(keys)` below, because these ARE counter keys and
+    # test_streaming_categories_lockstep.py pins the small set of expressions
+    # allowed to produce a counter's sort key — the bare item date, never anything
+    # composite, because the streaming reader sums a window with `sk BETWEEN`.
+    keys = {key for key in refused if key[0].startswith(PERSONA_PREFIX)}
+    if not keys:
+        return 0
+
+    # The old derivation, reproduced exactly — including its bespoke `Unknown`,
+    # which is a row name that already EXISTS rather than one anything writes fresh.
+    legacy_pk = f'{PERSONA_PREFIX}{item.get(LEGACY_PERSONA_FIELD) or LEGACY_PERSONA_UNKNOWN}'
+    landed = 0
+    for pk, date, field in sorted(keys):
+        if pk == legacy_pk:
+            # One row, two derivations agreeing on it: see the docstring.
+            continue
+        logger.info(
+            f"Persona decrement on {pk}/{date} was refused; reversing "
+            f"{legacy_pk} instead, the row this item's pre-deploy insert created"
+        )
+        if update_counter(legacy_pk, date, field, increment=-1):
+            landed += 1
+    return landed
 
 
 def apply_feedback(item: dict, sign: int, date: str):
     """Add (`sign=1`) or reverse (`sign=-1`) one item's contribution on `date`."""
-    apply_counter_keys(counter_keys(item, date), sign)
+    _, refused = apply_counter_keys(counter_keys(item, date), sign)
+    if sign < 0:
+        # Reversal only. Reading the old persona field on the INCREMENT path would
+        # make the axis permanently dual-sourced to serve a path with a sunset date,
+        # which this repo has rejected before; here the refusal makes it free and
+        # confines it to a direction that cannot change which bucket anything is
+        # COUNTED in. See `_reverse_a_pre_deploy_persona_row`.
+        _reverse_a_pre_deploy_persona_row(item, refused)
 
     # Daily sentiment score average
     sentiment_score = _image_score(item)
@@ -702,11 +868,20 @@ def process_modified_feedback(old_item: dict, new_item: dict) -> int | None:
 
     writes = 0
     if old_live:
-        writes += apply_counter_keys(decrements, -1)
+        landed, refused = apply_counter_keys(decrements, -1)
+        writes += landed
+        # The same pre-deploy compatibility the REMOVE path gets, for the same
+        # reason: this decrement reads an OLD IMAGE, which may be an image whose
+        # insert ran before the persona axis moved. It is reached only by an edit
+        # that CHANGES the archetype (or the date) — an edit leaving `persona_type`
+        # alone cancels in the symmetric difference and issues no persona write at
+        # all, so there is nothing to be refused. Derived from `old_item`, because
+        # the row to bring down is the one the OLD image's insert created.
+        writes += _reverse_a_pre_deploy_persona_row(old_item, refused)
     elif decrements:
         logger.info(f"Not decrementing {len(decrements)} counter(s) on the aged-out {old_date}")
     if new_live:
-        writes += apply_counter_keys(increments, 1)
+        writes += apply_counter_keys(increments, 1)[0]
     elif increments:
         # The half the `or` used to let through. These are unconditional writes, so
         # nothing but this branch stops them creating the day.

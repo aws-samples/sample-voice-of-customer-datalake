@@ -80,6 +80,38 @@ def sample_anonymous_feedback_item():
 
 
 @pytest.fixture
+def sample_pre_deploy_feedback_item():
+    """An item as it was written BEFORE the persona axis moved to the archetype.
+
+    A `persona_name` and NO `persona_type`, which is the shape of a stream OLD IMAGE
+    whose insert ran under the previous deploy: that insert counted the item under
+    `METRIC#persona#<the name>`, a row today's derivation never names. This is the
+    subject of TestAPreDeployImageIsReversedOnTheArchetype in test_handler.py — the
+    only case in which the reversal reads the old field, and the reason it may.
+
+    Distinct from `sample_anonymous_feedback_item` (an archetype and no name), which
+    is the POST-deploy production shape. The two are opposites on purpose: an item
+    carrying both fields, as the other fixtures do, cannot tell the two derivations
+    apart, which is how the original defect stayed green.
+    """
+    return {
+        'pk': 'SOURCE#webscraper',
+        'sk': 'FEEDBACK#legacy1',
+        'feedback_id': 'legacy1',
+        'date': '2025-01-15',
+        'source_platform': 'webscraper',
+        'category': 'delivery',
+        'sentiment_label': 'neutral',
+        # No `sentiment_score`. `apply_feedback` writes the running average only for
+        # a scored item, so leaving it off keeps this fixture's writes to the
+        # counters — which is all its tests are about — without an average write
+        # needing to be filtered out of every assertion.
+        'urgency': 'low',
+        'persona_name': 'Veronica Chen',
+    }
+
+
+@pytest.fixture
 def sample_dynamodb_stream_record(sample_feedback_item):
     """Create a sample DynamoDB stream record."""
     # Convert to DynamoDB format

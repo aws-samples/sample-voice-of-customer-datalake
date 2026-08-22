@@ -57,19 +57,37 @@ REVERT MAP
     * Point PERSONA_FIELD back at `persona_name` — fails
       test_an_item_with_an_archetype_and_no_name_buckets_under_its_archetype, which
       is the 99.97% case, and (from the API side)
-      test_the_scan_path_and_the_aggregates_path_agree_on_one_item in
+      test_the_scan_path_and_the_aggregates_path_bucket_one_item_identically in
       lambda/api/test/test_persona_dimension_lockstep.py.
+    * Spell the partition prefix here instead of importing PERSONA_PREFIX — fails
+      test_neither_side_spells_the_persona_partition_in_its_own_code, in that same
+      file, which reads the parsed CODE of the four functions that spend it.
+    * Delete the reversal's pre-deploy fallback
+      (`_reverse_a_pre_deploy_persona_row`) — fails
+      TestAPreDeployImageIsReversedOnTheArchetype in test_handler.py, which is where
+      the cross-deploy case is pinned.
+
+    Every name cited above was grepped against the repo and resolves. That check is
+    worth repeating on edit: review found this map naming a test
+    (`..._agree_on_one_item`) that existed nowhere, and in a repo where the REVERT
+    MAP is the index from mutation to failing test, a citation that resolves to
+    nothing is the one kind of staleness these files cannot absorb — the next reader
+    greps for it, finds nothing, and has to reconstruct whether the coverage exists.
 """
 import ast
 import re
 from pathlib import Path
 
-from aggregator.handler import PERSONA_FIELD, PERSONA_UNKNOWN, counter_dimensions
+from aggregator.handler import (
+    PERSONA_FIELD,
+    PERSONA_PREFIX,
+    PERSONA_UNKNOWN,
+    counter_dimensions,
+)
 
 PROCESSOR_SOURCE = 'lambda/processor/handler.py'
 AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
 DIMENSIONS_FUNCTION = 'counter_dimensions'
-PERSONA_PREFIX = 'METRIC#persona#'
 
 
 def _read(relative: str) -> str:
@@ -109,13 +127,22 @@ def _processor_persona_type_enum() -> set[str]:
     below stands in for, not a value the bucket could be named after.
     """
     source = _read(PROCESSOR_SOURCE)
-    declarations = re.findall(r'"persona":.*?"type":"([^"]+)"', source)
+    # re.DOTALL so `.` crosses newlines. Without it the pattern depended on
+    # `USER_PROMPT_TEMPLATE` staying one ~1000-character line, and wrapping it for
+    # readability — a plausible edit that changes no contract — would have found zero
+    # matches. The `len == 1` assertion below makes that loud rather than silent
+    # either way, but a pin should not be spendable on formatting at all.
+    declarations = re.findall(r'"persona":.*?"type":"([^"]+)"', source, re.DOTALL)
     assert len(declarations) == 1, (
         f'Expected exactly one `persona.type` declaration in the enrichment prompt '
         f'in {PROCESSOR_SOURCE}; found {len(declarations)}. Two contracts for one '
         f'field is drift of its own; if the prompt was restructured, follow it here '
         f'rather than loosening the pattern — an empty match would make the '
-        f'assertion below pass for the wrong reason.'
+        f'assertion below pass for the wrong reason.\n'
+        f'The remaining dependency, now that newlines are crossed: `"persona":` must '
+        f'precede its own `"type":"..."` with no other `"type":"` in between, since '
+        f'`.*?` stops at the FIRST one. A prompt that declares another object\'s '
+        f'`type` between the two would match that instead and report the wrong enum.'
     )
     return {value for value in declarations[0].split('|') if value != 'null'}
 

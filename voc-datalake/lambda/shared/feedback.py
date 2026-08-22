@@ -68,8 +68,50 @@ PERSONA_FIELD = 'persona_type'
 # bespoke `Unknown`: the contract already defines a value for this exact idea, so
 # every bucket name is one the contract declares. Aggregate rows written before the
 # field moved keep their old `Unknown` bucket and age out on their 90-day TTL
-# (`AGGREGATE_RETENTION_DAYS`); the transition is forward-only by design.
+# (`AGGREGATE_RETENTION_DAYS`); the transition is forward-only by design, with one
+# exception on the REVERSAL path — see `aggregator/handler.py::LEGACY_PERSONA_FIELD`.
+#
+# WHAT THIS BUCKET CANNOT TELL YOU, said out loud because the next person to ask
+# "is enrichment healthy?" will look exactly here: it merges "the enrichment
+# classified the archetype as `unknown`" with "the field is absent, so no
+# classification was recorded at all". Both land in this one partition, so a rising
+# `unknown` does not distinguish an enrichment regression from a corpus that
+# genuinely resists classification — a quieter variant of the blindness this axis
+# was just repaired for. The trade was accepted because the alternative, a second
+# bucket for the absent case, would put back a value the enrichment contract does
+# not declare, which is the thing naming this bucket the enum's way removes. A
+# caller who needs the two apart has to read the raw `persona_type` field on the
+# feedback items (`/feedback`, `/data-explorer/feedback`), where absent and
+# `unknown` are still different.
 PERSONA_UNKNOWN = 'unknown'
+
+# The partition prefix the persona counter rows are keyed by. Shared for the same
+# reason as the two above, and one more particular to it: it is spent by FOUR
+# call sites in two Lambdas that cannot import each other —
+# `aggregator/handler.py` builds the pk with it and `get_metric_type` tags the row
+# for the `metric_type` GSI by it, while `metrics_handler` strips it back off in
+# both of its aggregates branches. A prefix changed where the rows are WRITTEN and
+# not where they are READ leaves the GSI untagged and the dimension empty while
+# every count is still computed correctly, which is the worst kind of wrong: no
+# error, no log, an empty axis.
+#
+# It deliberately did NOT move when the source field did. The axis is still
+# "persona"; only where its value comes from changed.
+PERSONA_PREFIX = 'METRIC#persona#'
+
+# WHY THE DERIVATION (`item.get(PERSONA_FIELD) or PERSONA_UNKNOWN`) IS NOT ALSO
+# HERE, since the argument above for sharing the constants seems to apply one level
+# up as well. It was considered and rejected: the `or`-rather-than-a-`.get`-default
+# reasoning is a property of that one expression, and both call sites carry it in a
+# docstring where the code is — `counter_dimensions` explains it as part of what a
+# stream image can hold, `_persona_bucket` as part of what the scan path answers. A
+# shared helper would put that reasoning one import away from both readers to
+# remove a two-line duplication that is already PINNED:
+# test_persona_dimension_lockstep.py::test_neither_side_spells_the_bucket_out_beside_the_constant
+# requires exactly one statement per side, naming PERSONA_UNKNOWN and quoting
+# nothing, so the two cannot drift while agreeing to. A constant that two Lambdas
+# must spell identically is a fact; an expression they must compute identically is
+# a behaviour, and this repo pins behaviours with tests.
 
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90

@@ -20,7 +20,13 @@ from shared.api import (
     AGGREGATE_RETENTION_DAYS,
 )
 from shared.exceptions import ValidationError
-from shared.feedback import PERSONA_FIELD, PERSONA_UNKNOWN, basis_date, window_cutoff
+from shared.feedback import (
+    PERSONA_FIELD,
+    PERSONA_PREFIX,
+    PERSONA_UNKNOWN,
+    basis_date,
+    window_cutoff,
+)
 from shared.indexes import (
     AGGREGATES_BY_METRIC_TYPE_INDEX,
     FEEDBACK_BY_CATEGORY_INDEX,
@@ -310,6 +316,13 @@ def _persona_bucket(item: dict) -> str:
 
     `or`, not a `.get` default, and for the aggregator's reason: an item can carry
     an explicit None, which a default would not replace.
+
+    WHY THE DERIVATION IS DUPLICATED HERE rather than shared alongside the two
+    constants — considered, and rejected: that `or` reasoning is a property of this
+    one expression and reads differently on each side (there, what a stream image
+    can hold; here, what the scan path answers), so a shared helper would move it
+    one import away from both readers to remove two lines that are already pinned to
+    each other. See the note beside PERSONA_UNKNOWN in `shared/feedback.py`.
     """
     return item.get(PERSONA_FIELD) or PERSONA_UNKNOWN
 
@@ -591,8 +604,11 @@ def get_entities():
     persona_counts = {}
     for item in persona_response.get('Items', []):
         if item.get('sk') in date_range:
-            persona_name = item['pk'].replace('METRIC#persona#', '')
-            persona_counts[persona_name] = persona_counts.get(persona_name, 0) + int(item.get('count', 0))
+            # PERSONA_PREFIX, shared with the aggregator that BUILT this pk: two
+            # Lambdas that cannot import each other must strip exactly what the
+            # other prepended, or the bucket names come back mangled.
+            persona = item['pk'].replace(PERSONA_PREFIX, '')
+            persona_counts[persona] = persona_counts.get(persona, 0) + int(item.get('count', 0))
 
     # Get feedback count
     total_window, total_truncated = _query_metric_window(
@@ -1082,8 +1098,10 @@ def get_persona_metrics():
 
     for item in response.get('Items', []):
         if item.get('sk') in date_range:
-            persona_name = item['pk'].replace('METRIC#persona#', '')
-            personas[persona_name] = personas.get(persona_name, 0) + int(item.get('count', 0))
+            # PERSONA_PREFIX, shared with the aggregator that BUILT this pk — see
+            # the same read in `get_entities`.
+            persona = item['pk'].replace(PERSONA_PREFIX, '')
+            personas[persona] = personas.get(persona, 0) + int(item.get('count', 0))
 
     return {
         'period_days': days,
