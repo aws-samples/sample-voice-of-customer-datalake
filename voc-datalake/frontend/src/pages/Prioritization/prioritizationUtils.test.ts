@@ -659,7 +659,8 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
       b: aggregate({ impact: 0, reviewer_count: 1 }),
     }
 
-    for (const field of ['priority_score', 'impact', 'time_to_market', 'created_at'] as const) {      for (const direction of ['asc', 'desc'] as const) {
+    for (const field of ['priority_score', 'impact', 'time_to_market', 'created_at'] as const) {
+      for (const direction of ['asc', 'desc'] as const) {
         const sorted = sortRows(rows, aggregates, field, direction)
         expect(sorted, `${field}/${direction}`).toHaveLength(rows.length)
         // Length alone would accept a duplicated row masking a dropped one.
