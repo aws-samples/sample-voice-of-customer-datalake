@@ -41,7 +41,37 @@ REVERT STORY — which mutation makes which assertion fail:
       exists to end. Its own positive control is
       test_the_completeness_check_notices_a_tool_with_no_sample: the check is a
       function, called with a registry missing an entry, so "the check cannot
-      detect anything" is itself a failure.
+      detect anything" is itself a failure. It compares SET DIFFERENCES rather
+      than asserting `== [victim]`, so it does not also fail whenever an
+      unrelated tool is missing a sample — a control that fails alongside its
+      own subject cannot say which of the two broke.
+
+  test_every_declared_property_is_demonstrated_by_some_sample
+    — the SUBSTANCE half of the above, because the presence half counts dict
+      keys rather than evidence. Both metrics tools end at
+      `ToolResult(body if isinstance(body, dict) else {})` and declare no
+      `required`, so a route body of `{}` is a SUCCESSFUL call whose empty
+      payload validates against an open schema: replacing only those two tools'
+      bodies with `{}` once left every case green. Now it names the properties
+      the sample failed to produce. Its own positive control is
+      test_the_substance_check_notices_a_sample_that_demonstrates_nothing, which
+      hollows a sample and requires the check to object.
+
+  TestTheDerivationsSurviveAnUnusualDeclaration
+    — nothing read at IMPORT time may raise on a declaration a client accepts.
+      `_closed_schema_tools()` and `_closed_item_schemas()` run inside
+      `@pytest.mark.parametrize`, so a raise there is a collection error that
+      aborts all ~2200 `lambda/api` tests and is attributed to whatever ran
+      next. Two declarations did exactly that: a published tool with no
+      `outputSchema` (`KeyError`, in place of the precise message §5.4's test
+      already carries) and a boolean sub-schema, which Draft 2020-12 permits and
+      `check_schema` accepts (`AttributeError`) — this file crashing on a schema
+      it also certifies as valid. Both now degrade to "no schema, closes
+      nothing", leaving the §5.4 test the single named reporter. The tolerance
+      has its own positive control, test_the_derivations_still_find_the_real
+      _closures: making `_output_schema` return `{}` unconditionally would
+      satisfy that whole class while rendering the file vacuous, since an empty
+      schema validates every payload.
 
   test_a_real_payload_validates_against_its_declared_output_schema
     — the guard proper. Verified non-vacuous two ways rather than by inspection:
@@ -450,12 +480,46 @@ _REQUIRED_HINTS: tuple[str, ...] = (
     "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint",
 )
 
+# Declared top-level properties that no sample can demonstrate, `tool` → `{prop}`.
+#
+# 🔑 EMPTY, and it must stay hard to add to. Every property declared by the six
+# tools published today is carried by at least one sample payload, so
+# `test_every_declared_property_is_demonstrated_by_some_sample` passes on arrival
+# — which is the point, exactly as with the §5.4 class: it is here so a Phase 3
+# tool cannot satisfy the sample requirement with a route body of `{}`.
+#
+# An entry here is a claim that a declared property CANNOT appear in any real
+# answer, which is nearly always a sign the declaration is wrong rather than the
+# sample. Anything added needs a comment saying why the route can never produce
+# it; if the honest reason is "I did not want to build the body", the answer is to
+# build the body.
+_PROPERTIES_NO_SAMPLE_CAN_SHOW: dict[str, frozenset[str]] = {}
+
 
 def _output_schema(name: str) -> dict:
-    """One tool's declared `outputSchema`, read from the published registry."""
+    """One tool's declared `outputSchema`, read from the published registry.
+
+    🔑 CANNOT raise for a published tool. `tool["outputSchema"]` was here first
+    and a published tool declaring none raised a bare `KeyError` — from inside
+    `_closed_schema_tools()` and `_closed_item_schemas()`, which are evaluated in
+    `@pytest.mark.parametrize` decorators, so at MODULE IMPORT. That is a
+    collection error aborting every test in `lambda/api` (2184 of them), and the
+    message a Phase 3 author reads is `KeyError: 'outputSchema'` rather than
+    `test_every_tool_declares_what_section_5_4_requires`'s
+    `f"{name} declares no outputSchema"` — the assertion written for exactly this
+    case, which never gets to run. `"outputSchema": None` was the same abort with
+    an `AttributeError` instead.
+
+    So a missing or non-dict declaration degrades to `{}`: an empty schema is
+    open and validates anything, `_closed_schema_tools()` reports the tool as not
+    closed, `_closed_item_schemas()` finds no arrays in it, and the §5.4 test
+    stays the single named reporter of the gap. Pinned by
+    `TestTheDerivationsSurviveAnUnusualDeclaration`.
+    """
     for tool in mcp_handler.MCP_TOOLS:
         if tool["name"] == name:
-            return tool["outputSchema"]
+            declared = tool.get("outputSchema")
+            return declared if isinstance(declared, dict) else {}
     raise AssertionError(f"no published tool named {name}")
 
 
@@ -524,6 +588,29 @@ def _rejects_at(payload, schema: dict, path: tuple) -> bool:
     return any(p[: len(path)] == path for p in _error_paths(payload, schema))
 
 
+def _first_sample(tool: str) -> tuple[str, dict, dict]:
+    """This tool's first registered `(case, arguments, bodies)` triple.
+
+    🔑 `_TOOL_SAMPLES[tool][0]` was written directly at seven sites, and the
+    controls that use them are parametrised from the PUBLISHED registry rather
+    than from `_TOOL_SAMPLES` — deliberately, since the two disagreeing is the
+    state this file exists to report. So a published tool with no sample turned
+    four of those controls into bare `KeyError` tracebacks that say nothing about
+    samples, drowning the three tests that do name the tool.
+    `test_every_published_tool_has_a_registered_sample_payload` stays the single
+    authoritative reporter; this just makes the collateral failures legible.
+    """
+    samples = _TOOL_SAMPLES.get(tool) or ()
+    if not samples:
+        pytest.fail(
+            f"{tool} is published and has no registered sample; add one to "
+            "_TOOL_SAMPLES, taken from the shape the delegated route really "
+            "returns. test_every_published_tool_has_a_registered_sample_payload "
+            "is the authoritative report of this."
+        )
+    return samples[0]
+
+
 def _tools_missing_samples(registry: dict) -> list[str]:
     """Published tools with no sample in this registry.
 
@@ -551,6 +638,64 @@ def _closed_schema_tools() -> list[str]:
     ]
 
 
+def _subschemas(schema: dict) -> dict:
+    """A schema's `properties` map, with anything that is not a dict schema dropped.
+
+    🔑 A sub-schema in Draft 2020-12 may be a BOOLEAN, not only an object:
+    `{"properties": {"x": true}}` is well-formed — `check_schema` accepts it —
+    and means "any value here", while `false` means "nothing is valid here".
+    `declared.get("type")` on one of those raised
+    `AttributeError: 'bool' object has no attribute 'get'`, and because
+    `_closed_item_schemas()` is evaluated in a `@pytest.mark.parametrize`
+    decorator the raise landed at module import: a collection error aborting all
+    2184 `lambda/api` tests, on a declaration this very file also certifies as
+    valid via `test_the_declaration_is_itself_a_valid_json_schema`.
+
+    A boolean sub-schema constrains no keys and closes no door, so dropping it
+    here is not a loss of coverage — it is the derivation saying "nothing to
+    control", which is what `test_some_array_closes_its_item_schema` then
+    reports if that were ever true of every array. No published tool uses one
+    today; Phase 3's ~thirty declarations are where an unusual-but-legal
+    construct first shows up. Pinned by
+    `TestTheDerivationsSurviveAnUnusualDeclaration`.
+    """
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return {}
+    return {k: v for k, v in properties.items() if isinstance(v, dict)}
+
+
+def _undemonstrated_properties(tool: str, registry: dict) -> set[str]:
+    """Declared top-level properties that no sample payload for `tool` carries.
+
+    🔑 The substance half of the completeness check, and it exists because the
+    presence half counts ENTRIES rather than evidence. Both metrics tools end at
+    `ToolResult(body if isinstance(body, dict) else {})` and declare no
+    `required`, so a route body of `{}` is a fully SUCCESSFUL call producing
+    `structuredContent: {}` — which validates against an open schema, satisfies
+    `_payload`'s error checks, and turns `-NO-SAMPLE` green while demonstrating
+    nothing. Replacing only those two tools' bodies with `{}` left all 52 cases
+    passing before this function existed.
+
+    Union across a tool's cases rather than per-case, because the cases exist
+    precisely to cover different branches: `get_metrics_breakdown`'s `sentiment`
+    dimension cannot carry `categories`, and demanding every case show every
+    property would be demanding one route answer with another's fields.
+
+    A property whose absence is legitimate goes in
+    `_PROPERTIES_NO_SAMPLE_CAN_SHOW` with a reason, so the exemption is a line of
+    the diff rather than a silence.
+    """
+    declared = set(_subschemas(_output_schema(tool)))
+    if not declared:
+        return set()
+    demonstrated: set[str] = set()
+    for _case, arguments, bodies in registry.get(tool) or ():
+        payload = _payload(tool, arguments, bodies)
+        demonstrated |= set(payload)
+    return declared - demonstrated - _PROPERTIES_NO_SAMPLE_CAN_SHOW.get(tool, frozenset())
+
+
 def _closed_item_schemas() -> list[tuple[str, str]]:
     """`(tool, array property)` for every array whose ITEMS close the door.
 
@@ -562,10 +707,13 @@ def _closed_item_schemas() -> list[tuple[str, str]]:
     """
     found = []
     for name in _PUBLISHED_TOOL_NAMES:
-        for prop, declared in (_output_schema(name).get("properties") or {}).items():
+        for prop, declared in _subschemas(_output_schema(name)).items():
             if declared.get("type") != "array":
                 continue
-            if (declared.get("items") or {}).get("additionalProperties") is False:
+            items = declared.get("items")
+            # `items` may be a boolean for the same reason a sub-schema may be:
+            # `{"items": true}` is legal and closes nothing.
+            if isinstance(items, dict) and items.get("additionalProperties") is False:
                 found.append((name, prop))
     return found
 
@@ -606,13 +754,188 @@ class TestEveryToolBringsASample:
         nothing" cannot be because the check finds nothing ever. Deleting the
         `_tools_missing_samples` body to `return []` fails HERE, with the name of
         the tool it should have reported.
+
+        🔑 A set DIFFERENCE against the unthinned registry, not
+        `== [victim]`. Exact equality made this control fail whenever some OTHER
+        tool was also missing a sample — `assert ['get_feedback_detail',
+        'search_feedback'] == ['search_feedback']` — so the control failed
+        alongside the very thing it controls and could not say which of the two
+        broke. That is the same reasoning `_rejects_at` needed its own positive
+        control for: a control must be sensitive to its own subject and to
+        nothing else.
         """
         victim = _PUBLISHED_TOOL_NAMES[0]
+        already = set(_tools_missing_samples(_TOOL_SAMPLES))
         thinned = {k: v for k, v in _TOOL_SAMPLES.items() if k != victim}
 
-        assert _tools_missing_samples(thinned) == [victim]
+        assert set(_tools_missing_samples(thinned)) - already == {victim}
         # An empty entry is as useless as an absent one and must read the same.
-        assert _tools_missing_samples({**_TOOL_SAMPLES, victim: ()}) == [victim]
+        assert set(
+            _tools_missing_samples({**_TOOL_SAMPLES, victim: ()})
+        ) - already == {victim}
+
+    @pytest.mark.parametrize("tool", _PUBLISHED_TOOL_NAMES)
+    def test_every_declared_property_is_demonstrated_by_some_sample(self, tool):
+        """A registered sample must EXERCISE the declaration, not merely exist.
+
+        🔑 The presence check above is satisfied by a dict key. For a tool with an
+        open schema and no `required` — which is both metrics tools, and the
+        archetype for Phase 3's pass-through tools — a route body of `{}` yields a
+        successful call with `structuredContent: {}` that validates, so every
+        assertion in this file passes while nothing about the declaration was
+        tested. Emptying only those two tools' bodies left 52/52 green.
+
+        Requiring every declared property to appear in the union of a tool's
+        payloads is what makes the registry un-gameable: a `{}` body now names the
+        seven properties it failed to show.
+        """
+        undemonstrated = _undemonstrated_properties(tool, _TOOL_SAMPLES)
+
+        assert undemonstrated == set(), (
+            f"{tool} declares {sorted(undemonstrated)} and no registered sample "
+            "produces them, so nothing here validates those declarations. Give "
+            "the sample a route body that carries them — or, if a real answer "
+            "genuinely cannot, add them to _PROPERTIES_NO_SAMPLE_CAN_SHOW with "
+            "the reason."
+        )
+
+    def test_the_substance_check_notices_a_sample_that_demonstrates_nothing(self):
+        """The positive control for the check above — the same shape of mutation
+        that used to pass unnoticed.
+
+        A registry whose route bodies are all `{}` is the exact loophole: the call
+        succeeds, the payload is empty, and only a substance check objects. If
+        `_undemonstrated_properties` were reduced to `return set()`, this is the
+        one test that fails.
+        """
+        # An open schema with no `required`, so `{}` really is a valid payload —
+        # a closed-schema tool would fail for the unrelated reason that its
+        # projection cannot produce `{}`.
+        victim = next(
+            (
+                name for name in _PUBLISHED_TOOL_NAMES
+                if _output_schema(name).get("additionalProperties") is not False
+                and not _output_schema(name).get("required")
+                and _subschemas(_output_schema(name))
+                and _TOOL_SAMPLES.get(name)
+            ),
+            None,
+        )
+        assert victim, (
+            "no published tool has an open, unrequired schema, so the `{}`-body "
+            "loophole this control is about no longer exists; delete it and say so"
+        )
+
+        case, arguments, bodies = _first_sample(victim)
+        # A distinct dict per route: `dict.fromkeys(bodies, {})` would share one
+        # object across every route, which `_FakeLambda` could mutate through.
+        hollowed = {
+            **_TOOL_SAMPLES,
+            victim: ((case, arguments, {route: {} for route in bodies}),),
+        }
+
+        assert _undemonstrated_properties(victim, _TOOL_SAMPLES) == set()
+        assert _undemonstrated_properties(victim, hollowed), (
+            f"{victim}'s sample was reduced to an empty route body and the "
+            "substance check still found every declared property demonstrated"
+        )
+
+
+# ===========================================================================
+# The derivations — robust against a legal but unusual declaration
+# ===========================================================================
+
+class TestTheDerivationsSurviveAnUnusualDeclaration:
+    """Nothing read at import time may raise on a declaration a client accepts.
+
+    🔑 `_closed_schema_tools()` and `_closed_item_schemas()` are evaluated inside
+    `@pytest.mark.parametrize` decorators, so anything they raise is a COLLECTION
+    error: all 2184 tests in `lambda/api` abort, attributed to whatever ran next,
+    and no pull-request gate would report it (the one workflow runs a single
+    stdlib-only file). Two declarations did exactly that —
+
+      • no `outputSchema` at all → `KeyError: 'outputSchema'`, in place of
+        `test_every_tool_declares_what_section_5_4_requires`'s precise
+        `f"{name} declares no outputSchema"`, which never got to run;
+      • a BOOLEAN sub-schema, which Draft 2020-12 permits and
+        `check_schema` accepts → `AttributeError: 'bool' object has no
+        attribute 'get'`, i.e. this file crashing on a schema it also certifies.
+
+    — so the file's own primary anticipated failure mode degraded into the least
+    diagnostic signal available. These tests keep the degradation graceful, which
+    is what leaves the §5.4 test as the single named reporter.
+    """
+
+    def test_a_tool_declaring_no_output_schema_reads_as_an_empty_schema(self, monkeypatch):
+        """No raise, and no false claim that the tool closes anything."""
+        published = [dict(tool) for tool in mcp_handler.MCP_TOOLS]
+        published[0].pop("outputSchema", None)
+        monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
+
+        assert _output_schema(published[0]["name"]) == {}
+        assert published[0]["name"] not in _closed_schema_tools()
+        assert all(name != published[0]["name"] for name, _ in _closed_item_schemas())
+
+    def test_a_tool_whose_output_schema_is_not_a_dict_reads_as_an_empty_schema(
+        self, monkeypatch
+    ):
+        """`"outputSchema": None` was the same abort with a different exception."""
+        published = [dict(tool) for tool in mcp_handler.MCP_TOOLS]
+        published[0]["outputSchema"] = None
+        monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
+
+        assert _output_schema(published[0]["name"]) == {}
+        assert published[0]["name"] not in _closed_schema_tools()
+
+    def test_a_boolean_sub_schema_is_skipped_rather_than_crashing_the_derivation(
+        self, monkeypatch
+    ):
+        """`{"properties": {"x": true}}` is legal, means "anything", closes nothing.
+
+        Asserted to be legal here rather than assumed, so the test says WHY the
+        derivation has to tolerate it: `check_schema` accepting the declaration is
+        the whole reason a crash on it is this file's bug and not the tool's.
+        """
+        published = [copy.deepcopy(tool) for tool in mcp_handler.MCP_TOOLS]
+        published[0]["outputSchema"] = {
+            "type": "object",
+            "properties": {"anything": True, "nothing": False},
+        }
+        Draft202012Validator.check_schema(published[0]["outputSchema"])
+        monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
+
+        assert _subschemas(published[0]["outputSchema"]) == {}
+        # The assertion that matters: no AttributeError at what would be import.
+        assert all(name != published[0]["name"] for name, _ in _closed_item_schemas())
+
+    def test_a_boolean_items_schema_is_skipped_rather_than_crashing_the_derivation(
+        self, monkeypatch
+    ):
+        """`{"items": true}` is the same construct one level down, and it closes
+        no door either — so the array must simply not be reported as closed."""
+        published = [copy.deepcopy(tool) for tool in mcp_handler.MCP_TOOLS]
+        published[0]["outputSchema"] = {
+            "type": "object",
+            "properties": {"rows": {"type": "array", "items": True}},
+        }
+        Draft202012Validator.check_schema(published[0]["outputSchema"])
+        monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
+
+        assert all(name != published[0]["name"] for name, _ in _closed_item_schemas())
+
+    def test_the_derivations_still_find_the_real_closures(self):
+        """The positive control for all four above.
+
+        `_output_schema` returning `{}` unconditionally, or `_subschemas`
+        returning `{}` unconditionally, would satisfy every test in this class
+        while making the whole file vacuous — an empty schema validates every
+        payload. So the tolerant path must be shown NOT to be the only path.
+        """
+        assert _closed_schema_tools(), "the closed-schema derivation found nothing"
+        assert _closed_item_schemas(), "the closed-items derivation found nothing"
+        assert all(
+            _subschemas(_output_schema(name)) for name in _closed_schema_tools()
+        ), "a closed schema declared no usable properties"
 
 
 # ===========================================================================
@@ -724,7 +1047,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         `additionalProperties` passes every payload here, and passes exactly the
         declarations that are wrong.
         """
-        case, arguments, bodies = _TOOL_SAMPLES[tool][0]
+        case, arguments, bodies = _first_sample(tool)
         payload = _payload(tool, arguments, bodies)
         schema = _output_schema(tool)
 
@@ -765,7 +1088,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         that started forwarding unknown keys would break every validating client;
         this control is what says the declaration forbids it.
         """
-        case, arguments, bodies = _TOOL_SAMPLES[tool][0]
+        case, arguments, bodies = _first_sample(tool)
         payload = _payload(tool, arguments, bodies)
         schema = _output_schema(tool)
 
@@ -864,7 +1187,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         can pass for a different field's reason is not a control for this one.
         """
         personas_schema = _output_schema("list_personas")
-        payload = _payload("list_personas", *_TOOL_SAMPLES["list_personas"][0][1:])
+        payload = _payload("list_personas", *_first_sample("list_personas")[1:])
         assert _errors(payload, personas_schema) == [], "the sample must validate first"
 
         # Asserted, not assumed: a valid payload need not CONTAIN this path — the
@@ -889,7 +1212,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         ), _errors(broken, personas_schema)
 
         detail_schema = _output_schema("get_feedback_detail")
-        detail = _payload("get_feedback_detail", *_TOOL_SAMPLES["get_feedback_detail"][0][1:])
+        detail = _payload("get_feedback_detail", *_first_sample("get_feedback_detail")[1:])
         assert _errors(detail, detail_schema) == [], "the detail sample must validate first"
 
         assert _rejects_at({**detail, "keywords": {"0": "late"}}, detail_schema, ("keywords",))
@@ -907,7 +1230,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         that reports nothing on the day it is needed.
         """
         schema = _output_schema("list_personas")
-        payload = _payload("list_personas", *_TOOL_SAMPLES["list_personas"][0][1:])
+        payload = _payload("list_personas", *_first_sample("list_personas")[1:])
         assert _errors(payload, schema) == [], "the sample must validate first"
 
         broken = copy.deepcopy(payload)
@@ -922,7 +1245,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         is sometimes missing reads as "not truncated", which is the same wrong
         answer as asserting it false."""
         schema = _output_schema("search_feedback")
-        payload = _payload("search_feedback", *_TOOL_SAMPLES["search_feedback"][0][1:])
+        payload = _payload("search_feedback", *_first_sample("search_feedback")[1:])
         assert "is_partial" in schema.get("required", []), (
             "search_feedback no longer requires is_partial; this control moved"
         )
@@ -944,7 +1267,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         """
         mutated = copy.deepcopy(_output_schema("get_feedback_detail"))
         mutated["properties"]["keywords"]["type"] = "integer"
-        payload = _payload("get_feedback_detail", *_TOOL_SAMPLES["get_feedback_detail"][0][1:])
+        payload = _payload("get_feedback_detail", *_first_sample("get_feedback_detail")[1:])
 
         assert _errors(payload, _output_schema("get_feedback_detail")) == []
         assert _errors(payload, mutated), (
