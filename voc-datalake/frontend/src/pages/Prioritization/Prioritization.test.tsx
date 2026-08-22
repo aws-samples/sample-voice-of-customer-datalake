@@ -1187,8 +1187,8 @@ describe('Prioritization', () => {
     // EVERY empty branch, because the count is withheld for a reason that names them:
     // the list says which emptiness this is, and a bare zero cannot. The badge takes one
     // path through all three, so this is one case run three times — and `projects` is
-    // its own column rather than inferred from `documents`, so "a project that has no
-    // documents yet" is expressible instead of silently collapsing into "no projects".
+    // its own column rather than inferred from `documents`, which is what lets the middle
+    // case have a project at all instead of collapsing into "no projects".
     it.each([
       { emptiness: 'no projects at all', title: 'No Documents Found', projects: [], documents: [] },
       // Named for the state it actually reaches: the shared fixture's rows still name
