@@ -1149,7 +1149,7 @@ class TestConverseSurfaceRouting:
 
         assert result == ['R']
         mock_resolve.assert_not_called()
-        flagged = [c for c in mock_logger.warning.call_args_list if 'model wins' in str(c)]
+        flagged = [c for c in mock_logger.warning.call_args_list if 'drops inert overrides' in str(c)]
         assert flagged, 'expected a warning naming the ignored surface override'
 
     @patch('shared.converse.logger')
@@ -1168,5 +1168,28 @@ class TestConverseSurfaceRouting:
         )
 
         mock_resolve.assert_not_called()
-        flagged = [c for c in mock_logger.warning.call_args_list if 'model wins' in str(c)]
+        flagged = [c for c in mock_logger.warning.call_args_list if 'drops inert overrides' in str(c)]
         assert flagged, 'expected a warning naming the ignored surface override'
+
+    @patch('shared.converse.logger')
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_step_overrides_under_pinned_model_emit_one_warning(
+        self, mock_get_client, mock_resolve, mock_logger,
+    ):
+        """A step carrying BOTH a model and a surface under a chain pin logs
+        one combined warning naming everything dropped, not one per key."""
+        mock_get_client.return_value = self._client()
+
+        from shared.converse import converse_chain
+        result = converse_chain(
+            [{'system': '', 'user': 'a', 'surface': 'prototype', 'model': 'step-model'}],
+            surface='documents',
+            model_id='pinned-model',
+        )
+
+        assert result == ['R']
+        combined = [c for c in mock_logger.warning.call_args_list if 'drops inert overrides' in str(c)]
+        assert len(combined) == 1, 'expected exactly one combined warning'
+        assert "surface='prototype'" in str(combined[0])
+        assert 'model_id/model' in str(combined[0])

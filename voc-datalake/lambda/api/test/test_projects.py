@@ -290,13 +290,16 @@ class TestGeneratePersonasModelMetadata:
     """Tests for persona generation model metadata."""
 
     @staticmethod
-    def _put_item_payload(table):
-        call = table.put_item.call_args
-        assert call is not None, 'expected put_item to be called'
-        if call.kwargs.get('Item') is not None:
-            return call.kwargs['Item']
-        assert call.args, 'expected put_item Item as kwargs or first positional arg'
-        return call.args[0]
+    def _put_item_payloads(table):
+        """Every put_item payload, not just the final one: a persona_count > 1
+        run writes one row per persona and asserting only the last call would
+        silently skip the earlier ones."""
+        calls = table.put_item.call_args_list
+        assert calls, 'expected put_item to be called'
+        return [
+            c.kwargs['Item'] if c.kwargs.get('Item') is not None else c.args[0]
+            for c in calls
+        ]
 
     def test_stores_resolved_model_id(self):
         """Stamps the resolved model, not the global fallback constant."""
@@ -325,8 +328,8 @@ class TestGeneratePersonasModelMetadata:
                 {'persona_count': 1, 'generate_avatars': False},
             )
 
-        stored = self._put_item_payload(table)
-        assert stored['llm_metadata']['model'] == 'resolved-model'
+        for stored in self._put_item_payloads(table):
+            assert stored['llm_metadata']['model'] == 'resolved-model'
         # One resolution per invocation, and the chain is PINNED to it: the
         # model converse() invokes is the one llm_metadata records.
         mock_model_id.assert_called_once_with(surface='documents')
@@ -359,7 +362,7 @@ class TestGeneratePersonasModelMetadata:
                 {'persona_count': 1, 'generate_avatars': False},
             )
 
-        stored = self._put_item_payload(table)
-        assert stored['llm_metadata']['model'] == 'resolved-model'
+        for stored in self._put_item_payloads(table):
+            assert stored['llm_metadata']['model'] == 'resolved-model'
         assert mock_chain.call_args.kwargs['model_id'] == 'resolved-model'
-        assert 'surface' not in mock_chain.call_args.kwargs
+        assert mock_chain.call_args.kwargs['surface'] == 'documents'

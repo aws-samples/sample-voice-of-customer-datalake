@@ -216,8 +216,6 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         'soft studio lighting, neutral background, photorealistic'
     )
 
-    model_id = get_active_model_id(surface='utility')
-
     # Load prompt config before the Bedrock fallback boundary, preserving the
     # old behaviour: prompt file problems are configuration errors, while model
     # invocation problems degrade to a deterministic static prompt.
@@ -237,6 +235,11 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
     )
 
     try:
+        # Inside the boundary on purpose: before the per-surface picker this was
+        # a constant that could never fail, so a transient picker (DynamoDB)
+        # problem must degrade to the static fallback prompt exactly like an
+        # invocation failure instead of becoming a new hard-failure path.
+        model_id = get_active_model_id(surface='utility')
         request_body = {
             'anthropic_version': 'bedrock-2023-05-31',
             'max_tokens': config.get('max_tokens', 200),

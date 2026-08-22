@@ -668,6 +668,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             results = converse_chain(
                 chain_steps,
                 progress_callback=lambda p, s: update_progress(p, s),
+                surface='documents',
                 model_id=resolved_model_id,
             )
             logger.info(f"[PERSONA] LLM chain returned {len(results)} results")

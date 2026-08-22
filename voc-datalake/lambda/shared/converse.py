@@ -619,22 +619,22 @@ def converse_chain(
         max_tokens = step.get('max_tokens', 4096)
         step_explicit_model_id = step.get('model_id') or step.get('model')
         step_model_id = model_id or step_explicit_model_id
+        # An explicit model beats surface resolution inside converse(),
+        # whether that model comes from the chain pin or from the step
+        # itself. Every way this step loses that argument collapses into ONE
+        # warning naming everything dropped, so an operator greps once
+        # instead of matching several near-duplicate lines.
+        inert_overrides = []
         if step_model_id is not None and step.get('surface'):
-            # An explicit model wins over surface resolution inside
-            # converse(), whether that model came from this step or from a
-            # pinned chain model_id. Say so instead of silently eating an
-            # inert per-step surface.
-            model_source = 'chain model_id' if model_id else 'step model_id/model'
-            logger.warning(
-                f"[CHAIN] Step '{step_name}' sets surface='{step['surface']}' "
-                f"but {model_source} is explicit: that model wins and this "
-                "surface override is ignored"
-            )
+            inert_overrides.append(f"surface='{step['surface']}'")
         if model_id is not None and step_explicit_model_id:
+            inert_overrides.append('model_id/model')
+        if inert_overrides:
+            winner = ('the chain-pinned model_id' if model_id is not None
+                      else 'the step model_id/model')
             logger.warning(
-                f"[CHAIN] Step '{step_name}' sets model_id/model but the "
-                "chain pins model_id: the chain model wins and the step "
-                "model override is ignored"
+                f"[CHAIN] Step '{step_name}' drops inert overrides "
+                f"({', '.join(inert_overrides)}): {winner} is explicit and wins"
             )
         
         logger.info(f"[CHAIN] Step '{step_name}' config: max_tokens={max_tokens}, thinking_budget={thinking_budget}")
