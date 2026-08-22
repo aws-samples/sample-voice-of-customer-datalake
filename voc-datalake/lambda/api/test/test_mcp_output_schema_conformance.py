@@ -22,10 +22,15 @@ What makes it a guard rather than a test of six tools:
     Writing the schema out twice would prove only that it can be copied.
 
 ⚠️ This file REPORTS mismatches, it does not fix them. A declaration that
-disagrees with a real payload is a finding for a follow-up, marked `xfail` here
-with the mismatch named. A schema change in the same commit would make the
-guard's own correctness unfalsifiable: a reviewer could not tell whether it
-passes because it works or because the declaration was bent to fit it.
+disagrees with a real payload surfaces as a FAILING parametrised case and is
+fixed in a separate follow-up; changing a schema in the same commit would make
+the guard's own correctness unfalsifiable, because a reviewer could not tell
+whether it passes because it works or because the declaration was bent to fit
+it. If a fix genuinely has to be deferred, the marker is
+`pytest.mark.xfail(strict=True, reason=...)` naming the field and the tracking
+issue — strict, so the day the declaration is corrected this file says so
+instead of silently keeping a stale exemption. There is no such marker today: no
+published tool mismatches its declaration.
 
 REVERT STORY — which mutation makes which assertion fail:
 
@@ -52,9 +57,26 @@ REVERT STORY — which mutation makes which assertion fail:
       — the reason this file takes a `jsonschema` dependency instead of
       recursing over `properties` itself.
 
+  test_an_undeclared_key_inside_an_array_item_is_rejected
+    — the same closure one level DOWN, where M1 lived. The top-level control
+      cannot reach it, because merging a key into the payload root never touches
+      an element of `items`. Its anti-vacuity control is
+      test_some_array_closes_its_item_schema, and its positive counterpart is
+      test_an_unrecognised_key_on_a_route_row_is_not_forwarded, which pins the
+      projection behaviour that keeps the shape unreachable from a route.
+
   test_a_nested_object_where_an_array_is_declared_is_rejected
     — M1's exact shape, in the two places a live writer can still produce it.
       Drop it and a validator that never descends into `items` reads as green.
+      Every negative control here asserts the unmutated payload validates FIRST
+      and then matches the error's PATH (`_rejects_at`), not the message prose:
+      a substring matcher on prose is satisfied by an unrelated field failing,
+      and a control with no "valid first" assertion goes green the day its sample
+      stops conforming for a reason it was never about. `_rejects_at` therefore
+      has its own positive control,
+      test_the_path_matcher_distinguishes_one_field_from_another — rewrite it to
+      `return True` and every other control here still passes, because none of
+      them ever asks it to say no.
 
   test_every_tool_declares_what_section_5_4_requires
     — `outputSchema`, `annotations` (the four hints plus a title) and a cost
@@ -64,7 +86,8 @@ REVERT STORY — which mutation makes which assertion fail:
 WHERE THE SAMPLES CAME FROM. Each entry below names its provenance. None was
 invented to fit a schema; where a field's real shape is uncertain the MESSIER
 variant is preferred, because the nested-object case is what broke M1 and the
-tidy one is what hid it.
+tidy one is what hid it. `_TOOL_SAMPLES` states the ranked convention a Phase 3
+author should follow when a route has no fixture yet.
 """
 
 import copy
@@ -72,7 +95,28 @@ import sys
 from pathlib import Path
 
 import pytest
-from jsonschema import Draft202012Validator
+
+# 🔑 A hard failure, NOT `pytest.importorskip`. `jsonschema` is pinned in
+# `requirements-dev.txt` and installed by the venv recipe in
+# `docs/deployment.md`, which is where `npm run test:backend` gets its
+# interpreter. An `importorskip` would skip this whole file whenever the pin is
+# missing and report a successful run that validated nothing — precisely the
+# "green suite, uncallable tool" state M1 lived in. So the import stays fatal.
+#
+# Re-raised only to NAME the fix: a bare ModuleNotFoundError in a venv created
+# before this pin reads as a broken checkout, and the failure a developer sees
+# should say which file to install. It stays a collection error either way.
+try:
+    from jsonschema import Draft202012Validator
+except ModuleNotFoundError as exc:  # pragma: no cover - environment, not logic
+    raise ModuleNotFoundError(
+        "jsonschema is required by this MCP outputSchema conformance suite and is "
+        "pinned in voc-datalake/requirements-dev.txt. A virtualenv created before "
+        "that pin will not have it: re-run "
+        "`.venv/bin/pip install -r requirements-dev.txt`. This suite is NOT "
+        "skippable — skipping it would report a passing run that validated no "
+        "tool declaration at all."
+    ) from exc
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -82,15 +126,22 @@ import mcp_handler
 #
 # Copying them is the one thing this file must not do: a fixture that drifts from
 # the shapes the routes really produce is how M1 survived a full green suite, and
-# two copies drift by construction. The sibling import resolves because
-# `conftest.py` appends this directory to `sys.path` — the same one line that
-# makes `plugin_manifests.py` and `metrics_publishing_routes.py` importable — so
-# it does not depend on pytest's import mode or on which module loads first.
+# two copies drift by construction.
+#
+# 🔑 Imported by PACKAGE PATH, not as a bare `test_mcp_delegation`. Both resolve —
+# `conftest.py` puts `lambda/` and this directory on `sys.path` — but they do not
+# resolve to the same object. `lambda/api/test/__init__.py` exists, so pytest
+# imports the delegation suite as `api.test.test_mcp_delegation`; a bare import
+# executes its module body a SECOND time under a second name, leaving two sets of
+# fixture objects for the same source file. That is the "two copies drift by
+# construction" failure this import exists to avoid, arriving through the import
+# system instead of through a copy-paste. `sys.modules` proves it: with the bare
+# form, `[n for n in sys.modules if "mcp_delegation" in n]` has two entries.
 #
 # `_FakeLambda` is the ground truth that matters most here: it replays a canned
 # ROUTE BODY, so the payload this file validates is the tool's own output for a
 # realistic route answer, not a dict transcribed from the declaration.
-from test_mcp_delegation import (
+from api.test.test_mcp_delegation import (
     _GENERATED_PERSONA,
     _IMPORTED_PERSONA,
     _PROJECT,
@@ -236,6 +287,29 @@ _METRICS_PERSONAS_BODY = {
 #
 # 🔑 Adding a tool to `MCP_TOOLS` and not to this dict is a FAILING test, not a
 # silent gap. That is the whole point — see the module docstring's revert story.
+#
+# WHERE A PHASE 3 AUTHOR SHOULD GET A ROUTE BODY, in order of preference. This is
+# the one decision each of the ~30 new tools has to make, so it is stated once
+# here rather than left to be inferred from the provenance comments above:
+#
+#   1. An existing fixture from the suite that owns the route. Best, because it
+#      is already maintained against the route and cannot drift independently —
+#      `_feedback_row()` and the three persona shapes come from
+#      `test_mcp_delegation.py`, which took them from live rows.
+#   2. The route handler's own `return` dict, transcribed field for field, with a
+#      comment naming the function and the test that pins those values. This is
+#      what the metrics bodies below are, and it is second-best because a human
+#      transcription is exactly the link that can drift.
+#   3. Driving the route handler with a stubbed table. Strongest chain of custody
+#      and NOT used here: it would make this file depend on a second handler's
+#      stubbing (`metrics_handler`'s `aggregates_table`, which
+#      `test_metrics_handler.py` already sets up), so a change to that stubbing
+#      would break a schema-conformance suite for a reason that has nothing to do
+#      with schemas. Worth reaching for if a route's shape is hard to state by
+#      hand — a many-branch aggregation — but not by default.
+#
+# What is NOT acceptable at any level: a dict written by reading the outputSchema.
+# That proves a declaration can be copied, which is not in question.
 _TOOL_SAMPLES: dict[str, tuple[tuple[str, dict, dict], ...]] = {
     "search_feedback": (
         # The text-search branch, with the route's own truncation flag set. The
@@ -401,18 +475,53 @@ def _payload(tool: str, arguments: dict, bodies: dict) -> dict:
 
 
 def _errors(payload, schema: dict) -> list[str]:
-    """Every way this payload violates this schema, deepest-first, as prose.
+    """Every way this payload violates this schema, as prose, for a failure message.
 
     A REAL validator, not a subset of one. A hand-rolled check that skipped
     `additionalProperties` or never descended into `items` would pass exactly the
     declarations that are wrong — both constructs carry a live finding between
     them (M1 was inside `items`).
+
+    Unordered — `iter_errors` yields in the validator's own keyword and property
+    iteration order, so a shallow violation can precede a deep one. Nothing here
+    reads `errors[0]`, and a control that wants to name WHICH field failed must
+    use `_error_paths` rather than searching this prose: a message can mention
+    `'array'` because some other declared array broke.
     """
     validator = Draft202012Validator(schema)
     return [
         f"{'/'.join(str(p) for p in error.absolute_path) or '<root>'}: {error.message}"
         for error in validator.iter_errors(payload)
     ]
+
+
+def _error_paths(payload, schema: dict) -> list[tuple]:
+    """The payload path of every violation, as a tuple of keys and indices.
+
+    🔑 The attributable half of `_errors`. A control that asserts "this field is
+    rejected" by searching the message prose for a substring accepts an error
+    raised somewhere else entirely: `any("array" in e for e in errors)` passes
+    when an UNRELATED declared array is broken, and `list_personas` payloads
+    carry several. Matching on `absolute_path` names the field the control claims
+    to be about, so the control fails if that field stops being checked even
+    while the payload keeps failing for another reason.
+    """
+    return [
+        tuple(error.absolute_path)
+        for error in Draft202012Validator(schema).iter_errors(payload)
+    ]
+
+
+def _rejects_at(payload, schema: dict, path: tuple) -> bool:
+    """Whether some violation is at `path` or inside it.
+
+    Prefix rather than equality: `additionalProperties: false` reports at the
+    OBJECT that carried the undeclared key, while a wrong type reports at the
+    value, so a control that wants "the failure is attributable to this subtree"
+    cannot pin the exact depth without restating the validator's own reporting
+    rules.
+    """
+    return any(p[: len(path)] == path for p in _error_paths(payload, schema))
 
 
 def _tools_missing_samples(registry: dict) -> list[str]:
@@ -440,6 +549,25 @@ def _closed_schema_tools() -> list[str]:
         name for name in _PUBLISHED_TOOL_NAMES
         if _output_schema(name).get("additionalProperties") is False
     ]
+
+
+def _closed_item_schemas() -> list[tuple[str, str]]:
+    """`(tool, array property)` for every array whose ITEMS close the door.
+
+    Derived the same way as `_closed_schema_tools`, and needed for the same
+    reason one level down: M1 lived inside `items`, so the nested closure is the
+    architecturally important one to control, and the top-level control cannot
+    reach it — merging a key into the payload root never touches an element of
+    `items`.
+    """
+    found = []
+    for name in _PUBLISHED_TOOL_NAMES:
+        for prop, declared in (_output_schema(name).get("properties") or {}).items():
+            if declared.get("type") != "array":
+                continue
+            if (declared.get("items") or {}).get("additionalProperties") is False:
+                found.append((name, prop))
+    return found
 
 
 # ===========================================================================
@@ -547,6 +675,37 @@ class TestDeclaredSchemasHoldAgainstRealPayloads:
 # ===========================================================================
 
 class TestTheValidatorRejectsWhatTheDeclarationsForbid:
+    def test_the_path_matcher_distinguishes_one_field_from_another(self):
+        """The positive control for `_rejects_at`, which every control below uses.
+
+        🔑 A matcher is the one kind of helper whose failure mode is silent
+        approval: rewrite `_rejects_at` to `return True` and every negative
+        control below still passes, because each one only ever asks it to confirm
+        a rejection. So it is exercised here against a schema and payload owned by
+        this test — required to say NO for a path that did not fail, and no for a
+        payload with no errors at all, which is what the mutated version cannot
+        do.
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "wanted": {"type": "array", "items": {"type": "string"}},
+                "other": {"type": "array", "items": {"type": "string"}},
+            },
+        }
+        valid = {"wanted": ["a"], "other": ["b"]}
+        broken_elsewhere = {"wanted": ["a"], "other": {"not": "a list"}}
+
+        assert _rejects_at(broken_elsewhere, schema, ("other",))
+        assert not _rejects_at(broken_elsewhere, schema, ("wanted",)), (
+            "the path matcher attributed a failure to a field that did not fail; "
+            "every control below would then pass for the wrong reason"
+        )
+        assert not _rejects_at(valid, schema, ("wanted",))
+        assert not _rejects_at(valid, schema, ()), (
+            "the path matcher reported a rejection for a payload with no errors"
+        )
+
     def test_some_tool_closes_its_output_schema(self):
         """Anti-vacuity for the parametrization below: if no schema declared
         `additionalProperties: false`, the extra-key control would be an empty
@@ -580,6 +739,86 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         )
         assert any("a_field_no_one_declared" in e for e in errors), errors
 
+    def test_some_array_closes_its_item_schema(self):
+        """Anti-vacuity for the nested control below, the same way
+        `test_some_tool_closes_its_output_schema` is for the top-level one: an
+        empty derivation would make an empty parametrization read as green."""
+        assert _closed_item_schemas(), (
+            "no published array closes its item schema; the nested extra-key "
+            "control below would cover nothing — and M1 lived inside `items`"
+        )
+
+    @pytest.mark.parametrize("tool,prop", _closed_item_schemas())
+    def test_an_undeclared_key_inside_an_array_item_is_rejected(self, tool, prop):
+        """The nested half of the closed-door control, one level DOWN.
+
+        🔑 Architecturally the more important of the two, because M1 was inside
+        `items`: a client's validator descends there, and a validator of ours that
+        did not would pass exactly the declarations that are wrong. The top-level
+        control cannot reach this — merging a key into the payload root never
+        touches an element of an array.
+
+        Not reachable from a route body today, and that is itself the thing worth
+        pinning: the projections whitelist item keys, so an unrecognised field on
+        a route's row is dropped before it reaches the payload (asserted by
+        `test_an_unrecognised_key_on_a_route_row_is_not_forwarded`). A projection
+        that started forwarding unknown keys would break every validating client;
+        this control is what says the declaration forbids it.
+        """
+        case, arguments, bodies = _TOOL_SAMPLES[tool][0]
+        payload = _payload(tool, arguments, bodies)
+        schema = _output_schema(tool)
+
+        assert _errors(payload, schema) == [], f"{tool} ({case}) does not validate to begin with"
+        assert payload.get(prop), (
+            f"{tool} ({case}): the sample no longer carries any {prop} item, so "
+            "there is nothing to inject an undeclared key into; pick a sample "
+            "whose first case populates it"
+        )
+
+        broken = copy.deepcopy(payload)
+        broken[prop][0]["a_field_no_one_declared"] = 1
+
+        assert _rejects_at(broken, schema, (prop, 0)), (
+            f"{tool}.{prop} items declare additionalProperties: false and the "
+            f"validator accepted an undeclared key inside {prop}[0]: "
+            f"{_errors(broken, schema)}"
+        )
+
+    def test_an_unrecognised_key_on_a_route_row_is_not_forwarded(self):
+        """The positive half: the projection is what keeps the nested case unreachable.
+
+        The control above proves the DECLARATION forbids an undeclared key inside
+        an array item. This proves the tool never produces one, which is the
+        reason the control above cannot be driven from a route body — and the
+        property that would silently disappear if a projection were rewritten to
+        pass rows through.
+        """
+        search = _payload("search_feedback", {"query": "late"}, {
+            _SEARCH_ROUTE: {
+                "count": 1,
+                "query": "late",
+                "is_partial_window": False,
+                "items": [{**_FEEDBACK_ROW, "brand_new_route_field": "surprise"}],
+            },
+        })
+        assert search["items"], "the sample produced no items to inspect"
+        assert "brand_new_route_field" not in search["items"][0], (
+            "an unrecognised key on a feedback row reached the payload; the "
+            "declaration closes the item schema, so a validating client would "
+            "reject the whole response"
+        )
+
+        project = _payload("get_project", {"project_id": _PROJECT}, {
+            _PROJECT_ROUTE: {
+                "project": {"name": "Morning Briefing"},
+                "personas": [],
+                "documents": [{**_DOCUMENTS[0], "unexpected": "surprise"}],
+            },
+        })
+        assert project["documents"], "the sample produced no documents to inspect"
+        assert "unexpected" not in project["documents"][0]
+
     def test_an_undeclared_key_is_accepted_where_the_schema_leaves_it_open(self):
         """The other half of that split, and it is deliberate.
 
@@ -588,11 +827,26 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         rejection everywhere would be asserting a design this server
         deliberately does not have — and would turn a route growing a field into
         a failure in this file.
+
+        🔑 The undeclared key is added to the ROUTE BODY and driven through the
+        tool, not merged into the schema's input directly. Validating the body
+        would assume the tool is a pure pass-through — exactly the assumption the
+        rest of this file refuses to make, and the one that would silently stop
+        being true the day a projection is added here.
         """
         schema = _output_schema("get_metrics_breakdown")
-
         assert schema.get("additionalProperties") is not False
-        assert _errors({**_METRICS_CATEGORIES_BODY, "added_next_quarter": 1}, schema) == []
+
+        payload = _payload("get_metrics_breakdown", {"dimension": "categories"}, {
+            "/metrics/categories": {**_METRICS_CATEGORIES_BODY, "added_next_quarter": 1},
+        })
+
+        assert "added_next_quarter" in payload, (
+            "the tool dropped the undeclared key before the validator saw it, so "
+            "this control no longer says anything about the open declaration; it "
+            "now projects its answer and the declaration should say so"
+        )
+        assert _errors(payload, schema) == []
 
     def test_a_nested_object_where_an_array_is_declared_is_rejected(self):
         """M1's exact shape: an object in a slot declared `array`.
@@ -601,35 +855,67 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         string list, and the one declared array on the feedback detail. A
         validator that never descends into `items` reads green on both, which is
         what let M1 reach production.
+
+        🔑 Matched on the error PATH, not on the message prose. A disjunction like
+        `any("current_challenges" in e or "array" in e ...)` was here first and is
+        satisfiable by an unrelated failure: breaking `personas[0].quotes` instead
+        yields `personas/0/quotes: ... is not of type 'array'`, which the prose
+        matcher accepts while `current_challenges` is untouched. A control that
+        can pass for a different field's reason is not a control for this one.
         """
         personas_schema = _output_schema("list_personas")
         payload = _payload("list_personas", *_TOOL_SAMPLES["list_personas"][0][1:])
         assert _errors(payload, personas_schema) == [], "the sample must validate first"
 
+        # Asserted, not assumed: a valid payload need not CONTAIN this path — the
+        # persona item schema declares no `required`, so `_GENERATED_PERSONA` or
+        # the projection could stop emitting the section and the mutation below
+        # would raise KeyError instead of failing with a diagnosis.
+        section = payload["personas"][0].get("pain_points")
+        assert isinstance(section, dict) and isinstance(
+            section.get("current_challenges"), list
+        ), (
+            "the sample no longer contains a nested string-list section at "
+            "personas[0].pain_points.current_challenges, which is the exact shape "
+            f"M1 was; found {section!r}. Point this control at another nested "
+            "list declared `array`, or restore a sample that carries one."
+        )
+
         broken = copy.deepcopy(payload)
         broken["personas"][0]["pain_points"]["current_challenges"] = {"a": "alerts"}
-        errors = _errors(broken, personas_schema)
-        assert any("current_challenges" in e or "array" in e for e in errors), errors
+
+        assert _rejects_at(
+            broken, personas_schema, ("personas", 0, "pain_points", "current_challenges")
+        ), _errors(broken, personas_schema)
 
         detail_schema = _output_schema("get_feedback_detail")
         detail = _payload("get_feedback_detail", *_TOOL_SAMPLES["get_feedback_detail"][0][1:])
-        assert _errors(detail, detail_schema) == []
+        assert _errors(detail, detail_schema) == [], "the detail sample must validate first"
 
-        assert _errors({**detail, "keywords": {"0": "late"}}, detail_schema)
+        assert _rejects_at({**detail, "keywords": {"0": "late"}}, detail_schema, ("keywords",))
         # And a string where the array is declared: the flat-value case, which is
         # what the importer really writes.
-        assert _errors({**detail, "keywords": "late"}, detail_schema)
+        assert _rejects_at({**detail, "keywords": "late"}, detail_schema, ("keywords",))
 
     def test_a_string_where_an_integer_is_declared_is_rejected(self):
         """`feedback_count` arrives as a DynamoDB `Decimal` and on old rows not
-        at all, so a writer putting `"42"` there is not hypothetical."""
+        at all, so a writer putting `"42"` there is not hypothetical.
+
+        Valid first and matched on the path, for the same reason as the control
+        above: asserting only that the mutated payload has SOME error goes green
+        if the sample stops conforming for an unrelated reason, which is a control
+        that reports nothing on the day it is needed.
+        """
         schema = _output_schema("list_personas")
         payload = _payload("list_personas", *_TOOL_SAMPLES["list_personas"][0][1:])
+        assert _errors(payload, schema) == [], "the sample must validate first"
 
         broken = copy.deepcopy(payload)
         broken["personas"][0]["feedback_count"] = "42"
 
-        assert _errors(broken, schema)
+        assert _rejects_at(broken, schema, ("personas", 0, "feedback_count")), _errors(
+            broken, schema
+        )
 
     def test_a_required_field_that_is_absent_is_rejected(self):
         """`search_feedback` promises `is_partial` on every answer. A flag that
@@ -640,8 +926,13 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         assert "is_partial" in schema.get("required", []), (
             "search_feedback no longer requires is_partial; this control moved"
         )
+        assert _errors(payload, schema) == [], "the sample must validate first"
 
-        assert _errors({k: v for k, v in payload.items() if k != "is_partial"}, schema)
+        errors = _errors({k: v for k, v in payload.items() if k != "is_partial"}, schema)
+        # `required` reports at the OBJECT that lacks the key, so the path is the
+        # root for every missing field and cannot distinguish them: this is the one
+        # control where the message is the only place the field name appears.
+        assert any("is_partial" in e for e in errors), errors
 
     def test_breaking_a_declared_type_in_a_copy_of_a_schema_rejects_a_real_payload(self):
         """The guard mutation-checked against itself, in the suite.
@@ -661,20 +952,35 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
             "guard is not reading the declaration it claims to"
         )
 
-    def test_closing_an_open_schema_in_a_copy_rejects_a_real_route_body(self):
+    def test_closing_an_open_schema_in_a_copy_rejects_a_real_payload(self):
         """The same mutation for the other half of the split.
 
         The metrics schemas are open BECAUSE the route sends fields they do not
         declare — `/metrics/sentiment` sends `total`. Closing a copy must reject
-        the real body, which is what makes "open on purpose" a fact about the
+        the real payload, which is what makes "open on purpose" a fact about the
         payload rather than an assertion in a comment.
+
+        Driven through the tool for the same reason as the control above: the
+        equivalence between a metrics route body and the tool's payload holds only
+        while the tool projects nothing, and this file's whole method is to not
+        assume that.
         """
         schema = _output_schema("get_metrics_breakdown")
-        assert _errors(_METRICS_SENTIMENT_BODY, schema) == []
+        payload = _payload("get_metrics_breakdown", {"dimension": "sentiment"}, {
+            "/metrics/sentiment": _METRICS_SENTIMENT_BODY,
+        })
+        assert _errors(payload, schema) == []
+        assert "total" in payload, (
+            "the payload no longer carries `total`, the undeclared field that makes "
+            "the open declaration load-bearing; this control needs another one"
+        )
 
         closed = {**copy.deepcopy(schema), "additionalProperties": False}
-        errors = _errors(_METRICS_SENTIMENT_BODY, closed)
+        errors = _errors(payload, closed)
 
+        # `additionalProperties` reports at the containing object, so the path is
+        # the root here and the field name lives only in the message — the same
+        # exception `test_a_required_field_that_is_absent_is_rejected` documents.
         assert any("total" in e for e in errors), errors
 
 

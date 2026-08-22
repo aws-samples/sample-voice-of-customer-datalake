@@ -14,20 +14,17 @@ boto3-stubs[dynamodb,s3,sqs,secretsmanager,bedrock-runtime]>=1.35.0
 # Lambda Powertools (same as production)
 aws-lambda-powertools>=3.0.0
 
-# JSON Schema validation, TEST-ONLY — deliberately not in any Lambda layer.
+# JSON Schema validation for `lambda/api/test/test_mcp_output_schema_conformance.py`,
+# which validates each MCP tool's declared `outputSchema` against a payload the
+# tool really produces. That file's docstring carries the why.
 #
-# `test_mcp_output_schema_conformance.py` validates each MCP tool's declared
-# `outputSchema` against a payload the tool really produces, and it must use the
-# same kind of validator a CLIENT uses: a validating MCP client rejects a whole
-# response with -32602 when `structuredContent` disagrees with the declaration,
-# which is how `list_personas` came to be uncallable in production while every
-# test passed. A hand-rolled subset validator is what that suite used to have,
-# and a partial implementation ignoring `additionalProperties` or never
-# descending into `items` passes exactly the declarations that are wrong.
+# TEST-ONLY, deliberately absent from `lambda/layers/*`: nothing at runtime
+# validates against these schemas — the server PUBLISHES them and the client
+# checks them — so it stays out of the deployed bundle.
 #
-# Nothing at runtime validates against these schemas — the server PUBLISHES them
-# and the client checks them — so this stays out of `lambda/layers/*` and out of
-# the deployed bundle.
+# `<5`: a major release may change `Draft202012Validator`'s semantics, and this
+# suite's findings are only meaningful against a validator that behaves the way a
+# client's does today.
 jsonschema>=4.23.0,<5
 
 # Code quality — ruff is the only Python linter; the root gate runs
