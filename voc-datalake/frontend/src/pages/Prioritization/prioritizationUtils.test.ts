@@ -647,19 +647,24 @@ describe('the sort orders by the TEAM aggregate, not the caller own ballot', () 
     // `rowC` is local to the sibling cases, so this one mints its own third row.
     const rowC = rowView('c', 'Gamma', '2025-01-03')
     const rows = [rowA, rowB, rowC]
+    // Scored on ONE axis only (`a`, `b`) and absent entirely (`c`), which is what makes
+    // the four fields below land in three DIFFERENT grouping regimes rather than
+    // repeating one: `impact` splits them (a and b have a number, c does not);
+    // `time_to_market` and `priority_score` put all three in number-less blocks for two
+    // different reasons (a scored row with no value on the axis, versus no aggregate at
+    // all); and `created_at` is not team-ordered, so no grouping runs. The property has
+    // to hold in all three, and a number-less block is where a row can quietly vanish.
     const aggregates: Record<string, PrioritizationAggregate> = {
       a: aggregate({ impact: 5, reviewer_count: 2 }),
-      // `b` scored on one axis only and `c` absent entirely, so every arm of the
-      // grouping is exercised — the number-less block is where a row could be dropped.
       b: aggregate({ impact: 0, reviewer_count: 1 }),
     }
 
-    for (const field of ['priority_score', 'impact', 'time_to_market', 'created_at'] as const) {
-      for (const direction of ['asc', 'desc'] as const) {
+    for (const field of ['priority_score', 'impact', 'time_to_market', 'created_at'] as const) {      for (const direction of ['asc', 'desc'] as const) {
         const sorted = sortRows(rows, aggregates, field, direction)
         expect(sorted, `${field}/${direction}`).toHaveLength(rows.length)
         // Length alone would accept a duplicated row masking a dropped one.
-        expect(idsOf(sorted).slice().sort(), `${field}/${direction}`).toEqual(['a', 'b', 'c'])
+        // `idsOf` maps, so it already returns a fresh array — no copy needed before sort.
+        expect(idsOf(sorted).sort(), `${field}/${direction}`).toEqual(['a', 'b', 'c'])
       }
     }
   })
