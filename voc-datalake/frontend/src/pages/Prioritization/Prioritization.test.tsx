@@ -1136,9 +1136,15 @@ describe('Prioritization', () => {
       // through the real locale JSON rather than falling back to the key.
       expect((await screen.findByTestId('prioritization-row-count')).textContent)
         .toBe('2 proposals')
-      // Beside the h1, not inside it: the page's only level-1 heading has to keep
-      // reading as the page's name to a screen reader and the document outline, and it
-      // is what the breadcrumb names.
+      // Beside the h1, not inside it: this heading has to keep reading as the page's
+      // name to a screen reader and the document outline, and it is what the breadcrumb
+      // names.
+      //
+      // `level: 1` is unambiguous HERE ONLY because this suite renders the page without
+      // the app shell. The DEPLOYED page has two level-1 headings — Layout renders the
+      // brand as one — so this query would be ambiguous in a test that mounted Layout,
+      // and no assertion in this file can speak for the page's overall heading
+      // structure. Verified in a browser, not here.
       expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Prioritization$/)
     })
 
@@ -1169,8 +1175,10 @@ describe('Prioritization', () => {
 
       renderPrioritization()
 
+      // No companion "the raw key is absent" assertion: finding `1 proposal` already
+      // proves the `_one` form resolved, and a missing form renders the key path
+      // INSTEAD of the text, so the two can never disagree.
       expect(await screen.findByText('1 proposal')).toBeInTheDocument()
-      expect(screen.queryByText('rowCount')).toBeNull()
     })
 
     it('says nothing while the list is still loading', async () => {
