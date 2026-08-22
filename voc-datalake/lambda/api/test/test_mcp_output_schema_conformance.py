@@ -57,6 +57,37 @@ REVERT STORY — which mutation makes which assertion fail:
       test_the_substance_check_notices_a_sample_that_demonstrates_nothing, which
       hollows a sample and requires the check to object.
 
+  test_no_exemption_from_the_substance_check_has_gone_stale
+    — the check above can be opted out of via
+      `_PROPERTIES_NO_SAMPLE_CAN_SHOW`, and an allowlist is the one structure
+      here whose FUNCTION is to remove a declaration from the checked set, so a
+      stale entry is the most costly silence available. All three stale forms
+      were silent: an entry for a property some sample does demonstrate (dead
+      weight that suppresses a real requirement the day the sample changes), an
+      entry for a property no schema declares (a typo, protecting nothing while
+      reading as though it does), and an entry for an unpublished tool — the same
+      condition test_the_registry_holds_no_sample_for_a_tool_that_is_not_published
+      catches for `_TOOL_SAMPLES`. This is the module's own `xfail(strict=True)`
+      argument applied to its other exemption mechanism. The dict is empty, so it
+      passes trivially and the FIRST entry anyone adds is checked. Its positive
+      control, test_the_staleness_check_notices_each_way_an_exemption_can_go
+      _stale, asserts each form separately — one combined dict would pass while
+      two of three detections were broken — and requires SILENCE for an exemption
+      that is still doing work, since a check reporting everything would satisfy
+      all three while making the allowlist unusable.
+
+  _payload_populating, at the three controls that mutate an array element
+    — `_TOOL_SAMPLES[tool][0]` made those controls depend on the FIRST registered
+      case populating a particular array, so reordering the registry — an
+      apparently cosmetic edit — broke them: only one of `get_project`'s three
+      cases populates `documents`, and moving the empty-project case first was
+      enough. Two of them failed with a bare `IndexError` from
+      `payload["personas"][0]` rather than a sentence. Selecting whichever case
+      populates the property removes the coupling instead of only diagnosing it;
+      reordering now changes nothing, and the genuine "no case populates it"
+      condition fails naming the tool, the property and how many samples were
+      searched.
+
   TestTheDerivationsSurviveAnUnusualDeclaration
     — nothing read at IMPORT time may raise on a declaration a client accepts.
       `_closed_schema_tools()` and `_closed_item_schemas()` run inside
@@ -493,6 +524,21 @@ _REQUIRED_HINTS: tuple[str, ...] = (
 # sample. Anything added needs a comment saying why the route can never produce
 # it; if the honest reason is "I did not want to build the body", the answer is to
 # build the body.
+#
+# 🔑 Checked in BOTH directions, by `_stale_exemptions` and
+# `test_no_exemption_from_the_substance_check_has_gone_stale`. An allowlist is the
+# one structure in this file whose function is to REMOVE a declaration from the
+# checked set, so an entry that has stopped being true is the most costly kind of
+# silence here — and all three ways it can stop being true were silent before that
+# test existed: an entry for a property some sample does demonstrate (dead weight
+# that would suppress a real requirement the day the sample changed), an entry for
+# a property no schema declares (a typo, or a renamed declaration, protecting
+# nothing while reading as though it does), and an entry for a tool that is no
+# longer published (exactly what
+# `test_the_registry_holds_no_sample_for_a_tool_that_is_not_published` exists to
+# catch for `_TOOL_SAMPLES`). This is the same reasoning the module docstring
+# gives for choosing `xfail(strict=True)` over a plain skip, applied to the other
+# exemption mechanism the file has: an exemption may not outlive its reason.
 _PROPERTIES_NO_SAMPLE_CAN_SHOW: dict[str, frozenset[str]] = {}
 
 
@@ -611,6 +657,43 @@ def _first_sample(tool: str) -> tuple[str, dict, dict]:
     return samples[0]
 
 
+def _payload_populating(tool: str, prop: str) -> dict:
+    """A payload from whichever registered case populates `prop`, not case zero.
+
+    🔑 Removes an ordering coupling rather than only diagnosing it. Several
+    controls need a NON-EMPTY array to mutate, and taking `_first_sample`'s
+    payload made them depend on the first registered case being one that
+    populates it — a dependency reordering `_TOOL_SAMPLES`, an apparently
+    cosmetic edit, silently breaks. Only one of `get_project`'s three cases
+    populates `documents`, so moving the empty-project case first was enough.
+
+    Searching the cases instead means those controls hold for any ordering, and
+    they still fail — with a sentence rather than an `IndexError` from
+    `payload["personas"][0]` — when NO case populates the property, which is the
+    genuine "this control has lost its subject" condition. The controls that must
+    use the first case specifically (the closed-item parametrisation names the
+    case in its own message) keep using `_first_sample`.
+    """
+    samples = _TOOL_SAMPLES.get(tool) or ()
+    if not samples:
+        pytest.fail(
+            f"{tool} is published and has no registered sample; add one to "
+            "_TOOL_SAMPLES. "
+            "test_every_published_tool_has_a_registered_sample_payload is the "
+            "authoritative report of this."
+        )
+    for _case, arguments, bodies in samples:
+        payload = _payload(tool, arguments, bodies)
+        if payload.get(prop):
+            return payload
+    pytest.fail(
+        f"none of {tool}'s {len(samples)} registered samples populates {prop!r}, "
+        "so there is nothing for this control to mutate. Give one of its cases a "
+        f"route body that produces a non-empty {prop!r}, or point the control at "
+        "another array declared by this tool."
+    )
+
+
 def _tools_missing_samples(registry: dict) -> list[str]:
     """Published tools with no sample in this registry.
 
@@ -689,11 +772,76 @@ def _undemonstrated_properties(tool: str, registry: dict) -> set[str]:
     declared = set(_subschemas(_output_schema(tool)))
     if not declared:
         return set()
+    return (
+        declared
+        - _demonstrated_properties(tool, registry)
+        - _PROPERTIES_NO_SAMPLE_CAN_SHOW.get(tool, frozenset())
+    )
+
+
+def _demonstrated_properties(tool: str, registry: dict) -> set[str]:
+    """Every top-level key the union of this tool's sample payloads carries.
+
+    Split out of `_undemonstrated_properties` so the staleness check for
+    `_PROPERTIES_NO_SAMPLE_CAN_SHOW` measures demonstration the SAME way the
+    requirement does. Two independent notions of "demonstrated" would let an
+    exemption be simultaneously necessary and stale, which is a contradiction no
+    reader could act on.
+    """
     demonstrated: set[str] = set()
     for _case, arguments, bodies in registry.get(tool) or ():
-        payload = _payload(tool, arguments, bodies)
-        demonstrated |= set(payload)
-    return declared - demonstrated - _PROPERTIES_NO_SAMPLE_CAN_SHOW.get(tool, frozenset())
+        demonstrated |= set(_payload(tool, arguments, bodies))
+    return demonstrated
+
+
+def _stale_exemptions(exemptions: dict, registry: dict) -> list[str]:
+    """Every way an entry in an exemption allowlist has stopped being true.
+
+    🔑 A FUNCTION, taking the allowlist as an argument, for the same reason
+    `_tools_missing_samples` is one: a check on an empty dict passes trivially
+    whether or not it can detect anything, so its own positive control has to be
+    able to hand it entries that ARE stale
+    (`test_the_staleness_check_notices_each_way_an_exemption_can_go_stale`).
+
+    Returns prose rather than raising, so one run reports every stale entry
+    instead of the first.
+    """
+    findings: list[str] = []
+    for tool in sorted(exemptions):
+        properties = exemptions[tool]
+        if tool not in _PUBLISHED_TOOL_NAMES:
+            findings.append(
+                f"{tool} is exempted from the substance check and is not a "
+                f"published tool; the exemption protects nothing. Remove it, or "
+                f"correct the name to one of {sorted(_PUBLISHED_TOOL_NAMES)}."
+            )
+            # No schema and no samples to compare against, so the two checks
+            # below would only add noise about a name that does not exist.
+            continue
+
+        declared = set(_subschemas(_output_schema(tool)))
+        undeclared = sorted(set(properties) - declared)
+        if undeclared:
+            findings.append(
+                f"{tool} exempts {undeclared}, which its outputSchema does not "
+                "declare — a typo, or a declaration that was renamed. The "
+                "exemption reads as though it protects something and does not."
+            )
+
+        # The `xfail(strict=True)` equivalent: an exemption that has become
+        # unnecessary must say so rather than persist. Left in place, it silently
+        # suppresses a real requirement the day the sample stops producing the
+        # property.
+        unnecessary = sorted(
+            set(properties) & _demonstrated_properties(tool, registry)
+        )
+        if unnecessary:
+            findings.append(
+                f"{tool} exempts {unnecessary} from the substance check and a "
+                "registered sample demonstrates them anyway; the exemption is no "
+                "longer needed and should be deleted."
+            )
+    return findings
 
 
 def _closed_item_schemas() -> list[tuple[str, str]]:
@@ -840,10 +988,90 @@ class TestEveryToolBringsASample:
             "substance check still found every declared property demonstrated"
         )
 
+    def test_no_exemption_from_the_substance_check_has_gone_stale(self):
+        """An exemption may not outlive its reason.
 
-# ===========================================================================
-# The derivations — robust against a legal but unusual declaration
-# ===========================================================================
+        🔑 The one direction this file otherwise always checks, applied to the
+        allowlist — the structure where a stale entry costs the most, because its
+        whole function is to remove a declaration from the checked set. All three
+        stale forms were silent: an entry for a property a sample DOES demonstrate,
+        an entry for a property no schema declares, and an entry for a tool that is
+        no longer published. The third is the exact condition
+        `test_the_registry_holds_no_sample_for_a_tool_that_is_not_published`
+        exists to catch for `_TOOL_SAMPLES`; the first is the
+        `pytest.mark.xfail(strict=True)` reasoning the module docstring gives —
+        the day an exemption becomes unnecessary, it says so.
+
+        Passes trivially while the dict is empty, which is why it is cheap to add
+        now: the first entry anyone writes is checked from the moment it lands,
+        rather than after someone remembers to come back for it.
+        """
+        stale = _stale_exemptions(_PROPERTIES_NO_SAMPLE_CAN_SHOW, _TOOL_SAMPLES)
+
+        assert stale == [], "stale entries in _PROPERTIES_NO_SAMPLE_CAN_SHOW:\n" + "\n".join(
+            f"  • {finding}" for finding in stale
+        )
+
+    def test_the_staleness_check_notices_each_way_an_exemption_can_go_stale(self):
+        """The positive control for the check above, one assertion per stale form.
+
+        🔑 The check runs against an EMPTY dict in real life, so it passes whether
+        or not it can detect anything — the precise shape of vacuity
+        `_tools_missing_samples` needed a control for. Each form is asserted
+        separately rather than by handing over one dict with all three: a single
+        combined assertion passes while two of the three detections are broken.
+        """
+        published = _PUBLISHED_TOOL_NAMES[0]
+        # Declared AND demonstrated, so an exemption naming it is stale for the
+        # "no longer necessary" reason ONLY — an undeclared payload key would also
+        # trip the "not declared" finding and the two would be indistinguishable.
+        demonstrated = sorted(
+            set(_subschemas(_output_schema(published)))
+            & _demonstrated_properties(published, _TOOL_SAMPLES)
+        )
+        assert demonstrated, (
+            f"{published} demonstrates no declared property at all, so this control "
+            "cannot construct an unnecessary exemption; the substance check is the "
+            "authoritative report of that"
+        )
+
+        # 1. An exemption for a tool that is not published.
+        renamed = _stale_exemptions(
+            {"a_tool_that_was_renamed_away": frozenset({"whatever"})}, _TOOL_SAMPLES
+        )
+        assert any("a_tool_that_was_renamed_away" in f for f in renamed), renamed
+
+        # 2. An exemption for a property no schema declares.
+        undeclared = _stale_exemptions(
+            {published: frozenset({"a_property_that_does_not_exist"})}, _TOOL_SAMPLES
+        )
+        assert any("a_property_that_does_not_exist" in f for f in undeclared), undeclared
+
+        # 3. An exemption that has become unnecessary, which is the form a
+        #    reviewer is least likely to notice by reading: the entry names a real
+        #    property of a real tool, and only comparing it against what the
+        #    samples actually produce shows it is dead weight.
+        unnecessary = _stale_exemptions(
+            {published: frozenset({demonstrated[0]})}, _TOOL_SAMPLES
+        )
+        assert any(demonstrated[0] in f for f in unnecessary), unnecessary
+
+        # And it must stay SILENT about an exemption that is still doing work. A
+        # check rewritten to report every entry would satisfy all three assertions
+        # above while making the allowlist unusable — the mirror of the `return
+        # True` failure mode `_rejects_at` needed its own control for.
+        #
+        # Every declared property is demonstrated today, so an exemption that is
+        # still necessary has to be constructed: with no samples registered for the
+        # tool, nothing is demonstrated, and an exemption for a property its schema
+        # really declares is exactly the entry the allowlist is for.
+        still_needed = _stale_exemptions(
+            {published: frozenset({demonstrated[0]})}, {**_TOOL_SAMPLES, published: ()}
+        )
+        assert still_needed == [], (
+            "the staleness check objected to an exemption that is still doing "
+            f"work, so no entry could ever survive it: {still_needed}"
+        )
 
 class TestTheDerivationsSurviveAnUnusualDeclaration:
     """Nothing read at import time may raise on a declaration a client accepts.
@@ -1087,17 +1315,18 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         `test_an_unrecognised_key_on_a_route_row_is_not_forwarded`). A projection
         that started forwarding unknown keys would break every validating client;
         this control is what says the declaration forbids it.
+
+        🔑 Whichever case populates `prop`, not case zero. Only one of
+        `get_project`'s three cases populates `documents`, so making the
+        empty-project case first — a reordering that reads as cosmetic — used to
+        break this. `_payload_populating` searches instead, and reports "none of
+        the N samples populates it" when that is genuinely true, which is the
+        condition worth failing on.
         """
-        case, arguments, bodies = _first_sample(tool)
-        payload = _payload(tool, arguments, bodies)
+        payload = _payload_populating(tool, prop)
         schema = _output_schema(tool)
 
-        assert _errors(payload, schema) == [], f"{tool} ({case}) does not validate to begin with"
-        assert payload.get(prop), (
-            f"{tool} ({case}): the sample no longer carries any {prop} item, so "
-            "there is nothing to inject an undeclared key into; pick a sample "
-            "whose first case populates it"
-        )
+        assert _errors(payload, schema) == [], f"{tool} does not validate to begin with"
 
         broken = copy.deepcopy(payload)
         broken[prop][0]["a_field_no_one_declared"] = 1
@@ -1187,7 +1416,11 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         can pass for a different field's reason is not a control for this one.
         """
         personas_schema = _output_schema("list_personas")
-        payload = _payload("list_personas", *_first_sample("list_personas")[1:])
+        # Whichever case populates `personas`, not case zero: `payload["personas"][0]`
+        # raised a bare `IndexError` when the first registered case was one of the
+        # empty-project ones, so an apparently cosmetic reordering of the registry
+        # produced a traceback rather than a sentence.
+        payload = _payload_populating("list_personas", "personas")
         assert _errors(payload, personas_schema) == [], "the sample must validate first"
 
         # Asserted, not assumed: a valid payload need not CONTAIN this path — the
@@ -1230,7 +1463,9 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         that reports nothing on the day it is needed.
         """
         schema = _output_schema("list_personas")
-        payload = _payload("list_personas", *_first_sample("list_personas")[1:])
+        # As above: any case that populates `personas`, so registry order cannot
+        # turn this control into an `IndexError`.
+        payload = _payload_populating("list_personas", "personas")
         assert _errors(payload, schema) == [], "the sample must validate first"
 
         broken = copy.deepcopy(payload)
