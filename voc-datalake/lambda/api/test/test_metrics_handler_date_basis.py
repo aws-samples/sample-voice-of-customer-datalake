@@ -35,7 +35,12 @@ def _item(feedback_id: str, imported_days_ago: int, written_days_ago: int, **ove
         'sentiment_score': Decimal('0.8'),
         'category': 'delivery',
         'urgency': 'low',
+        # Both persona fields, because the processor writes both. The metrics axis
+        # buckets by the ARCHETYPE (`persona_type`) — `persona_name` is legitimately
+        # null for the anonymous feedback that is most of this corpus — so a fixture
+        # carrying only a name would agree with nothing in production.
         'persona_name': 'Loyal Customer',
+        'persona_type': 'existing_customer',
         'date': _day(imported_days_ago),
         'source_created_at': _iso(written_days_ago),
     }
@@ -231,10 +236,10 @@ class TestEntitiesDateBasis:
     ):
         items = [
             _item('a', imported_days_ago=0, written_days_ago=1,
-                  category='delivery', persona_name='Loyal Customer'),
+                  category='delivery', persona_type='existing_customer'),
             _item('b', imported_days_ago=0, written_days_ago=2,
                   category='billing', source_platform='manual_import',
-                  persona_name='New Customer'),
+                  persona_type='prospect'),
             _item('old', imported_days_ago=0, written_days_ago=900,
                   category='delivery'),
         ]
@@ -249,7 +254,7 @@ class TestEntitiesDateBasis:
         assert body['feedback_count'] == 2
         assert body['entities']['categories'] == {'delivery': 1, 'billing': 1}
         assert body['entities']['sources'] == {'webscraper': 1, 'manual_import': 1}
-        assert body['entities']['personas'] == {'Loyal Customer': 1, 'New Customer': 1}
+        assert body['entities']['personas'] == {'existing_customer': 1, 'prospect': 1}
 
 
 class TestSummaryDateBasis:
@@ -413,9 +418,12 @@ class TestPersonasDateBasis:
         self, mock_fb, mock_agg, api_gateway_event, lambda_context
     ):
         items = [
-            _item('a', imported_days_ago=0, written_days_ago=1, persona_name='Loyal Customer'),
-            _item('b', imported_days_ago=0, written_days_ago=2, persona_name='Loyal Customer'),
-            _item('old', imported_days_ago=0, written_days_ago=300, persona_name='Bargain Hunter'),
+            _item('a', imported_days_ago=0, written_days_ago=1,
+                  persona_type='existing_customer'),
+            _item('b', imported_days_ago=0, written_days_ago=2,
+                  persona_type='existing_customer'),
+            _item('old', imported_days_ago=0, written_days_ago=300,
+                  persona_type='prospect'),
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=30)
 
@@ -425,7 +433,7 @@ class TestPersonasDateBasis:
         )
         body = json.loads(lambda_handler(event, lambda_context)['body'])
 
-        assert body['personas'] == {'Loyal Customer': 2}
+        assert body['personas'] == {'existing_customer': 2}
         mock_agg.query.assert_not_called()
 
 

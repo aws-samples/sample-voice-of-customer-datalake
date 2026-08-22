@@ -20,7 +20,12 @@ from shared.api import (
     AGGREGATE_RETENTION_DAYS,
 )
 from shared.exceptions import ValidationError
-from shared.feedback import basis_date, window_cutoff
+from shared.feedback import (
+    PERSONA_PREFIX,
+    basis_date,
+    persona_bucket,
+    window_cutoff,
+)
 from shared.indexes import (
     AGGREGATES_BY_METRIC_TYPE_INDEX,
     FEEDBACK_BY_CATEGORY_INDEX,
@@ -288,6 +293,39 @@ def _index_read_was_truncated(response: dict) -> bool:
     return bool(response.get('LastEvaluatedKey'))
 
 
+def _persona_bucket(item: dict) -> str:
+    """The persona bucket one RAW FEEDBACK item belongs to, on the scan path.
+
+    A one-line delegation to `shared.feedback.persona_bucket`, kept as a named
+    function here only so that the reason the scan path needs one at all lives beside
+    the two branches that call it.
+
+    The scan path exists because aggregates are bucketed by import date only, so a
+    review-date window or a source filter has to be computed from raw items — and
+    that makes this the read side's answer to the same question
+    `aggregator/handler.py::counter_dimensions` answers when it names a
+    `METRIC#persona#<value>` row. The two must agree, or `/metrics/personas`
+    reports one thing for `?date_basis=review` and another for the default basis
+    over the same items. One window, two code paths, two different answers is the
+    defect class this file has now been repaired for twice.
+
+    🔑 IT IS ONE FUNCTION IN `shared/`, NOT TWO EXPRESSIONS THAT AGREE. An earlier
+    round of this change duplicated the expression and pinned the two copies to each
+    other, on the reasoning that a constant two Lambdas must SPELL alike is a fact to
+    share while an expression they must COMPUTE alike is a behaviour to pin. What
+    ended that was the derivation growing a branch: it now buckets a value outside
+    PERSONA_ARCHETYPES as the empty value, so the axis is CLOSED — and "closed" is a
+    property of the derivation, which two copies could widen independently. See
+    `persona_bucket`.
+
+    Why the field is the archetype and not the name is argued where the constant is
+    declared. The short of it: `persona_name` is legitimately null for anonymous
+    feedback, which is most of this corpus, so bucketing by it put 99.97% of a
+    6,239-item corpus in one bucket.
+    """
+    return persona_bucket(item)
+
+
 # ============================================
 # Feedback Endpoints
 # ============================================
@@ -502,9 +540,13 @@ def get_entities():
             category_counts[category] = category_counts.get(category, 0) + 1
             src = item.get('source_platform', 'unknown')
             source_counts[src] = source_counts.get(src, 0) + 1
-            persona_name = item.get('persona_name')
-            if persona_name:
-                persona_counts[persona_name] = persona_counts.get(persona_name, 0) + 1
+            # Counted for EVERY item, including the ones with no archetype, because
+            # the aggregates branch below counts every item too — the aggregator
+            # writes exactly one persona counter per item. Skipping the empty ones
+            # here would make the two branches of one route disagree about the same
+            # window, which is what `_persona_bucket` exists to prevent.
+            persona = _persona_bucket(item)
+            persona_counts[persona] = persona_counts.get(persona, 0) + 1
             problem = item.get('problem_summary', '')
             if problem and len(problem) > 5:
                 problem_key = problem[:100].lower().strip()
@@ -561,8 +603,11 @@ def get_entities():
     persona_counts = {}
     for item in persona_response.get('Items', []):
         if item.get('sk') in date_range:
-            persona_name = item['pk'].replace('METRIC#persona#', '')
-            persona_counts[persona_name] = persona_counts.get(persona_name, 0) + int(item.get('count', 0))
+            # PERSONA_PREFIX, shared with the aggregator that BUILT this pk: two
+            # Lambdas that cannot import each other must strip exactly what the
+            # other prepended, or the bucket names come back mangled.
+            persona = item['pk'].replace(PERSONA_PREFIX, '')
+            persona_counts[persona] = persona_counts.get(persona, 0) + int(item.get('count', 0))
 
     # Get feedback count
     total_window, total_truncated = _query_metric_window(
@@ -1025,9 +1070,12 @@ def get_persona_metrics():
         items, is_partial = _scan_window_items(days, date_basis)
         personas = {}
         for item in items:
-            persona_name = item.get('persona_name')
-            if persona_name:
-                personas[persona_name] = personas.get(persona_name, 0) + 1
+            # Every item, empty archetype included — see `_persona_bucket` and the
+            # note in `/feedback/entities`: the aggregates branch below counts one
+            # persona row per item, so a scan branch that dropped the empty ones
+            # would answer a different question over the same window.
+            persona = _persona_bucket(item)
+            personas[persona] = personas.get(persona, 0) + 1
         return {
             'period_days': days,
             'is_partial': is_partial,
@@ -1049,8 +1097,10 @@ def get_persona_metrics():
 
     for item in response.get('Items', []):
         if item.get('sk') in date_range:
-            persona_name = item['pk'].replace('METRIC#persona#', '')
-            personas[persona_name] = personas.get(persona_name, 0) + int(item.get('count', 0))
+            # PERSONA_PREFIX, shared with the aggregator that BUILT this pk — see
+            # the same read in `get_entities`.
+            persona = item['pk'].replace(PERSONA_PREFIX, '')
+            personas[persona] = personas.get(persona, 0) + int(item.get('count', 0))
 
     return {
         'period_days': days,

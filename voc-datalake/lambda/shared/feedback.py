@@ -38,6 +38,149 @@ def validate_date_basis(value: str | None) -> str:
         return value.strip().lower()
     return DATE_BASIS_IMPORTED
 
+# --- The persona metrics axis ------------------------------------------------
+# WHICH FIELD "PERSONA" MEANS WHEN IT IS A DIMENSION, and what an item with no
+# value for it is called. Two Lambdas bucket the same items by these values and
+# must agree, so they live here, in the data layer, beside the date-basis
+# constants and for the same reason: `aggregator/handler.py` writes the
+# `METRIC#persona#<value>` counter rows from a stream, `metrics_handler`'s scan
+# path buckets raw items itself when the caller asks for a review-date window or a
+# source filter, and neither Lambda can import the other (each asset excludes the
+# other's directory). One window read two ways answering two different things is
+# the defect class this repo has now fixed twice; a shared constant is what makes
+# "both paths read the same field" a fact rather than an intention.
+#
+# 🔑 `persona_type`, NOT `persona_name`. The processor writes both
+# (`processor/handler.py`), and the counter bucketed by `persona_name` until an
+# audit found 99.97% of a 6,239-item corpus under a single `Unknown` — an axis
+# useless while looking populated. The cause was NOT a field nothing writes: the
+# enrichment contract declares `persona.name` as "string or null" because this
+# platform ingests scraped reviews and mostly anonymous form submissions, so an
+# anonymous item HAS no name to give; the processor strips None before writing and
+# `persona_name` is simply absent. A null name is correct output for anonymous
+# feedback, so the field was not the bug — the AXIS was. `persona_type` is
+# populated and is a closed enum, which is what a dimension you group by has to
+# be; a person's name is an identifier, not an archetype.
+PERSONA_FIELD = 'persona_type'
+
+# The bucket an item with no archetype lands in, spelled as the enum spells it
+# (`existing_customer|prospect|churn_risk|advocate|unknown`) rather than as a
+# bespoke `Unknown`: the contract already defines a value for this exact idea, so
+# every bucket name is one the contract declares. Aggregate rows written before the
+# field moved keep their old `Unknown` bucket and age out on their 90-day TTL
+# (`AGGREGATE_RETENTION_DAYS`); the transition is forward-only by design, with one
+# exception on the REVERSAL path — see `aggregator/handler.py::LEGACY_PERSONA_FIELD`.
+#
+# WHAT THIS BUCKET CANNOT TELL YOU, said out loud because the next person to ask
+# "is enrichment healthy?" will look exactly here: it merges "the enrichment
+# classified the archetype as `unknown`", "the field is absent, so no classification
+# was recorded at all", and — since `persona_bucket` closed the axis to
+# PERSONA_ARCHETYPES — "the field held a value the contract does not declare". All
+# three land in this one partition, so a rising
+# `unknown` does not distinguish an enrichment regression from a corpus that
+# genuinely resists classification — a quieter variant of the blindness this axis
+# was just repaired for. The trade was accepted because the alternative, a second
+# bucket for the absent case, would put back a value the enrichment contract does
+# not declare, which is the thing naming this bucket the enum's way removes. A
+# caller who needs the two apart has to read the raw `persona_type` field on the
+# feedback items (`/feedback`, `/data-explorer/feedback`), where absent and
+# `unknown` are still different.
+PERSONA_UNKNOWN = 'unknown'
+
+# The archetypes the enrichment contract admits, which is the whole value space
+# this axis can produce — `PERSONA_UNKNOWN` included, since the contract declares it.
+#
+# 🔑 THIS SET IS WHAT MAKES THE AXIS CLOSED, and `persona_bucket` below is what makes
+# that true rather than hoped for. A value outside it buckets as PERSONA_UNKNOWN, so
+# the rows this deploy writes are exactly `PERSONA_PREFIX + <a member of this set>`
+# and nothing else. Two things depend on that being a FACT:
+#
+#   * the reversal's pre-deploy compatibility
+#     (`aggregator/handler.py::_reverse_a_pre_deploy_persona_row`) builds a partition
+#     key out of a free-text `persona_name` and must refuse to aim its `-1` at a row
+#     this deploy actively writes. Membership of this set is the only way it can know
+#     — and while an arbitrary `persona_type` could still reach a pk, that test was
+#     WRONG: review demonstrated a live `METRIC#persona#loyal` row (this repo's own
+#     fixtures use `persona_type: 'loyal'`, and `PUT /data-explorer/feedback` accepts
+#     the field with no allowlist) decremented 500 → 499 for an item counted
+#     elsewhere, because `loyal` is not in this set and so passed the guard;
+#   * a dimension a caller GROUPS BY is only useful if its value space is knowable.
+#     An MCP client reading these keys can enumerate them from the contract.
+#
+# WHAT CLOSING IT COSTS, stated where the closing happens: an out-of-contract
+# `persona_type` (an LLM ignoring the enum, or a hand edit through the Data Explorer)
+# is counted as unclassified rather than under its own name, so the axis cannot show
+# that the model returned something the contract does not declare. That is the same
+# trade PERSONA_UNKNOWN already makes, and the same place to look for the
+# distinction: the raw `persona_type` on the feedback items.
+#
+# 🔑 THE PROMPT IS STILL THE CONTRACT; this is a copy, and it is pinned as one.
+# `processor/handler.py`'s `USER_PROMPT_TEMPLATE` is what the model is told to
+# return, so it is the only place that DEFINES the value space, and
+# test_persona_field_lockstep.py::test_the_shared_archetypes_are_the_ones_the_enrichment_enum_declares
+# reads the enum back out of that prompt and fails if the two disagree. Without that
+# pin this would be a second declaration of the contract, which is the drift the
+# rest of this block exists to prevent. `null` is not a member: it is the contract's
+# way of saying "no value", and PERSONA_UNKNOWN is the bucket that case lands in.
+PERSONA_ARCHETYPES = frozenset({
+    'existing_customer',
+    'prospect',
+    'churn_risk',
+    'advocate',
+    PERSONA_UNKNOWN,
+})
+
+# The partition prefix the persona counter rows are keyed by. Shared for the same
+# reason as the two above, and one more particular to it: it is spent by FOUR
+# call sites in two Lambdas that cannot import each other —
+# `aggregator/handler.py` builds the pk with it and `get_metric_type` tags the row
+# for the `metric_type` GSI by it, while `metrics_handler` strips it back off in
+# both of its aggregates branches. A prefix changed where the rows are WRITTEN and
+# not where they are READ leaves the GSI untagged and the dimension empty while
+# every count is still computed correctly, which is the worst kind of wrong: no
+# error, no log, an empty axis.
+#
+# It deliberately did NOT move when the source field did. The axis is still
+# "persona"; only where its value comes from changed.
+PERSONA_PREFIX = 'METRIC#persona#'
+
+
+def persona_bucket(item: dict) -> str:
+    """The persona bucket one feedback item belongs to. THE only derivation.
+
+    🔑 SHARED, THOUGH AN EARLIER ROUND OF THIS CHANGE ARGUED IT SHOULD NOT BE, and
+    the argument that moved it is worth keeping because it is the general one. That
+    round's reasoning was: a constant two Lambdas must SPELL alike is a fact (share
+    it), while an expression they must COMPUTE alike is a behaviour (pin it with a
+    test) — and the `or`-not-a-`.get`-default reasoning read differently on each
+    side, so each side carried it where its code was.
+
+    That held while the derivation was `item.get(PERSONA_FIELD) or PERSONA_UNKNOWN`,
+    two tokens and one operator. It stopped holding when the membership test below
+    was added: a derivation with a BRANCH in it is no longer a spelling that two
+    docstrings can keep aligned. The property the axis now rests on — every row this
+    deploy writes is named by a member of PERSONA_ARCHETYPES — is a property of the
+    DERIVATION, not of the constants, so a second copy of it is a second place the
+    value space can be widened. The write side's collision guard would then be
+    reasoning about a set the read side no longer respects.
+
+    `or`, not a `.get` default: the processor strips None before writing, but a
+    stream image edited by hand, or any writer storing an explicit null, delivers the
+    key present and empty — and a default does not apply to a present key, so
+    `METRIC#persona#None` would be a partition nothing else ever writes to or reads
+    from. Invisible, and unreachable by a later reversal.
+
+    Membership, not just non-emptiness, and the two call sites need it for different
+    halves of one reason. On the WRITE side it is what makes the rows this deploy
+    creates enumerable, which the pre-deploy collision guard depends on. On the READ
+    side it is what stops the scan branch reporting a bucket the aggregates branch
+    could not have produced for the same item — one window, two branches, two value
+    spaces, which is the defect class this axis has now been repaired for twice.
+    """
+    persona = item.get(PERSONA_FIELD) or PERSONA_UNKNOWN
+    return persona if persona in PERSONA_ARCHETYPES else PERSONA_UNKNOWN
+
+
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90
 
