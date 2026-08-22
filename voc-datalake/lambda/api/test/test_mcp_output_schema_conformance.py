@@ -77,6 +77,30 @@ REVERT STORY — which mutation makes which assertion fail:
       an element missing one, and a control that cannot construct its own negative
       case only reports what the production code already does.
 
+      And through every KEYWORD that nests a schema, not only `properties` and
+      `items`. `Draft202012Validator` follows `$ref`, `anyOf`/`allOf`/`oneOf`,
+      `prefixItems` and a schema-valued `additionalProperties`/`patternProperties`,
+      so a declaration nesting that way was live for a client and invisible here —
+      an asymmetry, not merely a gap. Worse than invisible: `_stale_exemptions`
+      measures "declared" over the same walk, so a legitimate exemption for a
+      `$ref`'d property was reported as a TYPO and the only way to satisfy the file
+      was to delete a correct entry. The reviewer's five-construct probe found one
+      site, the root, with all five nested properties unmeasured; it now finds
+      six. test_the_substance_check_measures_through_every_keyword_that_nests_a
+      _schema is the control, asserting both directions over a schema it owns, and
+      what the walk CANNOT follow is refused by name rather than lost — see
+      test_no_published_declaration_nests_through_a_keyword_the_walk_cannot_follow.
+
+  test_no_published_declaration_uses_a_property_name_that_collides_with_a_label
+    — `_label` joins a path with `/`, so a property literally named `a/b` at the
+      root produces the same label as `b` inside object `a`, and one exemption
+      would silence both indistinguishably. The flat namespace is deliberate — an
+      allowlist's whole job is to be writable by hand, and escaping would put a
+      second addressing scheme in the one structure that must not need one — so
+      the assumption is CHECKED rather than only documented, which is the
+      treatment this file gives its other deliberate limitations. `[]` and `{}`
+      are reserved for the same reason.
+
   test_no_exemption_from_the_substance_check_has_gone_stale
     — the check above can be opted out of via
       `_PROPERTIES_NO_SAMPLE_CAN_SHOW`, and an allowlist is the one structure
@@ -96,33 +120,44 @@ REVERT STORY — which mutation makes which assertion fail:
       that is still doing work, since a check reporting everything would satisfy
       all three while making the allowlist unusable.
 
-  _payload_populating, at the three controls that mutate an array element
+  _payload_reaching, at the three controls that mutate an array element
     — `_TOOL_SAMPLES[tool][0]` made those controls depend on the FIRST registered
       case populating a particular array, so reordering the registry — an
       apparently cosmetic edit — broke them: only one of `get_project`'s three
       cases populates `documents`, and moving the empty-project case first was
       enough. Two of them failed with a bare `IndexError` from
       `payload["personas"][0]` rather than a sentence. Selecting whichever case
-      populates the property removes the coupling instead of only diagnosing it;
-      reordering now changes nothing, and the genuine "no case populates it"
-      condition fails naming the tool, the property and how many samples were
-      searched.
+      reaches the site removes the coupling instead of only diagnosing it;
+      reordering now changes nothing, and the genuine "no case reaches it"
+      condition fails naming the tool, the site and how many samples were
+      searched. It takes a PATH rather than a root property, so it reaches a site
+      at any depth — a helper that could only look up a root key would have kept
+      the control shallower than the derivation feeding it.
 
   TestTheDerivationsSurviveAnUnusualDeclaration
-    — nothing read at IMPORT time may raise on a declaration a client accepts.
-      `_closed_schema_tools()` and `_closed_item_schemas()` run inside
+    — nothing read at IMPORT time may raise on a declaration a client accepts, or
+      on a fixture this file imports. `_closed_schema_tools()`,
+      `_closed_item_schemas()` and `_TOOL_SAMPLES` are all read inside
       `@pytest.mark.parametrize`, so a raise there is a collection error that
-      aborts all ~2200 `lambda/api` tests and is attributed to whatever ran
-      next. Two declarations did exactly that: a published tool with no
+      aborts collection of the ENTIRE `lambda/api` suite and is attributed to
+      whatever ran next. Three did exactly that: a published tool with no
       `outputSchema` (`KeyError`, in place of the precise message §5.4's test
-      already carries) and a boolean sub-schema, which Draft 2020-12 permits and
+      already carries); a boolean sub-schema, which Draft 2020-12 permits and
       `check_schema` accepts (`AttributeError`) — this file crashing on a schema
-      it also certifies as valid. Both now degrade to "no schema, closes
-      nothing", leaving the §5.4 test the single named reporter. The tolerance
-      has its own positive control, test_the_derivations_still_find_the_real
-      _closures: making `_output_schema` return `{}` unconditionally would
-      satisfy that whole class while rendering the file vacuous, since an empty
-      schema validates every payload.
+      it also certifies as valid; and `_GENERATED_PERSONA["identity"]` in a
+      sample, where renaming that key in `test_mcp_delegation.py` gave
+      `KeyError: 'identity'` and took the suite to ZERO collected tests. The third
+      is the only one where the raising code was this file's own, and the coupling
+      is one-directional and to a PRIVATE name in another module, so nothing over
+      there will stop the rename. All three now degrade — "no schema, closes
+      nothing" and `.get(section, {})` — leaving the §5.4 test and the substance
+      check as the named reporters: the rename now reads as *"list_personas
+      declares ['personas/[]/identity/age_range', …] and no registered sample
+      produces them"* beside a test naming the fixture's owner, with 2199 other
+      tests still running. The tolerance has its own positive control,
+      test_the_derivations_still_find_the_real_closures: making `_output_schema`
+      return `{}` unconditionally would satisfy that whole class while rendering
+      the file vacuous, since an empty schema validates every payload.
 
   test_a_real_payload_validates_against_its_declared_output_schema
     — the guard proper. Verified non-vacuous two ways rather than by inspection:
@@ -145,6 +180,20 @@ REVERT STORY — which mutation makes which assertion fail:
       test_some_array_closes_its_item_schema, and its positive counterpart is
       test_an_unrecognised_key_on_a_route_row_is_not_forwarded, which pins the
       projection behaviour that keeps the shape unreachable from a route.
+
+      Parametrised from `_closed_item_schemas`, which now derives from the SAME
+      walk the substance check uses. It used to walk root-level `properties` only,
+      so a closed `items` nested inside another array's item schema — or inside a
+      nested object — was parametrised by nothing while `_declared_sites` saw it
+      perfectly well: the two halves of the file disagreed about how deep a
+      declaration goes, and the shallower half was the one guarding M1's level.
+      Confirmed reachable through production code, not only synthetically: a closed
+      nested array added to `_PERSONA_PROPERTIES` gave one substance-check failure
+      and ZERO from this control. Its depth has its own anti-vacuity control,
+      test_the_closed_item_derivation_can_find_a_closure_below_the_payload_root,
+      because test_some_array_closes_its_item_schema is satisfied by one closure at
+      the root and so passed throughout the round the derivation was shallow —
+      "finds nothing deep" read as "there is nothing deep".
 
   test_a_nested_object_where_an_array_is_declared_is_rejected
     — M1's exact shape, in the two places a live writer can still produce it.
@@ -529,6 +578,24 @@ _TOOL_SAMPLES: dict[str, tuple[tuple[str, dict, dict], ...]] = {
         # exotic one. This is provenance level 2 of the convention above: a
         # transcription from the schema that owns the shape, not a dict written by
         # reading the tool's `outputSchema`.
+        #
+        # 🔑 `.get(section, {})`, never `_GENERATED_PERSONA["section"]`. This dict
+        # is module-level and `_cases()` reads it inside a
+        # `@pytest.mark.parametrize` decorator, so a subscript here evaluates at
+        # IMPORT: renaming one section key in `test_mcp_delegation.py` — a
+        # plausible edit, since that suite re-derives its section names from
+        # `schemas/persona.schema.json` — raised `KeyError: 'identity'` and took
+        # the whole `lambda/api` suite to zero collected tests. That is exactly the
+        # blast radius `TestTheDerivationsSurviveAnUnusualDeclaration` exists to
+        # prevent, arriving from a fixture instead of from a declaration, and the
+        # coupling is one-directional and to a PRIVATE name in another module, so
+        # nothing over there will stop the rename.
+        #
+        # Degrading instead hands the report to this round's own addition: the
+        # substance check names the properties the samples stopped demonstrating
+        # (`personas/[]/identity/age_range` …), which is a diagnosis rather than a
+        # traceback. `test_the_imported_persona_fixture_still_carries_the_sections
+        # _this_sample_extends` is the assertion that says so by name.
         ("a generated row carrying every canonical persona field",
          {"project_id": _PROJECT}, {
              _PROJECT_ROUTE: {
@@ -536,23 +603,23 @@ _TOOL_SAMPLES: dict[str, tuple[tuple[str, dict, dict], ...]] = {
                  "personas": [{
                      **_GENERATED_PERSONA,
                      "identity": {
-                         **_GENERATED_PERSONA["identity"],
+                         **_GENERATED_PERSONA.get("identity", {}),
                          "bio": "Reads on the commute, decides at the weekend.",
                          "education": "LLB, University of Leeds",
                          "family_status": "Two children at primary school",
                          "income_bracket": "£60k-£80k",
                      },
                      "goals_motivations": {
-                         **_GENERATED_PERSONA["goals_motivations"],
+                         **_GENERATED_PERSONA.get("goals_motivations", {}),
                          "success_definition": "Nothing important was missed",
                          "underlying_motivations": ["Be the informed one at work"],
                      },
                      "behaviors": {
-                         **_GENERATED_PERSONA["behaviors"],
+                         **_GENERATED_PERSONA.get("behaviors", {}),
                          "activity_frequency": "Every weekday morning",
                      },
                      "context_environment": {
-                         **_GENERATED_PERSONA["context_environment"],
+                         **_GENERATED_PERSONA.get("context_environment", {}),
                          "social_context": "Alone, before the household wakes",
                          "influencers": ["Her local WhatsApp group"],
                      },
@@ -579,8 +646,9 @@ _REQUIRED_HINTS: tuple[str, ...] = (
 )
 
 # Declared properties that no sample can demonstrate, `tool` → `{label}`, where a
-# label is `_label`'s path: a root property is its own name, and `"[]"` marks a
-# descent through an array — `personas/[]/identity/bio`.
+# label is `_label`'s path: a root property is its own name, `"[]"` marks a descent
+# through an array and `"{}"` a descent through a schema-valued map
+# (`additionalProperties`) — `personas/[]/identity/bio`.
 #
 # 🔑 EMPTY, and it must stay hard to add to. Every property declared by the six
 # tools published today is carried by at least one sample payload, at every depth,
@@ -632,7 +700,7 @@ def _output_schema(name: str) -> dict:
     and a published tool declaring none raised a bare `KeyError` — from inside
     `_closed_schema_tools()` and `_closed_item_schemas()`, which are evaluated in
     `@pytest.mark.parametrize` decorators, so at MODULE IMPORT. That is a
-    collection error aborting every test in `lambda/api` (2184 of them), and the
+    collection error aborting the ENTIRE `lambda/api` suite, and the
     message a Phase 3 author reads is `KeyError: 'outputSchema'` rather than
     `test_every_tool_declares_what_section_5_4_requires`'s
     `f"{name} declares no outputSchema"` — the assertion written for exactly this
@@ -740,22 +808,27 @@ def _first_sample(tool: str) -> tuple[str, dict, dict]:
     return samples[0]
 
 
-def _payload_populating(tool: str, prop: str) -> dict:
-    """A payload from whichever registered case populates `prop`, not case zero.
+def _payload_reaching(tool: str, path: tuple) -> tuple[dict, tuple, dict]:
+    """A payload from whichever case reaches `path`, plus the object found there.
 
-    🔑 Removes an ordering coupling rather than only diagnosing it. Several
-    controls need a NON-EMPTY array to mutate, and taking `_first_sample`'s
-    payload made them depend on the first registered case being one that
-    populates it — a dependency reordering `_TOOL_SAMPLES`, an apparently
-    cosmetic edit, silently breaks. Only one of `get_project`'s three cases
-    populates `documents`, so moving the empty-project case first was enough.
+    Returns `(payload, concrete path, object)` where the object is a REFERENCE
+    into the payload, so a caller holding it can mutate through it and then ask
+    `_rejects_at` about the concrete path it mutated.
 
-    Searching the cases instead means those controls hold for any ordering, and
-    they still fail — with a sentence rather than an `IndexError` from
-    `payload["personas"][0]` — when NO case populates the property, which is the
-    genuine "this control has lost its subject" condition. The controls that must
-    use the first case specifically (the closed-item parametrisation names the
-    case in its own message) keep using `_first_sample`.
+    🔑 Searches the cases rather than taking `_TOOL_SAMPLES[tool][0]`, which
+    removes an ordering coupling instead of only diagnosing it. Several controls
+    need a populated array to mutate, and taking the first case made them depend
+    on that case being one that populates it — a dependency an apparently cosmetic
+    reordering of the registry silently breaks. Only one of `get_project`'s three
+    cases populates `documents`, so moving the empty-project case first was
+    enough, and two of the controls then failed with a bare `IndexError` from
+    `payload["personas"][0]` rather than a sentence.
+
+    🔑 Takes a PATH, not a root property, so it reaches a site at any depth for
+    the same reason `_closed_item_schemas` now derives them: a closed `items`
+    nested below the root has an element to mutate too, and a helper that could
+    only look up a root key would have kept this control shallower than the
+    derivation feeding it.
     """
     samples = _TOOL_SAMPLES.get(tool) or ()
     if not samples:
@@ -765,15 +838,18 @@ def _payload_populating(tool: str, prop: str) -> dict:
             "test_every_published_tool_has_a_registered_sample_payload is the "
             "authoritative report of this."
         )
+    label = "/".join(path) or "<root>"
     for _case, arguments, bodies in samples:
         payload = _payload(tool, arguments, bodies)
-        if payload.get(prop):
-            return payload
+        found = _located_objects(payload, path)
+        if found:
+            at, obj = found[0]
+            return payload, at, obj
     pytest.fail(
-        f"none of {tool}'s {len(samples)} registered samples populates {prop!r}, "
-        "so there is nothing for this control to mutate. Give one of its cases a "
-        f"route body that produces a non-empty {prop!r}, or point the control at "
-        "another array declared by this tool."
+        f"none of {tool}'s {len(samples)} registered samples reaches {label}, so "
+        "there is nothing for this control to mutate. Give one of its cases a "
+        f"route body that populates {label}, or point the control at another site "
+        "declared by this tool."
     )
 
 
@@ -813,8 +889,8 @@ def _subschemas(schema: dict) -> dict:
     `declared.get("type")` on one of those raised
     `AttributeError: 'bool' object has no attribute 'get'`, and because
     `_closed_item_schemas()` is evaluated in a `@pytest.mark.parametrize`
-    decorator the raise landed at module import: a collection error aborting all
-    2184 `lambda/api` tests, on a declaration this very file also certifies as
+    decorator the raise landed at module import: a collection error aborting the
+    entire `lambda/api` suite, on a declaration this very file also certifies as
     valid via `test_the_declaration_is_itself_a_valid_json_schema`.
 
     A boolean sub-schema constrains no keys and closes no door, so dropping it
@@ -831,71 +907,237 @@ def _subschemas(schema: dict) -> dict:
     return {k: v for k, v in properties.items() if isinstance(v, dict)}
 
 
-def _declared_sites(schema, path: tuple = ()) -> dict[tuple, frozenset[str]]:
-    """Every object schema in a declaration, keyed by the payload path reaching it.
+# The two path markers that stand for "descend through a container" rather than
+# naming a key: an array element, and an arbitrary key of a schema-valued map
+# (`additionalProperties` / `patternProperties`). Both are reserved words in the
+# label namespace `_label` builds — see its docstring.
+_ARRAY = "[]"
+_MAP = "{}"
 
-    🔑 Recursive, because the substance check stopping at the payload ROOT was the
-    one gap left at the level this file's own architecture argument singles out.
-    `_closed_item_schemas` descends into `items` for the negative controls — M1
-    lived there — but the requirement that a declaration be DEMONSTRATED by some
-    sample was measured only against top-level `properties`. So a Phase 3 author
-    could declare `"pain_points": {"type": "array"}` inside an item schema, have
-    no sample element ever carry that key, and every test here pass: item schemas
-    declare no `required`, and `additionalProperties: false` constrains only keys
-    that are PRESENT. Verified by injecting an item-level property no route emits
-    into a published declaration — 66 passed, in both `list_personas.personas`
-    and `search_feedback.items`. The first client to call the tool would be the
-    first thing to check it, which is exactly M1.
+# The keywords `_reachable_schemas` follows to another object schema. Named so
+# `test_no_published_declaration_nests_through_a_keyword_the_walk_cannot_follow`
+# can report what is NOT here rather than leaving it silent.
+_FOLLOWED_KEYWORDS: tuple[str, ...] = (
+    "$ref", "properties", "items", "prefixItems", "additionalProperties",
+    "patternProperties", "anyOf", "allOf", "oneOf",
+)
 
-    `"[]"` marks a descent through `items`, so one flat path names a site at any
-    depth: `("personas", "[]", "identity")`. Arrays are collapsed rather than
-    indexed on purpose — element 0 carrying a key and element 1 not is a
-    difference between rows, not between declarations, and the union across
-    elements is what "some sample demonstrates this" means.
+# Draft 2020-12's other ways to nest an object schema. `Draft202012Validator`
+# enforces every one of them, so a declaration nesting this way is LIVE for a
+# client while being invisible to the walk — the same asymmetry the `$ref` finding
+# was about. Not implemented, because none has a single payload path a label could
+# name: `if`/`then` and `not` describe conditional or negated shapes, and
+# `contains` matches an unknown subset of elements, so "which property is
+# demonstrated where" has no well-defined answer. Rejected loudly instead.
+_UNFOLLOWED_KEYWORDS: tuple[str, ...] = (
+    "contains", "if", "then", "else", "not", "dependentSchemas", "propertyNames",
+    "unevaluatedProperties", "unevaluatedItems", "$dynamicRef",
+)
 
-    Tolerant in the same way `_subschemas` is, and for the same reason: this runs
-    under `@pytest.mark.parametrize`, so anything it raises is a collection error
-    aborting the whole `lambda/api` suite. A boolean sub-schema, a non-dict
-    `items`, a `properties` that is not a map — all legal or all harmless, and all
-    simply contribute no site.
+
+def _resolve_ref(ref: str, root) -> dict:
+    """A local `$ref` pointer resolved against the declaration it lives in.
+
+    Local only: a declaration is published inside `tools/list` and a client
+    resolves it without fetching anything, so a remote pointer would be a defect
+    of a different kind. An unresolvable pointer yields `{}` — no site — for the
+    same reason every other derivation here degrades rather than raises: this runs
+    at import, under a `@pytest.mark.parametrize` decorator.
     """
-    sites: dict[tuple, frozenset[str]] = {}
+    if not ref.startswith("#"):
+        return {}
+    target = root
+    for raw in ref[1:].split("/"):
+        if not raw:
+            continue
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(target, list):
+            if not token.isdigit() or int(token) >= len(target):
+                return {}
+            target = target[int(token)]
+        elif isinstance(target, dict) and token in target:
+            target = target[token]
+        else:
+            return {}
+    return target if isinstance(target, dict) else {}
+
+
+def _reachable_schemas(
+    schema, root=None, path: tuple = (), seen: frozenset = frozenset()
+) -> list[tuple[tuple, dict]]:
+    """Every object schema a declaration reaches, with the payload path to it.
+
+    🔑 ONE walk, shared by the substance check (`_declared_sites`) and by the
+    closed-door controls (`_closed_item_schemas`). They used to be two walks of
+    different depths, and the shallower one fed
+    `test_an_undeclared_key_inside_an_array_item_is_rejected` — the control this
+    file singles out as the architecturally important one, because M1 was inside
+    `items`. A closed `items` nested below the root was parametrised by nothing
+    while the substance check happily saw it, so the two halves of the file
+    disagreed about how deep a declaration goes and the shallower half was the one
+    guarding M1's level.
+
+    🔑 Follows every keyword in `_FOLLOWED_KEYWORDS`, not just `properties` and
+    `items`. `Draft202012Validator` follows all of them, which is what made the
+    old gap asymmetric: a `$ref`'d `additionalProperties: false` is enforced
+    against a real client while being invisible here. Worse than invisible, in
+    fact — `_stale_exemptions` measures "declared" over this walk, so a legitimate
+    exemption for a `$ref`'d property was reported as a typo and the only way to
+    satisfy the file was to delete a CORRECT entry. Phase 3's ~thirty declarations
+    are built "from shared pieces" per `mcp_handler.py`'s own comment, so `$defs`
+    plus `$ref` is the natural next step for deduplicating the persona sections.
+    What it cannot follow is refused by name in
+    `test_no_published_declaration_nests_through_a_keyword_the_walk_cannot_follow`
+    rather than lost.
+
+    Paths mark a descent through a container with `_ARRAY` or `_MAP` and name a
+    key otherwise, so one flat tuple locates a site at any depth:
+    `("personas", "[]", "identity")`. Containers are collapsed rather than indexed
+    — element 0 carrying a key and element 1 not is a difference between rows, not
+    between declarations, and the union across elements is what "some sample
+    demonstrates this" means. `anyOf`/`allOf`/`oneOf` branches and a `$ref` target
+    contribute at the SAME path as their parent, because they describe the same
+    place in the payload.
+
+    Tolerant throughout, and for the reason above: a boolean sub-schema, a
+    non-dict `items`, a `properties` that is not a map, an unresolvable pointer —
+    all legal or all harmless, and all simply contribute no site. `seen` carries
+    the pointers already followed on this branch, so a self-referential `$defs`
+    entry terminates instead of recursing forever.
+    """
     if not isinstance(schema, dict):
-        return sites
+        return []
+    if root is None:
+        root = schema
 
-    declared = _subschemas(schema)
-    if declared:
-        sites[path] = frozenset(declared)
-        for prop, sub in declared.items():
-            sites.update(_declared_sites(sub, path + (prop,)))
+    found: list[tuple[tuple, dict]] = [(path, schema)]
 
+    # Same place in the payload: a `$ref` target and each composition branch
+    # describe the object at `path`, not one below it.
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref not in seen:
+        found += _reachable_schemas(
+            _resolve_ref(ref, root), root, path, seen | {ref}
+        )
+    for keyword in ("anyOf", "allOf", "oneOf"):
+        for branch in schema.get(keyword) or ():
+            if isinstance(branch, dict):
+                found += _reachable_schemas(branch, root, path, seen)
+
+    for prop, sub in _subschemas(schema).items():
+        found += _reachable_schemas(sub, root, path + (prop,), seen)
+
+    # `items` and `prefixItems` both describe elements, and both collapse to the
+    # same `_ARRAY` marker: a tuple-typed array's element 0 and element 1 are still
+    # rows of one list as far as "some sample carries this key" is concerned.
     items = schema.get("items")
     if isinstance(items, dict):
-        sites.update(_declared_sites(items, path + ("[]",)))
+        found += _reachable_schemas(items, root, path + (_ARRAY,), seen)
+    for entry in schema.get("prefixItems") or ():
+        if isinstance(entry, dict):
+            found += _reachable_schemas(entry, root, path + (_ARRAY,), seen)
+
+    # A schema-valued `additionalProperties` / `patternProperties` is a map whose
+    # KEYS are data — `{"mapped": {"additionalProperties": {...}}}`. `False` and
+    # `True` are the closure flags the other derivations read and nest nothing.
+    for keyword in ("additionalProperties", "patternProperties"):
+        declared = schema.get(keyword)
+        if isinstance(declared, dict) and keyword == "additionalProperties":
+            found += _reachable_schemas(declared, root, path + (_MAP,), seen)
+        elif isinstance(declared, dict):
+            for sub in declared.values():
+                if isinstance(sub, dict):
+                    found += _reachable_schemas(sub, root, path + (_MAP,), seen)
+    return found
+
+
+def _declared_sites(schema) -> dict[tuple, frozenset[str]]:
+    """The properties declared at each payload path, unioned across branches.
+
+    🔑 Built from `_reachable_schemas`, so the substance check stopping at the
+    payload ROOT is closed at every depth and through every keyword the walk
+    follows. Stopping at the root left the level this file's own architecture
+    argument singles out unmeasured: a property declared inside a closed `items`
+    could be demonstrated by no sample and still pass everything here, because
+    item schemas declare no `required` and `additionalProperties: false`
+    constrains only keys that are PRESENT. Verified by injecting an item-level
+    property no route emits into a published declaration — 66 passed, in both
+    `list_personas.personas` and `search_feedback.items`.
+
+    Unioned rather than overwritten, because several branches can describe one
+    path: an `allOf` of two object schemas declares the properties of both, and a
+    `$ref` beside sibling keywords is legal in 2020-12.
+    """
+    sites: dict[tuple, frozenset[str]] = {}
+    for path, sub in _reachable_schemas(schema):
+        declared = frozenset(_subschemas(sub))
+        if declared:
+            sites[path] = sites.get(path, frozenset()) | declared
     return sites
+
+
+def _located_objects(value, path: tuple, at: tuple = ()) -> list[tuple[tuple, dict]]:
+    """Every object `path` reaches in `value`, with its CONCRETE payload path.
+
+    The payload-side counterpart of `_reachable_schemas`, and the reason it
+    returns concrete paths rather than only the objects: a control that mutates an
+    element has to name where it mutated, so `_rejects_at` can be asked about that
+    exact element instead of about the whole subtree. `("personas", "[]")` locates
+    `("personas", 0)`.
+
+    References into `value`, so a caller holding a deep copy can mutate through
+    them. A path this payload does not reach contributes nothing rather than
+    raising: a sample that does not reach a site is precisely the "no sample
+    demonstrates it" finding, and it has to be reportable as a sentence rather
+    than a `KeyError`.
+    """
+    if not path:
+        return [(at, value)] if isinstance(value, dict) else []
+    head, rest = path[0], path[1:]
+    if head == _ARRAY:
+        if not isinstance(value, list):
+            return []
+        return [
+            found
+            for index, element in enumerate(value)
+            for found in _located_objects(element, rest, at + (index,))
+        ]
+    if head == _MAP:
+        if not isinstance(value, dict):
+            return []
+        return [
+            found
+            for key, sub in value.items()
+            for found in _located_objects(sub, rest, at + (key,))
+        ]
+    if not isinstance(value, dict) or head not in value:
+        return []
+    return _located_objects(value[head], rest, at + (head,))
 
 
 def _keys_at(value, path: tuple) -> set[str]:
     """Every key some part of `value` carries at `path`, unioned across elements.
 
-    The payload-side counterpart of `_declared_sites`. A path that does not exist
-    in this payload contributes nothing rather than raising: a sample that does
-    not reach a site is precisely the "no sample demonstrates it" finding, and it
-    has to be reportable as a sentence rather than a `KeyError`.
+    A thin reading of `_located_objects`, so there is exactly ONE payload-side
+    walk to keep in step with the schema-side one. Two would be the same
+    "derivations disagree about depth" defect the schema side just had.
     """
-    if not path:
-        return set(value) if isinstance(value, dict) else set()
-    head, rest = path[0], path[1:]
-    if head == "[]":
-        if not isinstance(value, list):
-            return set()
-        seen: set[str] = set()
-        for element in value:
-            seen |= _keys_at(element, rest)
-        return seen
-    if not isinstance(value, dict):
-        return set()
-    return _keys_at(value.get(head), rest) if head in value else set()
+    return {key for _at, obj in _located_objects(value, path) for key in obj}
+
+
+def _dig(value, at: tuple):
+    """The object at a CONCRETE payload path — real keys and indices, no markers.
+
+    The counterpart of `_located_objects` for a caller that already knows where it
+    is going: a control locates an element in the payload it validated, deep-copies
+    that payload, and then has to reach the same element in the copy. Mutating the
+    reference from the original instead would leave the payload the control
+    asserted valid and the payload it asserted rejected as two different objects,
+    which is the one thing every negative control here depends on not being true.
+    """
+    for key in at:
+        value = value[key]
+    return value
 
 
 def _label(path: tuple, prop: str) -> str:
@@ -906,6 +1148,19 @@ def _label(path: tuple, prop: str) -> str:
     and so `_stale_exemptions` can check an entry against the declarations and the
     samples without a second addressing scheme. A root property is its own name,
     unprefixed, which keeps every existing message reading the way it did.
+
+    🔑 The namespace ASSUMES no declared property name contains `/`, and that
+    `_ARRAY` / `_MAP` are not property names either. JSON Schema permits all
+    three, and a property literally named `a/b` at the root produces the same
+    label as property `b` inside object `a` — so one exemption would silence both
+    declarations and `_stale_exemptions` could not tell a reader which. Escaping,
+    or keeping the tuple and rendering it only for messages, would remove the
+    ambiguity at the cost of a second addressing scheme in the one structure whose
+    entire job is to be writable by hand. The trade is taken deliberately, and
+    CHECKED rather than merely documented, by
+    `test_no_published_declaration_uses_a_property_name_that_collides_with_a_label`
+    — so the day a Phase 3 declaration uses a slash, this file says so instead of
+    quietly conflating two properties.
     """
     return "/".join((*path, prop))
 
@@ -1056,25 +1311,39 @@ def _stale_exemptions(exemptions: dict, registry: dict) -> list[str]:
     return findings
 
 
-def _closed_item_schemas() -> list[tuple[str, str]]:
-    """`(tool, array property)` for every array whose ITEMS close the door.
+def _closed_item_schemas() -> list[tuple[str, tuple]]:
+    """`(tool, path)` for every ELEMENT schema that closes the door, at any depth.
 
-    Derived the same way as `_closed_schema_tools`, and needed for the same
-    reason one level down: M1 lived inside `items`, so the nested closure is the
+    Needed one level down from `_closed_schema_tools` for the reason this file
+    singles out: M1 lived inside `items`, so the nested closure is the
     architecturally important one to control, and the top-level control cannot
-    reach it — merging a key into the payload root never touches an element of
-    `items`.
+    reach it — merging a key into the payload root never touches an element of an
+    array.
+
+    🔑 Derived from `_reachable_schemas`, at ANY depth, not from a second walk of
+    root-level `properties`. The shallow version reported only arrays declared at
+    the payload root, so a closed `items` inside another array's item schema — or
+    inside a nested object — was parametrised by nothing, while
+    `_declared_sites` saw it perfectly well. That is the same "a derivation that
+    stops short produces silence" defect the substance check had one round
+    earlier, in the sibling derivation feeding the control that argument is
+    about. Confirmed reachable through production code: a closed nested array
+    added to `_PERSONA_PROPERTIES` gave one substance-check failure and ZERO from
+    this control, which did not know the array existed; populated, both were
+    silent.
+
+    Keyed by the same `_ARRAY`-marked path the substance check uses, so the two
+    halves of the file cannot drift back into disagreeing about depth. `type:
+    array` is deliberately NOT required: `{"items": {...}}` with no `type` still
+    constrains elements, and a validator enforces it.
     """
     found = []
     for name in _PUBLISHED_TOOL_NAMES:
-        for prop, declared in _subschemas(_output_schema(name)).items():
-            if declared.get("type") != "array":
-                continue
-            items = declared.get("items")
-            # `items` may be a boolean for the same reason a sub-schema may be:
-            # `{"items": true}` is legal and closes nothing.
-            if isinstance(items, dict) and items.get("additionalProperties") is False:
-                found.append((name, prop))
+        for path, sub in _reachable_schemas(_output_schema(name)):
+            # `_reachable_schemas` already dropped a boolean `items`, which is
+            # legal (`{"items": true}`) and closes nothing.
+            if path and path[-1] == _ARRAY and sub.get("additionalProperties") is False:
+                found.append((name, path))
     return found
 
 
@@ -1203,6 +1472,176 @@ class TestEveryToolBringsASample:
         ), (
             "no published declaration nests properties inside an array item — the "
             f"level M1 lived at. Sites found: {with_depth}"
+        )
+
+    def test_the_substance_check_measures_through_every_keyword_that_nests_a_schema(self):
+        """The descent must follow `$ref` and the composition keywords, not only
+        `properties` and `items`.
+
+        🔑 `Draft202012Validator` follows all of them, which is what made the old
+        gap asymmetric rather than merely incomplete: a `$ref`'d
+        `additionalProperties: false` is enforced against a real client while being
+        invisible here, so the declaration's first check would be a client's —
+        exactly M1. Worse, `_stale_exemptions` measures "declared" over this walk,
+        so a legitimate exemption for a `$ref`'d property was reported as a typo and
+        the only way to satisfy the file was to delete a CORRECT entry.
+
+        Over a schema this control owns, and `check_schema`'d first so it cannot
+        pass because the constructs are nonsense. No published declaration uses any
+        of them today — Phase 3's ~thirty, built "from shared pieces" per
+        `mcp_handler.py`'s own comment, are where `$defs` plus `$ref` is the natural
+        way to deduplicate the persona sections.
+        """
+        schema = {
+            "type": "object",
+            "$defs": {"Row": {"type": "object", "properties": {"via_ref": {"type": "string"}}}},
+            "properties": {
+                "rows": {"type": "array", "items": {"$ref": "#/$defs/Row"}},
+                "either": {"anyOf": [{"type": "object", "properties": {"via_anyof": {}}}]},
+                "merged": {"allOf": [{"type": "object", "properties": {"via_allof": {}}}]},
+                "one": {"oneOf": [{"type": "object", "properties": {"via_oneof": {}}}]},
+                "tuples": {
+                    "type": "array",
+                    "prefixItems": [{"type": "object", "properties": {"via_prefix": {}}}],
+                },
+                "mapped": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object", "properties": {"via_ap": {}},
+                    },
+                },
+                "patterned": {
+                    "type": "object",
+                    "patternProperties": {
+                        "^x": {"type": "object", "properties": {"via_pp": {}}},
+                    },
+                },
+            },
+        }
+        Draft202012Validator.check_schema(schema)
+
+        # Every one of the seven is measured: an empty payload demonstrates none of
+        # them, and each must be REPORTED rather than silently unmeasured.
+        reported = _undemonstrated_labels(schema, [{}])
+        for label in (
+            "rows/[]/via_ref", "either/via_anyof", "merged/via_allof", "one/via_oneof",
+            "tuples/[]/via_prefix", "mapped/{}/via_ap", "patterned/{}/via_pp",
+        ):
+            assert label in reported, (
+                f"{label} is declared and no payload demonstrates it, and the walk "
+                f"did not report it — a client's validator enforces it. Got: "
+                f"{sorted(reported)}"
+            )
+
+        # And the other direction, or a walk that reported every conceivable label
+        # would satisfy the loop above: a payload that really does carry them must
+        # be credited, at each marker.
+        populated = {
+            "rows": [{"via_ref": "a"}],
+            "either": {"via_anyof": 1},
+            "merged": {"via_allof": 1},
+            "one": {"via_oneof": 1},
+            "tuples": [{"via_prefix": 1}],
+            "mapped": {"any_key": {"via_ap": 1}},
+            "patterned": {"xkey": {"via_pp": 1}},
+        }
+        assert _undemonstrated_labels(schema, [populated]) == set(), (
+            "a payload carrying every declared property was still reported as "
+            f"demonstrating some of them: {sorted(_undemonstrated_labels(schema, [populated]))}"
+        )
+
+    def test_a_self_referential_declaration_does_not_hang_the_walk(self):
+        """A `$defs` entry that refers to itself is legal and describes a tree.
+
+        The walk follows `$ref`, so without a visited set a recursive declaration
+        recurses until the interpreter stops it — and because the walk runs inside a
+        `@pytest.mark.parametrize` decorator, that is a `RecursionError` at import
+        aborting collection of the whole `lambda/api` suite, which is the failure
+        class this file has a test class for.
+        """
+        schema = {
+            "type": "object",
+            "$defs": {"Node": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "string"},
+                    "children": {"type": "array", "items": {"$ref": "#/$defs/Node"}},
+                },
+            }},
+            "properties": {"root": {"$ref": "#/$defs/Node"}},
+        }
+        Draft202012Validator.check_schema(schema)
+
+        sites = _declared_sites(schema)
+
+        assert sites[("root",)] == frozenset({"value", "children"}), sites
+        assert "root/value" in _undemonstrated_labels(schema, [{}])
+
+    def test_no_published_declaration_nests_through_a_keyword_the_walk_cannot_follow(self):
+        """What the walk cannot follow is REFUSED, not silently unmeasured.
+
+        🔑 `contains`, `if`/`then`, `not`, `propertyNames`, `dependentSchemas` and
+        the `unevaluated*` keywords nest a schema at no single payload path a label
+        could name — a conditional or negated shape has no "the property lives
+        here", and `contains` matches an unknown subset of elements. So the walk
+        does not follow them, and rather than leave that as the silence this whole
+        round was about, a declaration using one fails HERE with the tool and the
+        keyword. A Phase 3 author is then told to teach the derivation, which is the
+        actionable version of "your declaration is measured by nothing".
+
+        Derived from `_UNFOLLOWED_KEYWORDS` and the live registry, so adding support
+        for one is a single edit to that tuple rather than to a test.
+        """
+        findings = []
+        for name in _PUBLISHED_TOOL_NAMES:
+            for path, sub in _reachable_schemas(_output_schema(name)):
+                used = sorted(k for k in _UNFOLLOWED_KEYWORDS if k in sub)
+                if used:
+                    findings.append(f"{name} at {'/'.join(path) or '<root>'}: {used}")
+
+        assert findings == [], (
+            "these declarations nest a schema through a keyword _reachable_schemas "
+            "does not follow, so the properties beneath it are measured by nothing "
+            "here while a client's validator enforces them:\n"
+            + "\n".join(f"  • {f}" for f in findings)
+            + "\nTeach _reachable_schemas to follow it (and give it a path marker "
+            "the way `[]` and `{}` are), or restate the declaration in terms of "
+            f"{list(_FOLLOWED_KEYWORDS)}."
+        )
+
+    def test_no_published_declaration_uses_a_property_name_that_collides_with_a_label(self):
+        """`_label`'s flat namespace assumes no property name contains `/`.
+
+        🔑 The assumption CHECKED rather than only documented, which is the
+        treatment this file gives its other deliberate limitations. A property
+        literally named `a/b` at the root produces the same label as property `b`
+        inside object `a`, so one `_PROPERTIES_NO_SAMPLE_CAN_SHOW` entry would
+        silence two declarations and `_stale_exemptions` could not tell a reader
+        which. JSON Schema permits the name; nothing declares one today, and the
+        trade — a flat namespace an exemption can be written by hand, over escaping
+        or a second addressing scheme — is taken deliberately.
+
+        The two path markers are reserved for the same reason: a property named
+        `[]` would be indistinguishable from a descent through an array.
+        """
+        collisions = []
+        for name in _PUBLISHED_TOOL_NAMES:
+            for path, sub in _reachable_schemas(_output_schema(name)):
+                for prop in _subschemas(sub):
+                    if "/" in prop or prop in (_ARRAY, _MAP):
+                        collisions.append(
+                            f"{name} declares {prop!r} at {'/'.join(path) or '<root>'}"
+                        )
+
+        assert collisions == [], (
+            "these property names collide with the label namespace "
+            "_PROPERTIES_NO_SAMPLE_CAN_SHOW is written in, so an exemption could "
+            "not name one unambiguously:\n"
+            + "\n".join(f"  • {c}" for c in collisions)
+            + f"\nA name containing '/' is ambiguous with a nested path, and "
+            f"{_ARRAY!r}/{_MAP!r} are the markers for a descent through a "
+            "container. Either rename the property, or give _label an escaping "
+            "scheme and say why it became worth the second addressing scheme."
         )
 
     def test_the_substance_check_notices_a_sample_that_demonstrates_nothing(self):
@@ -1401,22 +1840,30 @@ class TestEveryToolBringsASample:
 class TestTheDerivationsSurviveAnUnusualDeclaration:
     """Nothing read at import time may raise on a declaration a client accepts.
 
-    🔑 `_closed_schema_tools()` and `_closed_item_schemas()` are evaluated inside
-    `@pytest.mark.parametrize` decorators, so anything they raise is a COLLECTION
-    error: all 2184 tests in `lambda/api` abort, attributed to whatever ran next,
-    and no pull-request gate would report it (the one workflow runs a single
-    stdlib-only file). Two declarations did exactly that —
+    🔑 `_closed_schema_tools()`, `_closed_item_schemas()` and `_TOOL_SAMPLES` are
+    all read inside `@pytest.mark.parametrize` decorators, so anything they raise
+    is a COLLECTION error: every test in `lambda/api` aborts, attributed to
+    whatever ran next, and no pull-request gate would report it (the one workflow
+    runs a single stdlib-only file). The scope is named rather than counted on
+    purpose — the count drifts on nearly every PR, and a number a reader can see is
+    wrong invites them to discount the argument it is making, which is that a
+    collection error is a different KIND of event from a test failure. Three
+    declarations did exactly that —
 
       • no `outputSchema` at all → `KeyError: 'outputSchema'`, in place of
         `test_every_tool_declares_what_section_5_4_requires`'s precise
         `f"{name} declares no outputSchema"`, which never got to run;
       • a BOOLEAN sub-schema, which Draft 2020-12 permits and
         `check_schema` accepts → `AttributeError: 'bool' object has no
-        attribute 'get'`, i.e. this file crashing on a schema it also certifies.
+        attribute 'get'`, i.e. this file crashing on a schema it also certifies;
+      • a renamed key in the delegation suite's persona fixture, which the
+        samples used to SUBSCRIPT → `KeyError: 'identity'`. Same class and same
+        radius, reached from a fixture rather than a declaration, and the one
+        instance where the raising code was this file's own samples.
 
     — so the file's own primary anticipated failure mode degraded into the least
     diagnostic signal available. These tests keep the degradation graceful, which
-    is what leaves the §5.4 test as the single named reporter.
+    is what leaves the §5.4 test and the substance check as the named reporters.
     """
 
     def test_a_tool_declaring_no_output_schema_reads_as_an_empty_schema(self, monkeypatch):
@@ -1475,6 +1922,59 @@ class TestTheDerivationsSurviveAnUnusualDeclaration:
         monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
 
         assert all(name != published[0]["name"] for name, _ in _closed_item_schemas())
+
+    def test_the_imported_persona_fixture_still_carries_the_sections_this_sample_extends(
+        self,
+    ):
+        """The fixture coupling reported as an assertion, not a `KeyError`.
+
+        🔑 `_TOOL_SAMPLES` spreads `_GENERATED_PERSONA`'s section dicts, and it is
+        a MODULE-LEVEL dict read inside a `@pytest.mark.parametrize` decorator, so
+        a subscript there evaluates at import: `_GENERATED_PERSONA["identity"]`
+        raised `KeyError: 'identity'` when that key was renamed in
+        `test_mcp_delegation.py` and took the whole `lambda/api` suite to zero
+        collected tests, with the bare `KeyError` as the entire diagnostic. Same
+        class and same blast radius as the round-two `KeyError: 'outputSchema'`,
+        reached from a fixture rather than a declaration.
+
+        The samples now use `.get(section, {})`, so the rename degrades into
+        `test_every_declared_property_is_demonstrated_by_some_sample` naming the
+        properties no sample produces any more — which is the better signal, and
+        the outcome the round-two fix was designed for. This test is the one that
+        says WHY those fields went missing, so a reader is pointed at the fixture's
+        owner instead of at this file's samples.
+
+        Derived from the registry, not from a list of four names: it asks which
+        canonical persona sections the sample writes as objects and requires the
+        fixture to still carry each. A hardcoded list would go stale in the silent
+        direction the moment a fifth section were spread in.
+        """
+        extended = {
+            key
+            for _case, _arguments, bodies in _TOOL_SAMPLES.get("list_personas") or ()
+            for body in bodies.values()
+            for persona in body.get("personas") or ()
+            for key, value in persona.items()
+            if key in mcp_handler._PERSONA_SECTIONS and isinstance(value, dict)
+        }
+        assert extended, (
+            "no registered list_personas sample writes a canonical persona section "
+            "as an object, so this control has no coupling to check; if the samples "
+            "no longer spread the delegation suite's fixture, delete it and say so"
+        )
+
+        missing = sorted(section for section in extended if section not in _GENERATED_PERSONA)
+        assert missing == [], (
+            f"_GENERATED_PERSONA no longer carries {missing}, which this file's "
+            "samples extend to demonstrate the canonical persona fields. The "
+            "fixture is owned by api/test/test_mcp_delegation.py, which cannot "
+            "know these keys are load-bearing for a second suite — so if a section "
+            "was renamed there, rename it in _TOOL_SAMPLES too. The samples use "
+            "`.get(section, {})` precisely so this reads as a failure here and in "
+            "test_every_declared_property_is_demonstrated_by_some_sample, rather "
+            "than as a KeyError that aborts collection of the whole lambda/api "
+            "suite."
+        )
 
     def test_the_derivations_still_find_the_real_closures(self):
         """The positive control for all four above.
@@ -1624,8 +2124,62 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
             "control below would cover nothing — and M1 lived inside `items`"
         )
 
-    @pytest.mark.parametrize("tool,prop", _closed_item_schemas())
-    def test_an_undeclared_key_inside_an_array_item_is_rejected(self, tool, prop):
+    def test_the_closed_item_derivation_can_find_a_closure_below_the_payload_root(
+        self, monkeypatch
+    ):
+        """Anti-vacuity for the DEPTH of the derivation above, not just its size.
+
+        🔑 `test_some_array_closes_its_item_schema` is satisfied by one closure at
+        the payload root, so it passed throughout the round in which this
+        derivation walked root-level `properties` only — "finds nothing deep" read
+        as "there is nothing deep". Every published closure happens to be at the
+        root today, so the capability is asserted directly instead: a closed
+        `items` nested inside another array's item schema must be FOUND.
+
+        🔑 Through `_closed_item_schemas()` ITSELF, over a substituted registry —
+        not by re-implementing its filter over `_reachable_schemas`. Written the
+        second way first, and reverting the derivation to its old root-only walk
+        then left all 75 tests passing: the control was exercising the shared walk,
+        which the substance check already proves is deep, while the derivation that
+        actually feeds the parametrisation went unmeasured. A control has to call
+        the function whose depth it claims to be about.
+
+        The registry is substituted rather than a published declaration used,
+        because no published declaration nests a closure today — the same reason
+        `test_the_substance_check_descends_into_array_items` owns its schema.
+        """
+        nested = {
+            "type": "object", "additionalProperties": False,
+            "properties": {"groups": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "properties": {"rows": {"type": "array", "items": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {"a": {"type": "string"}},
+                }}},
+            }}},
+        }
+        Draft202012Validator.check_schema(nested)
+
+        published = [copy.deepcopy(tool) for tool in mcp_handler.MCP_TOOLS]
+        published[0]["outputSchema"] = nested
+        monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
+
+        found = [
+            path for name, path in _closed_item_schemas()
+            if name == published[0]["name"]
+        ]
+
+        assert ("groups", _ARRAY) in found, found
+        assert ("groups", _ARRAY, "rows", _ARRAY) in found, (
+            "a closed item schema nested below the payload root was not "
+            "parametrised, so no undeclared-key control covers it — the level M1 "
+            f"lived at. Found: {found}"
+        )
+
+    @pytest.mark.parametrize(
+        "tool,path", _closed_item_schemas(), ids=lambda p: p if isinstance(p, str) else "/".join(p)
+    )
+    def test_an_undeclared_key_inside_an_array_item_is_rejected(self, tool, path):
         """The nested half of the closed-door control, one level DOWN.
 
         🔑 Architecturally the more important of the two, because M1 was inside
@@ -1634,6 +2188,12 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         control cannot reach this — merging a key into the payload root never
         touches an element of an array.
 
+        🔑 Mutates the element at the DERIVED path, at any depth, rather than
+        `payload[prop][0]`. The derivation used to see only root-level arrays, so a
+        closure nested below the root was covered by nothing; keying on the path
+        `_reachable_schemas` produced is what keeps this control's reach equal to
+        the derivation's.
+
         Not reachable from a route body today, and that is itself the thing worth
         pinning: the projections whitelist item keys, so an unrecognised field on
         a route's row is dropped before it reaches the payload (asserted by
@@ -1641,24 +2201,28 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         that started forwarding unknown keys would break every validating client;
         this control is what says the declaration forbids it.
 
-        🔑 Whichever case populates `prop`, not case zero. Only one of
+        🔑 Whichever case reaches the path, not case zero. Only one of
         `get_project`'s three cases populates `documents`, so making the
         empty-project case first — a reordering that reads as cosmetic — used to
-        break this. `_payload_populating` searches instead, and reports "none of
-        the N samples populates it" when that is genuinely true, which is the
-        condition worth failing on.
+        break this. `_payload_reaching` searches instead, and reports "none of the
+        N samples reaches it" when that is genuinely true, which is the condition
+        worth failing on.
         """
-        payload = _payload_populating(tool, prop)
         schema = _output_schema(tool)
+        label = "/".join(path)
+        payload, at, _element = _payload_reaching(tool, path)
 
         assert _errors(payload, schema) == [], f"{tool} does not validate to begin with"
 
         broken = copy.deepcopy(payload)
-        broken[prop][0]["a_field_no_one_declared"] = 1
+        # Dug out of the COPY: the element `_payload_reaching` returned references
+        # the original, and mutating that would leave the payload this control
+        # asserted valid and the payload it asserts is rejected as one object.
+        _dig(broken, at)["a_field_no_one_declared"] = 1
 
-        assert _rejects_at(broken, schema, (prop, 0)), (
-            f"{tool}.{prop} items declare additionalProperties: false and the "
-            f"validator accepted an undeclared key inside {prop}[0]: "
+        assert _rejects_at(broken, schema, at), (
+            f"{tool}.{label} items declare additionalProperties: false and the "
+            f"validator accepted an undeclared key inside {at}: "
             f"{_errors(broken, schema)}"
         )
 
@@ -1741,32 +2305,34 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         can pass for a different field's reason is not a control for this one.
         """
         personas_schema = _output_schema("list_personas")
-        # Whichever case populates `personas`, not case zero: `payload["personas"][0]`
-        # raised a bare `IndexError` when the first registered case was one of the
-        # empty-project ones, so an apparently cosmetic reordering of the registry
-        # produced a traceback rather than a sentence.
-        payload = _payload_populating("list_personas", "personas")
+        # Whichever case reaches a persona element, not case zero:
+        # `payload["personas"][0]` raised a bare `IndexError` when the first
+        # registered case was one of the empty-project ones, so an apparently
+        # cosmetic reordering of the registry produced a traceback rather than a
+        # sentence.
+        payload, at, persona = _payload_reaching("list_personas", ("personas", _ARRAY))
         assert _errors(payload, personas_schema) == [], "the sample must validate first"
 
         # Asserted, not assumed: a valid payload need not CONTAIN this path — the
         # persona item schema declares no `required`, so `_GENERATED_PERSONA` or
         # the projection could stop emitting the section and the mutation below
         # would raise KeyError instead of failing with a diagnosis.
-        section = payload["personas"][0].get("pain_points")
+        section = persona.get("pain_points")
         assert isinstance(section, dict) and isinstance(
             section.get("current_challenges"), list
         ), (
             "the sample no longer contains a nested string-list section at "
-            "personas[0].pain_points.current_challenges, which is the exact shape "
-            f"M1 was; found {section!r}. Point this control at another nested "
-            "list declared `array`, or restore a sample that carries one."
+            f"{'/'.join(str(p) for p in at)}.pain_points.current_challenges, which "
+            f"is the exact shape M1 was; found {section!r}. Point this control at "
+            "another nested list declared `array`, or restore a sample that carries "
+            "one."
         )
 
         broken = copy.deepcopy(payload)
-        broken["personas"][0]["pain_points"]["current_challenges"] = {"a": "alerts"}
+        _dig(broken, at)["pain_points"]["current_challenges"] = {"a": "alerts"}
 
         assert _rejects_at(
-            broken, personas_schema, ("personas", 0, "pain_points", "current_challenges")
+            broken, personas_schema, (*at, "pain_points", "current_challenges")
         ), _errors(broken, personas_schema)
 
         detail_schema = _output_schema("get_feedback_detail")
@@ -1788,15 +2354,15 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         that reports nothing on the day it is needed.
         """
         schema = _output_schema("list_personas")
-        # As above: any case that populates `personas`, so registry order cannot
-        # turn this control into an `IndexError`.
-        payload = _payload_populating("list_personas", "personas")
+        # As above: any case that reaches a persona element, so registry order
+        # cannot turn this control into an `IndexError`.
+        payload, at, _persona = _payload_reaching("list_personas", ("personas", _ARRAY))
         assert _errors(payload, schema) == [], "the sample must validate first"
 
         broken = copy.deepcopy(payload)
-        broken["personas"][0]["feedback_count"] = "42"
+        _dig(broken, at)["feedback_count"] = "42"
 
-        assert _rejects_at(broken, schema, ("personas", 0, "feedback_count")), _errors(
+        assert _rejects_at(broken, schema, (*at, "feedback_count")), _errors(
             broken, schema
         )
 
