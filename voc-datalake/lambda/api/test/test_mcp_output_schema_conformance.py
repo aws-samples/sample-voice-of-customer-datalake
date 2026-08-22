@@ -57,6 +57,26 @@ REVERT STORY — which mutation makes which assertion fail:
       test_the_substance_check_notices_a_sample_that_demonstrates_nothing, which
       hollows a sample and requires the check to object.
 
+      It measures EVERY DEPTH, not the payload root. Stopping at the root left the
+      level this file's own architecture argument singles out unmeasured: a
+      property declared inside a closed `items` could be demonstrated by no sample
+      and still pass everything here, because item schemas declare no `required`
+      and `additionalProperties: false` constrains only keys that are PRESENT.
+      Injecting a property no route emits into
+      `list_personas.personas.items.properties` left 66 passing; it is now
+      reported as `personas/[]/nested_prop_no_route_emits`. Descending also found
+      nine canonical persona fields below the item level that no sample reached,
+      which is why a fifth `list_personas` case exists. Two controls, because the
+      requirement passing cannot distinguish "descends and finds everything
+      demonstrated" from "does not descend":
+      test_the_substance_check_measures_below_the_payload_root asserts the
+      derivation reaches inside an array item at all, and
+      test_the_substance_check_descends_into_array_items hollows an ELEMENT of a
+      schema it OWNS — owned rather than registry-driven because the projections
+      fill every declared item key unconditionally, so no route body can produce
+      an element missing one, and a control that cannot construct its own negative
+      case only reports what the production code already does.
+
   test_no_exemption_from_the_substance_check_has_gone_stale
     — the check above can be opted out of via
       `_PROPERTIES_NO_SAMPLE_CAN_SHOW`, and an allowlist is the one structure
@@ -493,6 +513,53 @@ _TOOL_SAMPLES: dict[str, tuple[tuple[str, dict, dict], ...]] = {
                  "documents": [],
              },
          }),
+        # The fully-populated generated row, carrying the canonical fields the
+        # three fixtures above happen not to. Required because the substance check
+        # descends to EVERY depth: nine properties declared inside
+        # `personas[].identity` / `.goals_motivations` / `.behaviors` /
+        # `.context_environment` were reached by no sample, so nothing validated
+        # their declared types — the item-level gap in miniature. See
+        # `_PROPERTIES_NO_SAMPLE_CAN_SHOW` for why they were sampled rather than
+        # exempted.
+        #
+        # Every key and value below is a field of `schemas/persona.schema.json`,
+        # the contract `projects.py` generation writes to, at the type that schema
+        # declares — an optional field a generated row carries when the model
+        # answered that part of the prompt, which is the ordinary case, not an
+        # exotic one. This is provenance level 2 of the convention above: a
+        # transcription from the schema that owns the shape, not a dict written by
+        # reading the tool's `outputSchema`.
+        ("a generated row carrying every canonical persona field",
+         {"project_id": _PROJECT}, {
+             _PROJECT_ROUTE: {
+                 "project": {"name": "Morning Briefing"},
+                 "personas": [{
+                     **_GENERATED_PERSONA,
+                     "identity": {
+                         **_GENERATED_PERSONA["identity"],
+                         "bio": "Reads on the commute, decides at the weekend.",
+                         "education": "LLB, University of Leeds",
+                         "family_status": "Two children at primary school",
+                         "income_bracket": "£60k-£80k",
+                     },
+                     "goals_motivations": {
+                         **_GENERATED_PERSONA["goals_motivations"],
+                         "success_definition": "Nothing important was missed",
+                         "underlying_motivations": ["Be the informed one at work"],
+                     },
+                     "behaviors": {
+                         **_GENERATED_PERSONA["behaviors"],
+                         "activity_frequency": "Every weekday morning",
+                     },
+                     "context_environment": {
+                         **_GENERATED_PERSONA["context_environment"],
+                         "social_context": "Alone, before the household wakes",
+                         "influencers": ["Her local WhatsApp group"],
+                     },
+                 }],
+                 "documents": [],
+             },
+         }),
         ("a project with no personas", {"project_id": _PROJECT}, {
             _PROJECT_ROUTE: {"project": {"name": "Empty"}, "personas": [], "documents": []},
         }),
@@ -511,13 +578,29 @@ _REQUIRED_HINTS: tuple[str, ...] = (
     "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint",
 )
 
-# Declared top-level properties that no sample can demonstrate, `tool` → `{prop}`.
+# Declared properties that no sample can demonstrate, `tool` → `{label}`, where a
+# label is `_label`'s path: a root property is its own name, and `"[]"` marks a
+# descent through an array — `personas/[]/identity/bio`.
 #
 # 🔑 EMPTY, and it must stay hard to add to. Every property declared by the six
-# tools published today is carried by at least one sample payload, so
-# `test_every_declared_property_is_demonstrated_by_some_sample` passes on arrival
-# — which is the point, exactly as with the §5.4 class: it is here so a Phase 3
-# tool cannot satisfy the sample requirement with a route body of `{}`.
+# tools published today is carried by at least one sample payload, at every depth,
+# so `test_every_declared_property_is_demonstrated_by_some_sample` passes on
+# arrival — which is the point, exactly as with the §5.4 class: it is here so a
+# Phase 3 tool cannot satisfy the sample requirement with a route body of `{}`.
+#
+# It was empty when the requirement stopped at the payload root, and it is STILL
+# empty now that the requirement descends to every depth — but that is a fact
+# about this diff, not a property of the samples it inherited. Descending found
+# nine declared properties below the item level that no sample reached
+# (`personas/[]/identity/bio`, `education`, `family_status`, `income_bracket`,
+# `goals_motivations/success_definition`, `underlying_motivations`,
+# `behaviors/activity_frequency`, `context_environment/social_context`,
+# `influencers`), every one of them a real field of
+# `schemas/persona.schema.json` that a generated row can carry. So the samples
+# were extended to carry them rather than the declarations exempted: nine
+# exemptions would have been nine claims that a canonical persona field cannot
+# appear in a real answer, which is false, and an allowlist that absorbs the first
+# finding it is asked about is one that will absorb the next.
 #
 # An entry here is a claim that a declared property CANNOT appear in any real
 # answer, which is nearly always a sign the declaration is wrong rather than the
@@ -748,8 +831,109 @@ def _subschemas(schema: dict) -> dict:
     return {k: v for k, v in properties.items() if isinstance(v, dict)}
 
 
+def _declared_sites(schema, path: tuple = ()) -> dict[tuple, frozenset[str]]:
+    """Every object schema in a declaration, keyed by the payload path reaching it.
+
+    🔑 Recursive, because the substance check stopping at the payload ROOT was the
+    one gap left at the level this file's own architecture argument singles out.
+    `_closed_item_schemas` descends into `items` for the negative controls — M1
+    lived there — but the requirement that a declaration be DEMONSTRATED by some
+    sample was measured only against top-level `properties`. So a Phase 3 author
+    could declare `"pain_points": {"type": "array"}` inside an item schema, have
+    no sample element ever carry that key, and every test here pass: item schemas
+    declare no `required`, and `additionalProperties: false` constrains only keys
+    that are PRESENT. Verified by injecting an item-level property no route emits
+    into a published declaration — 66 passed, in both `list_personas.personas`
+    and `search_feedback.items`. The first client to call the tool would be the
+    first thing to check it, which is exactly M1.
+
+    `"[]"` marks a descent through `items`, so one flat path names a site at any
+    depth: `("personas", "[]", "identity")`. Arrays are collapsed rather than
+    indexed on purpose — element 0 carrying a key and element 1 not is a
+    difference between rows, not between declarations, and the union across
+    elements is what "some sample demonstrates this" means.
+
+    Tolerant in the same way `_subschemas` is, and for the same reason: this runs
+    under `@pytest.mark.parametrize`, so anything it raises is a collection error
+    aborting the whole `lambda/api` suite. A boolean sub-schema, a non-dict
+    `items`, a `properties` that is not a map — all legal or all harmless, and all
+    simply contribute no site.
+    """
+    sites: dict[tuple, frozenset[str]] = {}
+    if not isinstance(schema, dict):
+        return sites
+
+    declared = _subschemas(schema)
+    if declared:
+        sites[path] = frozenset(declared)
+        for prop, sub in declared.items():
+            sites.update(_declared_sites(sub, path + (prop,)))
+
+    items = schema.get("items")
+    if isinstance(items, dict):
+        sites.update(_declared_sites(items, path + ("[]",)))
+    return sites
+
+
+def _keys_at(value, path: tuple) -> set[str]:
+    """Every key some part of `value` carries at `path`, unioned across elements.
+
+    The payload-side counterpart of `_declared_sites`. A path that does not exist
+    in this payload contributes nothing rather than raising: a sample that does
+    not reach a site is precisely the "no sample demonstrates it" finding, and it
+    has to be reportable as a sentence rather than a `KeyError`.
+    """
+    if not path:
+        return set(value) if isinstance(value, dict) else set()
+    head, rest = path[0], path[1:]
+    if head == "[]":
+        if not isinstance(value, list):
+            return set()
+        seen: set[str] = set()
+        for element in value:
+            seen |= _keys_at(element, rest)
+        return seen
+    if not isinstance(value, dict):
+        return set()
+    return _keys_at(value.get(head), rest) if head in value else set()
+
+
+def _label(path: tuple, prop: str) -> str:
+    """One declared property as a single string, `personas/[]/identity/bio`.
+
+    A flat label rather than a `(path, prop)` pair so that
+    `_PROPERTIES_NO_SAMPLE_CAN_SHOW` stays one namespace an exemption can name,
+    and so `_stale_exemptions` can check an entry against the declarations and the
+    samples without a second addressing scheme. A root property is its own name,
+    unprefixed, which keeps every existing message reading the way it did.
+    """
+    return "/".join((*path, prop))
+
+
+def _undemonstrated_labels(schema: dict, payloads: list, exempt=frozenset()) -> set[str]:
+    """Declared properties, at ANY depth, that none of these payloads carries.
+
+    🔑 Pure: a schema and a list of payloads in, labels out, with no reference to
+    the live registry. That is what lets the item-level descent have a positive
+    control over a schema and payloads the control OWNS
+    (`test_the_substance_check_descends_into_array_items`), instead of one that can
+    only be exercised by whatever the real projections happen to emit. The
+    registry-driven requirement is the thin wrapper below.
+    """
+    missing: set[str] = set()
+    for path, declared in _declared_sites(schema).items():
+        seen: set[str] = set()
+        for payload in payloads:
+            seen |= _keys_at(payload, path)
+        for prop in declared - seen:
+            label = _label(path, prop)
+            if label not in exempt:
+                missing.add(label)
+    return missing
+
+
 def _undemonstrated_properties(tool: str, registry: dict) -> set[str]:
-    """Declared top-level properties that no sample payload for `tool` carries.
+    """Declared properties that no sample payload for `tool` carries.
 
     🔑 The substance half of the completeness check, and it exists because the
     presence half counts ENTRIES rather than evidence. Both metrics tools end at
@@ -769,28 +953,52 @@ def _undemonstrated_properties(tool: str, registry: dict) -> set[str]:
     `_PROPERTIES_NO_SAMPLE_CAN_SHOW` with a reason, so the exemption is a line of
     the diff rather than a silence.
     """
-    declared = set(_subschemas(_output_schema(tool)))
-    if not declared:
-        return set()
-    return (
-        declared
-        - _demonstrated_properties(tool, registry)
-        - _PROPERTIES_NO_SAMPLE_CAN_SHOW.get(tool, frozenset())
+    return _undemonstrated_labels(
+        _output_schema(tool),
+        _sample_payloads(tool, registry),
+        _PROPERTIES_NO_SAMPLE_CAN_SHOW.get(tool, frozenset()),
     )
 
 
+def _sample_payloads(tool: str, registry: dict) -> list[dict]:
+    """Every payload this tool's registered cases produce, in registry order."""
+    return [
+        _payload(tool, arguments, bodies)
+        for _case, arguments, bodies in registry.get(tool) or ()
+    ]
+
+
+def _declared_properties(tool: str) -> set[str]:
+    """Every property this tool declares, at any depth, as a label."""
+    return {
+        _label(path, prop)
+        for path, declared in _declared_sites(_output_schema(tool)).items()
+        for prop in declared
+    }
+
+
 def _demonstrated_properties(tool: str, registry: dict) -> set[str]:
-    """Every top-level key the union of this tool's sample payloads carries.
+    """Every declared property the union of this tool's sample payloads carries.
 
     Split out of `_undemonstrated_properties` so the staleness check for
     `_PROPERTIES_NO_SAMPLE_CAN_SHOW` measures demonstration the SAME way the
     requirement does. Two independent notions of "demonstrated" would let an
     exemption be simultaneously necessary and stale, which is a contradiction no
     reader could act on.
+
+    Restricted to DECLARED labels, because that is the vocabulary an exemption is
+    written in: a payload key at a site the schema does not describe is not
+    something anyone could exempt, and reporting it would make the staleness
+    check's "a sample demonstrates this anyway" finding unactionable.
     """
+    payloads = _sample_payloads(tool, registry)
+    schema = _output_schema(tool)
     demonstrated: set[str] = set()
-    for _case, arguments, bodies in registry.get(tool) or ():
-        demonstrated |= set(_payload(tool, arguments, bodies))
+    for path, declared in _declared_sites(schema).items():
+        seen: set[str] = set()
+        for payload in payloads:
+            seen |= _keys_at(payload, path)
+        demonstrated |= {_label(path, prop) for prop in declared & seen}
     return demonstrated
 
 
@@ -819,7 +1027,11 @@ def _stale_exemptions(exemptions: dict, registry: dict) -> list[str]:
             # below would only add noise about a name that does not exist.
             continue
 
-        declared = set(_subschemas(_output_schema(tool)))
+        # Every declared label, at any depth, because an exemption may name an
+        # item-level or nested property — `personas/[]/identity/bio` — now that the
+        # requirement descends there. Measuring "declared" only at the root would
+        # report every legitimate nested exemption as a typo.
+        declared = _declared_properties(tool)
         undeclared = sorted(set(properties) - declared)
         if undeclared:
             findings.append(
@@ -936,15 +1148,61 @@ class TestEveryToolBringsASample:
         Requiring every declared property to appear in the union of a tool's
         payloads is what makes the registry un-gameable: a `{}` body now names the
         seven properties it failed to show.
+
+        🔑 At EVERY depth, not just the payload root. Measuring only top-level
+        `properties` left the level this file's own architecture argument singles
+        out unmeasured: an item-level declaration could be demonstrated by no
+        sample and still pass everything here, because item schemas declare no
+        `required` and `additionalProperties: false` constrains only keys that are
+        present. Injecting `nested_prop_no_route_emits` into
+        `list_personas.personas.items.properties` used to leave 66 passing; it is
+        now reported as `personas/[]/nested_prop_no_route_emits`.
         """
         undemonstrated = _undemonstrated_properties(tool, _TOOL_SAMPLES)
 
         assert undemonstrated == set(), (
             f"{tool} declares {sorted(undemonstrated)} and no registered sample "
-            "produces them, so nothing here validates those declarations. Give "
-            "the sample a route body that carries them — or, if a real answer "
-            "genuinely cannot, add them to _PROPERTIES_NO_SAMPLE_CAN_SHOW with "
-            "the reason."
+            "produces them, so nothing here validates those declarations. A label "
+            "like personas/[]/identity/bio is a property declared inside an array "
+            "item. Give the sample a route body that carries them — or, if a real "
+            "answer genuinely cannot, add them to _PROPERTIES_NO_SAMPLE_CAN_SHOW "
+            "with the reason."
+        )
+
+    def test_the_substance_check_measures_below_the_payload_root(self):
+        """Anti-vacuity for the descent: the requirement above must reach an
+        item schema, not merely be capable of it.
+
+        🔑 `_declared_sites` returning only the root — the behaviour this round
+        replaced — would satisfy every case of the requirement above while leaving
+        26 item-level and nested declarations unmeasured, which is the silence the
+        finding was about. The requirement passing cannot distinguish "descends and
+        finds everything demonstrated" from "does not descend", so the derivation
+        is asserted to reach depth directly.
+
+        Derived, not named: it asks whether SOME published tool declares properties
+        below the root, and says to delete the control if that ever stops being
+        true. Hardcoding `list_personas` would go stale in the silent direction the
+        moment the persona item schema were flattened.
+        """
+        deep = {
+            tool: sorted(
+                path for path in _declared_sites(_output_schema(tool)) if path
+            )
+            for tool in _PUBLISHED_TOOL_NAMES
+        }
+        with_depth = {tool: paths for tool, paths in deep.items() if paths}
+
+        assert with_depth, (
+            "no published tool declares any property below the payload root, so "
+            "the descent this control is about covers nothing; if the declarations "
+            "are genuinely all flat now, delete this control and say so"
+        )
+        assert any(
+            "[]" in path for paths in with_depth.values() for path in paths
+        ), (
+            "no published declaration nests properties inside an array item — the "
+            f"level M1 lived at. Sites found: {with_depth}"
         )
 
     def test_the_substance_check_notices_a_sample_that_demonstrates_nothing(self):
@@ -987,6 +1245,72 @@ class TestEveryToolBringsASample:
             f"{victim}'s sample was reduced to an empty route body and the "
             "substance check still found every declared property demonstrated"
         )
+
+    def test_the_substance_check_descends_into_array_items(self):
+        """The positive control for the descent: hollow an array ELEMENT and the
+        check must name the item properties it no longer demonstrates.
+
+        🔑 Over a schema and payloads this control OWNS, rather than through the
+        registry. The registry-driven version could only be exercised by whatever
+        the real projections happen to emit — and the projections fill every
+        declared item key unconditionally, so no route body can produce an element
+        missing one. A control that cannot construct its own negative case is a
+        control that reports whatever the production code already does, which is
+        the opposite of the point.
+
+        Two directions, because a check that descends but never returns is as
+        useless as one that never descends: a populated element must be measured
+        as demonstrating its keys, and a hollow one must be reported by name. The
+        second is what fails if `_declared_sites` is reverted to the root only.
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "shown": {"type": "string"},
+                            "unshown": {"type": "string"},
+                            "nested": {
+                                "type": "object",
+                                "properties": {"deep": {"type": "string"}},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        # Legal, so the control cannot pass because the schema is nonsense.
+        Draft202012Validator.check_schema(schema)
+
+        populated = {"rows": [{"shown": "a", "nested": {"deep": "d"}}]}
+        assert _undemonstrated_labels(schema, [populated]) == {"rows/[]/unshown"}, (
+            "the descent misreported a populated element; it must credit the keys "
+            "an element carries and report only the ones it does not"
+        )
+
+        # A hollow element loses `nested/deep` too: a site no payload reaches
+        # demonstrates nothing beneath it either, which is the reporting a reader
+        # needs — "this whole subtree is unsampled", not just its topmost key.
+        hollow = {"rows": [{}]}
+        assert _undemonstrated_labels(schema, [hollow]) == {
+            "rows/[]/shown", "rows/[]/unshown", "rows/[]/nested", "rows/[]/nested/deep",
+        }, "an element hollowed to {} was still counted as demonstrating its keys"
+
+        # And the exemption vocabulary has to be able to name a nested label,
+        # otherwise a legitimate item-level exemption is unwritable.
+        assert _undemonstrated_labels(
+            schema, [populated], frozenset({"rows/[]/unshown"})
+        ) == set()
+
+        # An empty array demonstrates nothing inside it, which is why the
+        # empty-project cases cannot satisfy the requirement on their own.
+        assert _undemonstrated_labels(schema, [{"rows": []}]) == {
+            "rows/[]/shown", "rows/[]/unshown", "rows/[]/nested", "rows/[]/nested/deep",
+        }
 
     def test_no_exemption_from_the_substance_check_has_gone_stale(self):
         """An exemption may not outlive its reason.
@@ -1072,6 +1396,7 @@ class TestEveryToolBringsASample:
             "the staleness check objected to an exemption that is still doing "
             f"work, so no entry could ever survive it: {still_needed}"
         )
+
 
 class TestTheDerivationsSurviveAnUnusualDeclaration:
     """Nothing read at import time may raise on a declaration a client accepts.
