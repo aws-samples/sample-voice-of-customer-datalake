@@ -320,8 +320,13 @@ LEGACY_PERSONA_CUTOVER = os.environ.get('PERSONA_AXIS_CUTOVER_AT', '2026-08-22T0
 # `unknown` archetype row instead of the legacy bucket, which is the largest bucket
 # on the current axis. The two are also not symmetric in kind: `unknown` is a value
 # the enrichment contract declares, while `Unknown` was a label the old derivation
-# invented, so the new one must never be substituted for the old. Asserted by
-# test_a_post_deploy_image_whose_row_is_gone_writes_nothing_more.
+# invented, so the new one must never be substituted for the old. Unifying them was
+# RUN, not predicted: it fails
+# test_a_pre_deploy_item_is_reversed_on_a_day_the_new_axis_has_already_populated,
+# test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current
+# and test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing
+# — the collision guard swallows the reversal entirely, because `unknown` IS an
+# archetype, so the majority shape stops being reversed at all.
 #
 # The GENERAL form of that collision is closed by code rather than by this
 # capitalisation. `_reverse_a_pre_deploy_persona_row` declines when the legacy value
