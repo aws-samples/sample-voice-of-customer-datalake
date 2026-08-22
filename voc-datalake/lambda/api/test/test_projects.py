@@ -291,15 +291,20 @@ class TestGeneratePersonasModelMetadata:
 
     @staticmethod
     def _put_item_payloads(table):
-        """Every put_item payload, not just the final one: a persona_count > 1
-        run writes one row per persona and asserting only the last call would
-        silently skip the earlier ones."""
+        """Every persona put_item payload, not just the final one: a
+        persona_count > 1 run writes one row per persona and asserting only
+        the last call would silently skip the earlier ones. Filtered on
+        llm_metadata so a hypothetical future non-persona row fails as
+        'no persona rows' instead of a bare KeyError."""
         calls = table.put_item.call_args_list
         assert calls, 'expected put_item to be called'
-        return [
+        payloads = [
             c.kwargs['Item'] if c.kwargs.get('Item') is not None else c.args[0]
             for c in calls
         ]
+        persona_rows = [p for p in payloads if p.get('llm_metadata')]
+        assert persona_rows, 'expected put_item to write at least one persona row'
+        return persona_rows
 
     def test_stores_resolved_model_id(self):
         """Stamps the resolved model, not the global fallback constant."""

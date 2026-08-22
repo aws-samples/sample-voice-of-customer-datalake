@@ -263,8 +263,9 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         return result['content'][0]['text'].strip()
     except Exception as e:
         logger.warning(
-            "[PERSONA_AVATAR] LLM prompt generation failed "
-            f"({type(e).__name__}: {e}), using fallback"
+            "[PERSONA_AVATAR] Avatar prompt generation failed in model "
+            f"resolution or Bedrock invocation ({type(e).__name__}: {e}), "
+            "using static fallback prompt"
         )
         return format_prompt(fallback_template, occupation=occupation or 'professional')
 
