@@ -1107,6 +1107,116 @@ describe('Prioritization', () => {
     })
   })
 
+  describe('the heading says how long the list is', () => {
+    // A reader cannot tell from the heading alone whether everything loaded, so the
+    // count goes beside it. The number is the LIST's own length rather than a second
+    // count computed from the documents, which is what keeps the badge and the rows
+    // beneath it from disagreeing.
+
+    /**
+     * Everything the heading area says, as one string.
+     *
+     * The h1's own wrapper, which holds the heading and the count and nothing else. Read
+     * as a whole so a test can assert what the area does NOT say: a count withheld is
+     * this reading back exactly the title, which stays true however a future plural form
+     * spells zero — whereas querying for the literal "0 proposals" only rules out one
+     * spelling of the claim.
+     */
+    const headingArea = () => screen.getByRole('heading', { level: 1 }).parentElement
+
+    it('counts the rows beside the heading', async () => {
+      // Two projects in the shared fixture, so TWO rows — p1's PRD and PR/FAQ are one
+      // row, which is why this is not "three documents".
+      renderPrioritization()
+
+      expect(await screen.findByText('2 proposals')).toBeInTheDocument()
+      // Beside the h1, not inside it: the page's only level-1 heading has to keep
+      // reading as the page's name to a screen reader and the document outline, and it
+      // is what the breadcrumb names.
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Prioritization$/)
+    })
+
+    it('agrees with the Total Proposals card', async () => {
+      // The badge counts `sortedRows` and the card counts `allRows`, so they agree only
+      // while the sort preserves length — which nothing else on the page asserts. They
+      // are two statements of the same quantity in the same viewport, and a reader who
+      // finds them disagreeing has reason to trust neither.
+      renderPrioritization()
+
+      expect(await screen.findByText('2 proposals')).toBeInTheDocument()
+      const grid = screen.getByText('Total Proposals').closest<HTMLElement>('div.grid')
+      expect(within(grid ?? document.body).getByText('Total Proposals').previousElementSibling)
+        .toHaveTextContent('2')
+    })
+
+    it('uses the singular form for a list of one', async () => {
+      // Not cosmetic. A count-only key needs both `rowCount_one` and `rowCount_other`
+      // under i18next's JSON v4 plurals, and a missing form renders the raw key path —
+      // the failure this page's own comments warn about elsewhere. Tests run the real
+      // locale JSON through the real i18next, so this case is what proves the forms
+      // resolve rather than that they merely exist in the file.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+      ]))
+
+      renderPrioritization()
+
+      expect(await screen.findByText('1 proposal')).toBeInTheDocument()
+      expect(screen.queryByText('rowCount')).toBeNull()
+    })
+
+    it('says nothing while the list is still loading', async () => {
+      // The badge must not appear over the spinner: a count is a claim about a list,
+      // and there is no list yet.
+      mockGetProjects.mockReturnValue(new Promise(() => {})) // Never resolves
+
+      renderPrioritization()
+
+      expect(await screen.findByText('Loading documents...')).toBeInTheDocument()
+      expect(headingArea()).toHaveTextContent(/^Prioritization$/)
+    })
+
+    // Both empty branches, because the count is withheld for a reason that names them:
+    // the list says WHICH emptiness this is, and a bare zero cannot. The badge takes the
+    // same path through either, so this is one case run twice rather than two cases.
+    it.each([
+      ['no projects at all', 'No Documents Found', []],
+      ['only non-scorable documents', 'No Scorable Documents', [
+        { document_id: 'r1', document_type: 'research', title: 'Research Only', content: '', created_at: '2025-01-01' },
+      ]],
+    ])('does not claim "0 proposals" over the empty state for %s', async (_case, emptyTitle, documents) => {
+      mockGetProjects.mockResolvedValue({
+        projects: documents.length === 0 ? [] : [mockProjects[0]],
+      })
+      mockGetProject.mockResolvedValue({ project_id: 'p1', documents })
+
+      renderPrioritization()
+
+      expect(await screen.findByText(emptyTitle)).toBeInTheDocument()
+      expect(headingArea()).toHaveTextContent(/^Prioritization$/)
+    })
+
+    it('counts the rows still on screen when the score read fails', async () => {
+      // The count follows the LIST, and the list deliberately survives a failed scores
+      // read on the rows the ensure confirmed (see the sibling suite). Withholding the
+      // badge on that failure would leave the heading silent above rows the reader can
+      // see and count by hand — and the count is not one of the numbers that read
+      // failed, so it has nothing to retract.
+      useLayout(oneRowPerDocument([
+        { document_id: 'd1', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '2025-01-01' },
+        { document_id: 'd3', document_type: 'prfaq', title: 'Feature B PR/FAQ', content: '', created_at: '2025-01-02' },
+      ]))
+      mockGetPrioritizationScores.mockRejectedValue(new Error('API Error: 500'))
+
+      renderPrioritization()
+
+      expect(await screen.findByText('2 proposals')).toBeInTheDocument()
+      // And the failure is still reported. Counting the rows is not claiming the read
+      // worked.
+      expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
+    })
+  })
+
   describe('PR/FAQ list', () => {
     it('displays PR/FAQ items after loading', async () => {
       renderPrioritization()
