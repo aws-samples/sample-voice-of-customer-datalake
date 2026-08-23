@@ -1071,72 +1071,45 @@ describe('Prioritization', () => {
     /** The badge beside the `<h1>`, or null while it is withheld. */
     const countBadge = () => document.getElementById('prioritization-row-count')
 
+    // Every withholding state below leaves `collectRows` at the same `0` an empty backlog
+    // gives, so the shared question is only ever whether that `0` was earned — and why an
+    // unearned one is the worst thing this badge could say is `rowCountPublishable`'s
+    // docstring. Each test names its own state and nothing more.
+
     it('counts the rows the list below renders, with their noun', async () => {
-      // Two projects in the default harness, so two rows — p1's PRD and PR/FAQ are
-      // ONE row. Counting documents would say three, which is the miscount the stats
-      // cards already fixed once; this badge reads the same array the list maps over.
+      // Two projects in the default harness, so two rows — p1's PRD and PR/FAQ are ONE row.
+      // Counting documents would say three, the miscount the stats cards already fixed once.
       renderPrioritization()
 
       await waitFor(() => {
         expect(countBadge()).toHaveTextContent('2 proposals')
       })
-      // Adjacent to the heading, not floated somewhere else on the page: the point is
-      // that a reader looking at the title can see the size without scrolling.
+      // Adjacent to the heading, so the size is readable without scrolling to find it.
       const heading = screen.getByRole('heading', { name: 'Prioritization' })
       expect(heading.parentElement).toContainElement(countBadge())
     })
 
     it('agrees with the Total Proposals card', async () => {
-      // Two numbers for one quantity is how a page loses a reader's trust, which is
-      // the whole reason this badge exists. Both read `allRows`, and this is what
-      // holds them to it.
+      // Two numbers for one quantity is how a page loses a reader's trust, which is the whole
+      // reason this badge exists. Both read `allRows`; this is what holds them to it.
       renderPrioritization()
 
       await waitFor(() => {
         expect(countBadge()).toBeInTheDocument()
       })
-      // The card carries no id and no test id, so its value is reachable only by
-      // adjacency — which has to be ASSERTED rather than shrugged at, or this test passes
-      // on a page that no longer has the card. Both steps used to be silent on failure:
-      // `total ?? ''` turned a moved value node into `toContain('')`, and a substring
-      // check on a bare numeral let a card reading `1` agree with `11 proposals`.
+      // The card has no id, so its value is reachable only by adjacency — which has to be
+      // asserted, or this passes on a page that no longer has the card. Both steps were once
+      // silent on failure: `total ?? ''` turned a moved value node into `toContain('')`, and a
+      // substring check let a card reading `1` agree with `11 proposals`. Hence the exact
+      // value, not `toBeTruthy()`, and the full badge string, noun included.
       const label = screen.getByText('Total Proposals')
       const total = label.previousElementSibling?.textContent
-      // The harness has two rows, so the card's own value is known: `toBeTruthy()` would
-      // pass for the string `'0'` and say nothing about which number agreed with which.
       expect(total).toBe('2')
-      // The FULL string, exactly: the badge's own noun is what makes this a comparison
-      // of two claims rather than of two digits.
       expect(countBadge()?.textContent).toBe(`${total} proposals`)
     })
 
-    it('does not contradict the Total Proposals card when a read fails', async () => {
-      // The case above only ever visits the state where both reads succeed, so it can
-      // never catch a DISAGREEMENT. Here the fan-out fails and the badge, which a reader
-      // takes as a statement about the whole backlog, says nothing at all — silence is the
-      // only non-contradicting thing available, since no number here is known to be the
-      // backlog's size.
-      //
-      // The card is NOT asserted. `StatsCards` renders `{rows.length}` unconditionally, so
-      // it still publishes a `0` labelled "Total Proposals" about this same unread backlog.
-      // That is pre-existing and out of scope for this change — but pinning it here would
-      // make a future fix to the card (dashing it on an unread rows source, which is what
-      // the reasoning behind this badge implies) arrive as a red test in the very file that
-      // argued for it.
-      mockGetProject.mockRejectedValue(new Error('500'))
-
-      renderPrioritization()
-
-      await waitFor(() => {
-        expect(screen.getByText('No Documents Found')).toBeInTheDocument()
-      })
-      expect(countBadge()).toBeNull()
-    })
-
     it('says nothing while the list is still being read', async () => {
-      // A `0` here would be a claim about a backlog nobody has read yet (why that is the
-      // worst number this badge can print: `rowCountPublishable`). Nothing is lost by
-      // staying quiet — the list's own spinner already covers this state.
+      // Nothing is lost by staying quiet: the list's own spinner already covers this state.
       mockGetProjects.mockReturnValue(new Promise(() => {}))
 
       renderPrioritization()
@@ -1150,9 +1123,8 @@ describe('Prioritization', () => {
     })
 
     it('reads zero once the read lands empty', async () => {
-      // The opposite state, and the one the badge is most use in: the read finished
-      // and there is genuinely nothing, which a reader can now tell apart from a read
-      // that never landed.
+      // The state the badge is most use in: the read finished and there is genuinely nothing,
+      // which a reader can now tell apart from a read that never landed.
       mockGetProjects.mockResolvedValue({ projects: [] })
 
       renderPrioritization()
@@ -1164,9 +1136,7 @@ describe('Prioritization', () => {
     })
 
     it('counts a single row in the singular', async () => {
-      // `count` interpolation, so an English reader gets "1 proposal" rather than
-      // "1 proposals" — and every locale carries an `_other` form, so no reader gets
-      // a raw key path.
+      // `count` interpolation, so an English reader gets "1 proposal" (see the JSX for why).
       useLayout(oneRowPerDocument([
         { document_id: 'd1', document_type: 'prfaq', title: 'Only One', created_at: '2025-01-01' },
       ]))
@@ -1181,10 +1151,10 @@ describe('Prioritization', () => {
     })
 
     it('says nothing when the projects read fails', async () => {
-      // The regression the gate was changed for: a failed projects read settles with
-      // `isLoading === false` and `collectRows` at `[]`, so the old "is the list in flight"
-      // gate printed "0 proposals" about a backlog it never read. This read has NO error
-      // panel, so the badge was the only thing on screen that could have said otherwise.
+      // The regression the gate was changed for: a failed read settles with
+      // `isLoading === false`, so the old "is the list in flight" gate published here — and
+      // this read has no error panel, leaving the badge the only thing that could say
+      // otherwise.
       mockGetProjects.mockRejectedValue(new Error('500'))
 
       renderPrioritization()
@@ -1193,15 +1163,18 @@ describe('Prioritization', () => {
         expect(screen.getByText('No Documents Found')).toBeInTheDocument()
       })
       expect(countBadge()).toBeNull()
-      // The heading is never withheld — only the claim about the list's length.
       expect(screen.getByRole('heading', { name: 'Prioritization' })).toBeInTheDocument()
     })
 
     it('says nothing when the project fan-out fails', async () => {
-      // The other half, and the more confidently wrong one: the projects list LANDED, so
-      // the page holds proof there is a backlog, and it is the per-project read that
-      // failed. `collectRows` short-circuits on either being absent, so this state read
-      // "0 proposals" too.
+      // The more confidently wrong half: the projects list LANDED, so the page holds proof
+      // there is a backlog and it is the per-project read that failed. Silence is the only
+      // non-contradicting thing available, no number here being known to be the backlog's size.
+      //
+      // The Total Proposals card is NOT asserted: `StatsCards` renders `{rows.length}`
+      // unconditionally, so it still publishes a `0` about this same unread backlog. That is
+      // pre-existing and out of scope — and pinning it here would make a future fix to the card
+      // arrive as a red test in the very file that argued for it.
       mockGetProject.mockRejectedValue(new Error('500'))
 
       renderPrioritization()
@@ -1213,38 +1186,32 @@ describe('Prioritization', () => {
     })
 
     it('says nothing when the rows themselves could not be read', async () => {
-      // The third input, and the last hole in this gate. Both project reads land here, so
-      // `collectRows` gets past its short-circuits — but the MAP it counts comes from the
-      // scores read and the create asks, and neither answers. `allRows` is `[]` for a
-      // backlog nobody read, which is the same lie as the two above.
-      //
-      // The create asks have to fail too, and that is not padding: when they answer they
-      // hand back the rows they confirmed, the list renders them, and the badge counting
-      // them is CORRECT even with the scores read still pending. Only "no row source has
-      // answered" is a withholding state.
+      // The third input: both project reads land, so `collectRows` gets past its
+      // short-circuits, but the map it counts comes from the scores read and the create asks.
+      // Both have to fail, and that is not padding — when the create asks answer they hand
+      // back the rows they confirmed, and counting those is CORRECT with the scores read still
+      // pending.
       mockGetPrioritizationScores.mockRejectedValue(new Error('500'))
       mockCreatePrioritizationRow.mockRejectedValue(new Error('500'))
 
       renderPrioritization()
 
-      // Waited on the empty state, not on the panel: the panel appears the moment the
-      // scores read fails, which can be before the project reads settle — and while they
-      // are unsettled the badge is withheld for a reason this test is not about.
+      // Waited on the empty state, not the panel: the panel appears the moment the scores read
+      // fails, which can be before the project reads settle — and the badge is withheld there
+      // for a reason this test is not about.
       await waitFor(() => {
         expect(screen.getByText('No Documents Found')).toBeInTheDocument()
       })
       expect(countBadge()).toBeNull()
-      // Unlike the two project reads, this state DOES have words on screen. Both are
-      // asserted together on purpose: the panel is the reason this gap was deferred once,
-      // and the badge is withheld anyway, because "we could not read the scores" is not a
-      // licence to publish a number about the rows.
+      // Both asserted together: unlike the project reads this state has words on screen, and
+      // "we could not read the scores" is still no licence to publish a number about the rows.
       expect(screen.getByRole('alert', { name: 'Scores could not be loaded' })).toBeInTheDocument()
     })
 
     it('counts rows, not projects', async () => {
       // Two projects, ONE row: p2 holds only a research document, which the create route
-      // refuses and `rowsFor` composes no row for. So `rowCount={projects.length}` would
-      // read "2 proposals" here and every other case in this block would still pass it.
+      // refuses and `rowsFor` composes no row for. `rowCount={projects.length}` would read
+      // "2 proposals" here, and every other case in this block would still pass it.
       const details = [
         {
           project_id: 'p1',
@@ -1268,16 +1235,14 @@ describe('Prioritization', () => {
       await waitFor(() => {
         expect(countBadge()).toHaveTextContent('1 proposal')
       })
-      // And the row that does exist is on screen, so "1" is the list's length rather than
-      // a count of something that failed to render.
+      // And the row that does exist is on screen, so "1" is the list's length rather than a
+      // count of something that failed to render.
       expect(screen.getByText('Scorable')).toBeInTheDocument()
     })
 
     it('associates the heading with the count for a screen reader', async () => {
-      // The badge sits OUTSIDE the `<h1>` deliberately — folding it in would make a
-      // landmark heading's accessible name move with the data — so a screen reader
-      // reaching the heading meets "Prioritization" and nothing else unless the
-      // association is explicit.
+      // The badge sits OUTSIDE the `<h1>` (see the JSX), so a screen reader reaching the
+      // heading meets "Prioritization" and nothing else unless the association is explicit.
       renderPrioritization()
 
       await waitFor(() => {
@@ -1285,16 +1250,14 @@ describe('Prioritization', () => {
       })
       const heading = screen.getByRole('heading', { name: 'Prioritization' })
       expect(heading).toHaveAttribute('aria-describedby', 'prioritization-row-count')
-      // Described, not named: the accessible name is still the title alone, which is what
-      // the rest of this suite queries the heading by.
+      // Described, not named: the accessible name is still the title alone, which is what the
+      // rest of this suite queries the heading by.
       expect(heading).toHaveAccessibleName('Prioritization')
       expect(heading).toHaveAccessibleDescription('2 proposals')
     })
 
     it('describes the heading with nothing while the count is withheld', async () => {
-      // A dangling IDREF is worse than no description: it resolves to nothing, and the
-      // attribute has to be dropped with the badge rather than left pointing at an id
-      // that is no longer in the document.
+      // The attribute has to be dropped with the badge, never left dangling (see the JSX).
       mockGetProjects.mockRejectedValue(new Error('500'))
 
       renderPrioritization()

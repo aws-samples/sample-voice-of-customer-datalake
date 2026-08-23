@@ -396,16 +396,14 @@ function PRFAQList({
 }
 
 /**
- * The row-count badge's id — spelled once because TWO attributes depend on it agreeing.
- *
- * The badge carries it and the `<h1>`'s `aria-describedby` points at it, and a typo in
- * either is silent: the page looks right, the description resolves to nothing, and only a
- * screen reader notices.
+ * The row-count badge's id — spelled once because TWO attributes must agree on it. The badge
+ * carries it, the `<h1>`'s `aria-describedby` points at it, and a typo in either is silent:
+ * the page looks right, the description resolves to nothing, only a screen reader notices.
  *
  * A LITERAL, unlike `SortControls`' `useId()` one above, because two things outside the
- * render need to name it: the test helper that reaches the badge by id, and the
- * `abca-verify` block that checks `#prioritization-row-count` on the deployed page. A
- * generated id is unknowable from outside the render tree, so neither could select it.
+ * render tree select it — the test helper reaching the badge by id, and the `abca-verify`
+ * block checking `#prioritization-row-count` on the deployed page — and neither can know a
+ * generated one.
  */
 const ROW_COUNT_ID = 'prioritization-row-count'
 
@@ -415,21 +413,14 @@ function PrioritizationHeader({
   readonly hasChanges: boolean
   readonly isPending: boolean
   /**
-   * Has anything earned the right to state `rowCount`? The difference between "nothing is
-   * here" and "nothing arrived", which is the whole point of putting a number next to the
-   * heading.
-   *
-   * `rowCountPublishable`, over the three inputs the count is derived from. Which states
-   * answer false, why an empty projects list is not one of them, and why the question is
-   * not "is the list still loading" are all its docstring's — not restated here.
+   * Has anything earned the right to state `rowCount` — "nothing is here" as against "nothing
+   * arrived". Which states answer false, and why, is `rowCountPublishable`'s docstring.
    */
   readonly countPublishable: boolean
   /**
-   * How many rows the list below renders — `allRows.length`, the SAME array
-   * `PRFAQList` maps over and the same one "Total Proposals" counts, so the badge
-   * cannot disagree with either. Not the project count: a project holding a PRD and
-   * a PR/FAQ about one idea is one row, and this number is offered to a reader
-   * checking whether the list they can see finished loading.
+   * How many rows the list below renders — `allRows.length`, the SAME array `PRFAQList` maps
+   * over and "Total Proposals" counts, so the badge cannot disagree with either. Not the
+   * project count: one project's PRD and PR/FAQ about one idea are one row.
    */
   readonly rowCount: number
   /**
@@ -482,22 +473,17 @@ function PrioritizationHeader({
           {/* DESCRIBED BY the count, not named by it. The badge is a sibling of the `<h1>`
               rather than a child on purpose: folding it in would make a landmark heading's
               accessible name change with the data ("Prioritization 3"), and every
-              `getByRole('heading', { name: 'Prioritization' })` on this page — and in its
-              suite — would be querying a name that moves.
+              `getByRole('heading', { name: 'Prioritization' })` here and in the suite
+              would be querying a name that moves.
 
-              `aria-describedby` is a MODEST improvement rather than the thing that closes
-              the gap, and worth stating as one. The badge is a text sibling immediately
-              after the heading, so linear reading meets the count either way; what the
-              attribute adds is heading-jump navigation, where the name alone is all that
-              is announced. The cost is that a heading jump now announces the count twice.
-              Also a departure from precedent worth knowing about: every other
-              `aria-describedby` in this codebase describes something FOCUSABLE, and a
-              static heading is the first non-interactive target — the case where
-              screen-reader support is least consistent.
-
-              Conditional on the same boolean as the badge, so the IDREF is never dangling.
-              A description pointing at nothing is worse than none: it resolves to empty
-              and some readers announce the raw id instead. */}
+              A MODEST improvement, not the thing that closes the gap: the badge is a text
+              sibling right after the heading, so linear reading meets the count either way,
+              and what this adds is heading-jump navigation, where the name alone is
+              announced — at the cost of announcing the count twice there. A first here too,
+              every other `aria-describedby` in this codebase describing something FOCUSABLE,
+              and static targets being where screen-reader support is least consistent.
+              Conditional on the badge's own boolean, so the IDREF never dangles: pointing at
+              nothing resolves to empty and some readers announce the raw id. */}
           <h1
             aria-describedby={countPublishable ? ROW_COUNT_ID : undefined}
             className="text-xl sm:text-2xl font-bold text-gray-900"
@@ -505,24 +491,21 @@ function PrioritizationHeader({
             {t('title')}
           </h1>
           {/* How long the list below is, next to the heading, so a reader can tell at a
-              glance whether everything loaded rather than scrolling to find out.
+              glance whether everything loaded. WITHHELD rather than `0` in every state that
+              has not earned a number — which states those are is `rowCountPublishable`'s.
 
-              WITHHELD rather than `0` in every state that has not earned a number — which
-              states those are, and why a `0` there is the worst thing this badge could
-              say, is `rowCountPublishable`'s docstring.
+              The COUNT WITH ITS NOUN ("3 proposals"), not a bare numeral: beside a heading a
+              lone number has no subject, and the description above announces "3" into a
+              sentence of its own. `count` interpolation picks the plural, and every locale
+              carries both `_one` and `_other` (see `stats.unreadable`) so no reader gets a
+              raw key path. The key is a LITERAL with the condition outside `t(...)`:
+              `i18n-check` only sees a key it reads verbatim, so a ternary inside the call
+              reports both forms unused.
 
-              Renders the COUNT WITH ITS NOUN ("3 proposals") rather than a bare numeral:
-              beside a heading, a lone number has no subject, and the description above
-              announces "3" into a sentence of its own. `count` interpolation picks the
-              plural form, and every locale carries both `_one` and `_other` (see
-              `stats.unreadable`) so no reader gets a raw key path. The key is a LITERAL
-              with the condition outside `t(...)`: `i18n-check` only sees a key it reads
-              verbatim, so a ternary inside the call reports both forms unused.
-
-              `text-gray-600` per the measured contrast table in `BAND_STYLE`, which is
-              measured on exactly the background this badge sets for itself — `bg-gray-100`
-              #f3f4f6 — where gray-600 is 6.87:1 and gray-500 fails AA at 4.39:1. The
-              page's own background never comes into it; the pill covers it. */}
+              `text-gray-600` per the measured contrast table in `BAND_STYLE`, measured on
+              exactly the background this badge sets for itself — `bg-gray-100` #f3f4f6, where
+              gray-600 is 6.87:1 and gray-500 fails AA at 4.39:1. The pill covers the page's
+              own background, so that never comes into it. */}
           {countPublishable ? (
             <span id={ROW_COUNT_ID} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs sm:text-sm font-medium text-gray-600">
               {t('headingCount', { count: rowCount })}
@@ -953,17 +936,14 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        // The same three inputs `allRows` is built from, not `isLoading`: a read that
-        // failed reaches `isLoading === false` with the same `0` an empty backlog has.
-        // Which states that publishes and which it withholds is `rowCountPublishable`'s
-        // docstring, and its unit tests.
+        // The same three inputs `allRows` is built from, not `isLoading`: a read that failed
+        // reaches `isLoading === false` with the same `0` an empty backlog has.
         countPublishable={rowCountPublishable({
           projects,
           details: allProjectDetails,
           savedScores,
           ensuredRows,
         })}
-        // The list's own array, so the badge counts exactly the rows rendered below.
         rowCount={allRows.length}
         saveBlocked={!ownBallots.inHand || overLongNotes.length > 0}
         onReset={handleReset}

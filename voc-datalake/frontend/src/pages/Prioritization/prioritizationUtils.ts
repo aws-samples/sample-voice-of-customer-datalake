@@ -1335,59 +1335,42 @@ export function projectsNeedingARow(
 /**
  * May the page state how long the list is — or has nothing yet earned a number?
  *
- * Guards the badge beside the `<h1>`, off ALL THREE inputs `collectRows` derives the
- * number from: the two project reads it short-circuits to `[]` on, and the rows map that
- * actually sets the count. Any of the three being absent produces exactly the same `0` a
- * genuinely empty backlog does. That `0` is the one number on this page a reader would
- * take as "the list finished and it is empty": it is offered as a completeness check, so
- * it is read as a statement about the whole backlog rather than about what happened to
- * arrive. The same reasoning `StatsCards` records for dashing its three team-derived
- * cards — a zero is a claim, and no failed read said anything about any document —
- * applies here one query over, and with less to fall back on, since there is no error
- * panel for the project reads at all.
+ * Guards the badge beside the `<h1>`, off ALL THREE inputs `collectRows` derives the number
+ * from: the two project reads it short-circuits to `[]` on, and the rows map that sets the
+ * count. Any absent one yields the `0` an empty backlog does, and the badge is offered as a
+ * completeness check — so that `0` reads as a claim about the whole backlog. `StatsCards`
+ * dashes its team-derived cards to avoid the same claim, with more to fall back on than
+ * this: the project reads have no error panel at all.
  *
- * So NOT "is the list in flight": that withholds the badge for the one state that fixes
- * itself and publishes it for the ones that do not. And not `details !== undefined`
- * either, which is the trap this predicate exists to name: when the projects read lands
- * as `[]` the details query never runs (`enabled: projectIds.length > 0`), so its
- * `undefined` result is LEGITIMATE rather than a failure — and that is precisely the
- * honest empty state the badge is most use in. Hence: the projects read landed AND (it
- * named no projects OR (the details read landed AND a row source has landed)).
+ * So NOT "is the list in flight", which withholds the one state that fixes itself and
+ * publishes the ones that do not; in-flight needs no case of its own, an undelivered read
+ * leaving its fact absent and absence being what every clause tests. Nor
+ * `details !== undefined`, the trap this exists to name: a projects read landing `[]` never
+ * runs the details query (`enabled: projectIds.length > 0`), so that `undefined` is
+ * LEGITIMATE, and it is the honest empty state the badge is most use in. Hence the empty list
+ * publishes, short-circuiting ahead of a row-source clause no rows map could add to.
  *
  * A ROW SOURCE is either half of the map the page merges for `collectRows` — the
  * prioritization read's own `rows`, or the rows the create asks handed back — and EITHER
- * landing is enough, because the page renders whichever arrives first. A landed scores
- * read carrying an EMPTY rows map publishes: the read answered, and a deployment with
- * projects but no rows is a real state to report. Only "no row source has answered yet"
- * withholds, which covers the window before the scores read delivers — it scans a
- * partition over up to `MAX_PRIORITIZATION_PAGES` round trips — and its failure, where
- * that `0` is terminal rather than transient.
+ * landing suffices, the page rendering whichever arrives first. A landed scores read carrying
+ * an EMPTY rows map publishes: it answered, and projects-but-no-rows is a real deployment.
+ * Only "no row source answered" withholds, covering the window before the scores read
+ * delivers (up to `MAX_PRIORITIZATION_PAGES` round trips) and its failure, where that `0` is
+ * terminal rather than transient.
  *
- * Takes the raw facts, and is exported and unit-tested without rendering, for the reason
- * `ownBallotRead` and `uncountableTeamRead` are: the question is easy to spell wrong at a
- * JSX gate where only one of its states is on screen, and it keeps the page's own branch
- * count inside the lint budget.
+ * `Array.isArray` rather than `!== undefined` on the projects half, because the page reads a
+ * non-array `projects` as no list (see its `projectIds`) — the wire promises the shape rather
+ * than proving it, and a lie there must withhold too.
  *
- * In-flight is subsumed rather than special-cased, for each of the three inputs: a read
- * that has not delivered leaves its fact absent, and absence is what every clause here
- * tests. The empty projects list is the one state that publishes on a fact being absent,
- * and it short-circuits BEFORE the row-source clause is reached — for the reason given
- * against `details !== undefined` above, which no rows map can add to.
- *
- * `Array.isArray` rather than `!== undefined` on the projects half, because the page
- * treats a non-array `projects` as no list (see its `projectIds`) — the wire is a
- * promise about the shape, not a proof of it, and a lie there must withhold too.
+ * Raw facts, so the question is unit-testable without rendering, as `ownBallotRead` and
+ * `uncountableTeamRead` are, and the page's own branch count stays inside the lint budget.
  */
 export function rowCountPublishable(read: {
   /** The projects list as the read yielded it — `undefined` in flight, or on failure. */
   readonly projects?: readonly unknown[]
   /** The per-project fan-out's result: `undefined` in flight, on failure, or when unrun. */
   readonly details?: readonly unknown[]
-  /**
-   * The prioritization response, whatever it carried: `undefined` in flight or on
-   * failure. Its mere PRESENCE is the fact — a response with an empty or absent `rows`
-   * map is still the read answering, and answering is what earns the number.
-   */
+  /** The prioritization response, whatever it carried: `undefined` in flight or on failure. */
   readonly savedScores?: unknown
   /** The rows the create asks handed back — empty until one of them answers. */
   readonly ensuredRows?: Record<string, unknown>
@@ -1427,6 +1410,11 @@ export function rowCountPublishable(read: {
  * deleted, would otherwise show nothing for. A prototype is context rather than
  * something the row is scored on, so a stale pointer there costs a reader a demo, not
  * the meaning of their ballot.
+ *
+ * MOVES WITH `rowCountPublishable`: the short-circuits below decide when the count is `[]`,
+ * that predicate decides when such a `[]` may be published as a number, and it RESTATES these
+ * guards rather than deriving from them. Change one without the other and the badge publishes
+ * a count for a state this function now answers `[]` for.
  */
 export function collectRows(
   rows: Record<string, PrioritizationRow>,
