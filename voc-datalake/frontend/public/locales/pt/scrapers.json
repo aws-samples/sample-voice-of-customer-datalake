@@ -172,12 +172,24 @@
     "titlePlaceholder": "Título da avaliação (opcional)"
   },
   "pluginConfig": {
+    "adminRequired": "Acesso de administrador necessário",
+    "addApp": "Adicionar app",
+    "addFirstApp": "Adicione seu primeiro app",
+    "addNewApp": "Adicionar novo app",
+    "cancel": "Cancelar",
+    "configuredApps": "Apps configurados",
     "automaticSchedule": "Agendamento automático",
     "close": "Fechar",
     "configuration": "Configuração",
+    "deleteAppMessage": "Tem certeza de que deseja remover esta configuração de app?",
+    "deleteAppTitle": "Excluir app",
+    "delete": "Excluir",
     "disabled": "Desabilitado",
+    "edit": "Editar",
+    "editApp": "Editar app",
     "enabled": "Habilitado",
     "hide": "Ocultar",
+    "noAppsConfigured": "Nenhum app configurado ainda",
     "runNow": "Executar agora",
     "runTriggered": "Execução iniciada",
     "save": "Salvar",
@@ -185,7 +197,8 @@
     "scheduleDescription": "Executar esta fonte no agendamento configurado",
     "select": "Selecionar...",
     "show": "Mostrar",
-    "test": "Testar"
+    "test": "Testar",
+    "unnamedApp": "App sem nome"
   },
   "refresh": "Atualizar",
   "status": {

@@ -177,7 +177,7 @@ export default function GeneratorConfigModal({
           <button
             onClick={() => generateMutation.mutate()}
             disabled={isBusy || !hasRequired || !isAdmin}
-            title={!isAdmin ? 'Admin access required' : undefined}
+            title={!isAdmin ? t('pluginConfig.adminRequired') : undefined}
             className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}

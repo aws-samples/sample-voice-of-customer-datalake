@@ -21,6 +21,7 @@ import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
 import { AppConfigCard } from './AppConfigComponents'
+import { appConfigsQueryKey } from './app-config-query'
 import GeneratorConfigModal from './GeneratorConfigModal'
 import JsonUploadModal from './JsonUploadModal'
 import CsvUploadModal from './CsvUploadModal'
@@ -43,10 +44,11 @@ function getAppConfigPlugins(): PluginManifest[] {
   return getPluginManifests().filter((p) => p.id !== 'webscraper' && p.id !== 's3_import' && p.category !== 'synthetic' && p.hasIngestor)
 }
 
-function AppConfigList({
-  plugins, onEditPlugin, onDeleteApp, onRunApp,
+export function AppConfigList({
+  plugins, isAdmin, onEditPlugin, onDeleteApp, onRunApp,
 }: {
   readonly plugins: PluginManifest[];
+  readonly isAdmin: boolean
   readonly onEditPlugin: (p: PluginManifest) => void
   readonly onDeleteApp: (pluginId: string, appId: string) => void;
   readonly onRunApp: (pluginId: string, appIdentifier: string) => void
@@ -105,6 +107,7 @@ function AppConfigList({
   }, [runningApps])
 
   const handleRun = (pluginId: string, appIdentifier: string) => {
+    // Phase 3 (#359): decide whether non-admin viewers may trigger source runs.
     const appKey = `${pluginId}-${appIdentifier}`
     setRunningApps((prev) => new Set(prev).add(appKey))
     setRunStatuses((prev) => ({
@@ -121,7 +124,7 @@ function AppConfigList({
   const {
     data: allAppConfigs, isLoading: isLoadingApps,
   } = useQuery({
-    queryKey: ['all-app-configs', plugins.map((p) => p.id).join(',')],
+    queryKey: appConfigsQueryKey(plugins),
     queryFn: async () => {
       const emptyApps: AppConfig[] = []
       const results = await Promise.all(plugins.map(async (plugin) => {
@@ -173,6 +176,7 @@ function AppConfigList({
         app, plugin,
       }) => (
         <AppConfigCard key={`${plugin.id}-${app.id}`} app={app} plugin={plugin}
+          canManage={isAdmin}
           onEdit={() => onEditPlugin(plugin)} onDelete={() => onDeleteApp(plugin.id, app.id)}
           onRun={() => handleRun(plugin.id, getAppIdentifier(app, plugin.id))}
           isRunning={runningApps.has(`${plugin.id}-${getAppIdentifier(app, plugin.id)}`)}
@@ -219,12 +223,13 @@ function useScraperMutations() {
 }
 
 function ScrapersContent({
-  scrapers, isLoading, appConfigPlugins, syntheticPlugins, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
+  scrapers, isLoading, appConfigPlugins, syntheticPlugins, isAdmin, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
 }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
   readonly appConfigPlugins: PluginManifest[]
   readonly syntheticPlugins: PluginManifest[]
+  readonly isAdmin: boolean
   readonly onRefresh: () => void
   readonly onShowTemplates: () => void
   readonly onEdit: (s: ScraperConfig) => void
@@ -257,7 +262,7 @@ function ScrapersContent({
       {isLoading ? <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div> : null}
       {!isLoading && (
         <div className="grid gap-4">
-          <AppConfigList plugins={appConfigPlugins} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
+          <AppConfigList plugins={appConfigPlugins} isAdmin={isAdmin} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
           {scrapers.map((scraper) => (
             <ScraperCard key={scraper.id} scraper={scraper} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
           ))}
@@ -380,6 +385,7 @@ export default function Scrapers() {
         isLoading={isLoading}
         appConfigPlugins={appConfigPlugins}
         syntheticPlugins={syntheticPlugins}
+        isAdmin={isAdmin}
         onRefresh={() => void refetch()}
         onShowTemplates={() => setShowTemplates(true)}
         onEdit={setEditingScraper}
@@ -410,6 +416,7 @@ export default function Scrapers() {
 
       {selectedPlugin == null ? null : <PluginConfigModal
         plugin={selectedPlugin}
+        isAdmin={isAdmin}
         onClose={() => setSelectedPlugin(null)}
       />}
 
@@ -436,9 +443,9 @@ export default function Scrapers() {
 
       {deleteAppInfo == null ? null : <ConfirmModal
         isOpen
-        title="Delete App"
-        message="Are you sure you want to remove this app configuration?"
-        confirmLabel="Delete"
+        title={t('pluginConfig.deleteAppTitle')}
+        message={t('pluginConfig.deleteAppMessage')}
+        confirmLabel={t('pluginConfig.delete')}
         onConfirm={() => {
           deleteAppMutation.mutate(deleteAppInfo)
         }}

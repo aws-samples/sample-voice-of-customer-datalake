@@ -420,11 +420,23 @@ def update_credentials(source: str):
 # ============================================
 
 APP_CONFIG_PLUGINS = {'app_reviews_ios', 'app_reviews_android'}
+APP_CONFIG_SECRET_FIELDS: dict[str, set[str]] = {
+    'app_reviews_ios': set(),
+    'app_reviews_android': set(),
+}
 
 
 def _get_app_configs_key(source: str) -> str:
     """Get the Secrets Manager key for a plugin's app configs array."""
     return f"{source}_configs"
+
+
+def _redact_app_config_secrets(source: str, configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove secret app-config fields before returning viewer-readable configs."""
+    secret_fields = APP_CONFIG_SECRET_FIELDS.get(source, set())
+    if not secret_fields:
+        return configs
+    return [{key: value for key, value in config.items() if key not in secret_fields} for config in configs]
 
 
 @app.get("/integrations/<source>/apps")
@@ -441,7 +453,7 @@ def list_app_configs(source: str):
         secrets = json.loads(response.get('SecretString', '{}'))
         configs_key = _get_app_configs_key(source)
         configs = json.loads(secrets.get(configs_key, '[]'))
-        return {'apps': configs}
+        return {'apps': _redact_app_config_secrets(source, configs)}
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
@@ -453,6 +465,7 @@ def list_app_configs(source: str):
 @tracer.capture_method
 def save_app_config(source: str):
     """Save (create or update) an app configuration for a multi-instance plugin."""
+    require_admin(app.current_event.raw_event)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -496,6 +509,7 @@ def save_app_config(source: str):
 @tracer.capture_method
 def delete_app_config(source: str, app_id: str):
     """Delete an app configuration from a multi-instance plugin."""
+    require_admin(app.current_event.raw_event)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -525,6 +539,7 @@ def run_source(source: str):
     Optionally accepts a JSON body with `app_id` to run a single app
     config instead of all configs for the source.
     """
+    # Phase 3 (#359): decide whether this authenticated write should require admin.
     from datetime import datetime, timezone
 
     from shared.tables import get_aggregates_table
@@ -646,6 +661,7 @@ def get_sources_status():
 @tracer.capture_method
 def enable_source(source: str):
     """Enable a data source schedule."""
+    require_admin(app.current_event.raw_event)
     rule_name = _build_rule_name(source)
     try:
         events_client.enable_rule(Name=rule_name)
@@ -659,6 +675,7 @@ def enable_source(source: str):
 @tracer.capture_method
 def disable_source(source: str):
     """Disable a data source schedule."""
+    require_admin(app.current_event.raw_event)
     rule_name = _build_rule_name(source)
     try:
         events_client.disable_rule(Name=rule_name)

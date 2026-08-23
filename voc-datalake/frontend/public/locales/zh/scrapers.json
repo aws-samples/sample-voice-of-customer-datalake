@@ -161,12 +161,24 @@
     "titlePlaceholder": "评论标题（可选）"
   },
   "pluginConfig": {
+    "adminRequired": "需要管理员权限",
+    "addApp": "添加应用",
+    "addFirstApp": "添加第一个应用",
+    "addNewApp": "添加新应用",
+    "cancel": "取消",
+    "configuredApps": "已配置的应用",
     "automaticSchedule": "自动计划",
     "close": "关闭",
     "configuration": "配置",
+    "deleteAppMessage": "确定要移除此应用配置吗？",
+    "deleteAppTitle": "删除应用",
+    "delete": "删除",
     "disabled": "已禁用",
+    "edit": "编辑",
+    "editApp": "编辑应用",
     "enabled": "已启用",
     "hide": "隐藏",
+    "noAppsConfigured": "尚未配置应用",
     "runNow": "立即运行",
     "runTriggered": "运行已触发",
     "save": "保存",
@@ -174,7 +186,8 @@
     "scheduleDescription": "按配置的计划运行此源",
     "select": "选择...",
     "show": "显示",
-    "test": "测试"
+    "test": "测试",
+    "unnamedApp": "未命名应用"
   },
   "refresh": "刷新",
   "status": {

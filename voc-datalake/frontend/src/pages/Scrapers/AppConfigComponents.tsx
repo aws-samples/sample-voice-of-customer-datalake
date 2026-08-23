@@ -10,6 +10,7 @@ import {
 import {
   getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'
+import { useTranslation } from 'react-i18next'
 import type { PluginManifest } from '../../plugins/types'
 
 type AppConfig = Record<string, string>
@@ -66,16 +67,18 @@ function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
 }
 
 export function AppConfigCard({
-  app, plugin, onEdit, onDelete, onRun, isRunning, runStatus,
+  app, plugin, canManage, onEdit, onDelete, onRun, isRunning, runStatus,
 }: Readonly<{
   app: AppConfig
   plugin: PluginManifest
+  canManage: boolean
   onEdit: () => void
   onDelete: () => void
   onRun: () => void
   isRunning: boolean
   runStatus?: RunStatusInfo
 }>) {
+  const { t } = useTranslation('scrapers')
   const frequencyMinutes = Number.parseInt(app.frequency_minutes === '' ? '1440' : app.frequency_minutes, 10)
   const frequencyLabel = getFrequencyLabel(frequencyMinutes)
 
@@ -85,16 +88,16 @@ export function AppConfigCard({
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center"><Smartphone size={20} /></div>
           <div>
-            <h3 className="font-semibold">{app.app_name === '' ? 'Unnamed App' : app.app_name}</h3>
+            <h3 className="font-semibold">{app.app_name === '' ? t('pluginConfig.unnamedApp') : app.app_name}</h3>
             <p className="text-sm text-gray-500">{getAppIdentifier(app, plugin.id)}</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={onRun} disabled={isRunning} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title="Run now">
+          <button data-testid="app-config-run" aria-label={t('pluginConfig.runNow')} onClick={onRun} disabled={isRunning} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title={t('pluginConfig.runNow')}>
             {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
           </button>
-          <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title="Edit"><Settings size={16} className="text-gray-500" /></button>
-          <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title="Delete"><Trash2 size={16} /></button>
+          {canManage && <button data-testid="app-config-edit" aria-label={t('pluginConfig.edit')} onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title={t('pluginConfig.edit')}><Settings size={16} className="text-gray-500" /></button>}
+          {canManage && <button data-testid="app-config-delete" aria-label={t('pluginConfig.delete')} onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title={t('pluginConfig.delete')}><Trash2 size={16} /></button>}
         </div>
       </div>
       <div className="grid grid-cols-3 gap-4 text-sm">
