@@ -1,22 +1,13 @@
 """Shared pytest fixtures for aggregator tests."""
 import pytest
 from unittest.mock import MagicMock
-from datetime import datetime, timedelta
 from decimal import Decimal
 
-from aggregator.handler import LEGACY_PERSONA_CUTOVER
-
-# `processed_at` values on either side of the persona axis's deploy boundary
-# (`aggregator/handler.py::LEGACY_PERSONA_CUTOVER`). Derived from that constant rather
-# than written out, so moving the boundary moves the fixtures with it and a fixture
-# cannot end up on the side its name denies.
-#
-# The stamp is what tells a reversal which derivation counted the item, so an item
-# WITHOUT one is treated as pre-deploy — which means omitting it is not neutral. Every
-# fixture below therefore says which side of the boundary it is on.
-_CUTOVER = datetime.fromisoformat(LEGACY_PERSONA_CUTOVER)
-PROCESSED_AFTER_THE_AXIS_MOVED = (_CUTOVER + timedelta(days=1)).isoformat()
-PROCESSED_BEFORE_THE_AXIS_MOVED = (_CUTOVER - timedelta(days=1)).isoformat()
+# NO FIXTURE HERE SAYS WHICH DEPLOY WROTE IT, and that is the point. Whether an
+# item's insert ran before the persona axis moved is not a property of the item at
+# all — it is whether the archetype row its decrement names EXISTS, which
+# `update_counter` reports back and a test arranges on the table. See
+# `_reverse_a_pre_deploy_persona_row`.
 
 
 @pytest.fixture
@@ -47,10 +38,6 @@ def sample_feedback_item():
         # rarely produces. See test_persona_field_lockstep.py.
         'persona_name': 'Happy Customer',
         'persona_type': 'advocate',
-        # Processed AFTER the axis moved, so this ordinary item's reversal is the
-        # plain one — no pre-deploy compatibility. Omitting the stamp would make
-        # every fixture here a pre-deploy item, which is the opposite of ordinary.
-        'processed_at': PROCESSED_AFTER_THE_AXIS_MOVED,
     }
 
 
@@ -69,7 +56,6 @@ def sample_urgent_feedback_item():
         'urgency': 'high',
         'persona_name': 'Frustrated Customer',
         'persona_type': 'churn_risk',
-        'processed_at': PROCESSED_AFTER_THE_AXIS_MOVED,
     }
 
 
@@ -85,10 +71,10 @@ def sample_anonymous_feedback_item():
     the axis buckets by `persona_type`. A fixture, because the two fixtures above
     both carry a name and so cannot tell the two fields apart.
 
-    Processed AFTER the axis moved: this is the ordinary anonymous item, whose
-    reversal needs no compatibility. `sample_pre_deploy_feedback_item` is the same
-    shape on the other side of the boundary, which is the pair that shows the stamp
-    rather than the shape is what decides.
+    Also the shape that shows the pre-deploy fallback is not triggered by an item's
+    PERSONA SHAPE: an anonymous item written before the axis moved looks exactly like
+    this one, and its insert still counted it under the old default. What separates
+    them is whether the archetype row exists, which is a fact about the table.
     """
     return {
         'pk': 'SOURCE#webscraper',
@@ -101,30 +87,24 @@ def sample_anonymous_feedback_item():
         'sentiment_score': Decimal('-0.4'),
         'urgency': 'low',
         'persona_type': 'churn_risk',
-        'processed_at': PROCESSED_AFTER_THE_AXIS_MOVED,
     }
 
 
 @pytest.fixture
 def sample_pre_deploy_feedback_item():
-    """An item PROCESSED before the persona axis moved to the archetype.
+    """An old image arranged so the two persona derivations name DIFFERENT rows.
 
-    🔑 WHAT MAKES IT PRE-DEPLOY IS `processed_at`, not its persona fields. The stamp
-    is the item's own record of which deploy wrote it, so it is the only thing a
-    reversal can read to know which derivation counted it — see
-    `LEGACY_PERSONA_STAMP_FIELD`. The fields below are arranged so a test can also
-    tell WHICH row a write went to: a `persona_name` and no `persona_type` makes the
-    two derivations name different rows, which an item carrying both cannot do.
+    A `persona_name` and no `persona_type`, which is what lets a test see WHICH row a
+    write went to — an item carrying both cannot, because then only the value differs
+    and not the derivation.
 
-    ⚠️ THAT ARRANGEMENT IS NOT THE PRE-DEPLOY SHAPE, and reading it as one is a
-    mistake this fixture has already invited once. `processor/handler.py` has written
-    both persona fields since the initial commit, so the axis move changed only the
-    READER: a real pre-deploy item usually carries a `persona_type` too, the dominant
-    one being `sample_anonymous_feedback_item`'s shape exactly, and a trigger that
-    tested for "a name but no archetype" would be silently inert for 99.97% of the
-    corpus. `sample_pre_deploy_anonymous_feedback_item` is that case, and
-    test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current
-    is where it is pinned.
+    ⚠️ THIS IS NOT "THE PRE-DEPLOY SHAPE", and reading it as one is a mistake this
+    fixture has invited before. `processor/handler.py` has written both persona fields
+    since the initial commit, so the axis move changed only the READER: a real
+    pre-deploy item usually carries a `persona_type` too, the dominant one being
+    `sample_anonymous_feedback_item`'s shape exactly. Nothing on an item says which
+    deploy inserted it, which is why the fallback triggers on the archetype ROW being
+    absent instead — a fact about the table, arranged per test.
 
     The subject of TestAPreDeployImageIsReversedOnTheRowItsInsertCreated in
     test_handler.py — the only case in which the reversal reads the old field, and
@@ -144,26 +124,7 @@ def sample_pre_deploy_feedback_item():
         # needing to be filtered out of every assertion.
         'urgency': 'low',
         'persona_name': 'Veronica Chen',
-        'processed_at': PROCESSED_BEFORE_THE_AXIS_MOVED,
     }
-
-
-@pytest.fixture
-def sample_pre_deploy_anonymous_feedback_item(sample_anonymous_feedback_item):
-    """The 99.97% pre-deploy item: an archetype, no name, and an OLD stamp.
-
-    Byte-identical to `sample_anonymous_feedback_item` but for `processed_at`, which
-    is the whole point — these two are the pair that shows the compatibility's trigger
-    has to be the stamp. A shape-based trigger cannot tell them apart at all, and the
-    absence of the archetype ROW only tells them apart on a day no post-deploy item
-    has written that bucket, which is not the day the corpus is busiest.
-
-    Its insert counted it under the OLD default (`METRIC#persona#Unknown`, the row
-    holding most of the pre-deploy corpus), because it had no name to be counted
-    under.
-    """
-    return {**sample_anonymous_feedback_item,
-            'processed_at': PROCESSED_BEFORE_THE_AXIS_MOVED}
 
 
 @pytest.fixture

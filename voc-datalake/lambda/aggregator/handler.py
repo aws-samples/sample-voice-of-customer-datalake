@@ -78,11 +78,13 @@ OLD IMAGE of an item whose insert may predate that move — so the row named by
 today's derivation was never created for it, while the row that WAS created is left
 inflated. The floor-and-existence condition means this cannot go negative or
 resurrect anything, but it would leave a persistent over-count in one dimension for
-every delete or edit of pre-deploy feedback. The refusal is the evidence, so the
-reversal path (and the decrement half of a rebucket) follows a refused persona
-decrement with one conditional write to the row the old derivation names. It is
-confined to the reversal direction, needs no stored state, and is deletable once the
-pre-deploy rows have aged out — see `LEGACY_PERSONA_FIELD` and
+every delete or edit of pre-deploy feedback. The ABSENT ROW is the evidence — a
+refusal is two facts and only "there was no such row" is the trigger, never "the row
+is sitting at its floor" — so the reversal path (and the decrement half of a
+rebucket) follows an archetype decrement that found NO row with one conditional
+write to the row the old derivation names. It is confined to the reversal direction,
+needs no stored state and nothing configured, and is deletable once the pre-deploy
+rows have aged out — see `LEGACY_PERSONA_FIELD` and
 `_reverse_a_pre_deploy_persona_row`.
 
 A reversal also refuses to GUESS a date. `_image_date` falls back to today when an
@@ -127,6 +129,15 @@ Known residuals
   `test_a_cross_day_arrival_onto_an_expired_average_still_fragments_it` pinning
   today's behaviour. The same-day case IS closed, because there the refused reversal
   is the evidence.
+* THE PRE-DEPLOY PERSONA FALLBACK IS INERT ON A BUSY DAY. It triggers on the
+  archetype decrement finding NO row, which is only observable on a day no
+  post-deploy item has written that bucket. On a day the new axis has already
+  populated it, a pre-deploy item's REMOVE decrements the archetype row it never
+  contributed to, and the legacy row it did contribute to stays inflated until its
+  90-day TTL. Exactly one counter still moves per deletion, which is the property
+  that matters and the one a wall-clock trigger broke; telling the two items apart
+  on a busy day is undecidable from the images and needs new stored state, so this
+  is left as a residual — see `_reverse_a_pre_deploy_persona_row`.
 """
 import os
 from collections.abc import Mapping
@@ -213,102 +224,40 @@ SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
 # reads the OLD IMAGE of an item whose insert may have run under the previous
 # deploy. That insert created `METRIC#persona#<persona_name, or Unknown>`; this
 # deploy's decrement names `METRIC#persona#<persona_type>`, a row that item never
-# contributed to. Two things follow, and neither is read staleness:
+# contributed to. So the row today's derivation names was never created for it, while
+# the row that WAS created is left inflated.
 #
-#   * the row the insert DID create is never brought down, so it stays inflated
-#     until its 90-day TTL expires — a delete or an edit of pre-deploy feedback
-#     leaves a persistent OVER-count in this dimension;
-#   * the archetype row is decremented for an item it never counted, which
-#     UNDERSTATES it while post-deploy items are populating it.
+# What this is NOT: it cannot drive a counter negative or resurrect an expired row.
+# Every decrement is guarded by `attribute_exists(pk) AND #field >= :floor`, so one
+# aimed at an absent or already-zero row is refused, swallowed and counted as
+# REFUSED_METRIC. No second clamp is needed anywhere, on either write.
 #
-# What this is NOT: it cannot drive a counter negative or resurrect an expired
-# row. `update_counter` guards every decrement with
-# `attribute_exists(pk) AND #field >= :floor`, so a decrement against an absent or
-# already-zero row is refused, swallowed and counted as REFUSED_METRIC.
+# THE TRIGGER IS THE ARCHETYPE DECREMENT REPORTING `ROW_ABSENT` — the one outcome
+# meaning NO counter moved for that bucket, which answers "did this deploy's
+# derivation ever count this item?" directly. No clock, no environment variable, no
+# CDK change, no cutover date: nothing to configure, and nothing to un-configure
+# later, since the fallback stops firing on its own as pre-deploy rows disappear.
+# WHEN IT IS SAFE TO DELETE IS STILL NOT A DATE, though: `update_counter` writes a
+# fresh `#ttl` on every write, decrements included, so each compatibility write
+# RENEWS the legacy row it touches for another 90 days. The signal that this is
+# deletable is `AggregateWriteDeclined` and the log line below going quiet, not the
+# calendar.
 #
-# THE FALLBACK, and why it is on this side only. On a reversal, the item's own
-# PROCESSING TIME says which derivation its insert used: `processed_at` is stamped by
-# `processor/handler.py` when the item was written, so an item processed before the
-# axis moved was counted by the old derivation and one processed after it by the new
-# one. The reversal then aims one extra conditional write at the row the old
-# derivation names. It needs no stored state of its own, and it is deletable in one
-# piece — the constants below and `_reverse_a_pre_deploy_persona_row`.
+# THE RESIDUAL, unsoftened. An absent archetype row is available as evidence ONLY on
+# a day no post-deploy item has written that bucket. On a day the new axis has
+# populated it, a pre-deploy item's REMOVE decrements the archetype row — one it never
+# contributed to — and the legacy row it did contribute to is never brought down,
+# ageing out on its 90-day TTL. Accepted deliberately: exactly one counter moves per
+# deletion either way, the property a wall-clock stamp broke, and no reading of the
+# two images can tell a pre-deploy item from a post-deploy one on a busy day without
+# new stored state. A missed `-1` is the direction this module already errs in — see
+# `process_deleted_feedback` on a dateless image.
 #
-# WHEN IT IS SAFE TO DELETE IS NOT A DATE, and the reason is a detail of
-# `update_counter`: its UpdateExpression always writes `#ttl = :ttl` with a fresh
-# `ttl_days`, DECREMENTS included, so every compatibility write RENEWS the legacy row
-# it touches for another 90 days (a row with 5 days left goes back to 90 — verified
-# against moto). A legacy row still receiving deletes therefore resets its own clock,
-# and the real bound is how long pre-deploy FEEDBACK survives to be deleted or edited,
-# not 90 days from deploy. The removal signal is the compatibility no longer firing —
-# `AggregateWriteDeclined`/the log line below in CloudWatch — rather than the
-# calendar. Leaving `#ttl` unwritten on this one path was considered and not done: it
-# is a change to the expression every counter in the module shares, and a row being
-# maintained is a row in use for every other caller.
-#
-# 🔑 WHY NOT THE ABSENT ROW, which is the signal this used to spend. An absent
-# archetype row does mean this item's insert created none, and it is where this
-# started — but it is only PRESENT as evidence on a day no post-deploy item has
-# written that bucket. Review demonstrated the gap against moto: post-deploy
-# ingestion populates `METRIC#persona#churn_risk` for the day, a pre-deploy item of
-# that day is then deleted, the decrement LANDS on the row it never contributed to,
-# and the legacy row it did contribute to is never touched. That is the busiest day
-# in the window and the ordinary cross-deploy state, so the compatibility was
-# effective exactly where the corpus was quiet. The absent row is sound evidence and
-# too rare to rely on; `processed_at` is per-ITEM, so it is available on every
-# reversal.
-#
-# THE ROW'S ABSENCE IS STILL READ, for the opposite purpose. `CounterWrite` reports
-# it, and a reversal whose archetype decrement was refused AT THE FLOOR is one whose
-# row exists — which is what a REDELIVERED remove of an already-reversed item looks
-# like. Nothing about the day tells those apart, so the fallback is skipped when the
-# archetype decrement LANDED or was refused at the floor for an item this deploy did
-# count. See `_reverse_a_pre_deploy_persona_row`.
-#
-# THE EVIDENCE IS NOT THE ITEM'S PERSONA SHAPE. Worth stating because that test
-# suggests itself and is false: `processor/handler.py` has written BOTH persona
-# fields since the initial commit, so "no `persona_type` but a `persona_name`" is
-# NOT the pre-deploy shape — an anonymous pre-deploy item carries a `persona_type`
-# and no name, exactly like a post-deploy one, and that is the 99.97% case. What
-# separates them is WHEN the item was processed, which is a different field.
-#
-# A permanent dual-READ on the increment path was rejected, and the reason is
-# recorded: this repo has already refused that shape once (the MCP legacy-token
-# decision), because preserving a legacy path there would have meant carrying a
-# permanent extra field to serve a path with a sunset date. Here the timestamp is a
-# field the processor already writes for its own reasons, and the compatibility is
-# confined to the reversal, where reading the old field cannot affect which bucket
-# anything is COUNTED in.
+# A permanent dual-READ on the INCREMENT path was rejected: this repo refused that
+# shape once already, for the MCP legacy-token decision, where preserving a legacy
+# path would have meant carrying a permanent extra field to serve a path with a
+# sunset date.
 LEGACY_PERSONA_FIELD = 'persona_name'
-# The item field that says which derivation counted it: `processor/handler.py` stamps
-# `processed_at` with the moment it wrote the item, so it is the item's own record of
-# which deploy was live then. Read rather than `date`, which is the day the feedback
-# belongs to and can be BACKDATED by an import — a pre-deploy `date` on an item
-# processed today is exactly the case a date-based test would get wrong.
-#
-# An item carrying NO `processed_at` is treated as pre-deploy: only legacy or
-# hand-written rows lack it, and those are pre-deploy by construction.
-LEGACY_PERSONA_STAMP_FIELD = 'processed_at'
-# The deploy boundary. Items processed at or after this instant were counted by the
-# archetype derivation; items before it were counted by the name derivation, so their
-# reversal needs the fallback.
-#
-# ⚠️ SET THIS TO THE DEPLOY TIME. It is a UTC ISO-8601 instant, PARSED rather than
-# compared as text: `processed_at` carries microseconds and this does not, and while
-# the two happen to order correctly as strings today that is a property of one
-# format's punctuation rather than something to depend on.
-#
-# The default is the date the axis move landed. An instant EARLIER than the real
-# deploy makes the compatibility inert for items processed in between — the behaviour
-# before this fix existed, an inflated legacy row. One LATER makes it fire for
-# post-deploy items, which drains a legacy row for an item that never touched it.
-# Erring early is the safer direction, so the default is the day the change landed
-# rather than an estimate of when it will be deployed.
-#
-# Environment-overridable so a deployment whose real cutover differs can correct it
-# without a code change, and because a test cannot otherwise place an item on either
-# side of a hardcoded instant.
-LEGACY_PERSONA_CUTOVER = os.environ.get('PERSONA_AXIS_CUTOVER_AT', '2026-08-22T00:00:00+00:00')
 # The bespoke empty bucket the old derivation used — deliberately capitalised the
 # way it was written, because this constant's whole job is to name rows that ALREADY
 # EXIST. It is not a value anything writes fresh: `counter_dimensions` spells the
@@ -321,12 +270,11 @@ LEGACY_PERSONA_CUTOVER = os.environ.get('PERSONA_AXIS_CUTOVER_AT', '2026-08-22T0
 # on the current axis. The two are also not symmetric in kind: `unknown` is a value
 # the enrichment contract declares, while `Unknown` was a label the old derivation
 # invented, so the new one must never be substituted for the old. Unifying them was
-# RUN, not predicted: it fails
-# test_a_pre_deploy_item_is_reversed_on_a_day_the_new_axis_has_already_populated,
+# RUN, not predicted: the collision guard below then swallows the reversal entirely,
+# because `unknown` IS an archetype, so the majority shape stops being reversed at
+# all. Setting this to PERSONA_UNKNOWN fails
 # test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current
-# and test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing
-# — the collision guard swallows the reversal entirely, because `unknown` IS an
-# archetype, so the majority shape stops being reversed at all.
+# and test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing.
 #
 # The GENERAL form of that collision is closed by code rather than by this
 # capitalisation. `_reverse_a_pre_deploy_persona_row` declines when the legacy value
@@ -369,25 +317,27 @@ class CounterWrite(Enum):
     `ReturnValuesOnConditionCheckFailure='ALL_OLD'` returns the refused item, or no
     item when there was none. So the distinction is OBSERVED rather than inferred.
 
-    WHAT IT IS NOT EVIDENCE OF, since it was read that way for one round: an absent
-    row is not the general test for "this item's insert predated the axis move". It
-    is sound when it happens, and it only happens on a day no post-deploy item has
-    written that bucket — so on the busiest day in the window it never fires, which
-    is where the pre-deploy over-count is largest. That test is per-ITEM
-    (`LEGACY_PERSONA_STAMP_FIELD`); this enum's job on that path is the narrower one
-    of ruling the fallback OUT.
+    WHAT THE ABSENT ROW IS FOR: it is what the pre-deploy persona fallback TRIGGERS
+    on, being the only outcome that means no counter moved for that bucket. Its known
+    limitation is that it is observable only on a day no post-deploy item has written
+    the bucket — on a busier day a pre-deploy item's decrement LANDS on the archetype
+    row it never contributed to and the legacy row it did contribute to is left
+    inflated until its TTL. Accepted, and recorded as a residual: see
+    `_reverse_a_pre_deploy_persona_row` and the module docstring.
     """
 
     LANDED = 'landed'
     # The row exists; the floor refused this decrement because the counter is at
-    # zero. An ordinary outcome of a redelivered REMOVE, and proof that this deploy's
-    # derivation is the one that counted the item — so no legacy row is owed anything.
+    # zero. An ordinary outcome of a redelivered REMOVE, and a row that exists is a
+    # row a counter for this bucket already sits in — so the pre-deploy fallback must
+    # not add a second `-1` for one deletion, and no legacy row is owed anything.
     # Also the outcome of a refusal whose response could not be read, because this is
     # the one no caller acts on.
     REFUSED_AT_FLOOR = 'refused_at_floor'
     # There is no such row: `attribute_exists(pk)` failed, and DynamoDB said so with a
     # readable response carrying no item. Either it aged out under its TTL, or this
-    # item's insert never created it.
+    # item's insert never created it — and the second is what the pre-deploy persona
+    # fallback triggers on.
     ROW_ABSENT = 'row_absent'
 
     def __bool__(self) -> bool:
@@ -761,10 +711,10 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     `attribute_exists(pk) AND #field >= :floor` condition refuses a decrement
     against an absent or zeroed row, so no counter goes negative and no expired row
     is resurrected; the refusal is counted as REFUSED_METRIC. What tells the reversal
-    that it is looking at such an item is the item's own `processed_at`, compared
-    against the deploy boundary — see LEGACY_PERSONA_FIELD and
-    `_reverse_a_pre_deploy_persona_row`, which is the whole of the compatibility and
-    is deletable once the pre-deploy rows have aged out.
+    that it is looking at such an item is that decrement finding NO row to move — see
+    LEGACY_PERSONA_FIELD and `_reverse_a_pre_deploy_persona_row`, which is the whole
+    of the compatibility, needs nothing configured, and is deletable once the
+    pre-deploy rows have aged out.
     """
     source_platform = item.get('source_platform', 'unknown')
     category = item.get('category', 'other')
@@ -853,40 +803,6 @@ def apply_counter_keys(
     return landed, outcomes
 
 
-def _was_counted_by_the_old_persona_axis(item: dict) -> bool:
-    """Did THIS item's insert bucket it by name rather than by archetype?
-
-    The item's own `processed_at` against the deploy boundary, which is the only
-    per-item fact that answers the question — see LEGACY_PERSONA_STAMP_FIELD and
-    LEGACY_PERSONA_CUTOVER.
-
-    An UNREADABLE or ABSENT stamp answers True, i.e. pre-deploy. Only legacy or
-    hand-written items lack `processed_at` (the processor has always written it), so
-    the fail direction matches what such an item almost certainly is — and the
-    consequence of being wrong here is bounded on both sides: the follow-up write is
-    conditional, and PERSONA_ARCHETYPES already refuses any legacy pk this deploy
-    could have written, so a false True costs at most one refused write against a
-    legacy row that does not exist.
-    """
-    stamp = item.get(LEGACY_PERSONA_STAMP_FIELD)
-    if not isinstance(stamp, str):
-        return True
-    try:
-        processed = datetime.fromisoformat(stamp)
-    except ValueError:
-        logger.warning(
-            f"Could not read `{LEGACY_PERSONA_STAMP_FIELD}` ({stamp!r}); treating the "
-            f"item as pre-deploy for the persona axis"
-        )
-        return True
-    if processed.tzinfo is None:
-        # The processor writes an aware timestamp; a naive one can only come from a
-        # hand-written row. UTC is the only reading consistent with everything else
-        # in this table.
-        processed = processed.replace(tzinfo=timezone.utc)
-    return processed < datetime.fromisoformat(LEGACY_PERSONA_CUTOVER)
-
-
 def _reverse_a_pre_deploy_persona_row(
     item: dict, outcomes: dict[tuple[str, str, str], 'CounterWrite'],
 ) -> int:
@@ -904,25 +820,13 @@ def _reverse_a_pre_deploy_persona_row(
     concerned (read out of the key, not re-derived, so a follow-up can never land on
     another day).
 
-    🔑 THE TRIGGER IS THE ITEM'S `processed_at`, NOT THE ARCHETYPE ROW'S ABSENCE.
-    Both readings have been tried, and the difference decides whether the
-    compatibility works on the days that matter:
-
-    * an ABSENT archetype row is sound evidence — this item's insert created no such
-      row — but it is only *available* on a day no post-deploy item has written that
-      bucket. On a day the new axis has already populated, a pre-deploy item's
-      decrement LANDS on a row it never contributed to and the legacy row is never
-      touched. That is the ordinary cross-deploy state and the busiest day in the
-      window, so the fallback was inert exactly where the over-count was largest;
-    * `processed_at` is per-ITEM, so it is available on every reversal, and it is the
-      item's own record of which deploy wrote it.
-
-    THE ROW'S OUTCOME IS STILL READ, to rule the fallback OUT. `CounterWrite`
-    distinguishes a decrement refused because the row was ABSENT from one refused at
-    the FLOOR, and a row at the floor exists — which is what an already-reversed item
-    looks like on redelivery. So a stamped-pre-deploy item whose archetype row exists
-    at zero is left alone: something counted it there, and one deletion must not
-    decrement two rows on the strength of a stamp.
+    🔑 THE TRIGGER IS THAT DECREMENT REPORTING `ROW_ABSENT`. It is the only outcome
+    that means NO counter moved for the bucket, so it is at once the evidence that
+    this deploy's derivation never counted the item and what holds one deletion to one
+    decrement. Its limitation is named rather than hidden: an absent row is observable
+    only on a day no post-deploy item has written the bucket, so on a busy day a
+    pre-deploy item's decrement lands on the archetype row and the legacy row stays
+    inflated until its TTL. Recorded as a residual in the module docstring.
 
     NOTHING IS ATTEMPTED AGAINST A ROW THIS DEPLOY WRITES. `legacy_pk` is built from a
     free-text, LLM-produced name — the one pk in this module not derived from a closed
@@ -936,43 +840,35 @@ def _reverse_a_pre_deploy_persona_row(
     right way to be wrong here, the judgement `process_deleted_feedback` already makes
     for a dateless image.
 
-    THE TWO DERIVATIONS CANNOT NAME ONE ROW HERE, so there is no separate guard for
-    it, and the reason is worth stating because an earlier round of this function had
-    one. A second decrement of the row this reversal just decremented would be one
-    deletion taking two counts off it — but that requires the legacy value to equal
-    the archetype value, the archetype value is always a member of PERSONA_ARCHETYPES
-    (`persona_bucket` guarantees it), and the collision guard above already declines
-    every legacy value in that set. So the case is refused one line earlier, by a
-    guard that exists for a stronger reason.
-
     It is CONDITIONAL like every other decrement, so the compatibility cannot
     resurrect a legacy row or drive one negative: if the old row has also aged out,
     this is refused in turn and counted as REFUSED_METRIC.
 
-    REDELIVERY: a redelivered REMOVE of a pre-deploy item decrements the legacy row
-    again, which is the module's general at-least-once residual rather than a new one
-    — the same is true of every counter this module writes, and the direction is
-    toward the truth, since the legacy row is inflated by exactly those items. It is
-    bounded by the floor. A POST-deploy item's redelivered REMOVE does not reach here
-    at all, because its stamp says so.
+    REDELIVERY: a redelivered REMOVE of a pre-deploy item whose legacy `-1` already
+    landed sees `ROW_ABSENT` on the archetype bucket again, and so decrements the
+    legacy row a second time. That is the module's general at-least-once residual
+    rather than a new one — the same is true of every counter this module writes — it
+    is bounded by the floor, and the direction is toward the truth, since the legacy
+    row is inflated by exactly those items.
 
     Returns how many writes landed.
     """
-    # Only the persona keys, and only those whose write did not LAND on the archetype
-    # row this deploy would have created. `sorted` below because these ARE counter
-    # keys and test_streaming_categories_lockstep.py pins the small set of expressions
-    # allowed to produce a counter's sort key — the bare item date, never anything
-    # composite, because the streaming reader sums a window with `sk BETWEEN`.
-    keys = {key for key in outcomes if key[0].startswith(PERSONA_PREFIX)}
-    if not keys or not _was_counted_by_the_old_persona_axis(item):
-        return 0
-
-    # A row at the FLOOR exists, so something counted this item there and a second
-    # decrement for one deletion is not owed. Absent or landed both leave the legacy
-    # row still to bring down: absent means the insert created nothing here, and
-    # landed means this deploy's derivation was decremented for an item the OLD one
-    # counted, which is the busy-day case the stamp exists to reach.
-    keys = {key for key in keys if outcomes[key] is not CounterWrite.REFUSED_AT_FLOOR}
+    # 🔑 ONLY THE PERSONA KEYS WHOSE WRITE FOUND NO ROW. `ROW_ABSENT` is the one
+    # outcome that means NO counter moved for this bucket, so it is at once the
+    # evidence that this deploy's derivation never counted the item AND what keeps one
+    # deletion to one decrement. The other two are excluded for the same reason:
+    # `LANDED` means a counter already moved for this bucket, and `REFUSED_AT_FLOOR`
+    # means the row exists at zero (the redelivered-REMOVE shape) — so in both cases a
+    # row exists under the archetype bucket, and a second `-1` would take two counts
+    # off one deletion.
+    #
+    # `sorted` below because these ARE counter keys and
+    # test_streaming_categories_lockstep.py pins the small set of expressions allowed
+    # to produce a counter's sort key — the bare item date, never anything composite,
+    # because the streaming reader sums a window with `sk BETWEEN`.
+    keys = {key for key in outcomes
+            if key[0].startswith(PERSONA_PREFIX)
+            and outcomes[key] is CounterWrite.ROW_ABSENT}
     if not keys:
         return 0
 
@@ -1004,8 +900,8 @@ def _reverse_a_pre_deploy_persona_row(
     landed = 0
     for pk, date, field in sorted(keys):
         logger.info(
-            f"Persona decrement on {pk}/{date} was for an item processed before the "
-            f"axis moved; also reversing {legacy_pk}, the row its insert created"
+            f"Persona decrement on {pk}/{date} found no row, so this item's insert "
+            f"ran before the axis moved; also reversing {legacy_pk}, the row it created"
         )
         if update_counter(legacy_pk, date, field, increment=-1):
             landed += 1
