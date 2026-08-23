@@ -201,6 +201,7 @@ reason:
     tests that delete without one.
 """
 import boto3
+import itertools
 import pytest
 from botocore.exceptions import ClientError
 from collections.abc import Mapping
@@ -2011,7 +2012,7 @@ class TestOneItemOwesOneLegacyDecrement:
         self._seed(real_aggregates_table, busy=False)
         walk = ['churn_risk', 'prospect', 'advocate', 'churn_risk']
 
-        for old, new in zip(walk, walk[1:]):
+        for old, new in itertools.pairwise(walk):
             process_modified_feedback(self._anonymous_pre_deploy(old),
                                       self._anonymous_pre_deploy(new))
 
@@ -2027,7 +2028,10 @@ class TestOneItemOwesOneLegacyDecrement:
         `apply_feedback`), so a bound that held only inside one of them would pass the
         test above.
         """
-        from aggregator.handler import process_deleted_feedback, process_modified_feedback
+        from aggregator.handler import (
+            process_deleted_feedback,
+            process_modified_feedback,
+        )
 
         self._seed(real_aggregates_table, busy=False)
 
@@ -2068,7 +2072,10 @@ class TestOneItemOwesOneLegacyDecrement:
         alike. The legacy row is left inflated to age out on its TTL. Asserted over all
         three arrangements at once, because on a busy day they are one observable.
         """
-        from aggregator.handler import process_deleted_feedback, process_modified_feedback
+        from aggregator.handler import (
+            process_deleted_feedback,
+            process_modified_feedback,
+        )
 
         self._seed(real_aggregates_table, busy=True)
 
