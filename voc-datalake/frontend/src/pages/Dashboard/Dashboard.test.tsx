@@ -6,6 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
+// The copy under test, read from the locale file the app itself renders from —
+// the same source src/test/setup.ts loads into i18next.
+import enCommon from '../../../public/locales/en/common.json'
 
 // Mock API before importing component
 const mockGetSummary = vi.fn()
@@ -35,12 +38,19 @@ vi.mock('../../store/configStore', () => ({
   })),
 }))
 
-// Mock child components to simplify testing
+// Mock child components to simplify testing.
+//
+// `hint` is forwarded, not dropped: it is the only user-visible statement that a
+// total is a lower bound rather than exact, and a mock that swallows it lets the
+// hint be deleted — or left as an untranslated literal — with this suite green.
+// MetricCard's own test covers what it DOES with the value (title + aria-label);
+// here it just has to be reachable.
 vi.mock('../../components/MetricCard', () => ({
-  default: ({ title, value }: { title: string; value: string | number }) => (
+  default: ({ title, value, hint }: { title: string; value: string | number; hint?: string }) => (
     <div data-testid={`metric-${title.toLowerCase().replace(/\s/g, '-')}`}>
       <span>{title}</span>
       <span>{value}</span>
+      {hint && <span data-testid="metric-hint">{hint}</span>}
     </div>
   ),
 }))
@@ -151,6 +161,32 @@ describe('Dashboard', () => {
         expect(screen.getByText('~1,234')).toBeInTheDocument()
       })
       expect(screen.getByText('~5')).toBeInTheDocument()
+      // The `~` alone does not say WHY, so the hint carries the meaning. The
+      // expected copy is READ from the English locale file rather than pasted
+      // here — the repo's lockstep idiom — so editing the wording is one change
+      // instead of two. A missing or misspelled key still fails, because i18next
+      // renders the key name and that is not what the file says.
+      //
+      // getAllByTestId, and no assertion on how MANY: more than one card carries
+      // the hint, a getByTestId would fail on the second rather than on the thing
+      // under test, and a count would be a tripwire on unrelated card edits.
+      const hints = screen.getAllByTestId('metric-hint')
+      expect(hints.length).toBeGreaterThan(0)
+      for (const hint of hints) {
+        expect(hint).toHaveTextContent(enCommon.partialCountsHint)
+      }
+    })
+
+    it('does not hint at approximation when the window was read in full', async () => {
+      // The positive control for the case above. Without it the hint could be
+      // rendered unconditionally — a permanent "approximate" is as uninformative
+      // as never showing it, and both read as "ignore this".
+      render(<Dashboard />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('1,234')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('metric-hint')).not.toBeInTheDocument()
     })
 
     it('displays average sentiment metric', async () => {
