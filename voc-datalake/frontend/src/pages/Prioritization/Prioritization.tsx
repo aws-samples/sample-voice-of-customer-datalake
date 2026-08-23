@@ -33,8 +33,8 @@ import PRFAQRow from './PRFAQRow'
 import {
   applyBallotEdits, getScore, getTeamView, collectRows, isScorable,
   MAX_NOTE_LENGTH, normalizeAggregates, normalizeRow, normalizeRows, normalizeScores, ownBallotRead,
-  overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY, sortRows,
-  teamAggregatesOf, teamOrderingAvailable, uncountableTeamRead, withEditedField,
+  overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY, rowCountPublishable,
+  sortRows, teamAggregatesOf, teamOrderingAvailable, uncountableTeamRead, withEditedField,
 } from './prioritizationUtils'
 import type {
   PrioritizationRowView, SortField, SortDirection, TeamAggregates,
@@ -395,18 +395,35 @@ function PRFAQList({
   )
 }
 
+/**
+ * The row-count badge's id — spelled once because TWO attributes depend on it agreeing.
+ *
+ * The badge carries it and the `<h1>`'s `aria-describedby` points at it, and a typo in
+ * either is silent: the page looks right, the description resolves to nothing, and only a
+ * screen reader notices.
+ *
+ * A LITERAL, unlike `SortControls`' `useId()` one above, because two things outside the
+ * render need to name it: the test helper that reaches the badge by id, and the
+ * `abca-verify` block that checks `#prioritization-row-count` on the deployed page. A
+ * generated id is unknowable from outside the render tree, so neither could select it.
+ */
+const ROW_COUNT_ID = 'prioritization-row-count'
+
 function PrioritizationHeader({
-  hasChanges, isPending, isLoading, rowCount, saveBlocked, onReset, onSave,
+  hasChanges, isPending, countPublishable, rowCount, saveBlocked, onReset, onSave,
 }: {
   readonly hasChanges: boolean
   readonly isPending: boolean
   /**
-   * Is the list below still being fetched? Counts the difference between "nothing
-   * is here" and "nothing has arrived yet", which is the whole point of putting a
-   * number next to the heading: a bare `0` beside a spinner would be the page
-   * claiming an empty backlog it has not read.
+   * Has anything earned the right to state `rowCount`? The difference between "nothing is
+   * here" and "nothing arrived", which is the whole point of putting a number next to the
+   * heading.
+   *
+   * `rowCountPublishable`, over the three inputs the count is derived from. Which states
+   * answer false, why an empty projects list is not one of them, and why the question is
+   * not "is the list still loading" are all its docstring's — not restated here.
    */
-  readonly isLoading: boolean
+  readonly countPublishable: boolean
   /**
    * How many rows the list below renders — `allRows.length`, the SAME array
    * `PRFAQList` maps over and the same one "Total Proposals" counts, so the badge
@@ -462,29 +479,55 @@ function PrioritizationHeader({
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <div className="flex items-center gap-2">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          {/* DESCRIBED BY the count, not named by it. The badge is a sibling of the `<h1>`
+              rather than a child on purpose: folding it in would make a landmark heading's
+              accessible name change with the data ("Prioritization 3"), and every
+              `getByRole('heading', { name: 'Prioritization' })` on this page — and in its
+              suite — would be querying a name that moves.
+
+              `aria-describedby` is a MODEST improvement rather than the thing that closes
+              the gap, and worth stating as one. The badge is a text sibling immediately
+              after the heading, so linear reading meets the count either way; what the
+              attribute adds is heading-jump navigation, where the name alone is all that
+              is announced. The cost is that a heading jump now announces the count twice.
+              Also a departure from precedent worth knowing about: every other
+              `aria-describedby` in this codebase describes something FOCUSABLE, and a
+              static heading is the first non-interactive target — the case where
+              screen-reader support is least consistent.
+
+              Conditional on the same boolean as the badge, so the IDREF is never dangling.
+              A description pointing at nothing is worse than none: it resolves to empty
+              and some readers announce the raw id instead. */}
+          <h1
+            aria-describedby={countPublishable ? ROW_COUNT_ID : undefined}
+            className="text-xl sm:text-2xl font-bold text-gray-900"
+          >
+            {t('title')}
+          </h1>
           {/* How long the list below is, next to the heading, so a reader can tell at a
               glance whether everything loaded rather than scrolling to find out.
 
-              Withheld while the read is in flight: a `0` here would be a claim about a
-              backlog nobody has read yet, and it is the one number on this page a reader
-              would take as "the list finished and it is empty". The list below already
-              shows a spinner for that state, so nothing is lost by staying quiet.
+              WITHHELD rather than `0` in every state that has not earned a number — which
+              states those are, and why a `0` there is the worst thing this badge could
+              say, is `rowCountPublishable`'s docstring.
 
               Renders the COUNT WITH ITS NOUN ("3 proposals") rather than a bare numeral:
-              beside a heading, a lone number has no subject, and a screen reader
-              announcing "Prioritization 3" says nothing. `count` interpolation picks the
+              beside a heading, a lone number has no subject, and the description above
+              announces "3" into a sentence of its own. `count` interpolation picks the
               plural form, and every locale carries both `_one` and `_other` (see
-              `stats.unreadable`) so no reader gets a raw key path.
+              `stats.unreadable`) so no reader gets a raw key path. The key is a LITERAL
+              with the condition outside `t(...)`: `i18n-check` only sees a key it reads
+              verbatim, so a ternary inside the call reports both forms unused.
 
-              `text-gray-600` per the measured contrast table in `BAND_STYLE`: gray-500
-              fails AA below 18.5px on a gray background, and this badge is text-sm on
-              the page's gray-50. */}
-          {isLoading ? null : (
-            <span id="prioritization-row-count" className="rounded-full bg-gray-100 px-2 py-0.5 text-xs sm:text-sm font-medium text-gray-600">
+              `text-gray-600` per the measured contrast table in `BAND_STYLE`, which is
+              measured on exactly the background this badge sets for itself — `bg-gray-100`
+              #f3f4f6 — where gray-600 is 6.87:1 and gray-500 fails AA at 4.39:1. The
+              page's own background never comes into it; the pill covers it. */}
+          {countPublishable ? (
+            <span id={ROW_COUNT_ID} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs sm:text-sm font-medium text-gray-600">
               {t('headingCount', { count: rowCount })}
             </span>
-          )}
+          ) : null}
         </div>
         <p className="text-sm sm:text-base text-gray-500 mt-1">{t('subtitle')}</p>
       </div>
@@ -910,7 +953,16 @@ export default function Prioritization() {
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        isLoading={isLoading}
+        // The same three inputs `allRows` is built from, not `isLoading`: a read that
+        // failed reaches `isLoading === false` with the same `0` an empty backlog has.
+        // Which states that publishes and which it withholds is `rowCountPublishable`'s
+        // docstring, and its unit tests.
+        countPublishable={rowCountPublishable({
+          projects,
+          details: allProjectDetails,
+          savedScores,
+          ensuredRows,
+        })}
         // The list's own array, so the badge counts exactly the rows rendered below.
         rowCount={allRows.length}
         saveBlocked={!ownBallots.inHand || overLongNotes.length > 0}

@@ -11,6 +11,7 @@ import {
   getPriorityLabel, priorityBand, reviewersDisagreed, sortRows, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
   ownBallotRead, UNREADABLE_ROW, teamOrderingAvailable, uncountableTeamRead,
+  rowCountPublishable,
 } from './prioritizationUtils'
 import type { TeamAggregates, TeamAggregateRow, PrioritizationRowView } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
@@ -385,6 +386,118 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     )
 
     expect(rows[0].prototype).toBeUndefined()
+  })
+})
+
+/**
+ * A wire value that is NOT a list, where the declared type promises one.
+ *
+ * Parsed from JSON rather than cast into place, because that is how such a value
+ * genuinely reaches the page: the response type is a promise about the wire, not a proof
+ * of it, and `JSON.parse` is the one seam where the promise stops being checked.
+ */
+const notAList = (json: string): readonly unknown[] => JSON.parse(json)
+
+describe('rowCountPublishable withholds a count no read has earned', () => {
+  // `collectRows` answers `[]` whenever ANY of its three inputs is absent — the two
+  // project reads it short-circuits on, and the rows map that sets the number — so an
+  // unlanded read produces exactly the `0` an empty backlog does. Why that `0` is the
+  // worst number this badge could print is the predicate's own docstring.
+  //
+  // Two cases discriminate this predicate from the shapes it could have had: an empty
+  // projects list, where the details result is legitimately `undefined` because the query
+  // never ran, and a scores read that LANDED carrying an empty rows map, which is a real
+  // deployment rather than an unread one.
+
+  /** Both project reads landed, so only the row-source clause is left to decide. */
+  const projectReadsLanded = {
+    projects: [{ project_id: 'p1' }],
+    details: [{ documents: [] }],
+  }
+
+  it('withholds while the reads are still in flight', () => {
+    expect(rowCountPublishable({})).toBe(false)
+    expect(rowCountPublishable({ projects: undefined, details: undefined })).toBe(false)
+  })
+  it('withholds when the projects read failed', () => {
+    // The bug this predicate replaced: nothing is loading here, so the page printed
+    // "0 proposals" about a backlog it never read, with no error panel to contradict it.
+    // Indistinguishable from in-flight in these facts alone, and deliberately so — both
+    // answer "no list has landed", and the failure is the state that does not fix itself.
+    expect(rowCountPublishable({ projects: undefined })).toBe(false)
+  })
+  it('withholds when the projects landed but the detail fan-out failed', () => {
+    // The projects list in hand PROVES there is a backlog, which makes a `0` here the
+    // more confidently wrong of the two.
+    expect(rowCountPublishable({ projects: [{ project_id: 'p1' }], details: undefined })).toBe(false)
+  })
+  it('publishes when the projects read landed empty — the honest zero', () => {
+    // `undefined` details is not a failure here: the fan-out is enabled on a non-empty id
+    // list, so it never ran. Withholding would silence the state the badge is most use in.
+    //
+    // No row source either, and that is the point: this short-circuits BEFORE the
+    // row-source clause, because a projects read that landed empty has already said the
+    // whole backlog is empty and no rows map can add to it.
+    expect(rowCountPublishable({ projects: [], details: undefined })).toBe(true)
+  })
+  it('publishes when both reads landed and the scores read brought rows', () => {
+    expect(rowCountPublishable({
+      ...projectReadsLanded,
+      savedScores: { rows: { row_p1_default: {} } },
+    })).toBe(true)
+  })
+  it('publishes an empty fan-out result — it landed, it just carried nothing', () => {
+    expect(rowCountPublishable({
+      projects: [{ project_id: 'p1' }],
+      details: [],
+      savedScores: { rows: {} },
+    })).toBe(true)
+  })
+  it('publishes when the scores read landed carrying an EMPTY rows map', () => {
+    // A deployment with projects but genuinely no rows. The row-source clause asks whether
+    // a response ARRIVED, not whether it carried anything — the read said so, and that is
+    // the same kind of honest zero the empty projects list gets.
+    expect(rowCountPublishable({ ...projectReadsLanded, savedScores: { rows: {} } })).toBe(true)
+    // An absent `rows` field is the same fact: a deployment predating rows still answered.
+    expect(rowCountPublishable({ ...projectReadsLanded, savedScores: {} })).toBe(true)
+  })
+  it('withholds while no row source has answered yet', () => {
+    // The gap the earlier two-fact predicate published for. Both project reads landed, so
+    // `collectRows` no longer short-circuits — but the map that sets the number is still
+    // empty, because the scores read is paging and no create ask has handed a row back.
+    // The page printed "0 proposals" here with the list below showing "No Documents Found"
+    // and nothing at all on screen contradicting it.
+    expect(rowCountPublishable(projectReadsLanded)).toBe(false)
+    expect(rowCountPublishable({
+      ...projectReadsLanded, savedScores: undefined, ensuredRows: {},
+    })).toBe(false)
+  })
+  it('withholds when the scores read failed with no row ensured', () => {
+    // The same facts as in flight, and deliberately so — both say "no row source has
+    // answered". The difference is not in the facts but in the outcome: here that `0`
+    // would be TERMINAL rather than a moment old. The error panel above the list does
+    // report this read, which is more than the project reads get, but a number about rows
+    // nobody read is not made true by an apology beside it.
+    expect(rowCountPublishable({ ...projectReadsLanded, ensuredRows: {} })).toBe(false)
+  })
+  it('publishes on an ensured row alone, with the scores read still pending', () => {
+    // The common path: one round trip after the details land, the create asks hand back
+    // the rows they confirmed and the list renders them. EITHER half of the merged map is
+    // enough, because the page counts whichever arrived.
+    expect(rowCountPublishable({
+      ...projectReadsLanded,
+      ensuredRows: { row_p1_default: {} },
+    })).toBe(true)
+  })
+  it('withholds when the projects field arrives as something other than a list', () => {
+    // The page reads `projects` through `Array.isArray` for the same reason: the declared
+    // response type is a promise about the wire, not a proof, and a lie there leaves
+    // `collectRows` at `[]` exactly as a failure does.
+    // An object with a `length` is the pointed one: `!== undefined` would publish it,
+    // and `.length === 0` would too for `{"length":0}`.
+    expect(rowCountPublishable({ projects: notAList('{"length":0}') })).toBe(false)
+    expect(rowCountPublishable({ projects: notAList('"two"') })).toBe(false)
+    expect(rowCountPublishable({ projects: notAList('null') })).toBe(false)
   })
 })
 
