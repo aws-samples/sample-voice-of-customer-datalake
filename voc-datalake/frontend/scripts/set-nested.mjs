@@ -7,8 +7,9 @@
  *
  * Two complementary protections:
  *
- * 1. Structural: intermediate containers are created with Object.create(null),
- *    so there is no prototype to pollute no matter what key reaches them.
+ * 1. Structural: intermediate containers are created with Object.create(null)
+ *    and only own properties are traversed. Inherited objects are never reused,
+ *    so there is no prototype path to pollute no matter what key reaches them.
  *    JSON.stringify serializes own enumerable properties only, so files saved
  *    by saveJSON are byte-identical to containers built with `{}` literals.
  *
@@ -26,8 +27,11 @@ export function setNested(obj, key, val) {
   if (parts.some(p => UNSAFE_KEYS.has(p))) return
   let cur = obj
   for (let i = 0; i < parts.length - 1; i++) {
-    if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = Object.create(null)
-    cur = cur[parts[i]]
+    const part = parts[i]
+    if (!Object.hasOwn(cur, part) || !cur[part] || typeof cur[part] !== 'object') {
+      cur[part] = Object.create(null)
+    }
+    cur = cur[part]
   }
   cur[parts[parts.length - 1]] = val
 }

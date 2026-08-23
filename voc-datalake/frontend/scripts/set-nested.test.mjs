@@ -76,6 +76,19 @@ test('existing subtree nodes are reused, not replaced', () => {
   assert.equal(existing.profile.name, 'New')
 })
 
+test('inherited subtree nodes are not traversed or reused', () => {
+  const inherited = { settings: { label: 'from prototype' } }
+  const root = Object.create(inherited)
+
+  setNested(root, 'settings.profile.name', 'New')
+
+  assert.ok(Object.hasOwn(root, 'settings'), 'setter must create an own container')
+  assert.notEqual(root.settings, inherited.settings, 'inherited object must not be reused')
+  assert.equal(inherited.settings.profile, undefined, 'prototype subtree must stay untouched')
+  assert.equal(Object.getPrototypeOf(root.settings), null)
+  assert.equal(root.settings.profile.name, 'New')
+})
+
 test('setting an existing leaf overwrites it (last write wins)', () => {
   const root = {}
   setNested(root, 'common.ok', 'OK')
@@ -85,7 +98,8 @@ test('setting an existing leaf overwrites it (last write wins)', () => {
 
 // ── Layer 2: pollution matrix (denylist) ──
 
-const PROTO_SNAPSHOT = Object.getOwnPropertyNames(Object.prototype).sort().join(',')
+const PROTO_NAMES_SNAPSHOT = Object.getOwnPropertyNames(Object.prototype).sort().join(',')
+const OBJECT_TO_STRING = Object.prototype.toString
 
 const DANGEROUS_KEYS = [
   '__proto__.polluted',
@@ -102,10 +116,11 @@ test('dangerous keys at any path position cannot touch Object.prototype', () => 
   for (const key of DANGEROUS_KEYS) {
     const root = {}
     setNested(root, key, 'evil')
-    assert.equal(PROTO_SNAPSHOT, Object.getOwnPropertyNames(Object.prototype).sort().join(','),
+    assert.equal(PROTO_NAMES_SNAPSHOT, Object.getOwnPropertyNames(Object.prototype).sort().join(','),
       `Object.prototype changed after writing "${key}"`)
+    assert.equal(Object.prototype.toString, OBJECT_TO_STRING,
+      `Object.prototype.toString changed after writing "${key}"`)
     assert.equal(({}).polluted, undefined, `global pollution after "${key}"`)
-    assert.equal(({}).prototype?.polluted, undefined)
     assert.equal(({}).constructor?.polluted, undefined)
   }
 })
@@ -115,8 +130,10 @@ test('dangerous keys against a pre-populated prototypal tree stay inert', () => 
   const root = JSON.parse('{"sidebar":{"label":"Sidebar"}}')
   for (const key of DANGEROUS_KEYS) {
     setNested(root, key, 'evil')
-    assert.equal(PROTO_SNAPSHOT, Object.getOwnPropertyNames(Object.prototype).sort().join(','),
+    assert.equal(PROTO_NAMES_SNAPSHOT, Object.getOwnPropertyNames(Object.prototype).sort().join(','),
       `Object.prototype changed after writing "${key}"`)
+    assert.equal(Object.prototype.toString, OBJECT_TO_STRING,
+      `Object.prototype.toString changed after writing "${key}"`)
     assert.equal(root.sidebar.__proto__, Object.prototype,
       `"${key}" must not rewrite an existing node's prototype`)
     assert.equal(Object.getOwnPropertyDescriptor(root.sidebar, '__proto__'), undefined,
