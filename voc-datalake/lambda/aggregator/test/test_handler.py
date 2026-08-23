@@ -1509,8 +1509,10 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         # satisfied by the archetype decrement on its own, so this test used to pass
         # with the fallback deleted outright. The count is what makes it about the
         # follow-up write at all.
-        assert len(writes) == 2, f'{writes}: expected the archetype decrement and the '\
-                                 f'legacy follow-up, not one of them'
+        assert len(writes) == 2, (
+            f'{writes}: expected the archetype decrement and the legacy follow-up, '
+            f'not one of them'
+        )
         assert {sk for _, sk, _, _ in writes} == {'2024-11-02'}, writes
 
     @patch('aggregator.handler.aggregates_table')
