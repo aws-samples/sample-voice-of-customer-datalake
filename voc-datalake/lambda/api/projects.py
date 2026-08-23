@@ -12,7 +12,8 @@ from botocore.exceptions import ClientError
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.model_config import get_active_model_id
 from shared.api import validate_days, MAX_PERSONAS_PER_GENERATION
 from shared.converse import converse_chain
 from shared.exceptions import (
@@ -789,7 +790,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 'created_at': now,
                 'updated_at': now,
                 'llm_metadata': {
-                    'model': BEDROCK_MODEL_ID,
+                    'model': get_active_model_id('documents'),
                     'prompt_version': PERSONA_PROMPT_VERSION,
                     'generation_time_ms': llm_time
                 },
