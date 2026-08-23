@@ -1241,6 +1241,14 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         this file, in api/test/test_persona_dimension_lockstep.py,
         test_an_out_of_contract_archetype_is_counted_as_unclassified — the read path
         buckets by the same derivation, so opening the axis moves both at once.
+      * Trigger on the ITEM rather than on the row's outcome — any per-item test, a
+        `processed_at` stamp or a persona SHAPE, reduces here to "act unless refused at
+        the floor" — fails three in TestOneItemOwesOneLegacyDecrement:
+        test_three_successive_edits_of_one_item_drain_the_legacy_row_once,
+        test_an_edit_then_the_delete_drain_it_once and
+        test_a_busy_day_does_not_drain_the_legacy_row_at_all. That class is where the
+        per-ITEM bound lives; review measured 3 and 2 drains for those first two
+        arrangements under the wall-clock trigger this replaced.
       * Have `update_counter` classify an unreadable refusal as `ROW_ABSENT` instead of
         `REFUSED_AT_FLOOR` — fails
         test_an_unreadable_refusal_is_not_evidence_that_a_row_was_absent, and only
@@ -1902,6 +1910,176 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         assert (self._archetype_pk(new), '2025-01-15', 'count', 1) in writes, (
             'and still count it under its new archetype — the increment path is '
             'untouched by the compatibility.'
+        )
+
+
+class TestOneItemOwesOneLegacyDecrement:
+    """🔑 THE DEBT IS PER-ITEM; THE COMPATIBILITY FIRES PER EVENT. How many times can
+    one pre-deploy item drain the legacy row?
+
+    A pre-deploy item contributed exactly `1` to exactly one legacy row, so at most one
+    `-1` is ever owed for it — while `_reverse_a_pre_deploy_persona_row` runs on every
+    reversal, and one item can be reversed many times: each edit that changes its
+    archetype or its date, its eventual delete, and every stream redelivery of any of
+    those.
+
+    Raised in review against the WALL-CLOCK trigger, where the answer was N drains for
+    N events (the stamp is immutable, so every reversal re-read it as pre-deploy and
+    issued another `-1`). It is the property that made "self-limiting" true, so it is
+    measured here rather than argued: all moto-backed, because the answer is DynamoDB's
+    — whether the archetype row exists after the previous event is the whole mechanism.
+
+    🔑 THE ABSENT-ROW TRIGGER BOUNDS THE LEGITIMATE CASES BY CONSTRUCTION, and that is
+    the strongest argument for it. The first reversal's INCREMENT creates the archetype
+    row for the item's new bucket, so every later decrement of that row LANDS, and a
+    landed decrement never reaches the fallback. Nothing was added to get this: it falls
+    out of triggering on "no counter moved" instead of on a fact about the item.
+
+    ⚠️ REDELIVERY IS NOT BOUNDED, and is accepted rather than fixed. A REMOVE redelivered
+    N times issues N legacy decrements, because a refused decrement creates nothing — so
+    the archetype row is still absent on the second delivery and the evidence is
+    unchanged. That is the module's general at-least-once residual (see
+    TestRedeliveryMovesACounterTwice: a redelivered REMOVE double-decrements EVERY
+    counter this module writes, and closing it means routing `eventID` through
+    `shared/idempotency.py`, a CDK change as well as a code one). Fixing it for this one
+    row and no other would be a special case of a module-wide residual.
+
+    ⚠️ AND THE HONEST COST, which an earlier docstring understated by calling it "toward
+    the truth": that is only so for the FIRST drain of each item. Once the legacy row
+    holds the count its remaining pre-deploy items justify, another redelivered `-1`
+    makes it UNDERSTATE — and it is a row `/metrics/personas` still serves for any
+    window overlapping the move. Bounded below by the floor, never negative.
+
+    REVERT MAP
+      * Trigger on the item instead of on the row's outcome (any per-item test: a
+        stamp, a shape) — fails
+        test_three_successive_edits_of_one_item_drain_the_legacy_row_once and
+        test_an_edit_then_the_delete_drain_it_once, which is exactly what review
+        measured at 3 and 2 drains before the trigger moved.
+      * Fire on `LANDED` as well — fails both of those and
+        test_a_busy_day_does_not_drain_the_legacy_row_at_all.
+    """
+
+    DAY = '2025-01-15'
+    LEGACY_PK = 'METRIC#persona#Unknown'
+
+    @staticmethod
+    def _anonymous_pre_deploy(persona_type: str) -> dict:
+        """The 99.97% pre-deploy shape: an archetype, NO name, so its insert counted it
+        under the old bespoke default. Built here rather than from the conftest fixture
+        because these tests walk `persona_type` through several values."""
+        return {
+            'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#anon1', 'feedback_id': 'anon1',
+            'date': '2025-01-15', 'source_platform': 'webscraper',
+            'category': 'delivery', 'sentiment_label': 'neutral', 'urgency': 'low',
+            'persona_type': persona_type,
+        }
+
+    @classmethod
+    def _seed(cls, table, *, busy: bool):
+        from aggregator.handler import PERSONA_ARCHETYPES
+
+        # `daily_total` is the sentinel `_day_has_aggregates` reads, so seeding it is
+        # what makes the day LIVE and lets a rebucket proceed at all.
+        table.put_item(Item={'pk': 'METRIC#daily_total', 'sk': cls.DAY,
+                             'count': Decimal(100)})
+        table.put_item(Item={'pk': cls.LEGACY_PK, 'sk': cls.DAY, 'count': Decimal(6000)})
+        if busy:
+            # A post-deploy item has already written every archetype bucket for the day,
+            # which is the state that makes the absent row unavailable as evidence.
+            for archetype in PERSONA_ARCHETYPES:
+                table.put_item(Item={'pk': f'METRIC#persona#{archetype}', 'sk': cls.DAY,
+                                     'count': Decimal(40)})
+
+    @classmethod
+    def _legacy_count(cls, table) -> int | None:
+        item = table.get_item(Key={'pk': cls.LEGACY_PK, 'sk': cls.DAY}).get('Item')
+        return None if item is None else int(item['count'])
+
+    def test_three_successive_edits_of_one_item_drain_the_legacy_row_once(
+        self, real_aggregates_table
+    ):
+        """Three legitimate archetype edits, one item, one `-1`.
+
+        Review measured THREE here against the wall-clock trigger. The first edit's
+        decrement finds no archetype row and settles the debt; its increment then
+        CREATES the row for the new bucket, so the second and third edits' decrements
+        land and never reach the fallback. No marker, no stored state, no extra guard.
+        """
+        from aggregator.handler import process_modified_feedback
+
+        self._seed(real_aggregates_table, busy=False)
+        walk = ['churn_risk', 'prospect', 'advocate', 'churn_risk']
+
+        for old, new in zip(walk, walk[1:]):
+            process_modified_feedback(self._anonymous_pre_deploy(old),
+                                      self._anonymous_pre_deploy(new))
+
+        assert self._legacy_count(real_aggregates_table) == 5999, (
+            'one item owes exactly one legacy `-1`, however many times it is edited.'
+        )
+
+    def test_an_edit_then_the_delete_drain_it_once(self, real_aggregates_table):
+        """The same property across two DIFFERENT event types.
+
+        Review measured two. Worth its own case because the edit and the delete reach
+        the fallback through different callers (`process_modified_feedback` and
+        `apply_feedback`), so a bound that held only inside one of them would pass the
+        test above.
+        """
+        from aggregator.handler import process_deleted_feedback, process_modified_feedback
+
+        self._seed(real_aggregates_table, busy=False)
+
+        process_modified_feedback(self._anonymous_pre_deploy('churn_risk'),
+                                  self._anonymous_pre_deploy('prospect'))
+        process_deleted_feedback(self._anonymous_pre_deploy('prospect'))
+
+        assert self._legacy_count(real_aggregates_table) == 5999
+
+    def test_a_redelivered_remove_drains_it_once_per_delivery(self, real_aggregates_table):
+        """⚠️ THE ACCEPTED MULTI-DRAIN, pinned so it is a decision and not an absence.
+
+        A refused decrement creates nothing, so the archetype row is still absent on the
+        second delivery and the evidence is unchanged — three deliveries, three `-1`s.
+        The module's general at-least-once residual rather than one this path invents,
+        and the direction is toward the truth for the FIRST drain only; past it the
+        legacy row understates. If this is ever closed it should be closed for every
+        counter at once, through `shared/idempotency.py`.
+        """
+        from aggregator.handler import process_deleted_feedback
+
+        self._seed(real_aggregates_table, busy=False)
+
+        for _ in range(3):
+            process_deleted_feedback(self._anonymous_pre_deploy('churn_risk'))
+
+        assert self._legacy_count(real_aggregates_table) == 5997, (
+            'three deliveries of one REMOVE take three counts off the legacy row. '
+            'Accepted: it is what every other counter in this module does under '
+            'redelivery — see TestRedeliveryMovesACounterTwice.'
+        )
+
+    def test_a_busy_day_does_not_drain_the_legacy_row_at_all(self, real_aggregates_table):
+        """The other side of the same mechanism, and the accepted busy-day residual.
+
+        With the archetype buckets already written for the day, every persona decrement
+        LANDS, so the fallback never fires — for an edit, a delete or a redelivery
+        alike. The legacy row is left inflated to age out on its TTL. Asserted over all
+        three arrangements at once, because on a busy day they are one observable.
+        """
+        from aggregator.handler import process_deleted_feedback, process_modified_feedback
+
+        self._seed(real_aggregates_table, busy=True)
+
+        process_modified_feedback(self._anonymous_pre_deploy('churn_risk'),
+                                  self._anonymous_pre_deploy('prospect'))
+        for _ in range(3):
+            process_deleted_feedback(self._anonymous_pre_deploy('prospect'))
+
+        assert self._legacy_count(real_aggregates_table) == 6000, (
+            'an absent archetype row is the only evidence this path has, and a busy '
+            'day does not offer it. Documented in `handler.py` under `Known residuals`.'
         )
 
 

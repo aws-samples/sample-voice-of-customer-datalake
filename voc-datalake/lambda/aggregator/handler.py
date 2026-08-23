@@ -147,6 +147,15 @@ Known residuals
   rather than for 90 days. A date in the code buying a permanent error in place of
   an ageing one is the trade this declines — see
   `_reverse_a_pre_deploy_persona_row`.
+* A REDELIVERED REMOVE DRAINS THE LEGACY PERSONA ROW AGAIN. The compatibility runs
+  per reversal EVENT while the debt is per ITEM, and a refused decrement creates
+  nothing, so the evidence is unchanged on the second delivery. The LEGITIMATE
+  multi-reversal cases are bounded by the trigger itself (the first reversal's
+  increment creates the archetype row, so later decrements land and never reach the
+  fallback — measured in TestOneItemOwesOneLegacyDecrement); redelivery is not, and is
+  accepted as an instance of the at-least-once residual above rather than closed for
+  one row. Cost, exactly: the first drain per item moves toward the truth and any
+  further one makes that row UNDERSTATE, bounded below by the floor.
 * THE ABSENT ROW IS NOT PROOF OF VINTAGE, only of "no live row here". A
   post-deploy INSERT whose stream record never landed — a batch failure, a window
   where this function was erroring — leaves no archetype row either, so deleting
@@ -873,12 +882,27 @@ def _reverse_a_pre_deploy_persona_row(
     resurrect a legacy row or drive one negative: if the old row has also aged out,
     this is refused in turn and counted as REFUSED_METRIC.
 
-    REDELIVERY: a redelivered REMOVE of a pre-deploy item whose legacy `-1` already
-    landed sees `ROW_ABSENT` on the archetype bucket again, and so decrements the
-    legacy row a second time. That is the module's general at-least-once residual
-    rather than a new one — the same is true of every counter this module writes — it
-    is bounded by the floor, and the direction is toward the truth, since the legacy
-    row is inflated by exactly those items.
+    🔑 ONE ITEM OWES ONE `-1`, AND THE TRIGGER BOUNDS THE LEGITIMATE CASES BY
+    CONSTRUCTION. This runs per reversal EVENT, while the debt is per ITEM — and one
+    item can be reversed many times (each edit that changes its archetype or date, then
+    its delete). It settles once anyway: the first reversal's INCREMENT creates the
+    archetype row for the item's new bucket, so every later decrement of that row LANDS
+    and never reaches here. Nothing was added to get that; it falls out of triggering on
+    "no counter moved" rather than on a fact about the item. Measured against moto in
+    TestOneItemOwesOneLegacyDecrement — three successive edits drain the legacy row
+    ONCE, and an edit followed by the delete once.
+
+    ⚠️ REDELIVERY IS THE EXCEPTION, and is accepted rather than closed. A refused
+    decrement creates nothing, so a redelivered REMOVE sees `ROW_ABSENT` again and
+    decrements the legacy row again — N deliveries, N writes. That is the module's
+    general at-least-once residual rather than one this path invents (every counter here
+    behaves the same way; see the module docstring, and closing it means routing
+    `eventID` through `shared/idempotency.py`, a CDK change as well as a code one), so
+    fixing it for this row alone would be a special case of a module-wide gap.
+    Its cost, stated exactly: the direction is toward the truth for the FIRST drain of
+    each item only. Past that the legacy row UNDERSTATES — it is bounded below by the
+    floor, never negative, but it is a row `/metrics/personas` still serves for a window
+    overlapping the move.
 
     Returns how many writes landed.
     """
