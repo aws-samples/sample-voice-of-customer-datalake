@@ -864,7 +864,12 @@ describe('API Client', () => {
 
   describe('getPersonas', () => {
     it('fetches personas with days parameter', async () => {
-      const mockResponse = { period_days: 7, personas: { 'Power User': 50, 'Casual User': 30 } }
+      // Contract archetype codes, which is what this route now returns: the persona
+      // axis buckets on `persona_type` and is closed to the enrichment enum, so a
+      // free-text key here would document a shape the API cannot produce.
+      const mockResponse = {
+        period_days: 7, personas: { existing_customer: 50, churn_risk: 30 },
+      }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),

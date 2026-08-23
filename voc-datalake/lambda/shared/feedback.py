@@ -71,6 +71,19 @@ PERSONA_FIELD = 'persona_type'
 # (`AGGREGATE_RETENTION_DAYS`); the transition is forward-only by design, with one
 # exception on the REVERSAL path — see `aggregator/handler.py::LEGACY_PERSONA_FIELD`.
 #
+# ⚠️ SO FOR UP TO 90 DAYS THE TWO BRANCHES OF ONE ROUTE DISAGREE, which is worth
+# saying plainly because it is a time-bounded instance of the very defect class this
+# file exists to prevent. `/metrics/personas` and `/feedback/entities` each have a
+# SCAN branch that re-derives the bucket from raw items — so it reports the new axis
+# for every item, whatever wrote it — and an AGGREGATES branch that reports what the
+# stored rows say, which for pre-move days is legacy free text plus `Unknown`. Over a
+# window spanning the move the default basis therefore publishes `Unknown` and
+# `unknown` as two buckets meaning one thing, and `?date_basis=review` answers
+# differently for the same window. Accepted rather than papered over: folding
+# `Unknown` into this value at the two aggregates strip sites would hide the
+# disagreement without making the stored rows agree, and the write side needs the two
+# spellings to stay distinct (`LEGACY_PERSONA_UNKNOWN`).
+#
 # WHAT THIS BUCKET CANNOT TELL YOU, said out loud because the next person to ask
 # "is enrichment healthy?" will look exactly here: it merges "the enrichment
 # classified the archetype as `unknown`", "the field is absent, so no classification

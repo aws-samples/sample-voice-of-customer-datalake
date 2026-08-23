@@ -170,6 +170,20 @@ export interface PersonaBreakdown {
   period_days: number
   /** See {@link MetricsSummary.is_partial} — same flag, same three reasons. */
   is_partial?: boolean
+  /**
+   * Keys are enrichment-contract ARCHETYPE CODES, not display labels:
+   * `existing_customer | prospect | churn_risk | advocate | unknown`
+   * (`PERSONA_ARCHETYPES` in `lambda/shared/feedback.py`, which closes the axis so
+   * anything outside the set is counted as `unknown`).
+   *
+   * So whoever first renders this dimension must MAP them, through i18n like every
+   * other user-facing label — printing a key would put `churn_risk` on screen. They
+   * are codes on purpose: the axis used to bucket on a free-text `persona_name`, and
+   * a caller grouping by a dimension can enumerate a contract enum and cannot
+   * enumerate free text. During the ~90 days aggregate rows written before the move
+   * survive, this map can also carry their legacy free-text keys and a separate
+   * `Unknown` — see the transition note at `PERSONA_UNKNOWN`.
+   */
   personas: Record<string, number>
 }
 

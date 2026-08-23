@@ -52,11 +52,19 @@ decisions inside it that a naive implementation gets wrong. The revert map:
     — the persona axis buckets by `persona_type` (the archetype), not by
       `persona_name`: a null name is correct output for anonymous feedback, which is
       most of this corpus, so the name-based axis put 99.97% of it in one `Unknown`
-      bucket. Pointing `PERSONA_FIELD` back at `persona_name` fails
-      `test_an_anonymous_items_insert_writes_the_bucket_counter_dimensions_names`
-      and its delete counterpart — the subject item carries an archetype and NO
-      name, the production shape. Naming the bucket in a second place instead of
-      through `counter_dimensions` fails
+      bucket. ⚠️ NOT CAUGHT BY THIS CLASS, and an earlier version of this map
+      claimed it was: pointing `PERSONA_FIELD` back at `persona_name` fails ELEVEN
+      tests and NONE of them are here. `_expected_persona_pk` derives the expected
+      pk by calling `counter_dimensions` — the code under test — so moving the field
+      moves both sides of the assertion together. That is deliberate and is what
+      lets the class catch a SECOND derivation, but it is exactly what makes it
+      unable to catch a WRONG one. The field move is caught by
+      `test_persona_field_lockstep.py::TestTheAxisMeasuresTheArchetype::test_an_item_with_an_archetype_and_no_name_buckets_under_its_archetype`,
+      by `TestProcessNewFeedback::test_updates_persona_counter`, and by five tests
+      in `api/test/test_persona_dimension_lockstep.py` — which is the file that
+      compares the two SIDES rather than one side with itself. What this class does
+      catch is naming the bucket in a second place instead of through
+      `counter_dimensions`: that fails
       `test_the_two_directions_name_one_row_and_only_the_sign_differs` as soon as
       the two copies disagree, which is what a half-moved field name is.
 
@@ -70,7 +78,7 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       `ROW_ABSENT` — no counter moved for the bucket — which is a fact about the
       TABLE, so every test there arranges the table rather than the fixture.
       Deleting `_reverse_a_pre_deploy_persona_row`'s call in `apply_feedback` fails
-      five of these; deleting it in `process_modified_feedback` fails
+      six of these; deleting it in `process_modified_feedback` fails
       `test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too` and
       `test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing`.
       Acting on EITHER refusal instead of only on the absent row fails the three
@@ -1190,11 +1198,15 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
     REVERT MAP for this class. Every entry below was RUN against the real source and
     its citations are the tests that really failed, not the ones that ought to have.
       * Delete `_reverse_a_pre_deploy_persona_row`'s call in `apply_feedback` — fails
-        test_the_row_the_pre_deploy_insert_created_is_the_one_brought_down,
+        six: test_the_row_the_pre_deploy_insert_created_is_the_one_brought_down,
         test_a_pre_deploy_image_with_no_name_either_falls_back_to_the_old_default,
         test_exactly_one_persona_bucket_moves_per_deletion,
-        test_a_name_equal_to_a_live_out_of_contract_row_is_declined_too and
-        test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current.
+        test_a_name_the_closed_axis_can_no_longer_write_is_reversed_not_declined,
+        test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current
+        and test_the_fallback_lands_on_the_day_the_decrement_concerned. That last one
+        survived this mutation until review found it: asserting only WHICH DAY the
+        writes landed on was satisfied by the archetype decrement alone, so it now
+        asserts the COUNT as well.
         Not the rebucket test: MODIFY has its own call, and deleting THAT one instead
         fails test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too and,
         in TestEachBehaviourEmitsItsOwnMetric,
@@ -1225,7 +1237,7 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         how the first of them was found to have gone vacuous when the trigger changed.
       * Open the axis again (have `persona_bucket` interpolate `persona_type`
         verbatim) — fails test_the_rows_this_deploy_writes_are_all_in_the_enum,
-        test_a_name_equal_to_a_live_out_of_contract_row_is_declined_too and, outside
+        test_a_name_the_closed_axis_can_no_longer_write_is_reversed_not_declined and, outside
         this file, in api/test/test_persona_dimension_lockstep.py,
         test_an_out_of_contract_archetype_is_counted_as_unclassified — the read path
         buckets by the same derivation, so opening the axis moves both at once.
@@ -1404,8 +1416,10 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         observable. A landed decrement is equally what a PRE-deploy item deleted on a
         day the new axis has already written that bucket looks like — and then the row
         its own insert created is not brought down, and ages out on its 90-day TTL
-        instead. Nothing in the two images tells those cases apart, so closing it needs
-        new stored state; exactly one counter still moves either way
+        instead. Deciding it is possible — `processed_at` is on the old image — and
+        declined: a constant naming the deploy instant misreads an item written just
+        before the deploy and aggregated just after it, and leaves THAT row inflated
+        permanently rather than for 90 days. Either way exactly one counter moves
         (test_exactly_one_persona_bucket_moves_per_deletion). Recorded in `handler.py`
         under `Known residuals`, and this assertion is what would fail if the residual
         were ever closed — a separate test for it would assert the same call twice.
@@ -1490,8 +1504,14 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
 
         record_handler(_record('REMOVE', old=item))
 
-        days = {sk for pk, sk, _, _ in self._persona_writes(mock_table)}
-        assert days == {'2024-11-02'}, days
+        writes = self._persona_writes(mock_table)
+        # BOTH writes, not just the days they landed on: asserting the day alone was
+        # satisfied by the archetype decrement on its own, so this test used to pass
+        # with the fallback deleted outright. The count is what makes it about the
+        # follow-up write at all.
+        assert len(writes) == 2, f'{writes}: expected the archetype decrement and the '\
+                                 f'legacy follow-up, not one of them'
+        assert {sk for _, sk, _, _ in writes} == {'2024-11-02'}, writes
 
     @patch('aggregator.handler.aggregates_table')
     def test_a_redelivered_remove_of_a_post_deploy_item_leaves_the_legacy_row_alone(
@@ -1697,7 +1717,7 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         )
 
     @patch('aggregator.handler.aggregates_table')
-    def test_a_name_equal_to_a_live_out_of_contract_row_is_declined_too(
+    def test_a_name_the_closed_axis_can_no_longer_write_is_reversed_not_declined(
         self, mock_table, sample_pre_deploy_feedback_item
     ):
         """The half of that collision the guard used to miss, closed at the root.

@@ -135,9 +135,24 @@ Known residuals
   populated it, a pre-deploy item's REMOVE decrements the archetype row it never
   contributed to, and the legacy row it did contribute to stays inflated until its
   90-day TTL. Exactly one counter still moves per deletion, which is the property
-  that matters and the one a wall-clock trigger broke; telling the two items apart
-  on a busy day is undecidable from the images and needs new stored state, so this
-  is left as a residual — see `_reverse_a_pre_deploy_persona_row`.
+  that matters and the one a wall-clock trigger broke.
+  ⚠️ NOT because the images cannot decide it. `processed_at` IS on the old image
+  (the processor writes it, the stream is NEW_AND_OLD_IMAGES), so a module constant
+  naming the axis-move instant plus EXCLUSIVE routing — legacy row or archetype
+  row, never both — would be correct on a busy day, with no env var and no CDK
+  change. It is not taken because it is not correct either, only differently
+  wrong: it misreads an item written just before the deploy whose INSERT was
+  aggregated just after it, and for that item it would skip the archetype
+  decrement that IS holding its count, leaving that row inflated permanently
+  rather than for 90 days. A date in the code buying a permanent error in place of
+  an ageing one is the trade this declines — see
+  `_reverse_a_pre_deploy_persona_row`.
+* THE ABSENT ROW IS NOT PROOF OF VINTAGE, only of "no live row here". A
+  post-deploy INSERT whose stream record never landed — a batch failure, a window
+  where this function was erroring — leaves no archetype row either, so deleting
+  that item aims one `-1` at the bucket its free-text name spells. Bounded by the
+  same condition (at most one count, in a row that is ageing out), self-limiting
+  once the legacy rows are gone, and strictly smaller than the over-count above.
 """
 import os
 from collections.abc import Mapping
@@ -233,10 +248,17 @@ SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
 # REFUSED_METRIC. No second clamp is needed anywhere, on either write.
 #
 # THE TRIGGER IS THE ARCHETYPE DECREMENT REPORTING `ROW_ABSENT` — the one outcome
-# meaning NO counter moved for that bucket, which answers "did this deploy's
-# derivation ever count this item?" directly. No clock, no environment variable, no
+# meaning NO counter moved for that bucket. No clock, no environment variable, no
 # CDK change, no cutover date: nothing to configure, and nothing to un-configure
 # later, since the fallback stops firing on its own as pre-deploy rows disappear.
+# ⚠️ WHAT IT IS EVIDENCE OF is "no live row under this bucket", which is NOT the
+# same fact as "this item's insert predates the axis move". They come apart when a
+# post-deploy INSERT produced no row at all — a stream record lost to a batch
+# failure, or a window where this function was erroring — and then the fallback
+# aims one `-1` at the bucket that item's free-text name spells. Bounded by the
+# same condition and self-limiting as the legacy rows expire; recorded with the
+# other residuals in the module docstring rather than guarded against, because the
+# guard would be the stored state this design is declining to add.
 # WHEN IT IS SAFE TO DELETE IS STILL NOT A DATE, though: `update_counter` writes a
 # fresh `#ttl` on every write, decrements included, so each compatibility write
 # RENEWS the legacy row it touches for another 90 days. The signal that this is
@@ -248,10 +270,14 @@ SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
 # populated it, a pre-deploy item's REMOVE decrements the archetype row — one it never
 # contributed to — and the legacy row it did contribute to is never brought down,
 # ageing out on its 90-day TTL. Accepted deliberately: exactly one counter moves per
-# deletion either way, the property a wall-clock stamp broke, and no reading of the
-# two images can tell a pre-deploy item from a post-deploy one on a busy day without
-# new stored state. A missed `-1` is the direction this module already errs in — see
-# `process_deleted_feedback` on a dateless image.
+# deletion either way, the property a wall-clock stamp broke. Deciding the busy day
+# correctly is POSSIBLE — `processed_at` is on the old image — and declined anyway,
+# because a constant naming the deploy instant is only differently wrong: it
+# misreads an item written just before the deploy and aggregated just after it, and
+# skips the archetype decrement that is really holding that item's count, leaving
+# that row inflated permanently instead of for 90 days. A missed `-1` is the
+# direction this module already errs in — see `process_deleted_feedback` on a
+# dateless image — and an ageing error beats a permanent one.
 #
 # A permanent dual-READ on the INCREMENT path was rejected: this repo refused that
 # shape once already, for the MCP legacy-token decision, where preserving a legacy
@@ -823,10 +849,13 @@ def _reverse_a_pre_deploy_persona_row(
     🔑 THE TRIGGER IS THAT DECREMENT REPORTING `ROW_ABSENT`. It is the only outcome
     that means NO counter moved for the bucket, so it is at once the evidence that
     this deploy's derivation never counted the item and what holds one deletion to one
-    decrement. Its limitation is named rather than hidden: an absent row is observable
-    only on a day no post-deploy item has written the bucket, so on a busy day a
-    pre-deploy item's decrement lands on the archetype row and the legacy row stays
-    inflated until its TTL. Recorded as a residual in the module docstring.
+    decrement. Its two limitations are named rather than hidden, and both are recorded
+    as residuals in the module docstring: an absent row is observable only on a day no
+    post-deploy item has written the bucket, so on a busy day a pre-deploy item's
+    decrement lands on the archetype row and the legacy row stays inflated until its
+    TTL; and an absent row means "no live row here" rather than "this insert was
+    pre-deploy", so a post-deploy INSERT that never reached this function makes its
+    item look pre-deploy on deletion.
 
     NOTHING IS ATTEMPTED AGAINST A ROW THIS DEPLOY WRITES. `legacy_pk` is built from a
     free-text, LLM-produced name — the one pk in this module not derived from a closed
