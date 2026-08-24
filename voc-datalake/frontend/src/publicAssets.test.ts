@@ -53,16 +53,29 @@ const FRONTEND_DIR = path.join(__dirname, '..')
  * are split on `/` rather than `path.sep`; using the platform separator would
  * silently stop collapsing `locales/en/common.json` to `locales` on Windows and
  * the inventory assertion would fail listing 121 files.
+ *
+ * `-z` is load-bearing, not stylistic. Without it `git ls-files` honours
+ * `core.quotePath`, which defaults to true, so any path containing a non-ASCII
+ * byte comes back C-quoted with octal escapes — `public/déad.js` is emitted as
+ * `"public/d\303\251ad.js"`. Every step below then breaks silently: the script
+ * regex is anchored with `$` and cannot match a name ending in a literal quote,
+ * so a published script would pass the check that exists to catch it, and the
+ * `^public/` strip is a no-op because the line starts with `"`. `-z` returns raw
+ * NUL-separated bytes instead, which also survives a path containing a newline
+ * (`split('\n')` would tear that one in half). `locales/` already spans eight
+ * languages, so non-ASCII filenames here are ordinary rather than exotic.
  */
 function trackedPublicPaths(): string[] {
   let stdout: string
 
   try {
-    stdout = execFileSync('git', ['ls-files', '--', 'public'], {
+    stdout = execFileSync('git', ['ls-files', '-z', '--', 'public'], {
       cwd: FRONTEND_DIR,
       encoding: 'utf8',
-      // Capture git's stderr instead of letting it leak into the test output,
-      // so it can be folded into the rethrown message below.
+      // Keep git's stderr out of the test output rather than letting it print
+      // above the assertion. `execFileSync` already appends the child's stderr
+      // to the thrown error's `message`, which is what the catch below
+      // interpolates — nothing here reads `error.stderr`.
       stdio: ['ignore', 'pipe', 'pipe'],
     })
   } catch (error) {
@@ -81,7 +94,7 @@ function trackedPublicPaths(): string[] {
   }
 
   return stdout
-    .split('\n')
+    .split('\0')
     .filter((line) => line.length > 0)
     .map((line) => line.replace(/^public\//, ''))
 }

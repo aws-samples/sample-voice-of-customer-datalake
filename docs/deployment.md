@@ -811,6 +811,16 @@ access logs or a `curl -I`; there is not one. This is the same trap already
 documented for `config.json` under "🔴 Never `aws s3 sync --delete` the website
 bucket": on this bucket a missing object is never a visible 404.
 
+That 200 is the steady state, not the first thing you see. Both deploy paths
+invalidate `/*` after pruning (the CDK `BucketDeployment` passes
+`distributionPaths: ['/*']`; `frontend/scripts/deploy.sh` runs an explicit
+`create-invalidation`), but the object leaves the bucket before the invalidation
+lands, so for that window CloudFront still serves the **old widget** from the
+edge — which fails at the network layer against the retired `/feedback-form/*`
+routes, not with a syntax error. It then flips to the `200`/`index.html` shell
+described above. "It still worked a minute ago, and now it breaks differently" is
+one removal, not two problems, and not a bad deploy.
+
 There is no `/feedback-forms/{form_id}/widget.js` route either, and requesting
 *that* fails to 404 for an unrelated reason. Because the per-form routes are
 declared explicitly rather than behind a `{proxy+}` (see above), a path that is

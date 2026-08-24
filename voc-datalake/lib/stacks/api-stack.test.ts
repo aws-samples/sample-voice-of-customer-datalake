@@ -413,7 +413,8 @@ describe('stack and callers stay in step', () => {
     // that finding was to state in prose that `widget.js` does NOT exist, so
     // scanning the whole page would fail on the very sentences that prevent the
     // mistake recurring. What is asserted is narrower and is the thing that
-    // matters — every URL offered for pasting resolves to a wired route.
+    // matters — every URL offered for pasting is one a customer's browser can
+    // actually call.
     const page = readRepoFile(...relativePath.split('/'));
     // `\r?` so a CRLF checkout matches. The pattern needs a newline straight
     // after the language tag, and without it every fence misses silently — the
@@ -435,11 +436,30 @@ describe('stack and callers stay in step', () => {
       'no ```html fence containing a /feedback-forms path — did the embed snippet move or its fence language change?',
     ).toBeGreaterThan(0);
 
-    const wiredPaths = new Set(apiMethods(apiTemplate()).map((m) => m.path));
+    // Resolved against the UNAUTHENTICATED subset, unlike the two caller checks
+    // above. Those run from an authorized context — `client.ts` carries a Cognito
+    // token and the widget source is inlined into a route that is already public
+    // — so "is it wired?" is their whole question. A docs snippet is the one
+    // caller for which wired is not enough: it executes in a stranger's browser
+    // with no credentials on somebody else's site, so pointing it at a wired but
+    // Cognito-protected per-form route (`submissions`, `stats`) hands out a
+    // 401/403 rather than a form. Asserting only "wired" leaves that green.
+    //
+    // Derived from the synthesized template rather than from
+    // INTENTIONALLY_PUBLIC_ROUTES, keeping this an independent oracle in the
+    // same shape as the handler-parity tests above. OPTIONS is excluded the way
+    // `nonOptions` does, since generated CORS preflights are unauthenticated by
+    // construction and would re-admit every path they cover.
+    const publicPaths = new Set(
+      nonOptions(apiTemplate()).filter((m) => m.authorizationType === 'NONE').map((m) => m.path),
+    );
     const referenced = callerFormsPaths(embedBlocks.join('\n'));
 
     expect(referenced.length).toBeGreaterThan(0);
-    expect(referenced.filter((path) => !wiredPaths.has(path))).toEqual([]);
+    expect(
+      referenced.filter((path) => !publicPaths.has(path)),
+      'the snippet names a path an unauthenticated browser cannot call — it is either unwired or behind Cognito',
+    ).toEqual([]);
   });
 
   it('has no proxy resource left without explicit method options', () => {
