@@ -281,8 +281,11 @@ const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g
  *  Takes the template as a PARAMETER rather than closing over `apiTemplate()`,
  *  which is what lets the orphan-key invariant run over both the default and the
  *  `skipFeedbackFormItemRoutes` shapes. One copy at module scope: three describe
- *  blocks below need it, and three near-identical private copies is the shape
- *  `sonarjs/no-identical-functions` exists to catch. */
+ *  blocks below need it, and three near-identical private copies is duplication
+ *  REVIEW has to catch here — no linter covers `lib/`. The only ESLint configs in
+ *  the tree are frontend/ and lambda/stream/, and the root `lint` script is
+ *  `lint:frontend && lint:stream && lint:python`, so nothing in this directory is
+ *  linted at all (the frontend config additionally ignores `**\/*.test.ts`). */
 function methodSettings(template: Template): { key: string; rate?: number; burst?: number }[] {
   const stages = Object.values(template.findResources('AWS::ApiGateway::Stage'));
 
@@ -965,11 +968,25 @@ describe('the public feedback-form routes', () => {
         // httpMethod (the deploy-probe finding recorded on methodOptions in
         // api-stack.ts), so demanding `/…/{proxy+}/ANY` would make this case
         // unsatisfiable rather than merely strict — it would fail against a
-        // correct, maximally-throttled stack. For such a method, any concrete-verb
-        // setting on the same path is the throttled form, which is how the /mcp
+        // correct, maximally-throttled stack. For such a method, a concrete-verb
+        // setting on the SAME path is the throttled form, which is how the /mcp
         // proxy entries are spelled.
+        //
+        // "Same path" is compared by splitting each setting key at its LAST `/`
+        // and requiring equality, not with `startsWith`. A prefix test also
+        // matches DESCENDANTS, so a setting on `/webhooks/some-plugin/POST` would
+        // excuse an un-throttled ANY method on `/webhooks` — a false negative, and
+        // the wrong direction for a guard whose job is to flag a public route
+        // riding the stage default.
+        //
+        // NO CURRENT FIXTURE EXERCISES THIS BRANCH: no manifest declares a webhook
+        // (pinned by the sibling case above), and every `addProxy({ anyMethod:
+        // true })` in api-stack.ts passes `authMethodOptions`, so no template here
+        // holds an unauthenticated ANY route. Its correctness rests on reading
+        // rather than on a passing assertion — which is why the predicate is
+        // written to be exact rather than merely sufficient for today's template.
         .filter(({ path, verb, key }) => (verb === 'ANY'
-          ? ![...settings.keys()].some((k) => k.startsWith(`${path}/`) && explicitPair(k))
+          ? ![...settings.keys()].some((k) => k.slice(0, k.lastIndexOf('/')) === path && explicitPair(k))
           : !explicitPair(key)))
         .map(({ key }) => key);
 
@@ -995,8 +1012,8 @@ describe('the public feedback-form routes', () => {
     // no, when it states a number a deploy can contradict.
     //
     // Deliberately asserts only the NUMBERS, and only that each route's own pair
-    // appears on a line naming that route: the prose around them is explanatory
-    // and should stay free to be reworded without a test edit.
+    // appears on a line stating that route's limit: the prose around them is
+    // explanatory and should stay free to be reworded without a test edit.
     //
     // PER ROUTE rather than per document, which a first version got wrong and a
     // mutation caught: searching the whole file for "100 … 200" passes even after
@@ -1004,37 +1021,130 @@ describe('the public feedback-form routes', () => {
     // pair elsewhere in the file. Scoping the search to lines that name the route
     // is what makes a single stale row fail. The docs are read from the repo ROOT,
     // one level above `voc-datalake`.
+    //
+    // That scoping fixed the CROSS-ROUTE false pass and left the WITHIN-LINE one.
+    // Any "do these digits occur on the line" predicate is satisfied by a row that
+    // states the WRONG limit and mentions the right one in passing — `| GET /config
+    // | 20 rps / 40 | was 100 rps / 200 before |` matches 100/200 — and prose beside
+    // a number ("raised from 100 to 250", or a "Why" column citing another route's
+    // figures) is exactly how a doc goes stale.
+    //
+    // Requiring the two numbers to be ADJACENT does not close it either: in `was
+    // 100 rps / 200 before` the correct pair IS adjacent, so that row still passes.
+    // Checked against the falsified row before settling on the predicate below.
+    //
+    // So it is not a search. Each candidate line is PARSED for the pair it STATES —
+    // the first `<n> rps|req/s … <n>` on it — and that pair is compared to the
+    // template's numerically. A stale row fails because what it states is 20/40,
+    // whatever else the line goes on to mention: the property asserted is "this row
+    // is correct", not "the right digits are present somewhere on it". Both
+    // phrasings parse: "100 req/s, burst 200" and "**100 rps / 200**".
+    //
+    // Candidates are lines that STATE A LIMIT, i.e. that name the route AND carry
+    // a rate token, rather than every line mentioning the route. That is what keeps
+    // two kinds of line out of the candidate set: the embed snippet in
+    // docs/feedback-forms.md (`src="…/{form_id}/iframe"`, which carries a digit in
+    // `/v1/` and so survives a bare digit filter), and the 429-symptom table, whose
+    // rows name each route and say nothing about its ceiling. A "must be a markdown
+    // table row" test would exclude the snippet too, but not the symptom rows, and
+    // it would exclude the BALLOT figure below, which is stated in prose.
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
+    const FORMS = 'docs/feedback-forms.md';
+    const STEERING = '.kiro/steering/structure.md';
+
+    /** Each figure a document publishes, and which documents publish it.
+     *
+     *  The two BALLOT routes are here as well as the three form ones, answering a
+     *  review question rather than only the task's scope. They share
+     *  `publicRouteThrottle` with the widget's `submit` today, so they cannot drift
+     *  from it while that constant is shared — but the named follow-up (a per-form
+     *  submission cap) is precisely the thing that would DECOUPLE them, moving the
+     *  form figure and leaving the ballot prose behind with the suite still green.
+     *  Pinning both costs two lines and removes that trap. */
     const documented = [
-      { suffix: '/config', setting: settings.get('/feedback-forms/{form_id}/config/GET') },
-      { suffix: '/iframe', setting: settings.get('/feedback-forms/{form_id}/iframe/GET') },
-      { suffix: '/submit', setting: settings.get('/feedback-forms/{form_id}/submit/POST') },
+      { names: '/config', setting: settings.get('/feedback-forms/{form_id}/config/GET'), docs: [FORMS, STEERING] },
+      { names: '/iframe', setting: settings.get('/feedback-forms/{form_id}/iframe/GET'), docs: [FORMS, STEERING] },
+      { names: '/submit', setting: settings.get('/feedback-forms/{form_id}/submit/POST'), docs: [FORMS, STEERING] },
+      { names: '/voting-sessions', setting: settings.get('/voting-sessions/{session_id}/config/GET'), docs: [STEERING] },
     ];
 
-    for (const { suffix, setting } of documented) {
+    for (const { names, setting } of documented) {
       // Guards the case itself: an absent setting would search for "undefined" and
       // every assertion below would fail confusingly rather than say what is wrong.
-      expect(setting, `${suffix} has no method-level throttle to document`).toBeDefined();
+      expect(setting, `${names} has no method-level throttle to document`).toBeDefined();
     }
 
-    for (const doc of ['docs/feedback-forms.md', '.kiro/steering/structure.md']) {
+    /** A line stating a rate limit, in either document's phrasing. */
+    const statesALimit = (line: string) => /\b(?:rps|req\/s)\b/.test(line);
+
+    /** The pair a line STATES: the first `<rate> rps|req/s … <burst>` on it.
+     *
+     *  Parsing rather than searching is what makes a falsified row fail. `\d+`
+     *  immediately before the rate token is the rate; the next number after it is
+     *  the burst, whether the separator is `, burst ` or ` / `. Anything the line
+     *  says AFTERWARDS — including a correct pair quoted as history — is not what
+     *  the row states and cannot rescue it. */
+    const statedPair = (line: string): { rate: number; burst: number } | undefined => {
+      const match = /(\d+)\s*(?:rps|req\/s)[^0-9]*(\d+)/.exec(line);
+      return match ? { rate: Number(match[1]), burst: Number(match[2]) } : undefined;
+    };
+
+    for (const doc of [FORMS, STEERING]) {
       const lines = readFileSync(join(__dirname, '..', '..', '..', ...doc.split('/')), 'utf-8').split('\n');
 
-      for (const { suffix, setting } of documented) {
-        // The two docs phrase a pair differently ("100 req/s, burst 200" vs
-        // "**100 rps / 200**"), and the steering file groups the two reads onto one
-        // row, so the match is "the two numbers in order, on a line naming this
-        // route" rather than either phrasing or a per-route row.
-        const pair = new RegExp(`\\b${setting?.rate}\\b.*?\\b${setting?.burst}\\b`);
-        const rows = lines.filter((line) => line.includes(suffix) && /\d/.test(line));
+      for (const { names, setting } of documented.filter((d) => d.docs.includes(doc))) {
+        // The steering file groups the two reads onto one row, so a route may be
+        // documented by more than one line and it is enough that ONE of them states
+        // the right pair — but each candidate is judged by the pair IT states.
+        const rows = lines.filter((line) => line.includes(names) && statesALimit(line));
 
-        expect(rows.length, `${doc} documents no rate limit for ${suffix}`).toBeGreaterThan(0);
+        expect(rows.length, `${doc} documents no rate limit for ${names}`).toBeGreaterThan(0);
         expect(
-          rows.some((line) => pair.test(line)),
-          `${doc} is stale for ${suffix}: expected ${setting?.rate}/${setting?.burst}`,
-        ).toBe(true);
+          rows.map(statedPair),
+          `${doc} is stale for ${names}: expected ${setting?.rate}/${setting?.burst}`,
+        ).toContainEqual({ rate: setting?.rate, burst: setting?.burst });
       }
     }
+  });
+
+  it('finds no THIRD document stating these numbers unpinned', () => {
+    // The case above reads a HARDCODED LIST OF TWO FILES, which is the same "fix
+    // the instance, not the class" shape the converse throttle invariant was added
+    // to avoid: a third document stating these figures would drift with nothing
+    // to stop it, and nothing would point that out. This is the class-level half —
+    // it enumerates every markdown file in the repository and fails if one states
+    // a rate limit for these routes without being in the pinned list.
+    //
+    // Cheap enough to be worth it (a few dozen small files) and it answers the
+    // second half of the review question: prose is not exempt, and the exemption
+    // cannot be obtained by writing the numbers somewhere the lockstep does not
+    // look.
+    const ROOT = join(__dirname, '..', '..', '..');
+    const PINNED = ['docs/feedback-forms.md', '.kiro/steering/structure.md'];
+    const SKIP = new Set(['node_modules', '.git', 'dist', 'coverage', '.venv', 'cdk.out']);
+
+    const markdownFiles = (dir: string, prefix = ''): string[] => readdirSync(dir, { withFileTypes: true })
+      .flatMap((entry) => {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) return SKIP.has(entry.name) ? [] : markdownFiles(join(dir, entry.name), rel);
+        return entry.name.endsWith('.md') ? [rel] : [];
+      });
+
+    const ROUTES = ['/feedback-forms', '/voting-sessions'];
+    const stating = markdownFiles(ROOT).filter((rel) => {
+      const lines = readFileSync(join(ROOT, ...rel.split('/')), 'utf-8').split('\n');
+      return lines.some((line) => /\b(?:rps|req\/s)\b/.test(line) && ROUTES.some((r) => line.includes(r)));
+    });
+
+    expect(
+      stating.filter((rel) => !PINNED.includes(rel)).sort(),
+      'a markdown file states a public-route rate limit but is not read by the lockstep case above — '
+      + 'add it to that case\'s document list, or remove the figures and point at api-stack.ts',
+    ).toEqual([]);
+
+    // And the converse: a pinned document that stops stating them would leave the
+    // case above asserting nothing, so both must still be in the discovered set.
+    expect(PINNED.filter((rel) => !stating.includes(rel))).toEqual([]);
   });
 
   // No "adds no public route" case here: that is `VocApiStack authorization
