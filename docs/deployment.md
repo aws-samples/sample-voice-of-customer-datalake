@@ -797,11 +797,30 @@ A second, stale copy used to be published to the CDN from
 snippet points at the website bucket (`https://<distribution>/feedback-widget.js`),
 repoint it at the iframe embed rather than restoring the file.
 
-There is no `/feedback-forms/{form_id}/widget.js` route, and requesting one does
-not 404. Because the per-form routes are declared explicitly rather than behind a
-`{proxy+}` (see above), a path that is not wired never reaches the Lambda, so API
-Gateway answers **403 `Missing Authentication Token`**. Treat that 403 on a
-`widget.js` URL as "this route does not exist", not as an authorization problem.
+🪤 **That bucket URL does not start 404ing now the object is pruned — it returns
+`200` carrying the SPA's `index.html`.** The frontend distribution maps
+`404 -> 200 /index.html` so client-side routes resolve (`core-stack.ts`, pinned
+by `core-stack.test.ts`'s "still routes SPA deep links via the 404 rule"), and
+custom error responses are distribution-wide, so the rule catches a deleted asset
+exactly as it catches a deep link. An old
+`<script src="https://<distribution>/feedback-widget.js">` therefore parses HTML
+as JavaScript and fails with `Uncaught SyntaxError: Unexpected token '<'`,
+followed by `VoCFeedbackForm is not defined` — which reads as "the widget is
+broken" rather than "that file is gone". Do not go looking for a 404 in the
+access logs or a `curl -I`; there is not one. This is the same trap already
+documented for `config.json` under "🔴 Never `aws s3 sync --delete` the website
+bucket": on this bucket a missing object is never a visible 404.
+
+There is no `/feedback-forms/{form_id}/widget.js` route either, and requesting
+*that* fails to 404 for an unrelated reason. Because the per-form routes are
+declared explicitly rather than behind a `{proxy+}` (see above), a path that is
+not wired never reaches the Lambda, so API Gateway answers
+**403 `Missing Authentication Token`**. Treat that 403 on a `widget.js` URL as
+"this route does not exist", not as an authorization problem.
+
+Worth holding the two apart, because a broken embed can land on either: a pruned
+**bucket** object answers `200` with HTML, an unwired **API** path answers `403`.
+Neither answers the 404 that would have made the cause obvious.
 
 ### CloudFront Cache
 

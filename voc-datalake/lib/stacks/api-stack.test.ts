@@ -415,12 +415,28 @@ describe('stack and callers stay in step', () => {
     // mistake recurring. What is asserted is narrower and is the thing that
     // matters — every URL offered for pasting resolves to a wired route.
     const page = readRepoFile(...relativePath.split('/'));
-    const htmlBlocks = [...page.matchAll(/```html\n([\s\S]*?)```/g)].map(([, body]) => body).join('\n');
+    // `\r?` so a CRLF checkout matches. The pattern needs a newline straight
+    // after the language tag, and without it every fence misses silently — the
+    // same no-op the assertion below exists to rule out.
+    const htmlBlocks = [...page.matchAll(/```html\r?\n([\s\S]*?)```/g)].map(([, body]) => body);
 
-    expect(htmlBlocks.length, 'no ```html snippet found — did the fence language change?').toBeGreaterThan(0);
+    // Assert the EMBED snippet was found, not merely that some fence was.
+    // Counting all html fences (or worse, the character length of their joined
+    // bodies, which is what this line used to do) is satisfiable by any
+    // unrelated block — a theming or <div> example — so retagging the embed to
+    // ```markdown, or leaving it untagged, would silently reduce the guard to
+    // checking nothing while still reporting green. Requiring a fence that
+    // actually mentions the route scopes the check to the snippet whose
+    // correctness is the point.
+    const embedBlocks = htmlBlocks.filter((body) => body.includes('/feedback-forms'));
+
+    expect(
+      embedBlocks.length,
+      'no ```html fence containing a /feedback-forms path — did the embed snippet move or its fence language change?',
+    ).toBeGreaterThan(0);
 
     const wiredPaths = new Set(apiMethods(apiTemplate()).map((m) => m.path));
-    const referenced = callerFormsPaths(htmlBlocks);
+    const referenced = callerFormsPaths(embedBlocks.join('\n'));
 
     expect(referenced.length).toBeGreaterThan(0);
     expect(referenced.filter((path) => !wiredPaths.has(path))).toEqual([]);

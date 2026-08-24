@@ -69,10 +69,13 @@ The iframe route returns a self-contained HTML page: the Lambda inlines
 with the form's `config` and `submit` endpoints already wired, so nothing else
 needs loading.
 
-There is no standalone `widget.js` script to load. `/feedback-forms/{form_id}/`
-exposes exactly three public routes — `config`, `submit` and `iframe` — so a
-`<script src=".../widget.js">` tag fetches a path that is not wired and gets a
-`403 Missing Authentication Token` back from API Gateway, not the widget.
+There is no standalone `widget.js` script to load. That path is registered
+nowhere — not by the handler and not by the API — so a
+`<script src=".../widget.js">` tag never reaches the application at all and gets
+a `403 Missing Authentication Token` back from API Gateway, not the widget. The
+403 means "no such route" here rather than "not allowed": per-form paths are
+declared one by one instead of behind a catch-all, so an unregistered one has
+nothing to answer it.
 
 ## Pre-Categorization
 
