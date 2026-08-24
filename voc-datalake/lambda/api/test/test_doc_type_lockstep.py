@@ -96,10 +96,21 @@ def _api_client_doc_type_sets() -> dict[str, frozenset[str]]:
         if not path.is_file():
             continue
         enclosing = None
+        enclosing_column = -1
         for line_number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-            start = method_start.search(line)
-            if start:
-                enclosing = start.group(1)
+            # COLUMN-SCOPED, because a function-typed field NESTED in the request
+            # body — `onProgress: (pct: number) => void`, an abort-signal factory,
+            # any callback — also matches `name: (`. Taking every match would
+            # reassign `enclosing` to that field and silently skip the real
+            # annotation below it, returning an empty set with nothing saying so.
+            # A nested field is indented deeper than the method that contains it,
+            # so only a match at the same or lower column can END the method:
+            # `generateDocument` in projectsApi.ts sits at column 2 with its body
+            # fields at 4, and in client.ts the whole signature is one line where
+            # the method is the leftmost match.
+            for start in method_start.finditer(line):
+                if enclosing is None or start.start() <= enclosing_column:
+                    enclosing, enclosing_column = start.group(1), start.start()
             if enclosing != 'generateDocument':
                 continue
             for raw in annotation.findall(line):
@@ -125,12 +136,17 @@ class TestDocTypeLockstep:
             f'was the type renamed, or reformatted across lines?'
         )
         client_sets = _api_client_doc_type_sets()
-        # Both generateDocument signatures, or the parser has stopped finding one
-        # of them and is silently comparing less than it claims to.
-        assert len(client_sets) == len(API_CLIENT_SOURCES), (
-            f'expected one generateDocument doc_type annotation in each of '
-            f'{API_CLIENT_SOURCES}, parsed {sorted(client_sets)} — was the method '
-            f'renamed, or the request-body signature extracted into a named type? '
+        # PER FILE, not a total. `found` is keyed "file:line", so a bare
+        # `len(client_sets) == 2` is satisfied by two annotations parsed from one
+        # source while the other is entirely unparsed — which is precisely the mode
+        # this control exists to exclude, so counting the total lets through the
+        # only thing it is for.
+        parsed_sources = sorted({where.split(':')[0] for where in client_sets})
+        assert parsed_sources == sorted(API_CLIENT_SOURCES), (
+            f'expected a generateDocument doc_type annotation in EACH of '
+            f'{sorted(API_CLIENT_SOURCES)}, parsed only {parsed_sources} '
+            f'(declarations found: {sorted(client_sets)}) — was the method renamed, '
+            f'or the request-body signature extracted into a named type? '
             f'If so, point this parser at it.'
         )
 

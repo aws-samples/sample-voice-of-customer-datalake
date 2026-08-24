@@ -628,10 +628,52 @@ class TestGenerateDocumentDocType:
         mock_invoke.assert_not_called()
 
     @pytest.mark.parametrize('raw_body', [
+        '{not json',        # never parses at all
+        '   ',              # whitespace only: truthy, so it IS parsed, and fails
+    ], ids=['malformed', 'whitespace'])
+    def test_an_unparseable_body_answers_400_not_500(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        """The third way this body can fail, which a hand-rolled shape check misses.
+
+        `json_body` is a cached_property calling `json.loads`, so unparseable JSON
+        raises `JSONDecodeError` AT THE ATTRIBUTE READ — before any isinstance
+        check can run — and reaches the handler's catch-all as a 500. Only reading
+        the body through `_json_object_body`, whose `except ValueError` branch owns
+        this case, turns it into the 400 the caller can act on.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+        )
+        event['body'] = raw_body
+
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        # Names the body as the problem, not the shape: this one never parsed.
+        assert 'must be JSON' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    @pytest.mark.parametrize('raw_body', [
         'null',     # an explicit JSON null body
         None,       # no body at all
         '{}',       # an empty JSON object
-    ], ids=['json_null', 'absent', 'empty_object'])
+        # A ZERO-LENGTH body, which is what a real client sends with
+        # Content-Length: 0 — different bytes on the wire from the JSON string
+        # `""` two tests up, and the opposite answer. It defaults, but NOT via the
+        # `body is None` branch: powertools' `json_body` returns None for a falsy
+        # `decoded_body` without parsing it, so `''` never reaches the shape check.
+        # That makes this route's answer here rest on a library detail, which is
+        # exactly why it is pinned rather than left to be rediscovered.
+        '',
+    ], ids=['json_null', 'absent', 'empty_object', 'zero_length'])
     def test_an_absent_body_still_defaults_to_prd(
         self, api_gateway_event, lambda_context, raw_body
     ):
@@ -752,17 +794,27 @@ class TestGenerateDocumentDocType:
         from projects_handler import api_generate_document
 
         source = inspect.getsource(api_generate_document)
-        assignment = next(
-            (line for line in source.splitlines() if line.strip().startswith('is_chain')),
+        lines = source.splitlines()
+        first = next(
+            (i for i, line in enumerate(lines) if line.strip().startswith('is_chain')),
             None,
         )
-        assert assignment is not None, 'no is_chain assignment found in api_generate_document'
+        assert first is not None, 'no is_chain assignment found in api_generate_document'
+        # The whole STATEMENT, not just its first line: wrapped as
+        # `is_chain = (\n    doc_type in ...)` a line-only check would inspect the
+        # `is_chain = (` half and a re-declared literal on the continuation would
+        # pass unseen. Consume lines until the brackets balance.
+        assignment = ''
+        for line in lines[first:]:
+            assignment += line
+            if assignment.count('(') == assignment.count(')'):
+                break
         assert 'GENERATED_DOC_TYPES' in assignment, (
             f'the routing predicate must read the allowlist constant, not a second '
             f'copy of its literal: {assignment.strip()}'
         )
-        # No quoted doc type on that line, which is what a re-declared literal
-        # would look like however it were spelled or spaced.
+        # No quoted doc type in the statement, which is what a re-declared literal
+        # would look like however it were spelled, spaced or wrapped.
         assert "'prd'" not in assignment and "'prfaq'" not in assignment
 
 

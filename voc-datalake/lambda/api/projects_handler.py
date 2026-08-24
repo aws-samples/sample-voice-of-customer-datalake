@@ -381,26 +381,13 @@ def api_generate_document(project_id: str):
     generator's dispatch, NOT about this route's input: see
     GENERATED_DOC_TYPES above for why this route accepts two values.
     """
-    # Read the parsed body ONCE and inspect its shape before any coercion. The
-    # obvious `json_body or {}` cannot do this job: `or` collapses every falsy
-    # value first, so `[]`, `false`, `0` and `""` would arrive at the check below
-    # already disguised as an empty object and start a default `prd` generation —
-    # the exact unvalidated entry this route is being closed against.
-    #
-    # Only a genuinely absent body (no body, or a literal JSON `null`) defaults.
-    # That is the behaviour this route has always had and the SPA relies on it,
-    # so it is preserved deliberately rather than swept into the refusal.
-    body = app.current_event.json_body
-    if body is None:
-        body = {}
-    # A body that parses to a list or a scalar reaches `.get` below and raises
-    # AttributeError, which the handler's catch-all turns into a 500. A 400 is
-    # the honest answer: the fault is in the request, and a caller (or the SPA's
-    # error handling) can act on a 400 where a 500 reads as "retry, the server is
-    # broken". The sibling generation routes share this gap; fixing it here is
-    # scoped to the route this change is about.
-    if not isinstance(body, dict):
-        raise ValidationError('request body must be a JSON object')
+    # The file's existing helper rather than a third spelling of it: it already
+    # answers 400 for the three ways this body can fail to be an object
+    # (unparseable, absent, parses-to-not-a-dict), and hand-rolling a subset here
+    # omitted its unparseable-JSON branch — `{not json` raised JSONDecodeError at
+    # the `json_body` read and the catch-all reported a malformed REQUEST as a
+    # server fault. See its docstring for the full reasoning.
+    body = _json_object_body()
     # Validated BEFORE create_job, so a rejected request leaves no job row
     # describing work nobody will do, and bills no Bedrock call.
     doc_type = _validated_doc_type(body.get('doc_type'))
@@ -834,15 +821,28 @@ def _json_object_body() -> dict:
     counted as an error, with nothing the page can say about it. Probed before
     fixing: `[1,2]`, `"hi"` and `{not json` each answered 500.
 
+    The `or {}` idiom is wrong in a THIRD way, and it is the quietest: `or`
+    collapses every falsy value, so `[]`, `false`, `0` and `""` arrive at any
+    later isinstance check already disguised as an empty object and are accepted
+    as "no body". On a route that starts a billed job from the body, that is an
+    unvalidated entry rather than a 500. Hence `is None`, not `or`: only a
+    genuinely absent body (no body, or a literal JSON `null`) defaults.
+
+    A zero-length body (`Content-Length: 0`) also defaults, though by a route
+    outside this helper: powertools' `json_body` returns None for a falsy
+    `decoded_body` without parsing it, so `''` reaches the `is None` branch below
+    rather than the refusal. Same answer as an absent body, which is the intended
+    one — pinned by test rather than left resting on that library detail.
+
     Deliberately the same helper, with the same name and contract, as
     `ballots_handler._json_object_body` — one idiom rather than two spellings of it.
     Not extracted into `shared/` while it has two copies; the third one should do
     that rather than a second refactor of the first two.
 
-    SCOPE: applied to the prioritization routes only. The other bodies in this
-    module have the same latent shape and predate this change, and sweeping ~20
-    pre-existing routes is its own reviewable diff rather than a rider on a
-    data-model change.
+    SCOPE: the prioritization routes and `api_generate_document`. The other bodies
+    in this module have the same latent shape and predate this change, and
+    sweeping ~20 pre-existing routes is its own reviewable diff rather than a
+    rider on a change to one route.
     """
     try:
         body = app.current_event.json_body

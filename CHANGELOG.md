@@ -29,8 +29,9 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   have their own routes (`POST .../build-prototype`, `POST .../product-report`); use those instead.
 - **The same route now answers 400 when the request body is present but is not a JSON object** —
   an array, string, number or boolean, including the falsy ones (`[]`, `false`, `0`, `""`). These
-  previously started a default `prd` generation. A body that is absent altogether, or a literal
-  JSON `null`, still means "generate a PRD with the defaults" and is unchanged.
+  previously started a default `prd` generation. Unparseable JSON is a 400 too, where it was
+  previously a 500. A body that is absent altogether, a literal JSON `null`, or zero-length
+  (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
 
 ## [0.2.0] - 2026-08-19
 
