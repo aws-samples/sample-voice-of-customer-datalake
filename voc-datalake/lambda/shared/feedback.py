@@ -6,6 +6,7 @@ and job Lambdas (document generator, document merger).
 
 import logging
 import re
+from collections.abc import Iterable
 from datetime import datetime, timezone, timedelta
 
 from boto3.dynamodb.conditions import Key
@@ -194,7 +195,7 @@ def persona_bucket(item: dict) -> str:
     return persona if persona in PERSONA_ARCHETYPES else PERSONA_UNKNOWN
 
 
-def has_legacy_persona_buckets(buckets) -> bool:
+def has_legacy_persona_buckets(buckets: Iterable[str]) -> bool:
     """Does this persona breakdown contain a bucket the current axis cannot write?
 
     🔑 A READ-SIDE HONESTY FLAG, and the reason it exists is the transition note at
