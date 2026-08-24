@@ -309,15 +309,12 @@ def api_run_research(project_id: str):
 
 DEFAULT_GENERATED_DOC_TYPE = 'prd'
 
-# What POST /projects/{id}/document accepts in `doc_type`. TWO values, and the
-# narrowness is the point: this one body field steers the job type
-# (`generate_{doc_type}`), the execution path (chain vs single-shot invoke) and
-# the generator's DynamoDB sort key (`{doc_type.upper()}#{doc_id}`), and every
-# attempt bills a Bedrock call.
+# What POST /projects/{id}/document accepts in `doc_type`. Mirrored in the
+# frontend's `DocType` union; `test_doc_type_lockstep.py` fails if the two drift.
 #
 # ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
-# `build_prototype`, `product_report`) and the docstring below names the latter
-# two, which reads like an argument for admitting them here. It isn't:
+# `build_prototype`, `product_report`) and this route's docstring names the
+# latter two, which reads like an argument for admitting them here. It isn't:
 #   * `build_prototype` and `product_report` have their OWN routes
 #     (POST .../build-prototype, POST .../product-report). Each builds its own
 #     `doc_config` with its own hardcoded `doc_type` and validates its own
@@ -330,11 +327,23 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # while widening it would re-open here the unvalidated entry those two
 # deliberately avoid. The docstring sentence is about which generator paths stay
 # single-shot, not about what this route accepts.
+#
+# NOT SHARED with POST .../documents/suggest-brief, which reads `doc_type`
+# unchecked too (`projects.suggest_document_brief`). There the value only picks a
+# prompt label (`'PR-FAQ' if doc_type == 'prfaq' else 'PRD'`) and never reaches a
+# key, a job type or a routing decision, so an unrecognised value mislabels one
+# prompt rather than writing an unrecognised sort key — a different blast radius,
+# and a separate change if it is wanted.
 GENERATED_DOC_TYPES = ('prd', 'prfaq')
 
 
 def _validated_doc_type(raw: Any) -> str:
     """Resolve the `doc_type` a document-generation request asked for.
+
+    This one body field steers the job type (`generate_{doc_type}`), the
+    execution path (chain vs single-shot invoke) and the generator's DynamoDB
+    sort key (`{doc_type.upper()}#{doc_id}`) — and every attempt bills a Bedrock
+    call, which is why it is matched rather than coerced.
 
     Absent (or JSON null — `dict.get` cannot tell one from the other) means
     `prd`, which is the behaviour this route has always had. Anything outside
@@ -345,8 +354,14 @@ def _validated_doc_type(raw: Any) -> str:
     if raw is None:
         return DEFAULT_GENERATED_DOC_TYPE
     if raw not in GENERATED_DOC_TYPES:
+        # Type name but NOT the value, following `validate_bool`'s reasoning in
+        # shared/api.py: the type is the diagnostic a caller sending `[]` or `7`
+        # needs, while the value is unbounded caller input that echoing back
+        # buys nothing they do not already have. The resolver's ValidationError
+        # handler logs this same message, so the type reaches CloudWatch too.
         raise ValidationError(
-            'doc_type must be one of: ' + ', '.join(GENERATED_DOC_TYPES)
+            f'doc_type must be one of: {", ".join(GENERATED_DOC_TYPES)} '
+            f'(got {type(raw).__name__})'
         )
     return raw
 
@@ -367,29 +382,50 @@ def api_generate_document(project_id: str):
     GENERATED_DOC_TYPES above for why this route accepts two values.
     """
     body = app.current_event.json_body or {}
+    # A body that parses to a list or a scalar reaches `.get` below and raises
+    # AttributeError, which the handler's catch-all turns into a 500. A 400 is
+    # the honest answer: the fault is in the request, and a caller (or the SPA's
+    # error handling) can act on a 400 where a 500 reads as "retry, the server is
+    # broken". The sibling generation routes share this gap; fixing it here is
+    # scoped to the route this change is about.
+    if not isinstance(body, dict):
+        raise ValidationError('request body must be a JSON object')
     # Validated BEFORE create_job, so a rejected request leaves no job row
     # describing work nobody will do, and bills no Bedrock call.
     doc_type = _validated_doc_type(body.get('doc_type'))
-    # Written back so the stored config and the generator see the value this
-    # route resolved: the generator's own `doc_config.get('doc_type', 'prd')`
-    # would read an explicit null as null rather than as the default.
-    body['doc_type'] = doc_type
-    job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', body, status='pending')
+    # A COPY, so the resolved value reaches the stored config without rewriting
+    # the request as received: `json_body` is a cached_property, and mutating it
+    # would mean any later read (middleware, an audit log, a second handler
+    # read) silently sees this route's rewrite rather than what the caller sent.
+    #
+    # The resolved value has to be in it either way — the generator's own
+    # `doc_config.get('doc_type', 'prd')` reads an explicit null as null rather
+    # than as the default, and a null crashes it on `.upper()` after the job row
+    # already exists.
+    doc_config = {**body, 'doc_type': doc_type}
+    job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', doc_config, status='pending')
 
     state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
-    is_chain = doc_type in ('prd', 'prfaq')
+    # The constant, not a second copy of its literal: a re-declared allowlist
+    # here could disagree with the one the route validates against, sending a
+    # newly accepted value down the single-shot path with nothing saying why.
+    # After `_validated_doc_type` this is always true today, so the branch below
+    # turns solely on the state machine being configured — it is kept because
+    # "which doc types are multi-step chains" and "which doc types this route
+    # accepts" are two questions that happen to share an answer, not one.
+    is_chain = doc_type in GENERATED_DOC_TYPES
 
     if state_machine_arn and is_chain:
         boto3.client('stepfunctions').start_execution(
             stateMachineArn=state_machine_arn,
             name=job_id,
-            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'doc_config': body})
+            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'doc_config': doc_config})
         )
     else:
         invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
             'project_id': project_id,
             'job_id': job_id,
-            'doc_config': body
+            'doc_config': doc_config
         })
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': f'{doc_type.upper()} generation started.'}
 

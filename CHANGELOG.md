@@ -10,6 +10,24 @@ releases, so a minor bump may carry changes that would be breaking in a `1.x` pr
 The version recorded here is the one in the `package.json` files. It is **not** what the dashboard
 displays: the UI's build identifier is the short git commit SHA, injected at build time.
 
+## [Unreleased]
+
+### Security
+
+- `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
+  `prfaq` before creating the job. The field steered the job type, the execution path and the
+  generated document's DynamoDB sort key straight from the request body, and each attempt billed a
+  model call.
+
+### Upgrade notes
+
+- **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
+  `prfaq`, and for a request body that is not a JSON object.** The web app is unaffected — it only
+  ever sends those two values — but a script or integration calling this route directly with
+  `build_prototype`, `product_report`, an empty string or a non-object body was previously accepted.
+  `build_prototype` and `product_report` have their own routes
+  (`POST .../build-prototype`, `POST .../product-report`); use those instead.
+
 ## [0.2.0] - 2026-08-19
 
 The first release since the platform moved from a single-stack sample to a workspace covering

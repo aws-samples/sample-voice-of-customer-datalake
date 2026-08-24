@@ -2,6 +2,7 @@
 Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
+import os
 from unittest.mock import patch
 
 import pytest
@@ -451,6 +452,10 @@ class TestGenerateDocumentDocType:
     their own doc_config, and this handler has no internal callers — so
     narrowing it cannot affect them. Reverting the guard fails the rejection
     tests below; widening it to four fails them too.
+
+    The body SHAPE is checked here too: a body that parses to a list or a scalar
+    used to raise AttributeError on `body.get` and answer 500, which reads as a
+    server fault for what is a malformed request.
     """
 
     @staticmethod
@@ -562,6 +567,116 @@ class TestGenerateDocumentDocType:
         mock_create_job.assert_not_called()
         mock_invoke.assert_not_called()
 
+    def test_the_refusal_names_the_received_type(
+        self, api_gateway_event, lambda_context
+    ):
+        """The type is the diagnostic a caller sending the wrong shape needs, and
+        `validate_bool` in shared/api.py records the same reasoning: name the
+        type, never echo the value back."""
+        response, _, _ = self._post(
+            api_gateway_event, lambda_context, {'doc_type': 7, 'title': 'A feature'},
+        )
+        error = json.loads(response['body'])['error']
+        assert 'got int' in error
+        # The value itself stays out of the response: it is unbounded caller
+        # input and echoing it buys the caller nothing they do not have.
+        assert '7' not in error
+
+    @pytest.mark.parametrize('raw_body', [
+        '[1, 2]',       # a JSON array
+        '"prd"',        # a bare JSON string
+        '7',            # a bare JSON number
+        'true',         # a bare JSON boolean
+    ], ids=['array', 'string', 'number', 'boolean'])
+    def test_a_non_object_body_answers_400_not_500(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        """A malformed body is the caller's fault, so it gets a 400 naming the
+        problem. Before the isinstance guard these raised AttributeError on
+        `body.get` and the handler's catch-all answered 500 — which reads as a
+        server fault and which a client retries differently."""
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+        )
+        # Set verbatim rather than through the fixture's `body=`, which JSON-encodes
+        # a dict: the point is a payload that parses to a NON-dict.
+        event['body'] = raw_body
+
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert 'JSON object' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    def test_the_request_body_is_not_mutated_by_the_write_back(
+        self, api_gateway_event, lambda_context
+    ):
+        """The resolved doc_type reaches the stored config through a COPY.
+
+        `json_body` is a cached_property, so writing into it would rewrite the
+        request as received for the rest of the invocation — any later read
+        (middleware, an audit log) would see this route's resolution rather than
+        what the caller sent.
+        """
+        from projects_handler import app, lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+            body={'doc_type': None, 'title': 'A feature'},
+        )
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async'):
+            lambda_handler(event, lambda_context)
+
+        # The STORED config carries the resolved value...
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+        # ...while the parsed request still carries the null the caller sent.
+        assert app.current_event.json_body['doc_type'] is None
+
+    @pytest.mark.parametrize('doc_type', ['prd', 'prfaq'])
+    def test_an_accepted_doc_type_reaches_the_state_machine(
+        self, api_gateway_event, lambda_context, doc_type
+    ):
+        """The chain path, which the other cases never reach.
+
+        With no DOCUMENT_STATE_MACHINE_ARN in the test environment every other
+        test here lands on the single-shot invoke, so without this the validated
+        value was never observed reaching the Step Functions input — the path
+        production actually runs.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+            body={'doc_type': doc_type, 'title': 'A feature'},
+        )
+        with patch.dict(os.environ, {'DOCUMENT_STATE_MACHINE_ARN': 'arn:aws:states:us-east-1:1:sm/doc'}), \
+                patch('projects_handler.create_job', return_value=('job-1', {})), \
+                patch('projects_handler.boto3.client') as mock_client, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert json.loads(response['body'])['success'] is True
+        start_execution = mock_client.return_value.start_execution
+        start_execution.assert_called_once()
+        # The validated value reaches the state machine's input, not just the job row.
+        sfn_input = json.loads(start_execution.call_args.kwargs['input'])
+        assert sfn_input['doc_config']['doc_type'] == doc_type
+        # is_chain is true for every accepted value, so the single-shot fallback
+        # is not taken when the ARN is configured.
+        mock_invoke.assert_not_called()
+
     def test_the_allowlist_stays_at_two_values(self):
         """The allowlist is the assertion, not an implementation detail: growing
         it to the generator's four doc types is exactly the regression the
@@ -569,6 +684,23 @@ class TestGenerateDocumentDocType:
         from projects_handler import GENERATED_DOC_TYPES
 
         assert GENERATED_DOC_TYPES == ('prd', 'prfaq')
+
+    def test_the_routing_predicate_reads_the_allowlist_constant(self):
+        """`is_chain` must not re-declare the allowlist.
+
+        A second copy of the literal can disagree with the set the route
+        validates against, which would route a newly accepted value down the
+        single-shot path silently. Asserting on the source is crude, but the
+        alternative — a behavioural test — cannot see the difference while the
+        two sets agree, which is precisely when the drift would be introduced.
+        """
+        import inspect
+
+        from projects_handler import api_generate_document
+
+        source = inspect.getsource(api_generate_document)
+        assert 'is_chain = doc_type in GENERATED_DOC_TYPES' in source
+        assert "('prd', 'prfaq')" not in source
 
 
 class TestDocumentCRUDEndpoints:
