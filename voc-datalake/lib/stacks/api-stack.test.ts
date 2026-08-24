@@ -1033,12 +1033,21 @@ describe('the public feedback-form routes', () => {
     // 100 rps / 200 before` the correct pair IS adjacent, so that row still passes.
     // Checked against the falsified row before settling on the predicate below.
     //
-    // So it is not a search. Each candidate line is PARSED for the pair it STATES —
-    // the first `<n> rps|req/s … <n>` on it — and that pair is compared to the
-    // template's numerically. A stale row fails because what it states is 20/40,
-    // whatever else the line goes on to mention: the property asserted is "this row
-    // is correct", not "the right digits are present somewhere on it". Both
-    // phrasings parse: "100 req/s, burst 200" and "**100 rps / 200**".
+    // So it is not a search. Each candidate line is PARSED for the pair it STATES
+    // and that pair is compared to the template's numerically: the property
+    // asserted is "this row is correct", not "the right digits are present
+    // somewhere on it". Both phrasings parse: "100 req/s, burst 200" and
+    // "**100 rps / 200**".
+    //
+    // And the parse is NOT POSITIONAL, which is the second half of the same defect.
+    // Taking the FIRST pair on the line just picks whichever of two well-formed
+    // pairs comes first, so the stale row survives with its clauses reversed:
+    // `| GET /config | raised from 100 rps / 200 to **250 rps / 500** |` parses as
+    // 100/200, matches, and passes while the document publishes 250/500 — and
+    // "raised from X to Y" is the more natural phrasing of the two, since it reads
+    // chronologically. So every pair on the line is collected and a candidate row
+    // must state EXACTLY ONE, which removes the ordering question instead of
+    // answering it. Both orderings were checked against the real documents.
     //
     // Candidates are lines that STATE A LIMIT, i.e. that name the route AND carry
     // a rate token, rather than every line mentioning the route. That is what keeps
@@ -1074,20 +1083,27 @@ describe('the public feedback-form routes', () => {
       expect(setting, `${names} has no method-level throttle to document`).toBeDefined();
     }
 
-    /** A line stating a rate limit, in either document's phrasing. */
+    /** A line stating a rate limit, in either document's phrasing. PRECISE on
+     *  purpose — it selects which lines of two KNOWN documents are judged, so a
+     *  false positive here makes a legitimate line fail. Contrast the
+     *  deliberately over-inclusive discovery predicate in the case below, which
+     *  has to find UNKNOWN documents and therefore wants the opposite bias. */
     const statesALimit = (line: string) => /\b(?:rps|req\/s)\b/.test(line);
 
-    /** The pair a line STATES: the first `<rate> rps|req/s … <burst>` on it.
+    /** EVERY `<rate> rps|req/s … <burst>` pair a line states, in order.
      *
-     *  Parsing rather than searching is what makes a falsified row fail. `\d+`
-     *  immediately before the rate token is the rate; the next number after it is
-     *  the burst, whether the separator is `, burst ` or ` / `. Anything the line
-     *  says AFTERWARDS — including a correct pair quoted as history — is not what
-     *  the row states and cannot rescue it. */
-    const statedPair = (line: string): { rate: number; burst: number } | undefined => {
-      const match = /(\d+)\s*(?:rps|req\/s)[^0-9]*(\d+)/.exec(line);
-      return match ? { rate: Number(match[1]), burst: Number(match[2]) } : undefined;
-    };
+     *  All of them, not the first, and that is the whole point. Parsing the FIRST
+     *  pair is still positional, so it picks whichever of two well-formed pairs
+     *  comes first and the stale-row defect survives with the clauses reversed:
+     *  `raised from 100 rps / 200 to **250 rps / 500**` parses as 100/200, matches
+     *  the template, and passes while the document publishes 250/500. Verified
+     *  against the real steering doc before this was widened.
+     *
+     *  `\d+` immediately before the rate token is a rate; the next number after it
+     *  is its burst, whether the separator is `, burst ` or ` / `. */
+    const allStatedPairs = (line: string): { rate: number; burst: number }[] =>
+      [...line.matchAll(/(\d+)\s*(?:rps|req\/s)[^0-9]*(\d+)/g)]
+        .map((match) => ({ rate: Number(match[1]), burst: Number(match[2]) }));
 
     for (const doc of [FORMS, STEERING]) {
       const lines = readFileSync(join(__dirname, '..', '..', '..', ...doc.split('/')), 'utf-8').split('\n');
@@ -1095,12 +1111,27 @@ describe('the public feedback-form routes', () => {
       for (const { names, setting } of documented.filter((d) => d.docs.includes(doc))) {
         // The steering file groups the two reads onto one row, so a route may be
         // documented by more than one line and it is enough that ONE of them states
-        // the right pair — but each candidate is judged by the pair IT states.
+        // the right pair — but each candidate is judged by the pairs IT states.
         const rows = lines.filter((line) => line.includes(names) && statesALimit(line));
 
         expect(rows.length, `${doc} documents no rate limit for ${names}`).toBeGreaterThan(0);
+
+        // ONE pair per line, which removes the ordering question rather than
+        // answering it. Every candidate row in both documents states exactly one
+        // today, so this costs nothing now and forces a future "was 100/200"
+        // aside — the phrasing that defeats any positional parse — onto its own
+        // line or into a footnote, where it cannot be mistaken for the row's
+        // claim. Checked before adopting: no current row states two.
+        for (const row of rows) {
+          expect(
+            allStatedPairs(row).length,
+            `${doc} states more than one rate pair on one line for ${names}, so which one the row `
+            + `CLAIMS is ambiguous — move the aside to its own line: ${row.trim()}`,
+          ).toBe(1);
+        }
+
         expect(
-          rows.map(statedPair),
+          rows.flatMap(allStatedPairs),
           `${doc} is stale for ${names}: expected ${setting?.rate}/${setting?.burst}`,
         ).toContainEqual({ rate: setting?.rate, burst: setting?.burst });
       }
@@ -1117,8 +1148,33 @@ describe('the public feedback-form routes', () => {
     //
     // Cheap enough to be worth it (a few dozen small files) and it answers the
     // second half of the review question: prose is not exempt, and the exemption
-    // cannot be obtained by writing the numbers somewhere the lockstep does not
-    // look.
+    // is not obtained by writing the numbers somewhere the lockstep does not look.
+    //
+    // The predicate below is DELIBERATELY OVER-INCLUSIVE, which is the opposite
+    // bias from `statesALimit` in the case above, and the two are kept separate
+    // rather than shared for exactly that reason. `statesALimit` picks lines out of
+    // two KNOWN documents, so a false positive there fails a legitimate line and it
+    // must be precise. This one has to DISCOVER unknown documents written by
+    // someone who never read this test, so a false negative silently excuses a
+    // drifting file while a false positive only asks an author to pin the file or
+    // drop the figures. Two consequences, both found by review:
+    //
+    //   - THE RATE TOKEN IS BROAD. Reusing `\b(?:rps|req/s)\b` would recognise only
+    //     the two spellings the two pinned documents happen to use, so a third
+    //     document writing `100 requests/second, burst 200` states the figures and
+    //     is not detected — which is precisely the "different word for per second"
+    //     a different author naturally reaches for.
+    //   - IT IS EVALUATED OVER THE WHOLE FILE, not per line. Requiring the route
+    //     and the rate on ONE line misses a table styled like the steering doc's
+    //     own, whose route column reads `POST /submit` while only the heading says
+    //     `/feedback-forms`. That gap also made `.kiro/steering/structure.md`
+    //     itself discoverable ONLY via its ballot prose sentence — so a reword of
+    //     one line about a DIFFERENT feature would have turned the converse
+    //     assertion below red for an unrelated reason.
+    //
+    // Verified over the tree: whole-file scope with the wide token flags exactly
+    // the two pinned documents and nothing else, so the over-inclusion costs no
+    // false positive today.
     const ROOT = join(__dirname, '..', '..', '..');
     const PINNED = ['docs/feedback-forms.md', '.kiro/steering/structure.md'];
     const SKIP = new Set(['node_modules', '.git', 'dist', 'coverage', '.venv', 'cdk.out']);
@@ -1131,9 +1187,11 @@ describe('the public feedback-form routes', () => {
       });
 
     const ROUTES = ['/feedback-forms', '/voting-sessions'];
+    /** Any spelling of a per-second rate, including `100/s`. */
+    const STATES_A_RATE = /\b(?:rps|requests? per second|req\/sec|requests?\/sec(?:ond)?|req\/s|requests?\/s)\b|\d+\s*\/\s*s\b/;
     const stating = markdownFiles(ROOT).filter((rel) => {
-      const lines = readFileSync(join(ROOT, ...rel.split('/')), 'utf-8').split('\n');
-      return lines.some((line) => /\b(?:rps|req\/s)\b/.test(line) && ROUTES.some((r) => line.includes(r)));
+      const text = readFileSync(join(ROOT, ...rel.split('/')), 'utf-8');
+      return STATES_A_RATE.test(text) && ROUTES.some((route) => text.includes(route));
     });
 
     expect(
@@ -1144,7 +1202,11 @@ describe('the public feedback-form routes', () => {
 
     // And the converse: a pinned document that stops stating them would leave the
     // case above asserting nothing, so both must still be in the discovered set.
-    expect(PINNED.filter((rel) => !stating.includes(rel))).toEqual([]);
+    expect(
+      PINNED.filter((rel) => !stating.includes(rel)),
+      'a document the lockstep case above reads no longer states any public-route rate limit, so that '
+      + 'case is now asserting nothing for it — restore the figures or drop it from that list',
+    ).toEqual([]);
   });
 
   // No "adds no public route" case here: that is `VocApiStack authorization
