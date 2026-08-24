@@ -63,21 +63,34 @@ function cdkJsonContext(): Record<string, unknown> {
 /**
  * The same block, read strictly, for the two suites that use it as an ORACLE.
  *
- * MUST NOT be rewritten to delegate to {@link cdkJsonContext}. Both callers
- * compare a value {@link committedFeatureFlags} derives FROM `cdkJsonContext()`
- * against this read, so a delegating body reduces them to `f(x) === f(x)` — green
- * even if the default argument were wired to cdk.context.json. The independent
- * body is the whole mechanism; exported so there is one of it rather than the
- * byte-identical copy each suite used to hold.
+ * A second body rather than a delegation to {@link cdkJsonContext}, and the
+ * independence is load-bearing: both callers compare a value
+ * {@link committedFeatureFlags} derives FROM `cdkJsonContext()` against this read,
+ * so `return cdkJsonContext()` here would reduce them to `f(x) === f(x)`.
+ * Exported so there is one such body rather than the byte-identical copy each
+ * suite used to hold.
  *
- * Strict because an oracle that degrades to `{}` satisfies its own comparison.
+ * That delegation passed all 290 cases when measured, which is why the throw below
+ * is asserted rather than merely described — `cdkJsonContextStrict` in
+ * synth-app.test.ts is what now catches it, via the one behaviour the two reads do
+ * not share. Strict at all because an oracle that degrades to `{}` satisfies its
+ * own comparison.
+ *
  * Shares `PROJECT_ROOT`, so the pair catches a wrong file, key or default — not a
  * wrong root.
+ *
+ * @param cdkJsonPath file to read, defaulting to the project's cdk.json.
+ *                    Injectable for the same reason {@link committedFeatureFlags}
+ *                    takes its context: a fixture without a `context` block is the
+ *                    only way to exercise the throw, and no production caller can
+ *                    supply one.
  */
-export function cdkJsonContextStrict(): Record<string, unknown> {
+export function cdkJsonContextStrict(
+  cdkJsonPath: string = join(PROJECT_ROOT, 'cdk.json'),
+): Record<string, unknown> {
   return z
     .object({ context: z.record(z.string(), z.unknown()) })
-    .parse(JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.json'), 'utf8')))
+    .parse(JSON.parse(readFileSync(cdkJsonPath, 'utf8')))
     .context;
 }
 

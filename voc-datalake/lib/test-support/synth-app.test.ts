@@ -140,6 +140,33 @@ describe('pluginSystemSuppressions', () => {
  * learn the filter went missing. Passing context in makes the classification rule
  * itself the subject, so its removal fails a test today.
  */
+describe('cdkJsonContextStrict', () => {
+  it('throws on a cdk.json with no context block, rather than returning {}', () => {
+    // Two claims in one case, and the second is why it exists.
+    //
+    // The strictness itself: this read is the ORACLE the two cases below and
+    // `spreads CDK feature flags only…` in lib/stacks/core-stack.test.ts compare
+    // against, and an oracle that degraded to `{}` would satisfy its own
+    // comparison — `{}` filtered still equals `{}` filtered.
+    //
+    // And the independence from the private `cdkJsonContext()`. Rewriting
+    // `cdkJsonContextStrict()` to `return cdkJsonContext()` is invisible to
+    // everything else: measured, that delegation passes all 290 cases and
+    // typechecks clean, while quietly making the comparisons `f(x) === f(x)`. It
+    // fails HERE, because the delegating body ignores this path, reads the real
+    // cdk.json and returns a populated context instead of throwing. The throw is
+    // the one behaviour the two reads do not share, so it is the only thing that
+    // can pin them apart.
+    const noContext = join(createAssemblyDir('voc-cdkjson-'), 'cdk.json');
+    writeFileSync(noContext, JSON.stringify({ app: 'npx ts-node bin/voc-datalake.ts' }));
+
+    expect(() => cdkJsonContextStrict(noContext)).toThrow();
+    // The complement: the default still reads the real file, so the case above
+    // cannot pass by throwing everywhere.
+    expect(cdkJsonContextStrict()['@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy']).toBe(true);
+  });
+});
+
 describe('committedFeatureFlags', () => {
   it('keeps CDK feature flags and drops project-level context keys', () => {
     // The guarantee lib/stacks/core-stack.test.ts depends on: that suite has cases
@@ -173,8 +200,8 @@ describe('committedFeatureFlags', () => {
     // fails loudly on — so this case would double-report that one cause while
     // saying nothing extra about the read.
     // `cdkJsonContextStrict()`, NOT the private `cdkJsonContext()` the default
-    // argument uses — see its doc comment. Delegating one to the other turns this
-    // into `f(x) === f(x)`.
+    // argument uses: an independent read is what gives this comparison something to
+    // catch, and `cdkJsonContextStrict` above is what keeps it independent.
     expect(committedFeatureFlags()).toEqual(committedFeatureFlags(cdkJsonContextStrict()));
     // Non-empty, so a cdk.json whose `context` went missing cannot satisfy the
     // equality above by making both sides `{}`.
