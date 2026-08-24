@@ -797,6 +797,16 @@ A second, stale copy used to be published to the CDN from
 snippet points at the website bucket (`https://<distribution>/feedback-widget.js`),
 repoint it at the iframe embed rather than restoring the file.
 
+⚠️ **Pruning it requires a rebuilt `dist`, and the freshness guard will not tell
+you otherwise.** As above, CDK does not build the frontend — it ships whatever is
+in `frontend/dist` at synth time. `assertFrontendBuildFresh` compares
+`dist/index.html`'s mtime against the *newest* surviving source file, so a change
+that only **deletes** from `public/` lowers no mtime and leaves the guard silent:
+deploying a `dist` built before the deletion re-publishes the removed objects
+without complaint. Run `npm run build` in `frontend/` before deploying a deletion
+(`npm run deploy:frontend` already does). `publicAssets.test.ts` will not catch
+this either — it reads tracked files, not `dist`.
+
 🪤 **That bucket URL does not start 404ing now the object is pruned — it returns
 `200` carrying the SPA's `index.html`.** The frontend distribution maps
 `404 -> 200 /index.html` so client-side routes resolve (`core-stack.ts`, pinned
