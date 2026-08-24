@@ -133,17 +133,30 @@ Comprehend, Translate and a Bedrock model invocation downstream. The two reads a
 cheap — one `get_item`, and a static HTML render — so they are held at the higher
 pair, sized for widget page-view traffic rather than for submissions.
 
+These figures are **pinned against the synthesized template** by a lockstep case in
+`voc-datalake/lib/stacks/api-stack.test.ts`, so tuning the numbers in `api-stack.ts`
+without updating this table fails the CDK suite. The stack is the source of truth;
+this table cannot silently go stale.
+
 Two properties surprise people:
 
 - **A limit is per route, not per form or per caller.** The method setting keys on
   the path with the form id left as a variable, so one ceiling is shared across
   every form in the deployment and every visitor. 100 req/s is therefore the
   *aggregate* widget page-view rate a deployment supports, across all embeds.
-- **A throttled request looks like a disabled form.** On a 429 the widget renders
-  a flat `Feedback form unavailable.` with no retry, which is the same message a
-  deliberately disabled form produces. If a busy page shows that intermittently,
-  suspect the rate limit before the form's state; the fix is raising the number in
-  `api-stack.ts`, not a change on the page.
+- **A throttled request never names the limit, and each of the three routes fails
+  differently.** Nothing surfaces "429" to the visitor, so all three symptoms are
+  easy to misattribute:
+
+  | Route | What a 429 looks like |
+  |-------|-----------------------|
+  | `GET /config` | The widget renders a flat `Feedback form unavailable.` in the container, with no retry — the *same* message a deliberately disabled form produces |
+  | `POST /submit` | A modal `Failed to submit.` alert instead, with the visitor's typed feedback still in the form. Retryable: they can press submit again |
+  | `GET /iframe` | No widget code runs at all — the browser navigates here directly, so this is a raw API Gateway error page inside your `<iframe>`, i.e. a broken frame |
+
+  If a busy page shows any of these intermittently, suspect the rate limit before
+  the form's state; the fix is raising the number in `api-stack.ts`, not a change
+  on the page.
 
 ## Processing Pipeline
 

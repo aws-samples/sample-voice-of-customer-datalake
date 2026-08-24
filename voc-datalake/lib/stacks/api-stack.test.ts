@@ -823,11 +823,14 @@ describe('the public feedback-form routes', () => {
    *  default, deliberately restated rather than inherited. Their legitimate demand
    *  is a CUSTOMER's page-view rate (feedback-widget.js fetches `config` on every
    *  page load; `iframe` renders per embed), the setting is keyed by path so the
-   *  ceiling is shared across every form and caller in the deployment, and the
-   *  widget shows a 429 as an unretried "Feedback form unavailable." So the
-   *  bounded-room argument behind 20 rps does not reach them, and pinning their
-   *  own value keeps a future tightening of the stage-wide default from silently
-   *  squeezing a third party's page.
+   *  ceiling is shared across every form and caller in the deployment, and a 429
+   *  surfaces as an unretried "Feedback form unavailable." on `config`
+   *  specifically — indistinguishable from a disabled form (`submit` and `iframe`
+   *  fail differently again; the three symptoms are enumerated on
+   *  publicWidgetReadThrottle in api-stack.ts). So the bounded-room argument
+   *  behind 20 rps does not reach them, and pinning their own value keeps a future
+   *  tightening of the stage-wide default from silently squeezing a third party's
+   *  page.
    *
    *  Keys are `deployOptions.methodOptions`' own form, `{resource path}/{METHOD}`,
    *  and `{form_id}` is the spelling of the resource created as
@@ -930,21 +933,107 @@ describe('the public feedback-form routes', () => {
     //
     // Quantified over the unauthenticated routes the TEMPLATE declares, not over
     // INTENTIONALLY_PUBLIC_ROUTES, so it needs no maintenance: publishing a route
-    // puts it in scope here automatically. Both shapes, since the flagged one
-    // publishes a different (smaller) set.
-    for (const template of [apiTemplate(), apiTemplateFlagged()]) {
+    // puts it in scope here automatically.
+    //
+    // THREE shapes, and the third is the one that makes this non-vacuous for the
+    // scenario named above. The realistic "sixth public route" in this repo is a
+    // PLUGIN WEBHOOK: api-stack.ts adds them as `pluginResource.addMethod(method,
+    // webhookIntegration)` with no method options, i.e. deliberately
+    // AuthorizationType NONE. Those exist only when plugins are enabled, so with
+    // apiTemplate()/apiTemplateFlagged() alone (both synthesized with
+    // `enabledSources: []`) the route this case should flag would not be in any
+    // template it inspects. apiTemplateAllPlugins() is the fixture the sibling
+    // authorization invariant already uses for exactly this reason. No manifest
+    // declares a webhook today, so this adds no failure now and starts working on
+    // the day one does.
+    for (const template of [apiTemplate(), apiTemplateFlagged(), apiTemplateAllPlugins()]) {
       const settings = new Map(methodSettings(template).map((s) => [s.key, s]));
+      const explicitPair = (key: string) =>
+        settings.get(key)?.rate !== undefined && settings.get(key)?.burst !== undefined;
       const unthrottled = unauthenticatedRoutes(template)
         // `GET /a/b` is keyed `/a/b/GET` in deployOptions.methodOptions.
         .map((route) => {
           const [verb, path] = route.split(' ');
-          return `${path}/${verb}`;
+          return { path, verb, key: `${path}/${verb}` };
         })
         // A rate limit with no burst, or vice versa, is not an explicit pair: the
         // missing half falls back to the stage or account default silently.
-        .filter((key) => settings.get(key)?.rate === undefined || settings.get(key)?.burst === undefined);
+        //
+        // `ANY` needs the same allowance the orphan check above makes, and for the
+        // converse reason. A route wired through `addProxy({ anyMethod: true })`
+        // reports httpMethod ANY, but API Gateway REJECTS `ANY` as a method-setting
+        // httpMethod (the deploy-probe finding recorded on methodOptions in
+        // api-stack.ts), so demanding `/…/{proxy+}/ANY` would make this case
+        // unsatisfiable rather than merely strict — it would fail against a
+        // correct, maximally-throttled stack. For such a method, any concrete-verb
+        // setting on the same path is the throttled form, which is how the /mcp
+        // proxy entries are spelled.
+        .filter(({ path, verb, key }) => (verb === 'ANY'
+          ? ![...settings.keys()].some((k) => k.startsWith(`${path}/`) && explicitPair(k))
+          : !explicitPair(key)))
+        .map(({ key }) => key);
 
       expect(unthrottled, 'public routes riding the stage default').toEqual([]);
+    }
+  });
+
+  it('keeps the two prose copies of these numbers in step with the template', () => {
+    // The pairs are stated in FIVE places: the two constants in api-stack.ts, the
+    // record above, and two documents — docs/feedback-forms.md (integrator-facing)
+    // and .kiro/steering/structure.md. The first three are enforced against the
+    // synthesized template by the cases above; without this, the two prose copies
+    // drift silently on the next tuning and mislead the exact reader they were
+    // added for.
+    //
+    // A .md file is a new thing for this suite to read, but not a new IDEA: the
+    // `stack and callers stay in step` block already reads feedback_form_handler.py,
+    // ballots_handler.py, api.py and api-stack.ts itself, and the Python side
+    // carries a family of *_lockstep tests for constants shared across languages.
+    // A number published as an integrator-facing contract is exactly the kind of
+    // claim this repo pins rather than trusts, so the docs are held to the same
+    // standard as the code — that is the answer to "should prose stay unpinned":
+    // no, when it states a number a deploy can contradict.
+    //
+    // Deliberately asserts only the NUMBERS, and only that each route's own pair
+    // appears on a line naming that route: the prose around them is explanatory
+    // and should stay free to be reworded without a test edit.
+    //
+    // PER ROUTE rather than per document, which a first version got wrong and a
+    // mutation caught: searching the whole file for "100 … 200" passes even after
+    // `config`'s row is falsified, because `iframe` legitimately carries the same
+    // pair elsewhere in the file. Scoping the search to lines that name the route
+    // is what makes a single stale row fail. The docs are read from the repo ROOT,
+    // one level above `voc-datalake`.
+    const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
+    const documented = [
+      { suffix: '/config', setting: settings.get('/feedback-forms/{form_id}/config/GET') },
+      { suffix: '/iframe', setting: settings.get('/feedback-forms/{form_id}/iframe/GET') },
+      { suffix: '/submit', setting: settings.get('/feedback-forms/{form_id}/submit/POST') },
+    ];
+
+    for (const { suffix, setting } of documented) {
+      // Guards the case itself: an absent setting would search for "undefined" and
+      // every assertion below would fail confusingly rather than say what is wrong.
+      expect(setting, `${suffix} has no method-level throttle to document`).toBeDefined();
+    }
+
+    for (const doc of ['docs/feedback-forms.md', '.kiro/steering/structure.md']) {
+      const lines = readFileSync(join(__dirname, '..', '..', '..', ...doc.split('/')), 'utf-8').split('\n');
+
+      for (const { suffix, setting } of documented) {
+        // The two docs phrase a pair differently ("100 req/s, burst 200" vs
+        // "**100 rps / 200**"), and the steering file groups the two reads onto one
+        // row, so the match is "the two numbers in order, on a line naming this
+        // route" rather than either phrasing or a per-route row.
+        const pair = new RegExp(`\\b${setting?.rate}\\b.*?\\b${setting?.burst}\\b`);
+        const rows = lines.filter((line) => line.includes(suffix) && /\d/.test(line));
+
+        expect(rows.length, `${doc} documents no rate limit for ${suffix}`).toBeGreaterThan(0);
+        expect(
+          rows.some((line) => pair.test(line)),
+          `${doc} is stale for ${suffix}: expected ${setting?.rate}/${setting?.burst}`,
+        ).toBe(true);
+      }
     }
   });
 

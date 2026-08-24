@@ -262,13 +262,22 @@ embeddable widget calls from the customer's own site.
 > as `addResource('{form_id}')`, so that is the path to look for in the template,
 > even though the table above uses `{id}` for brevity like the rest of this file.
 >
+> These four numbers are PINNED against the synthesized template by a lockstep case
+> in `api-stack.test.ts`, so tuning them in `api-stack.ts` without updating this
+> table fails the CDK suite. The stack is the source of truth.
+>
 > A method setting is keyed by PATH with that variable left as-is, so each ceiling is
 > shared across **every form in the deployment and every caller** — not per form
 > and not per client. 100 rps is therefore the aggregate widget page-view rate a
-> deployment supports. Above it the widget renders a flat "Feedback form
-> unavailable." with no retry, indistinguishable from a disabled form — so a busy
-> embed is fixed by raising the number, not widget-side. The two
-> `/voting-sessions/{id}/…` public routes carry 20 rps / 40 for a different
+> deployment supports.
+>
+> Above it, **each of the three fails differently and none names the limit**, so a
+> busy embed is fixed by raising the number rather than widget-side: `GET /config`
+> renders a flat "Feedback form unavailable." with no retry, indistinguishable from
+> a disabled form; `POST /submit` shows a modal "Failed to submit." alert and is
+> retryable; `GET /iframe` runs no widget code at all (the browser navigates to it
+> directly), so it is a raw API Gateway error page inside the customer's iframe.
+> The two `/voting-sessions/{id}/…` public routes carry 20 rps / 40 for a different
 > reason (a room is bounded by `MAX_BALLOT_CAP`).
 
 > There is no `/feedback-form/*` (singular) API. These routes are declared
