@@ -136,7 +136,7 @@ describe('pluginSystemSuppressions', () => {
  * Both compare a value derived from the PRIVATE `cdkJsonContext()` against this
  * read, so the comparisons mean something only while the two bodies stay separate.
  * Nothing else in the project detects a merge: rewriting `cdkJsonContextStrict()`
- * to `return cdkJsonContext()` passed all 290 cases at the parent commit,
+ * to `return cdkJsonContext()` passed the entire suite at the parent commit,
  * typechecks clean (`noUnusedParameters` is off, so the ignored path is fine) and
  * meets no ESLint leg, since none covers CDK `lib/`. This suite is the only thing
  * standing between that one-line "dedupe" and two silently vacuous comparisons.

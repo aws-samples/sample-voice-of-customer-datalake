@@ -71,7 +71,7 @@ function cdkJsonContext(): Record<string, unknown> {
  * suite used to hold — which is also what makes the merge tempting now that both
  * live in this file.
  *
- * That merge passed all 290 cases when measured, and typechecks and lints clean.
+ * That merge passed the ENTIRE suite when measured, and typechecks and lints clean.
  * Hence `cdkJsonContextStrict` in synth-app.test.ts, which is what now catches it.
  * Strict at all because an oracle that degrades to `{}` satisfies its own
  * comparison.
