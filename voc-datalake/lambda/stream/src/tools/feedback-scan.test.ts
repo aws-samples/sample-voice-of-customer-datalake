@@ -65,6 +65,15 @@ function makeFeedbackItem(overrides: Record<string, unknown> = {}) {
  * the calendar would put every default fixture outside the window.
  */
 const PINNED_NOW = new Date(`${today}T12:00:00.000Z`);
+/**
+ * How many rows the scan actually collected, read out of aggregate mode's own total.
+ *
+ * The collected count has no field on the result — `items` is the capped example set —
+ * so the prose is the only channel that reports it. Aggregate mode over unfiltered
+ * fixtures matches every candidate, which makes its total equal to the collection.
+ */
+const totalMatches = (formatted: string): number =>
+  Number(/\*\*Total matches:\*\* (\d+)/.exec(formatted)?.[1] ?? NaN);
 
 function freezeClock() {
   beforeEach(() => {
@@ -186,5 +195,14 @@ describe('the day scan is bounded-concurrent, not sequential', () => {
     // gone, so wave 2 is never dispatched. Per-day budgeting would keep going.
     expect(client.send).toHaveBeenCalledTimes(DAY_SCAN_CONCURRENCY);
     expect(result.isPartial).toBe(true);
+    // And the total actually collected, which is the property this case is named for
+    // and previously never checked. It is NOT TEST_CAP: a page charges the budget only
+    // after it lands, so the wave in flight when the cap is reached overshoots by up to
+    // DAY_SCAN_CONCURRENCY pages. Asserting the cap here would fail, and asserting only
+    // the two lines above passes for a per-day budget too — so this is the assertion
+    // that distinguishes them. Equality, not an upper bound: `toBeLessThan(K x cap)`
+    // would also hold for the sliced design this test exists to rule out.
+    expect(totalMatches(result.formatted)).toBe(DAY_SCAN_CONCURRENCY * rows.length);
+    expect(rows.length).toBeGreaterThan(TEST_CAP); // else one page alone never trips the cap
   });
 });

@@ -760,6 +760,44 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     expect(result.formatted).toContain('NOT a result of zero feedback items');
     warn.mockRestore();
   });
+  it('keeps the rows a day read before its later page failed, instead of calling the window unmeasured', async () => {
+    // The negative twin of the test above, and the case that made the honesty
+    // machinery lie in the OTHER direction: every day here answers its first page
+    // and fails its second, so a classification keyed on "did this day end with an
+    // error" counted all 90 as never read, `unmeasured` fired, and every collected
+    // row was discarded behind "the store could not be reached" — 450 rows read,
+    // zero reported. `fetchDayPages` promises the opposite in its own docstring
+    // ("a partition whose second page fails must keep what its first page
+    // measured", the voc-context.ts::readMetricPage rule), so this pins it.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rows = Array.from({ length: 5 }, (_, i) =>
+      makeFeedbackItem({ feedback_id: `p${String(i).padStart(31, '0')}` }));
+    const throttled = new RangeError('throttled');
+    throttled.name = 'ProvisionedThroughputExceededException';
+    const docClient = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) =>
+        // A transient name, so the scan is not short-circuited and every day of the
+        // window contributes — which is what makes discarding them all measurable.
+        (command.input.ExclusiveStartKey === undefined
+          ? Promise.resolve({ Items: rows, LastEvaluatedKey: { pk: 'page2' } })
+          : Promise.reject(throttled))),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', { mode: 'aggregate' }, { days: 90 },
+    );
+    // What the rows bought: an answer, not an absence.
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.formatted).not.toContain('THE SEARCH COULD NOT BE RUN');
+    expect(result.formatted).not.toContain('could not be read, so nothing is known');
+    // And the hole is still declared — surviving a failure is only honest if the
+    // survival is reported, so this must not become a silent success either.
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).toContain('at least one day could not be read');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('ProvisionedThroughputExceededException'),
+    );
+    warn.mockRestore();
+  });
 
   it('logs rows the schema rejected, with the count and the date', async () => {
     // The row is a real loss and an operator must be able to find and repair it.

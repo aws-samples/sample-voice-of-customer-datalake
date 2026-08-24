@@ -145,7 +145,10 @@ class TestLookbackWindowMirror:
         """
         assert _TOOL_SOURCE.exists(), f'chat tool source moved: {_TOOL_SOURCE}'
         assert _stream_lookback_days() is not None, (
-            'parsed no MAX_LOOKBACK_DAYS from search-feedback.ts — parser drift?'
+            # Name the file the parser actually reads. It said search-feedback.ts, which
+            # only SPENDS the constant, so the message sent a reader to the wrong file at
+            # the one moment the guard is failing and the message is all they have.
+            f'parsed no MAX_LOOKBACK_DAYS from {_TOOL_SOURCE.name} — parser drift?'
         )
 
     @pytest.mark.skipif(not _TOOL_SOURCE.exists(), reason='stream tree absent from this checkout')

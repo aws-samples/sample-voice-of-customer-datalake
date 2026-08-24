@@ -37,7 +37,8 @@ export const feedbackItemSchema = z.object({
 export type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
 /**
- * Upper bound on candidates collected across all days. A DynamoDB Query caps
+ * Bound on candidates collected across all days — to within one wave of pages, see
+ * CandidateBudget for why that slack exists and why it is not the cap itself. A DynamoDB Query caps
  * each page at 1MB (often far fewer than 1000 large items), so we MUST follow
  * LastEvaluatedKey to page through a day — otherwise a day with thousands of
  * rows is silently truncated to the first ~500 (this caused "987 negative but
@@ -152,6 +153,14 @@ const DROPPED_ROWS_PARTIAL_SHARE = 0.1;
  * budget as it lands, so the cap means what it says and a day reports truncation
  * only when the budget is genuinely gone.
  *
+ * ⚠️ The bound is the cap PLUS ONE WAVE, not the cap. A page charges the budget only once
+ * it has landed, and a wave dispatches DAY_SCAN_CONCURRENCY days before any of them do, so
+ * the last wave to start may overshoot by up to that many pages. Stated rather than fixed:
+ * charging before dispatch would have to guess a page's size, and the overshoot is bounded
+ * by the fan-out width, which is small and fixed. What the counter DOES guarantee is the
+ * thing the sliced version could not — the overshoot is one wave's worth however wide the
+ * window, instead of K× the whole cap. The test asserts the real bound, not this prose.
+ *
  * Mutated in place because this package bans `let` (eslint no-restricted-syntax).
  */
 interface CandidateBudget {
@@ -168,6 +177,19 @@ interface DayReadOutcome {
   truncated: boolean;
   dropped: number;
   errorName?: string;
+  /**
+   * Did ANY page of this day come back? Not the same as `errorName === undefined`.
+   *
+   * A day has two stopping points — the page and the day — and a failure at the second
+   * page is a different fact from a failure at the first. Deriving "was this day read"
+   * from `errorName` alone conflated them, so a day that returned 5 rows and then hit a
+   * throttle counted as never read; over a whole window that made `unmeasured` true and
+   * `executeSearchFeedback` discard every row it had (measured: 450 rows read, 0
+   * returned, prose telling the model the store could not be reached). That is the
+   * inverse of the failure this file exists to prevent, and it contradicts the rule
+   * `fetchDayPages` quotes from voc-context.ts::readMetricPage.
+   */
+  reached: boolean;
 }
 
 /** One day's rows and what its read cost, kept together for the wave to fold. */
@@ -180,7 +202,13 @@ interface DayRead extends DayReadOutcome {
 interface ScanShortfalls {
   failures: { dateStr: string; errorName: string }[];
   drops: { dateStr: string; dropped: number }[];
-  /** Dates read without error — empty means the window was never measured. */
+  /**
+   * Dates that answered AT ALL — empty means the window was never measured.
+   *
+   * Reached, not error-free: a day that returned rows and then failed on a later page
+   * belongs here, because its rows are in `candidates` and an answer built from them is
+   * a partial answer, not an absent one. Its failure is still reported, via `failures`.
+   */
   daysRead: string[];
 }
 
@@ -286,13 +314,18 @@ async function fetchDayPages(
   }
   const dropped = parsedRows.filter((parsed) => !parsed.success).length;
   budget.spent += parsedRows.length - dropped;
-  if (page.errorName !== undefined) return { truncated: false, dropped, errorName: page.errorName };
-  if (!page.lastKey) return { truncated: false, dropped };
-  if (budgetExhausted(budget)) return { truncated: true, dropped };
+  if (page.errorName !== undefined) {
+    // `startKey` IS the record of whether an earlier page of this day already came back:
+    // it is set only by the recursive call below, which runs only after a page succeeded.
+    // So a first-page failure leaves the day unreached, and a later one does not.
+    return { truncated: false, dropped, errorName: page.errorName, reached: startKey !== undefined };
+  }
+  if (!page.lastKey) return { truncated: false, dropped, reached: true };
+  if (budgetExhausted(budget)) return { truncated: true, dropped, reached: true };
   const rest = await fetchDayPages(
     docClient, feedbackTable, dateStr, candidates, budget, page.lastKey,
   );
-  return { ...rest, dropped: dropped + rest.dropped };
+  return { ...rest, dropped: dropped + rest.dropped, reached: true };
 }
 
 /** One day's rows and outcome. Never throws: a failed read is a reported hole. */
@@ -365,7 +398,7 @@ async function scanWaves(
       ],
       daysRead: [
         ...acc.shortfalls.daysRead,
-        ...reads.flatMap((read) => (read.errorName === undefined ? [read.dateStr] : [])),
+        ...reads.flatMap((read) => (read.reached ? [read.dateStr] : [])),
       ],
     },
   };
