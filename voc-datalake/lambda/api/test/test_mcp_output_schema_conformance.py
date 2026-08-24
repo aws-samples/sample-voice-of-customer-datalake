@@ -137,7 +137,7 @@ REVERT STORY — which mutation makes which assertion fail:
   TestTheDerivationsSurviveAnUnusualDeclaration
     — nothing read at IMPORT time may raise on a declaration a client accepts, or
       on a fixture this file imports. `_closed_schema_tools()`,
-      `_closed_item_schemas()` and `_TOOL_SAMPLES` are all read inside
+      `_closed_subschemas()` and `_TOOL_SAMPLES` are all read inside
       `@pytest.mark.parametrize`, so a raise there is a collection error that
       aborts collection of the ENTIRE `lambda/api` suite and is attributed to
       whatever ran next. Three did exactly that: a published tool with no
@@ -173,15 +173,15 @@ REVERT STORY — which mutation makes which assertion fail:
       — the reason this file takes a `jsonschema` dependency instead of
       recursing over `properties` itself.
 
-  test_an_undeclared_key_inside_an_array_item_is_rejected
+  test_an_undeclared_key_inside_a_closed_subschema_is_rejected
     — the same closure one level DOWN, where M1 lived. The top-level control
       cannot reach it, because merging a key into the payload root never touches
       an element of `items`. Its anti-vacuity control is
-      test_some_array_closes_its_item_schema, and its positive counterpart is
+      test_some_declaration_closes_a_schema_below_the_root, and its positive counterpart is
       test_an_unrecognised_key_on_a_route_row_is_not_forwarded, which pins the
       projection behaviour that keeps the shape unreachable from a route.
 
-      Parametrised from `_closed_item_schemas`, which now derives from the SAME
+      Parametrised from `_closed_subschemas`, which now derives from the SAME
       walk the substance check uses. It used to walk root-level `properties` only,
       so a closed `items` nested inside another array's item schema — or inside a
       nested object — was parametrised by nothing while `_declared_sites` saw it
@@ -191,9 +191,43 @@ REVERT STORY — which mutation makes which assertion fail:
       nested array added to `_PERSONA_PROPERTIES` gave one substance-check failure
       and ZERO from this control. Its depth has its own anti-vacuity control,
       test_the_closed_item_derivation_can_find_a_closure_below_the_payload_root,
-      because test_some_array_closes_its_item_schema is satisfied by one closure at
+      because test_some_declaration_closes_a_schema_below_the_root is satisfied by one closure at
       the root and so passed throughout the round the derivation was shallow —
       "finds nothing deep" read as "there is nothing deep".
+
+      🔑 AND IT NO LONGER FILTERS ON THE ARRAY MARKER. One round it derived depth
+      correctly and still admitted only `path[-1] == '[]'`, so a closed nested
+      OBJECT was parametrised by nothing while a client enforced it — the same
+      defect one step narrower, and the array case was privileged only because
+      M1's happened to live there. Measured through production code before the
+      widening: closing the `scenario` persona section left the whole file at 75
+      passed, unchanged; after it, the same mutation produces a new control,
+      `list_personas-personas/[]/scenario`. The filter is now "below the root, and
+      closed", the root being excluded because `_closed_schema_tools` already
+      controls it by merging a key into the payload root.
+
+  test_no_published_declaration_uses_a_ref_the_walk_cannot_resolve
+    — the sibling of the unfollowed-keyword test, and it exists because that one
+      cannot cover this: it asks which keyword is PRESENT, and `$ref` IS followed,
+      so a `$ref` that is followed and FAILS was silence with a clean bill of
+      health. `_resolve_ref` returning None rather than {} for "could not resolve"
+      is what makes the difference reportable. Publish `{"$ref": "#Row"}` against
+      an `$anchor` — legal 2020-12, resolved perfectly by Draft202012Validator —
+      and before this the file was 75 passed; now it is one failure naming the
+      tool, the path and the ref. Its positive control is
+      test_the_ref_check_notices_each_pointer_it_cannot_follow, over an $anchor, a
+      remote pointer, a typo and a resolvable one.
+
+  test_no_published_declaration_nests_through_a_keyword_the_walk_collapses
+    — the THIRD category, after "followed" and "unfollowed": followed onto a
+      marker that MERGES cases a validator keeps apart. Over-crediting rather
+      than silence, which is the worse direction — a green case meaning less than
+      it says prompts nobody to look. `patternProperties`, `prefixItems` and a
+      schema-valued `additionalProperties` each credit a property a client would
+      reject at that position; `_COLLAPSED_KEYWORDS` records exactly what each
+      merges and what teaching it would cost. Declare any of the three on a
+      published tool and this fails by name (measured: three separate mutations,
+      three failures naming this test).
 
   test_a_nested_object_where_an_array_is_declared_is_rejected
     — M1's exact shape, in the two places a live writer can still produce it.
@@ -399,10 +433,72 @@ _METRICS_SOURCES_BODY = {
     "is_partial": True,
     "sources": {"webscraper": 4000, "feedback-form": 21},
 }
+# `/metrics/personas` — ⚠️ RE-TRANSCRIBED, and the reason is the risk this registry
+# names two comments below. Until #369 the route bucketed this dimension on a
+# free-text `persona_name`, so the body here read
+# `{"Priya Shah": 42, "Tobias Krenzler": 3}`. That change moved the axis to the
+# `persona_type` archetype enum and added `has_legacy_persona_buckets` — and this
+# transcription went stale the moment it merged, silently, because the tool's schema
+# is open and the substance check only walks declared → demonstrated. Nothing in this
+# file reported it; a human noticed. That is provenance level 2 behaving exactly as
+# the comment predicts, which is worth leaving on the record rather than tidying away.
+#
+# ⚠️ AND IT IS STILL UNDETECTABLE HERE. Putting the pre-#369 body back leaves the file
+# at 81 passed — measured. Nothing compares a transcription to the route it names, so
+# the correction below is a correction, not a guard. Closing it needs the route's own
+# return derived rather than copied, which is a route-side mechanism
+# (`test_persona_dimension_lockstep.py` is where that lives) and the natural next
+# slice; a check confined to this file could only compare the copy with itself.
 _METRICS_PERSONAS_BODY = {
     "period_days": 7,
     "is_partial": False,
-    "personas": {"Priya Shah": 42, "Tobias Krenzler": 3},
+    # An UNDECLARED key the route really returns, kept for the same reason
+    # `_METRICS_SENTIMENT_BODY` keeps `total`: it is the evidence that leaving these
+    # schemas open is load-bearing rather than an oversight.
+    "has_legacy_persona_buckets": False,
+    "personas": {"advocate": 530, "churn_risk": 322, "existing_customer": 312,
+                 "unknown": 34, "prospect": 30},
+}
+
+# The same route mid-transition, which is a real answer for ~90 days after the axis
+# moved: aggregate rows written by the old derivation still carry free-text names and
+# a capitalised `Unknown`, so the counts object mixes both value spaces and the route
+# says so. A model reading these keys is the caller this flag exists for.
+#
+# ⚠️ THIS CASE IS DOCUMENTATION, NOT ENFORCEMENT, and saying so is the point.
+# Deleting it leaves the file at 80 passed — measured, not assumed. It declares no
+# new property, and the substance check unions across a tool's cases, so nothing can
+# fail when it goes. It earns its place by recording a shape a reader would otherwise
+# have to reconstruct from two other files; it does not earn a claim of coverage.
+# The same is true of the empty-window cases below.
+_METRICS_PERSONAS_TRANSITION_BODY = {
+    "period_days": 30,
+    "is_partial": False,
+    "has_legacy_persona_buckets": True,
+    "personas": {"Unknown": 6237, "advocate": 12, "G.Adlung": 1},
+}
+
+# The empty answer from a metrics route: a window with nothing in it. A real answer
+# with a shape, and the same case `search_feedback`, `get_project` and `list_personas`
+# each register — the metrics tools were the three that did not, which review raised
+# in round one. It matters more for them than for the others, because these tools pass
+# their route's body through unprojected and their schemas carry no `required`, so an
+# EMPTY `structuredContent` is fully valid and fully vacuous; a registered empty case
+# is what makes the difference between the two observable.
+_METRICS_EMPTY_WINDOW_BODY = {
+    "period_days": 7,
+    "is_partial": False,
+    "total_feedback": 0,
+    "avg_sentiment": 0.0,
+    "urgent_count": 0,
+    "daily_totals": [],
+    "daily_sentiment": [],
+}
+_METRICS_EMPTY_BREAKDOWN_BODY = {
+    "period_days": 7,
+    "is_partial": False,
+    "has_legacy_persona_buckets": False,
+    "personas": {},
 }
 
 
@@ -485,6 +581,7 @@ _TOOL_SAMPLES: dict[str, tuple[tuple[str, dict, dict], ...]] = {
         ("a complete window", {}, {"/metrics/summary": _METRICS_SUMMARY_BODY}),
         ("a partial window", {"days": 365},
          {"/metrics/summary": _METRICS_SUMMARY_PARTIAL_BODY}),
+        ("an empty window", {}, {"/metrics/summary": _METRICS_EMPTY_WINDOW_BODY}),
     ),
     "get_metrics_breakdown": (
         # All four dimensions, because each reaches a DIFFERENT route with a
@@ -497,6 +594,12 @@ _TOOL_SAMPLES: dict[str, tuple[tuple[str, dict, dict], ...]] = {
          {"/metrics/sources": _METRICS_SOURCES_BODY}),
         ("personas", {"dimension": "personas"},
          {"/metrics/personas": _METRICS_PERSONAS_BODY}),
+        # The persona axis mid-transition, mixing both value spaces — see
+        # `_METRICS_PERSONAS_TRANSITION_BODY`.
+        ("personas, mid-transition", {"dimension": "personas"},
+         {"/metrics/personas": _METRICS_PERSONAS_TRANSITION_BODY}),
+        ("an empty window", {"dimension": "personas"},
+         {"/metrics/personas": _METRICS_EMPTY_BREAKDOWN_BODY}),
     ),
     "get_project": (
         ("metadata, three live persona shapes and all six document kinds",
@@ -698,7 +801,7 @@ def _output_schema(name: str) -> dict:
 
     🔑 CANNOT raise for a published tool. `tool["outputSchema"]` was here first
     and a published tool declaring none raised a bare `KeyError` — from inside
-    `_closed_schema_tools()` and `_closed_item_schemas()`, which are evaluated in
+    `_closed_schema_tools()` and `_closed_subschemas()`, which are evaluated in
     `@pytest.mark.parametrize` decorators, so at MODULE IMPORT. That is a
     collection error aborting the ENTIRE `lambda/api` suite, and the
     message a Phase 3 author reads is `KeyError: 'outputSchema'` rather than
@@ -709,7 +812,7 @@ def _output_schema(name: str) -> dict:
 
     So a missing or non-dict declaration degrades to `{}`: an empty schema is
     open and validates anything, `_closed_schema_tools()` reports the tool as not
-    closed, `_closed_item_schemas()` finds no arrays in it, and the §5.4 test
+    closed, `_closed_subschemas()` finds no arrays in it, and the §5.4 test
     stays the single named reporter of the gap. Pinned by
     `TestTheDerivationsSurviveAnUnusualDeclaration`.
     """
@@ -825,7 +928,7 @@ def _payload_reaching(tool: str, path: tuple) -> tuple[dict, tuple, dict]:
     `payload["personas"][0]` rather than a sentence.
 
     🔑 Takes a PATH, not a root property, so it reaches a site at any depth for
-    the same reason `_closed_item_schemas` now derives them: a closed `items`
+    the same reason `_closed_subschemas` now derives them: a closed `items`
     nested below the root has an element to mutate too, and a helper that could
     only look up a root key would have kept this control shallower than the
     derivation feeding it.
@@ -888,14 +991,14 @@ def _subschemas(schema: dict) -> dict:
     and means "any value here", while `false` means "nothing is valid here".
     `declared.get("type")` on one of those raised
     `AttributeError: 'bool' object has no attribute 'get'`, and because
-    `_closed_item_schemas()` is evaluated in a `@pytest.mark.parametrize`
+    `_closed_subschemas()` is evaluated in a `@pytest.mark.parametrize`
     decorator the raise landed at module import: a collection error aborting the
     entire `lambda/api` suite, on a declaration this very file also certifies as
     valid via `test_the_declaration_is_itself_a_valid_json_schema`.
 
     A boolean sub-schema constrains no keys and closes no door, so dropping it
     here is not a loss of coverage — it is the derivation saying "nothing to
-    control", which is what `test_some_array_closes_its_item_schema` then
+    control", which is what `test_some_declaration_closes_a_schema_below_the_root` then
     reports if that were ever true of every array. No published tool uses one
     today; Phase 3's ~thirty declarations are where an unusual-but-legal
     construct first shows up. Pinned by
@@ -917,6 +1020,13 @@ _MAP = "{}"
 # The keywords `_reachable_schemas` follows to another object schema. Named so
 # `test_no_published_declaration_nests_through_a_keyword_the_walk_cannot_follow`
 # can report what is NOT here rather than leaving it silent.
+#
+# Two of these are ALSO in `_COLLAPSED_KEYWORDS`, which is not a contradiction:
+# `patternProperties` and `prefixItems` are followed, so nothing beneath them is
+# invisible, and separately refused, because the marker they land on merges cases a
+# validator keeps apart. Followed and refused is the belt-and-braces position — the
+# walk reaches the subtree, and the author is still told the addressing is too coarse
+# to credit anything there.
 _FOLLOWED_KEYWORDS: tuple[str, ...] = (
     "$ref", "properties", "items", "prefixItems", "additionalProperties",
     "patternProperties", "anyOf", "allOf", "oneOf",
@@ -934,18 +1044,68 @@ _UNFOLLOWED_KEYWORDS: tuple[str, ...] = (
     "unevaluatedProperties", "unevaluatedItems", "$dynamicRef",
 )
 
+# Keywords the walk DOES follow, onto a path marker that collapses a distinction the
+# validator keeps. Followed, so nothing beneath them is invisible — but addressed
+# imprecisely, so the substance check can credit a property a client would never
+# accept there. That is over-crediting rather than silence, which is the more
+# dangerous direction: a green case that means less than it says.
+#
+# Exactly what each would over-credit, because "imprecise" is not actionable:
+#
+#   • `patternProperties` — every key at the `{}` marker is mapped, including one
+#     the PATTERN does not match. A payload key `total` credits the properties
+#     declared under `^persona_`, which a client applies only to matching keys.
+#     Teaching it means the marker carrying the pattern (`{^persona_}`), i.e. a
+#     wider label namespace.
+#   • a schema-valued `additionalProperties` — same marker, and by definition the
+#     keyword applies only to keys `properties` does NOT claim. The walk maps all of
+#     them, so a declared property name credits the additional schema.
+#   • `prefixItems` — positional schemas all collapse onto `[]`, so element 0
+#     credits the properties declared for element 1 and swapping two elements
+#     changes nothing. Teaching it means positional markers (`[0]`, `[1]`).
+#
+# Refused by name rather than measured wrongly, the same trade
+# `_UNFOLLOWED_KEYWORDS` makes — and free today, because no published declaration
+# uses any of the three. A Phase 3 author reaching for one is told to teach the
+# derivation, which is the point at which the addressing cost is worth paying.
+_COLLAPSED_KEYWORDS: tuple[str, ...] = ("patternProperties", "prefixItems")
 
-def _resolve_ref(ref: str, root) -> dict:
-    """A local `$ref` pointer resolved against the declaration it lives in.
+
+def _resolve_ref(ref: str, root) -> dict | None:
+    """A local JSON-POINTER `$ref` resolved against the declaration it lives in.
 
     Local only: a declaration is published inside `tools/list` and a client
     resolves it without fetching anything, so a remote pointer would be a defect
-    of a different kind. An unresolvable pointer yields `{}` — no site — for the
-    same reason every other derivation here degrades rather than raises: this runs
-    at import, under a `@pytest.mark.parametrize` decorator.
+    of a different kind. Degrades rather than raises for the same reason every
+    other derivation here does: this runs at import, under a
+    `@pytest.mark.parametrize` decorator.
+
+    🔑 `None` MEANS "COULD NOT RESOLVE", AND IT IS NOT THE SAME ANSWER AS `{}`.
+    An earlier round returned `{}` for both, which made an unresolvable pointer
+    indistinguishable from a pointer onto a legitimately empty schema — and that
+    is the file's recurring defect in its purest form, because all three
+    consumers of the walk go quiet at once: no site for the substance check, no
+    closure for the undeclared-key control, and `_stale_exemptions` reporting a
+    CORRECT exemption beneath the ref as a typo, whose only green fix is to delete
+    it. Returning `None` lets
+    `test_no_published_declaration_uses_a_ref_the_walk_cannot_resolve` say so by
+    name; the traversal still degrades, because `_reachable_schemas` ignores a
+    non-dict.
+
+    ⚠️ WHAT THIS DELIBERATELY DOES NOT RESOLVE, and why that is now safe: a
+    PLAIN-NAME pointer (`#Row` against an `$anchor`) and a remote one. Both are
+    legal 2020-12 and `Draft202012Validator` follows the first perfectly, so a
+    client enforces a declaration this walk cannot see. Teaching the resolver
+    `$anchor` is a real option; refusing it by name is the same trade
+    `_UNFOLLOWED_KEYWORDS` already makes for `contains` — the walk says what it
+    cannot measure instead of measuring it wrongly — and it costs a Phase 3 author
+    one restatement as `#/$defs/Row`, which every consumer here then follows.
     """
-    if not ref.startswith("#"):
-        return {}
+    if not ref.startswith("#/"):
+        # `#` alone is the whole document; `#Name` is an `$anchor`, which this
+        # resolver does not implement. Neither is a pointer, so neither is a
+        # failure to *follow* a pointer — both are reported, not guessed at.
+        return root if ref == "#" and isinstance(root, dict) else None
     target = root
     for raw in ref[1:].split("/"):
         if not raw:
@@ -953,13 +1113,34 @@ def _resolve_ref(ref: str, root) -> dict:
         token = raw.replace("~1", "/").replace("~0", "~")
         if isinstance(target, list):
             if not token.isdigit() or int(token) >= len(target):
-                return {}
+                return None
             target = target[int(token)]
         elif isinstance(target, dict) and token in target:
             target = target[token]
         else:
-            return {}
-    return target if isinstance(target, dict) else {}
+            return None
+    return target if isinstance(target, dict) else None
+
+
+def _unresolvable_refs(schema: dict) -> list[tuple[tuple, str]]:
+    """`(payload path, ref)` for every `$ref` the walk reaches and cannot follow.
+
+    Consumes `_reachable_schemas` rather than walking again — the one-walk rule
+    this file already learned twice: a second traversal is a second thing to keep
+    in step, and the closed-door control's shallow copy of the walk is what made
+    a nested closure invisible for a round.
+
+    A ref inside a subtree that is ITSELF unreachable cannot be reported, which is
+    the same ceiling `_UNFOLLOWED_KEYWORDS` has: detection happens where the walk
+    arrives. The first unresolvable ref on a path is what gets named, and fixing
+    it exposes anything beneath it.
+    """
+    found = []
+    for path, sub in _reachable_schemas(schema):
+        ref = sub.get("$ref")
+        if isinstance(ref, str) and _resolve_ref(ref, schema) is None:
+            found.append((path, ref))
+    return found
 
 
 def _reachable_schemas(
@@ -968,9 +1149,9 @@ def _reachable_schemas(
     """Every object schema a declaration reaches, with the payload path to it.
 
     🔑 ONE walk, shared by the substance check (`_declared_sites`) and by the
-    closed-door controls (`_closed_item_schemas`). They used to be two walks of
+    closed-door controls (`_closed_subschemas`). They used to be two walks of
     different depths, and the shallower one fed
-    `test_an_undeclared_key_inside_an_array_item_is_rejected` — the control this
+    `test_an_undeclared_key_inside_a_closed_subschema_is_rejected` — the control this
     file singles out as the architecturally important one, because M1 was inside
     `items`. A closed `items` nested below the root was parametrised by nothing
     while the substance check happily saw it, so the two halves of the file
@@ -1311,7 +1492,7 @@ def _stale_exemptions(exemptions: dict, registry: dict) -> list[str]:
     return findings
 
 
-def _closed_item_schemas() -> list[tuple[str, tuple]]:
+def _closed_subschemas() -> list[tuple[str, tuple]]:
     """`(tool, path)` for every ELEMENT schema that closes the door, at any depth.
 
     Needed one level down from `_closed_schema_tools` for the reason this file
@@ -1332,17 +1513,28 @@ def _closed_item_schemas() -> list[tuple[str, tuple]]:
     this control, which did not know the array existed; populated, both were
     silent.
 
-    Keyed by the same `_ARRAY`-marked path the substance check uses, so the two
-    halves of the file cannot drift back into disagreeing about depth. `type:
-    array` is deliberately NOT required: `{"items": {...}}` with no `type` still
-    constrains elements, and a validator enforces it.
+    🔑 ANY CLOSED SCHEMA BELOW THE ROOT, NOT ONLY AN ARRAY'S ELEMENTS. The
+    previous round kept `path[-1] == _ARRAY`, which is the same defect one step
+    narrower: a client enforces `additionalProperties: false` wherever it is
+    declared, and this control only covered the array case because that is where
+    M1's defect happened to live. A closed nested OBJECT was parametrised by
+    nothing. Confirmed through production code before the widening: closing the
+    `scenario` persona section left the whole file at 75 passed, unchanged.
+    Now the filter is "not the root, and closed" — the root is excluded only
+    because `_closed_schema_tools` already controls it, through a test that
+    merges the key into the payload root.
+
+    Keyed by the same marked path the substance check uses, so the two halves of
+    the file cannot drift back into disagreeing about depth. `type: array` is
+    deliberately NOT required: `{"items": {...}}` with no `type` still constrains
+    elements, and a validator enforces it.
     """
     found = []
     for name in _PUBLISHED_TOOL_NAMES:
         for path, sub in _reachable_schemas(_output_schema(name)):
             # `_reachable_schemas` already dropped a boolean `items`, which is
             # legal (`{"items": true}`) and closes nothing.
-            if path and path[-1] == _ARRAY and sub.get("additionalProperties") is False:
+            if path and sub.get("additionalProperties") is False:
                 found.append((name, path))
     return found
 
@@ -1609,6 +1801,127 @@ class TestEveryToolBringsASample:
             f"{list(_FOLLOWED_KEYWORDS)}."
         )
 
+    def test_no_published_declaration_nests_through_a_keyword_the_walk_collapses(self):
+        """What the walk addresses IMPRECISELY is refused, not credited wrongly.
+
+        🔑 THE THIRD CATEGORY, and the dangerous one. `_UNFOLLOWED_KEYWORDS` is
+        about silence — a declaration measured by nothing. These three are about
+        OVER-CREDITING: the walk follows them and lands on a marker (`[]`, `{}`)
+        that merges cases a validator keeps apart, so a sample can satisfy the
+        substance check for a property a client would reject at that position. A
+        green case that means less than it says is worse than an absent one,
+        because nothing prompts anyone to look.
+
+        `_COLLAPSED_KEYWORDS` carries the per-keyword detail. The schema-valued
+        `additionalProperties` case is checked separately because the keyword's mere
+        PRESENCE is not the problem — `True`/`False` are everywhere and both are
+        precise; only a sub-SCHEMA there is collapsed.
+
+        Free today: no published declaration uses any of them, which is why this is
+        a refusal rather than an addressing rework. Phase 3 pays that cost at the
+        moment it needs the construct.
+        """
+        findings = []
+        for name in _PUBLISHED_TOOL_NAMES:
+            for path, sub in _reachable_schemas(_output_schema(name)):
+                where = "/".join(path) or "<root>"
+                used = sorted(k for k in _COLLAPSED_KEYWORDS if k in sub)
+                if used:
+                    findings.append(f"{name} at {where}: {used}")
+                if isinstance(sub.get("additionalProperties"), dict):
+                    findings.append(f"{name} at {where}: schema-valued additionalProperties")
+
+        assert findings == [], (
+            "these declarations nest a schema through a keyword the walk follows but "
+            "addresses imprecisely, so the substance check can credit a property a "
+            "client would not accept at that position:\n"
+            + "\n".join(f"  • {f}" for f in findings)
+            + "\nGive the construct its own path marker in `_reachable_schemas` and "
+            "`_located_objects` (the way `[]` and `{}` work), or restate the "
+            "declaration with named `properties`. See `_COLLAPSED_KEYWORDS` for what "
+            "each one currently merges."
+        )
+
+    def test_no_published_declaration_uses_a_ref_the_walk_cannot_resolve(self):
+        """A `$ref` the resolver cannot follow is REFUSED, on the same grounds.
+
+        🔑 THE SIBLING OF THE TEST ABOVE, and it exists because that one cannot
+        cover this: it asks which keyword is PRESENT, and `$ref` is in
+        `_FOLLOWED_KEYWORDS` — so a `$ref` that is followed and fails resolves to
+        nothing while passing every check in the file. `_resolve_ref` returning
+        `None` rather than `{}` is what makes the difference reportable.
+
+        The three shapes this catches, all legal to publish and all enforced by a
+        client: a PLAIN-NAME pointer (`#Row` against an `$anchor`, which
+        `Draft202012Validator` resolves perfectly), a REMOTE one, and a TYPO'd
+        local one. The typo has a second, louder symptom — the validator raises and
+        five tests fail — so this test's unique contribution is the first two,
+        which are silent everywhere else.
+
+        Derived from the live registry, so a Phase 3 declaration that reaches for
+        `$anchor` is told to restate it as `#/$defs/Name` rather than shipping a
+        subtree nothing here measures.
+        """
+        findings = []
+        for name in _PUBLISHED_TOOL_NAMES:
+            for path, ref in _unresolvable_refs(_output_schema(name)):
+                findings.append(f"{name} at {'/'.join(path) or '<root>'}: {ref!r}")
+
+        assert findings == [], (
+            "these declarations point at a schema `_resolve_ref` cannot follow, so "
+            "everything beneath the pointer is measured by nothing here — no site "
+            "for the substance check, no closure for the undeclared-key control, "
+            "and a correct exemption below it reported as a typo:\n"
+            + "\n".join(f"  • {f}" for f in findings)
+            + "\nRestate it as a local JSON pointer (`#/$defs/Name`), or teach "
+            "`_resolve_ref` the form you need."
+        )
+
+    def test_the_ref_check_notices_each_pointer_it_cannot_follow(self):
+        """The positive control: each unfollowable shape, and silence for a good one.
+
+        Owned schemas rather than the registry, because nothing published uses these
+        forms — which is exactly why the check above passes today and why it would
+        be worth nothing unproven. `check_schema` on the `$anchor` case is the point
+        of the whole finding: a client accepts and enforces it.
+        """
+        anchored = {
+            "type": "object",
+            "$defs": {"Row": {"$anchor": "Row", "type": "object",
+                              "properties": {"id": {"type": "string"}}}},
+            "properties": {"rows": {"type": "array", "items": {"$ref": "#Row"}}},
+        }
+        Draft202012Validator.check_schema(anchored)
+        assert _unresolvable_refs(anchored) == [(("rows", _ARRAY), "#Row")], (
+            "a plain-name pointer against an $anchor must be reported: a client "
+            "resolves it and this walk does not."
+        )
+        # And it really is invisible to the walk — no site beneath it.
+        assert ("rows", _ARRAY) not in _declared_sites(anchored)
+
+        remote = {"type": "object",
+                  "properties": {"row": {"$ref": "https://example.test/s.json#/$defs/Row"}}}
+        assert [ref for _p, ref in _unresolvable_refs(remote)] == [
+            "https://example.test/s.json#/$defs/Row"
+        ]
+
+        typo = {"type": "object", "$defs": {"Row": {"type": "object"}},
+                "properties": {"row": {"$ref": "#/$defs/Rwo"}}}
+        assert _unresolvable_refs(typo) == [(("row",), "#/$defs/Rwo")]
+
+        good = {
+            "type": "object",
+            "$defs": {"Row": {"type": "object", "properties": {"id": {"type": "string"}}}},
+            "properties": {"rows": {"type": "array", "items": {"$ref": "#/$defs/Row"}}},
+        }
+        Draft202012Validator.check_schema(good)
+        assert _unresolvable_refs(good) == [], "a resolvable pointer must be silent"
+        assert _declared_sites(good)[("rows", _ARRAY)] == frozenset({"id"})
+
+        # `#` is the whole document, and resolving it is not a failure to follow a
+        # pointer — it is how a self-referential declaration is written.
+        assert _unresolvable_refs({"type": "object", "properties": {"self": {"$ref": "#"}}}) == []
+
     def test_no_published_declaration_uses_a_property_name_that_collides_with_a_label(self):
         """`_label`'s flat namespace assumes no property name contains `/`.
 
@@ -1840,7 +2153,7 @@ class TestEveryToolBringsASample:
 class TestTheDerivationsSurviveAnUnusualDeclaration:
     """Nothing read at import time may raise on a declaration a client accepts.
 
-    🔑 `_closed_schema_tools()`, `_closed_item_schemas()` and `_TOOL_SAMPLES` are
+    🔑 `_closed_schema_tools()`, `_closed_subschemas()` and `_TOOL_SAMPLES` are
     all read inside `@pytest.mark.parametrize` decorators, so anything they raise
     is a COLLECTION error: every test in `lambda/api` aborts, attributed to
     whatever ran next, and no pull-request gate would report it (the one workflow
@@ -1874,7 +2187,7 @@ class TestTheDerivationsSurviveAnUnusualDeclaration:
 
         assert _output_schema(published[0]["name"]) == {}
         assert published[0]["name"] not in _closed_schema_tools()
-        assert all(name != published[0]["name"] for name, _ in _closed_item_schemas())
+        assert all(name != published[0]["name"] for name, _ in _closed_subschemas())
 
     def test_a_tool_whose_output_schema_is_not_a_dict_reads_as_an_empty_schema(
         self, monkeypatch
@@ -1906,7 +2219,7 @@ class TestTheDerivationsSurviveAnUnusualDeclaration:
 
         assert _subschemas(published[0]["outputSchema"]) == {}
         # The assertion that matters: no AttributeError at what would be import.
-        assert all(name != published[0]["name"] for name, _ in _closed_item_schemas())
+        assert all(name != published[0]["name"] for name, _ in _closed_subschemas())
 
     def test_a_boolean_items_schema_is_skipped_rather_than_crashing_the_derivation(
         self, monkeypatch
@@ -1921,7 +2234,7 @@ class TestTheDerivationsSurviveAnUnusualDeclaration:
         Draft202012Validator.check_schema(published[0]["outputSchema"])
         monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
 
-        assert all(name != published[0]["name"] for name, _ in _closed_item_schemas())
+        assert all(name != published[0]["name"] for name, _ in _closed_subschemas())
 
     def test_the_imported_persona_fixture_still_carries_the_sections_this_sample_extends(
         self,
@@ -1985,7 +2298,7 @@ class TestTheDerivationsSurviveAnUnusualDeclaration:
         payload. So the tolerant path must be shown NOT to be the only path.
         """
         assert _closed_schema_tools(), "the closed-schema derivation found nothing"
-        assert _closed_item_schemas(), "the closed-items derivation found nothing"
+        assert _closed_subschemas(), "the closed-items derivation found nothing"
         assert all(
             _subschemas(_output_schema(name)) for name in _closed_schema_tools()
         ), "a closed schema declared no usable properties"
@@ -2115,11 +2428,11 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         )
         assert any("a_field_no_one_declared" in e for e in errors), errors
 
-    def test_some_array_closes_its_item_schema(self):
+    def test_some_declaration_closes_a_schema_below_the_root(self):
         """Anti-vacuity for the nested control below, the same way
         `test_some_tool_closes_its_output_schema` is for the top-level one: an
         empty derivation would make an empty parametrization read as green."""
-        assert _closed_item_schemas(), (
+        assert _closed_subschemas(), (
             "no published array closes its item schema; the nested extra-key "
             "control below would cover nothing — and M1 lived inside `items`"
         )
@@ -2129,14 +2442,14 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
     ):
         """Anti-vacuity for the DEPTH of the derivation above, not just its size.
 
-        🔑 `test_some_array_closes_its_item_schema` is satisfied by one closure at
+        🔑 `test_some_declaration_closes_a_schema_below_the_root` is satisfied by one closure at
         the payload root, so it passed throughout the round in which this
         derivation walked root-level `properties` only — "finds nothing deep" read
         as "there is nothing deep". Every published closure happens to be at the
         root today, so the capability is asserted directly instead: a closed
         `items` nested inside another array's item schema must be FOUND.
 
-        🔑 Through `_closed_item_schemas()` ITSELF, over a substituted registry —
+        🔑 Through `_closed_subschemas()` ITSELF, over a substituted registry —
         not by re-implementing its filter over `_reachable_schemas`. Written the
         second way first, and reverting the derivation to its old root-only walk
         then left all 75 tests passing: the control was exercising the shared walk,
@@ -2165,7 +2478,7 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         monkeypatch.setattr(mcp_handler, "MCP_TOOLS", published)
 
         found = [
-            path for name, path in _closed_item_schemas()
+            path for name, path in _closed_subschemas()
             if name == published[0]["name"]
         ]
 
@@ -2177,9 +2490,9 @@ class TestTheValidatorRejectsWhatTheDeclarationsForbid:
         )
 
     @pytest.mark.parametrize(
-        "tool,path", _closed_item_schemas(), ids=lambda p: p if isinstance(p, str) else "/".join(p)
+        "tool,path", _closed_subschemas(), ids=lambda p: p if isinstance(p, str) else "/".join(p)
     )
-    def test_an_undeclared_key_inside_an_array_item_is_rejected(self, tool, path):
+    def test_an_undeclared_key_inside_a_closed_subschema_is_rejected(self, tool, path):
         """The nested half of the closed-door control, one level DOWN.
 
         🔑 Architecturally the more important of the two, because M1 was inside
