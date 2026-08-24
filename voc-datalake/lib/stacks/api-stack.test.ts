@@ -397,6 +397,35 @@ describe('stack and callers stay in step', () => {
     expect(referenced.filter((path) => !wiredPaths.has(path))).toEqual([]);
   });
 
+  it.each([
+    ['the integrator guide', join('..', 'docs', 'feedback-forms.md')],
+    ['the system documentation', join('..', 'docs', 'SYSTEM_DOCUMENTATION.md')],
+  ])('wires every /feedback-forms path the embed snippet in %s hands to customers', (_label, relativePath) => {
+    // A copy-pasteable snippet is a caller, and it is the one caller whose
+    // failure lands on somebody outside this repo. #374 found both of these
+    // pages advertising `/feedback-forms/{form_id}/widget.js`, a route neither
+    // the handler nor the stack has ever registered — so the snippet returned
+    // 403 Missing Authentication Token, which reads as an authorization problem
+    // rather than a wrong URL. Prose is checked nowhere else, and the docs are
+    // where the wrong path outlived the code by longest.
+    //
+    // Only fenced `html` blocks are read, not the prose around them: the fix for
+    // that finding was to state in prose that `widget.js` does NOT exist, so
+    // scanning the whole page would fail on the very sentences that prevent the
+    // mistake recurring. What is asserted is narrower and is the thing that
+    // matters — every URL offered for pasting resolves to a wired route.
+    const page = readRepoFile(...relativePath.split('/'));
+    const htmlBlocks = [...page.matchAll(/```html\n([\s\S]*?)```/g)].map(([, body]) => body).join('\n');
+
+    expect(htmlBlocks.length, 'no ```html snippet found — did the fence language change?').toBeGreaterThan(0);
+
+    const wiredPaths = new Set(apiMethods(apiTemplate()).map((m) => m.path));
+    const referenced = callerFormsPaths(htmlBlocks);
+
+    expect(referenced.length).toBeGreaterThan(0);
+    expect(referenced.filter((path) => !wiredPaths.has(path))).toEqual([]);
+  });
+
   it('has no proxy resource left without explicit method options', () => {
     // The original defect in source form: `addProxy` without
     // `defaultMethodOptions` silently publishes everything beneath it.

@@ -20,44 +20,77 @@
  * both are yes, add it below. If not, it does not belong in `public/` —
  * build-time assets belong in `src/` where the bundler can tree-shake them, and
  * anything needing authorization belongs behind the API.
+ *
+ * The inventory is read from git rather than from the working tree, because the
+ * two are not the same question. What CI publishes is what is *tracked*; an
+ * untracked file exists on one developer's disk and is never deployed. Reading
+ * the filesystem would therefore fail on things that are deliberately ignored —
+ * `frontend/.gitignore` names `public/config.json` on purpose (runtimeConfig.ts
+ * fetches `/config.json`, and scripts/deploy.sh generates it into `dist/` at
+ * deploy time, so a developer wanting `npm run dev` to serve a real config drops
+ * it here) as well as `.DS_Store`. A guard that breaks `npm test` for a
+ * documented workflow gets deleted rather than fixed, so it must not.
  */
 import { describe, it, expect } from 'vitest'
-import * as fs from 'fs'
+import { execFileSync } from 'child_process'
 import * as path from 'path'
 
-const PUBLIC_DIR = path.join(__dirname, '../public')
+const FRONTEND_DIR = path.join(__dirname, '..')
+
+/**
+ * Every path tracked under `public/`, relative to `public/`. This is the set git
+ * would deploy, so gitignored local-only files (see the note above) cannot make
+ * it fail, and nested paths are included — recursion comes for free.
+ */
+function trackedPublicPaths(): string[] {
+  return execFileSync('git', ['ls-files', '--', 'public'], {
+    cwd: FRONTEND_DIR,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => path.relative('public', line))
+}
 
 /**
  * Every entry deliberately published to the CDN, with why it must be public.
- * Keep sorted; `readdirSync` output is compared against this exactly.
+ * Keep sorted; the top-level tracked entries are compared against this exactly.
  */
 const EXPECTED_PUBLIC_ENTRIES = [
-  // Browser tab icon; requested by the browser itself, not by our code.
+  // Browser tab icon; requested by the browser itself, not by our code
+  // (index.html:5 declares it, but the browser would request /favicon.ico
+  // regardless).
   'favicon.ico',
   // i18next fetches translation JSON at runtime over HTTP, so these cannot be
-  // bundled. Contents are guarded separately by src/i18n/localeParity.test.ts.
+  // bundled — src/i18n/loadPath.ts builds `/locales/{{lng}}/{{ns}}.json?v=…`.
+  // Contents are guarded separately by src/i18n/localeParity.test.ts.
   'locales',
-  // Referenced by index.html.
-  'vite.svg',
 ]
 
 describe('frontend public/ inventory', () => {
   it('contains exactly the assets we intend to publish to the CDN', () => {
-    const actual = fs.readdirSync(PUBLIC_DIR).sort()
+    // First path segment only, so `locales/en/common.json` counts as `locales`
+    // and the 120 translation files do not have to be listed individually.
+    const actual = [
+      ...new Set(trackedPublicPaths().map((p) => p.split(path.sep)[0])),
+    ].sort()
 
     // Compared as a whole rather than per-entry so the failure message names
     // the unexpected file, which is the thing a reader needs to act on.
     expect(actual).toEqual(EXPECTED_PUBLIC_ENTRIES)
   })
 
-  it('publishes no JavaScript, which would be served unbundled and unlinted', () => {
-    // Both files this guard was written for were .js. Anything executable in
-    // here bypasses the bundler (no tree-shaking, no content hash, no
-    // type-checking) and, until #374, the lint ignores as well.
-    const scripts = fs
-      .readdirSync(PUBLIC_DIR, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.[cm]?[jt]sx?$/.test(entry.name))
-      .map((entry) => entry.name)
+  it('publishes no JavaScript anywhere in the tree, which would be served unbundled and unlinted', () => {
+    // Both files this guard was written for were top-level .js, but the check
+    // covers every tracked path under public/ — a script inside an allowlisted
+    // directory (locales/ is machine-managed by i18next-parser, so it is the
+    // subtree least likely to be read carefully) is copied to dist/ and served
+    // just the same, while the assertion above sees only the directory name.
+    // Anything executable here bypasses the bundler: no tree-shaking, no
+    // content hash, no type-checking, and until #374 no linting either.
+    const scripts = trackedPublicPaths()
+      .filter((p) => /\.[cm]?[jt]sx?$/.test(p))
+      .sort()
 
     expect(scripts).toEqual([])
   })

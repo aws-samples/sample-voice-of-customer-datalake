@@ -6,7 +6,7 @@ Feedback Forms allow you to collect customer feedback directly through embeddabl
 
 The VoC platform provides a customizable feedback form system that:
 
-- Embeds on any website via iframe or JavaScript widget
+- Embeds on any website via an iframe
 - Supports multiple forms with different configurations
 - Routes feedback directly to the processing pipeline
 - Allows pre-categorization for targeted feedback collection
