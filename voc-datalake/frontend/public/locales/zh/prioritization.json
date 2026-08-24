@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "{{documents}} 个文档，一张选票"
   },
+  "rowCount_one": "{{count}} 个提案",
+  "rowCount_other": "{{count}} 个提案",
   "scores": {
     "confidence": "置信度",
     "confidenceDescription": "对影响力和上市时间估计的确定性",

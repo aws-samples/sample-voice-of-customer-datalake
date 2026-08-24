@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "{{documents}} documentos, una papeleta"
   },
+  "rowCount_one": "{{count}} propuesta",
+  "rowCount_other": "{{count}} propuestas",
   "scores": {
     "confidence": "Confianza",
     "confidenceDescription": "Certeza en las estimaciones de impacto y TdC",

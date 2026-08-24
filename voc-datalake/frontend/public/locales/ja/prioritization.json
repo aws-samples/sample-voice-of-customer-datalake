@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "ドキュメント{{documents}}件、投票は1票"
   },
+  "rowCount_one": "提案{{count}}件",
+  "rowCount_other": "提案{{count}}件",
   "scores": {
     "confidence": "確信度",
     "confidenceDescription": "インパクトとTTM見積もりの確実性",
