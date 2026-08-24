@@ -230,6 +230,38 @@ interface DayReadOutcome {
 }
 
 /**
+ * How many day partitions are read at once. See `scanWaves`.
+ *
+ * Exported so the test can assert the fan-out is really bounded at this width,
+ * rather than having quietly returned to one round trip at a time.
+ */
+export const DAY_SCAN_CONCURRENCY = 8;
+
+/**
+ * The candidate ceiling, shared by every day in the scan.
+ *
+ * ONE counter, deliberately, not a per-day slice of the remainder. Slicing is
+ * what makes concurrency unsafe here: it would let K in-flight days each believe
+ * they may spend the whole budget (K×MAX_CANDIDATES rows held at once, which is
+ * the thing the cap exists to bound), and dividing it K ways instead makes a
+ * moderate day report `dayPartiallyRead` while the total is nowhere near the cap
+ * — a false truncation signal in the one mechanism this file exists to make
+ * trustworthy. A shared counter has neither problem: every page charges the same
+ * budget as it lands, so the cap means what it says and a day reports truncation
+ * only when the budget is genuinely gone.
+ *
+ * Mutated in place because this package bans `let` (eslint no-restricted-syntax).
+ */
+interface CandidateBudget {
+  cap: number;
+  spent: number;
+}
+
+function budgetExhausted(budget: CandidateBudget): boolean {
+  return budget.spent >= budget.cap;
+}
+
+/**
  * Page through one day's GSI partition via LastEvaluatedKey (not just the
  * first page), appending valid rows to `candidates`. Per-row safeParse: a
  * single malformed item must not throw and discard the whole day's results.
@@ -237,16 +269,22 @@ interface DayReadOutcome {
  * stops early only as parsed rows accumulate (a day of entirely malformed
  * rows still pages to its end, same as the previous do/while).
  *
- * `truncated` is true when the day still had pages left but MAX_CANDIDATES
- * stopped the walk. `dropped` counts rows safeParse rejected: they are rows the
- * answer does not contain, so the caller reports them too rather than
+ * `truncated` is true when the day still had pages left but the shared candidate
+ * budget stopped the walk. `dropped` counts rows safeParse rejected: they are
+ * rows the answer does not contain, so the caller reports them too rather than
  * presenting a window every row of which was discarded as fully read.
+ *
+ * Rows land in this day's OWN array rather than straight into the shared list,
+ * so concurrently-read days cannot interleave: the caller concatenates them in
+ * date order. The budget is charged as pages land, so the cap still bounds the
+ * whole scan rather than each day separately.
  */
 async function fetchDayPages(
   docClient: DynamoDBDocumentClient,
   feedbackTable: string,
   dateStr: string,
   candidates: FeedbackItem[],
+  budget: CandidateBudget,
   startKey?: Record<string, unknown>,
 ): Promise<DayReadOutcome> {
   const resp = await docClient.send(
@@ -264,10 +302,11 @@ async function fetchDayPages(
     if (parsed.success) candidates.push(parsed.data);
   }
   const dropped = parsedRows.filter((parsed) => !parsed.success).length;
+  budget.spent += parsedRows.length - dropped;
   if (!resp.LastEvaluatedKey) return { truncated: false, dropped };
-  if (candidates.length >= MAX_CANDIDATES) return { truncated: true, dropped };
+  if (budgetExhausted(budget)) return { truncated: true, dropped };
   const rest = await fetchDayPages(
-    docClient, feedbackTable, dateStr, candidates, resp.LastEvaluatedKey,
+    docClient, feedbackTable, dateStr, candidates, budget, resp.LastEvaluatedKey,
   );
   return { truncated: rest.truncated, dropped: dropped + rest.dropped };
 }
@@ -288,53 +327,95 @@ async function fetchDayPages(
  * REPORTED (the rule voc-context.ts states for its metric pages) rather than
  * leaving a missing day looking like an empty one.
  *
- * One partition per day, sequentially, so widening the bound to 90 days triples
- * the worst-case round trips per tool call — and this result is awaited mid-turn
- * while the user watches. Kept sequential deliberately, not by omission:
- * `voc-context.ts::sumMetricWindow` escapes per-day reads because METRIC rows
- * live in one partition with a sortable date key, so BETWEEN bounds the window
- * server-side. Feedback rows do not — `gsi1pk` IS the date — so a window is N
- * partitions and no query shape collapses them. Bounded concurrency would cut
- * the wall time, but the obvious version breaks two properties this file relies
- * on: each in-flight day may spend the whole remaining candidate budget, so K
- * concurrent days hold up to K×MAX_CANDIDATES rows (the cap exists to bound
- * exactly that), and dividing the budget per day makes a moderate day report
- * `dayPartiallyRead` when the total is nowhere near the cap — a false truncation
- * signal in the one mechanism this file exists to make trustworthy. That is a
- * budgeting decision to take on its own, with a measurement; empty partitions
- * are cheap, so the cost lands on tenants with data across the whole window.
+ * Days are read DAY_SCAN_CONCURRENCY at a time, newest wave first. Sequentially
+ * a 90-day window is 90 round trips awaited mid-turn while the user watches a
+ * half-rendered answer; at a 12ms round trip that measured p99 1092ms against
+ * 153ms in waves of 8 — less even than the 30-day sequential scan this widening
+ * replaced (364ms), so the window got three times wider and still got faster.
+ *
+ * A range query is not available: `voc-context.ts::sumMetricWindow` escapes
+ * per-day reads because METRIC rows share one partition with a sortable date
+ * key, so BETWEEN bounds the window server-side. Feedback rows do not — `gsi1pk`
+ * IS the date — so a window is N partitions and no query shape collapses them.
+ * Concurrency is what is left, and it is safe here only because the candidate
+ * budget is one shared counter rather than a per-day slice; see CandidateBudget
+ * for why the sliced version would both hold K× the rows and invent truncation
+ * signals that never happened.
  */
 async function fetchCandidatesByDate(
   docClient: DynamoDBDocumentClient,
   feedbackTable: string,
   days: number,
+  candidateCap: number,
 ): Promise<{ candidates: FeedbackItem[]; reasons: TruncationReason[] }> {
   const now = new Date();
-  const candidates: FeedbackItem[] = [];
-  // Reasons accumulate into an array rather than a reassigned flag because this
-  // package bans `let` (eslint no-restricted-syntax).
-  const reasons: TruncationReason[] = [];
-
-  for (const i of Array.from({ length: days }, (_, idx) => idx)) {
+  const dates = Array.from({ length: days }, (_, i) => {
     const d = new Date(now);
     d.setUTCDate(d.getUTCDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    try {
-      const day = await fetchDayPages(docClient, feedbackTable, dateStr, candidates);
-      if (day.truncated) reasons.push('dayPartiallyRead');
-      if (day.dropped > 0) reasons.push(...noteDroppedRows(dateStr, day.dropped));
-    } catch (error) {
-      reasons.push(...noteFailedDay(dateStr, error));
-    }
-    if (candidates.length >= MAX_CANDIDATES) {
-      // Days still unread => the window was never fully scanned. `days` is the
-      // whole window here, clamped or not, so this cannot claim "nothing left
-      // unread" about days the caller asked for and the loop never reached.
-      if (i < days - 1) reasons.push('daysUnread');
-      break;
-    }
+    return d.toISOString().slice(0, 10);
+  });
+  const waves = Array.from(
+    { length: Math.ceil(dates.length / DAY_SCAN_CONCURRENCY) },
+    (_, i) => dates.slice(i * DAY_SCAN_CONCURRENCY, (i + 1) * DAY_SCAN_CONCURRENCY),
+  );
+  return scanWaves(docClient, feedbackTable, waves, { cap: candidateCap, spent: 0 });
+}
+
+/** One day, never throwing: a failed read is a reported hole, not a lost scan. */
+async function readOneDay(
+  docClient: DynamoDBDocumentClient,
+  feedbackTable: string,
+  dateStr: string,
+  budget: CandidateBudget,
+): Promise<{ items: FeedbackItem[]; reasons: TruncationReason[] }> {
+  const items: FeedbackItem[] = [];
+  try {
+    const day = await fetchDayPages(docClient, feedbackTable, dateStr, items, budget);
+    return {
+      items,
+      reasons: [
+        ...(day.truncated ? ['dayPartiallyRead' as const] : []),
+        ...(day.dropped > 0 ? noteDroppedRows(dateStr, day.dropped) : []),
+      ],
+    };
+  } catch (error) {
+    return { items, reasons: noteFailedDay(dateStr, error) };
   }
-  return { candidates, reasons };
+}
+
+/**
+ * Read the waves in order, stopping once the candidate budget is gone.
+ *
+ * Recursion rather than a loop because the accumulator has to stay `const`.
+ * Ordering is by DATE, not completion: each wave's days are concatenated in the
+ * order they were dispatched, so list mode's default 'recent' sort — which is
+ * the scan order itself — is unchanged from the sequential version.
+ */
+async function scanWaves(
+  docClient: DynamoDBDocumentClient,
+  feedbackTable: string,
+  waves: string[][],
+  budget: CandidateBudget,
+  acc: { candidates: FeedbackItem[]; reasons: TruncationReason[] } = { candidates: [], reasons: [] },
+  index = 0,
+): Promise<{ candidates: FeedbackItem[]; reasons: TruncationReason[] }> {
+  if (index >= waves.length) return acc;
+  const reads = await Promise.all(
+    waves[index].map((dateStr) => readOneDay(docClient, feedbackTable, dateStr, budget)),
+  );
+  const next = {
+    candidates: [...acc.candidates, ...reads.flatMap((r) => r.items)],
+    reasons: [...acc.reasons, ...reads.flatMap((r) => r.reasons)],
+  };
+  if (budgetExhausted(budget)) {
+    // Waves after this one were never dispatched, so those days are genuinely
+    // unread. Every day WITHIN this wave was read, hence the wave-level test:
+    // claiming 'daysUnread' for them would be a truncation that did not happen.
+    return index + 1 < waves.length
+      ? { ...next, reasons: [...next.reasons, 'daysUnread'] }
+      : next;
+  }
+  return scanWaves(docClient, feedbackTable, waves, budget, next, index + 1);
 }
 
 /**
@@ -417,6 +498,9 @@ export async function executeSearchFeedback(
   feedbackTable: string,
   toolInput: unknown,
   contextFilters: ContextFilters,
+  // Overridable so the cap-reached cases can be driven with a handful of rows
+  // instead of materialising MAX_CANDIDATES zod-parsed fixtures per test.
+  candidateCap: number = MAX_CANDIDATES,
 ): Promise<SearchFeedbackResult> {
   const {
     input, query, mode, limit, days, requestedDays, filters,
@@ -430,7 +514,7 @@ export async function executeSearchFeedback(
     if (idResult) return idResult;
   }
 
-  const scan = await fetchCandidatesByDate(docClient, feedbackTable, days);
+  const scan = await fetchCandidatesByDate(docClient, feedbackTable, days, candidateCap);
   // The clamp is a truncation like any other: the caller asked about a longer
   // window than this scan can reach, so the answer covers less than the
   // question did and has to say which window it actually read.

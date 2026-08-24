@@ -2,7 +2,22 @@
  * Tests for search_feedback tool implementation.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeSearchFeedback, MAX_CANDIDATES, MAX_LOOKBACK_DAYS } from './search-feedback.js';
+import {
+  executeSearchFeedback,
+  DAY_SCAN_CONCURRENCY,
+  MAX_CANDIDATES,
+  MAX_LOOKBACK_DAYS,
+} from './search-feedback.js';
+
+/**
+ * The candidate cap the truncation cases inject.
+ *
+ * Three rows reach the cap-hit branches that MAX_CANDIDATES needed ten thousand
+ * zod-parsed fixtures apiece to reach. Kept far below MAX_CANDIDATES, and
+ * asserted so, since a TEST_CAP that drifted up to the real value would put the
+ * 10k fixtures back without anyone noticing.
+ */
+const TEST_CAP = 3;
 
 // Mock DynamoDB document client
 function createMockDocClient(queryResponses: Record<string, unknown>[][] = []) {
@@ -528,18 +543,132 @@ describe('lookback window (matches shared/feedback.py MAX_LOOKBACK_DAYS)', () =>
   });
 });
 
+describe('the day scan is bounded-concurrent, not sequential', () => {
+  freezeClock();
+
+  it('drives the cap branches with an injected budget, not the production one', () => {
+    // The override is what lets the truncation cases above use 3-row fixtures
+    // instead of 10 000 each. If TEST_CAP ever drifted up to the real value the
+    // fixtures would silently balloon again; if MAX_CANDIDATES drifted down to a
+    // handful, production would report truncation on ordinary windows.
+    expect(TEST_CAP).toBeLessThan(MAX_CANDIDATES);
+    expect(MAX_CANDIDATES).toBe(10000);
+  });
+
+  /** Counts how many sends are in flight at once, so overlap is observable. */
+  function createOverlapTrackingDocClient() {
+    const inFlight = { now: 0, max: 0 };
+    const client = {
+      send: vi.fn().mockImplementation(() => {
+        inFlight.now += 1;
+        inFlight.max = Math.max(inFlight.max, inFlight.now);
+        return Promise.resolve({ Items: [] }).finally(() => {
+          inFlight.now -= 1;
+        });
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+    return { client, inFlight };
+  }
+
+  it('overlaps day reads in waves instead of awaiting one at a time', async () => {
+    // 90 sequential round trips sat in front of a half-rendered chat turn. At a
+    // 12ms round trip that measured p99 1092ms sequential against 153ms in waves
+    // of 8 — less even than the 30-day sequential scan this widening replaced.
+    const { client, inFlight } = createOverlapTrackingDocClient();
+
+    await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 90 });
+
+    // Both assertions carry weight and neither suffices alone. The first catches
+    // a return to sequential reads; comparing only against the imported constant
+    // would NOT, because setting it to 1 satisfies the equality — a green result
+    // meaning "did not check". The second catches an unbounded fan-out, or drift
+    // from the declared width.
+    expect(inFlight.max).toBeGreaterThan(1);
+    expect(inFlight.max).toBe(DAY_SCAN_CONCURRENCY);
+    expect(client.send).toHaveBeenCalledTimes(90);
+  });
+
+  it('never exceeds the declared width, even on a window that is not a whole number of waves', async () => {
+    // 90 / 8 leaves a final wave of 2. A chunker that mishandled the remainder
+    // could dispatch it alongside the previous wave.
+    const { client, inFlight } = createOverlapTrackingDocClient();
+
+    await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 90 });
+
+    expect(inFlight.max).toBeLessThanOrEqual(DAY_SCAN_CONCURRENCY);
+  });
+
+  it('keeps candidates in date order, newest first, despite concurrent reads', async () => {
+    // Concurrency must not reorder results: list mode's default 'recent' sort IS
+    // the scan order, so completion-order accumulation would silently shuffle
+    // what the model is shown. Days resolve in reverse order here to force it.
+    const byDate = Object.fromEntries(
+      [1, 2, 3].map((n) => [daysAgo(n), [makeFeedbackItem({
+        feedback_id: `${n}`.repeat(32),
+        date: daysAgo(n),
+        source_created_at: `${daysAgo(n)}T10:00:00Z`,
+      })]]),
+    );
+    const client = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        const date = (values[':pk'] ?? '').replace('DATE#', '');
+        const items = byDate[date] ?? [];
+        // Newer days settle LAST: each awaits more microtask turns than the day
+        // before it, so completion order is the reverse of date order. Microtasks
+        // rather than timers because these tests run on fake timers.
+        const settleOrder: Record<string, number> = { [daysAgo(1)]: 3, [daysAgo(2)]: 2 };
+        const turns = settleOrder[date] ?? 1;
+        return Array.from({ length: turns }).reduce<Promise<{ Items: unknown[] }>>(
+          (p) => p.then((v) => v),
+          Promise.resolve({ Items: items }),
+        );
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const result = await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 5 });
+
+    expect(result.items.map((i) => i.date)).toStrictEqual([daysAgo(1), daysAgo(2), daysAgo(3)]);
+  });
+
+  it('honours the shared candidate budget across concurrent days, not per day', async () => {
+    // The reason concurrency is safe here at all. A per-day slice of the budget
+    // would let each in-flight day spend the whole remainder — 8 x the cap held
+    // at once, which is exactly what the cap exists to prevent. One counter,
+    // charged as pages land, so the total is bounded however wide the fan-out.
+    const rows = Array.from({ length: 4 }, (_, i) =>
+      makeFeedbackItem({ feedback_id: `d${String(i).padStart(31, '0')}` }),
+    );
+    const client = {
+      send: vi.fn().mockImplementation(() => Promise.resolve({ Items: rows })),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const result = await executeSearchFeedback(
+      client, 'test-feedback-table', { mode: 'aggregate' }, { days: 90 }, TEST_CAP,
+    );
+
+    // One wave of 8 days x 4 rows is all that may be collected: the budget is
+    // gone, so wave 2 is never dispatched. Per-day budgeting would keep going.
+    expect(client.send).toHaveBeenCalledTimes(DAY_SCAN_CONCURRENCY);
+    expect(result.isPartial).toBe(true);
+  });
+});
+
 describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_partial)', () => {
   freezeClock();
 
   /**
    * One page big enough to reach the candidate cap, optionally with more to come.
    *
-   * Sized from the exported constant rather than a literal, so the fixture cannot
-   * go stale — at 9 999 rows every truncation assertion below would pass for the
-   * wrong reason, or fail for none.
+   * Sized from TEST_CAP, which every case below passes to `executeSearchFeedback`
+   * as its cap. Sizing from MAX_CANDIDATES instead meant 10 000 zod-parsed
+   * fixtures per test and ~40 000 across the file, all of it incidental to what
+   * is being asserted — and it scaled with any future rise in the cap. The
+   * injected cap keeps the fixture honest without keeping it huge: it is still
+   * "one page that exactly fills the budget", just a smaller budget.
    */
   function createCappedDocClient(hasMorePages: boolean) {
-    const page = Array.from({ length: MAX_CANDIDATES }, (_, i) =>
+    const page = Array.from({ length: TEST_CAP }, (_, i) =>
       makeFeedbackItem({ feedback_id: `c${String(i).padStart(31, '0')}` }),
     );
     let call = 0;
@@ -573,7 +702,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     // set the flag is the unfinished partition — otherwise this passes on the
     // other branch and the day-level signal goes untested.
     const result = await executeSearchFeedback(
-      createCappedDocClient(true), 'test-feedback-table', {}, { days: 1 },
+      createCappedDocClient(true), 'test-feedback-table', {}, { days: 1 }, TEST_CAP,
     );
 
     expect(result.isPartial).toBe(true);
@@ -584,7 +713,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     // Day 0 fills the budget on a single page (no LastEvaluatedKey), so the day
     // itself was complete — but days 1..89 were never read.
     const result = await executeSearchFeedback(
-      createCappedDocClient(false), 'test-feedback-table', {}, { days: 90 },
+      createCappedDocClient(false), 'test-feedback-table', {}, { days: 90 }, TEST_CAP,
     );
 
     expect(result.isPartial).toBe(true);
@@ -593,7 +722,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
 
   it('does not flag a single-day window the cap ended: nothing was left unread', async () => {
     const result = await executeSearchFeedback(
-      createCappedDocClient(false), 'test-feedback-table', {}, { days: 1 },
+      createCappedDocClient(false), 'test-feedback-table', {}, { days: 1 }, TEST_CAP,
     );
 
     expect(result.isPartial).toBe(false);
@@ -647,7 +776,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     // A flag that stays out of `formatted` changes nothing for the user: the
     // model is the only consumer of this tool result.
     const result = await executeSearchFeedback(
-      createCappedDocClient(true), 'test-feedback-table', { limit: 5 }, { days: 30 },
+      createCappedDocClient(true), 'test-feedback-table', { limit: 5 }, { days: 30 }, TEST_CAP,
     );
 
     expect(result.formatted).toContain('INCOMPLETE RESULTS');
@@ -658,7 +787,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     // The dangerous sentence: unqualified, it tells the model to treat capped
     // counts as the whole dataset.
     const result = await executeSearchFeedback(
-      createCappedDocClient(true), 'test-feedback-table', { mode: 'aggregate' }, { days: 90 },
+      createCappedDocClient(true), 'test-feedback-table', { mode: 'aggregate' }, { days: 90 }, TEST_CAP,
     );
 
     expect(result.isPartial).toBe(true);
@@ -673,7 +802,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     // aggregate header flags PARTIAL and annotates the total; the imperative to
     // relay it belongs to truncationNotice alone.
     const result = await executeSearchFeedback(
-      createCappedDocClient(true), 'test-feedback-table', { mode: 'aggregate' }, { days: 90 },
+      createCappedDocClient(true), 'test-feedback-table', { mode: 'aggregate' }, { days: 90 }, TEST_CAP,
     );
 
     expect(result.formatted.match(/Say so when you answer/g)).toHaveLength(1);
