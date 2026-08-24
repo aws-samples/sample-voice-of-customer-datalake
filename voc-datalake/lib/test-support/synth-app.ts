@@ -39,19 +39,54 @@ export interface Baseline {
   stacks: Record<string, { templateSha256: string; names: NameInventory }>;
 }
 
+/** The `context` block cdk.json commits, or `{}` if it is absent or malformed. */
+function cdkJsonContext(): Record<string, unknown> {
+  const cdkJson: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.json'), 'utf8'));
+  return isRecord(cdkJson) && isRecord(cdkJson.context) ? cdkJson.context : {};
+}
+
+/**
+ * Only the CDK FEATURE FLAGS cdk.json commits — no project-level context.
+ *
+ * Read rather than listed because several flags change the SHAPE of a
+ * synthesized template and not merely its details: `@aws-cdk/aws-iam:minimizePolicies`
+ * merges IAM statements, and `@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy`
+ * decides whether S3 log delivery is granted by a statement on the destination's
+ * bucket policy or by a `LogDeliveryWrite` ACL. A synth that omits them asserts
+ * against a template no deploy of this project produces, and a synth that
+ * hard-codes a copy of them drifts from cdk.json with nothing failing.
+ *
+ * Exported for lib/stacks/core-stack.test.ts, which wants exactly this and
+ * deliberately NOT the project context {@link baseContext} adds: that suite has
+ * cases asserting CDK's own DEFAULTS — `sets case-insensitive sign-in by default
+ * (greenfield)` relies on `omitUserPoolUsernameConfiguration` being unset — and a
+ * project `-c` default reaching them would silently invert what they measure.
+ *
+ * The `@aws-cdk` filter is what makes that guarantee structural rather than a
+ * coincidence of today's cdk.json holding nothing else: every one of its 19 keys
+ * is `@aws-cdk`-prefixed, so the filter is a no-op now and a barrier later.
+ */
+export function committedFeatureFlags(): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(cdkJsonContext()).filter(([key]) => key.startsWith('@aws-cdk')),
+  );
+}
+
 /**
  * Context every synth here uses. Mirrors cdk.json + cdk.context.json (the
  * committed project defaults, i.e. what a real deploy gets) plus the two
  * escape hatches template assertions always want: no Docker bundling and no
  * frontend-freshness check.
+ *
+ * Unfiltered on purpose, unlike {@link committedFeatureFlags}: this one models a
+ * real deploy of the whole app, so a project key committed to either file has to
+ * reach it.
  */
 function baseContext(): Record<string, unknown> {
-  const cdkJson: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.json'), 'utf8'));
   const committed: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.context.json'), 'utf8'));
-  const featureFlags = isRecord(cdkJson) && isRecord(cdkJson.context) ? cdkJson.context : {};
   const projectContext = isRecord(committed) ? committed : {};
   return {
-    ...featureFlags,
+    ...cdkJsonContext(),
     ...projectContext,
     'aws:cdk:bundling-stacks': [],
     skipFrontendBuildCheck: true,
