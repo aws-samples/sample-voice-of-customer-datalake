@@ -3,9 +3,16 @@ frontend can SEND must not drift apart.
 
 `projects_handler.GENERATED_DOC_TYPES` is what POST /projects/{id}/document
 validates against — anything outside it is a 400 raised before `create_job`. The
-frontend independently declares the same set three times: the `DocType` union it
-builds its picker from, and the `doc_type` field of the two API client signatures
-that call this route.
+frontend independently declares the same set: the `DocType` union it builds its
+picker from, and the `doc_type` field of the two `generateDocument` client
+signatures that call this route.
+
+Only THIS route's declarations are pinned. `suggestDocumentBrief` also takes a
+`doc_type`, but it calls a different route which the comment above
+GENERATED_DOC_TYPES documents as deliberately not sharing this allowlist (there
+the value picks a prompt label and never reaches a key, a job type or a routing
+decision). Binding it here would turn widening that route — a change the same
+comment invites — into a failure attributed to this one.
 
 Nothing tied them together. The failure is user-visible rather than loud: a client
 that offers a value the route refuses turns a click into an HTTP 400 from a
@@ -61,21 +68,41 @@ def _doc_type_union() -> frozenset[str]:
 
 
 def _api_client_doc_type_sets() -> dict[str, frozenset[str]]:
-    """Every inline `doc_type: 'a' | 'b'` annotation in the API client sources.
+    """The `doc_type: 'a' | 'b'` annotations of the `generateDocument` signatures.
+
+    Scoped to that ONE client method on purpose. Matching every `doc_type`
+    annotation in these files also picks up `suggestDocumentBrief`, which calls a
+    DIFFERENT route (POST .../documents/suggest-brief) that the comment above
+    GENERATED_DOC_TYPES documents as deliberately NOT sharing this allowlist —
+    there the value only picks a prompt label and never reaches a key, a job type
+    or a routing decision. Asserting it against this constant would make widening
+    suggest-brief, the change that comment invites, fail a test named after the
+    document route, and narrowing the test back would look like weakening a
+    security check. If suggest-brief is ever worth pinning it wants its own
+    constant and its own rationale.
 
     Keyed by "file:line" so a mismatch report names the declaration that drifted
-    rather than only the file. The route's own callers and the sibling
-    suggest-brief signature are both matched — they should all agree, and the
-    suggest-brief route accepting a wider set than this one would be the drift
-    worth knowing about.
+    rather than only the file.
     """
+    # The client method whose body types THIS route's request. The annotation sits
+    # on the same line in one file and a line or two below in the other, so track
+    # the enclosing property rather than matching `doc_type` anywhere.
+    method_start = re.compile(r'\b(\w+)\s*:\s*(?:async\s*)?\(')
+    annotation = re.compile(r"doc_type\??\s*:\s*((?:'[^']+'\s*\|\s*)+'[^']+')")
+
     found: dict[str, frozenset[str]] = {}
     for relative in API_CLIENT_SOURCES:
         path = _repo_root() / relative
         if not path.is_file():
             continue
+        enclosing = None
         for line_number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-            for raw in re.findall(r"doc_type\??\s*:\s*((?:'[^']+'\s*\|\s*)+'[^']+')", line):
+            start = method_start.search(line)
+            if start:
+                enclosing = start.group(1)
+            if enclosing != 'generateDocument':
+                continue
+            for raw in annotation.findall(line):
                 found[f'{relative}:{line_number}'] = frozenset(re.findall(r"'([^']+)'", raw))
     return found
 
@@ -97,10 +124,14 @@ class TestDocTypeLockstep:
             f'parsed no DocType union members from {DOC_TYPE_UNION_SOURCE} — '
             f'was the type renamed, or reformatted across lines?'
         )
-        assert _api_client_doc_type_sets(), (
-            f'parsed no inline doc_type unions from {API_CLIENT_SOURCES} — '
-            f'were the request-body signatures extracted into named types? '
-            f'If so, point this parser at them.'
+        client_sets = _api_client_doc_type_sets()
+        # Both generateDocument signatures, or the parser has stopped finding one
+        # of them and is silently comparing less than it claims to.
+        assert len(client_sets) == len(API_CLIENT_SOURCES), (
+            f'expected one generateDocument doc_type annotation in each of '
+            f'{API_CLIENT_SOURCES}, parsed {sorted(client_sets)} — was the method '
+            f'renamed, or the request-body signature extracted into a named type? '
+            f'If so, point this parser at it.'
         )
 
     @pytest.mark.skipif(
@@ -127,9 +158,11 @@ class TestDocTypeLockstep:
     @pytest.mark.skipif(
         not _frontend_tree_present(), reason='frontend tree absent from this checkout'
     )
-    def test_every_api_client_signature_agrees_with_the_route(self):
-        """The client signatures are what actually types the request body, so a
-        widened signature is the change that would let a refused value be sent."""
+    def test_every_generate_document_signature_agrees_with_the_route(self):
+        """The `generateDocument` signatures are what actually types this route's
+        request body, so a widened signature is the change that would let a
+        refused value be sent. Sibling routes' `doc_type` fields are out of scope
+        — see this module's docstring for why suggest-brief is excluded."""
         from projects_handler import GENERATED_DOC_TYPES
 
         expected = frozenset(GENERATED_DOC_TYPES)
@@ -139,6 +172,6 @@ class TestDocTypeLockstep:
             if declared != expected
         }
         assert not drifted, (
-            f'API client doc_type signatures disagree with the route, which '
-            f'accepts {sorted(expected)}: {drifted}'
+            f'generateDocument doc_type signatures disagree with the route, '
+            f'which accepts {sorted(expected)}: {drifted}'
         )

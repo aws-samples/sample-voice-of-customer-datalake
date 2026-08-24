@@ -22,11 +22,15 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 ### Upgrade notes
 
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
-  `prfaq`, and for a request body that is not a JSON object.** The web app is unaffected — it only
-  ever sends those two values — but a script or integration calling this route directly with
-  `build_prototype`, `product_report`, an empty string or a non-object body was previously accepted.
-  `build_prototype` and `product_report` have their own routes
-  (`POST .../build-prototype`, `POST .../product-report`); use those instead.
+  `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
+  too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty
+  string. The web app is unaffected — it only ever sends the two accepted values — but a script or
+  integration calling this route directly may need updating. `build_prototype` and `product_report`
+  have their own routes (`POST .../build-prototype`, `POST .../product-report`); use those instead.
+- **The same route now answers 400 when the request body is present but is not a JSON object** —
+  an array, string, number or boolean, including the falsy ones (`[]`, `false`, `0`, `""`). These
+  previously started a default `prd` generation. A body that is absent altogether, or a literal
+  JSON `null`, still means "generate a PRD with the defaults" and is unchanged.
 
 ## [0.2.0] - 2026-08-19
 

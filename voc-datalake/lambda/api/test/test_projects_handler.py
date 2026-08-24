@@ -583,11 +583,23 @@ class TestGenerateDocumentDocType:
         assert '7' not in error
 
     @pytest.mark.parametrize('raw_body', [
+        # TRUTHY non-objects: these reached `body.get` and raised AttributeError.
         '[1, 2]',       # a JSON array
         '"prd"',        # a bare JSON string
         '7',            # a bare JSON number
         'true',         # a bare JSON boolean
-    ], ids=['array', 'string', 'number', 'boolean'])
+        # FALSY non-objects, which are the interesting half. The obvious
+        # `json_body or {}` collapses each of these into `{}` BEFORE any
+        # isinstance check can see it, so they were accepted as an empty body and
+        # started a default `prd` generation — a billed Bedrock call from a body
+        # that is not an object at all. They only fail if the shape is inspected
+        # before the falsy coercion.
+        '[]',           # an empty JSON array
+        'false',
+        '0',
+        '""',           # an empty JSON string as the WHOLE body, not as a value
+    ], ids=['array', 'string', 'number', 'boolean',
+            'empty_array', 'false', 'zero', 'empty_string'])
     def test_a_non_object_body_answers_400_not_500(
         self, api_gateway_event, lambda_context, raw_body
     ):
@@ -614,6 +626,41 @@ class TestGenerateDocumentDocType:
         assert 'JSON object' in json.loads(response['body'])['error']
         mock_create_job.assert_not_called()
         mock_invoke.assert_not_called()
+
+    @pytest.mark.parametrize('raw_body', [
+        'null',     # an explicit JSON null body
+        None,       # no body at all
+        '{}',       # an empty JSON object
+    ], ids=['json_null', 'absent', 'empty_object'])
+    def test_an_absent_body_still_defaults_to_prd(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        """The counterpart to the refusals above, and the reason the shape check
+        cannot simply refuse everything falsy.
+
+        A body that is absent — no body, or a literal JSON `null` — has always
+        meant "generate a PRD with the defaults", and the SPA relies on it. Only
+        a body that IS something, and that something is not an object, is a 400.
+        Without this case a guard that also refused the absent body would look
+        correct.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+        )
+        event['body'] = raw_body
+
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert json.loads(response['body'])['success'] is True
+        assert mock_create_job.call_args.args[1] == 'generate_prd'
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+        mock_invoke.assert_called_once()
 
     def test_the_request_body_is_not_mutated_by_the_write_back(
         self, api_gateway_event, lambda_context
@@ -693,14 +740,30 @@ class TestGenerateDocumentDocType:
         single-shot path silently. Asserting on the source is crude, but the
         alternative — a behavioural test — cannot see the difference while the
         two sets agree, which is precisely when the drift would be introduced.
+
+        Scoped to the assignment STATEMENT rather than the whole function, whose
+        source includes the docstring and the surrounding comments: those discuss
+        which doc types take which path and would quote the pair legitimately, so
+        a whole-function match fails for a reason it does not name. This survives
+        reformatting and a rename of the variable.
         """
         import inspect
 
         from projects_handler import api_generate_document
 
         source = inspect.getsource(api_generate_document)
-        assert 'is_chain = doc_type in GENERATED_DOC_TYPES' in source
-        assert "('prd', 'prfaq')" not in source
+        assignment = next(
+            (line for line in source.splitlines() if line.strip().startswith('is_chain')),
+            None,
+        )
+        assert assignment is not None, 'no is_chain assignment found in api_generate_document'
+        assert 'GENERATED_DOC_TYPES' in assignment, (
+            f'the routing predicate must read the allowlist constant, not a second '
+            f'copy of its literal: {assignment.strip()}'
+        )
+        # No quoted doc type on that line, which is what a re-declared literal
+        # would look like however it were spelled or spaced.
+        assert "'prd'" not in assignment and "'prfaq'" not in assignment
 
 
 class TestDocumentCRUDEndpoints:

@@ -381,7 +381,18 @@ def api_generate_document(project_id: str):
     generator's dispatch, NOT about this route's input: see
     GENERATED_DOC_TYPES above for why this route accepts two values.
     """
-    body = app.current_event.json_body or {}
+    # Read the parsed body ONCE and inspect its shape before any coercion. The
+    # obvious `json_body or {}` cannot do this job: `or` collapses every falsy
+    # value first, so `[]`, `false`, `0` and `""` would arrive at the check below
+    # already disguised as an empty object and start a default `prd` generation —
+    # the exact unvalidated entry this route is being closed against.
+    #
+    # Only a genuinely absent body (no body, or a literal JSON `null`) defaults.
+    # That is the behaviour this route has always had and the SPA relies on it,
+    # so it is preserved deliberately rather than swept into the refusal.
+    body = app.current_event.json_body
+    if body is None:
+        body = {}
     # A body that parses to a list or a scalar reaches `.get` below and raises
     # AttributeError, which the handler's catch-all turns into a 500. A 400 is
     # the honest answer: the fault is in the request, and a caller (or the SPA's
