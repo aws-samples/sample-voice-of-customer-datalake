@@ -13,6 +13,8 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { z } from 'zod';
+
 import type { NameInventory } from './name-inventory';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
@@ -59,6 +61,27 @@ function cdkJsonContext(): Record<string, unknown> {
 }
 
 /**
+ * The same block, read strictly, for the two suites that use it as an ORACLE.
+ *
+ * MUST NOT be rewritten to delegate to {@link cdkJsonContext}. Both callers
+ * compare a value {@link committedFeatureFlags} derives FROM `cdkJsonContext()`
+ * against this read, so a delegating body reduces them to `f(x) === f(x)` — green
+ * even if the default argument were wired to cdk.context.json. The independent
+ * body is the whole mechanism; exported so there is one of it rather than the
+ * byte-identical copy each suite used to hold.
+ *
+ * Strict because an oracle that degrades to `{}` satisfies its own comparison.
+ * Shares `PROJECT_ROOT`, so the pair catches a wrong file, key or default — not a
+ * wrong root.
+ */
+export function cdkJsonContextStrict(): Record<string, unknown> {
+  return z
+    .object({ context: z.record(z.string(), z.unknown()) })
+    .parse(JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.json'), 'utf8')))
+    .context;
+}
+
+/**
  * Only the CDK FEATURE FLAGS cdk.json commits — no project-level context.
  *
  * Read rather than listed because several flags change the SHAPE of a
@@ -76,26 +99,36 @@ function cdkJsonContext(): Record<string, unknown> {
  * project `-c` default reaching them would silently invert what they measure.
  *
  * The `@aws-cdk` prefix is a deliberate HEURISTIC for "is a feature flag", NOT a
- * structural guarantee. It is a no-op on today's cdk.json — all 19 committed keys
- * are `@aws-cdk`-prefixed — and a barrier against a project key added later, but
- * it has two known edges, both recorded because a reader who takes the rule as
- * exact draws the wrong conclusion at either one:
+ * structural guarantee. It is a no-op on today's cdk.json — every committed key is
+ * `@aws-cdk`-prefixed, and `synthCoreTemplate() must not spread cdk.json project
+ * context` in lib/stacks/core-stack.test.ts goes red the day one is not — and a
+ * barrier against a project key added later, but it has two known edges, both
+ * recorded because a reader who takes the rule as exact draws the wrong conclusion
+ * at either one. No count appears below on purpose: `aws-cdk-lib` is a caret
+ * range, so any figure here goes stale on an `npm update` with no committed file
+ * changing, and each claim is instead either asserted or dated.
  *
- * 1. `cx-api`'s `FLAGS` registry holds 108 feature flags and exactly one,
- *    `aws-cdk:enableDiffNoFail`, is not `@aws-cdk`-prefixed. Were cdk.json to
- *    commit it, this filter would drop it as project context while
- *    {@link baseContext} kept it, so the two would synthesize from different flag
- *    sets. Inert: the flag only selects `cdk diff`'s exit code and cannot alter a
- *    synthesized template, so no assertion in lib/stacks/core-stack.test.ts moves.
+ * 1. Exactly one flag in `cx-api`'s `FLAGS` registry, `aws-cdk:enableDiffNoFail`,
+ *    is not `@aws-cdk`-prefixed. Were cdk.json to commit it, this filter would
+ *    drop it as project context while {@link baseContext} kept it, so the two
+ *    would synthesize from different flag sets. Inert: the flag only selects
+ *    `cdk diff`'s exit code and cannot alter a synthesized template, so no
+ *    assertion in lib/stacks/core-stack.test.ts moves. The "exactly one" is
+ *    ASSERTED — `would drop aws-cdk:enableDiffNoFail…` in synth-app.test.ts — so a
+ *    CDK upgrade that adds a second unprefixed flag fails there rather than
+ *    leaving this paragraph quietly wrong.
  * 2. Filtering by `key in cx.FLAGS` instead is not a fix, because the registry is
  *    not a superset of what a project may commit:
  *    `@aws-cdk/aws-iam:standardizedServicePrincipals` IS committed here but has
- *    expired out of `FLAGS` (18 of the 19 keys are recognized), so a registry
- *    predicate would drop it. Inert too — the flag has no runtime effect in
- *    aws-cdk-lib 2.261.0 (zero references in any `.js` under the package, only a
- *    doc comment in aws-iam/lib/principals.d.ts; CDK v2 applies the standardized
- *    behaviour unconditionally), and removing it leaves VocCoreStack's template
- *    byte-identical at 78006 characters.
+ *    expired out of `FLAGS`, so a registry predicate would drop it. Also asserted,
+ *    by `cannot use cx-api FLAGS as the predicate instead…`. Inert too — the flag
+ *    has no runtime effect in aws-cdk-lib 2.261.0 (zero references in any `.js`
+ *    under the package, only a doc comment in aws-iam/lib/principals.d.ts; CDK v2
+ *    applies the standardized behaviour unconditionally), and dropping it left
+ *    VocCoreStack's template byte-identical. That last one is a MEASUREMENT taken
+ *    at 2.261.0, not an assertion: pinning the template here would duplicate what
+ *    baseline.json's hash already guards, and would move on the next unrelated
+ *    change to this stack.
  *
  * So BOTH edges are inert, for different reasons, and neither predicate is exact.
  * The prefix rule is preferred because it errs toward passing keys THROUGH — not

@@ -8,8 +8,6 @@
  * Pre-#105 environments deploy with `-c omitUserPoolUsernameConfiguration=true`
  * to keep their pool untouched; greenfield keeps case-insensitive sign-in.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
@@ -21,7 +19,7 @@ import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../u
 // silently. Importing costs nothing at module load — synth-app.ts only shells out
 // to `cdk synth` inside `synthApp()`, and its sole module-level work is a `join()`
 // on two path constants.
-import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from '../test-support/synth-app';
+import { SYNTH_ACCOUNT, SYNTH_REGION, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
 
 /**
  * cdk.json's CDK feature flags, resolved once for every case in this file.
@@ -111,10 +109,7 @@ describe('VocCoreStack synth context', () => {
     // The first assertion is entailed by the third — if every key in
     // CDK_FEATURE_FLAGS is prefixed then no unprefixed key can be `in` it — and is
     // kept only because its failure message names the consequence.
-    const rawContext = z
-      .object({ context: z.record(z.string(), z.unknown()) })
-      .parse(JSON.parse(readFileSync(join(__dirname, '..', '..', 'cdk.json'), 'utf8')))
-      .context;
+    const rawContext = cdkJsonContextStrict();
     const projectKeys = Object.keys(rawContext).filter((key) => !key.startsWith('@aws-cdk'));
 
     expect(

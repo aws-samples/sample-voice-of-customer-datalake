@@ -20,7 +20,7 @@
  * function of the deployment prefix — the same finding must be suppressed under
  * a prefix and reported when the suppression is built for the wrong one.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import * as cdk from 'aws-cdk-lib';
@@ -28,10 +28,10 @@ import * as cx from 'aws-cdk-lib/cx-api';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
 import { afterAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import {
+  cdkJsonContextStrict,
   cleanupAssemblyDirs,
   committedFeatureFlags,
   createAssemblyDir,
@@ -134,7 +134,7 @@ describe('pluginSystemSuppressions', () => {
  *
  * That distinction is the whole point of these cases. lib/stacks/core-stack.test.ts
  * asserts the filter's EFFECT against the real cdk.json, but every key committed
- * there is `@aws-cdk`-prefixed, so filtered and unfiltered reads are the same 19
+ * there is `@aws-cdk`-prefixed, so filtered and unfiltered reads return the same
  * keys and deleting the filter outright leaves that suite green — it arms only
  * once cdk.json gains a project key, which is precisely when it is too late to
  * learn the filter went missing. Passing context in makes the classification rule
@@ -172,28 +172,29 @@ describe('committedFeatureFlags', () => {
     // no project key — a claim lib/stacks/core-stack.test.ts already owns and
     // fails loudly on — so this case would double-report that one cause while
     // saying nothing extra about the read.
-    const cdkJsonContext = z
-      .object({ context: z.record(z.string(), z.unknown()) })
-      .parse(JSON.parse(readFileSync(join(__dirname, '..', '..', 'cdk.json'), 'utf8')))
-      .context;
-
-    expect(committedFeatureFlags()).toEqual(committedFeatureFlags(cdkJsonContext));
+    // `cdkJsonContextStrict()`, NOT the private `cdkJsonContext()` the default
+    // argument uses — see its doc comment. Delegating one to the other turns this
+    // into `f(x) === f(x)`.
+    expect(committedFeatureFlags()).toEqual(committedFeatureFlags(cdkJsonContextStrict()));
     // Non-empty, so a cdk.json whose `context` went missing cannot satisfy the
     // equality above by making both sides `{}`.
     expect(committedFeatureFlags()['@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy']).toBe(true);
   });
 
   it('would drop aws-cdk:enableDiffNoFail, the one CDK flag the prefix rule misses', () => {
-    // Asserting the KNOWN LIMIT, not the desired behaviour. cx-api's FLAGS holds
-    // 108 feature flags and exactly one is not `@aws-cdk`-prefixed, so this filter
-    // classifies it as project context while `baseContext()` keeps it — the two
-    // would then synthesize from different flag sets. Harmless today because the
-    // flag only selects `cdk diff`'s exit code and cannot move a template, and
-    // cdk.json does not commit it.
+    // Asserting the KNOWN LIMIT, not the desired behaviour. Exactly one flag in
+    // cx-api's FLAGS is not `@aws-cdk`-prefixed, so this filter classifies it as
+    // project context while `baseContext()` keeps it — the two would then
+    // synthesize from different flag sets. Harmless today because the flag only
+    // selects `cdk diff`'s exit code and cannot move a template, and cdk.json does
+    // not commit it.
     //
     // Here so the limit is measured rather than asserted in a comment: if a CDK
-    // upgrade adds a second unprefixed flag, or renames this one, the count below
-    // moves and someone re-reads whether the heuristic still holds.
+    // upgrade adds a second unprefixed flag, or renames this one, the list below
+    // moves and someone re-reads whether the heuristic still holds. `aws-cdk-lib`
+    // is a caret range, so that upgrade can arrive without any committed file
+    // changing — which is exactly why this is an assertion and not a figure in
+    // prose.
     const unprefixed = Object.keys(cx.FLAGS).filter((flag) => !flag.startsWith('@aws-cdk'));
     expect(unprefixed).toEqual(['aws-cdk:enableDiffNoFail']);
     expect(committedFeatureFlags({ 'aws-cdk:enableDiffNoFail': true })).toEqual({});
@@ -211,8 +212,10 @@ describe('committedFeatureFlags', () => {
     // runtime effect in aws-cdk-lib 2.261.0 — zero references in any `.js` under
     // the package, only a doc comment in aws-iam/lib/principals.d.ts describing
     // what it used to gate — because CDK v2 applies the standardized behaviour
-    // unconditionally. Removing it from the synth context leaves VocCoreStack's
-    // template byte-identical (78006 characters either way).
+    // unconditionally. Removing it from the synth context left VocCoreStack's
+    // template byte-identical — measured at 2.261.0, and left unasserted on
+    // purpose: a template length here would duplicate baseline.json's hash and
+    // would move on the next unrelated change to that stack.
     //
     // So both known edges of the prefix heuristic are inert, for different
     // reasons: `aws-cdk:enableDiffNoFail` because it only selects `cdk diff`'s
