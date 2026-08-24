@@ -437,6 +437,140 @@ class TestGeneratePersonasEndpoint:
         )['generate_avatars'] is False
 
 
+class TestGenerateDocumentDocType:
+    """POST /projects/<id>/document validates `doc_type` against an allowlist.
+
+    The field arrived unchecked and steered three things at once: the job type
+    (`generate_{doc_type}`), the execution path (`doc_type in ('prd','prfaq')`
+    decides Step Functions vs a single-shot Lambda invoke) and the generator's
+    DynamoDB sort key (`{doc_type.upper()}#{doc_id}`) — with every attempt
+    billing a Bedrock call.
+
+    The allowlist is TWO values on purpose. `build_prototype` and
+    `product_report` reach the generator through their own routes, which build
+    their own doc_config, and this handler has no internal callers — so
+    narrowing it cannot affect them. Reverting the guard fails the rejection
+    tests below; widening it to four fails them too.
+    """
+
+    @staticmethod
+    def _post(api_gateway_event, lambda_context, body):
+        """POST the generation route with create_job and the invoke both mocked.
+
+        Returns (response, mock_create_job, mock_invoke) so a test can assert on
+        the refusal AND on the absence of a job row.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+            body=body,
+        )
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+        return response, mock_create_job, mock_invoke
+
+    @pytest.mark.parametrize('doc_type', ['prd', 'prfaq'])
+    def test_an_accepted_doc_type_still_starts_a_job(
+        self, api_gateway_event, lambda_context, doc_type
+    ):
+        """The positive control: the guard refuses unknown values, it does not
+        refuse the field. Without this, rejecting everything would still pass
+        the refusal tests below."""
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event, lambda_context,
+            {'doc_type': doc_type, 'title': 'A feature'},
+        )
+        body = json.loads(response['body'])
+        assert body['success'] is True
+        assert body['job_id'] == 'job-1'
+        # The job type carries the doc_type through, which is the interpolation
+        # the unvalidated field used to reach.
+        assert mock_create_job.call_args.args[1] == f'generate_{doc_type}'
+        assert mock_create_job.call_args.args[3]['doc_type'] == doc_type
+        # No state machine ARN in the test environment, so the single-shot path
+        # is what runs; either way the request was accepted.
+        mock_invoke.assert_called_once()
+
+    def test_an_absent_doc_type_still_defaults_to_prd(
+        self, api_gateway_event, lambda_context
+    ):
+        """Pinning the pre-existing default: a request that says nothing about
+        doc_type behaves exactly as it did before the guard."""
+        response, mock_create_job, _ = self._post(
+            api_gateway_event, lambda_context, {'title': 'A feature'},
+        )
+        assert json.loads(response['body'])['success'] is True
+        assert mock_create_job.call_args.args[1] == 'generate_prd'
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+
+    def test_an_explicit_null_doc_type_is_resolved_not_forwarded(
+        self, api_gateway_event, lambda_context
+    ):
+        """`dict.get` cannot tell JSON null from a missing key, so null means
+        `prd` here too — and the RESOLVED value has to reach the stored config.
+        The generator's own `doc_config.get('doc_type', 'prd')` reads a present
+        null as null, and a null doc_type crashes it on `.upper()` after the job
+        row already exists."""
+        response, mock_create_job, _ = self._post(
+            api_gateway_event, lambda_context, {'doc_type': None, 'title': 'A feature'},
+        )
+        assert json.loads(response['body'])['success'] is True
+        assert mock_create_job.call_args.args[1] == 'generate_prd'
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+
+    @pytest.mark.parametrize('bad', [
+        # The two doc types the generator also serves, which have their own
+        # routes: this route must not be a second, unvalidated door to them.
+        'build_prototype',
+        'product_report',
+        # A value carrying the sort-key delimiter — the reason this field is a
+        # trust boundary at all, since the generator writes
+        # f'{doc_type.upper()}#{doc_id}' as a DynamoDB sort key.
+        'prd#injected',
+        '#',
+        '../prd',
+        # Case and whitespace are NOT folded: the generator compares with `==`,
+        # so a value it does not recognise still becomes half of a sort key.
+        'PRD',
+        ' prd',
+        'prd ',
+        # Wrong types, which would blow up on `.upper()` or serialise into the
+        # job type as a repr.
+        '',
+        [],
+        {},
+        7,
+        True,
+    ])
+    def test_a_rejected_doc_type_answers_400_and_creates_no_job(
+        self, api_gateway_event, lambda_context, bad
+    ):
+        """A 400 BEFORE create_job: refusing afterwards would leave a job row
+        describing a request that was rejected, and each attempt bills a Bedrock
+        call."""
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event, lambda_context, {'doc_type': bad, 'title': 'A feature'},
+        )
+        assert response['statusCode'] == 400
+        # The field must be NAMED in the error, so the caller is not left
+        # guessing which of the body's fields it was.
+        assert 'doc_type' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    def test_the_allowlist_stays_at_two_values(self):
+        """The allowlist is the assertion, not an implementation detail: growing
+        it to the generator's four doc types is exactly the regression the
+        comment beside it argues against."""
+        from projects_handler import GENERATED_DOC_TYPES
+
+        assert GENERATED_DOC_TYPES == ('prd', 'prfaq')
+
+
 class TestDocumentCRUDEndpoints:
     """Tests for document CRUD endpoints."""
 

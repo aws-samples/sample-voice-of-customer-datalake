@@ -307,6 +307,50 @@ def api_run_research(project_id: str):
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.'}
 
 
+DEFAULT_GENERATED_DOC_TYPE = 'prd'
+
+# What POST /projects/{id}/document accepts in `doc_type`. TWO values, and the
+# narrowness is the point: this one body field steers the job type
+# (`generate_{doc_type}`), the execution path (chain vs single-shot invoke) and
+# the generator's DynamoDB sort key (`{doc_type.upper()}#{doc_id}`), and every
+# attempt bills a Bedrock call.
+#
+# ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
+# `build_prototype`, `product_report`) and the docstring below names the latter
+# two, which reads like an argument for admitting them here. It isn't:
+#   * `build_prototype` and `product_report` have their OWN routes
+#     (POST .../build-prototype, POST .../product-report). Each builds its own
+#     `doc_config` with its own hardcoded `doc_type` and validates its own
+#     inputs before invoking the generator directly.
+#   * `api_generate_document` has no internal callers — the only occurrence of
+#     the symbol in `lambda/` is its own `def`.
+#   * The only frontend caller of this route types the field
+#     `doc_type: 'prd' | 'prfaq'`.
+# So narrowing this route cannot affect prototype building or product reports,
+# while widening it would re-open here the unvalidated entry those two
+# deliberately avoid. The docstring sentence is about which generator paths stay
+# single-shot, not about what this route accepts.
+GENERATED_DOC_TYPES = ('prd', 'prfaq')
+
+
+def _validated_doc_type(raw: Any) -> str:
+    """Resolve the `doc_type` a document-generation request asked for.
+
+    Absent (or JSON null — `dict.get` cannot tell one from the other) means
+    `prd`, which is the behaviour this route has always had. Anything outside
+    GENERATED_DOC_TYPES is a 400: matched EXACTLY, with no case folding or
+    trimming, because the generator compares the value with `==` and the value
+    it does not recognise still becomes half of a sort key.
+    """
+    if raw is None:
+        return DEFAULT_GENERATED_DOC_TYPE
+    if raw not in GENERATED_DOC_TYPES:
+        raise ValidationError(
+            'doc_type must be one of: ' + ', '.join(GENERATED_DOC_TYPES)
+        )
+    return raw
+
+
 @app.post("/projects/<project_id>/document")
 @tracer.capture_method
 def api_generate_document(project_id: str):
@@ -318,10 +362,18 @@ def api_generate_document(project_id: str):
     async Lambda invoke when the state machine isn't configured.
 
     `build_prototype` and `product_report` doc_types stay on the single-shot
-    Lambda path (they aren't multi-step LLM chains).
+    Lambda path (they aren't multi-step LLM chains) — a statement about the
+    generator's dispatch, NOT about this route's input: see
+    GENERATED_DOC_TYPES above for why this route accepts two values.
     """
     body = app.current_event.json_body or {}
-    doc_type = body.get('doc_type', 'prd')
+    # Validated BEFORE create_job, so a rejected request leaves no job row
+    # describing work nobody will do, and bills no Bedrock call.
+    doc_type = _validated_doc_type(body.get('doc_type'))
+    # Written back so the stored config and the generator see the value this
+    # route resolved: the generator's own `doc_config.get('doc_type', 'prd')`
+    # would read an explicit null as null rather than as the default.
+    body['doc_type'] = doc_type
     job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', body, status='pending')
 
     state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
