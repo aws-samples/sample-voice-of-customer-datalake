@@ -37,13 +37,14 @@ export const feedbackItemSchema = z.object({
 export type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
 /**
- * Bound on candidates collected across all days — to within one wave of pages, see
- * CandidateBudget for why that slack exists and why it is not the cap itself. A DynamoDB Query caps
- * each page at 1MB (often far fewer than 1000 large items), so we MUST follow
- * LastEvaluatedKey to page through a day — otherwise a day with thousands of
- * rows is silently truncated to the first ~500 (this caused "987 negative but
- * tool only saw 116"). Bound the total so aggregate mode can summarize the full
- * set without unbounded memory/time on a huge table.
+ * Bound on candidates collected across all days, to within one wave of pages — see
+ * CandidateBudget for why that slack exists and why it is not the cap itself.
+ *
+ * A DynamoDB Query caps each page at 1MB (often far fewer than 1000 large items),
+ * so we MUST follow LastEvaluatedKey to page through a day — otherwise a day with
+ * thousands of rows is silently truncated to the first ~500 (this caused "987
+ * negative but tool only saw 116"). Bound the total so aggregate mode can
+ * summarize the full set without unbounded memory/time on a huge table.
  *
  * Deliberately NOT pinned to `metrics_handler.CANDIDATES_SOFT_CAP` (1000): the
  * two budget different consumers — a model reading one prose digest in a single

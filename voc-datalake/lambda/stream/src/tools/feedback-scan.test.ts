@@ -183,6 +183,10 @@ describe('the day scan is bounded-concurrent, not sequential', () => {
     const rows = Array.from({ length: 4 }, (_, i) =>
       makeFeedbackItem({ feedback_id: `d${String(i).padStart(31, '0')}` }),
     );
+    // Fixture invariant, asserted before the act rather than trailing the outcomes: one
+    // page has to outspend the cap on its own, or the budget branches below are never
+    // reached and this case passes without exercising the property it is named for.
+    expect(rows.length).toBeGreaterThan(TEST_CAP);
     const client = {
       send: vi.fn().mockImplementation(() => Promise.resolve({ Items: rows })),
     } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
@@ -195,14 +199,25 @@ describe('the day scan is bounded-concurrent, not sequential', () => {
     // gone, so wave 2 is never dispatched. Per-day budgeting would keep going.
     expect(client.send).toHaveBeenCalledTimes(DAY_SCAN_CONCURRENCY);
     expect(result.isPartial).toBe(true);
-    // And the total actually collected, which is the property this case is named for
-    // and previously never checked. It is NOT TEST_CAP: a page charges the budget only
-    // after it lands, so the wave in flight when the cap is reached overshoots by up to
-    // DAY_SCAN_CONCURRENCY pages. Asserting the cap here would fail, and asserting only
-    // the two lines above passes for a per-day budget too — so this is the assertion
-    // that distinguishes them. Equality, not an upper bound: `toBeLessThan(K x cap)`
-    // would also hold for the sliced design this test exists to rule out.
-    expect(totalMatches(result.formatted)).toBe(DAY_SCAN_CONCURRENCY * rows.length);
-    expect(rows.length).toBeGreaterThan(TEST_CAP); // else one page alone never trips the cap
+    // And the total actually collected, which is the property this case is named for and
+    // previously went unchecked — the two assertions above pass for a per-day budget too.
+    //
+    // Bounded, not pinned. The ceiling is the cap plus one wave of pages, because a page
+    // charges the budget only after it lands and a wave dispatches before any of them do
+    // (see CandidateBudget). Asserting the exact overshoot would freeze slack the source
+    // deliberately leaves open: charging before dispatch is a correction that docblock
+    // contemplates, and an equality here would fail it as though it were a defect. The
+    // ceiling still rules out the per-day slice this case exists to reject — that design
+    // budgets each day separately, so the scan runs every wave and collects an order of
+    // magnitude more than this.
+    // The ceiling is the discriminating assertion and the only one that may name the
+    // cap: any correct shared budget lands under it, whether it charges as pages land
+    // (today, so up to a wave over) or reserves before dispatch (a correction, landing
+    // AT the cap). A lower bound of `> TEST_CAP` would forbid that second one, which is
+    // the mistake the equality here made in the first place. `> 0` guards vacuity only —
+    // an empty read would otherwise satisfy the ceiling and prove nothing.
+    const collected = totalMatches(result.formatted);
+    expect(collected).toBeLessThanOrEqual(TEST_CAP + DAY_SCAN_CONCURRENCY * rows.length);
+    expect(collected).toBeGreaterThan(0);
   });
 });
