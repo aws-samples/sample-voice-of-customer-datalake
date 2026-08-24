@@ -816,10 +816,20 @@ invalidate `/*` after pruning (the CDK `BucketDeployment` passes
 `distributionPaths: ['/*']`; `frontend/scripts/deploy.sh` runs an explicit
 `create-invalidation`), but the object leaves the bucket before the invalidation
 lands, so for that window CloudFront still serves the **old widget** from the
-edge — which fails at the network layer against the retired `/feedback-form/*`
-routes, not with a syntax error. It then flips to the `200`/`index.html` shell
-described above. "It still worked a minute ago, and now it breaks differently" is
-one removal, not two problems, and not a bad deploy.
+edge. During it the script loads and runs fine — it is its `config` fetch that
+fails, against the retired `/feedback-form/*` (singular) path, which is unwired
+and so answers the same `403 Missing Authentication Token` described below. A 403
+is an ordinary response that `fetch` resolves rather than rejects, and the
+`DEFAULT_4XX` gateway response sends `Access-Control-Allow-Origin: *`, so the
+widget reads it, finds no `success` flag and renders **its own**
+`Feedback form unavailable.` message into the embed (or `Failed to load form.`
+from its `.catch`). So the symptom is a message *inside the embed*, with a `403`
+on the `config` call in the Network tab — not a transport failure, and nothing in
+the console at all. Once the invalidation lands it flips to the
+`200`/`index.html` shell above: a *widget-authored* message inside the embed
+first, a *console* `Unexpected token '<'` afterwards. "It still worked a minute
+ago, and now it breaks differently" is one removal, not two problems, and not a
+bad deploy.
 
 There is no `/feedback-forms/{form_id}/widget.js` route either, and requesting
 *that* fails to 404 for an unrelated reason. Because the per-form routes are

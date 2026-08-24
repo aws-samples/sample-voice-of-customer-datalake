@@ -135,8 +135,17 @@ describe('frontend public/ inventory', () => {
     // just the same, while the assertion above sees only the directory name.
     // Anything executable here bypasses the bundler: no tree-shaking, no
     // content hash, no type-checking, and until #374 no linting either.
+    //
+    // Matched case-insensitively, which is load-bearing rather than defensive.
+    // S3 keys and URL paths are case-sensitive, so `locales/en/DEAD.JS` is a
+    // distinct object that Vite copies and CloudFront serves exactly like a
+    // lowercase one — but a case-sensitive regex does not match it, so the
+    // check that exists to name a published script would have stayed silent
+    // while the file shipped. macOS makes this ordinary rather than contrived:
+    // its filesystem treats `DEAD.JS` and `dead.js` as the same file, so the
+    // case a contributor gets is whichever one git recorded on `git add`.
     const scripts = trackedPublicPaths()
-      .filter((p) => /\.[cm]?[jt]sx?$/.test(p))
+      .filter((p) => /\.[cm]?[jt]sx?$/i.test(p))
       .sort()
 
     expect(scripts).toEqual([])
