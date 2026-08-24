@@ -71,6 +71,21 @@ const feedbackItemSchema = z.object({
 
 type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
+/**
+ * What the tool hands back.
+ *
+ * `isPartial` is true when the candidate scan was truncated, so `items` and the
+ * counts in `formatted` describe a sample rather than the whole window. The
+ * same warning is written into `formatted` (see `truncationNotice`) because the
+ * consumer here is the model, which only reads the prose — a flag that never
+ * reaches the text would change nothing for the user.
+ */
+interface SearchFeedbackResult {
+  items: FeedbackItem[];
+  formatted: string;
+  isPartial: boolean;
+}
+
 // ── Filtering ──
 
 // Shape guard: a malformed source_created_at ("unavailable") would compare
@@ -134,7 +149,7 @@ async function lookupByFeedbackId(
   docClient: DynamoDBDocumentClient,
   feedbackTable: string,
   feedbackId: string,
-): Promise<{ items: FeedbackItem[]; formatted: string } | null> {
+): Promise<SearchFeedbackResult | null> {
   try {
     const resp = await docClient.send(
       new QueryCommand({
@@ -147,7 +162,8 @@ async function lookupByFeedbackId(
     );
     const items = (resp.Items ?? []).map((raw) => feedbackItemSchema.parse(raw));
     if (items.length > 0) {
-      return { items, formatted: formatToolResults(items) };
+      // A direct ID hit reads one row by key: nothing was truncated.
+      return { items, formatted: formatToolResults(items), isPartial: false };
     }
   } catch {
     // Fall through to date-based search
@@ -164,12 +180,31 @@ async function lookupByFeedbackId(
 const MAX_CANDIDATES = 10000;
 
 /**
+ * How many days back the date scan may reach, however many the chat context
+ * asks for. Mirror of `MAX_LOOKBACK_DAYS` in lambda/shared/feedback.py, which
+ * the REST feedback routes spend as `days=min(days, MAX_LOOKBACK_DAYS)`.
+ *
+ * This runtime cannot import the Python constant, so the two are pinned
+ * together by lambda/shared/test/test_lookback_window_lockstep.py: it parses
+ * the declaration below and fails when the numbers diverge. It read 30 here
+ * against 90 there for months, so the chat tool answered "last quarter" from a
+ * month of feedback while the REST route used the full window.
+ *
+ * Keep the literal on one line as `export const MAX_LOOKBACK_DAYS = <n>` — the
+ * lockstep test parses this text.
+ */
+export const MAX_LOOKBACK_DAYS = 90;
+
+/**
  * Page through one day's GSI partition via LastEvaluatedKey (not just the
  * first page), appending valid rows to `candidates`. Per-row safeParse: a
  * single malformed item must not throw and discard the whole day's results.
  * Recursion depth = pages in the day's partition; the MAX_CANDIDATES check
  * stops early only as parsed rows accumulate (a day of entirely malformed
  * rows still pages to its end, same as the previous do/while).
+ *
+ * Returns true when the day still had pages left but MAX_CANDIDATES stopped
+ * the walk — i.e. this day was truncated and the caller's answer is a sample.
  */
 async function fetchDayPages(
   docClient: DynamoDBDocumentClient,
@@ -177,7 +212,7 @@ async function fetchDayPages(
   dateStr: string,
   candidates: FeedbackItem[],
   startKey?: Record<string, unknown>,
-): Promise<void> {
+): Promise<boolean> {
   const resp = await docClient.send(
     new QueryCommand({
       TableName: feedbackTable,
@@ -192,31 +227,50 @@ async function fetchDayPages(
     const parsed = feedbackItemSchema.safeParse(raw);
     if (parsed.success) candidates.push(parsed.data);
   }
-  if (resp.LastEvaluatedKey && candidates.length < MAX_CANDIDATES) {
-    return fetchDayPages(docClient, feedbackTable, dateStr, candidates, resp.LastEvaluatedKey);
-  }
+  if (!resp.LastEvaluatedKey) return false;
+  if (candidates.length >= MAX_CANDIDATES) return true;
+  return fetchDayPages(docClient, feedbackTable, dateStr, candidates, resp.LastEvaluatedKey);
 }
 
+/**
+ * Collect candidates day by day, newest first, bounded by MAX_LOOKBACK_DAYS
+ * and MAX_CANDIDATES.
+ *
+ * Returns `{ candidates, isPartial }`. `isPartial` is true when the scan was
+ * cut short — a day partition had more pages than the candidate budget
+ * allowed, or the budget ran out with days still unread — so the caller knows
+ * it holds a sample rather than the whole window. Mirrors the Python route's
+ * `_scan_recent_items` in lambda/api/metrics_handler.py, which returns
+ * `(items, is_partial)` for the same reason.
+ */
 async function fetchCandidatesByDate(
   docClient: DynamoDBDocumentClient,
   feedbackTable: string,
   days: number,
-): Promise<FeedbackItem[]> {
+): Promise<{ candidates: FeedbackItem[]; isPartial: boolean }> {
   const now = new Date();
   const candidates: FeedbackItem[] = [];
+  const scannedDays = Math.min(days, MAX_LOOKBACK_DAYS);
+  // Each entry is one reason the scan was incomplete. An array rather than a
+  // reassigned flag because this package bans `let` (eslint no-restricted-syntax).
+  const truncations: boolean[] = [];
 
-  for (const i of Array.from({ length: Math.min(days, 30) }, (_, idx) => idx)) {
+  for (const i of Array.from({ length: scannedDays }, (_, idx) => idx)) {
     const d = new Date(now);
     d.setUTCDate(d.getUTCDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
     try {
-      await fetchDayPages(docClient, feedbackTable, dateStr, candidates);
+      truncations.push(await fetchDayPages(docClient, feedbackTable, dateStr, candidates));
     } catch {
       // continue to the next day
     }
-    if (candidates.length >= MAX_CANDIDATES) break;
+    if (candidates.length >= MAX_CANDIDATES) {
+      // Days still unread => the window was never fully scanned.
+      truncations.push(i < scannedDays - 1);
+      break;
+    }
   }
-  return candidates;
+  return { candidates, isPartial: truncations.includes(true) };
 }
 
 // ── Main export ──
@@ -254,7 +308,7 @@ export async function executeSearchFeedback(
   feedbackTable: string,
   toolInput: unknown,
   contextFilters: ContextFilters,
-): Promise<{ items: FeedbackItem[]; formatted: string }> {
+): Promise<SearchFeedbackResult> {
   const { input, query, mode, limit, days, filters } = resolveSearchParams(toolInput, contextFilters);
 
   if (!feedbackTable) throw new ConfigurationError('Feedback table not configured');
@@ -265,7 +319,7 @@ export async function executeSearchFeedback(
     if (idResult) return idResult;
   }
 
-  const candidates = await fetchCandidatesByDate(docClient, feedbackTable, days);
+  const { candidates, isPartial } = await fetchCandidatesByDate(docClient, feedbackTable, days);
 
   // Days-long window ending today (same definition as the metrics API).
   // Review basis compares against the date the customer wrote the item; the
@@ -284,7 +338,11 @@ export async function executeSearchFeedback(
   // so "summarize all feedback" / "top issues" don't force the model to loop.
   if (mode === 'aggregate') {
     const examples = [...allMatched].sort(compareByUrgency).slice(0, limit);
-    return { items: examples, formatted: formatAggregate(allMatched, examples) };
+    return {
+      items: examples,
+      formatted: formatAggregate(allMatched, examples, isPartial) + truncationNotice(isPartial, days),
+      isPartial,
+    };
   }
 
   if (input.sort_by === 'urgency') {
@@ -292,10 +350,30 @@ export async function executeSearchFeedback(
   }
   const matched = allMatched.slice(0, limit);
 
-  return { items: matched, formatted: formatToolResults(matched) };
+  return {
+    items: matched,
+    formatted: formatToolResults(matched) + truncationNotice(isPartial, days),
+    isPartial,
+  };
 }
 
 // ── Formatting ──
+
+/**
+ * The line the model reads when the scan was truncated.
+ *
+ * Empty when the window was fully read, so a complete answer carries no
+ * hedging. Phrased as an instruction because the consumer is the model: left as
+ * a bare boolean on the returned object it would never reach the user, who has
+ * no other way to tell a capped answer from a complete one.
+ */
+function truncationNotice(isPartial: boolean, days: number): string {
+  if (!isPartial) return '';
+  return `\n⚠️ INCOMPLETE RESULTS: the ${days}-day window holds more feedback than this `
+    + `search could read (candidate cap ${MAX_CANDIDATES}), so the items and any counts `
+    + 'above are a partial sample of the most recent days — not the whole window. Say so '
+    + 'when you answer, and do not present these totals or percentages as complete.\n';
+}
 
 function formatSingleItem(item: FeedbackItem, index: number): string {
   const sourceDate = item.source_created_at?.slice(0, 10) ?? 'N/A';
@@ -341,7 +419,11 @@ function formatDistribution(label: string, dist: [string, number][], total: numb
 // One-call summary over the ENTIRE match set: total, distributions by urgency /
 // sentiment / category / source, average rating, plus the top examples (already
 // urgency-sorted) so the model can quote specifics without another search.
-function formatAggregate(all: FeedbackItem[], examples: FeedbackItem[]): string {
+// When the candidate scan was truncated (`isPartial`) the "COMPLETE set" claim
+// below is false, and it is the most dangerous sentence in this file: the model
+// is told in so many words to base its answer on numbers that only cover the
+// most recent slice of the window. So the header states which it is.
+function formatAggregate(all: FeedbackItem[], examples: FeedbackItem[], isPartial = false): string {
   const total = all.length;
   if (total === 0) return 'No feedback found matching the search criteria.';
 
@@ -351,9 +433,14 @@ function formatAggregate(all: FeedbackItem[], examples: FeedbackItem[]): string 
     : 'N/A';
 
   const sections = [
-    `Aggregate summary over ALL ${total} matching feedback items `,
-    `(this is the COMPLETE set, not a sample — base your answer on these numbers):\n\n`,
-    `**Total matches:** ${total}\n`,
+    isPartial
+      ? `Aggregate summary over ${total} matching feedback items `
+      : `Aggregate summary over ALL ${total} matching feedback items `,
+    isPartial
+      ? '(⚠️ PARTIAL — the scan hit its candidate cap, so this is a sample of the most '
+        + 'recent days in the window, NOT the complete set; say so when you answer):\n\n'
+      : '(this is the COMPLETE set, not a sample — base your answer on these numbers):\n\n',
+    `**Total matches:** ${total}${isPartial ? ' (partial — scan truncated)' : ''}\n`,
     `**Average rating:** ${avgRating}\n\n`,
     formatDistribution('By urgency', countBy(all, 'urgency'), total),
     formatDistribution('By sentiment', countBy(all, 'sentiment_label'), total),

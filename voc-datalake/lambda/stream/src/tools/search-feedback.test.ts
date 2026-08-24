@@ -2,7 +2,7 @@
  * Tests for search_feedback tool implementation.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { executeSearchFeedback } from './search-feedback.js';
+import { executeSearchFeedback, MAX_LOOKBACK_DAYS } from './search-feedback.js';
 
 // Mock DynamoDB document client
 function createMockDocClient(queryResponses: Record<string, unknown>[][] = []) {
@@ -17,6 +17,13 @@ function createMockDocClient(queryResponses: Record<string, unknown>[][] = []) {
 }
 
 const today = new Date().toISOString().slice(0, 10);
+
+/** YYYY-MM-DD `n` days before today, UTC — the shape the date GSI partitions by. */
+const daysAgo = (n: number) => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+};
 
 function makeFeedbackItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -309,12 +316,6 @@ describe('executeSearchFeedback', () => {
 
 
 describe('date basis (issue #150)', () => {
-  const daysAgo = (n: number) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - n);
-    return d.toISOString().slice(0, 10);
-  };
-
   it('keeps freshly imported old reviews on the default (imported) basis', async () => {
     const backfilled = makeFeedbackItem({
       feedback_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -392,5 +393,189 @@ describe('date basis (issue #150)', () => {
     expect(result.items.map((i) => i.feedback_id)).toStrictEqual([
       'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
     ]);
+  });
+});
+
+
+// ── The lookback window, and saying when the answer is capped ──
+//
+// Two halves of one defect: the day loop clamped at 30 while the REST routes
+// read `MAX_LOOKBACK_DAYS = 90` (lambda/shared/feedback.py), so the chat tool
+// answered "last quarter" from a month of feedback — and reported none of its
+// three stopping points, so a capped answer was indistinguishable from a
+// complete one. Widening the window without the notice makes that worse, hence
+// both here. The Python↔TypeScript pin lives in
+// lambda/shared/test/test_lookback_window_lockstep.py.
+
+/** A mock that answers per date partition, so day-loop reach is observable. */
+function createDateAwareDocClient(itemsByDate: Record<string, Record<string, unknown>[]>) {
+  const queriedDates: string[] = [];
+  const client = {
+    send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+      const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+      const pk = values[':pk'] ?? '';
+      const date = pk.replace('DATE#', '');
+      queriedDates.push(date);
+      return Promise.resolve({ Items: itemsByDate[date] ?? [] });
+    }),
+  } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+  return { client, queriedDates };
+}
+
+describe('lookback window (matches shared/feedback.py MAX_LOOKBACK_DAYS)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('declares the same bound the Python routes enforce', () => {
+    // Pinned to shared/feedback.py from the Python side; asserted here too so
+    // the TypeScript suite fails loudly if the constant is edited alone.
+    expect(MAX_LOOKBACK_DAYS).toBe(90);
+  });
+
+  it('finds an item 60 days old — the old 30-day clamp never queried its partition', async () => {
+    const old = makeFeedbackItem({
+      feedback_id: 'f'.repeat(32),
+      date: daysAgo(60),
+      source_created_at: `${daysAgo(60)}T10:00:00Z`,
+    });
+    const { client, queriedDates } = createDateAwareDocClient({ [daysAgo(60)]: [old] });
+
+    const result = await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 90 });
+
+    expect(queriedDates).toContain(daysAgo(60));
+    expect(result.items.map((i) => i.feedback_id)).toStrictEqual(['f'.repeat(32)]);
+  });
+
+  it('scans at most MAX_LOOKBACK_DAYS partitions however many days are asked for', async () => {
+    const { client, queriedDates } = createDateAwareDocClient({});
+
+    await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 365 });
+
+    expect(queriedDates).toHaveLength(MAX_LOOKBACK_DAYS);
+    expect(queriedDates).toContain(daysAgo(MAX_LOOKBACK_DAYS - 1));
+    expect(queriedDates).not.toContain(daysAgo(MAX_LOOKBACK_DAYS));
+  });
+
+  it('does not widen a narrow window: days=7 still reads 7 partitions', async () => {
+    const { client, queriedDates } = createDateAwareDocClient({});
+
+    await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 7 });
+
+    expect(queriedDates).toHaveLength(7);
+  });
+});
+
+describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_partial)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** One page big enough to reach MAX_CANDIDATES, optionally with more to come. */
+  function createCappedDocClient(hasMorePages: boolean) {
+    const page = Array.from({ length: 10000 }, (_, i) =>
+      makeFeedbackItem({ feedback_id: `c${String(i).padStart(31, '0')}` }),
+    );
+    let call = 0;
+    return {
+      send: vi.fn().mockImplementation(() => {
+        call++;
+        if (call === 1) {
+          return Promise.resolve(
+            hasMorePages ? { Items: page, LastEvaluatedKey: { k: 'next' } } : { Items: page },
+          );
+        }
+        return Promise.resolve({ Items: [] });
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+  }
+
+  it('reports a complete scan as complete, with no hedging in the prose', async () => {
+    const docClient = createMockDocClient([[makeFeedbackItem()]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', {}, { days: 7 },
+    );
+
+    expect(result.isPartial).toBe(false);
+    expect(result.formatted).not.toContain('INCOMPLETE');
+    expect(result.formatted).not.toContain('partial');
+  });
+
+  it('flags a day whose partition still had pages when the candidate cap hit', async () => {
+    // days=1 on purpose, so no day is left unread and the ONLY thing that can
+    // set the flag is the unfinished partition — otherwise this passes on the
+    // other branch and the day-level signal goes untested.
+    const result = await executeSearchFeedback(
+      createCappedDocClient(true), 'test-feedback-table', {}, { days: 1 },
+    );
+
+    expect(result.isPartial).toBe(true);
+  });
+
+  it('flags the cap ending the scan with days still unread', async () => {
+    // Day 0 fills the budget on a single page (no LastEvaluatedKey), so the day
+    // itself was complete — but days 1..89 were never read.
+    const result = await executeSearchFeedback(
+      createCappedDocClient(false), 'test-feedback-table', {}, { days: 90 },
+    );
+
+    expect(result.isPartial).toBe(true);
+  });
+
+  it('does not flag a single-day window the cap ended: nothing was left unread', async () => {
+    const result = await executeSearchFeedback(
+      createCappedDocClient(false), 'test-feedback-table', {}, { days: 1 },
+    );
+
+    expect(result.isPartial).toBe(false);
+  });
+
+  it('puts the warning in the formatted text the model reads, not just the object', async () => {
+    // A flag that stays out of `formatted` changes nothing for the user: the
+    // model is the only consumer of this tool result.
+    const result = await executeSearchFeedback(
+      createCappedDocClient(true), 'test-feedback-table', { limit: 5 }, { days: 30 },
+    );
+
+    expect(result.formatted).toContain('INCOMPLETE RESULTS');
+    expect(result.formatted).toContain('30-day window');
+  });
+
+  it('aggregate mode drops its "COMPLETE set" claim when the scan was truncated', async () => {
+    // The dangerous sentence: unqualified, it tells the model to treat capped
+    // counts as the whole dataset.
+    const result = await executeSearchFeedback(
+      createCappedDocClient(true), 'test-feedback-table', { mode: 'aggregate' }, { days: 90 },
+    );
+
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).not.toContain('COMPLETE set');
+    expect(result.formatted).toContain('PARTIAL');
+    expect(result.formatted).toContain('scan truncated');
+  });
+
+  it('aggregate mode still claims completeness when the whole window was read', async () => {
+    const items = Array.from({ length: 5 }, (_, i) =>
+      makeFeedbackItem({ feedback_id: `a${String(i).padStart(31, '0')}` }),
+    );
+    const result = await executeSearchFeedback(
+      createMockDocClient([items]), 'test-feedback-table', { mode: 'aggregate' }, { days: 7 },
+    );
+
+    expect(result.isPartial).toBe(false);
+    expect(result.formatted).toContain('COMPLETE set');
+    expect(result.formatted).not.toContain('PARTIAL');
+  });
+
+  it('a feedback-ID hit is complete by construction', async () => {
+    const feedbackId = 'abcdef1234567890abcdef1234567890';
+    const docClient = createMockDocClient([[makeFeedbackItem({ feedback_id: feedbackId })]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', { query: feedbackId }, { days: 7 },
+    );
+
+    expect(result.isPartial).toBe(false);
   });
 });
