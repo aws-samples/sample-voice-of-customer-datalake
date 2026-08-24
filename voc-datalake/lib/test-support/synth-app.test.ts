@@ -20,17 +20,20 @@
  * function of the deployment prefix — the same finding must be suppressed under
  * a prefix and reported when the suppression is built for the wrong one.
  */
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import * as cdk from 'aws-cdk-lib';
+import * as cx from 'aws-cdk-lib/cx-api';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
 import { afterAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import {
   cleanupAssemblyDirs,
+  committedFeatureFlags,
   createAssemblyDir,
   diagnostics,
   DIAGNOSTIC_ANNOTATION_TYPES,
@@ -122,6 +125,88 @@ describe('pluginSystemSuppressions', () => {
     // while suppressing findings it was never meant to.
     expect(nagFindings(synthIngestorGrant('b', undefined)).join('\n')).toContain('AwsSolutions-IAM5');
     expect(nagFindings(synthIngestorGrant(undefined, 'b')).join('\n')).toContain('AwsSolutions-IAM5');
+  });
+});
+
+/**
+ * The `@aws-cdk` filter in `committedFeatureFlags()`, tested on synthetic context
+ * rather than on cdk.json's.
+ *
+ * That distinction is the whole point of these cases. lib/stacks/core-stack.test.ts
+ * asserts the filter's EFFECT against the real cdk.json, but every key committed
+ * there is `@aws-cdk`-prefixed, so filtered and unfiltered reads are the same 19
+ * keys and deleting the filter outright leaves that suite green — it arms only
+ * once cdk.json gains a project key, which is precisely when it is too late to
+ * learn the filter went missing. Passing context in makes the classification rule
+ * itself the subject, so its removal fails a test today.
+ */
+describe('committedFeatureFlags', () => {
+  it('keeps CDK feature flags and drops project-level context keys', () => {
+    // The guarantee lib/stacks/core-stack.test.ts depends on: that suite has cases
+    // asserting a DEFAULT (`sets case-insensitive sign-in by default (greenfield)`
+    // needs `omitUserPoolUsernameConfiguration` UNSET), so a project `-c` default
+    // reaching its synth would invert what those cases measure while they stayed
+    // green. `deploymentPrefix` and `omitUserPoolUsernameConfiguration` below are
+    // the two real project keys this repo passes with `-c`.
+    expect(committedFeatureFlags({
+      '@aws-cdk/aws-iam:minimizePolicies': true,
+      '@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver': true,
+      omitUserPoolUsernameConfiguration: true,
+      deploymentPrefix: 'b',
+    })).toEqual({
+      '@aws-cdk/aws-iam:minimizePolicies': true,
+      // `@aws-cdk`, not `@aws-cdk/`: the ecs-service-extensions flag cdk.json
+      // commits lives under `@aws-cdk-containers/`, so a trailing slash in the
+      // predicate would silently drop a flag a real deploy gets.
+      '@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver': true,
+    });
+  });
+
+  it('reads cdk.json when handed no context', () => {
+    // The default argument is what every production caller uses, so it needs its
+    // own case: an injectable filter could be perfect and still be wired to the
+    // wrong file, and the cases above would not notice.
+    //
+    // Compared against the PREFIXED SUBSET rather than the whole context block on
+    // purpose. Comparing against all of it would pass only while cdk.json commits
+    // no project key — a claim lib/stacks/core-stack.test.ts already owns and
+    // fails loudly on — so this case would double-report that one cause while
+    // saying nothing extra about the read.
+    const cdkJsonContext = z
+      .object({ context: z.record(z.string(), z.unknown()) })
+      .parse(JSON.parse(readFileSync(join(__dirname, '..', '..', 'cdk.json'), 'utf8')))
+      .context;
+
+    expect(committedFeatureFlags()).toEqual(committedFeatureFlags(cdkJsonContext));
+    // Non-empty, so a cdk.json whose `context` went missing cannot satisfy the
+    // equality above by making both sides `{}`.
+    expect(committedFeatureFlags()['@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy']).toBe(true);
+  });
+
+  it('would drop aws-cdk:enableDiffNoFail, the one CDK flag the prefix rule misses', () => {
+    // Asserting the KNOWN LIMIT, not the desired behaviour. cx-api's FLAGS holds
+    // 108 feature flags and exactly one is not `@aws-cdk`-prefixed, so this filter
+    // classifies it as project context while `baseContext()` keeps it — the two
+    // would then synthesize from different flag sets. Harmless today because the
+    // flag only selects `cdk diff`'s exit code and cannot move a template, and
+    // cdk.json does not commit it.
+    //
+    // Here so the limit is measured rather than asserted in a comment: if a CDK
+    // upgrade adds a second unprefixed flag, or renames this one, the count below
+    // moves and someone re-reads whether the heuristic still holds.
+    const unprefixed = Object.keys(cx.FLAGS).filter((flag) => !flag.startsWith('@aws-cdk'));
+    expect(unprefixed).toEqual(['aws-cdk:enableDiffNoFail']);
+    expect(committedFeatureFlags({ 'aws-cdk:enableDiffNoFail': true })).toEqual({});
+  });
+
+  it('cannot use cx-api FLAGS as the predicate instead, since a committed flag has expired out of it', () => {
+    // Why the obvious fix for the case above is not a fix. The registry is not a
+    // superset of what a project commits: this one sets
+    // `@aws-cdk/aws-iam:standardizedServicePrincipals`, which CDK has since
+    // dropped from FLAGS, so `key in cx.FLAGS` would stop passing a flag every
+    // real deploy here gets — trading a known, inert gap for a live one.
+    expect('@aws-cdk/aws-iam:standardizedServicePrincipals' in cx.FLAGS).toBe(false);
+    expect(committedFeatureFlags()).toHaveProperty('@aws-cdk/aws-iam:standardizedServicePrincipals');
   });
 });
 

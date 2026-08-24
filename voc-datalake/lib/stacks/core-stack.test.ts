@@ -52,7 +52,7 @@ import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from '../test-supp
  * KMS key policy 5 against 6. No assertion's outcome changes — the extractor's
  * S3 read and write statements have different resources and so never merge — but
  * a case that counts statements must be written against these numbers.
- * `pins the statement counts a real deploy's feature flags produce` below is what
+ * `merges IAM statements the way a real deploy's feature flags do` below is what
  * turns that from a comment into a guard.
  */
 const CDK_FEATURE_FLAGS = committedFeatureFlags();
@@ -97,10 +97,20 @@ describe('VocCoreStack synth context', () => {
     //
     // Compared against cdk.json's RAW context rather than just inspecting the
     // filtered result, which would be tautological: `committedFeatureFlags()`
-    // filters by this very prefix, so its own output trivially satisfies it. The
-    // claim worth asserting is that the filter is still THERE — so this fails
-    // exactly when a leak becomes possible, i.e. when cdk.json holds a
-    // non-`@aws-cdk` key and the filter has stopped dropping it.
+    // filters by this very prefix, so its own output trivially satisfies it.
+    //
+    // What this case does NOT do is prove the filter exists. It is a conjunction:
+    // it fails only when cdk.json holds a non-`@aws-cdk` key AND the filter has
+    // stopped dropping it. With every committed key prefixed today, deleting the
+    // filter leaves this green — so the filter's own removal is caught by
+    // `committedFeatureFlags` in lib/test-support/synth-app.test.ts, which feeds it
+    // synthetic context and therefore does not depend on what cdk.json happens to
+    // hold. This case guards the OTHER half: the day a project key is committed,
+    // it fails here rather than silently inverting a default-asserting case below.
+    //
+    // The first assertion is entailed by the third — if every key in
+    // CDK_FEATURE_FLAGS is prefixed then no unprefixed key can be `in` it — and is
+    // kept only because its failure message names the consequence.
     const rawContext = z
       .object({ context: z.record(z.string(), z.unknown()) })
       .parse(JSON.parse(readFileSync(join(__dirname, '..', '..', 'cdk.json'), 'utf8')))
@@ -119,14 +129,23 @@ describe('VocCoreStack synth context', () => {
     );
   });
 
-  it('pins the statement counts a real deploy\'s feature flags produce', () => {
+  it('merges IAM statements the way a real deploy\'s feature flags do', () => {
     // `@aws-cdk/aws-iam:minimizePolicies` merges statements that share a
     // resource set, so these three resources genuinely change shape between a
-    // bare `App` and this one (10→6, 2→1, 6→5). Breaking this case means the
-    // synth context moved: either the flag stopped arriving — which would also
-    // take the S3 log-delivery grants with it, since the same read supplies both
-    // — or a policy gained a statement. Both want reading, and neither should
-    // surface only as a baseline digest diff.
+    // bare `App` and this one (10→6, 2→1, 6→5).
+    //
+    // Named for the mechanism rather than for the numbers because the numbers
+    // move for TWO unrelated causes, and the failure gives no hint which: the
+    // flag stopped arriving (a synth-context regression, which would also take
+    // the S3 log-delivery grants with it — the same read supplies both), or one
+    // of these policies legitimately gained a statement. The assertion messages
+    // say so, since `expected 7 to be 6` after a least-privilege change would
+    // otherwise send a reader hunting through cdk.json.
+    //
+    // Worth a case at all because the flag going missing is not a digest-only
+    // event: it would fail all five app-baseline.test.ts comparisons too, whose
+    // message tells the maintainer to regenerate the baseline — exactly the wrong
+    // instruction. This is the case that names the cause.
     const template = synthCoreTemplate();
 
     const statementCount = (type: string, logicalIdPrefix: string, documentKey: string): number => {
@@ -136,9 +155,19 @@ describe('VocCoreStack synth context', () => {
       return StatementsSchema.parse(found[0][1].Properties?.[documentKey]).Statement.length;
     };
 
-    expect(statementCount('AWS::IAM::Policy', 'ProductDocExtractorLambdaServiceRoleDefaultPolicy', 'PolicyDocument')).toBe(6);
-    expect(statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument')).toBe(1);
-    expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy')).toBe(5);
+    const because = (resource: string) =>
+      `${resource}'s statement count moved: either the synth context lost `
+      + '@aws-cdk/aws-iam:minimizePolicies, or this policy gained a statement. Both want reading.';
+
+    expect(
+      statementCount('AWS::IAM::Policy', 'ProductDocExtractorLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
+      because('the doc-extractor role'),
+    ).toBe(6);
+    expect(
+      statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
+      because('the CDN signing-key role'),
+    ).toBe(1);
+    expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy'), because('the KMS key')).toBe(5);
   });
 });
 
@@ -333,6 +362,16 @@ describe('VocCoreStack S3 server access logging', () => {
    * only the two expected keys and rejecting the rest means an added `Prefix`
    * fails at the parse, naming the offending key
    * (`Unrecognized key(s) in object: 'Prefix'`).
+   *
+   * That strictness is deliberately BROADER than the case's stated claim: ANY key
+   * not listed here fails the parse, including a benign one. Adding
+   * `id: 'expire-logs'` to the rule — no prefix, no retention change, the sort of
+   * edit made to reference a rule in the console — fails with
+   * `Unrecognized key(s) in object: 'Id'`, which reads like a prefix regression
+   * when nothing about prefixes moved. The remedy in that case is to ADD the key
+   * here, not to hunt a lifecycle bug. Over-rejection is the accepted trade
+   * because the alternative is worse in kind rather than degree: a lenient parse
+   * drops the key and the assertion passes while the property it guards is gone.
    */
   const LifecycleSchema = z.object({
     Rules: z.array(z.object({ ExpirationInDays: z.number(), Status: z.string() }).strict()),

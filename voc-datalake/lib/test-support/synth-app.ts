@@ -62,13 +62,36 @@ function cdkJsonContext(): Record<string, unknown> {
  * (greenfield)` relies on `omitUserPoolUsernameConfiguration` being unset — and a
  * project `-c` default reaching them would silently invert what they measure.
  *
- * The `@aws-cdk` filter is what makes that guarantee structural rather than a
- * coincidence of today's cdk.json holding nothing else: every one of its 19 keys
- * is `@aws-cdk`-prefixed, so the filter is a no-op now and a barrier later.
+ * The `@aws-cdk` prefix is a deliberate HEURISTIC for "is a feature flag", NOT a
+ * structural guarantee. It is a no-op on today's cdk.json — all 19 committed keys
+ * are `@aws-cdk`-prefixed — and a barrier against a project key added later, but
+ * it has two known edges, both recorded because a reader who takes the rule as
+ * exact draws the wrong conclusion at either one:
+ *
+ * 1. `cx-api`'s `FLAGS` registry holds 108 feature flags and exactly one,
+ *    `aws-cdk:enableDiffNoFail`, is not `@aws-cdk`-prefixed. Were cdk.json to
+ *    commit it, this filter would drop it as project context while
+ *    {@link baseContext} kept it, so the two would synthesize from different flag
+ *    sets. That divergence is LATENT rather than live: the flag selects
+ *    `cdk diff`'s exit code and cannot alter a synthesized template, so no
+ *    assertion in lib/stacks/core-stack.test.ts would move.
+ * 2. Filtering by `key in cx.FLAGS` instead is not a fix, it is a different gap.
+ *    `@aws-cdk/aws-iam:standardizedServicePrincipals` IS committed here but has
+ *    expired out of the registry (18 of the 19 keys are recognized), so a
+ *    registry filter would stop passing a flag this project does set. Neither
+ *    rule is exact; this one errs toward passing flags through.
+ *
+ * @param context context to filter, defaulting to cdk.json's. Injectable so the
+ *                filter itself is directly testable — with cdk.json holding no
+ *                project key, deleting the filter changes nothing observable, so
+ *                a test that reads only the real file cannot detect its removal.
+ *                See `committedFeatureFlags` in synth-app.test.ts.
  */
-export function committedFeatureFlags(): Record<string, unknown> {
+export function committedFeatureFlags(
+  context: Record<string, unknown> = cdkJsonContext(),
+): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(cdkJsonContext()).filter(([key]) => key.startsWith('@aws-cdk')),
+    Object.entries(context).filter(([key]) => key.startsWith('@aws-cdk')),
   );
 }
 
