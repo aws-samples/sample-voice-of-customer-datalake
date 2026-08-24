@@ -517,6 +517,27 @@ export class VocApiStack extends VocStack {
         // other route on this function carries the Cognito authorizer and is
         // refused before the handler runs, and a CORS header never grants access
         // to a caller that is not a browser anyway.
+        //
+        // TWO CONSEQUENCES, both deliberate and both out of scope to fix here:
+        //
+        // 1. This is the ONE Lambda in this stack whose CORS origin is
+        //    INDEPENDENT OF THE `environment` CONTEXT. Every other API Lambda
+        //    takes `allowedOrigin`, which is `isDev ? '*' : https://<frontend>`
+        //    (see its declaration above), so `-c environment=dev` moves all of
+        //    them and has no effect whatsoever on this one. Nothing at deploy
+        //    time can tighten this value; changing it means editing this line.
+        //    Worth knowing before adding a deployment-time CORS control and
+        //    expecting it to cover the widget.
+        //
+        // 2. The wildcard is FUNCTION-WIDE, not route-wide. This function also
+        //    serves the authenticated /feedback-forms, /{form_id}, /submissions
+        //    and /stats routes, so their responses carry '*' too — which is the
+        //    very reasoning the ballots Lambda's comment uses to REJECT '*' for
+        //    itself. The paragraph above is why that is safe rather than why it
+        //    is tidy: the honest shape is two variables (ALLOWED_ORIGIN = the
+        //    site origin, plus a PUBLIC_ALLOWED_ORIGIN = '*' returned only on the
+        //    three widget responses), which is a feedback_form_handler.py change
+        //    and therefore a follow-up, not part of a CDK-only change.
         ALLOWED_ORIGIN: '*',
         POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api',
         LOG_LEVEL: 'INFO',
@@ -1062,19 +1083,73 @@ export class VocApiStack extends VocStack {
     // resources are created at all (see /feedback-forms/* below, which is where
     // the flag is explained in full) and whether this stage carries method
     // settings for the three public routes under them.
+    // Read ONCE into a const — the value is compared twice, not fetched twice.
+    // `true` and `'true'` are the accepted spellings ('TRUE', '1', 'yes' are
+    // "off"); "off" means "deploy the routes", so a typo fails loudly on the
+    // first upgrade deploy rather than skipping the step silently.
+    const skipFeedbackFormItemRoutesContext: unknown = this.node.tryGetContext('skipFeedbackFormItemRoutes');
     const skipFeedbackFormItemRoutes =
-      this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
-      || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
+      skipFeedbackFormItemRoutesContext === true || skipFeedbackFormItemRoutesContext === 'true';
 
-    /** 20 rps / burst 40 — the pair every UNAUTHENTICATED method on this API is
-     *  held to. Named once so the ballot and feedback-form entries below cannot
-     *  drift apart by a typo in a number.
+    /** 20 rps / burst 40 — the pair for an unauthenticated method whose
+     *  LEGITIMATE demand is bounded and whose per-request cost is not. Both
+     *  ballot methods (a room is capped at MAX_BALLOT_CAP ballots, one per
+     *  attendee) and the widget's `submit` (see its own comment below).
+     *
+     *  Named once so those entries cannot drift apart by a typo in a number, and
+     *  ANNOTATED so a typo in a property NAME is a compile error too: without the
+     *  annotation the object literal is not fresh at its use sites, excess-property
+     *  checking never fires, and a `throttlingBurstLmit` would deploy a rate limit
+     *  with the burst left at the account default.
      *
      *  Deliberately NOT shared with the /mcp entries, which carry the same two
      *  numbers by coincidence and for a different reason (a bearer-token brute
      *  force, not an anonymous caller) — see the comment on them below. Tuning
-     *  one of the two sets should not silently move the other. */
-    const publicRouteThrottle = { throttlingRateLimit: 20, throttlingBurstLimit: 40 };
+     *  one of the two sets should not silently move the other.
+     *
+     *  Deliberately NOT shared with the two widget READS either, whose demand is
+     *  a third party's page-view rate — see publicWidgetReadThrottle. */
+    const publicRouteThrottle: apigateway.MethodDeploymentOptions = {
+      throttlingRateLimit: 20,
+      throttlingBurstLimit: 40,
+    };
+
+    /** 100 rps / burst 200 for the two widget READS — `config` and `iframe`.
+     *
+     *  A DIFFERENT pair from publicRouteThrottle, on purpose. The 20 rps figure is
+     *  argued from a bounded room: MAX_BALLOT_CAP attendees submitting once each,
+     *  so 20 rps is ~30x the need. Nothing in that argument transfers here.
+     *  `config` is fetched by feedback-widget.js on EVERY PAGE LOAD of every
+     *  customer page carrying the widget, and `iframe` on every iframe render, so
+     *  the legitimate demand is a third party's traffic, which this stack cannot
+     *  bound and does not get told about. A stage method setting is keyed by PATH,
+     *  with `{form_id}` as a variable, so the ceiling is shared across every form
+     *  in the deployment AND every caller — one busy embed spends the whole
+     *  budget, and the widget renders the resulting 429 as a flat "Feedback form
+     *  unavailable." with no retry and no way to tell it from a disabled form.
+     *
+     *  So the number is stated as what it is: 100 rps is the AGGREGATE widget
+     *  page-view rate this deployment supports — ~8.6M/day across all embeds —
+     *  and it is the ceiling these routes already had, since it equals the stage
+     *  default. Restating it here rather than letting them ride that default is
+     *  the point: it pins the reads' ceiling to the demand THEY have, so a later
+     *  decision to tighten the stage-wide default cannot silently squeeze a
+     *  customer's page.
+     *
+     *  Cost is the reason this can be the generous side of the pair: `config` is
+     *  one get_item, and `iframe` touches no AWS service at all — it interpolates
+     *  form_id into a static HTML shell around a module-cached widget script.
+     *
+     *  CACHING, not a throttle, is the right primary control for `iframe`: the
+     *  response is a pure function of form_id and host. It is not adopted here
+     *  because both available forms are out of a CDK-only change — an API Gateway
+     *  cache is a priced cluster on the stage, and a Cache-Control header is a
+     *  feedback_form_handler.py change. Recorded so nobody reads the throttle as
+     *  evidence that the route is uncacheable. */
+    const publicWidgetReadThrottle: apigateway.MethodDeploymentOptions = {
+      throttlingRateLimit: 100,
+      throttlingBurstLimit: 200,
+    };
 
     // The three public feedback-form methods, keyed as
     // `{resource path}/{METHOD}`. CONDITIONAL on the flag above: when it is set
@@ -1086,9 +1161,9 @@ export class VocApiStack extends VocStack {
     // only the default one.
     const publicFeedbackFormMethodOptions: Record<string, apigateway.MethodDeploymentOptions> =
       skipFeedbackFormItemRoutes ? {} : {
-        '/feedback-forms/{form_id}/config/GET': publicRouteThrottle,
+        '/feedback-forms/{form_id}/config/GET': publicWidgetReadThrottle,
         '/feedback-forms/{form_id}/submit/POST': publicRouteThrottle,
-        '/feedback-forms/{form_id}/iframe/GET': publicRouteThrottle,
+        '/feedback-forms/{form_id}/iframe/GET': publicWidgetReadThrottle,
       };
 
     // API Gateway CloudWatch Logs
@@ -1105,13 +1180,21 @@ export class VocApiStack extends VocStack {
         stageName: 'v1',
         throttlingRateLimit: 100,
         throttlingBurstLimit: 200,
-        // Tighter limits on every UNAUTHENTICATED method — the two ballot methods
-        // (see /voting-sessions/* below) and the three feedback-form widget
-        // methods (see /feedback-forms/* below). Each request costs a DynamoDB
-        // read even for an id that does not exist, and nothing in front of them
-        // asks who is calling — the session token, or the form's own state, is
-        // checked inside the handler, which means the cost is paid before the
-        // refusal.
+        // An EXPLICIT limit on every UNAUTHENTICATED method — the two ballot
+        // methods (see /voting-sessions/* below) and the three feedback-form
+        // widget methods (see /feedback-forms/* below). Each request costs a
+        // DynamoDB read even for an id that does not exist, and nothing in front
+        // of them asks who is calling — the session token, or the form's own
+        // state, is checked inside the handler, which means the cost is paid
+        // before the refusal.
+        //
+        // "Explicit" rather than "tighter", because the five are not all at one
+        // number: the three that pay a write or a model invocation are held below
+        // the stage default at 20/40, and the two widget READS restate the
+        // default's 100/200 as a limit of their own. Stating a value that equals
+        // the default is not a no-op — it decouples a route whose demand is a
+        // customer's page-view rate from a stage-wide number that may be tuned
+        // for entirely unrelated reasons.
         //
         // As STAGE METHOD SETTINGS rather than as a usage plan, which is what the
         // /mcp route uses: a usage plan's throttle binds per API KEY, and these
@@ -1126,17 +1209,30 @@ export class VocApiStack extends VocStack {
         methodOptions: {
           '/voting-sessions/{session_id}/config/GET': publicRouteThrottle,
           '/voting-sessions/{session_id}/submit/POST': publicRouteThrottle,
-          // The SAME numbers for the three feedback-form widget methods, which
-          // were the only members of the public set still riding the stage
-          // default (100/200) — see INTENTIONALLY_PUBLIC_ROUTES in
-          // api-stack.test.ts for the full list of five.
+          // The three feedback-form widget methods, which were the only members
+          // of the public set still riding the stage default — see
+          // INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts for the full list
+          // of five. TWO different pairs, not one: `submit` joins the ballots at
+          // 20/40, while `config` and `iframe` are stated at the stage default's
+          // 100/200 because their legitimate demand is a customer's page-view
+          // rate rather than a bounded room. The full argument for the split is
+          // on publicRouteThrottle / publicWidgetReadThrottle above.
           //
-          // `submit` is the one that most needs it: one request reads the form,
-          // may conditionally update it, writes to the feedback table and
-          // enqueues to the processing queue — up to four backend operations,
-          // against the single transaction a ballot submission costs. `config`
-          // and `iframe` are reads, and are held to the same pair because they
-          // are reachable by exactly the same anonymous caller.
+          // `submit` is the one that earns the tighter pair, and the reason is
+          // DOWNSTREAM rather than local. In the handler
+          // (submit_form_feedback in lambda/api/feedback_form_handler.py) one
+          // request costs three operations: a get_item for the form, an optional
+          // conditional update_item to anchor its brand (_anchor_form_brand), and
+          // an SQS send_message. It never writes the feedback table — and cannot:
+          // this role holds feedbackTable.grantReadData only (see above).
+          //
+          // The write happens in lambda/processor/handler.py, off the queue, and
+          // it does not arrive alone: each enqueued record drives Comprehend
+          // language detection, a Translate call, Comprehend sentiment AND a
+          // Bedrock LLM invocation (invoke_bedrock_llm). So an anonymous caller
+          // at this ceiling buys a per-request model invocation against a shared
+          // account quota — which is the real reason 20 rps rather than any
+          // DynamoDB cost, and the thing to weigh before raising it.
           //
           // Keys are spelled `{form_id}`, matching
           // `feedbackFormsResource.addResource('{form_id}')`, and are omitted

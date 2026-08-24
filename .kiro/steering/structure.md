@@ -250,6 +250,23 @@ embeddable widget calls from the customer's own site.
 | POST | `/feedback-forms/{id}/submit` | **public** | Submit feedback |
 | GET | `/feedback-forms/{id}/iframe` | **public** | Iframe embed variant |
 
+> **Rate limits on the three public routes** are stage method settings in
+> `api-stack.ts`, and are EXTERNALLY OBSERVABLE to anyone embedding the widget:
+>
+> | Route | Rate / burst | Why |
+> |---|---|---|
+> | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
+> | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item`, and a static HTML render, respectively) |
+>
+> A method setting is keyed by PATH with `{id}` as a variable, so each ceiling is
+> shared across **every form in the deployment and every caller** — not per form
+> and not per client. 100 rps is therefore the aggregate widget page-view rate a
+> deployment supports. Above it the widget renders a flat "Feedback form
+> unavailable." with no retry, indistinguishable from a disabled form — so a busy
+> embed is fixed by raising the number, not widget-side. The two
+> `/voting-sessions/{id}/…` public routes carry 20 rps / 40 for a different
+> reason (a room is bounded by `MAX_BALLOT_CAP`).
+
 > There is no `/feedback-form/*` (singular) API. These routes are declared
 > **explicitly** in `api-stack.ts` rather than behind a `{proxy+}`, so adding a
 > route to the handler also requires wiring it there. That is deliberate: a

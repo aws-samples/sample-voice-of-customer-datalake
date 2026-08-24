@@ -165,6 +165,15 @@ function apiTemplateFlagged(): Template {
   return cachedFlagged;
 }
 
+/** `-c environment=dev`, the shape that loosens `allowedOrigin` to '*'. Cached
+ *  like the other three, so calling any of these repeatedly inside a case costs
+ *  a map lookup rather than another synth. */
+let cachedDev: Template | undefined;
+function apiTemplateDev(): Template {
+  cachedDev ??= synthApiTemplate({ environment: 'dev' });
+  return cachedDev;
+}
+
 // Template values arrive as `unknown`; parse rather than assert (no `as`).
 const RefSchema = z.object({ Ref: z.string() });
 const GetAttSchema = z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.string()]) });
@@ -246,8 +255,55 @@ function callerFormsPaths(source: string): string[] {
 
 const readRepoFile = (...segments: string[]) => readFileSync(join(__dirname, '..', '..', ...segments), 'utf-8');
 
+const StageSchema = z.object({
+  Properties: z.object({
+    MethodSettings: z.array(z.object({
+      ResourcePath: z.string(),
+      HttpMethod: z.string(),
+      ThrottlingRateLimit: z.number().optional(),
+      ThrottlingBurstLimit: z.number().optional(),
+    })).optional(),
+  }),
+});
+
+/** CloudFormation carries a method setting's path in API Gateway's escaped
+ *  form, where `~1` stands for `/` — `/voting-sessions/{session_id}/config`
+ *  is stored as `/~1voting-sessions~1{session_id}~1config`. Decoded back so the
+ *  assertions below read as routes.
+ *
+ *  This escaping is also why every method-setting key has to be pinned rather
+ *  than trusted: a mistyped `methodOptions` key is escaped just as happily as a
+ *  correct one and produces a setting that matches no method, silently. */
+const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
+
+/** Every stage method setting, keyed `{resource path}/{METHOD}`.
+ *
+ *  Takes the template as a PARAMETER rather than closing over `apiTemplate()`,
+ *  which is what lets the orphan-key invariant run over both the default and the
+ *  `skipFeedbackFormItemRoutes` shapes. One copy at module scope: three describe
+ *  blocks below need it, and three near-identical private copies is the shape
+ *  `sonarjs/no-identical-functions` exists to catch. */
+function methodSettings(template: Template): { key: string; rate?: number; burst?: number }[] {
+  const stages = Object.values(template.findResources('AWS::ApiGateway::Stage'));
+
+  expect(stages.length, 'expected exactly one API stage').toBe(1);
+
+  return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
+    key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
+    rate: s.ThrottlingRateLimit,
+    burst: s.ThrottlingBurstLimit,
+  }));
+}
+
 describe('VocApiStack authorization invariant', () => {
   it('leaves only the allowlisted widget and ballot routes unauthenticated', () => {
+    // The COUNT as well as the contents, and here rather than in one of the
+    // per-feature describes below: five is the number a change to either public
+    // set has to argue past, so it belongs with the invariant itself instead of
+    // being restated once per feature that touches those routes. A throttle, a
+    // CORS value or a rewired resource tree is not an authorization change — this
+    // is the single guard that says so for all of them.
+    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(5);
     expect(unauthenticatedRoutes(apiTemplate())).toEqual(INTENTIONALLY_PUBLIC_ROUTES);
   });
 
@@ -589,44 +645,13 @@ describe('the public ballot routes', () => {
     '/voting-sessions/{session_id}/submit/POST',
   ];
 
-  const StageSchema = z.object({
-    Properties: z.object({
-      MethodSettings: z.array(z.object({
-        ResourcePath: z.string(),
-        HttpMethod: z.string(),
-        ThrottlingRateLimit: z.number().optional(),
-        ThrottlingBurstLimit: z.number().optional(),
-      })).optional(),
-    }),
-  });
-
-  /** CloudFormation carries a method setting's path in API Gateway's escaped
-   *  form, where `~1` stands for `/` — `/voting-sessions/{session_id}/config`
-   *  is stored as `/~1voting-sessions~1{session_id}~1config`. Decoded back so the
-   *  assertions below read as routes.
-   *
-   *  This escaping is also why the key has to be pinned rather than trusted: a
-   *  mistyped `methodOptions` key is escaped just as happily as a correct one and
-   *  produces a setting that matches no method, silently. */
-  const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
-
-  function methodSettings(): { key: string; rate?: number; burst?: number }[] {
-    const stages = Object.values(apiTemplate().findResources('AWS::ApiGateway::Stage'));
-
-    expect(stages.length, 'expected exactly one API stage').toBe(1);
-
-    return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
-      key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
-      rate: s.ThrottlingRateLimit,
-      burst: s.ThrottlingBurstLimit,
-    }));
-  }
-
   it('throttles both of them below the stage default', () => {
-    // The stage default is 100/200 for `/*/*`. These two are the only methods on
-    // the API that answer an anonymous caller a DynamoDB read, so they get their
-    // own tighter pair.
-    const settings = new Map(methodSettings().map((s) => [s.key, s]));
+    // The stage default is 100/200 for `/*/*`. These two answer an anonymous
+    // caller a DynamoDB read — and `submit` a conditional write — against a
+    // bounded room, so they get their own tighter pair. (The widget's `submit`
+    // shares it; the two widget reads deliberately do not — see
+    // `the public feedback-form routes` below.)
+    const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
 
     for (const key of PUBLIC_BALLOT_METHOD_KEYS) {
       const setting = settings.get(key);
@@ -728,6 +753,10 @@ describe('the two public sets get OPPOSITE origins, on purpose', () => {
   });
 
   it('gives the ballots Lambda the site origin', () => {
+    // `https://app.example.invalid` is this fixture's `frontendDomainName`
+    // interpolated by `allowedOrigin`, i.e. the RESOLVED form of a value a real
+    // deploy carries as an Fn::Join over the CloudFront domain. The assertion
+    // pins the derivation, not a literal any deployment ever sees.
     expect(allowedOriginOf(apiTemplate(), 'voc-ballots-api')).toBe('https://app.example.invalid');
   });
 
@@ -742,10 +771,29 @@ describe('the two public sets get OPPOSITE origins, on purpose', () => {
   });
 
   it('keeps the two values distinct, so neither can be "fixed" into the other', () => {
-    const forms = allowedOriginOf(apiTemplate(), 'voc-feedback-form-api');
-    const ballots = allowedOriginOf(apiTemplate(), 'voc-ballots-api');
+    // TRUE OF THE DEFAULT (PRODUCTION) SHAPE ONLY, and that is not a weakness of
+    // the test but a fact about the stack worth stating here: the ballots value
+    // comes from `allowedOrigin`, which is `isDev ? '*' : https://<frontend>`, so
+    // under `-c environment=dev` it also becomes '*' and the two coincide. The
+    // forms value is hardcoded and moves for neither context (see its comment in
+    // api-stack.ts). Asserting distinctness under `environment=dev` would
+    // therefore be asserting something false.
+    const template = apiTemplate();
+    const forms = allowedOriginOf(template, 'voc-feedback-form-api');
+    const ballots = allowedOriginOf(template, 'voc-ballots-api');
 
     expect(forms).not.toBe(ballots);
+  });
+
+  it('leaves the forms wildcard unmoved by environment=dev, unlike every other Lambda', () => {
+    // The divergence the case above describes, asserted rather than only noted.
+    // This is the one API Lambda no deployment-time control can tighten: the dev
+    // switch that loosens all fifteen others reaches everything BUT this value,
+    // which is already at its loosest and stays there in both contexts.
+    const dev = apiTemplateDev();
+
+    expect(allowedOriginOf(dev, 'voc-feedback-form-api')).toBe('*');
+    expect(allowedOriginOf(dev, 'voc-ballots-api')).toBe('*');
   });
 });
 
@@ -764,46 +812,53 @@ describe('the public feedback-form routes', () => {
     '/feedback-forms/{form_id}/iframe/GET',
   ];
 
-  const StageSchema = z.object({
-    Properties: z.object({
-      MethodSettings: z.array(z.object({
-        ResourcePath: z.string(),
-        HttpMethod: z.string(),
-        ThrottlingRateLimit: z.number().optional(),
-        ThrottlingBurstLimit: z.number().optional(),
-      })).optional(),
-    }),
-  });
+  /** The pair each of those three carries, and WHY it is not one pair.
+   *
+   *  `submit` joins the ballots at 20/40: the request itself is three operations
+   *  (form get_item, conditional brand update_item, SQS send_message — it does NOT
+   *  write the feedback table, the role is read-only there), and the enqueued
+   *  record then drives Comprehend, Translate and a Bedrock invocation in
+   *  lambda/processor/handler.py. A per-request model call against a shared
+   *  account quota is what the 20 buys protection from.
+   *
+   *  `config` and `iframe` are stated at 100/200 — the same numbers as the stage
+   *  default, deliberately restated rather than inherited. Their legitimate demand
+   *  is a CUSTOMER's page-view rate (feedback-widget.js fetches `config` on every
+   *  page load; `iframe` renders per embed), the setting is keyed by path so the
+   *  ceiling is shared across every form and caller in the deployment, and the
+   *  widget shows a 429 as an unretried "Feedback form unavailable." So the
+   *  bounded-room argument behind 20 rps does not reach them, and pinning their
+   *  own value keeps a future tightening of the stage-wide default from silently
+   *  squeezing a third party's page. */
+  const EXPECTED_FORM_THROTTLES: Record<string, { rate: number; burst: number }> = {
+    '/feedback-forms/{form_id}/config/GET': { rate: 100, burst: 200 },
+    '/feedback-forms/{form_id}/submit/POST': { rate: 20, burst: 40 },
+    '/feedback-forms/{form_id}/iframe/GET': { rate: 100, burst: 200 },
+  };
 
-  /** CloudFormation stores a method setting's path in API Gateway's escaped
-   *  form, where `~1` stands for `/`. Decoded back so assertions read as routes. */
-  const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
-
-  function methodSettings(template: Template): { key: string; rate?: number; burst?: number }[] {
-    const stages = Object.values(template.findResources('AWS::ApiGateway::Stage'));
-
-    expect(stages.length, 'expected exactly one API stage').toBe(1);
-
-    return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
-      key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
-      rate: s.ThrottlingRateLimit,
-      burst: s.ThrottlingBurstLimit,
-    }));
-  }
-
-  it('throttles all three below the stage default, at the ballots\' numbers', () => {
-    // The stage default is 100/200 for `/*/*`, and these three were the only
-    // members of INTENTIONALLY_PUBLIC_ROUTES still riding it. `submit` costs up to
-    // four backend operations per request (form read, conditional form update,
-    // feedback-table write, queue enqueue) against a ballot's single transaction.
+  it('gives each of the three an explicit pair, tight for submit and generous for the reads', () => {
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
 
     for (const key of PUBLIC_FORM_METHOD_KEYS) {
       const setting = settings.get(key);
 
       expect(setting, `${key} has no method-level throttle`).toBeDefined();
-      expect(setting?.rate).toBe(20);
-      expect(setting?.burst).toBe(40);
+      expect(setting?.rate).toBe(EXPECTED_FORM_THROTTLES[key].rate);
+      expect(setting?.burst).toBe(EXPECTED_FORM_THROTTLES[key].burst);
+    }
+  });
+
+  it('holds submit strictly tighter than the two reads, which is the whole split', () => {
+    // The pins above would still pass if all three were "fixed" back to one pair.
+    // This is the case that fails then: the asymmetry is the decision, and it is
+    // argued from cost (a Bedrock invocation per submission) versus demand (a
+    // third party's page views), not from who is allowed to call.
+    const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
+    const submit = settings.get('/feedback-forms/{form_id}/submit/POST');
+
+    for (const read of ['/feedback-forms/{form_id}/config/GET', '/feedback-forms/{form_id}/iframe/GET']) {
+      expect(submit?.rate, `submit should be tighter than ${read}`)
+        .toBeLessThan(settings.get(read)?.rate ?? 0);
     }
   });
 
@@ -851,11 +906,9 @@ describe('the public feedback-form routes', () => {
     }
   });
 
-  it('adds no public route — the intentional list is still exactly five', () => {
-    // A throttle is not an authorization change. This is the guard that says so.
-    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(5);
-    expect(unauthenticatedRoutes(apiTemplate())).toEqual(INTENTIONALLY_PUBLIC_ROUTES);
-  });
+  // No "adds no public route" case here: that is `VocApiStack authorization
+  // invariant`'s first test, which pins both the contents and the count of
+  // INTENTIONALLY_PUBLIC_ROUTES once for the whole file.
 });
 
 
@@ -1392,28 +1445,8 @@ describe('mcp endpoint throttling', () => {
     '/mcp/{proxy+}/POST',
     '/mcp/{proxy+}/GET',
   ];
-  const StageSchema = z.object({
-    Properties: z.object({
-      MethodSettings: z.array(z.object({
-        ResourcePath: z.string(),
-        HttpMethod: z.string(),
-        ThrottlingRateLimit: z.number().optional(),
-        ThrottlingBurstLimit: z.number().optional(),
-      })).optional(),
-    }),
-  });
-  const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
-  function methodSettings(): { key: string; rate?: number; burst?: number }[] {
-    const stages = Object.values(apiTemplate().findResources('AWS::ApiGateway::Stage'));
-    expect(stages.length, 'expected exactly one API stage').toBe(1);
-    return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
-      key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
-      rate: s.ThrottlingRateLimit,
-      burst: s.ThrottlingBurstLimit,
-    }));
-  }
   it('throttles the MCP methods below the stage default', () => {
-    const settings = new Map(methodSettings().map((s) => [s.key, s]));
+    const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
     for (const key of MCP_METHOD_KEYS) {
       const setting = settings.get(key);
       expect(setting, `${key} has no method-level throttle`).toBeDefined();
