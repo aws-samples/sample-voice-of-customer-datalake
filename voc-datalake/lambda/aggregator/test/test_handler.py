@@ -48,6 +48,44 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       `urgency == 'high'` guard fails five tests across three classes, including
       `test_urgency_raised_to_high_adds_the_urgent_count`.
 
+  TestBothDirectionsAgreeOnThePersonaBucket
+    — the persona axis buckets by `persona_type` (the archetype), not by
+      `persona_name`: a null name is correct output for anonymous feedback, which is
+      most of this corpus, so the name-based axis put 99.97% of it in one `Unknown`
+      bucket. ⚠️ NOT CAUGHT BY THIS CLASS, and an earlier version of this map
+      claimed it was: pointing `PERSONA_FIELD` back at `persona_name` fails ELEVEN
+      tests and NONE of them are here. `_expected_persona_pk` derives the expected
+      pk by calling `counter_dimensions` — the code under test — so moving the field
+      moves both sides of the assertion together. That is deliberate and is what
+      lets the class catch a SECOND derivation, but it is exactly what makes it
+      unable to catch a WRONG one. The field move is caught by
+      `test_persona_field_lockstep.py::TestTheAxisMeasuresTheArchetype::test_an_item_with_an_archetype_and_no_name_buckets_under_its_archetype`,
+      by `TestProcessNewFeedback::test_updates_persona_counter`, and by five tests
+      in `api/test/test_persona_dimension_lockstep.py` — which is the file that
+      compares the two SIDES rather than one side with itself. What this class does
+      catch is naming the bucket in a second place instead of through
+      `counter_dimensions`: that fails
+      `test_the_two_directions_name_one_row_and_only_the_sign_differs` as soon as
+      the two copies disagree, which is what a half-moved field name is.
+
+  TestAPreDeployImageIsReversedOnTheRowItsInsertCreated
+    — the class above cannot see a cross-deploy image, because both of its images are
+      built by the same deployed code. A REMOVE whose INSERT ran before the persona
+      axis moved was counted under the OLD derivation's bucket, so a decrement from
+      the shared description alone leaves that row inflated for up to 90 days while
+      decrementing an archetype row the item never contributed to. What tells the
+      reversal it is looking at such an item is that archetype decrement reporting
+      `ROW_ABSENT` — no counter moved for the bucket — which is a fact about the
+      TABLE, so every test there arranges the table rather than the fixture.
+      Deleting `_reverse_a_pre_deploy_persona_row`'s call in `apply_feedback` fails
+      six of these; deleting it in `process_modified_feedback` fails
+      `test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too` and
+      `test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing`.
+      Acting on EITHER refusal instead of only on the absent row fails the three
+      redelivery tests. The class's own REVERT MAP has the rest, including the
+      accepted busy-day residual and three mutations that do NOT fail — one of them
+      a citation this map used to make and could not support.
+
   TestAReversalRefusesToGuessTheDay
     — `_image_date`'s today-fallback is safe for an arrival and arbitrary for a
       reversal. Having `process_deleted_feedback` or `process_modified_feedback`
@@ -163,6 +201,7 @@ reason:
     tests that delete without one.
 """
 import boto3
+import itertools
 import pytest
 from botocore.exceptions import ClientError
 from collections.abc import Mapping
@@ -311,7 +350,7 @@ class TestGetMetricType:
         """Returns 'persona' for persona metric pk."""
         from aggregator.handler import get_metric_type
         
-        result = get_metric_type('METRIC#persona#Happy Customer')
+        result = get_metric_type('METRIC#persona#advocate')
         
         assert result == 'persona'
 
@@ -387,7 +426,7 @@ class TestUpdateCounter:
         """Includes metric_type for persona metrics (for GSI)."""
         from aggregator.handler import update_counter
         
-        update_counter('METRIC#persona#Happy Customer', '2025-01-15', 'count')
+        update_counter('METRIC#persona#advocate', '2025-01-15', 'count')
         
         call_kwargs = mock_table.update_item.call_args.kwargs
         assert ':metric_type' in call_kwargs['ExpressionAttributeValues']
@@ -517,13 +556,13 @@ class TestProcessNewFeedback:
     @patch('aggregator.handler.update_average')
     @patch('aggregator.handler.update_counter')
     def test_updates_persona_counter(self, mock_counter, mock_avg, sample_feedback_item):
-        """Updates persona counter."""
+        """Updates the persona counter, under the item's ARCHETYPE."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         calls = mock_counter.call_args_list
-        persona_call = [c for c in calls if 'persona#Happy Customer' in c.args[0]]
+        persona_call = [c for c in calls if 'persona#advocate' in c.args[0]]
         assert len(persona_call) == 1
 
     @patch('aggregator.handler.update_average')
@@ -1027,6 +1066,1028 @@ class TestCounterDimensions:
 
         assert counter_dimensions({}) == counter_dimensions({'date': '2025-01-15'})
         assert ('METRIC#daily_source#unknown', 'count') in counter_dimensions({})
+
+
+class TestBothDirectionsAgreeOnThePersonaBucket:
+    """The persona row an insert creates is the row a delete comes back for.
+
+    A dimension read out of the NEW image on the way in and out of the OLD image on
+    the way back is the one place a field name can be changed on half the axis: the
+    increment lands on `METRIC#persona#<new field's value>` while the decrement
+    looks for `METRIC#persona#<old field's value>`, so the counter goes up and never
+    comes down. That is the bug this module was repaired for, and moving the field
+    is exactly the edit that could reintroduce it in this one dimension.
+
+    Both the EXPECTED bucket and the OBSERVED ones are derived — the expectation
+    from `counter_dimensions`, the observations from the writes the handler issued —
+    so nothing here restates the pk, and a second place naming the persona bucket
+    cannot pass by agreeing with a literal in this file.
+
+    The subject is the ANONYMOUS fixture (an archetype, no name), because that is
+    the shape of nearly every item in production and the shape the old field
+    bucketed as `Unknown`.
+    """
+
+    @staticmethod
+    def _expected_persona_pk(item: dict) -> str:
+        from aggregator.handler import counter_dimensions
+
+        personas = [pk for pk, _ in counter_dimensions(item)
+                    if pk.startswith('METRIC#persona#')]
+        assert len(personas) == 1, personas
+        return personas[0]
+
+    @staticmethod
+    def _persona_writes(mock_table) -> list[tuple[str, str, str, int]]:
+        return [w for w in _writes(mock_table) if w[0].startswith('METRIC#persona#')]
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_an_anonymous_items_insert_writes_the_bucket_counter_dimensions_names(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_anonymous_feedback_item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._expected_persona_pk(sample_anonymous_feedback_item),
+             '2025-01-15', 'count', 1)
+        ]
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_its_delete_decrements_that_same_bucket(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        from aggregator.handler import record_handler
+
+        record_handler(_record('REMOVE', old=sample_anonymous_feedback_item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._expected_persona_pk(sample_anonymous_feedback_item),
+             '2025-01-15', 'count', -1)
+        ]
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_the_two_directions_name_one_row_and_only_the_sign_differs(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        """The property, stated without either side being written down.
+
+        Compared as sets of (pk, sk, field) so the assertion is about WHICH row,
+        which is the thing a half-moved field name gets wrong; the signs are checked
+        separately, so a reversal that incremented could not pass either.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('INSERT', new=sample_anonymous_feedback_item))
+        inserted = self._persona_writes(mock_table)
+        mock_table.reset_mock()
+
+        record_handler(_record('REMOVE', old=sample_anonymous_feedback_item))
+        removed = self._persona_writes(mock_table)
+
+        assert _dimensions(inserted) == _dimensions(removed)
+        assert [delta for *_, delta in inserted] == [1]
+        assert [delta for *_, delta in removed] == [-1]
+
+
+class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
+    """The one case in which the reversal reads the OLD persona field.
+
+    The class above is the property for images written by THIS deploy, and it cannot
+    see this case: both of its images are built by the same deployed code, so both
+    derive the same bucket. A REMOVE whose INSERT ran before the axis moved is
+    different — that insert counted the item under `METRIC#persona#<persona_name, or
+    Unknown>`, a row today's derivation never names — and without a fallback the
+    delete leaves that row inflated for up to 90 days while decrementing an archetype
+    row the item never contributed to.
+
+    NO COUNTER GOES NEGATIVE AND NO EXPIRED ROW IS RESURRECTED, here or anywhere
+    else on this path: `update_counter` guards every decrement with
+    `attribute_exists(pk) AND #field >= :floor`, pinned against a real DynamoDB by
+    TestADecrementCannotCreateOrGoNegative. The damage this fallback repairs was a
+    persistent OVER-count of a legacy row, not a negative one.
+
+    🔑 THE TRIGGER IS THE ARCHETYPE DECREMENT REPORTING `ROW_ABSENT`, AND NOTHING
+    ABOUT THE ITEM — argued at `_reverse_a_pre_deploy_persona_row`. What follows from
+    it HERE is how every test below is arranged: pre-deploy versus post-deploy is a
+    fact about the TABLE, set with `_refuse`, never a field on a fixture. No fixture in
+    conftest.py says which deploy wrote it, deliberately. That the two refusals are
+    distinguishable at all is an assumption about DynamoDB rather than about this code,
+    so it is checked against a real table by
+    test_a_real_dynamodb_tells_a_row_at_zero_from_a_row_that_is_not_there.
+
+    THE ACCEPTED RESIDUAL, recorded here rather than softened: an absent archetype row
+    is available as evidence ONLY on a day no post-deploy item has written that
+    bucket. On a busier day a pre-deploy item's decrement LANDS on the archetype row it
+    never contributed to, the fallback does not fire, and the legacy row it did
+    contribute to stays inflated until its 90-day TTL. That observable is the same one
+    test_a_post_deploy_image_does_not_touch_the_legacy_row asserts — the cases are
+    indistinguishable, which is the residual — so it is pinned there rather than in a
+    test of its own, and `handler.py`'s `Known residuals` says the same. What holds
+    either way is that EXACTLY ONE counter moves per deletion
+    (test_exactly_one_persona_bucket_moves_per_deletion), which is the property the
+    wall-clock trigger this replaced broke: it read a stamp on the item, so it issued a
+    legacy `-1` on top of a decrement that had already landed.
+
+    The collision guard and the reversal-only confinement are argued where they live,
+    in `_reverse_a_pre_deploy_persona_row` — not restated here. What this class adds is
+    that the guard is COMPLETE only because `persona_bucket` closed the axis, which is
+    a property rather than an instance and so has its own test
+    (test_the_rows_this_deploy_writes_are_all_in_the_enum).
+
+    REVERT MAP for this class. Every entry below was RUN against the real source and
+    its citations are the tests that really failed, not the ones that ought to have.
+      * Delete `_reverse_a_pre_deploy_persona_row`'s call in `apply_feedback` — fails
+        six: test_the_row_the_pre_deploy_insert_created_is_the_one_brought_down,
+        test_a_pre_deploy_image_with_no_name_either_falls_back_to_the_old_default,
+        test_exactly_one_persona_bucket_moves_per_deletion,
+        test_a_name_the_closed_axis_can_no_longer_write_is_reversed_not_declined,
+        test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current
+        and test_the_fallback_lands_on_the_day_the_decrement_concerned. That last one
+        survived this mutation until review found it: asserting only WHICH DAY the
+        writes landed on was satisfied by the archetype decrement alone, so it now
+        asserts the COUNT as well.
+        Not the rebucket test: MODIFY has its own call, and deleting THAT one instead
+        fails test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too and,
+        in TestEachBehaviourEmitsItsOwnMetric,
+        test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing.
+      * Widen the gate from `is CounterWrite.ROW_ABSENT` to `is not
+        CounterWrite.LANDED`, i.e. act on EITHER refusal — fails
+        test_a_redelivered_remove_of_a_post_deploy_item_leaves_the_legacy_row_alone,
+        test_a_redelivered_remove_of_an_anonymous_item_does_not_drain_the_legacy_default
+        and test_a_redelivered_remove_of_a_pre_deploy_item_does_not_decrement_twice.
+        Those three are the redelivered-REMOVE shape, which is the only place the two
+        refusals differ observably.
+      * Drop the outcome condition from the gate entirely, firing for every persona
+        key — fails eight, in three classes: the three above, plus
+        test_a_post_deploy_image_does_not_touch_the_legacy_row,
+        test_exactly_one_persona_bucket_moves_per_deletion,
+        TestADeleteReversesExactlyWhatTheInsertAdded's
+        test_the_reversed_dimensions_are_exactly_the_incremented_ones, and both of
+        TestBothDirectionsAgreeOnThePersonaBucket's shared-derivation tests
+        (test_its_delete_decrements_that_same_bucket,
+        test_the_two_directions_name_one_row_and_only_the_sign_differs). A
+        compatibility that fires unconditionally is not a compatibility, and it stops
+        being a fact about ONE axis.
+      * Drop the PERSONA_ARCHETYPES collision guard — fails
+        test_a_name_equal_to_an_archetype_does_not_aim_the_reversal_at_a_live_row and
+        test_one_deletion_never_decrements_one_row_twice. Both need the archetype row
+        arranged ABSENT to reach the guard at all; without that `_refuse` in the
+        arrangement the gate returns early and this mutation fails nothing, which is
+        how the first of them was found to have gone vacuous when the trigger changed.
+      * Open the axis again (have `persona_bucket` interpolate `persona_type`
+        verbatim) — fails test_the_rows_this_deploy_writes_are_all_in_the_enum,
+        test_a_name_the_closed_axis_can_no_longer_write_is_reversed_not_declined and, outside
+        this file, in api/test/test_persona_dimension_lockstep.py,
+        test_an_out_of_contract_archetype_is_counted_as_unclassified — the read path
+        buckets by the same derivation, so opening the axis moves both at once.
+      * Trigger on the ITEM rather than on the row's outcome — any per-item test, a
+        `processed_at` stamp or a persona SHAPE, reduces here to "act unless refused at
+        the floor" — fails three in TestOneItemOwesOneLegacyDecrement:
+        test_three_successive_edits_of_one_item_drain_the_legacy_row_once,
+        test_an_edit_then_the_delete_drain_it_once and
+        test_a_busy_day_does_not_drain_the_legacy_row_at_all. That class is where the
+        per-ITEM bound lives; review measured 3 and 2 drains for those first two
+        arrangements under the wall-clock trigger this replaced.
+      * Have `update_counter` classify an unreadable refusal as `ROW_ABSENT` instead of
+        `REFUSED_AT_FLOOR` — fails
+        test_an_unreadable_refusal_is_not_evidence_that_a_row_was_absent, and only
+        that: it is the fail direction of the one conclusion carrying a write.
+      * Drop `ReturnValuesOnConditionCheckFailure='ALL_OLD'` from `update_counter` —
+        fails test_a_real_dynamodb_tells_a_row_at_zero_from_a_row_that_is_not_there,
+        and only that, because it is the only test that asks a real table which
+        refusal it gave. Every mocked refusal in this class is hand-built, so the
+        mutation is invisible to all of them — which is exactly why that test exists.
+      * Drop `update_counter`'s decrement ConditionExpression — fails 16 across five
+        classes, of which this one's is
+        test_the_fallback_cannot_resurrect_an_aged_out_legacy_row: the compatibility is
+        one `update_counter` call and inherits the condition rather than restating it.
+
+    WHY THE TRIGGER IS NOT THE ITEM'S PERSONA SHAPE, recorded because it is the fix
+    that suggests itself and does not work: "no `persona_type`, but a `persona_name`"
+    looks like a pre-deploy image and is not one. `processor/handler.py` has written
+    BOTH persona fields since the initial commit, so the axis move changed only the
+    READER — an anonymous pre-deploy item carries a `persona_type` and no name,
+    exactly like a post-deploy one, and that is the 99.97% case this compatibility
+    exists for. A shape test would therefore be silently inert for the majority of the
+    corpus while looking like a tightening;
+    test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current
+    is the case that fails under it, and its subject is the ORDINARY post-deploy
+    fixture — the same item, reversed on the strength of the table alone.
+
+    MUTATIONS THAT DO NOT FAIL ANYTHING, run and recorded rather than asserted into
+    existence, because a REVERT MAP is only worth what its citations are:
+      * `if sign < 0` → `if True` in `apply_feedback`: passes. An increment carries no
+        ConditionExpression, so it can only ever report LANDED and the gate finds no
+        `ROW_ABSENT` key to act on — the guard STATES that the compatibility is
+        reversal-only rather than being what makes it so. (It was a no-op under the
+        previous wall-clock trigger too, for a weaker reason: that one relied on a
+        stream INSERT of a pre-deploy item being impossible.)
+      * MAKING THE AXIS DUAL-SOURCED — `item.get(PERSONA_FIELD) or
+        item.get('persona_name') or PERSONA_UNKNOWN` in `persona_bucket`: passes, and
+        this one is a finding rather than a formality. An earlier version of this map
+        claimed it failed two named tests; it does not. The membership filter absorbs
+        it — a free-text name is not a member of PERSONA_ARCHETYPES, so it buckets as
+        the empty value exactly as an absent field does, and every fixture and
+        assertion here uses names like `Veronica Chen`. The mutation is observable only
+        for a `persona_name` that happens to BE an archetype value with no
+        `persona_type` beside it, a shape nothing in this repo pins. Closing the axis
+        made the dual-read harmless, which is worth knowing, but it also means the
+        shape this change is careful not to be is NOT held off by a failing test.
+      * Reading the day from `_image_date(item)` instead of out of the counter key:
+        passes, because for one reversal every key carries the very date `counter_keys`
+        was given. Reading it out of the key is structural rather than observable — it
+        makes it impossible for a future caller to hand this function keys from one day
+        and an item naming another, the failure `_image_date_or_none` exists to prevent
+        elsewhere and which no ConditionExpression can catch.
+        test_the_fallback_lands_on_the_day_the_decrement_concerned therefore pins the
+        OUTCOME (both writes on the item's own day) rather than the mechanism.
+    """
+
+    @staticmethod
+    def _persona_writes(mock_table) -> list[tuple[str, str, str, int]]:
+        return [w for w in _writes(mock_table) if w[0].startswith('METRIC#persona#')]
+
+    @staticmethod
+    def _legacy_pk(item: dict) -> str:
+        """The row a pre-deploy insert created, derived from the handler's own
+        constants rather than written out, so a change to either is visible here."""
+        from aggregator.handler import (
+            LEGACY_PERSONA_FIELD,
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_PREFIX,
+        )
+
+        return f'{PERSONA_PREFIX}{item.get(LEGACY_PERSONA_FIELD) or LEGACY_PERSONA_UNKNOWN}'
+
+    @staticmethod
+    def _archetype_pk(item: dict) -> str:
+        """The row today's derivation names — from `counter_dimensions`, so nothing
+        here restates a pk."""
+        from aggregator.handler import counter_dimensions
+
+        personas = [pk for pk, _ in counter_dimensions(item)
+                    if pk.startswith('METRIC#persona#')]
+        assert len(personas) == 1, personas
+        return personas[0]
+
+    @staticmethod
+    def _refuse(mock_table, *, unless_pk: str | None = None, at_floor: bool = False):
+        """Make the mocked table refuse EVERY conditional write, or all but one.
+
+        A decrement against a row that does not exist is what production really
+        answers with, and an unconfigured mock accepts everything — so without this
+        the fallback could never be reached and the tests below would pass with it
+        deleted.
+
+        `at_floor` picks WHICH refusal is mimicked, and the two are not
+        interchangeable. DynamoDB reports a conditional failure with the refused item
+        attached when there was one (`ReturnValuesOnConditionCheckFailure='ALL_OLD'`),
+        and with no item when the row was absent — which is how `update_counter`
+        tells a row that never existed from one sitting at zero. A helper that
+        answered only one of the two would make one of those cases untestable, and it
+        is the difference the fallback's trigger now turns on.
+        """
+        floor_item = {'pk': {'S': 'set-below'}, 'sk': {'S': 'd'}, 'count': {'N': '0'}}
+
+        def update_item(**kwargs):
+            if 'ConditionExpression' in kwargs and kwargs['Key']['pk'] != unless_pk:
+                response = {
+                    'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'no'},
+                }
+                if at_floor:
+                    response['Item'] = {**floor_item, 'pk': {'S': kwargs['Key']['pk']}}
+                raise ClientError(response, 'UpdateItem')
+            return {}
+
+        mock_table.update_item.side_effect = update_item
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_the_row_the_pre_deploy_insert_created_is_the_one_brought_down(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """The blocking half of the finding: without this, deleting pre-deploy
+        feedback leaves its persona row inflated until the row's TTL expires."""
+        from aggregator.handler import record_handler
+
+        self._refuse(mock_table)
+        item = sample_pre_deploy_feedback_item
+
+        record_handler(_record('REMOVE', old=item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._archetype_pk(item), '2025-01-15', 'count', -1),
+            (self._legacy_pk(item), '2025-01-15', 'count', -1),
+        ], (
+            'a REMOVE of a pre-deploy image must try the archetype row first (the '
+            'shared derivation, so both directions still read one description) and, '
+            'when that is refused because the insert never created it, bring down '
+            'the row the insert really did create.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_pre_deploy_image_with_no_name_either_falls_back_to_the_old_default(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """The old derivation's empty bucket was a bespoke `Unknown`, which is where
+        99.97% of the corpus went — so it is the row most pre-deploy deletes have to
+        bring down, and it is spelled the OLD way on purpose: this names rows that
+        already exist, not a value anything writes fresh."""
+        from aggregator.handler import (
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_PREFIX,
+            record_handler,
+        )
+
+        self._refuse(mock_table)
+        nameless = {k: v for k, v in sample_pre_deploy_feedback_item.items()
+                    if k != 'persona_name'}
+
+        record_handler(_record('REMOVE', old=nameless))
+
+        assert (f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}', '2025-01-15', 'count', -1) \
+            in self._persona_writes(mock_table)
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_post_deploy_image_does_not_touch_the_legacy_row(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        """The POSITIVE CONTROL for the whole class — and the residual, in one call.
+
+        Nothing is refused, so the archetype decrement LANDS, which is what an item
+        this deploy counted looks like: a counter for that bucket has already come
+        down and no legacy row is owed a second one. Without this, a fallback that
+        fired on every reversal would pass every test above while double-counting
+        every ordinary delete against a legacy row.
+
+        🔑 IT IS ALSO THE ACCEPTED BUSY-DAY RESIDUAL, because the two are one
+        observable. A landed decrement is equally what a PRE-deploy item deleted on a
+        day the new axis has already written that bucket looks like — and then the row
+        its own insert created is not brought down, and ages out on its 90-day TTL
+        instead. Deciding it is possible — `processed_at` is on the old image — and
+        declined: a constant naming the deploy instant misreads an item written just
+        before the deploy and aggregated just after it, and leaves THAT row inflated
+        permanently rather than for 90 days. Either way exactly one counter moves
+        (test_exactly_one_persona_bucket_moves_per_deletion). Recorded in `handler.py`
+        under `Known residuals`, and this assertion is what would fail if the residual
+        were ever closed — a separate test for it would assert the same call twice.
+        """
+        from aggregator.handler import record_handler
+
+        item = sample_anonymous_feedback_item
+
+        record_handler(_record('REMOVE', old=item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._archetype_pk(item), '2025-01-15', 'count', -1)
+        ]
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_one_deletion_never_decrements_one_row_twice(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """The property the removed `pk == legacy_pk` branch used to carry.
+
+        One deletion taking two counts off one row would need the legacy value to
+        equal the archetype value — and it cannot: the archetype is always a member of
+        PERSONA_ARCHETYPES (`persona_bucket` guarantees it) and the collision guard
+        declines every legacy value in that set, so the case is refused one line
+        earlier by a guard that exists for a stronger reason. Asserted over every
+        arrangement that could reach it rather than one, because the argument is
+        exhaustive and a single example would not show that.
+        """
+        from aggregator.handler import PERSONA_UNKNOWN, record_handler
+
+        for name in (PERSONA_UNKNOWN, 'Unknown', 'churn_risk', 'Veronica Chen'):
+            for archetype in (None, 'churn_risk', PERSONA_UNKNOWN, 'loyal'):
+                mock_table.reset_mock()
+                self._refuse(mock_table)
+                item = {**sample_pre_deploy_feedback_item, 'persona_name': name}
+                if archetype:
+                    item['persona_type'] = archetype
+
+                record_handler(_record('REMOVE', old=item))
+
+                rows = [pk for pk, *_ in self._persona_writes(mock_table)]
+                assert len(rows) == len(set(rows)), (
+                    f'{item} produced writes to {rows}: one deletion decremented one '
+                    f'row twice.'
+                )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_an_insert_never_writes_the_legacy_bucket(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """The fallback is REVERSAL-ONLY. A dual-read on the increment path would
+        make the axis permanently two-sourced to serve a path with a sunset date."""
+        from aggregator.handler import record_handler
+
+        item = sample_pre_deploy_feedback_item
+
+        record_handler(_record('INSERT', new=item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._archetype_pk(item), '2025-01-15', 'count', 1)
+        ], (
+            'an arriving item is counted by the archetype axis and nothing else — '
+            'including an item that happens to carry only a name, which counts as '
+            'unclassified rather than under its name.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_the_fallback_lands_on_the_day_the_decrement_concerned(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """The date is read out of the counter KEY, not re-derived.
+
+        A follow-up write that recomputed the day could land on another one, which is
+        the failure `_image_date_or_none` exists to prevent elsewhere in this module:
+        no ConditionExpression can catch a `-1` aimed at the wrong day, because that
+        row exists and is above the floor.
+        """
+        from aggregator.handler import record_handler
+
+        self._refuse(mock_table)
+        item = {**sample_pre_deploy_feedback_item, 'date': '2024-11-02'}
+
+        record_handler(_record('REMOVE', old=item))
+
+        writes = self._persona_writes(mock_table)
+        # BOTH writes, not just the days they landed on: asserting the day alone was
+        # satisfied by the archetype decrement on its own, so this test used to pass
+        # with the fallback deleted outright. The count is what makes it about the
+        # follow-up write at all.
+        assert len(writes) == 2, (
+            f'{writes}: expected the archetype decrement and the legacy follow-up, '
+            f'not one of them'
+        )
+        assert {sk for _, sk, _, _ in writes} == {'2024-11-02'}, writes
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_redelivered_remove_of_a_post_deploy_item_leaves_the_legacy_row_alone(
+        self, mock_table, sample_feedback_item
+    ):
+        """A refused decrement is not evidence of a pre-deploy insert.
+
+        Streams are at-least-once, so a REMOVE is redelivered after its counters have
+        already come down — and the archetype row then sits at ZERO, where the floor
+        refuses the second decrement. A refusal is two facts, and only "there was no
+        such row" is evidence of a pre-deploy insert: a version triggering on ANY
+        refusal fails here, which is what this arrangement is for.
+        """
+        from aggregator.handler import record_handler
+
+        # Every conditional write refused BY THE FLOOR: the rows are all there.
+        self._refuse(mock_table, at_floor=True)
+        item = sample_feedback_item
+        assert item.get('persona_name') and item.get('persona_type'), (
+            'the subject must carry BOTH fields, or the two derivations name one row '
+            'and a stray write would be invisible'
+        )
+
+        record_handler(_record('REMOVE', old=item))
+
+        assert self._persona_writes(mock_table) == [
+            (self._archetype_pk(item), '2025-01-15', 'count', -1)
+        ], (
+            'a redelivered REMOVE of a post-deploy item must attempt its archetype '
+            'row and stop there. The row being at zero says the row exists, so the '
+            'insert created it, so there is no pre-deploy row to bring down.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_redelivered_remove_of_an_anonymous_item_does_not_drain_the_legacy_default(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        """The same case in the shape production actually has, which is the costly one.
+
+        An anonymous item derives the legacy bucket from the OLD DEFAULT, so a stray
+        decrement lands on `METRIC#persona#Unknown` — the single row holding ~99.97%
+        of the pre-deploy corpus. Every redelivered REMOVE would have taken a count
+        off it, for items it never held.
+        """
+        from aggregator.handler import (
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_PREFIX,
+            record_handler,
+        )
+
+        self._refuse(mock_table, at_floor=True)
+
+        record_handler(_record('REMOVE', old=sample_anonymous_feedback_item))
+
+        legacy_default = f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}'
+        written = [pk for pk, *_ in self._persona_writes(mock_table)]
+        assert legacy_default not in written, written
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_redelivered_remove_of_a_pre_deploy_item_does_not_decrement_twice(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """The ROW'S OUTCOME is the only evidence, and here it rules the fallback OUT.
+
+        A REMOVE redelivered after this item's counters have already come down finds the
+        ARCHETYPE row refused AT THE FLOOR — and a row refused at the floor EXISTS,
+        which is a counter for that bucket already holding this item. One deletion owes
+        one `-1`, so no legacy write is due, however pre-deploy the image looks: this
+        one carries a name and no archetype, the shape most readily mistaken for a
+        trigger. Excluding `REFUSED_AT_FLOOR` alongside `LANDED` is the whole of what
+        keeps a redelivery from draining the legacy row again.
+        """
+        from aggregator.handler import record_handler
+
+        self._refuse(mock_table, at_floor=True)
+
+        record_handler(_record('REMOVE', old=sample_pre_deploy_feedback_item))
+
+        written = [pk for pk, *_ in self._persona_writes(mock_table)]
+        assert written == [self._archetype_pk(sample_pre_deploy_feedback_item)], (
+            f'{written}: a row refused at the floor EXISTS, so this deploy counted the '
+            f'item there and no legacy write is owed.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_exactly_one_persona_bucket_moves_per_deletion(
+        self, mock_table, sample_pre_deploy_feedback_item, sample_anonymous_feedback_item
+    ):
+        """🔑 THE PROPERTY THE WALL-CLOCK TRIGGER BROKE, stated on its own.
+
+        An item was counted in exactly ONE persona bucket, so exactly one persona
+        counter may move when it is deleted — whichever side of the deploy its insert
+        fell on. The trigger that read a stamp off the item lost this: it issued a
+        legacy `-1` on top of an archetype decrement that had already landed, so one
+        deletion took two counts off the axis. Reading the archetype row's outcome
+        instead makes the two mutually exclusive by construction, and this is that
+        exclusivity asserted over both arrangements rather than inferred from either.
+
+        LANDED writes, not attempted ones: a refused `update_item` is still a call on
+        the table, so `_persona_writes` sees it. What did not land is what `_refuse`
+        was told to refuse, which is why the arrangement carries the pk allowed through.
+        """
+        from aggregator.handler import record_handler
+
+        pre_deploy, post_deploy = (sample_pre_deploy_feedback_item,
+                                   sample_anonymous_feedback_item)
+        # (what the arrangement is, the old image, the pk a conditional write may land
+        # on — None meaning nothing is refused, so every write lands.)
+        arrangements = [
+            # The archetype row this item's insert never created is ABSENT, so that
+            # decrement moves nothing and the compatibility brings down the row the
+            # insert did create.
+            ('PRE-DEPLOY, on a quiet day', pre_deploy, self._legacy_pk(pre_deploy)),
+            # The archetype row is there, so its decrement lands and the gate is never
+            # reached: no legacy write is attempted at all.
+            ('POST-DEPLOY', post_deploy, None),
+        ]
+
+        for what, item, may_land in arrangements:
+            mock_table.reset_mock()
+            if may_land is None:
+                mock_table.update_item.side_effect = None
+            else:
+                self._refuse(mock_table, unless_pk=may_land)
+
+            record_handler(_record('REMOVE', old=item))
+
+            attempted = self._persona_writes(mock_table)
+            landed = [w for w in attempted if may_land is None or w[0] == may_land]
+            assert len(landed) == 1, (
+                f'{what}: persona writes attempted {attempted}, of which {landed} '
+                f'landed. The item was counted in exactly one persona bucket, so '
+                f'exactly one counter may move for its deletion.'
+            )
+            assert landed[0][3] == -1, landed
+
+    def test_the_rows_this_deploy_writes_are_all_in_the_enum(self):
+        """What makes the collision guard COMPLETE rather than partial.
+
+        The guard declines a legacy value that is a member of PERSONA_ARCHETYPES,
+        justified as "a row this deploy writes" — and that justification only holds
+        while the set really is every row this deploy can write. It was not: review
+        found a live `METRIC#persona#loyal` row (this repo's own fixtures use that
+        value, and `PUT /data-explorer/feedback` accepts `persona_type` with no
+        allowlist) decremented for an item counted elsewhere, because `loyal` reached
+        the pk verbatim and so passed the guard.
+
+        `persona_bucket` closing the axis is what fixed it, so this asserts the
+        property the guard depends on rather than one more instance of the symptom.
+        """
+        from aggregator.handler import PERSONA_ARCHETYPES, counter_dimensions
+
+        for value in ('loyal', 'VIP customer', 'power_user', '', None, 'churn_risk'):
+            personas = [pk for pk, _ in counter_dimensions({'persona_type': value})
+                        if pk.startswith('METRIC#persona#')]
+            assert len(personas) == 1, personas
+            bucket = personas[0].removeprefix('METRIC#persona#')
+            assert bucket in PERSONA_ARCHETYPES, (
+                f'persona_type={value!r} writes METRIC#persona#{bucket}, which is not '
+                f'a member of PERSONA_ARCHETYPES. The reversal\'s collision guard '
+                f'tests membership of that set to decide whether a row is live, so a '
+                f'row outside it is a live row the guard cannot recognise.'
+            )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_name_equal_to_an_archetype_does_not_aim_the_reversal_at_a_live_row(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """`legacy_pk` is the one pk built out of free text, so it can collide.
+
+        `persona_name` is an LLM-produced person name, and nothing constrains it to
+        the value space this axis uses — `unknown` is entirely plausible for anonymous
+        feedback, and it names the axis's LARGEST live bucket. A `-1` there is a
+        current number corrupted rather than a legacy one corrected, and no condition
+        expression can refuse it: that row exists and is above the floor. A missed
+        legacy decrement is the right way to be wrong, the judgement
+        `process_deleted_feedback` already makes for a dateless image.
+        """
+        from aggregator.handler import (
+            PERSONA_ARCHETYPES,
+            PERSONA_PREFIX,
+            record_handler,
+        )
+
+        # The archetype row absent, so the fallback is REACHED and the guard is what
+        # stops it. Without this the decrement lands, the gate returns early, and this
+        # test would pass with the collision guard deleted.
+        self._refuse(mock_table)
+        colliding = {**sample_pre_deploy_feedback_item,
+                     'persona_name': 'unknown', 'persona_type': 'advocate'}
+        assert 'unknown' in PERSONA_ARCHETYPES, (
+            'the arrangement depends on this name being a value the current axis '
+            'writes; if the enum changes, pick another member of it'
+        )
+
+        record_handler(_record('REMOVE', old=colliding))
+
+        written = [pk for pk, *_ in self._persona_writes(mock_table)]
+        assert written == [f'{PERSONA_PREFIX}advocate'], (
+            f'{written}: only the archetype decrement may be attempted. The name '
+            f'`unknown` names a bucket THIS deploy writes, so it cannot be told '
+            f'apart from a live row and must be left alone.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_a_name_the_closed_axis_can_no_longer_write_is_reversed_not_declined(
+        self, mock_table, sample_pre_deploy_feedback_item
+    ):
+        """The half of that collision the guard used to miss, closed at the root.
+
+        A legacy `persona_name` of `loyal` was NOT declined, because `loyal` is not in
+        PERSONA_ARCHETYPES — while `METRIC#persona#loyal` was nonetheless a row this
+        deploy wrote, for any item whose `persona_type` was `loyal`. Closing the axis
+        means that row can no longer be written, so decrementing it is now correct
+        rather than corrupting: it can only be a legacy row.
+
+        Asserted as the property (the write goes to the row named by the OLD
+        derivation, and the archetype row is the enum's) rather than as "no write
+        happens", because the fix removed the hazard instead of adding a second guard.
+        """
+        from aggregator.handler import PERSONA_PREFIX, record_handler
+
+        # As above: the archetype row has to be absent for the fallback to be reached
+        # at all, which is what makes the assertion below about the guard.
+        self._refuse(mock_table)
+        item = {**sample_pre_deploy_feedback_item,
+                'persona_name': 'loyal', 'persona_type': 'loyal'}
+
+        record_handler(_record('REMOVE', old=item))
+
+        written = [pk for pk, *_ in self._persona_writes(mock_table)]
+        assert f'{PERSONA_PREFIX}loyal' in written, (
+            f'{written}: `loyal` can no longer name a row this deploy writes, so the '
+            f'only row of that name is the legacy one this item\'s insert created.'
+        )
+        assert self._archetype_pk(item) == f'{PERSONA_PREFIX}unknown', (
+            'and the archetype side must have bucketed the out-of-contract value as '
+            'the empty one — which is what makes the legacy row unambiguous.'
+        )
+
+    def test_an_unreadable_refusal_is_not_evidence_that_a_row_was_absent(self):
+        """The fail direction of the one conclusion that carries a write.
+
+        `is_conditional_check_failure` recognises this exception by TYPE NAME as well
+        as by code, precisely because it arrives with no `response` payload on some
+        paths — and `ROW_ABSENT` was the else-branch, so an unreadable refusal read as
+        "there was no row". That is the fail-OPEN direction for a conclusion whose
+        consequence is a write, so it now resolves to the outcome no caller acts on.
+        """
+        from aggregator.handler import CounterWrite, update_counter
+
+        class ConditionalCheckFailedException(ClientError):
+            def __init__(self):
+                self.response = None
+
+        with patch('aggregator.handler.aggregates_table') as table:
+            table.update_item.side_effect = ConditionalCheckFailedException()
+            outcome = update_counter('METRIC#persona#advocate', '2025-01-15', 'count',
+                                     increment=-1)
+
+        assert outcome is CounterWrite.REFUSED_AT_FLOOR, (
+            f'{outcome}: a refusal whose response cannot be read says nothing about '
+            f'whether the row was there, and ROW_ABSENT is the conclusion that issues '
+            f'a follow-up write.'
+        )
+
+    @patch('aggregator.handler.aggregates_table')
+    def test_an_anonymous_pre_deploy_image_is_still_reversed_though_its_shape_looks_current(
+        self, mock_table, sample_anonymous_feedback_item
+    ):
+        """The 99.97% case, and the reason the trigger cannot be the item's SHAPE.
+
+        `processor/handler.py` has written both persona fields since the initial commit,
+        so the axis move changed only the READER: a pre-deploy anonymous item carries a
+        `persona_type` and no name, which is byte-identical to a post-deploy one — the
+        subject here IS the ordinary post-deploy fixture, and its insert nonetheless
+        counted it under the old default bucket if it ran before the move. So "no
+        `persona_type` but a `persona_name`" is NOT the pre-deploy shape, and a shape
+        test (`PERSONA_FIELD not in item and LEGACY_PERSONA_FIELD in item`) would fail
+        this: it looks like a tightening while switching the compatibility off for the
+        majority of the corpus it exists for.
+
+        What decides instead is a fact about the TABLE — the archetype row is arranged
+        ABSENT — which the item's shape cannot contradict.
+        """
+        from aggregator.handler import (
+            LEGACY_PERSONA_FIELD,
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_PREFIX,
+            record_handler,
+        )
+
+        self._refuse(mock_table)
+        item = sample_anonymous_feedback_item
+        assert LEGACY_PERSONA_FIELD not in item and item.get('persona_type'), (
+            'the arrangement is the point: the subject must look exactly like an item '
+            f'this deploy wrote — an archetype and no `{LEGACY_PERSONA_FIELD}` — or it '
+            'does not show that the shape is not what decides'
+        )
+
+        record_handler(_record('REMOVE', old=item))
+
+        assert (f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}', '2025-01-15', 'count', -1) \
+            in self._persona_writes(mock_table), (
+            'an anonymous item whose archetype row was never created must bring down '
+            'the old default bucket its insert really incremented — the single row that '
+            'held ~99.97% of the pre-deploy corpus.'
+        )
+
+    def test_the_fallback_cannot_resurrect_an_aged_out_legacy_row(
+        self, real_aggregates_table
+    ):
+        """Moto-backed of necessity: a mock cannot refuse a write.
+
+        The legacy row may have aged out too — it carries the same 90-day TTL — and
+        the compatibility must not create it holding `-1` any more than the ordinary
+        decrement may. It is one `update_counter` call, so it inherits that
+        condition; this asserts the inheritance rather than assuming it.
+        """
+        from aggregator.handler import record_handler
+
+        record_handler(_record('REMOVE', old={
+            'date': '2025-01-15', 'source_platform': 'webscraper',
+            'category': 'delivery', 'sentiment_label': 'neutral', 'urgency': 'low',
+            'persona_name': 'Veronica Chen',
+        }))
+
+        assert real_aggregates_table.scan()['Items'] == [], (
+            'every write of this reversal — the archetype decrement and the legacy '
+            'fallback alike — is conditional, so a day whose rows have expired must '
+            'come out of it with no rows at all.'
+        )
+
+    def test_a_real_dynamodb_tells_a_row_at_zero_from_a_row_that_is_not_there(
+        self, real_aggregates_table
+    ):
+        """The distinction the trigger rests on, against the thing that supplies it.
+
+        `update_counter` reads it out of `ReturnValuesOnConditionCheckFailure`, so it
+        is a property of DynamoDB's response rather than of this repo's code — and a
+        mock cannot establish it: the mocked refusals elsewhere in this class are
+        hand-built to carry an item or not, which pins how the two are HANDLED but
+        assumes DynamoDB draws the distinction at all. This is the assumption.
+        """
+        from aggregator.handler import CounterWrite, update_counter
+
+        real_aggregates_table.put_item(
+            Item={'pk': 'METRIC#persona#advocate', 'sk': '2025-01-15', 'count': Decimal(0)}
+        )
+
+        at_floor = update_counter('METRIC#persona#advocate', '2025-01-15', 'count',
+                                  increment=-1)
+        absent = update_counter('METRIC#persona#nothing_here', '2025-01-15', 'count',
+                                increment=-1)
+
+        assert at_floor is CounterWrite.REFUSED_AT_FLOOR, at_floor
+        assert absent is CounterWrite.ROW_ABSENT, absent
+        assert not at_floor and not absent, (
+            'both are refusals, so both must stay falsy — the callers that only ask '
+            '"did it land?" read this value as a boolean.'
+        )
+
+    def test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too(
+        self, live_day_table, sample_pre_deploy_feedback_item
+    ):
+        """MODIFY's decrement half reads an old image as well.
+
+        Reached only by an edit that CHANGES the archetype (or the date): an edit
+        leaving `persona_type` alone cancels in the symmetric difference and issues
+        no persona write, so there is nothing to be refused — which is why the plain
+        `test_a_changed_category_moves_the_count` does not see this.
+        """
+        from aggregator.handler import record_handler
+
+        self._refuse(live_day_table, unless_pk='METRIC#daily_total')
+        old = sample_pre_deploy_feedback_item
+        new = {**old, 'persona_type': 'advocate'}
+
+        record_handler(_record('MODIFY', old=old, new=new))
+
+        writes = self._persona_writes(live_day_table)
+        assert (self._legacy_pk(old), '2025-01-15', 'count', -1) in writes, (
+            f'{writes}: an edit to a pre-deploy item must bring down the row its '
+            f'insert created, for the same reason its deletion must.'
+        )
+        assert (self._archetype_pk(new), '2025-01-15', 'count', 1) in writes, (
+            'and still count it under its new archetype — the increment path is '
+            'untouched by the compatibility.'
+        )
+
+
+class TestOneItemOwesOneLegacyDecrement:
+    """🔑 THE DEBT IS PER-ITEM; THE COMPATIBILITY FIRES PER EVENT. How many times can
+    one pre-deploy item drain the legacy row?
+
+    A pre-deploy item contributed exactly `1` to exactly one legacy row, so at most one
+    `-1` is ever owed for it — while `_reverse_a_pre_deploy_persona_row` runs on every
+    reversal, and one item can be reversed many times: each edit that changes its
+    archetype or its date, its eventual delete, and every stream redelivery of any of
+    those.
+
+    Raised in review against the WALL-CLOCK trigger, where the answer was N drains for
+    N events (the stamp is immutable, so every reversal re-read it as pre-deploy and
+    issued another `-1`). It is the property that made "self-limiting" true, so it is
+    measured here rather than argued: all moto-backed, because the answer is DynamoDB's
+    — whether the archetype row exists after the previous event is the whole mechanism.
+
+    🔑 THE ABSENT-ROW TRIGGER BOUNDS THE LEGITIMATE CASES BY CONSTRUCTION, and that is
+    the strongest argument for it. The first reversal's INCREMENT creates the archetype
+    row for the item's new bucket, so every later decrement of that row LANDS, and a
+    landed decrement never reaches the fallback. Nothing was added to get this: it falls
+    out of triggering on "no counter moved" instead of on a fact about the item.
+
+    ⚠️ REDELIVERY IS NOT BOUNDED, and is accepted rather than fixed. A REMOVE redelivered
+    N times issues N legacy decrements, because a refused decrement creates nothing — so
+    the archetype row is still absent on the second delivery and the evidence is
+    unchanged. That is the module's general at-least-once residual (see
+    TestRedeliveryMovesACounterTwice: a redelivered REMOVE double-decrements EVERY
+    counter this module writes, and closing it means routing `eventID` through
+    `shared/idempotency.py`, a CDK change as well as a code one). Fixing it for this one
+    row and no other would be a special case of a module-wide residual.
+
+    ⚠️ AND THE HONEST COST, which an earlier docstring understated by calling it "toward
+    the truth": that is only so for the FIRST drain of each item. Once the legacy row
+    holds the count its remaining pre-deploy items justify, another redelivered `-1`
+    makes it UNDERSTATE — and it is a row `/metrics/personas` still serves for any
+    window overlapping the move. Bounded below by the floor, never negative.
+
+    REVERT MAP
+      * Trigger on the item instead of on the row's outcome (any per-item test: a
+        stamp, a shape) — fails
+        test_three_successive_edits_of_one_item_drain_the_legacy_row_once and
+        test_an_edit_then_the_delete_drain_it_once, which is exactly what review
+        measured at 3 and 2 drains before the trigger moved.
+      * Fire on `LANDED` as well — fails both of those and
+        test_a_busy_day_does_not_drain_the_legacy_row_at_all.
+    """
+
+    DAY = '2025-01-15'
+    LEGACY_PK = 'METRIC#persona#Unknown'
+
+    @staticmethod
+    def _anonymous_pre_deploy(persona_type: str) -> dict:
+        """The 99.97% pre-deploy shape: an archetype, NO name, so its insert counted it
+        under the old bespoke default. Built here rather than from the conftest fixture
+        because these tests walk `persona_type` through several values."""
+        return {
+            'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#anon1', 'feedback_id': 'anon1',
+            'date': '2025-01-15', 'source_platform': 'webscraper',
+            'category': 'delivery', 'sentiment_label': 'neutral', 'urgency': 'low',
+            'persona_type': persona_type,
+        }
+
+    @classmethod
+    def _seed(cls, table, *, busy: bool):
+        from aggregator.handler import PERSONA_ARCHETYPES
+
+        # `daily_total` is the sentinel `_day_has_aggregates` reads, so seeding it is
+        # what makes the day LIVE and lets a rebucket proceed at all.
+        table.put_item(Item={'pk': 'METRIC#daily_total', 'sk': cls.DAY,
+                             'count': Decimal(100)})
+        table.put_item(Item={'pk': cls.LEGACY_PK, 'sk': cls.DAY, 'count': Decimal(6000)})
+        if busy:
+            # A post-deploy item has already written every archetype bucket for the day,
+            # which is the state that makes the absent row unavailable as evidence.
+            for archetype in PERSONA_ARCHETYPES:
+                table.put_item(Item={'pk': f'METRIC#persona#{archetype}', 'sk': cls.DAY,
+                                     'count': Decimal(40)})
+
+    @classmethod
+    def _legacy_count(cls, table) -> int | None:
+        item = table.get_item(Key={'pk': cls.LEGACY_PK, 'sk': cls.DAY}).get('Item')
+        return None if item is None else int(item['count'])
+
+    def test_three_successive_edits_of_one_item_drain_the_legacy_row_once(
+        self, real_aggregates_table
+    ):
+        """Three legitimate archetype edits, one item, one `-1`.
+
+        Review measured THREE here against the wall-clock trigger. The first edit's
+        decrement finds no archetype row and settles the debt; its increment then
+        CREATES the row for the new bucket, so the second and third edits' decrements
+        land and never reach the fallback. No marker, no stored state, no extra guard.
+        """
+        from aggregator.handler import process_modified_feedback
+
+        self._seed(real_aggregates_table, busy=False)
+        walk = ['churn_risk', 'prospect', 'advocate', 'churn_risk']
+
+        for old, new in itertools.pairwise(walk):
+            process_modified_feedback(self._anonymous_pre_deploy(old),
+                                      self._anonymous_pre_deploy(new))
+
+        assert self._legacy_count(real_aggregates_table) == 5999, (
+            'one item owes exactly one legacy `-1`, however many times it is edited.'
+        )
+
+    def test_an_edit_then_the_delete_drain_it_once(self, real_aggregates_table):
+        """The same property across two DIFFERENT event types.
+
+        Review measured two. Worth its own case because the edit and the delete reach
+        the fallback through different callers (`process_modified_feedback` and
+        `apply_feedback`), so a bound that held only inside one of them would pass the
+        test above.
+        """
+        from aggregator.handler import (
+            process_deleted_feedback,
+            process_modified_feedback,
+        )
+
+        self._seed(real_aggregates_table, busy=False)
+
+        process_modified_feedback(self._anonymous_pre_deploy('churn_risk'),
+                                  self._anonymous_pre_deploy('prospect'))
+        process_deleted_feedback(self._anonymous_pre_deploy('prospect'))
+
+        assert self._legacy_count(real_aggregates_table) == 5999
+
+    def test_a_redelivered_remove_drains_it_once_per_delivery(self, real_aggregates_table):
+        """⚠️ THE ACCEPTED MULTI-DRAIN, pinned so it is a decision and not an absence.
+
+        A refused decrement creates nothing, so the archetype row is still absent on the
+        second delivery and the evidence is unchanged — three deliveries, three `-1`s.
+        The module's general at-least-once residual rather than one this path invents,
+        and the direction is toward the truth for the FIRST drain only; past it the
+        legacy row understates. If this is ever closed it should be closed for every
+        counter at once, through `shared/idempotency.py`.
+        """
+        from aggregator.handler import process_deleted_feedback
+
+        self._seed(real_aggregates_table, busy=False)
+
+        for _ in range(3):
+            process_deleted_feedback(self._anonymous_pre_deploy('churn_risk'))
+
+        assert self._legacy_count(real_aggregates_table) == 5997, (
+            'three deliveries of one REMOVE take three counts off the legacy row. '
+            'Accepted: it is what every other counter in this module does under '
+            'redelivery — see TestRedeliveryMovesACounterTwice.'
+        )
+
+    def test_a_busy_day_does_not_drain_the_legacy_row_at_all(self, real_aggregates_table):
+        """The other side of the same mechanism, and the accepted busy-day residual.
+
+        With the archetype buckets already written for the day, every persona decrement
+        LANDS, so the fallback never fires — for an edit, a delete or a redelivery
+        alike. The legacy row is left inflated to age out on its TTL. Asserted over all
+        three arrangements at once, because on a busy day they are one observable.
+        """
+        from aggregator.handler import (
+            process_deleted_feedback,
+            process_modified_feedback,
+        )
+
+        self._seed(real_aggregates_table, busy=True)
+
+        process_modified_feedback(self._anonymous_pre_deploy('churn_risk'),
+                                  self._anonymous_pre_deploy('prospect'))
+        for _ in range(3):
+            process_deleted_feedback(self._anonymous_pre_deploy('prospect'))
+
+        assert self._legacy_count(real_aggregates_table) == 6000, (
+            'an absent archetype row is the only evidence this path has, and a busy '
+            'day does not offer it. Documented in `handler.py` under `Known residuals`.'
+        )
 
 
 class TestAReversalRefusesToGuessTheDay:
@@ -2117,6 +3178,65 @@ class TestEachBehaviourEmitsItsOwnMetric:
 
         # The refusal is visible; the rebucket is not claimed.
         assert self._names(mock_metrics) == [REFUSED_METRIC]
+
+    @patch('aggregator.handler.metrics')
+    def test_an_edit_whose_only_landing_write_was_the_pre_deploy_compatibility_counts_as_nothing(
+        self, mock_metrics, real_aggregates_table, sample_pre_deploy_feedback_item
+    ):
+        """REBUCKETED_METRIC claims THIS EDIT moved aggregates.
+
+        The pre-deploy persona compatibility is a write the edit did not ask for: it
+        corrects a row a previous deploy created. Folding it into the same total would
+        make the metric fire for an edit whose own decrements and increments were
+        every one refused — so an operator reading it would see an edit that moved
+        nothing reported as one that did, which is the distinction REFUSED_METRIC and
+        DECLINED_METRIC already exist to keep.
+
+        Moto-backed of necessity: the arrangement needs a live day whose archetype row
+        is genuinely ABSENT while the legacy row is genuinely present, and a mock
+        cannot refuse the one and accept the other on the strength of the real
+        condition.
+
+        THE ARRANGEMENT, because it takes some doing to leave an edit with no landing
+        write of its own: increments carry no condition, so they always land — the
+        edit therefore has to move the item ONTO AN AGED-OUT DAY, where the increments
+        are declined rather than attempted. On the day it leaves, `daily_total` is
+        present at ZERO, which keeps the day live for `_day_has_aggregates` while the
+        floor refuses its decrement; every other row it names is absent.
+        """
+        from aggregator.handler import (
+            LEGACY_PERSONA_UNKNOWN,
+            PERSONA_PREFIX,
+            REBUCKETED_METRIC,
+            record_handler,
+        )
+
+        old = {k: v for k, v in sample_pre_deploy_feedback_item.items()
+               if k != 'persona_name'}
+        real_aggregates_table.put_item(
+            Item={'pk': 'METRIC#daily_total', 'sk': '2025-01-15', 'count': Decimal(0)}
+        )
+        real_aggregates_table.put_item(Item={
+            'pk': f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}', 'sk': '2025-01-15',
+            'count': Decimal(3),
+        })
+        mock_metrics.reset_mock()
+
+        record_handler(_record('MODIFY', old=old, new={**old, 'date': '2024-01-01'}))
+
+        legacy = real_aggregates_table.get_item(Key={
+            'pk': f'{PERSONA_PREFIX}{LEGACY_PERSONA_UNKNOWN}', 'sk': '2025-01-15',
+        })['Item']
+        assert legacy['count'] == Decimal(2), (
+            'the arrangement requires the compatibility write to have LANDED, or this '
+            'test would pass for want of anything to count'
+        )
+        assert REBUCKETED_METRIC not in self._names(mock_metrics), (
+            f'{self._names(mock_metrics)}: the edit moved none of the aggregates it '
+            f'names, so it must not be reported as having rebucketed. The only write '
+            f'that landed was the pre-deploy compatibility, which the edit did not '
+            f'ask for.'
+        )
 
     @patch('aggregator.handler.metrics')
     def test_an_edit_that_did_move_a_counter_still_counts_as_rebucketed(
