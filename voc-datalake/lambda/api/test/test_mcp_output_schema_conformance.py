@@ -322,6 +322,15 @@ _LIST_ROUTE = "/feedback"
 _FEEDBACK_ID = "1ae1eb6abcd7d3a2e364f46139f98466"
 _DETAIL_ROUTE = f"/feedback/{_FEEDBACK_ID}"
 _PROJECT_ROUTE = f"/projects/{_PROJECT}"
+# The four routes the tools added in server 3.8.0 delegate to. Spelled from the
+# same `_FEEDBACK_ID`/`_PROJECT` values the routes above use, so a sample cannot
+# address a different item than the tool arguments name — `_FakeLambda` is keyed by
+# PATH, and a mismatched path answers `{}` rather than failing, which would make a
+# case pass while exercising nothing.
+_SIMILAR_ROUTE = f"/feedback/{_FEEDBACK_ID}/similar"
+_URGENT_ROUTE = "/feedback/urgent"
+_ENTITIES_ROUTE = "/feedback/entities"
+_JOBS_ROUTE = f"/projects/{_PROJECT}/jobs"
 
 
 @pytest.fixture(autouse=True)
@@ -500,6 +509,220 @@ _METRICS_EMPTY_BREAKDOWN_BODY = {
     "has_legacy_persona_buckets": False,
     "personas": {},
 }
+
+# ---------------------------------------------------------------------------
+# The four routes behind server 3.8.0's tools
+# ---------------------------------------------------------------------------
+#
+# Each of these is provenance level 2 of the convention `_TOOL_SAMPLES` states: the
+# route handler's OWN `return` statement, transcribed field for field, with the
+# function named so a reader can check the sample against its source. Level 1 was
+# unavailable — no fixture exists for these four route bodies yet — and the ROWS
+# inside them are level 1, reused from `_feedback_row()` rather than re-invented,
+# which is where the shape that broke M1 actually lives.
+
+# `metrics_handler.list_feedback`'s own return dict: `count`, `total`, `offset`,
+# `limit`, `is_partial_window`, `items`. All six, because reporting the four
+# `search_feedback` drops is the whole reason `list_feedback` exists — a sample
+# missing them would make the tool's central claim untested.
+#
+# The values are a mid-window page: 20 items requested from offset 40 of a filtered
+# window of 137, so `total > count` and `offset > 0` are both exercised. Two rows
+# rather than 20, since the projection is per row and the count is derived.
+_FEEDBACK_PAGE_BODY = {
+    "count": 2,
+    "total": 137,
+    "offset": 40,
+    "limit": 20,
+    "is_partial_window": False,
+    "items": [_FEEDBACK_ROW, _LEGACY_FEEDBACK_ROW],
+}
+
+# The same route with its cap reached: `is_partial_window` true, so `total` is a
+# lower bound. This is the answer `search_feedback` used to discard, and the reason
+# `list_feedback` declares the flag `required`.
+_FEEDBACK_PAGE_TRUNCATED_BODY = {
+    "count": 1,
+    "total": 5000,
+    "offset": 0,
+    "limit": 50,
+    "is_partial_window": True,
+    "items": [_HOSTILE_FEEDBACK_ROW],
+}
+
+# The empty page — a real answer with a shape, and the one where every pagination
+# field is present and zero. A window with nothing in it must not read as a
+# truncated one.
+_FEEDBACK_PAGE_EMPTY_BODY = {
+    "count": 0,
+    "total": 0,
+    "offset": 0,
+    "limit": 50,
+    "is_partial_window": False,
+    "items": [],
+}
+
+# `metrics_handler.get_similar_feedback`'s own return dict: `source_feedback_id`,
+# `count`, `items` — RAW rows from the category GSI, the same shape `/feedback`
+# returns, which is why `_project_feedback(summary=True)` applies unchanged.
+#
+# The id is `_FEEDBACK_ID`, matching `_SIMILAR_ROUTE` and the tool arguments: the
+# route echoes the id it was called with, and a sample echoing a different one would
+# hide a tool that reported the wrong item as the source.
+_SIMILAR_BODY = {
+    "source_feedback_id": _FEEDBACK_ID,
+    "count": 2,
+    "items": [_FEEDBACK_ROW, _HOSTILE_FEEDBACK_ROW],
+}
+
+# The isolated item: a category partition holding only the source row, which the
+# route filters out by id. `count: 0` here means "no neighbours", NOT "no such
+# item" — an unknown id is the route's 404 and reaches the client as a tool error
+# instead, so this is the shape a model has to be able to read as "this complaint
+# stands alone".
+_SIMILAR_NONE_BODY = {
+    "source_feedback_id": _FEEDBACK_ID,
+    "count": 0,
+    "items": [],
+}
+
+# `metrics_handler.get_urgent_feedback`'s own return dict, which is exactly
+# `{'count': len(items), 'items': items[:limit]}` — two keys, raw rows, and no
+# truncation flag anywhere. That absence is the fact the tool's `count` description
+# is about, and it is visible here: nothing in this body could tell a caller whether
+# the scan stopped early.
+_URGENT_BODY = {
+    "count": 2,
+    "items": [_FEEDBACK_ROW, _LEGACY_FEEDBACK_ROW],
+}
+
+# The same route with nothing urgent in the window. `count: 0` and an empty list is
+# a complete answer, not a degraded one.
+_URGENT_EMPTY_BODY = {"count": 0, "items": []}
+
+# `metrics_handler.get_entities`'s AGGREGATES branch — the one taken when no
+# `source` filter is given and the basis is 'imported'. Field for field from that
+# `return`: `period_days`, `feedback_count`, `is_partial`, `has_legacy_persona_buckets`
+# and the five-map `entities` object.
+#
+# 🔑 `keywords` IS `{}` HERE BECAUSE THE ROUTE HARDCODES IT — the literal appears in
+# both branches, and there is no keyword extraction behind either. It is kept in the
+# sample precisely because the tool DOES NOT declare it: this body is the evidence
+# for that omission, and a future reader wondering whether the field was forgotten
+# can see the route sending nothing. `personas` and `sources` are the same kind of
+# undeclared-but-real key, dropped because `get_metrics_breakdown` reports them.
+_ENTITIES_BODY = {
+    "period_days": 7,
+    "feedback_count": 6239,
+    "is_partial": False,
+    "has_legacy_persona_buckets": False,
+    "entities": {
+        "keywords": {},
+        "categories": {"delivery": 300, "pricing": 120, "product_quality": 8},
+        "issues": {"arrived late and damaged": 42, "charged twice for one order": 7},
+        "personas": {"advocate": 530, "churn_risk": 322},
+        "sources": {"webscraper": 4000, "feedback-form": 21},
+    },
+}
+
+# The SCAN branch of the same route, taken when a `source` filter or the review
+# basis forces entities to be computed from raw items. Two differences that matter:
+# `is_partial` comes from `_scan_window_items` and can be true, and
+# `has_legacy_persona_buckets` is the hardcoded `False` of that branch. The tool
+# coerces the flag with `bool()` rather than passing it through, which is what makes
+# a branch that omitted it safe.
+_ENTITIES_SCAN_BODY = {
+    "period_days": 30,
+    "feedback_count": 812,
+    "is_partial": True,
+    "has_legacy_persona_buckets": False,
+    "entities": {
+        "keywords": {},
+        "categories": {"delivery": 700, "other": 112},
+        "issues": {"the courier left it in the rain": 19},
+        "personas": {"unknown": 812},
+        "sources": {"webscraper": 812},
+    },
+}
+
+# The empty window: every map present and empty. A real answer, and the case where a
+# projected tool declaring `required` has to fill each field from nothing.
+_ENTITIES_EMPTY_BODY = {
+    "period_days": 7,
+    "feedback_count": 0,
+    "is_partial": False,
+    "has_legacy_persona_buckets": False,
+    "entities": {
+        "keywords": {}, "categories": {}, "issues": {}, "personas": {}, "sources": {},
+    },
+}
+
+# `projects_handler.api_list_jobs`'s own return dict: `{'success': True, 'jobs': [...]}`
+# where each job carries the nine fields the tool declares plus `result`, which it
+# drops. Both halves of that are exercised here — a FINISHED job with a `result`
+# payload (so the drop is observable rather than assumed) and a RUNNING one where the
+# route's projection puts `None` in `completed_at`, `error` and `result`.
+#
+# The running job is the important one: `None` under a `string` declaration is M1's
+# exact shape, and the route produces it on every unfinished job, so this is not a
+# hypothetical hostile row.
+_JOBS_BODY = {
+    "success": True,
+    "jobs": [
+        {
+            "job_id": "job_5f3c1a9e0b7d4c62",
+            "job_type": "generate_personas",
+            "status": "completed",
+            "progress": 100,
+            "current_step": "done",
+            "created_at": "2026-08-19T14:30:00+00:00",
+            "updated_at": "2026-08-19T14:34:12+00:00",
+            "completed_at": "2026-08-19T14:34:12+00:00",
+            "error": None,
+            # Dropped by the projection. A real one is far larger than this — a
+            # prototype's HTML or a research report — which is the argument for
+            # dropping it; a token of it here is enough to prove it does not travel.
+            "result": {"personas_created": 3, "markdown": "# Priya Shah\n..."},
+        },
+        {
+            "job_id": "job_a1b2c3d4e5f60718",
+            "job_type": "research",
+            "status": "running",
+            "progress": 40,
+            "current_step": "searching the web",
+            "created_at": "2026-08-19T15:00:00+00:00",
+            "updated_at": "2026-08-19T15:02:30+00:00",
+            "completed_at": None,
+            "error": None,
+            "result": None,
+        },
+    ],
+}
+
+# A FAILED job, which is the only shape that fills `error`. Without it that field is
+# declared and demonstrated by nothing, which is the substance check's whole subject.
+# `job_id` falls back to the sort key here — `i.get('job_id') or
+# i.get('sk', '').removeprefix('JOB#')` in the route — a real case for rows written
+# before `job_id` was stored as its own attribute.
+_JOBS_FAILED_BODY = {
+    "success": True,
+    "jobs": [{
+        "job_id": "job_998877665544332211",
+        "job_type": "generate_prototype",
+        "status": "failed",
+        "progress": 60,
+        "current_step": "rendering",
+        "created_at": "2026-08-18T09:00:00+00:00",
+        "updated_at": "2026-08-18T09:01:05+00:00",
+        "completed_at": "2026-08-18T09:01:05+00:00",
+        "error": "Bedrock throttled the request after 3 attempts",
+        "result": None,
+    }],
+}
+
+# A project with no jobs. The route answers `{'success': True, 'jobs': []}` for an
+# empty partition — never a 404 — so an empty list is the honest "nothing has run".
+_JOBS_EMPTY_BODY = {"success": True, "jobs": []}
 
 
 # ---------------------------------------------------------------------------
@@ -733,6 +956,51 @@ _TOOL_SAMPLES: dict[str, tuple[tuple[str, dict, dict], ...]] = {
         ("a project with no personas", {"project_id": _PROJECT}, {
             _PROJECT_ROUTE: {"project": {"name": "Empty"}, "personas": [], "documents": []},
         }),
+    ),
+    "list_feedback": (
+        # A mid-window page: the four pagination fields `search_feedback` drops,
+        # with `total` above `count` and a non-zero `offset`, which is the state a
+        # caller has to be able to read to page at all.
+        ("a mid-window page", {"days": 7, "limit": 20, "offset": 40},
+         {_LIST_ROUTE: _FEEDBACK_PAGE_BODY}),
+        # The cap reached, so `total` is a lower bound and the flag says so.
+        ("a truncated candidate window", {"days": 365},
+         {_LIST_ROUTE: _FEEDBACK_PAGE_TRUNCATED_BODY}),
+        ("an empty window", {"category": "delivery"},
+         {_LIST_ROUTE: _FEEDBACK_PAGE_EMPTY_BODY}),
+    ),
+    "get_similar_feedback": (
+        ("neighbours in the same category", {"feedback_id": _FEEDBACK_ID},
+         {_SIMILAR_ROUTE: _SIMILAR_BODY}),
+        # An isolated item — `count: 0` meaning "no neighbours", which is a
+        # different answer from the 404 an unknown id produces.
+        ("an item with no neighbours", {"feedback_id": _FEEDBACK_ID, "limit": 50},
+         {_SIMILAR_ROUTE: _SIMILAR_NONE_BODY}),
+    ),
+    "list_urgent_feedback": (
+        ("a page of urgent items", {"days": 30}, {_URGENT_ROUTE: _URGENT_BODY}),
+        ("nothing urgent in the window", {"days": 7, "limit": 10},
+         {_URGENT_ROUTE: _URGENT_EMPTY_BODY}),
+    ),
+    "list_feedback_facets": (
+        # Both branches of `get_entities`, because they are different bodies and one
+        # tool schema has to describe both — the same reason
+        # `get_metrics_breakdown` registers all four of its dimensions.
+        ("the aggregates branch", {"days": 7}, {_ENTITIES_ROUTE: _ENTITIES_BODY}),
+        ("the scan branch, partial", {"days": 30, "source": "webscraper"},
+         {_ENTITIES_ROUTE: _ENTITIES_SCAN_BODY}),
+        ("an empty window", {}, {_ENTITIES_ROUTE: _ENTITIES_EMPTY_BODY}),
+    ),
+    "list_jobs": (
+        # A finished job carrying a `result` the projection drops, beside a running
+        # one whose `completed_at`/`error` the route sends as `None` — the coercion
+        # this tool needs, on the shape the route really produces.
+        ("a finished job and a running one", {"project_id": _PROJECT},
+         {_JOBS_ROUTE: _JOBS_BODY}),
+        # The only shape that fills `error`.
+        ("a failed job", {"project_id": _PROJECT}, {_JOBS_ROUTE: _JOBS_FAILED_BODY}),
+        ("a project that has run nothing", {"project_id": _PROJECT},
+         {_JOBS_ROUTE: _JOBS_EMPTY_BODY}),
     ),
 }
 

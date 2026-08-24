@@ -1097,7 +1097,7 @@ class TestStructuredOutput:
         serialized = json.dumps(shapes, sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
-        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.7.0", "941e33f48bcca829"), (
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.8.0", "8d4a76e902615ab7"), (
             "a tool's published declaration changed. Move MCP_SERVER_VERSION — minor "
             "for an added field, MAJOR for a removal or a retype, because a client "
             "validates structuredContent against these schemas and caches the whole "
@@ -1774,25 +1774,45 @@ class TestMetricsToolsDeclareTheFlagTheyPassThrough:
         too, so there is one derivation and not two) and the reachable set from the
         live `DOMAIN_ROUTES` table, so neither is a copy.
 
-        `/feedback/entities` publishes the flag and is deliberately NOT exposed —
-        it is in `_RESERVED_PATH_SEGMENTS` precisely so it cannot be reached. If it
-        or another publishing route is ever added to `DOMAIN_ROUTES`, this fails,
-        and the fix is to declare `is_partial` on whichever tool serves it.
+        ⚠️ `/feedback/entities` USED TO BE THE UNREACHABLE ONE, and this docstring
+        used to say so: it publishes the flag, and being in
+        `_RESERVED_PATH_SEGMENTS` was read here as "so it cannot be reached". That
+        conflated two things. The reserved entry stops a FEEDBACK ID from
+        impersonating the route (`/feedback/entities` is a static sibling of
+        `/feedback/{feedback_id}`); it never bore on whether a tool may address the
+        route by its own key. Server 3.8.0's `list_feedback_facets` does, so the
+        route is reachable now — and it declares the flag, which is exactly the fix
+        this test's own prose prescribed for that day.
+
+        The accounting is a TABLE of route → serving tool rather than a bare set,
+        and each named tool's declaration is CHECKED here: "some tool serves it" is
+        a claim about the wrong thing if that tool turns out not to declare the
+        flag. `/feedback` is deliberately absent — it publishes
+        `is_partial_window`, a different key, which `routes_publishing_is_partial`
+        does not find and `list_feedback` declares under the route's own name.
         """
         publishing = set(routes_publishing_is_partial())
         assert len(publishing) == 6, f"derivation looks wrong: {sorted(publishing)}"
 
         reachable = {path for _domain, _method, path in mcp_handler.DOMAIN_ROUTES.values()}
-        served_by_the_metrics_tools = {
-            "/metrics/summary",
-            *mcp_handler._BREAKDOWN_DIMENSIONS.values(),
+        serving_tool = {
+            "/metrics/summary": "get_metrics_summary",
+            **{route: "get_metrics_breakdown"
+               for route in mcp_handler._BREAKDOWN_DIMENSIONS.values()},
+            "/feedback/entities": "list_feedback_facets",
         }
 
-        unaccounted = sorted((publishing & reachable) - served_by_the_metrics_tools)
+        unaccounted = sorted((publishing & reachable) - set(serving_tool))
         assert unaccounted == [], (
             f"{unaccounted} publish is_partial and are reachable through MCP, but no "
             "tool known to declare the flag serves them"
         )
+        for route in sorted(publishing & reachable):
+            declared = _tool_output_schema(serving_tool[route])["properties"]
+            assert "is_partial" in declared, (
+                f"{serving_tool[route]} is named here as the tool serving {route}, "
+                "which publishes is_partial, but it does not declare the flag"
+            )
         # Anti-vacuous, and no more than that: the intersection must be non-empty
         # or the check above passes by having nothing to account for. Deliberately
         # NOT asserting equality with the served set — a future breakdown axis over

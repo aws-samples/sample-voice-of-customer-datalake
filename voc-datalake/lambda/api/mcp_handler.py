@@ -465,15 +465,33 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 # Declared but deliberately NOT `required` on either tool; the argument is at
 # `_IS_PARTIAL_DESCRIPTION`, where the declaration is, and it turns on these two
 # tools forwarding the route body unprojected.
-MCP_SERVER_VERSION = "3.7.0"
+#
+# 3.8.0 ADDS FIVE TOOLS and changes no existing one, which is a MINOR bump under the
+# rule above: `list_feedback`, `get_similar_feedback`, `list_urgent_feedback`,
+# `list_feedback_facets` and `list_jobs`. Every one adapts a route that already
+# exists, so this is declaration and projection work — no route moved, and the four
+# new `DOMAIN_ROUTES` entries are all inside the two functions `mcpRole` already
+# invokes.
+#
+# Additive is the honest reading even though a client CACHES the catalogue at
+# connect: the five names are new, so nothing a client already validates against
+# changes shape. The version moving is what tells it to re-fetch and see them; the
+# etag beside it moves for the same reason.
+#
+# ⚠️ One existing declaration was TOUCHED without changing: `search_feedback`'s four
+# filter arguments now read from `_CATEGORY_ARG`/`_SENTIMENT_ARG`/`_SOURCE_ARG`/
+# `_DATE_BASIS_ARG` instead of restating their literals, because four tools forward
+# the same parameters to the same routes. The published values are byte-identical, so
+# the fingerprint moves for the five additions alone.
+MCP_SERVER_VERSION = "3.8.0"
 
 
 # ============================================
 # Domain routes — the delegation map
 # ============================================
 
-# Which domain function owns which route. Two functions serve all five tools:
-# the metrics Lambda owns /feedback/* and /metrics/*, the projects Lambda owns
+# Which domain function owns which route. Two functions serve every tool: the
+# metrics Lambda owns /feedback/* and /metrics/*, the projects Lambda owns
 # /projects/*. Adding a tool for a third domain means adding its function here
 # AND a grantInvoke in api-stack.ts — the lockstep test in api-stack.test.ts
 # fails if a route named here is not wired and invokable.
@@ -492,6 +510,15 @@ DOMAIN_ROUTES: dict[str, tuple[str, str, str]] = {
     'feedback_list': (DOMAIN_METRICS, 'GET', '/feedback'),
     'feedback_search': (DOMAIN_METRICS, 'GET', '/feedback/search'),
     'feedback_item': (DOMAIN_METRICS, 'GET', '/feedback/{feedback_id}'),
+    'feedback_similar': (DOMAIN_METRICS, 'GET', '/feedback/{feedback_id}/similar'),
+    'feedback_urgent': (DOMAIN_METRICS, 'GET', '/feedback/urgent'),
+    # 🔑 REACHABLE, and still a RESERVED SEGMENT. `/feedback/entities` is in
+    # `_RESERVED_PATH_SEGMENTS['/feedback']` because it is a static sibling of
+    # `/feedback/{feedback_id}` — that entry stops a feedback id from
+    # impersonating this route, which is a different question from whether a tool
+    # may address it deliberately. `list_feedback_facets` addresses it by its own
+    # route key, interpolating nothing.
+    'feedback_entities': (DOMAIN_METRICS, 'GET', '/feedback/entities'),
     'metrics_summary': (DOMAIN_METRICS, 'GET', '/metrics/summary'),
     # The four breakdown axes behind the single get_metrics_breakdown tool.
     'metrics_sentiment': (DOMAIN_METRICS, 'GET', '/metrics/sentiment'),
@@ -499,6 +526,7 @@ DOMAIN_ROUTES: dict[str, tuple[str, str, str]] = {
     'metrics_sources': (DOMAIN_METRICS, 'GET', '/metrics/sources'),
     'metrics_personas': (DOMAIN_METRICS, 'GET', '/metrics/personas'),
     'project_get': (DOMAIN_PROJECTS, 'GET', '/projects/{project_id}'),
+    'project_jobs': (DOMAIN_PROJECTS, 'GET', '/projects/{project_id}/jobs'),
     'project_autoseed': (DOMAIN_PROJECTS, 'GET', '/projects/{project_id}/autoseed'),
 }
 
@@ -2062,6 +2090,75 @@ _DAYS_ARG: dict[str, Any] = {
     "maximum": MAX_FEEDBACK_WINDOW_DAYS,
 }
 
+# One background job as `list_jobs` reports it, mirroring `api_list_jobs`'s own
+# projection in `projects_handler.py` field for field — minus `result`.
+#
+# 🔑 `result` IS DELIBERATELY NOT DECLARED, and not projected either. It holds
+# whatever the job produced: a research report, a product report, a generated
+# prototype's HTML. That is the same argument `_tool_get_project` makes for
+# listing documents by title rather than inlining their bodies — the 6 MB
+# synchronous-invoke ceiling on the delegated call, and a model's context budget,
+# both of which a single completed prototype can exhaust on its own. A caller that
+# wants a finished artifact reads it where it lives (`get_project` lists the
+# documents a job wrote).
+#
+# Every value is declared a string except `progress`, because that is what the
+# route's own projection produces: `progress` defaults to the integer `0` and the
+# rest default to `None`, so the projection here coerces each to its declared
+# type rather than forwarding a `None` under a `string` declaration — the M1
+# failure mode.
+_JOB_PROPERTIES: dict[str, Any] = {
+    "job_id": {"type": "string"},
+    "job_type": {
+        "type": "string",
+        "description": "What the job does, e.g. generate_personas, research",
+    },
+    "status": {"type": "string", "description": "e.g. pending, running, completed, failed"},
+    "progress": {"type": "integer", "description": "Percent complete, 0-100"},
+    "current_step": {"type": "string", "description": "Free text, e.g. queued, starting"},
+    "created_at": {"type": "string", "description": "ISO-8601 timestamp"},
+    "updated_at": {"type": "string", "description": "ISO-8601 timestamp"},
+    "completed_at": {"type": "string", "description": "ISO-8601 timestamp, empty while running"},
+    "error": {"type": "string", "description": "The failure reason, empty unless status is failed"},
+}
+
+_JOB_TYPES: dict[str, str] = _declared_types(_JOB_PROPERTIES)
+
+# The three post-query filters and the window basis that `GET /feedback`,
+# `GET /feedback/search`, `GET /feedback/urgent` and `GET /feedback/entities` all
+# read under the same names, stated once for the same reason `_DAYS_ARG` is: four
+# tools now forward them, and four hand-maintained copies of one enum is how the
+# declarations stop agreeing with each other and then with the routes.
+#
+# ⚠️ WHICH ROUTES HONOUR WHICH is a per-tool fact, not a property of these blocks —
+# `list_feedback_facets` takes `source` and `date_basis` and no `category`, because
+# `get_entities` reads no `category` parameter. A tool declares only the ones its
+# own route reads; that is what keeps the input schema a promise rather than a
+# suggestion.
+_CATEGORY_ARG: dict[str, Any] = {
+    "type": "string",
+    "description": "Filter by category (e.g. delivery, pricing, product_quality)",
+}
+_SENTIMENT_ARG: dict[str, Any] = {
+    "type": "string",
+    "enum": ["positive", "negative", "neutral", "mixed"],
+    "description": "Filter by sentiment label",
+}
+_SOURCE_ARG: dict[str, Any] = {
+    "type": "string",
+    "description": "Filter by source platform (e.g. webscraper, feedback-form)",
+}
+_DATE_BASIS_ARG: dict[str, Any] = {
+    "type": "string",
+    "enum": ["imported", "review"],
+    "description": (
+        "Which date the days window applies to: 'imported' (default, "
+        "when the item entered the data lake) or 'review' (when the "
+        "customer wrote it)"
+    ),
+    "default": "imported",
+}
+
 # ---------------------------------------------------------------------------
 # The vendor `_meta` prefix
 # ---------------------------------------------------------------------------
@@ -2116,11 +2213,27 @@ TOOL_COST_CLASSES: dict[str, str] = {
     # the metadata, so listing personas costs the same read.
     "get_project": COST_MODERATE,
     "list_personas": COST_MODERATE,
+    # One Query of the project's job partition, capped at 50 rows by the route.
+    "list_jobs": COST_MODERATE,
     # Pre-aggregated daily rows over the window.
     "get_metrics_summary": COST_MODERATE,
     "get_metrics_breakdown": COST_MODERATE,
+    # One id lookup plus one Query of that item's category partition.
+    "get_similar_feedback": COST_MODERATE,
     # The candidate scan. Soft-capped, hence `is_partial`.
     "search_feedback": COST_EXPENSIVE,
+    # `GET /feedback` walks one day partition per day of the window and, with any
+    # post-query filter, scans the whole window up to its cap — the same shape of
+    # read `search_feedback` pays for, which is why it carries the same class and
+    # reports `is_partial_window`.
+    "list_feedback": COST_EXPENSIVE,
+    # One GSI Query per urgent candidate PLUS a keyed `get_item` for each, until
+    # `limit` survive the filters. The per-item read is what makes this expensive
+    # rather than moderate.
+    "list_urgent_feedback": COST_EXPENSIVE,
+    # One aggregate window read per configured category, two metric-type index
+    # Queries, and up to seven day partitions for the issue sample.
+    "list_feedback_facets": COST_EXPENSIVE,
 }
 
 # A human-readable title per tool, which is what `annotations.title` is for: the
@@ -2135,6 +2248,11 @@ TOOL_TITLES: dict[str, str] = {
     "get_metrics_breakdown": "Break metrics down by one axis",
     "get_project": "Read a project",
     "list_personas": "List a project's personas",
+    "list_feedback": "List customer feedback by page",
+    "get_similar_feedback": "Find feedback like this one",
+    "list_urgent_feedback": "List urgent customer feedback",
+    "list_feedback_facets": "List a window's categories and issues",
+    "list_jobs": "List a project's background jobs",
 }
 
 
@@ -2248,29 +2366,15 @@ _TOOL_DECLARATIONS = [
                     ),
                 },
                 "days": _DAYS_ARG,
-                "category": {
-                    "type": "string",
-                    "description": "Filter by category (e.g. delivery, pricing, product_quality)",
-                },
-                "sentiment": {
-                    "type": "string",
-                    "enum": ["positive", "negative", "neutral", "mixed"],
-                    "description": "Filter by sentiment label",
-                },
-                "date_basis": {
-                    "type": "string",
-                    "enum": ["imported", "review"],
-                    "description": (
-                        "Which date the days window applies to: 'imported' (default, "
-                        "when the item entered the data lake) or 'review' (when the "
-                        "customer wrote it)"
-                    ),
-                    "default": "imported",
-                },
-                "source": {
-                    "type": "string",
-                    "description": "Filter by source platform (e.g. webscraper, feedback-form)",
-                },
+                # The four filter blocks now live above, beside `_DAYS_ARG`, because
+                # `list_feedback`, `list_urgent_feedback` and `list_feedback_facets`
+                # forward the same parameters to the same routes. The values are
+                # unchanged — this is one source for four declarations, not a new
+                # contract.
+                "category": _CATEGORY_ARG,
+                "sentiment": _SENTIMENT_ARG,
+                "date_basis": _DATE_BASIS_ARG,
+                "source": _SOURCE_ARG,
                 "limit": {
                     "type": "integer",
                     "description": "Max items to return (default 20). Clamped to the route's ceiling of 100.",
@@ -2485,6 +2589,346 @@ _TOOL_DECLARATIONS = [
             # Every key is always emitted (the projection uses typed defaults),
             # so declaring them costs nothing and lets a client rely on them.
             "required": sorted(_FEEDBACK_DETAIL_PROPERTIES),
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "list_feedback",
+        # 🔑 WHY THIS EXISTS BESIDE `search_feedback`, which already delegates to
+        # `GET /feedback` for its filter-only branch: that tool drops `total`,
+        # `offset` and `limit`, so a model filtering a window learns how many items
+        # it received and never how many there are. This tool carries all four of
+        # the route's pagination fields through, which is what makes paging
+        # possible at all — without `total` a caller cannot tell a last page from a
+        # full one, and without `offset` it cannot ask for the next.
+        "description": (
+            "List customer feedback in a window with optional filters, PAGED: reports "
+            "the size of the filtered window and the page's offset alongside the items, "
+            "so a caller can walk it. Use search_feedback to match text instead."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "days": _DAYS_ARG,
+                "category": _CATEGORY_ARG,
+                "sentiment": _SENTIMENT_ARG,
+                "date_basis": _DATE_BASIS_ARG,
+                "source": _SOURCE_ARG,
+                "limit": {
+                    "type": "integer",
+                    "description": (
+                        "Page size (the route's default is 50). Clamped to the route's "
+                        "ceiling of 100, not refused."
+                    ),
+                    "default": 50,
+                    "minimum": 1,
+                    "maximum": 100,
+                },
+                "offset": {
+                    "type": "integer",
+                    # No `maximum`, deliberately. The route's ceiling is its own
+                    # `MAX_FEEDBACK_OFFSET`, which lives in `metrics_handler` — a
+                    # DIFFERENT Lambda bundle this one does not (and must not) import.
+                    # Writing the number here would be exactly the un-CI-able copy
+                    # `_DAYS_ARG`'s comment argues against, and the route clamps rather
+                    # than refusing, so an over-large value is not an error. Naming the
+                    # bound in prose without declaring it is the honest reading.
+                    "description": (
+                        "How many items to skip (default 0). The route clamps this to "
+                        "its own candidate-window cap, which is also the furthest this "
+                        "route can page: beyond it, raise `days` or narrow the filters."
+                    ),
+                    "default": 0,
+                    "minimum": 0,
+                },
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "count": {"type": "integer", "description": "Items on this page"},
+                # The three fields `search_feedback` drops, and the reason this tool
+                # is worth having. `total` is the route's own word for the size of
+                # the FILTERED CANDIDATE WINDOW, not of the corpus, and it is a lower
+                # bound whenever `is_partial_window` is true — so the description
+                # says both rather than leaving a model to read it as a corpus total.
+                "total": {
+                    "type": "integer",
+                    "description": (
+                        "Items matching in the whole window, which is what to page "
+                        "through — not a count of the corpus. A LOWER BOUND when "
+                        "is_partial_window is true."
+                    ),
+                },
+                "offset": {"type": "integer", "description": "The offset this page starts at"},
+                "limit": {"type": "integer", "description": "The page size the route applied"},
+                "is_partial_window": {
+                    "type": "boolean",
+                    "description": (
+                        "True when the candidate window hit the route's cap before the "
+                        "window ended, so `total` is a lower bound and items beyond it "
+                        "are unreachable by paging."
+                    ),
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": _FEEDBACK_SUMMARY_PROPERTIES,
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            # Every key is written by the projection below, unconditionally, so all
+            # six can be promised — the same argument `search_feedback` makes for
+            # requiring its own four.
+            "required": ["count", "total", "offset", "limit", "is_partial_window", "items"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_similar_feedback",
+        "description": (
+            "Feedback items in the same category as one item, newest first — the "
+            "route's notion of similarity. Use it to find whether one complaint is "
+            "isolated or part of a pattern."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "feedback_id": {
+                    "type": "string",
+                    "description": "The feedback item to find neighbours of",
+                },
+                "limit": {
+                    "type": "integer",
+                    # `maximum` is the route's OWN ceiling (`validate_limit(..., max_val=50)`),
+                    # not a tighter number invented here: a bound this file made up
+                    # would be a promise nothing keeps, which is the drift `_DAYS_ARG`
+                    # records. The route clamps rather than refusing, so an
+                    # out-of-range value is not an error.
+                    "description": "Max neighbours to return (default 8). Clamped to the route's ceiling of 50.",
+                    "default": 8,
+                    "minimum": 1,
+                    "maximum": 50,
+                },
+            },
+            "required": ["feedback_id"],
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "source_feedback_id": {
+                    "type": "string",
+                    "description": "The item the neighbours were found for; never one of them",
+                },
+                "count": {"type": "integer", "description": "Neighbours returned"},
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": _FEEDBACK_SUMMARY_PROPERTIES,
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["source_feedback_id", "count", "items"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "list_urgent_feedback",
+        "description": (
+            "The high-urgency feedback of a window, newest first. One page only: the "
+            "route stops scanning at `limit` and offers no continuation, so ask for "
+            "more by raising `limit` rather than by paging."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                # The route's `days` default here is 30, not the 7 `_DAYS_ARG`
+                # states, so the description is overridden the way the metrics tools
+                # override theirs. The bounds are the shared ones, because the route
+                # validates this parameter through the same `validate_days`.
+                "days": {
+                    **_DAYS_ARG,
+                    "description": (
+                        "Days to look back (default 30). Values above the route's "
+                        "ceiling are clamped, not refused."
+                    ),
+                    "default": 30,
+                },
+                "category": _CATEGORY_ARG,
+                "sentiment": _SENTIMENT_ARG,
+                "date_basis": _DATE_BASIS_ARG,
+                "source": _SOURCE_ARG,
+                "limit": {
+                    "type": "integer",
+                    "description": "Max items to return (default 50). Clamped to the route's ceiling of 100.",
+                    "default": 50,
+                    "minimum": 1,
+                    "maximum": 100,
+                },
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                # 🔑 THE ONE ACCURACY POINT ON THIS TOOL. The route's scan stops the
+                # moment `limit` items have survived its filters, and it publishes no
+                # truncation flag, so `count` is the length of THIS PAGE and can never
+                # exceed `limit`. Reading it as a window total is a live defect on
+                # record: the sidebar urgent badge did exactly that with `limit=10`
+                # and could never show more than 10. A model asking "how urgent is
+                # this week" needs `get_metrics_summary`'s `urgent_count`, which sums
+                # the exact daily aggregates, and this says so rather than leaving it
+                # to be inferred.
+                "count": {
+                    "type": "integer",
+                    "description": (
+                        "Items on this page, NOT the number of urgent items in the "
+                        "window: the scan stops at `limit` and the route reports no "
+                        "truncation flag, so count == limit means 'at least this many'. "
+                        "For a window total use get_metrics_summary's urgent_count."
+                    ),
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": _FEEDBACK_SUMMARY_PROPERTIES,
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["count", "items"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "list_feedback_facets",
+        "description": (
+            "What a window is ABOUT, as two counted maps: feedback per category, and "
+            "the recurring problem summaries. Use it to pick a filter for "
+            "list_feedback or search_feedback before reading any verbatim."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "days": _DAYS_ARG,
+                # No `category` and no `sentiment`: `get_entities` reads neither, so
+                # declaring them would be this tool promising a filter the route
+                # ignores — the shape of untruth PR #356 fixed.
+                "date_basis": _DATE_BASIS_ARG,
+                "source": _SOURCE_ARG,
+                "limit": {
+                    "type": "integer",
+                    "description": (
+                        "How many recent items the `issues` sample is drawn from "
+                        "(default 100). Clamped to the route's ceiling of 200. It does "
+                        "NOT bound the category counts, which cover the whole window."
+                    ),
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 200,
+                },
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "period_days": {"type": "integer"},
+                "feedback_count": {
+                    "type": "integer",
+                    "description": "Items in the window, a lower bound when is_partial is true",
+                },
+                "is_partial": {
+                    "type": "boolean",
+                    "description": (
+                        "True when the window could not be counted in full — a metric "
+                        "read stopped short, or the window is wider than aggregates are "
+                        "retained for. The counts are then a lower bound, not a total."
+                    ),
+                },
+                "categories": {
+                    "type": "object",
+                    "description": (
+                        "Category name → count over the window, highest first. Empty "
+                        "when nothing in the window has a counted category."
+                    ),
+                },
+                "issues": {
+                    "type": "object",
+                    "description": (
+                        "Recurring problem summary (lowercased, first 100 characters) → "
+                        "how many items said it, highest first. A SAMPLE of at most 20 "
+                        "entries drawn from the newest items, never the whole window, "
+                        "and `is_partial` does not describe it."
+                    ),
+                },
+                # ⚠️ `keywords` IS DELIBERATELY ABSENT, and so is any argument for it.
+                # The route returns `entities.keywords` as `{}` from BOTH of its
+                # branches — it is the hardcoded literal in each, with no keyword
+                # extraction behind it — so declaring the field would advertise data
+                # no real answer ever carries. That is the defect PR #356 fixed and
+                # PR #368 now guards: `test_every_declared_property_is_demonstrated_by
+                # _some_sample` would report it, because no sample taken from the
+                # route can demonstrate it. It becomes declarable the day the route
+                # extracts keywords, and not before.
+                #
+                # `personas`, `sources` and `has_legacy_persona_buckets` are dropped
+                # for a different and weaker reason: they are real, and
+                # `get_metrics_breakdown` already reports the first two per axis with
+                # the legacy-bucket caveat attached. Two tools reporting one map is
+                # the duplication delegation exists to avoid.
+            },
+            "required": ["period_days", "feedback_count", "is_partial", "categories", "issues"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "list_jobs",
+        "description": (
+            "The background jobs of a project — persona generation, research, document "
+            "and prototype builds — newest first, with each one's status and progress. "
+            "⚠️ The route caps its answer at 50 jobs and offers no continuation token, "
+            "so a project with more than 50 is silently truncated at 50 and the older "
+            "ones cannot be reached through this tool. Job RESULTS are not included; "
+            "read finished artifacts through get_project."
+        ),
+        "inputSchema": {
+            "type": "object",
+            # `project_id` ALONE. The route reads no query-string parameters at all —
+            # no limit, no status, no job_type — so any other argument declared here
+            # would be silently ignored, which is the declaration-looser-than-reality
+            # shape this file exists to prevent. Adding a filter means adding it to
+            # the route first.
+            "properties": {
+                "project_id": _PROJECT_ID_ARG,
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "description": "Jobs returned, at most the route's cap of 50",
+                },
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": _JOB_PROPERTIES,
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["count", "jobs"],
             "additionalProperties": False,
         },
     },
@@ -3047,6 +3491,246 @@ def _tool_get_feedback_detail(args: dict, token_info: dict) -> ToolResult:
     return ToolResult(_project_feedback(body, summary=False))
 
 
+def _projected_rows(body: Any, key: str = 'items') -> list[dict]:
+    """The route's item list, projected as feedback summaries.
+
+    Stated once because four tools now do exactly this to the same route family,
+    and each of them needs the same two guards: a non-dict payload is no items
+    (not a crash), and a non-dict ENTRY is skipped rather than handed to
+    `_project_feedback`, which reads `.get`. Projecting before counting is what
+    keeps `count` a description of what the caller received — counting the route's
+    own list would let a skipped entry make `count` exceed `len(items)` inside one
+    payload.
+    """
+    rows = body.get(key, []) if isinstance(body, dict) else []
+    if not isinstance(rows, (list, tuple)):
+        return []
+    return [_project_feedback(row, summary=True) for row in rows if isinstance(row, dict)]
+
+
+def _feedback_filters(args: dict) -> dict[str, Any]:
+    """The filter arguments the /feedback family reads, under the routes' own names.
+
+    `None` values are dropped by `build_proxy_event`, so an omitted filter is
+    forwarded as absence rather than as a value this file invented — the rule
+    `test_mcp_date_basis.py::test_omits_date_basis_when_the_caller_gave_none`
+    pins. Nothing is validated here on purpose: the routes' own validators are the
+    single implementation of each allowlist, and a copy in the adapter is the drift
+    delegation exists to remove.
+    """
+    return {
+        'category': args.get('category'),
+        'sentiment': args.get('sentiment'),
+        'source': args.get('source'),
+        'date_basis': args.get('date_basis'),
+    }
+
+
+@tracer.capture_method
+def _tool_list_feedback(args: dict, token_info: dict) -> ToolResult:
+    """One page of the feedback window, WITH its pagination reported.
+
+    The same route `_tool_search_feedback` uses for its filter-only branch, and
+    the difference is the whole reason this tool exists: that one reports `count`
+    and `items` and discards `total`, `offset`, `limit` and `is_partial_window`, so
+    a model could see twenty items and never learn whether the window held twenty
+    or two thousand. All four travel through here.
+
+    The counts are read off the ROUTE rather than recomputed: `total` describes the
+    filtered candidate window, which this process never sees, so it can only be
+    reported or dropped — and dropping it was the defect.
+    """
+    body = _delegate(
+        _domain_call('feedback_list', query={
+            'days': args.get('days', 7),
+            'limit': args.get('limit', 50),
+            'offset': args.get('offset', 0),
+            **_feedback_filters(args),
+        }),
+        token_info,
+    ).payload
+    items = _projected_rows(body)
+    pagination = body if isinstance(body, dict) else {}
+    return ToolResult({
+        "count": len(items),
+        # `_as_int` rather than a bare `.get(key, 0)`: the route's own values are
+        # ints, and a default fires only on an ABSENT key — it cannot correct a
+        # value of the wrong type, which is the M1 mechanism. Declared integers get
+        # coerced to integers.
+        "total": _as_int(pagination.get('total')),
+        "offset": _as_int(pagination.get('offset')),
+        "limit": _as_int(pagination.get('limit')),
+        # Coerced with `bool()` for the same reason `_tool_search_feedback` coerces
+        # its copy: the declaration says boolean, and a route answering `null` would
+        # otherwise put a null under a boolean declaration.
+        "is_partial_window": bool(pagination.get('is_partial_window')),
+        "items": items,
+    })
+
+
+@tracer.capture_method
+def _tool_get_similar_feedback(args: dict, token_info: dict) -> ToolResult:
+    """The neighbours of one feedback item, by the route's own similarity.
+
+    An unknown id is the route's 404 arriving as a tool ERROR, exactly as in
+    `_tool_get_feedback_detail` and for the same reason: a successful result
+    carrying no items would tell a model this complaint is unique when in fact the
+    id was wrong.
+
+    The route answers with RAW rows, the same shape `/feedback` returns, so
+    `_project_feedback(summary=True)` applies unchanged — no second projection.
+    """
+    feedback_id = args.get('feedback_id')
+    if not isinstance(feedback_id, str) or not feedback_id.strip():
+        raise InvalidToolArgument('feedback_id must be a non-empty string')
+
+    body = _delegate(
+        _domain_call('feedback_similar',
+                     path_parameters={'feedback_id': feedback_id.strip()},
+                     query={'limit': args.get('limit', 8)}),
+        token_info,
+    ).payload
+    items = _projected_rows(body)
+    return ToolResult({
+        # The caller's own id, not the route's echo of it: the two are the same
+        # value, and reporting the argument keeps the field present even if the
+        # route ever stopped echoing it.
+        "source_feedback_id": feedback_id.strip(),
+        "count": len(items),
+        "items": items,
+    })
+
+
+@tracer.capture_method
+def _tool_list_urgent_feedback(args: dict, token_info: dict) -> ToolResult:
+    """The window's high-urgency items, one page deep.
+
+    `count` is `len(items)` — this page — and that is the route's semantics too:
+    its scan stops as soon as `limit` items survive the filters, and it publishes
+    no truncation flag, so no total exists to report. The output declaration says
+    so in the field's own description and points at `get_metrics_summary`'s
+    `urgent_count` for a window total; see that description for the defect this
+    prevents.
+    """
+    body = _delegate(
+        _domain_call('feedback_urgent', query={
+            'days': args.get('days', 30),
+            'limit': args.get('limit', 50),
+            **_feedback_filters(args),
+        }),
+        token_info,
+    ).payload
+    items = _projected_rows(body)
+    return ToolResult({"count": len(items), "items": items})
+
+
+def _counts_map(value: Any) -> dict:
+    """A declared-object counts map, or an empty one.
+
+    The counterpart of `_as_string`/`_as_int` for the two maps `list_feedback_facets`
+    declares: a value of the wrong TYPE cannot be corrected by `.get(key, {})`,
+    which fires only on an absent key, and that gap is the M1 mechanism. Values pass
+    through unchanged — the maps are open (their keys are category names and problem
+    summaries, which no schema can enumerate) so there is nothing to coerce inside
+    them.
+    """
+    return value if isinstance(value, dict) else {}
+
+
+@tracer.capture_method
+def _tool_list_feedback_facets(args: dict, token_info: dict) -> ToolResult:
+    """What a window is about: counts per category, and the recurring problems.
+
+    PROJECTED rather than passed through, unlike the metrics tools, because the
+    route's `entities` object holds five maps and only two of them are this tool's
+    answer. The other three:
+
+      • `keywords` is a hardcoded `{}` in BOTH branches of the route — there is no
+        keyword extraction behind it — so it is neither projected nor declared. A
+        declared field no real answer fills is finding M1's shape, and PR #368's
+        substance check reports it.
+      • `personas` and `sources` are real, and `get_metrics_breakdown` already
+        reports each per axis, with the legacy-persona-bucket caveat attached to
+        that tool's own dimension description. Two tools reporting one map is the
+        duplication delegation exists to remove.
+    """
+    body = _delegate(
+        _domain_call('feedback_entities', query={
+            'days': args.get('days', 7),
+            'limit': args.get('limit', 100),
+            'source': args.get('source'),
+            'date_basis': args.get('date_basis'),
+        }),
+        token_info,
+    ).payload
+    if not isinstance(body, dict):
+        raise DelegationUnavailable('entities route returned no object')
+    entities = body.get('entities')
+    entities = entities if isinstance(entities, dict) else {}
+    return ToolResult({
+        "period_days": _as_int(body.get('period_days')),
+        "feedback_count": _as_int(body.get('feedback_count')),
+        # `bool()` because only ONE of the route's two branches used to publish this
+        # flag, so an absent value is a real case — and `_tool_search_feedback`
+        # coerces its copy of the same fact for the same reason.
+        "is_partial": bool(body.get('is_partial')),
+        # `_counts_map` rather than the raw value: both are declared objects, and a
+        # route answering a list would put a list under an `object` declaration.
+        "categories": _counts_map(entities.get('categories')),
+        "issues": _counts_map(entities.get('issues')),
+    })
+
+
+def _project_job(item: dict) -> dict:
+    """One background job, in the shape `_JOB_PROPERTIES` declares.
+
+    `result` is dropped, deliberately: it holds whatever the job produced — a
+    research report, a product report, a prototype's HTML — which is the same
+    reason `_tool_get_project` lists documents by title instead of inlining their
+    bodies. The 6 MB synchronous-invoke ceiling and the model's context budget are
+    both reachable by ONE completed prototype.
+
+    Every field is coerced to its declared type rather than read with a default,
+    because the route projects `None` into most of these slots for a job that has
+    not finished: a `None` under a `string` declaration is exactly the M1 shape,
+    and `_as_string(None)` is `''`.
+    """
+    return {
+        key: _coerce_declared(item.get(key), declared_type)
+        for key, declared_type in _JOB_TYPES.items()
+    }
+
+
+@tracer.capture_method
+def _tool_list_jobs(args: dict, token_info: dict) -> ToolResult:
+    """A project's background jobs, newest first.
+
+    `project_id` is the project `_handle_tools_call` resolved and authorized, the
+    same contract `_get_project_payload` documents: it is not "the token's
+    project" — a credential can reach several — so it is read from `token_info`
+    rather than re-derived from the arguments.
+
+    ⚠️ TRUNCATION IS SILENT AT THE ROUTE. `api_list_jobs` applies a hardcoded
+    `Limit=50` and returns no `LastEvaluatedKey`, so a project with more jobs than
+    that is answered with 50 and nothing says so. The tool's description states it;
+    it cannot be detected here, because a full page and a truncated one are the
+    same answer. Making it detectable is a route change and is deliberately out of
+    this slice.
+    """
+    body = _delegate(
+        _domain_call('project_jobs',
+                     path_parameters={'project_id': token_info['project_id']}),
+        token_info,
+    ).payload
+    rows = body.get('jobs') if isinstance(body, dict) else None
+    rows = rows if isinstance(rows, (list, tuple)) else []
+    jobs = [_project_job(row) for row in rows if isinstance(row, dict)]
+    # `success` is dropped: it is the route's own always-true envelope field, and a
+    # constant is not information a model can act on. A real failure arrives as a
+    # non-2xx and is already a tool error by the time this line runs.
+    return ToolResult({"count": len(jobs), "jobs": jobs})
+
+
 # Tool name → implementation mapping
 TOOL_HANDLERS = {
     "search_feedback": _tool_search_feedback,
@@ -3055,6 +3739,11 @@ TOOL_HANDLERS = {
     "get_metrics_breakdown": _tool_get_metrics_breakdown,
     "get_project": _tool_get_project,
     "list_personas": _tool_list_personas,
+    "list_feedback": _tool_list_feedback,
+    "get_similar_feedback": _tool_get_similar_feedback,
+    "list_urgent_feedback": _tool_list_urgent_feedback,
+    "list_feedback_facets": _tool_list_feedback_facets,
+    "list_jobs": _tool_list_jobs,
 }
 
 # The scope each registered tool requires, from the vocabulary in
@@ -3074,10 +3763,21 @@ TOOL_HANDLERS = {
 TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
     "search_feedback": SCOPE_FEEDBACK_READ,
     "get_feedback_detail": SCOPE_FEEDBACK_READ,
+    # The four /feedback readers, all under the feedback scope — including
+    # `list_feedback_facets`, whose answer is COUNTED rather than verbatim: it
+    # aggregates the same corpus (and its `issues` map holds real problem summaries),
+    # so a credential that may not read feedback may not read counts of it either.
+    # `metrics:read` covers the pre-aggregated dashboards, which is a different set
+    # of rows.
+    "list_feedback": SCOPE_FEEDBACK_READ,
+    "get_similar_feedback": SCOPE_FEEDBACK_READ,
+    "list_urgent_feedback": SCOPE_FEEDBACK_READ,
+    "list_feedback_facets": SCOPE_FEEDBACK_READ,
     "get_metrics_summary": SCOPE_METRICS_READ,
     "get_metrics_breakdown": SCOPE_METRICS_READ,
     "get_project": SCOPE_PROJECTS_READ,
     "list_personas": SCOPE_PROJECTS_READ,
+    "list_jobs": SCOPE_PROJECTS_READ,
 }
 
 # How each tool's data is SHAPED, which decides how the token's read_reach
@@ -3096,10 +3796,21 @@ TOOL_SCOPE_REQUIREMENTS: dict[str, str] = {
 TOOL_REACH_KINDS: dict[str, str] = {
     "search_feedback": REACH_KIND_WORKSPACE,
     "get_feedback_detail": REACH_KIND_WORKSPACE,
+    # Every /feedback route reads the same project-less corpus, so all four of the
+    # new feedback tools are workspace-shaped for the reason stated above: there is
+    # no project dimension to narrow, and admitting a `project-set` credential would
+    # hand a supposedly sealed token the whole verbatim history.
+    "list_feedback": REACH_KIND_WORKSPACE,
+    "get_similar_feedback": REACH_KIND_WORKSPACE,
+    "list_urgent_feedback": REACH_KIND_WORKSPACE,
+    "list_feedback_facets": REACH_KIND_WORKSPACE,
     "get_metrics_summary": REACH_KIND_WORKSPACE,
     "get_metrics_breakdown": REACH_KIND_WORKSPACE,
     "get_project": REACH_KIND_PROJECT,
     "list_personas": REACH_KIND_PROJECT,
+    # Jobs are keyed `PROJECT#{project_id}`, so this addresses exactly one project
+    # and takes the same `project_id` argument `get_project` does.
+    "list_jobs": REACH_KIND_PROJECT,
 }
 
 
