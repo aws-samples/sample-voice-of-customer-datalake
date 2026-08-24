@@ -29,6 +29,15 @@ checkout should not report a mismatch it never measured), but
 the sources exist and parse, which is the check that must run — without it a
 rename would make every parser return an empty set and the equality tests would
 pass while comparing nothing.
+
+Both parsers are pure functions of the text (`_doc_type_union`,
+`_doc_type_annotations`) and both have their own class of synthetic shapes
+(`TestTheUnionParser`, `TestTheParser`). That is deliberate and it is the half the
+findability control cannot cover: the control can report that a parser found
+nothing in the sources as they are TODAY, never that a plausible restyling — a
+Prettier-wrapped union, a double-quoted member, a commented-out predecessor — would
+make it find nothing tomorrow. Every shape pinned there is one an earlier version
+of this file read wrongly or not at all.
 """
 import re
 from pathlib import Path
@@ -54,18 +63,28 @@ def _frontend_tree_present() -> bool:
     return (_repo_root() / DOC_TYPE_UNION_SOURCE).is_file()
 
 
-def _doc_type_union() -> frozenset[str]:
-    """The `DocType` union members, or an empty set if the declaration is gone.
+# A quoted string-literal union member, in either quote style. TypeScript accepts
+# both and Prettier's `singleQuote` setting decides which a file uses, so reading
+# only one of them makes a formatter setting the difference between a parser that
+# works and one that silently returns nothing.
+QUOTED_MEMBER = r"""(?:'[^']+'|"[^"]+")"""
+# A union TERM is a quoted literal OR a bare identifier. Identifiers are matched
+# deliberately, not tolerated: a union that refers to another type
+# (`'prd' | 'prfaq' | ExtraDocType`) cannot be compared against the route's
+# allowlist, and matching only the literals beside it would truncate the union and
+# PASS while the frontend can send whatever the identifier admits. Captured here
+# so `_doc_type_union` can refuse it by name instead.
+UNION_TERM = rf"""(?:{QUOTED_MEMBER}|[A-Za-z_$][\w$]*)"""
+MEMBER_LITERAL = re.compile(rf'^{QUOTED_MEMBER}$')
+QUOTED_TEXT = re.compile(r"""['"]([^'"]+)['"]""")
 
-    Matches: export type DocType = 'prd' | 'prfaq'
-    """
-    source = (_repo_root() / DOC_TYPE_UNION_SOURCE).read_text(encoding='utf-8')
-    match = re.search(
-        r"export\s+type\s+DocType\s*=\s*((?:'[^']+'\s*\|?\s*)+)",
-        source,
-    )
-    return frozenset(re.findall(r"'([^']+)'", match.group(1))) if match else frozenset()
-
+# The `DocType` union. The optional leading `|` matters: it is what Prettier
+# produces once a union exceeds the print width, so adding a third member — the
+# very drift this file exists to catch — is a realistic route into a shape the
+# previous pattern could not read at all.
+DOC_TYPE_UNION = re.compile(
+    rf'export\s+type\s+DocType\s*=\s*\|?\s*({UNION_TERM}(?:\s*\|\s*{UNION_TERM})*)'
+)
 
 # The client method whose parameters type THIS route's request body, anchored by
 # NAME rather than by tracking whichever `name: (` was seen most recently. An
@@ -77,7 +96,115 @@ def _doc_type_union() -> frozenset[str]:
 # `generateDocument` forever, silently. Anchoring on the name and delimiting by
 # bracket balance asks the question directly and has no such state.
 GENERATE_DOCUMENT_ANCHOR = re.compile(r'\bgenerateDocument\s*:\s*(?:async\s*)?\(')
-DOC_TYPE_ANNOTATION = re.compile(r"doc_type\??\s*:\s*((?:'[^']+'\s*\|\s*)+'[^']+')")
+# The union is OPTIONAL, so a NARROWED signature (`doc_type: 'prd'`, dropping
+# PR-FAQ from the client while the route still accepts it) is read and reported as
+# drift against the route. Requiring a `|` made that edit unparseable instead, and
+# the two failures send a maintainer to different places: "the client and the route
+# disagree" is the finding, "was the method renamed?" is a wrong turn.
+DOC_TYPE_ANNOTATION = re.compile(
+    rf'doc_type\??\s*:\s*({QUOTED_MEMBER}(?:\s*\|\s*{QUOTED_MEMBER})*)'
+)
+
+
+def _without_comments(source: str) -> str:
+    """`source` with `//` and `/* */` comment BODIES blanked, same length.
+
+    Comments are removed before anything else looks at the text, because both
+    parsers below were reading declarations out of them. A commented-out older
+    signature above the live one was collected as a second declaration and failed
+    the equality test while the client was correct; worse, a renamed method with a
+    commented-out reference left behind was collected as though it were live, so
+    the findability control passed while nothing live was pinned — the "green
+    result meaning did not check" this file exists to prevent, arriving through the
+    parser instead of the code under test. Same defect class as counting brackets
+    on `line.split('#')[0]` in `test_the_routing_predicate_reads_the_allowlist_constant`:
+    commentary is not a declaration.
+
+    Blanked rather than deleted, and newlines inside comments preserved, so every
+    index and every line number in the result still refers to the same place in the
+    original file — the annotation line numbers are what a failure report names.
+
+    Quote state is tracked so a `//` inside a string is not mistaken for a comment.
+    A regex literal containing `//` or `/*` would be, but an empty regex is not
+    legal TypeScript and these are API-client type signatures; the shapes that do
+    occur are pinned in `TestTheParser`.
+    """
+    def blanked(text: str) -> str:
+        return ''.join('\n' if char == '\n' else ' ' for char in text)
+
+    out: list[str] = []
+    quote = None
+    index = 0
+    while index < len(source):
+        char = source[index]
+        if quote is not None:
+            out.append(char)
+            if char == '\\':
+                out.append(source[index + 1:index + 2])
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in '\'"`':
+            quote = char
+            out.append(char)
+            index += 1
+            continue
+        if source.startswith('//', index):
+            newline = source.find('\n', index)
+            stop = len(source) if newline == -1 else newline
+            out.append(blanked(source[index:stop]))
+            index = stop
+            continue
+        if source.startswith('/*', index):
+            close = source.find('*/', index + 2)
+            stop = len(source) if close == -1 else close + 2
+            out.append(blanked(source[index:stop]))
+            index = stop
+            continue
+        out.append(char)
+        index += 1
+    return ''.join(out)
+
+
+def _doc_type_union(source: str) -> frozenset[str]:
+    """The `DocType` union members, or an empty set if the declaration is gone.
+
+    A pure function of the text, for the same reason `_doc_type_annotations` is:
+    the findability control can report that this parser found nothing, never that
+    a plausible restyling of the declaration would make it find nothing.
+    `TestTheUnionParser` is that second half.
+
+    Reads, among others:
+        export type DocType = 'prd' | 'prfaq'
+        export type DocType =
+          | 'prd'
+          | 'prfaq'
+
+    Raises rather than truncating when a member is not a string literal — see
+    UNION_TERM.
+    """
+    match = DOC_TYPE_UNION.search(_without_comments(source))
+    if match is None:
+        return frozenset()
+    terms = [term.strip() for term in match.group(1).split('|') if term.strip()]
+    non_literal = [term for term in terms if not MEMBER_LITERAL.match(term)]
+    assert not non_literal, (
+        f'the DocType union has members that are not string literals: {non_literal}. '
+        f'This parser cannot compare those against the route\'s allowlist, and '
+        f'silently reading only the literals beside them would PASS while the '
+        f'frontend can send whatever they admit.'
+    )
+    return frozenset(QUOTED_TEXT.findall(match.group(1)))
+
+
+def _declared_doc_type_union() -> frozenset[str]:
+    """`_doc_type_union` over the checked-in declaration."""
+    return _doc_type_union(
+        (_repo_root() / DOC_TYPE_UNION_SOURCE).read_text(encoding='utf-8')
+    )
 
 
 def _parameter_list_end(source: str, open_paren: int) -> int | None:
@@ -90,9 +217,11 @@ def _parameter_list_end(source: str, open_paren: int) -> int | None:
     deliberately does not pin, so an over-long extent would quietly reintroduce
     the coupling. Nothing found fails the findability control loudly instead.
 
-    Quoted strings and `//` comments are skipped so a bracket inside either
-    cannot unbalance the count — the same defect class as the comment-stripping
-    in `test_the_routing_predicate_reads_the_allowlist_constant`.
+    Quoted strings are skipped so a bracket inside one cannot unbalance the count.
+    Comments need no handling here because `_doc_type_annotations` blanks them
+    before calling this — which is also what stops a bracket or an apostrophe
+    inside a `/* */` comment from unbalancing the count or opening a quote state
+    that swallows the rest of the parameter list.
     """
     depth = 0
     quote = None
@@ -107,10 +236,6 @@ def _parameter_list_end(source: str, open_paren: int) -> int | None:
                 quote = None
         elif char in '\'"`':
             quote = char
-        elif source.startswith('//', index):
-            newline = source.find('\n', index)
-            index = len(source) if newline == -1 else newline
-            continue
         elif char == '(':
             depth += 1
         elif char == ')':
@@ -129,6 +254,10 @@ def _doc_type_annotations(source: str) -> dict[int, frozenset[str]]:
     broke earlier attempts, because a lockstep test whose parser silently returns
     nothing is a green result meaning "did not check".
 
+    Both the anchor and the annotations are matched against the COMMENT-FREE text,
+    so a commented-out signature is neither collected as a declaration nor allowed
+    to stand in for the live one. See `_without_comments`.
+
     Scoped to that ONE client method on purpose. Matching every `doc_type`
     annotation in these files also picks up `suggestDocumentBrief`, which calls a
     DIFFERENT route (POST .../documents/suggest-brief) that the comment above
@@ -140,17 +269,18 @@ def _doc_type_annotations(source: str) -> dict[int, frozenset[str]]:
     security check. If suggest-brief is ever worth pinning it wants its own
     constant and its own rationale.
     """
+    code = _without_comments(source)
     found: dict[int, frozenset[str]] = {}
-    for anchor in GENERATE_DOCUMENT_ANCHOR.finditer(source):
+    for anchor in GENERATE_DOCUMENT_ANCHOR.finditer(code):
         open_paren = anchor.end() - 1
-        end = _parameter_list_end(source, open_paren)
+        end = _parameter_list_end(code, open_paren)
         if end is None:
             continue
-        signature = source[open_paren:end]
-        first_line = source.count('\n', 0, open_paren) + 1
+        signature = code[open_paren:end]
+        first_line = code.count('\n', 0, open_paren) + 1
         for match in DOC_TYPE_ANNOTATION.finditer(signature):
             line_number = first_line + signature.count('\n', 0, match.start())
-            found[line_number] = frozenset(re.findall(r"'([^']+)'", match.group(1)))
+            found[line_number] = frozenset(QUOTED_TEXT.findall(match.group(1)))
     return found
 
 
@@ -224,6 +354,47 @@ generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,
     # `async` between the name and the parameter list.
     'async':
         "generateDocument: async (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,\n",
+    # A BLOCK comment carrying a bracket, which unbalanced the end-of-signature
+    # search and lost the annotation entirely.
+    'bracket_in_block_comment': """generateDocument: (p: string, d: {
+  /* see runResearch( for the twin */
+  doc_type: 'prd' | 'prfaq'
+}) => q,
+""",
+    # A block comment carrying an apostrophe, which opened a quote state that
+    # swallowed the rest of the parameter list.
+    'apostrophe_in_block_comment': """generateDocument: (p: string, d: {
+  /* don't widen this */
+  doc_type: 'prd' | 'prfaq'
+}) => q,
+""",
+    # A commented-out OLDER signature above the live one — what a maintainer
+    # plausibly leaves behind when narrowing it. Only the live annotation may be
+    # collected: reading the comment too reported drift (`legacy`) against a
+    # client that was entirely correct.
+    'commented_out_predecessor':
+        """  // was: generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' | 'legacy' }) => q,
+  generateDocument: (projectId: string, data: {
+    doc_type: 'prd' | 'prfaq'
+  }) => q,
+""",
+    # Double-quoted members. Which quote style a file uses is a Prettier setting,
+    # not a fact about the contract.
+    'double_quoted':
+        'generateDocument: (p: string, d: { doc_type: "prd" | "prfaq" }) => q,\n',
+}
+
+# Shapes where the annotation is present but does NOT declare both members, so
+# `_doc_type_annotations` must report what it read rather than nothing. A narrowed
+# signature is real drift in the "accepted but never offered" direction, and it has
+# to surface from the comparison test that names that — not as an unparseable file
+# from the findability control, which would send a maintainer looking for a rename
+# that never happened.
+NARROWED_SHAPES = {
+    'single_value':
+        "generateDocument: (p: string, d: { doc_type: 'prd' }) => q,\n",
+    'optional_single_value':
+        "generateDocument: (p: string, d: { doc_type?: 'prd' }) => q,\n",
 }
 
 
@@ -288,6 +459,96 @@ class TestTheParser:
         source = "createDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,\n"
         assert _doc_type_annotations(source) == {}
 
+    def test_a_renamed_method_yields_nothing_despite_a_commented_out_reference(self):
+        """The worst of the comment cases, because it is SILENT.
+
+        A rename that leaves the old call commented out used to satisfy the
+        findability control — one annotation parsed per source — while the live
+        signature was pinned by nothing. That is the "green result meaning did not
+        check" this file exists to prevent, arriving through the parser rather than
+        through the code under test, so the comment must not stand in for the
+        declaration it is a copy of.
+        """
+        source = (
+            "  // generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,\n"
+            '  createDocument: (projectId: string, data: {\n'
+            "    doc_type: 'prd' | 'prfaq'\n"
+            '  }) => q,\n'
+        )
+        assert _doc_type_annotations(source) == {}
+
+    @pytest.mark.parametrize('shape', NARROWED_SHAPES.values(), ids=NARROWED_SHAPES)
+    def test_a_narrowed_signature_is_read_rather_than_missed(self, shape):
+        """Drift must be reported as drift, not as an unparseable file.
+
+        Dropping PR-FAQ from the client while the route still accepts it is exactly
+        the "accepted but never offered (unreachable)" direction the comparison test
+        names. Requiring a `|` in the annotation made that edit invisible to this
+        parser, so it surfaced from the findability control as "was the method
+        renamed?" — a wrong turn for a maintainer who had just narrowed a union.
+        """
+        assert list(_doc_type_annotations(shape).values()) == [frozenset({'prd'})]
+
+
+# Each value declares `prd` and `prfaq`, however it is styled.
+UNION_SHAPES = {
+    # The declaration in types.ts today.
+    'single_line': "export type DocType = 'prd' | 'prfaq'\n",
+    # What Prettier produces once the union exceeds the print width — so adding a
+    # third member, the drift this file exists to catch, is a realistic route into
+    # this shape. The previous pattern required a quoted literal immediately after
+    # `=` and read nothing here.
+    'leading_pipe': "export type DocType =\n  | 'prd'\n  | 'prfaq'\n",
+    'wrapped_without_leading_pipe': "export type DocType =\n  'prd'\n  | 'prfaq'\n",
+    # Quote style is a formatter setting, not a fact about the contract.
+    'double_quoted': 'export type DocType = "prd" | "prfaq"\n',
+    # A comment between the members, which must not end the union.
+    'commented': "export type DocType =\n  | 'prd' // the default\n  | 'prfaq'\n",
+    # A commented-out predecessor above the live declaration. `re.search` takes the
+    # first match, so without comment stripping the DEAD union is what gets read.
+    'commented_out_predecessor':
+        "// export type DocType = 'prd' | 'prfaq' | 'legacy'\n"
+        "export type DocType = 'prd' | 'prfaq'\n",
+}
+
+
+class TestTheUnionParser:
+    """`_doc_type_union` on synthetic declarations.
+
+    The same reasoning as `TestTheParser`, applied to the other parser in this
+    file: the findability control can only report that this one found nothing, and
+    a maintainer who reads its message ("was the type renamed, or reformatted
+    across lines?") is sent looking for a rename when the real answer may be that
+    their union is legal TypeScript this parser could not read.
+    """
+
+    @pytest.mark.parametrize('shape', UNION_SHAPES.values(), ids=UNION_SHAPES)
+    def test_the_members_are_found_however_the_union_is_styled(self, shape):
+        assert _doc_type_union(shape) == frozenset({'prd', 'prfaq'}), (
+            f'parsed {sorted(_doc_type_union(shape))} from:\n{shape}'
+        )
+
+    def test_a_three_member_union_is_read_whole(self):
+        """The drift this file exists to catch is a member being ADDED, so the
+        parser must read the added one — truncating to the first two would report
+        agreement with the route while the picker offers a third value."""
+        source = "export type DocType =\n  | 'prd'\n  | 'prfaq'\n  | 'onepager'\n"
+        assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
+
+    def test_a_renamed_type_yields_nothing(self):
+        """The negative control: the findability check below is only meaningful if
+        an empty set really means the declaration was not found."""
+        assert _doc_type_union("export type DocKind = 'prd' | 'prfaq'\n") == frozenset()
+
+    def test_a_non_literal_member_fails_rather_than_truncating(self):
+        """A union referring to another type cannot be compared with the route's
+        allowlist. Reading only the literals beside it returned {'prd','prfaq'} and
+        PASSED, while the frontend could send whatever the identifier admits — a
+        silent pass, which is the direction that matters here.
+        """
+        with pytest.raises(AssertionError, match='not string literals'):
+            _doc_type_union("export type DocType = 'prd' | 'prfaq' | ExtraDocType\n")
+
 
 class TestDocTypeLockstep:
     """The route refuses what the client cannot send, so the two must agree."""
@@ -302,9 +563,10 @@ class TestDocTypeLockstep:
         """
         union_path = _repo_root() / DOC_TYPE_UNION_SOURCE
         assert union_path.is_file(), f'DocType source moved: {DOC_TYPE_UNION_SOURCE}'
-        assert _doc_type_union(), (
+        assert _declared_doc_type_union(), (
             f'parsed no DocType union members from {DOC_TYPE_UNION_SOURCE} — '
-            f'was the type renamed, or reformatted across lines?'
+            f'was the type renamed? (Restylings of the union itself are covered by '
+            f'TestTheUnionParser, so a legal reformatting should not land here.)'
         )
         client_sets = _api_client_doc_type_sets()
         # PER FILE, not a total. `found` is keyed "file:line", so a bare
@@ -333,13 +595,14 @@ class TestDocTypeLockstep:
         """
         from projects_handler import GENERATED_DOC_TYPES
 
-        assert _doc_type_union() == frozenset(GENERATED_DOC_TYPES), (
-            f'DocType in {DOC_TYPE_UNION_SOURCE} declares {sorted(_doc_type_union())} '
+        declared = _declared_doc_type_union()
+        assert declared == frozenset(GENERATED_DOC_TYPES), (
+            f'DocType in {DOC_TYPE_UNION_SOURCE} declares {sorted(declared)} '
             f'while the route accepts {sorted(GENERATED_DOC_TYPES)}.\n'
             f'  Offered but refused (a user-visible 400): '
-            f'{sorted(_doc_type_union() - frozenset(GENERATED_DOC_TYPES))}\n'
+            f'{sorted(declared - frozenset(GENERATED_DOC_TYPES))}\n'
             f'  Accepted but never offered (unreachable): '
-            f'{sorted(frozenset(GENERATED_DOC_TYPES) - _doc_type_union())}'
+            f'{sorted(frozenset(GENERATED_DOC_TYPES) - declared)}'
         )
 
     @pytest.mark.skipif(
