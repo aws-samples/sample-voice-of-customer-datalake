@@ -309,6 +309,24 @@ def _aggregate_personas(rows, mock_agg, event_factory, context) -> dict:
     return json.loads(response['body'])['personas']
 
 
+def _aggregate_body(rows, mock_agg, event_factory, context) -> dict:
+    """`/metrics/personas` down its AGGREGATES branch, WHOLE body.
+
+    Separate from `_aggregate_personas` rather than widening it, because the callers of
+    that one assert on the map and reading a wider return would let a test compare a
+    dict against a body and pass on the `!=`.
+    """
+    mock_agg.query.return_value = {'Items': rows}
+    from metrics_handler import lambda_handler
+
+    event = event_factory(
+        method='GET', path='/metrics/personas', query_params={'days': '7'},
+    )
+    response = lambda_handler(event, context)
+    assert response['statusCode'] == 200, response['body']
+    return json.loads(response['body'])
+
+
 def _scan_entities(items, mock_fb, mock_agg, event_factory, context) -> dict:
     """`/feedback/entities` down its SCAN branch (review basis), parsed whole.
 
@@ -388,6 +406,137 @@ class TestBothScanBranchesCountEveryItem:
         )
 
         assert body['entities']['personas'] == {ARCHETYPE: 1}, body['entities']
+
+
+class TestTheMixedWindowSaysSoInTheRESPONSE:
+    """🔑 A QUALIFIED ANSWER MUST SAY IT IS QUALIFIED, which a comment cannot do.
+
+    For up to `AGGREGATE_RETENTION_DAYS` after the move, the aggregates branch returns
+    rows the OLD derivation wrote — free-text names and a capitalised `Unknown` — beside
+    the enum's values, and the counts are all correct. A caller reading
+    `{'churn_risk': 40, 'Unknown': 6000, 'Veronica Chen': 1}` cannot tell residue from a
+    live bucket, and an MCP caller is a model that will report on those keys.
+
+    `is_partial` is the precedent this follows: it exists because a reader cannot tell an
+    absent flag from a false one, and the same argument applies to a second dimension of
+    the same response. Before this, the transition was documented only in a comment at
+    `PERSONA_UNKNOWN` — which is the qualification living somewhere the caller cannot
+    read, the shape this repo has already rejected once.
+
+    ⚠️ IT REPORTS, IT DOES NOT REPAIR, and the negative test below is the one that
+    matters: folding a legacy key into `unknown` on read would merge real free-text
+    counts into the empty bucket, corrupting the one bucket an operator watches to judge
+    enrichment health and hiding the transition in the other direction.
+
+    REVERT MAP
+      * Drop the flag from either aggregates branch — fails
+        test_a_window_carrying_a_pre_move_row_says_so and
+        test_the_entities_route_flags_it_too.
+      * Publish it only when true (omit it otherwise) — fails
+        test_a_window_of_only_enum_buckets_leaves_it_false, which is `is_partial`'s own
+        argument: an absent flag and a false one must not look alike.
+      * Normalise legacy keys into PERSONA_UNKNOWN on read — fails
+        test_the_counts_come_back_exactly_as_stored.
+      * Derive the admitted set locally instead of from PERSONA_ARCHETYPES — caught by
+        TestNeitherSideKeepsItsOwnCopy, which is where that property already lives.
+    """
+
+    LEGACY_ROW = 'Unknown'
+
+    @staticmethod
+    def _row(bucket: str, count: int) -> dict:
+        """An aggregates row as the aggregator writes it, built from the shared prefix
+        so nothing here restates a pk."""
+        from shared.feedback import PERSONA_PREFIX
+
+        return {'pk': f'{PERSONA_PREFIX}{bucket}', 'sk': _day(0), 'count': count,
+                'metric_type': 'persona'}
+
+    @patch('metrics_handler.aggregates_table')
+    def test_a_window_of_only_enum_buckets_leaves_it_false(
+        self, mock_agg, api_gateway_event, lambda_context
+    ):
+        """Published as False rather than omitted — the `is_partial` argument."""
+        body = _aggregate_body([self._row(ARCHETYPE, 40)], mock_agg,
+                               api_gateway_event, lambda_context)
+
+        assert body['has_legacy_persona_buckets'] is False, body
+
+    @patch('metrics_handler.aggregates_table')
+    def test_a_window_carrying_a_pre_move_row_says_so(
+        self, mock_agg, api_gateway_event, lambda_context
+    ):
+        """The transition made visible to the caller instead of to a code reader."""
+        body = _aggregate_body(
+            [self._row(ARCHETYPE, 40), self._row(self.LEGACY_ROW, 6000)],
+            mock_agg, api_gateway_event, lambda_context,
+        )
+
+        assert body['has_legacy_persona_buckets'] is True, body
+
+    @patch('metrics_handler.aggregates_table')
+    def test_the_counts_come_back_exactly_as_stored(
+        self, mock_agg, api_gateway_event, lambda_context
+    ):
+        """🔑 FLAGGING IS NOT MERGING. `Unknown` and `unknown` stay two keys.
+
+        The tempting fix is to normalise the legacy bucket into the empty one, which
+        reads as tidying and is destructive: it adds 6000 pre-move items to the bucket an
+        operator watches for enrichment regressions, and makes the residue invisible.
+        """
+        from shared.feedback import PERSONA_UNKNOWN
+
+        body = _aggregate_body(
+            [self._row(PERSONA_UNKNOWN, 3), self._row(self.LEGACY_ROW, 6000)],
+            mock_agg, api_gateway_event, lambda_context,
+        )
+
+        assert body['personas'] == {self.LEGACY_ROW: 6000, PERSONA_UNKNOWN: 3}, (
+            f"{body['personas']}: the two spellings are two buckets. Reporting the "
+            f"mixed window must not silently merge them."
+        )
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_the_entities_route_flags_it_too(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The other aggregates branch of the same axis, for the same reason.
+
+        `/feedback/entities` publishes the persona map as well, so a flag on only one
+        route would leave the same window qualified on one path and unqualified on the
+        other — the two-answers defect this file exists to prevent, in a new field.
+        """
+        import json as _json
+
+        from metrics_handler import lambda_handler
+
+        mock_agg.query.return_value = {'Items': [self._row(self.LEGACY_ROW, 6000)]}
+        mock_fb.query.return_value = {'Items': []}
+        event = api_gateway_event(method='GET', path='/feedback/entities',
+                                  query_params={'days': '7'})
+
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200, response['body']
+        assert _json.loads(response['body'])['has_legacy_persona_buckets'] is True
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_derived_branch_publishes_it_as_false(
+        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+    ):
+        """The SCAN branch cannot produce a legacy bucket, and still says so.
+
+        It buckets every item through `persona_bucket`, which emits only members of the
+        enum — so False here is a fact about the derivation rather than about the window,
+        and publishing it is what stops a caller reading the field's absence on one
+        branch as "not applicable".
+        """
+        body = _scan_entities([_feedback_item(persona_type=ARCHETYPE)], mock_fb,
+                              mock_agg, api_gateway_event, lambda_context)
+
+        assert body['has_legacy_persona_buckets'] is False, body
 
 
 class TestOneRouteGivesOneAnswer:

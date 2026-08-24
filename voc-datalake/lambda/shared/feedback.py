@@ -194,6 +194,36 @@ def persona_bucket(item: dict) -> str:
     return persona if persona in PERSONA_ARCHETYPES else PERSONA_UNKNOWN
 
 
+def has_legacy_persona_buckets(buckets) -> bool:
+    """Does this persona breakdown contain a bucket the current axis cannot write?
+
+    🔑 A READ-SIDE HONESTY FLAG, and the reason it exists is the transition note at
+    `PERSONA_UNKNOWN`: for up to `AGGREGATE_RETENTION_DAYS` the aggregates branch of
+    `/metrics/personas` and `/feedback/entities` returns rows written by the old
+    derivation — free-text names and a capitalised `Unknown` — beside the enum's
+    values, and a caller cannot tell residue from a live bucket. An MCP client is a
+    model reading these keys and reporting on them, which is precisely the case where
+    a correct-but-unqualified answer is read as a qualified one.
+
+    This is `is_partial`'s argument applied to a second dimension of the same
+    response: a qualified answer must SAY it is qualified, rather than leaving the
+    qualification in a comment or a PR body.
+
+    ⚠️ IT REPORTS, IT DOES NOT REPAIR. Normalising a legacy key into PERSONA_UNKNOWN
+    on read was considered and rejected: it would fold real free-text counts into the
+    empty bucket, which makes the transition invisible in the other direction and
+    corrupts the one bucket an operator watches to judge enrichment health. The counts
+    come back exactly as stored; only their presence is flagged.
+
+    Membership of PERSONA_ARCHETYPES is the whole test, and it is complete for the
+    same reason the aggregator's collision guard is: `persona_bucket` closes the axis,
+    so every bucket THIS deploy can write is a member. Deletable once no pre-move
+    aggregate row can survive — `AGGREGATE_RETENTION_DAYS` after the deploy — and the
+    flag going permanently false is the signal.
+    """
+    return any(bucket not in PERSONA_ARCHETYPES for bucket in buckets)
+
+
 # Maximum number of days to look back when querying by date
 MAX_LOOKBACK_DAYS = 90
 

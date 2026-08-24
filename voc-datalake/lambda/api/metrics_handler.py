@@ -22,6 +22,7 @@ from shared.api import (
 from shared.exceptions import ValidationError
 from shared.feedback import (
     PERSONA_PREFIX,
+    has_legacy_persona_buckets,
     basis_date,
     persona_bucket,
     window_cutoff,
@@ -556,6 +557,12 @@ def get_entities():
             'period_days': days,
             'feedback_count': len(items),
             'is_partial': is_partial,
+            # Always False on this branch, and published rather than omitted for the
+            # reason `is_partial` is: a reader cannot tell an absent flag from a false
+            # one. It cannot be true here because this branch DERIVES every bucket
+            # through `persona_bucket`, which only ever emits a member of the enum —
+            # so the flag also documents the difference between the two branches.
+            'has_legacy_persona_buckets': False,
             'entities': {
                 'keywords': {},
                 'categories': dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)),
@@ -645,6 +652,10 @@ def get_entities():
         'period_days': days,
         'feedback_count': feedback_count,
         'is_partial': is_partial,
+        # Rows written before the persona axis moved come back exactly as stored, so
+        # this window can carry free-text names and a capitalised `Unknown` beside the
+        # enum's values. Reported, never repaired — see `has_legacy_persona_buckets`.
+        'has_legacy_persona_buckets': has_legacy_persona_buckets(persona_counts),
         'entities': {
             'keywords': {},
             'categories': dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)),
@@ -1079,6 +1090,9 @@ def get_persona_metrics():
         return {
             'period_days': days,
             'is_partial': is_partial,
+            # Cannot be true on a derived branch — see the same field in
+            # `/feedback/entities`, and published for the same reason.
+            'has_legacy_persona_buckets': False,
             'personas': dict(sorted(personas.items(), key=lambda x: x[1], reverse=True))
         }
     
@@ -1105,6 +1119,9 @@ def get_persona_metrics():
     return {
         'period_days': days,
         'is_partial': is_partial,
+        # The stored rows, as stored — so this window can mix the enum's values with
+        # buckets only the old derivation could write. See `has_legacy_persona_buckets`.
+        'has_legacy_persona_buckets': has_legacy_persona_buckets(personas),
         'personas': dict(sorted(personas.items(), key=lambda x: x[1], reverse=True))
     }
 

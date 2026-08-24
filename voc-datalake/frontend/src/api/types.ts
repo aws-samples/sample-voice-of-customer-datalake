@@ -171,6 +171,20 @@ export interface PersonaBreakdown {
   /** See {@link MetricsSummary.is_partial} — same flag, same three reasons. */
   is_partial?: boolean
   /**
+   * True when `personas` carries at least one bucket the current axis cannot write —
+   * i.e. a row written before the dimension moved to `persona_type`, which is free
+   * text or a capitalised `Unknown`. The counts are correct either way; the flag says
+   * the KEY SPACE is mid-transition, which resolves itself once no pre-move aggregate
+   * row survives its 90-day TTL.
+   *
+   * Published on every branch, false included, for the reason `is_partial` is: a
+   * reader cannot tell an absent flag from a false one. A consumer rendering this
+   * dimension during the transition should expect keys outside the archetype set and
+   * must not merge them into `unknown` — see `has_legacy_persona_buckets` in
+   * `lambda/shared/feedback.py` for why that would destroy information.
+   */
+  has_legacy_persona_buckets?: boolean
+  /**
    * Keys are enrichment-contract ARCHETYPE CODES, not display labels:
    * `existing_customer | prospect | churn_risk | advocate | unknown`
    * (`PERSONA_ARCHETYPES` in `lambda/shared/feedback.py`, which closes the axis so
@@ -260,6 +274,9 @@ export interface EntitiesResponse {
    * call and therefore worth nothing.
    */
   is_partial?: boolean
+  /** See {@link PersonaBreakdown.has_legacy_persona_buckets} — the same flag about the
+   *  same axis, on this route's `entities.personas` map. */
+  has_legacy_persona_buckets?: boolean
   entities: {
     keywords: Record<string, number>
     categories: Record<string, number>
