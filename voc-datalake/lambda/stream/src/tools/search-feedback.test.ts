@@ -5,7 +5,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   executeSearchFeedback,
   DAY_SCAN_CONCURRENCY,
-  MAX_CANDIDATES,
   MAX_LOOKBACK_DAYS,
 } from './search-feedback.js';
 
@@ -543,117 +542,6 @@ describe('lookback window (matches shared/feedback.py MAX_LOOKBACK_DAYS)', () =>
   });
 });
 
-describe('the day scan is bounded-concurrent, not sequential', () => {
-  freezeClock();
-
-  it('drives the cap branches with an injected budget, not the production one', () => {
-    // The override is what lets the truncation cases above use 3-row fixtures
-    // instead of 10 000 each. If TEST_CAP ever drifted up to the real value the
-    // fixtures would silently balloon again; if MAX_CANDIDATES drifted down to a
-    // handful, production would report truncation on ordinary windows.
-    expect(TEST_CAP).toBeLessThan(MAX_CANDIDATES);
-    expect(MAX_CANDIDATES).toBe(10000);
-  });
-
-  /** Counts how many sends are in flight at once, so overlap is observable. */
-  function createOverlapTrackingDocClient() {
-    const inFlight = { now: 0, max: 0 };
-    const client = {
-      send: vi.fn().mockImplementation(() => {
-        inFlight.now += 1;
-        inFlight.max = Math.max(inFlight.max, inFlight.now);
-        return Promise.resolve({ Items: [] }).finally(() => {
-          inFlight.now -= 1;
-        });
-      }),
-    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
-    return { client, inFlight };
-  }
-
-  it('overlaps day reads in waves instead of awaiting one at a time', async () => {
-    // 90 sequential round trips sat in front of a half-rendered chat turn. At a
-    // 12ms round trip that measured p99 1092ms sequential against 153ms in waves
-    // of 8 — less even than the 30-day sequential scan this widening replaced.
-    const { client, inFlight } = createOverlapTrackingDocClient();
-
-    await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 90 });
-
-    // Both assertions carry weight and neither suffices alone. The first catches
-    // a return to sequential reads; comparing only against the imported constant
-    // would NOT, because setting it to 1 satisfies the equality — a green result
-    // meaning "did not check". The second catches an unbounded fan-out, or drift
-    // from the declared width.
-    expect(inFlight.max).toBeGreaterThan(1);
-    expect(inFlight.max).toBe(DAY_SCAN_CONCURRENCY);
-    expect(client.send).toHaveBeenCalledTimes(90);
-  });
-
-  it('never exceeds the declared width, even on a window that is not a whole number of waves', async () => {
-    // 90 / 8 leaves a final wave of 2. A chunker that mishandled the remainder
-    // could dispatch it alongside the previous wave.
-    const { client, inFlight } = createOverlapTrackingDocClient();
-
-    await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 90 });
-
-    expect(inFlight.max).toBeLessThanOrEqual(DAY_SCAN_CONCURRENCY);
-  });
-
-  it('keeps candidates in date order, newest first, despite concurrent reads', async () => {
-    // Concurrency must not reorder results: list mode's default 'recent' sort IS
-    // the scan order, so completion-order accumulation would silently shuffle
-    // what the model is shown. Days resolve in reverse order here to force it.
-    const byDate = Object.fromEntries(
-      [1, 2, 3].map((n) => [daysAgo(n), [makeFeedbackItem({
-        feedback_id: `${n}`.repeat(32),
-        date: daysAgo(n),
-        source_created_at: `${daysAgo(n)}T10:00:00Z`,
-      })]]),
-    );
-    const client = {
-      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
-        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
-        const date = (values[':pk'] ?? '').replace('DATE#', '');
-        const items = byDate[date] ?? [];
-        // Newer days settle LAST: each awaits more microtask turns than the day
-        // before it, so completion order is the reverse of date order. Microtasks
-        // rather than timers because these tests run on fake timers.
-        const settleOrder: Record<string, number> = { [daysAgo(1)]: 3, [daysAgo(2)]: 2 };
-        const turns = settleOrder[date] ?? 1;
-        return Array.from({ length: turns }).reduce<Promise<{ Items: unknown[] }>>(
-          (p) => p.then((v) => v),
-          Promise.resolve({ Items: items }),
-        );
-      }),
-    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
-
-    const result = await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 5 });
-
-    expect(result.items.map((i) => i.date)).toStrictEqual([daysAgo(1), daysAgo(2), daysAgo(3)]);
-  });
-
-  it('honours the shared candidate budget across concurrent days, not per day', async () => {
-    // The reason concurrency is safe here at all. A per-day slice of the budget
-    // would let each in-flight day spend the whole remainder — 8 x the cap held
-    // at once, which is exactly what the cap exists to prevent. One counter,
-    // charged as pages land, so the total is bounded however wide the fan-out.
-    const rows = Array.from({ length: 4 }, (_, i) =>
-      makeFeedbackItem({ feedback_id: `d${String(i).padStart(31, '0')}` }),
-    );
-    const client = {
-      send: vi.fn().mockImplementation(() => Promise.resolve({ Items: rows })),
-    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
-
-    const result = await executeSearchFeedback(
-      client, 'test-feedback-table', { mode: 'aggregate' }, { days: 90 }, TEST_CAP,
-    );
-
-    // One wave of 8 days x 4 rows is all that may be collected: the budget is
-    // gone, so wave 2 is never dispatched. Per-day budgeting would keep going.
-    expect(client.send).toHaveBeenCalledTimes(DAY_SCAN_CONCURRENCY);
-    expect(result.isPartial).toBe(true);
-  });
-});
-
 describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_partial)', () => {
   freezeClock();
 
@@ -694,7 +582,12 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
 
     expect(result.isPartial).toBe(false);
     expect(result.formatted).not.toContain('INCOMPLETE');
-    expect(result.formatted).not.toContain('partial');
+    // The hedging strings themselves, not the bare word `partial`: `formatted`
+    // embeds up to 400 characters of arbitrary customer text per item, so a
+    // fixture whose feedback happened to mention the word would fail this for no
+    // behaviour change at all.
+    expect(result.formatted).not.toContain('scan truncated');
+    expect(result.formatted).not.toContain('PARTIAL');
   });
 
   it('flags a day whose partition still had pages when the candidate cap hit', async () => {
@@ -749,12 +642,64 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     expect(result.formatted).toContain('at least one day could not be read');
     // The cause reaches the operator log, never the model-facing prose: an
     // exception name is infrastructure detail (voc-context.ts states the rule).
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`DATE#${failedDate}`));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(failedDate));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('RangeError'));
     expect(result.formatted).not.toContain('RangeError');
+    // A transient name is one partition's bad luck, so the other days are still
+    // read — the throttle must not cost the window.
+    expect(docClient.send).toHaveBeenCalledTimes(7);
     warn.mockRestore();
   });
 
-  it('flags rows the schema rejected: a discarded row is not a read one', async () => {
+  it('stops on a systemic failure instead of repeating it for every wave', async () => {
+    // A missing grant fails identically for every partition of the index, so the
+    // remaining waves only repeat it and one log line per day says nothing the
+    // first said (query-errors.ts states both consequences; recent-feedback.ts
+    // already breaks its own fan-out on these names).
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const denied = new RangeError('denied');
+    denied.name = 'AccessDeniedException';
+    const docClient = {
+      send: vi.fn().mockImplementation(() => Promise.reject(denied)),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const result = await executeSearchFeedback(docClient, 'test-feedback-table', {}, { days: 90 });
+
+    // The first wave was dispatched before the fault was known; the other ten
+    // never were.
+    expect(docClient.send).toHaveBeenCalledTimes(DAY_SCAN_CONCURRENCY);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('AccessDeniedException'));
+    expect(result.isPartial).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('says the window is unmeasured, not empty, when no day could be read', async () => {
+    // Nothing was measured, so zero is not a finding: query-errors.ts requires a
+    // consumer to "treat the numbers it leaves behind as unmeasured rather than
+    // as zero", and a user asking how much negative feedback arrived must not be
+    // told there was none when the tool could not look.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const denied = new RangeError('denied');
+    denied.name = 'AccessDeniedException';
+    const docClient = {
+      send: vi.fn().mockImplementation(() => Promise.reject(denied)),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', { mode: 'aggregate' }, { days: 90 },
+    );
+
+    expect(result.items).toHaveLength(0);
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).not.toContain('No feedback found');
+    expect(result.formatted).toContain('no day of the 90-day window could be read');
+    expect(result.formatted).toContain('NOT a result of zero feedback items');
+    warn.mockRestore();
+  });
+
+  it('logs rows the schema rejected, with the count and the date', async () => {
+    // The row is a real loss and an operator must be able to find and repair it.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const rows = [
       makeFeedbackItem({ feedback_id: 'good1'.padEnd(32, '0') }),
@@ -766,9 +711,72 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     );
 
     expect(result.items).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('dropped 1 unparseable row(s) across 1 day(s)'),
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(today));
+    warn.mockRestore();
+  });
+
+  it('does not call the whole window a sample over one unparseable row', async () => {
+    // A malformed legacy row fails identically on every future call, so folding
+    // it into isPartial would hedge every answer forever over a window that was
+    // read end to end — and a flag that always fires carries no information when
+    // a real truncation happens.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rows = [
+      ...Array.from({ length: 20 }, (_, i) =>
+        makeFeedbackItem({ feedback_id: `g${String(i).padStart(31, '0')}` })),
+      { original_text: 12345 },
+    ];
+
+    const result = await executeSearchFeedback(
+      createMockDocClient([rows as Record<string, unknown>[]]), 'test-feedback-table',
+      { mode: 'aggregate' }, { days: 7 },
+    );
+
+    expect(result.isPartial).toBe(false);
+    expect(result.formatted).toContain('COMPLETE set');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('dropped 1 unparseable row(s)'));
+    warn.mockRestore();
+  });
+
+  it('flags bulk parse loss, which really does bend the distributions', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rows = [
+      makeFeedbackItem({ feedback_id: 'good1'.padEnd(32, '0') }),
+      ...Array.from({ length: 5 }, () => ({ original_text: 12345 })),
+    ];
+
+    const result = await executeSearchFeedback(
+      createMockDocClient([rows as Record<string, unknown>[]]), 'test-feedback-table', {}, { days: 7 },
+    );
+
+    expect(result.items).toHaveLength(1);
     expect(result.isPartial).toBe(true);
     expect(result.formatted).toContain('could not be parsed');
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('dropped 1 unparseable rows'));
+    warn.mockRestore();
+  });
+
+  it('reports one line per cause for the turn, not one per day', async () => {
+    // A drift that touches every day of the window is the realistic shape: a
+    // migration or producer change does not stop at one partition. Ninety
+    // identical CloudWatch lines per chat turn say nothing the first one did.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rows = [
+      makeFeedbackItem({ feedback_id: 'good1'.padEnd(32, '0') }),
+      { original_text: 12345 },
+    ];
+    const docClient = {
+      send: vi.fn().mockImplementation(() => Promise.resolve({ Items: rows })),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    await executeSearchFeedback(docClient, 'test-feedback-table', {}, { days: 90 });
+
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('dropped 90 unparseable row(s) across 90 day(s)'),
+    );
     warn.mockRestore();
   });
 
@@ -801,12 +809,28 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     // result dilute rather than reinforce, and leave two wordings to sync. The
     // aggregate header flags PARTIAL and annotates the total; the imperative to
     // relay it belongs to truncationNotice alone.
+    //
+    // Counts the notice and the imperative rather than ⚠️ glyphs: an emoji count
+    // pins presentation, so dropping the header's glyph while keeping its PARTIAL
+    // wording would fail for no behaviour change, and the count only ever held
+    // for aggregate mode anyway (list mode has one).
     const result = await executeSearchFeedback(
       createCappedDocClient(true), 'test-feedback-table', { mode: 'aggregate' }, { days: 90 }, TEST_CAP,
     );
 
     expect(result.formatted.match(/Say so when you answer/g)).toHaveLength(1);
-    expect(result.formatted.match(/⚠️/g)).toHaveLength(2);
+    expect(result.formatted.match(/INCOMPLETE RESULTS/g)).toHaveLength(1);
+  });
+
+  it('states the truncation once in list mode too', async () => {
+    // The aggregate-only assertion above cannot see a list-mode double-append,
+    // because list mode never renders the aggregate header.
+    const result = await executeSearchFeedback(
+      createCappedDocClient(true), 'test-feedback-table', { limit: 5 }, { days: 90 }, TEST_CAP,
+    );
+
+    expect(result.formatted.match(/Say so when you answer/g)).toHaveLength(1);
+    expect(result.formatted.match(/INCOMPLETE RESULTS/g)).toHaveLength(1);
   });
 
   it('aggregate mode still claims completeness when the whole window was read', async () => {
@@ -830,6 +854,43 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
       docClient, 'test-feedback-table', { query: feedbackId }, { days: 7 },
     );
 
+    expect(result.isPartial).toBe(false);
+  });
+
+  it('answers about the item when its row will not parse, in one query', async () => {
+    // Strict `.parse` threw into the fall-through catch, so a single-key lookup
+    // became a 91-query window scan that returned nothing and hedged about a
+    // 90-day window the user never asked about. The row exists; that is the answer.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const feedbackId = 'abcdef1234567890abcdef1234567890';
+    const docClient = createMockDocClient([
+      [{ feedback_id: feedbackId, original_text: 12345 }],
+    ]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', { query: feedbackId }, { days: 90 },
+    );
+
+    expect(docClient.send).toHaveBeenCalledOnce();
+    expect(result.items).toHaveLength(0);
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).toContain('could not be read');
+    expect(result.formatted).not.toContain('90-day window');
+    expect(result.formatted).not.toContain('INCOMPLETE RESULTS');
+    warn.mockRestore();
+  });
+
+  it('still falls through to the date scan when the ID index has no such row', async () => {
+    const feedbackId = 'abcdef1234567890abcdef1234567890';
+    const inWindow = makeFeedbackItem({ feedback_id: 'd'.repeat(32) });
+    const docClient = createMockDocClient([[], [inWindow]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', { query: feedbackId }, { days: 7 },
+    );
+
+    // The ID query plus the day scan, so a mistyped ID still gets a text search.
+    expect(docClient.send).toHaveBeenCalledTimes(8);
     expect(result.isPartial).toBe(false);
   });
 });

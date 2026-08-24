@@ -2,8 +2,8 @@
 
 `shared/feedback.py` owns `MAX_LOOKBACK_DAYS`: the REST feedback routes spend it
 as ``days=min(days, MAX_LOOKBACK_DAYS)``. The streaming chat Lambda is a second
-runtime of the same rule — `lambda/stream/src/tools/search-feedback.ts` runs its
-own date loop and cannot import Python — so it declares its own copy.
+runtime of the same rule — `lambda/stream/src/tools/feedback-scan.ts` runs its
+own date scan and cannot import Python — so it declares its own copy.
 
 Nothing tied the two together, and they diverged for months: the chat tool capped
 its scan at 30 days while the route used 90. The failure is silent rather than
@@ -16,10 +16,15 @@ and assert equality, so a change on either side fails CI instead of quietly
 answering the wrong question.
 
 The third test guards the OTHER way this file can go green over drifted code: a
-constant that agrees with Python is worthless if the day loop re-acquires a
+constant that agrees with Python is worthless if the day scan re-acquires a
 hard-coded clamp of its own. It asserts properties (the constant is spent; no
 numeric-literal window clamp survives anywhere) rather than one exact spelling,
-so reformatting or moving the clamp does not fail it for a non-defect.
+so reformatting or moving the clamp does not fail it for a non-defect. The clamp
+check is a TRIPWIRE for the idioms this codebase writes, not a proof — a bound
+computed at runtime would pass it — so the reference count is the load-bearing
+half. Both properties read every chat-tool source rather than one path, because
+the constant is declared beside the reads while `resolveSearchParams` spends it
+in `search-feedback.ts`.
 
 Deliberately NOT asserted here: the candidate ceilings. TypeScript's
 `MAX_CANDIDATES = 10000` and `metrics_handler.CANDIDATES_SOFT_CAP` are separate
@@ -40,7 +45,33 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-_TOOL_SOURCE = _repo_root() / 'lambda' / 'stream' / 'src' / 'tools' / 'search-feedback.ts'
+_TOOL_SOURCE = _repo_root() / 'lambda' / 'stream' / 'src' / 'tools' / 'feedback-scan.ts'
+
+# Every clamp idiom this codebase writes, so a re-introduced literal bound fails
+# here however it is spelled. A tripwire rather than a proof — see the module
+# docstring — but the single pattern this replaced caught only the first shape,
+# and `Math.min(90, days)` and a ternary are the same defect written differently.
+_LITERAL_CLAMP_PATTERNS = (
+    r'Math\.min\(\s*\w*[Dd]ays\s*,\s*\d+',
+    r'Math\.min\(\s*\d+\s*,\s*\w*[Dd]ays',
+    r'\w*[Dd]ays\s*[<>]=?\s*\d+\s*\?',
+)
+
+
+def search_feedback_sources() -> dict[str, str]:
+    """The chat tool's own sources, by file name.
+
+    Read as a SET rather than one path: the constant lives with the reads in
+    `feedback-scan.ts` while `resolveSearchParams` spends it in
+    `search-feedback.ts`, so pinning one file let a mutation that moved the clamp
+    into the sibling and made it a literal pass unnoticed. Verified by applying
+    exactly that mutation, not by reading the glob.
+    """
+    return {
+        path.name: path.read_text()
+        for path in sorted(_TOOL_SOURCE.parent.glob('*feedback*.ts'))
+        if not path.name.endswith('.test.ts')
+    }
 
 
 def _stream_lookback_days() -> int | None:
@@ -79,9 +110,16 @@ def literal_day_clamps(source: str) -> list[str]:
     """Clamps of a day count against a hard-coded number, e.g. `Math.min(days, 30)`.
 
     Any `*days`/`*Days` operand matches, so renaming the local to `requestedDays`
-    when the clamp moved did not open a blind spot.
+    when the clamp moved did not open a blind spot. Three idioms rather than one,
+    because `Math.min(30, days)` and `days > 30 ? 30 : days` are the same defect:
+    a single-pattern draft missed both.
     """
-    return re.findall(r'Math\.min\(\s*\w*[Dd]ays\s*,\s*\d+', strip_comments(source))
+    code = strip_comments(source)
+    return [
+        match
+        for pattern in _LITERAL_CLAMP_PATTERNS
+        for match in re.findall(pattern, code)
+    ]
 
 
 class TestLookbackWindowMirror:
@@ -137,16 +175,26 @@ class TestLookbackWindowMirror:
         Both properties are measured over the source with COMMENTS STRIPPED. See
         `strip_comments`: counting prose let a file that had stopped spending the
         constant pass on the strength of its own docblocks.
+
+        And over EVERY chat-tool source, not just the declaring one: the clamp is
+        spent in `search-feedback.ts` while the constant is declared in
+        `feedback-scan.ts`, so a one-path check misses a literal clamp
+        re-appearing in the other half.
         """
-        source = _TOOL_SOURCE.read_text()
-        uses = constant_uses(source)
+        sources = search_feedback_sources()
+        assert sources, f'no chat tool sources beside {_TOOL_SOURCE}'
+        uses = sum(constant_uses(text) for text in sources.values())
         assert uses >= 2, (
-            f'MAX_LOOKBACK_DAYS appears {uses}x in search-feedback.ts code — declared but '
-            'never spent, so the equality test above pins a number nothing reads'
+            f'MAX_LOOKBACK_DAYS appears {uses}x across {", ".join(sources)} code — declared '
+            'but never spent, so the equality test above pins a number nothing reads'
         )
-        clamps = literal_day_clamps(source)
+        clamps = {
+            name: found
+            for name, text in sources.items()
+            if (found := literal_day_clamps(text))
+        }
         assert not clamps, (
-            f'search-feedback.ts clamps its window with a hard-coded literal '
+            f'the chat tool clamps its window with a hard-coded literal '
             f'({clamps}) — that is how the 30-vs-90 divergence happened, and it '
             'makes the equality test vacuous'
         )
@@ -188,6 +236,18 @@ class TestTheGuardItself:
         renamed = 'export const MAX_LOOKBACK_DAYS = 90;\nMath.min(requestedDays, 30)'
         assert literal_day_clamps(renamed), 'a literal clamp on a renamed operand went unnoticed'
 
+        # The same clamp with the arguments the other way round, and as a ternary.
+        # A single-pattern draft passed both, so the drift this guard exists for
+        # survived it — verified against the compiled patterns, not assumed.
+        reversed_args = 'export const MAX_LOOKBACK_DAYS = 90;\nMath.min(90, requestedDays)'
+        assert literal_day_clamps(reversed_args), 'a reversed-argument literal clamp went unnoticed'
+
+        ternary = (
+            'export const MAX_LOOKBACK_DAYS = 90;\n'
+            'const scanned = requestedDays > 90 ? 90 : requestedDays;'
+        )
+        assert literal_day_clamps(ternary), 'a ternary literal clamp went unnoticed'
+
         declared_only = 'export const MAX_LOOKBACK_DAYS = 90;\nconst scanned = days;'
         assert constant_uses(declared_only) < 2, 'a constant nobody spends went unnoticed'
 
@@ -226,4 +286,22 @@ class TestTheGuardItself:
         )
         assert not literal_day_clamps(discussed_not_done), (
             'a literal clamp quoted in a comment was reported as live code'
+        )
+
+    def test_it_reads_every_chat_tool_source_not_only_the_declaring_one(self):
+        """The gap that opened when the reads moved to their own module.
+
+        The constant is declared in `feedback-scan.ts`; `resolveSearchParams`
+        spends it in `search-feedback.ts`. A guard bound to one path passed a
+        mutation that put a literal clamp in the other file — found by applying it,
+        which is why the property below is over the whole set.
+        """
+        sources = search_feedback_sources()
+        assert 'feedback-scan.ts' in sources, 'the declaring source is not in the set'
+        assert 'search-feedback.ts' in sources, (
+            'the file that SPENDS the constant is not in the set, so a literal clamp '
+            'there would go unnoticed'
+        )
+        assert not any(name.endswith('.test.ts') for name in sources), (
+            'test files are in the set, so a clamp in a fixture would read as production drift'
         )
