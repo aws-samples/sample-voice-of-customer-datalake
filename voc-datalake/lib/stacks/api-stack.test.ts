@@ -855,6 +855,45 @@ describe('the public feedback-form routes', () => {
    *  so no unchecked lookup to get wrong. */
   const PUBLIC_FORM_METHOD_KEYS = Object.keys(EXPECTED_FORM_THROTTLES);
 
+  /** The substring a document uses to name a route, and the method-setting key
+   *  whose numbers that row must state. The short forms are what the two
+   *  documents actually write (`POST /submit`, not the full path), so they are
+   *  what a line has to contain to be judged.
+   *
+   *  `/voting-sessions` is here as well as the three form routes, answering a
+   *  review question rather than only the task's scope. It shares
+   *  `publicRouteThrottle` with the widget's `submit` today, so it cannot drift
+   *  from it while that constant is shared — but the named follow-up (a per-form
+   *  submission cap) is precisely the thing that would DECOUPLE them, moving the
+   *  form figure and leaving the ballot prose behind with the suite still green. */
+  const DOCUMENTED_ROUTE_KEYS = {
+    '/config': '/feedback-forms/{form_id}/config/GET',
+    '/iframe': '/feedback-forms/{form_id}/iframe/GET',
+    '/submit': '/feedback-forms/{form_id}/submit/POST',
+    '/voting-sessions': '/voting-sessions/{session_id}/config/GET',
+  } satisfies Record<string, string>;
+
+  /** Every document that publishes these figures, and which routes each one
+   *  publishes. THE SINGLE SOURCE for both cases below, which is the point: the
+   *  lockstep case READS these files, and the class-level guard EXEMPTS them from
+   *  its "no third document states these unpinned" sweep.
+   *
+   *  Two separately-maintained copies of this list is the defect review found —
+   *  adding a third document to the guard's copy alone silenced the guard (the
+   *  file counts as pinned) while the lockstep never read it (its own list was
+   *  untouched), so a document publishing 999/999 passed the whole block. The
+   *  guard's failure message even pointed at the OTHER list, making the half-fix
+   *  the natural one. Derived over one declaration, adding a document is one edit
+   *  that necessarily does both, which is the same reasoning as
+   *  `PUBLIC_FORM_METHOD_KEYS` being `Object.keys` of the record above.
+   *
+   *  Typed against `DOCUMENTED_ROUTE_KEYS`, so a route name that no longer exists
+   *  fails to compile instead of quietly asserting nothing for it. */
+  const PINNED_DOCS = {
+    'docs/feedback-forms.md': ['/config', '/iframe', '/submit'],
+    '.kiro/steering/structure.md': ['/config', '/iframe', '/submit', '/voting-sessions'],
+  } satisfies Record<string, (keyof typeof DOCUMENTED_ROUTE_KEYS)[]>;
+
   it('gives each of the three an explicit pair, tight for submit and generous for the reads', () => {
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
 
@@ -1058,29 +1097,11 @@ describe('the public feedback-form routes', () => {
     // table row" test would exclude the snippet too, but not the symptom rows, and
     // it would exclude the BALLOT figure below, which is stated in prose.
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
-    const FORMS = 'docs/feedback-forms.md';
-    const STEERING = '.kiro/steering/structure.md';
 
-    /** Each figure a document publishes, and which documents publish it.
-     *
-     *  The two BALLOT routes are here as well as the three form ones, answering a
-     *  review question rather than only the task's scope. They share
-     *  `publicRouteThrottle` with the widget's `submit` today, so they cannot drift
-     *  from it while that constant is shared — but the named follow-up (a per-form
-     *  submission cap) is precisely the thing that would DECOUPLE them, moving the
-     *  form figure and leaving the ballot prose behind with the suite still green.
-     *  Pinning both costs two lines and removes that trap. */
-    const documented = [
-      { names: '/config', setting: settings.get('/feedback-forms/{form_id}/config/GET'), docs: [FORMS, STEERING] },
-      { names: '/iframe', setting: settings.get('/feedback-forms/{form_id}/iframe/GET'), docs: [FORMS, STEERING] },
-      { names: '/submit', setting: settings.get('/feedback-forms/{form_id}/submit/POST'), docs: [FORMS, STEERING] },
-      { names: '/voting-sessions', setting: settings.get('/voting-sessions/{session_id}/config/GET'), docs: [STEERING] },
-    ];
-
-    for (const { names, setting } of documented) {
+    for (const [names, key] of Object.entries(DOCUMENTED_ROUTE_KEYS)) {
       // Guards the case itself: an absent setting would search for "undefined" and
       // every assertion below would fail confusingly rather than say what is wrong.
-      expect(setting, `${names} has no method-level throttle to document`).toBeDefined();
+      expect(settings.get(key), `${names} has no method-level throttle to document`).toBeDefined();
     }
 
     /** A line stating a rate limit, in either document's phrasing. PRECISE on
@@ -1090,7 +1111,7 @@ describe('the public feedback-form routes', () => {
      *  has to find UNKNOWN documents and therefore wants the opposite bias. */
     const statesALimit = (line: string) => /\b(?:rps|req\/s)\b/.test(line);
 
-    /** EVERY `<rate> rps|req/s … <burst>` pair a line states, in order.
+    /** EVERY `<rate> rps|req/s <separator> <burst>` pair a line states, in order.
      *
      *  All of them, not the first, and that is the whole point. Parsing the FIRST
      *  pair is still positional, so it picks whichever of two well-formed pairs
@@ -1099,16 +1120,31 @@ describe('the public feedback-form routes', () => {
      *  the template, and passes while the document publishes 250/500. Verified
      *  against the real steering doc before this was widened.
      *
-     *  `\d+` immediately before the rate token is a rate; the next number after it
-     *  is its burst, whether the separator is `, burst ` or ` / `. */
+     *  THE BURST IS ANCHORED TO THE TOKEN THAT INTRODUCES IT, not to "the next
+     *  digits anywhere after the rate". An unanchored `[^0-9]*` spans any run of
+     *  non-digits, so a row publishing NO burst still parsed one by adopting an
+     *  unrelated later number — `| 100 req/s | burst raised in PR 200 |` yielded
+     *  100/200, matched the template, satisfied the exactly-one check, and passed
+     *  while telling an integrator nothing about the burst. A PR number, an issue
+     *  reference, a version or a percentage later in the row was enough, and the
+     *  row need not even be wrong on purpose, just reworded. Reproduced before
+     *  fixing; that is the same class as the two defects the previous round fixed,
+     *  one field over.
+     *
+     *  Both real phrasings put a word or a bare `/` immediately before the burst —
+     *  `100 req/s, burst 200` and `**100 rps / 200**` — so requiring one of those
+     *  two separators accepts every current row and yields ZERO pairs for a row
+     *  that states no burst, which then fails as "states no parseable pair" rather
+     *  than passing. */
     const allStatedPairs = (line: string): { rate: number; burst: number }[] =>
-      [...line.matchAll(/(\d+)\s*(?:rps|req\/s)[^0-9]*(\d+)/g)]
+      [...line.matchAll(/(\d+)\s*(?:rps|req\/s)\s*(?:,\s*burst\s+|\/\s*)(\d+)/g)]
         .map((match) => ({ rate: Number(match[1]), burst: Number(match[2]) }));
 
-    for (const doc of [FORMS, STEERING]) {
+    for (const [doc, routes] of Object.entries(PINNED_DOCS)) {
       const lines = readFileSync(join(__dirname, '..', '..', '..', ...doc.split('/')), 'utf-8').split('\n');
 
-      for (const { names, setting } of documented.filter((d) => d.docs.includes(doc))) {
+      for (const names of routes) {
+        const setting = settings.get(DOCUMENTED_ROUTE_KEYS[names]);
         // The steering file groups the two reads onto one row, so a route may be
         // documented by more than one line and it is enough that ONE of them states
         // the right pair — but each candidate is judged by the pairs IT states.
@@ -1116,18 +1152,40 @@ describe('the public feedback-form routes', () => {
 
         expect(rows.length, `${doc} documents no rate limit for ${names}`).toBeGreaterThan(0);
 
-        // ONE pair per line, which removes the ordering question rather than
-        // answering it. Every candidate row in both documents states exactly one
-        // today, so this costs nothing now and forces a future "was 100/200"
+        // EXACTLY ONE pair per line, which removes the ordering question rather
+        // than answering it. Every candidate row in both documents states exactly
+        // one today, so this costs nothing now and forces a future "was 100/200"
         // aside — the phrasing that defeats any positional parse — onto its own
         // line or into a footnote, where it cannot be mistaken for the row's
         // claim. Checked before adopting: no current row states two.
+        //
+        // TWO ASSERTIONS, NOT ONE `toBe(1)`. A single two-sided assertion can only
+        // carry one message, and the one it carried described only the greater-than
+        // side: a row stating ZERO parseable pairs failed with "states more than
+        // one … move the aside to its own line", advising an author to split a row
+        // that has nothing to split, with `expected +0 to be 1` the only clue that
+        // the diagnosis was inverted. Reproduced verbatim by spelling a burst in
+        // words. The zero case is not hypothetical — it is reached by omitting the
+        // burst, spelling it in words, or any rewording the parse stops matching,
+        // and it is the state the anchored burst above now correctly produces for a
+        // row that publishes no burst, so the two interact. Assertion messages here
+        // are load-bearing, so a message that misdescribes the failure it fires on
+        // is a defect rather than a wording nit.
         for (const row of rows) {
+          const pairs = allStatedPairs(row);
+
           expect(
-            allStatedPairs(row).length,
+            pairs.length,
+            `${doc} names ${names} and carries a rate token but states no rate pair this test can `
+            + 'parse, so nothing pins it — write it as "100 req/s, burst 200" or "100 rps / 200" '
+            + `(digits, not words): ${row.trim()}`,
+          ).toBeGreaterThan(0);
+
+          expect(
+            pairs.length,
             `${doc} states more than one rate pair on one line for ${names}, so which one the row `
             + `CLAIMS is ambiguous — move the aside to its own line: ${row.trim()}`,
-          ).toBe(1);
+          ).toBeLessThan(2);
         }
 
         expect(
@@ -1139,7 +1197,7 @@ describe('the public feedback-form routes', () => {
   });
 
   it('finds no THIRD document stating these numbers unpinned', () => {
-    // The case above reads a HARDCODED LIST OF TWO FILES, which is the same "fix
+    // The case above reads an ENUMERATED LIST OF TWO FILES, which is the same "fix
     // the instance, not the class" shape the converse throttle invariant was added
     // to avoid: a third document stating these figures would drift with nothing
     // to stop it, and nothing would point that out. This is the class-level half —
@@ -1176,7 +1234,16 @@ describe('the public feedback-form routes', () => {
     // the two pinned documents and nothing else, so the over-inclusion costs no
     // false positive today.
     const ROOT = join(__dirname, '..', '..', '..');
-    const PINNED = ['docs/feedback-forms.md', '.kiro/steering/structure.md'];
+    /** THE SAME DECLARATION the lockstep case above reads, not a second copy of
+     *  the same two paths. Two separately-maintained lists could disagree, and
+     *  review demonstrated the half-fix they invited: appending a stale table to a
+     *  third document and adding it HERE ONLY — the edit this case's own failure
+     *  message most directly suggests, since this is the list literally named
+     *  "pinned" — left the whole block green with that document publishing
+     *  999/999. This case stopped complaining (the file is now pinned) and the
+     *  lockstep never read it (its list was untouched). One declaration makes
+     *  adding a document necessarily both pin it and exempt it. */
+    const PINNED = Object.keys(PINNED_DOCS);
     const SKIP = new Set(['node_modules', '.git', 'dist', 'coverage', '.venv', 'cdk.out']);
 
     const markdownFiles = (dir: string, prefix = ''): string[] => readdirSync(dir, { withFileTypes: true })
@@ -1197,15 +1264,16 @@ describe('the public feedback-form routes', () => {
     expect(
       stating.filter((rel) => !PINNED.includes(rel)).sort(),
       'a markdown file states a public-route rate limit but is not read by the lockstep case above — '
-      + 'add it to that case\'s document list, or remove the figures and point at api-stack.ts',
+      + 'add it to PINNED_DOCS (which both pins and exempts it, naming the routes it publishes), '
+      + 'or remove the figures and point at api-stack.ts',
     ).toEqual([]);
 
     // And the converse: a pinned document that stops stating them would leave the
     // case above asserting nothing, so both must still be in the discovered set.
     expect(
       PINNED.filter((rel) => !stating.includes(rel)),
-      'a document the lockstep case above reads no longer states any public-route rate limit, so that '
-      + 'case is now asserting nothing for it — restore the figures or drop it from that list',
+      'a document in PINNED_DOCS no longer states any public-route rate limit, so the lockstep case '
+      + 'above is now asserting nothing for it — restore the figures or drop it from PINNED_DOCS',
     ).toEqual([]);
   });
 
