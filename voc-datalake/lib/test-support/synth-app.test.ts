@@ -201,10 +201,26 @@ describe('committedFeatureFlags', () => {
 
   it('cannot use cx-api FLAGS as the predicate instead, since a committed flag has expired out of it', () => {
     // Why the obvious fix for the case above is not a fix. The registry is not a
-    // superset of what a project commits: this one sets
+    // superset of what a project may commit: this one sets
     // `@aws-cdk/aws-iam:standardizedServicePrincipals`, which CDK has since
-    // dropped from FLAGS, so `key in cx.FLAGS` would stop passing a flag every
-    // real deploy here gets — trading a known, inert gap for a live one.
+    // dropped from FLAGS, so `key in cx.FLAGS` would classify a committed flag as
+    // project context and drop it.
+    //
+    // Dropping it would in fact be HARMLESS today, and saying otherwise would
+    // overstate the case: that flag is EXPIRED, not merely unregistered. It has no
+    // runtime effect in aws-cdk-lib 2.261.0 — zero references in any `.js` under
+    // the package, only a doc comment in aws-iam/lib/principals.d.ts describing
+    // what it used to gate — because CDK v2 applies the standardized behaviour
+    // unconditionally. Removing it from the synth context leaves VocCoreStack's
+    // template byte-identical (78006 characters either way).
+    //
+    // So both known edges of the prefix heuristic are inert, for different
+    // reasons: `aws-cdk:enableDiffNoFail` because it only selects `cdk diff`'s
+    // exit code, and this one because it has expired. Neither predicate is exact,
+    // and the prefix rule wins because it errs toward passing keys THROUGH — a
+    // rule that silently drops a key a project commits is unsound in general even
+    // when today's instance costs nothing. That is the claim these two assertions
+    // pin, and it is why the tempting swap to `key in cx.FLAGS` is a regression.
     expect('@aws-cdk/aws-iam:standardizedServicePrincipals' in cx.FLAGS).toBe(false);
     expect(committedFeatureFlags()).toHaveProperty('@aws-cdk/aws-iam:standardizedServicePrincipals');
   });

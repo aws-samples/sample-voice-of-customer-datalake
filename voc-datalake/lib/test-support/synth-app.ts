@@ -39,7 +39,20 @@ export interface Baseline {
   stacks: Record<string, { templateSha256: string; names: NameInventory }>;
 }
 
-/** The `context` block cdk.json commits, or `{}` if it is absent or malformed. */
+/**
+ * The `context` block cdk.json commits.
+ *
+ * Two subjects, two behaviours, and they are easy to conflate: `{}` is returned
+ * when the `context` KEY is absent or is not an object, but an error PROPAGATES
+ * when cdk.json ITSELF cannot be read or parsed — a missing file throws `ENOENT`
+ * and unparseable JSON throws `SyntaxError`.
+ *
+ * Throwing there is deliberate, so do not wrap this in a try/catch. A silent `{}`
+ * would send every dependent synth back to the bare-`App` context shape, which is
+ * exactly the state the S3 log-delivery and IAM statement-count assertions in
+ * lib/stacks/core-stack.test.ts exist to rule out: both would then describe a
+ * template no deploy of this project produces, and both would still pass.
+ */
 function cdkJsonContext(): Record<string, unknown> {
   const cdkJson: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.json'), 'utf8'));
   return isRecord(cdkJson) && isRecord(cdkJson.context) ? cdkJson.context : {};
@@ -72,14 +85,21 @@ function cdkJsonContext(): Record<string, unknown> {
  *    `aws-cdk:enableDiffNoFail`, is not `@aws-cdk`-prefixed. Were cdk.json to
  *    commit it, this filter would drop it as project context while
  *    {@link baseContext} kept it, so the two would synthesize from different flag
- *    sets. That divergence is LATENT rather than live: the flag selects
- *    `cdk diff`'s exit code and cannot alter a synthesized template, so no
- *    assertion in lib/stacks/core-stack.test.ts would move.
- * 2. Filtering by `key in cx.FLAGS` instead is not a fix, it is a different gap.
+ *    sets. Inert: the flag only selects `cdk diff`'s exit code and cannot alter a
+ *    synthesized template, so no assertion in lib/stacks/core-stack.test.ts moves.
+ * 2. Filtering by `key in cx.FLAGS` instead is not a fix, because the registry is
+ *    not a superset of what a project may commit:
  *    `@aws-cdk/aws-iam:standardizedServicePrincipals` IS committed here but has
- *    expired out of the registry (18 of the 19 keys are recognized), so a
- *    registry filter would stop passing a flag this project does set. Neither
- *    rule is exact; this one errs toward passing flags through.
+ *    expired out of `FLAGS` (18 of the 19 keys are recognized), so a registry
+ *    predicate would drop it. Inert too — the flag has no runtime effect in
+ *    aws-cdk-lib 2.261.0 (zero references in any `.js` under the package, only a
+ *    doc comment in aws-iam/lib/principals.d.ts; CDK v2 applies the standardized
+ *    behaviour unconditionally), and removing it leaves VocCoreStack's template
+ *    byte-identical at 78006 characters.
+ *
+ * So BOTH edges are inert, for different reasons, and neither predicate is exact.
+ * The prefix rule is preferred because it errs toward passing keys THROUGH — not
+ * because a registry predicate would break a real deploy.
  *
  * @param context context to filter, defaulting to cdk.json's. Injectable so the
  *                filter itself is directly testable — with cdk.json holding no
