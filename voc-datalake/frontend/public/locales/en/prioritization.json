@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "{{documents}} documents, one ballot"
   },
+  "rowCount_one": "{{count}} proposal",
+  "rowCount_other": "{{count}} proposals",
   "scores": {
     "confidence": "Confidence",
     "confidenceDescription": "Certainty in impact and TTM estimates",

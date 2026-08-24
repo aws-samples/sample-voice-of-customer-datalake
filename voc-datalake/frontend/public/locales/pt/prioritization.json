@@ -121,6 +121,8 @@
   "row": {
     "multiDocument": "{{documents}} documentos, uma cédula"
   },
+  "rowCount_one": "{{count}} proposta",
+  "rowCount_other": "{{count}} propostas",
   "scores": {
     "confidence": "Confiança",
     "confidenceDescription": "Certeza nas estimativas de impacto e TTM",

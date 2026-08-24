@@ -396,7 +396,7 @@ function PRFAQList({
 }
 
 function PrioritizationHeader({
-  hasChanges, isPending, saveBlocked, onReset, onSave,
+  hasChanges, isPending, saveBlocked, rowCount, onReset, onSave,
 }: {
   readonly hasChanges: boolean
   readonly isPending: boolean
@@ -438,6 +438,28 @@ function PrioritizationHeader({
    * that a reader cannot infer from the sliders has words above the list.
    */
   readonly saveBlocked: boolean
+  /**
+   * How many rows the list below is showing.
+   *
+   * NOT RENDERED AT ZERO, and that one rule is the whole of the state handling here,
+   * because "0 proposals" beside the heading asserts an empty backlog. Both states that
+   * reach this with nothing to count would be asserting one they have not established:
+   * the loading pass, where no documents have arrived to compose rows from and the list
+   * is still a spinner; and a genuinely empty list, where the list's own empty state
+   * already says so in words and says WHICH emptiness — no documents at all, or none of
+   * a scorable type — which a bare `0` cannot. A `number | null` prop was the same rule
+   * spelled twice, since a page with no rows yet has no other value to pass.
+   *
+   * Counts ROWS — the same UNIT as the "Total Proposals" card and as the list itself, so
+   * a reader comparing the two is comparing like with like. Deliberately not the number
+   * of documents: one row can hold a PRD and a PR/FAQ describing one idea.
+   *
+   * The same unit, not a promise of the same number. This is the LIST's length and the
+   * card's is the backlog's, which are equal only while nothing narrows the list — the
+   * first row filter or search box put on this page should make them differ, and each
+   * would then be right about what it is labelled.
+   */
+  readonly rowCount: number
   readonly onReset: () => void
   readonly onSave: () => void
 }) {
@@ -446,7 +468,28 @@ function PrioritizationHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+        {/* BESIDE the heading, not inside it: a screen reader announcing this page's
+            heading should read "Prioritization", which is also what the breadcrumb and
+            the document outline name. The count's own text is self-describing.
+            (Not "the only h1" — the app shell's brand is an h1 too, so the deployed
+            page has two. That is pre-existing and separate; the point here is only
+            that THIS heading's accessible name stays the page's name.) */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          {rowCount === 0 ? null : (
+            // The testid is what lets a test assert this is ABSENT without depending on
+            // how a zero would have been spelled or on where the badge sits. Querying
+            // for the text "0 proposals" only rules out one wording — a later
+            // `rowCount_zero` form would walk straight past it — and reading the
+            // wrapper's text depends on nothing being nested around the heading.
+            <span
+              data-testid="prioritization-row-count"
+              className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs sm:text-sm font-medium text-gray-600"
+            >
+              {t('rowCount', { count: rowCount })}
+            </span>
+          )}
+        </div>
         <p className="text-sm sm:text-base text-gray-500 mt-1">{t('subtitle')}</p>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
@@ -864,6 +907,13 @@ export default function Prioritization() {
     return <div className="text-center py-12"><p className="text-gray-500">{t('configureApiEndpoint')}</p></div>
   }
 
+  // Whether the list is still a spinner. The heading's count relies on this being a
+  // SUBSET of "no rows yet": `collectRows` returns nothing until both these reads land,
+  // and neither query carries `placeholderData`, so a page that is loading always has
+  // zero rows and the header's own zero-gate covers the loading pass for free. Widening
+  // this to `isFetching` — the obvious way to spin on refetch — breaks that, because
+  // cached rows survive a refetch and the count would then sit over a spinner. Gate the
+  // badge explicitly if that happens.
   const isLoading = loadingProjects || loadingDetails
 
   return (
@@ -872,6 +922,11 @@ export default function Prioritization() {
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
         saveBlocked={!ownBallots.inHand || overLongNotes.length > 0}
+        // The list's OWN length, so the badge and the rows below it are one number.
+        // Nothing is gated here — the header withholds a zero, which covers the loading
+        // pass as well, since `collectRows` has no documents to compose rows from until
+        // the reads `isLoading` tracks have landed. See `rowCount` there.
+        rowCount={sortedRows.length}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />
