@@ -1821,3 +1821,359 @@ class TestMetricsToolsDeclareTheFlagTheyPassThrough:
             "no publishing route is reachable through MCP, so the check above "
             "proved nothing"
         )
+
+
+# ===========================================================================
+# The five tools added in server 3.8.0 — route selection and what is reported
+# ===========================================================================
+
+class TestTheNewReadToolsReachTheirOwnRoutes:
+    """Each tool addresses the route that owns its data, and nothing else.
+
+    Asserted on the PATH `_FakeLambda` recorded rather than on the answer, because
+    a stub answers `{}` for a path it does not know: a tool calling the wrong route
+    still produces a valid empty payload, so the conformance suite would pass while
+    the tool read nothing. The path is the thing under test.
+    """
+
+    @pytest.mark.parametrize("tool,arguments,route", [
+        ("list_feedback", {}, "/feedback"),
+        ("get_similar_feedback", {"feedback_id": _FEEDBACK_ID},
+         f"/feedback/{_FEEDBACK_ID}/similar"),
+        ("list_urgent_feedback", {}, "/feedback/urgent"),
+        ("list_feedback_facets", {}, "/feedback/entities"),
+        ("list_jobs", {"project_id": _PROJECT}, f"/projects/{_PROJECT}/jobs"),
+    ])
+    def test_the_tool_calls_exactly_one_route_and_it_is_the_right_one(
+        self, tool, arguments, route
+    ):
+        fake = _FakeLambda({route: {}})
+        result = _call(tool, arguments, fake)
+
+        assert fake.paths == [route], result
+        assert result["result"]["isError"] is False, result
+
+    @pytest.mark.parametrize("tool,route", [
+        ("list_feedback", "/feedback"),
+        ("list_urgent_feedback", "/feedback/urgent"),
+    ])
+    def test_the_filters_reach_the_route_under_its_own_parameter_names(self, tool, route):
+        """The names are the ROUTE's, not the tool's: `date_basis`, `source`,
+        `category`, `sentiment`. A tool renaming one would be refused by nothing —
+        the route ignores a parameter it does not know and answers the unfiltered
+        window, which reads as data rather than as an error."""
+        fake = _FakeLambda({route: {}})
+        _call(tool, {"category": "delivery", "sentiment": "negative",
+                     "source": "webscraper", "date_basis": "review"}, fake)
+
+        assert fake.last_query["category"] == "delivery"
+        assert fake.last_query["sentiment"] == "negative"
+        assert fake.last_query["source"] == "webscraper"
+        assert fake.last_query["date_basis"] == "review"
+
+    @pytest.mark.parametrize("tool,route,expected_days", [
+        # The route defaults differ, and the tool's default has to be the ROUTE's:
+        # `/feedback/urgent` defaults to 30 days where the rest default to 7, so a
+        # 7 forwarded here would silently narrow the window a caller asked nothing
+        # about.
+        ("list_feedback", "/feedback", "7"),
+        ("list_urgent_feedback", "/feedback/urgent", "30"),
+        ("list_feedback_facets", "/feedback/entities", "7"),
+    ])
+    def test_the_window_default_matches_the_route_it_delegates_to(
+        self, tool, route, expected_days
+    ):
+        fake = _FakeLambda({route: {}})
+        _call(tool, {}, fake)
+
+        assert fake.last_query["days"] == expected_days
+
+    def test_an_omitted_filter_is_forwarded_as_absence(self):
+        """Not as a value this adapter invented. The route owns every default, and
+        a default restated here is the copy that goes stale — the same rule
+        `test_mcp_date_basis.py` pins for `search_feedback`."""
+        fake = _FakeLambda({"/feedback": {}})
+        _call("list_feedback", {}, fake)
+
+        for absent in ("category", "sentiment", "source", "date_basis"):
+            assert absent not in fake.last_query
+
+    def test_the_jobs_route_is_sent_no_query_parameters_at_all(self):
+        """`api_list_jobs` reads none, which is why the tool declares only
+        `project_id`. Sending one anyway would be harmless and would also make the
+        input schema's claim untestable."""
+        fake = _FakeLambda({f"/projects/{_PROJECT}/jobs": {"success": True, "jobs": []}})
+        _call("list_jobs", {"project_id": _PROJECT}, fake)
+
+        assert fake.calls[-1][1]["queryStringParameters"] is None
+
+    def test_an_unknown_similar_id_is_a_tool_error_not_an_empty_answer(self):
+        """The route's 404 arriving as `isError: true`, for the reason
+        `get_feedback_detail` does: a successful result with no items tells a model
+        this complaint is unique, when in fact the id was wrong."""
+        fake = _FakeLambda(
+            {f"/feedback/{_FEEDBACK_ID}/similar": {"message": "Feedback not found"}},
+            status=404,
+        )
+        result = _call("get_similar_feedback", {"feedback_id": _FEEDBACK_ID}, fake)["result"]
+
+        assert result["isError"] is True
+        assert "not found" in result["content"][0]["text"]
+
+
+# A mid-window page from `GET /feedback`: `total` above `count`, a non-zero
+# `offset`, and the cap not reached. Module-level rather than a class attribute
+# because ruff's RUF012 refuses a mutable class default, and the repo's ruff gate is
+# kept clean on new code.
+_FEEDBACK_PAGE = {
+    "count": 2, "total": 137, "offset": 40, "limit": 20,
+    "is_partial_window": False, "items": [],
+}
+
+
+class TestListFeedbackReportsThePaginationSearchDrops:
+    """The reason `list_feedback` exists beside `search_feedback`.
+
+    Both delegate to `GET /feedback`; that one reports `count` and `items` and
+    discards `total`, `offset`, `limit` and `is_partial_window`, so a model saw a
+    page and could not tell a last page from a full one. Deleting any of the four
+    from the projection fails here.
+    """
+
+    ROUTE = "/feedback"
+
+    def _payload(self, body: dict, arguments: dict | None = None) -> dict:
+        fake = _FakeLambda({self.ROUTE: body})
+        return _call("list_feedback", arguments or {}, fake)["result"]["structuredContent"]
+
+    @pytest.mark.parametrize("field,expected", [
+        ("total", 137), ("offset", 40), ("limit", 20),
+    ])
+    def test_each_pagination_field_reaches_the_client(self, field, expected):
+        assert self._payload(_FEEDBACK_PAGE)[field] == expected
+
+    def test_the_truncation_flag_reaches_the_client_under_the_routes_own_name(self):
+        """`is_partial_window`, not `is_partial`. `search_feedback` renames it, and
+        the two tools genuinely differ: that one's flag describes a soft-capped text
+        scan, this one's describes the candidate WINDOW, which also bounds `total`.
+        One name for two facts would be worse than two names."""
+        payload = self._payload({**_FEEDBACK_PAGE, "is_partial_window": True})
+
+        assert payload["is_partial_window"] is True
+        assert "is_partial" not in payload
+
+    def test_a_route_that_omits_the_flag_reports_false_rather_than_null(self):
+        """The declaration says boolean and requires it, so absence has to become
+        `False` — a `null` under a boolean declaration is M1's shape."""
+        assert self._payload({"items": []})["is_partial_window"] is False
+
+    def test_count_describes_the_items_returned_not_the_routes_own_count(self):
+        """Projected first, then counted, so a row the projection skipped cannot
+        make `count` exceed `len(items)` inside one payload."""
+        payload = self._payload({**_FEEDBACK_PAGE, "count": 99,
+                                 "items": [_feedback_row(), "not a row", None]})
+
+        assert payload["count"] == len(payload["items"]) == 1
+
+    def test_the_offset_argument_reaches_the_route(self):
+        """Reporting `offset` is useless if a caller cannot ask for the next page."""
+        fake = _FakeLambda({self.ROUTE: _FEEDBACK_PAGE})
+        _call("list_feedback", {"offset": 40, "limit": 20}, fake)
+
+        assert fake.last_query["offset"] == "40"
+        assert fake.last_query["limit"] == "20"
+
+    def test_the_payload_satisfies_its_own_declaration(self):
+        payload = self._payload(_FEEDBACK_PAGE)
+
+        assert _schema_errors(payload, _tool_output_schema("list_feedback")) == []
+
+
+class TestListFeedbackFacetsLeavesOutWhatTheRouteCannotFill:
+    """`keywords` is declared by nothing and projected by nothing.
+
+    The route returns `entities.keywords` as a hardcoded `{}` from BOTH of its
+    branches — there is no keyword extraction behind it — so declaring the field
+    would advertise data no real answer carries. That is finding M1's shape, and it
+    is asserted here in both directions: absent from the declaration, and absent
+    from the payload even when the route sends one.
+    """
+
+    ROUTE = "/feedback/entities"
+
+    def _payload(self, body: dict) -> dict:
+        fake = _FakeLambda({self.ROUTE: body})
+        return _call("list_feedback_facets", {}, fake)["result"]["structuredContent"]
+
+    def test_the_route_really_does_hardcode_an_empty_keyword_map(self):
+        """Read from `metrics_handler`'s SOURCE, so this is a claim about the route
+        rather than about a fixture. The day the route extracts keywords, this fails
+        and the field becomes declarable — which is the outcome to want."""
+        source = Path(__file__).resolve().parents[1] / "metrics_handler.py"
+        text = source.read_text(encoding="utf-8")
+
+        assert text.count("'keywords': {}") == 2, (
+            "the entities route no longer hardcodes an empty keyword map in both "
+            "branches — `list_feedback_facets` can now declare and project the field"
+        )
+
+    def test_keywords_is_neither_declared_nor_reported(self):
+        schema = _tool_output_schema("list_feedback_facets")
+        payload = self._payload({"entities": {"keywords": {"late": 5}}})
+
+        assert "keywords" not in schema["properties"]
+        assert "keywords" not in payload
+
+    def test_the_two_useful_maps_are_reported(self):
+        payload = self._payload({
+            "period_days": 7, "feedback_count": 6239, "is_partial": False,
+            "entities": {"keywords": {}, "categories": {"delivery": 300},
+                         "issues": {"arrived late": 42},
+                         "personas": {"advocate": 5}, "sources": {"webscraper": 9}},
+        })
+
+        assert payload["categories"] == {"delivery": 300}
+        assert payload["issues"] == {"arrived late": 42}
+        # `get_metrics_breakdown` already reports these two per axis, with the
+        # legacy-bucket caveat attached there. Two tools reporting one map is the
+        # duplication delegating exists to remove.
+        assert "personas" not in payload
+        assert "sources" not in payload
+
+    def test_the_branch_that_omits_is_partial_reports_false_not_null(self):
+        """`is_partial` comes back from only one of the route's two branches, so it
+        is coerced with `bool()` the way `_tool_search_feedback` coerces its copy."""
+        assert self._payload({"entities": {}})["is_partial"] is False
+
+    def test_a_partial_window_reaches_the_client(self):
+        """The positive control: a flag that is always false says nothing."""
+        assert self._payload({"is_partial": True, "entities": {}})["is_partial"] is True
+
+
+# One finished job as `api_list_jobs` projects it, `result` included — the field the
+# tool drops. Module-level for the RUF012 reason `_FEEDBACK_PAGE` records. The
+# `result` is deliberately BULKY: the assertion below searches the serialized payload
+# for it, which a token-sized value would satisfy vacuously.
+_FINISHED_JOB = {
+    "job_id": "job_5f3c1a9e0b7d4c62", "job_type": "generate_personas",
+    "status": "completed", "progress": 100, "current_step": "done",
+    "created_at": "2026-08-19T14:30:00+00:00",
+    "updated_at": "2026-08-19T14:34:12+00:00",
+    "completed_at": "2026-08-19T14:34:12+00:00", "error": None,
+    "result": {"markdown": "x" * 5000},
+}
+
+
+class TestListJobsLeavesTheResultBehind:
+    """A job's `result` is an arbitrary payload and is never inlined.
+
+    Same argument as `get_project` listing documents by title: the 6 MB
+    synchronous-invoke ceiling and the model's context budget are both reachable by
+    ONE completed prototype. Asserted on a payload the route really produces, so
+    deleting the omission fails here rather than in production.
+    """
+
+    def _payload(self, jobs: list) -> dict:
+        fake = _FakeLambda({f"/projects/{_PROJECT}/jobs": {"success": True, "jobs": jobs}})
+        return _call("list_jobs", {"project_id": _PROJECT},
+                     fake)["result"]["structuredContent"]
+
+    def test_the_result_payload_does_not_travel(self):
+        payload = self._payload([_FINISHED_JOB])
+
+        assert "result" not in payload["jobs"][0]
+        assert "x" * 5000 not in json.dumps(payload)
+
+    def test_it_is_not_declared_either(self):
+        """Dropping it from the projection while declaring it would be the mirror
+        defect: a field a client is told to expect and never gets."""
+        schema = _tool_output_schema("list_jobs")
+
+        assert "result" not in schema["properties"]["jobs"]["items"]["properties"]
+
+    def test_the_envelope_success_flag_is_dropped(self):
+        """It is the route's own always-true field, and a constant is not something
+        a model can act on. A real failure is a non-2xx and is already a tool error
+        by then."""
+        assert "success" not in self._payload([])
+
+    def test_every_declared_field_of_a_job_is_reported(self):
+        payload = self._payload([_FINISHED_JOB])
+        declared = set(_tool_output_schema("list_jobs")["properties"]["jobs"]
+                       ["items"]["properties"])
+
+        assert set(payload["jobs"][0]) == declared
+
+    def test_a_running_jobs_nulls_become_the_types_they_are_declared_as(self):
+        """The route projects `None` into `completed_at`, `error` and `result` for
+        every unfinished job, and a `None` under a `string` declaration is M1's
+        exact shape. This is the ordinary case, not a hostile row."""
+        payload = self._payload([{**_FINISHED_JOB, "status": "running", "progress": 40,
+                                  "completed_at": None, "error": None, "result": None}])
+        job = payload["jobs"][0]
+
+        assert job["completed_at"] == ""
+        assert job["error"] == ""
+        assert job["progress"] == 40
+        assert _schema_errors(payload, _tool_output_schema("list_jobs")) == []
+
+    def test_a_job_of_wrong_types_still_satisfies_the_declaration(self):
+        """The jobs table is written by five separate job handlers, so a `progress`
+        stored as a string or a `status` as a list is a shape no schema stops."""
+        payload = self._payload([{
+            "job_id": ["job_1"], "job_type": {"S": "research"}, "status": None,
+            "progress": "40", "current_step": 7, "created_at": 12345,
+            "updated_at": None, "completed_at": [], "error": {"k": "v"},
+        }])
+
+        assert _schema_errors(payload, _tool_output_schema("list_jobs")) == []
+
+
+class TestUrgentCountIsThisPageNotTheWindow:
+    """The one accuracy point on `list_urgent_feedback`.
+
+    The route's scan stops as soon as `limit` items survive its filters and it
+    publishes no truncation flag, so `count` is bounded by `limit`. Reading it as a
+    window total is a defect on record: the sidebar urgent badge did exactly that
+    with `limit=10` and could never show more than 10. The declaration has to SAY
+    so, because a model reads the description to decide how much weight a number
+    carries.
+    """
+
+    @staticmethod
+    def _count_description() -> str:
+        return _tool_output_schema("list_urgent_feedback")["properties"]["count"]["description"]
+
+    def test_the_description_says_the_count_is_a_page_not_a_total(self):
+        description = self._count_description()
+
+        assert "NOT the number of urgent items" in description, description
+        assert "limit" in description, description
+
+    def test_the_description_points_at_the_tool_that_has_the_window_total(self):
+        """A caveat with no alternative teaches a model to distrust the number and
+        stop. `get_metrics_summary`'s `urgent_count` sums the exact daily
+        aggregates, so there IS a right answer to send them to."""
+        assert "get_metrics_summary" in self._count_description()
+        assert "urgent_count" in self._count_description()
+
+    def test_the_route_still_has_no_truncation_flag_to_report(self):
+        """Read from `metrics_handler`'s source. If the route ever grows one, this
+        fails and the caveat above can be replaced by the flag — which is the
+        outcome to want, and is a route change deliberately outside this slice."""
+        source = Path(__file__).resolve().parents[1] / "metrics_handler.py"
+        text = source.read_text(encoding="utf-8")
+
+        assert "return {'count': len(items), 'items': items[:limit]}" in text, (
+            "the urgent route's return shape changed — re-check whether it now "
+            "reports truncation, and if so replace the caveat with the flag"
+        )
+
+    def test_count_equals_the_items_returned(self):
+        fake = _FakeLambda({"/feedback/urgent": {
+            "count": 99, "items": [_feedback_row(), _feedback_row()],
+        }})
+        payload = _call("list_urgent_feedback", {}, fake)["result"]["structuredContent"]
+
+        assert payload["count"] == len(payload["items"]) == 2
+        assert _schema_errors(payload, _tool_output_schema("list_urgent_feedback")) == []
