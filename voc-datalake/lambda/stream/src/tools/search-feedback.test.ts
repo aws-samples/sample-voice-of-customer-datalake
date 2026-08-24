@@ -1,8 +1,8 @@
 /**
  * Tests for search_feedback tool implementation.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { executeSearchFeedback, MAX_LOOKBACK_DAYS } from './search-feedback.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { executeSearchFeedback, MAX_CANDIDATES, MAX_LOOKBACK_DAYS } from './search-feedback.js';
 
 // Mock DynamoDB document client
 function createMockDocClient(queryResponses: Record<string, unknown>[][] = []) {
@@ -422,10 +422,34 @@ function createDateAwareDocClient(itemsByDate: Record<string, Record<string, unk
   return { client, queriedDates };
 }
 
-describe('lookback window (matches shared/feedback.py MAX_LOOKBACK_DAYS)', () => {
+/**
+ * Freeze the clock for the window tests, so the dates the scan computes and the
+ * dates the assertions expect are the same instant.
+ *
+ * Without this the two read `new Date()` at different moments and a run
+ * straddling UTC midnight flips `toContain(daysAgo(89))` — a once-a-day CI flake
+ * that never reproduces. Same convention as src/context/voc-context.test.ts.
+ *
+ * Pinned to midday on the date this module loaded rather than a hard-coded
+ * calendar day, because `today` and `makeFeedbackItem`'s default `date` are
+ * module-scope constants read off the real clock: a fixed instant elsewhere in
+ * the calendar would put every default fixture outside the window.
+ */
+const PINNED_NOW = new Date(`${today}T12:00:00.000Z`);
+
+function freezeClock() {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(PINNED_NOW);
   });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+}
+
+describe('lookback window (matches shared/feedback.py MAX_LOOKBACK_DAYS)', () => {
+  freezeClock();
 
   it('declares the same bound the Python routes enforce', () => {
     // Pinned to shared/feedback.py from the Python side; asserted here too so
@@ -464,16 +488,58 @@ describe('lookback window (matches shared/feedback.py MAX_LOOKBACK_DAYS)', () =>
 
     expect(queriedDates).toHaveLength(7);
   });
+
+  it('filters on the window it scanned, not the one it was asked for', async () => {
+    // The clamp and the cutoff must spend ONE number. When they disagreed the
+    // filter admitted a year of items over a scan that read 90 days of them, so
+    // whatever the scan happened to return was presented as the full year
+    // (metrics_handler.py:705-712 records the same bug on the Python side).
+    // This mock answers every partition with the same 200-day-old row, so only
+    // the cutoff can exclude it.
+    const ancient = makeFeedbackItem({
+      feedback_id: 'g'.repeat(32),
+      date: daysAgo(200),
+      source_created_at: `${daysAgo(200)}T10:00:00Z`,
+    });
+    const docClient = createMockDocClient([[ancient]]);
+
+    const result = await executeSearchFeedback(
+      docClient, 'test-feedback-table', {}, { days: 365 },
+    );
+
+    expect(result.items).toHaveLength(0);
+  });
+
+  it('says which window it read when the request exceeded the bound', async () => {
+    // A clamped window is unread remainder like any other: 275 days of what was
+    // asked about were never queried, so an unhedged answer is a false claim.
+    const { client } = createDateAwareDocClient({
+      [daysAgo(1)]: [makeFeedbackItem({ date: daysAgo(1) })],
+    });
+
+    const result = await executeSearchFeedback(
+      client, 'test-feedback-table', { mode: 'aggregate' }, { days: 365 },
+    );
+
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).not.toContain('COMPLETE set');
+    expect(result.formatted).toContain('most recent 90 days of the 365-day window');
+    expect(result.formatted).toContain('name the 90-day window');
+  });
 });
 
 describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_partial)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  freezeClock();
 
-  /** One page big enough to reach MAX_CANDIDATES, optionally with more to come. */
+  /**
+   * One page big enough to reach the candidate cap, optionally with more to come.
+   *
+   * Sized from the exported constant rather than a literal, so the fixture cannot
+   * go stale — at 9 999 rows every truncation assertion below would pass for the
+   * wrong reason, or fail for none.
+   */
   function createCappedDocClient(hasMorePages: boolean) {
-    const page = Array.from({ length: 10000 }, (_, i) =>
+    const page = Array.from({ length: MAX_CANDIDATES }, (_, i) =>
       makeFeedbackItem({ feedback_id: `c${String(i).padStart(31, '0')}` }),
     );
     let call = 0;
@@ -511,6 +577,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     );
 
     expect(result.isPartial).toBe(true);
+    expect(result.formatted).toContain('more feedback than the candidate budget allowed');
   });
 
   it('flags the cap ending the scan with days still unread', async () => {
@@ -521,6 +588,7 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     );
 
     expect(result.isPartial).toBe(true);
+    expect(result.formatted).toContain('older days still unread');
   });
 
   it('does not flag a single-day window the cap ended: nothing was left unread', async () => {
@@ -529,6 +597,50 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     );
 
     expect(result.isPartial).toBe(false);
+  });
+
+  it('flags a day that could not be read, rather than treating it as empty', async () => {
+    // A throttle or 500 on one partition is survived so the other 89 days are
+    // not lost — but survival without a report is how a sample comes back
+    // claiming to be complete. Tripling the round trips makes this likelier.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const failedDate = daysAgo(3);
+    const docClient = {
+      send: vi.fn().mockImplementation((command: { input: Record<string, unknown> }) => {
+        const values = (command.input.ExpressionAttributeValues ?? {}) as Record<string, string>;
+        return (values[':pk'] ?? '') === `DATE#${failedDate}`
+          ? Promise.reject(new RangeError('ProvisionedThroughputExceededException'))
+          : Promise.resolve({ Items: [] });
+      }),
+    } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;
+
+    const result = await executeSearchFeedback(docClient, 'test-feedback-table', {}, { days: 7 });
+
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).toContain('at least one day could not be read');
+    // The cause reaches the operator log, never the model-facing prose: an
+    // exception name is infrastructure detail (voc-context.ts states the rule).
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`DATE#${failedDate}`));
+    expect(result.formatted).not.toContain('RangeError');
+    warn.mockRestore();
+  });
+
+  it('flags rows the schema rejected: a discarded row is not a read one', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rows = [
+      makeFeedbackItem({ feedback_id: 'good1'.padEnd(32, '0') }),
+      { original_text: 12345 },
+    ];
+
+    const result = await executeSearchFeedback(
+      createMockDocClient([rows as Record<string, unknown>[]]), 'test-feedback-table', {}, { days: 7 },
+    );
+
+    expect(result.items).toHaveLength(1);
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).toContain('could not be parsed');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('dropped 1 unparseable rows'));
+    warn.mockRestore();
   });
 
   it('puts the warning in the formatted text the model reads, not just the object', async () => {
@@ -553,6 +665,19 @@ describe('truncation is reported (mirrors metrics_handler._scan_recent_items is_
     expect(result.formatted).not.toContain('COMPLETE set');
     expect(result.formatted).toContain('PARTIAL');
     expect(result.formatted).toContain('scan truncated');
+  });
+
+  it('states the truncation once, not once per formatter', async () => {
+    // Three statements of one fact in the highest-attention region of the tool
+    // result dilute rather than reinforce, and leave two wordings to sync. The
+    // aggregate header flags PARTIAL and annotates the total; the imperative to
+    // relay it belongs to truncationNotice alone.
+    const result = await executeSearchFeedback(
+      createCappedDocClient(true), 'test-feedback-table', { mode: 'aggregate' }, { days: 90 },
+    );
+
+    expect(result.formatted.match(/Say so when you answer/g)).toHaveLength(1);
+    expect(result.formatted.match(/⚠️/g)).toHaveLength(2);
   });
 
   it('aggregate mode still claims completeness when the whole window was read', async () => {

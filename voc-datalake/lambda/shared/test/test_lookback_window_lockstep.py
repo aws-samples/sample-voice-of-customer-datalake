@@ -15,6 +15,12 @@ and `test_indexes.py` (CDK ↔ Python GSI names): parse the other language's sou
 and assert equality, so a change on either side fails CI instead of quietly
 answering the wrong question.
 
+The third test guards the OTHER way this file can go green over drifted code: a
+constant that agrees with Python is worthless if the day loop re-acquires a
+hard-coded clamp of its own. It asserts properties (the constant is spent; no
+numeric-literal window clamp survives anywhere) rather than one exact spelling,
+so reformatting or moving the clamp does not fail it for a non-defect.
+
 Deliberately NOT asserted here: the candidate ceilings. TypeScript's
 `MAX_CANDIDATES = 10000` and `metrics_handler.CANDIDATES_SOFT_CAP` are separate
 budget decisions for different consumers (a model reading prose vs. a paginating
@@ -86,9 +92,25 @@ class TestLookbackWindowMirror:
         """A second control, for the other way this guard can go green while the
         code has drifted: the constant agreeing with Python is worthless if the
         day loop still clamps to a hard-coded number of its own.
+
+        Asserted as two PROPERTIES rather than one exact spelling. An earlier
+        draft required the literal substring ``Math.min(days, MAX_LOOKBACK_DAYS)``,
+        which breaks on reformatting, on renaming the local, and — worst — on
+        moving the clamp to where the window is resolved, which is where it
+        belongs, so that the scan bound and the cutoff filter cannot disagree. A
+        guard that fails on the correct fix teaches the next reader to edit the
+        guard rather than trust it, which is the failure mode `test_indexes.py`
+        -style guards exist to avoid.
         """
         source = _TOOL_SOURCE.read_text()
-        assert 'Math.min(days, MAX_LOOKBACK_DAYS)' in source, (
-            'search-feedback.ts no longer clamps its day loop with MAX_LOOKBACK_DAYS '
-            '— a re-introduced literal would make the equality test above vacuous'
+        uses = len(re.findall(r'\bMAX_LOOKBACK_DAYS\b', source))
+        assert uses >= 2, (
+            f'MAX_LOOKBACK_DAYS appears {uses}x in search-feedback.ts — declared but '
+            'never spent, so the equality test above pins a number nothing reads'
+        )
+        literal_clamp = re.search(r'Math\.min\(\s*\w*[Dd]ays\s*,\s*\d+', source)
+        assert literal_clamp is None, (
+            f'search-feedback.ts clamps its window with a hard-coded literal '
+            f'({literal_clamp.group(0) if literal_clamp else ""}) — that is how the '
+            '30-vs-90 divergence happened, and it makes the equality test vacuous'
         )
