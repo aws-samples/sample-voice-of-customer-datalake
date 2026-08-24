@@ -100,6 +100,38 @@ function trackedPublicPaths(): string[] {
 }
 
 /**
+ * For each allowlisted DIRECTORY, the file extensions its contents may have.
+ *
+ * The inventory assertion below compares only first path segments, so once a
+ * directory is allowlisted every file at any depth inside it is invisible to
+ * that check — `locales/en/dump.csv` collapses to `locales` and passes. The
+ * script assertion catches executables there, but nothing else: a tracked
+ * `.csv`, `.html` or `.pdf` under `locales/` reached the CDN with no gate
+ * objecting, and the sibling `localeParity.test.ts` cannot see it either
+ * because it enumerates the `.json` namespaces it expects rather than whatever
+ * happens to be present. `locales/` is machine-managed by i18next-parser, which
+ * is exactly why it is the subtree least likely to be read.
+ *
+ * Extensions are matched EXACTLY, lowercase, which is the opposite of the
+ * case-insensitive script regex below — deliberately. The two assertions have
+ * inverted jobs: the script check enumerates what is FORBIDDEN, so it must match
+ * as broadly as possible or something slips past; this one enumerates what is
+ * ALLOWED, so it must match as narrowly as possible or something slips in.
+ * Concretely, `locales/en/COMMON.JSON` is a distinct S3 key that i18next never
+ * requests (loadPath builds a lowercase `.json` URL), so it is dead weight on
+ * the CDN and should fail here rather than be waved through as "a JSON file".
+ *
+ * A nested path under a directory with NO entry here also fails. That keeps the
+ * decision conscious in the same way the file-level inventory does: allowlisting
+ * a new directory forces you to say what may live in it, instead of silently
+ * opening a subtree.
+ */
+const NESTED_ALLOWED_EXTENSIONS: Record<string, readonly string[]> = {
+  // i18next-parser writes one JSON namespace per language and nothing else.
+  locales: ['.json'],
+}
+
+/**
  * Every entry deliberately published to the CDN, with why it must be public.
  * Keep sorted; the top-level tracked entries are compared against this exactly.
  */
@@ -149,5 +181,23 @@ describe('frontend public/ inventory', () => {
       .sort()
 
     expect(scripts).toEqual([])
+  })
+
+  it('publishes only the declared file types inside allowlisted directories', () => {
+    // The inventory assertion sees `locales`, not `locales/en/dump.csv`, so
+    // without this a non-script file nested in an allowlisted directory is
+    // published with nothing objecting. See NESTED_ALLOWED_EXTENSIONS for why
+    // the match is exact-lowercase rather than case-insensitive.
+    const unexpected = trackedPublicPaths()
+      .filter((p) => p.includes('/'))
+      .filter((p) => {
+        const allowed = NESTED_ALLOWED_EXTENSIONS[p.split('/')[0]]
+        // No declared extensions for this directory ⇒ nothing may be nested in
+        // it, so report the path instead of treating the gap as permission.
+        return !allowed?.some((ext) => p.endsWith(ext))
+      })
+      .sort()
+
+    expect(unexpected).toEqual([])
   })
 })
