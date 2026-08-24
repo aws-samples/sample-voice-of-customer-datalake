@@ -797,60 +797,43 @@ A second, stale copy used to be published to the CDN from
 snippet points at the website bucket (`https://<distribution>/feedback-widget.js`),
 repoint it at the iframe embed rather than restoring the file.
 
-⚠️ **Pruning it requires a rebuilt `dist`, and the freshness guard will not tell
-you otherwise.** As above, CDK does not build the frontend — it ships whatever is
-in `frontend/dist` at synth time. `assertFrontendBuildFresh` compares
-`dist/index.html`'s mtime against the *newest* surviving source file, so a change
-that only **deletes** from `public/` lowers no mtime and leaves the guard silent:
-deploying a `dist` built before the deletion re-publishes the removed objects
-without complaint. Run `npm run build` in `frontend/` before deploying a deletion
-(`npm run deploy:frontend` already does). `publicAssets.test.ts` will not catch
-this either — it reads tracked files, not `dist`.
+⚠️ **Deploying a `public/` deletion needs a rebuilt `dist` — build it first.** CDK
+ships whatever is in `frontend/dist` at synth time, and the freshness guard will
+not object: `assertFrontendBuildFresh` compares `dist/index.html`'s mtime against
+the newest *surviving* source file (`lib/utils/assert-frontend-build.ts`, whose
+`SOURCE_DIRS` is `['src', 'public']` — so `public/` is walked, but a deletion
+lowers no mtime), so a stale `dist` re-publishes the removed object silently.
+`npm run build` in `frontend/` fixes it; `npm run deploy:frontend` already runs it
+(`frontend/scripts/deploy.sh`). `publicAssets.test.ts` will not catch it either —
+it reads tracked files, not `dist`.
 
-🪤 **That bucket URL does not start 404ing now the object is pruned — it returns
-`200` carrying the SPA's `index.html`.** The frontend distribution maps
-`404 -> 200 /index.html` so client-side routes resolve (`core-stack.ts`, pinned
-by `core-stack.test.ts`'s "still routes SPA deep links via the 404 rule"), and
-custom error responses are distribution-wide, so the rule catches a deleted asset
-exactly as it catches a deep link. An old
-`<script src="https://<distribution>/feedback-widget.js">` therefore parses HTML
-as JavaScript and fails with `Uncaught SyntaxError: Unexpected token '<'`,
-followed by `VoCFeedbackForm is not defined` — which reads as "the widget is
-broken" rather than "that file is gone". Do not go looking for a 404 in the
-access logs or a `curl -I`; there is not one. This is the same trap already
-documented for `config.json` under "🔴 Never `aws s3 sync --delete` the website
-bucket": on this bucket a missing object is never a visible 404.
+🪤 **A pruned object does not 404 here.** Neither of the two ways a stale embed can
+fail produces the 404 that would make the cause obvious, which is the only reason
+this is worth writing down:
 
-That 200 is the steady state, not the first thing you see. Both deploy paths
-invalidate `/*` after pruning (the CDK `BucketDeployment` passes
-`distributionPaths: ['/*']`; `frontend/scripts/deploy.sh` runs an explicit
-`create-invalidation`), but the object leaves the bucket before the invalidation
-lands, so for that window CloudFront still serves the **old widget** from the
-edge. During it the script loads and runs fine — it is its `config` fetch that
-fails, against the retired `/feedback-form/*` (singular) path, which is unwired
-and so answers the same `403 Missing Authentication Token` described below. A 403
-is an ordinary response that `fetch` resolves rather than rejects, and the
-`DEFAULT_4XX` gateway response sends `Access-Control-Allow-Origin: *`, so the
-widget reads it, finds no `success` flag and renders **its own**
-`Feedback form unavailable.` message into the embed (or `Failed to load form.`
-from its `.catch`). So the symptom is a message *inside the embed*, with a `403`
-on the `config` call in the Network tab — not a transport failure, and nothing in
-the console at all. Once the invalidation lands it flips to the
-`200`/`index.html` shell above: a *widget-authored* message inside the embed
-first, a *console* `Unexpected token '<'` afterwards. "It still worked a minute
-ago, and now it breaks differently" is one removal, not two problems, and not a
-bad deploy.
+| Old snippet points at | Response | Why |
+|---|---|---|
+| the website bucket (`https://<distribution>/feedback-widget.js`) | **`200` + `index.html`** | the distribution maps `404 -> 200 /index.html` so SPA deep links resolve (`core-stack.ts`, pinned by `core-stack.test.ts`'s "still routes SPA deep links via the 404 rule"); custom error responses are distribution-wide, so a deleted asset takes the same rule |
+| an API path (`/feedback-forms/{form_id}/widget.js`) | **`403 Missing Authentication Token`** | no such route — the per-form routes are declared explicitly, not behind a `{proxy+}` (see above), so an unwired path never reaches the Lambda |
 
-There is no `/feedback-forms/{form_id}/widget.js` route either, and requesting
-*that* fails to 404 for an unrelated reason. Because the per-form routes are
-declared explicitly rather than behind a `{proxy+}` (see above), a path that is
-not wired never reaches the Lambda, so API Gateway answers
-**403 `Missing Authentication Token`**. Treat that 403 on a `widget.js` URL as
-"this route does not exist", not as an authorization problem.
+Both verified live against a deployed stack. Consequences worth knowing: a `<script
+src>` at the bucket URL parses HTML as JavaScript and throws `Uncaught SyntaxError:
+Unexpected token '<'`, which reads as "the widget is broken" rather than "that file
+is gone" — so do not hunt for a 404 in the access logs or a `curl -I`, there is not
+one. Treat the `403` as "this route does not exist", not as an authorization
+problem. The bucket case is the same trap already documented for `config.json`
+under "🔴 Never `aws s3 sync --delete` the website bucket".
 
-Worth holding the two apart, because a broken embed can land on either: a pruned
-**bucket** object answers `200` with HTML, an unwired **API** path answers `403`.
-Neither answers the 404 that would have made the cause obvious.
+One transient wrinkle, if a report says the failure *changed*: both deploy paths
+invalidate `/*` after pruning (`BucketDeployment` passes `distributionPaths:
+['/*']`; `deploy.sh` runs an explicit `create-invalidation`), but the object leaves
+the bucket before the invalidation lands. During that window the edge still serves
+the old widget, which loads fine and fails on its own `config` fetch instead — the
+retired `/feedback-form/*` (singular) path answers `403`, and because the
+`DEFAULT_4XX` gateway response sets `Access-Control-Allow-Origin: *`
+(`api-stack.ts`) the widget can read it and renders its own `Feedback form
+unavailable.` inside the embed. So: a widget-authored message first, a console
+`Unexpected token '<'` afterwards. That is one removal, not two problems.
 
 ### CloudFront Cache
 
