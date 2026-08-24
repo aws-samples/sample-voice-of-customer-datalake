@@ -8,21 +8,55 @@
  * Pre-#105 environments deploy with `-c omitUserPoolUsernameConfiguration=true`
  * to keep their pool untouched; greenfield keeps case-insensitive sign-in.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { VocCoreStack } from './core-stack';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
+// The same fixed synth environment the whole-app harness uses, imported rather
+// than re-declared: a second copy of the literals drifts silently, and an
+// assertion about a resolved `aws:SourceAccount` would then pin an account no
+// other suite uses. Importing costs nothing at module load — synth-app.ts only
+// shells out to `cdk synth` inside `synthApp()`.
+import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
 
-/** Fixed synth account, so resolved `aws:SourceAccount`-style values are assertable. */
-const SYNTH_ACCOUNT = '111111111111';
+/**
+ * Feature flags from cdk.json, i.e. what a real deploy of this project gets.
+ *
+ * Read rather than listed, mirroring `baseContext()` in
+ * lib/test-support/synth-app.ts, because several flags change the SHAPE of the
+ * synthesized template and not just its details. The one this file asserts
+ * about is `@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy`, which decides
+ * whether S3 log delivery is granted by a statement on the destination's bucket
+ * policy or by a `LogDeliveryWrite` ACL — both of which render an identical
+ * `LoggingConfiguration` on the source, so a bare `App` would let this file pin
+ * a grant shape no deploy produces. Reading the file keeps the test and the
+ * deploy configuration from drifting apart: flip or delete the flag in cdk.json
+ * and these assertions follow it instead of quietly describing the old world.
+ *
+ * Parsed, not cast: `context` missing or malformed would otherwise spread as
+ * nothing and silently return every template to the bare-`App` shape.
+ */
+const CDK_JSON_FEATURE_FLAGS = z
+  .object({ context: z.record(z.string(), z.unknown()) })
+  .parse(JSON.parse(readFileSync(join(__dirname, '..', '..', 'cdk.json'), 'utf8')))
+  .context;
 
 function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
   // Skip asset bundling (Docker) — template assertions only need structure.
-  const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], skipFrontendBuildCheck: true, ...context } });
+  const app = new cdk.App({
+    context: {
+      ...CDK_JSON_FEATURE_FLAGS,
+      'aws:cdk:bundling-stacks': [],
+      skipFrontendBuildCheck: true,
+      ...context,
+    },
+  });
   const stack = new VocCoreStack(app, 'TestCoreStack', {
-    env: { account: SYNTH_ACCOUNT, region: 'us-east-1' },
+    env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
     brandName: 'TestBrand',
   });
   return Template.fromStack(stack);
@@ -204,20 +238,21 @@ describe('VocCoreStack S3 server access logging', () => {
     cdk_nag: z.object({ rules_to_suppress: z.array(z.object({ id: z.string() })) }).optional(),
   });
 
+  /** A bucket policy resource, down to the statement list this block reads. */
+  const PolicyResourceSchema = z.object({
+    Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.unknown()) }) }),
+  });
+
   /**
-   * The stack as a real deploy renders its S3 log-delivery grants.
+   * The access-logs bucket's retention rule.
    *
-   * `@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy` is `true` in cdk.json, but
-   * `synthCoreTemplate()` builds a bare `App` and so reads none of those feature
-   * flags. That one flag decides HOW the grant is expressed: with it CDK adds an
-   * `s3:PutObject` statement to the destination's bucket policy, without it it
-   * falls back to a `LogDeliveryWrite` bucket ACL. Both render a
-   * `LoggingConfiguration` on the source, so asserting against the bare default
-   * would pin a grant shape that no deploy of this project ever produces.
+   * `Prefix` is deliberately NOT in the schema — its ABSENCE is the property
+   * asserted below, so a rule that grows one must be read as a change rather
+   * than silently ignored by a lenient parse.
    */
-  function synthWithDeployedS3Flags(): Template {
-    return synthCoreTemplate({ '@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy': true });
-  }
+  const LifecycleSchema = z.object({
+    Rules: z.array(z.object({ ExpirationInDays: z.number(), Status: z.string() }).passthrough()),
+  });
 
   /**
    * Resolve one bucket from the template by logical-id prefix.
@@ -239,14 +274,20 @@ describe('VocCoreStack S3 server access logging', () => {
     return found[0];
   }
 
-  /** Statements on the access-logs bucket's own resource policy. */
+  /**
+   * Statements on the access-logs bucket's own resource policy.
+   *
+   * Guarantees two things before returning, as two distinct failures: exactly one
+   * `AccessLogsBucketPolicy*` resource exists, and its document carries a
+   * `Statement` array. Parsed with zod rather than cast, per `rawDataBucketCors()`
+   * above — a CDK property rename then surfaces as a schema error instead of an
+   * `undefined` that quietly satisfies every assertion downstream.
+   */
   function accessLogsPolicyStatements(template: Template): unknown[] {
     const policies = Object.entries(template.findResources('AWS::S3::BucketPolicy'))
       .filter(([logicalId]) => logicalId.startsWith('AccessLogsBucketPolicy'));
     expect(policies, 'expected exactly one AccessLogsBucket policy').toHaveLength(1);
-    const statements = policies[0][1].Properties?.PolicyDocument?.Statement;
-    expect(Array.isArray(statements), 'policy document has no Statement array').toBe(true);
-    return statements as unknown[];
+    return PolicyResourceSchema.parse(policies[0][1]).Properties.PolicyDocument.Statement;
   }
 
   // ONLY these two: the S3-import bucket is the third producer into this
@@ -263,7 +304,7 @@ describe('VocCoreStack S3 server access logging', () => {
     ['WebsiteBucket', 'website-bucket/'],
     ['RawDataBucket', 'raw-data-bucket/'],
   ])('ships %s logging into the access-logs bucket under %s', (prefix, logPrefix) => {
-    const template = synthWithDeployedS3Flags();
+    const template = synthCoreTemplate();
     const [accessLogsLogicalId] = bucketByLogicalIdPrefix(template, 'AccessLogsBucket');
     const [sourceLogicalId, bucket] = bucketByLogicalIdPrefix(template, prefix);
 
@@ -283,9 +324,13 @@ describe('VocCoreStack S3 server access logging', () => {
     // assertion every case above still passes in that state, which is the exact
     // failure this block exists to make legible.
     const grants = accessLogsPolicyStatements(template)
-      .map((statement) => LogDeliveryStatementSchema.safeParse(statement))
-      .filter((parsed) => parsed.success)
-      .map((parsed) => parsed.data)
+      .flatMap((statement) => {
+        // flatMap rather than filter+map on `success`: narrowing the safeParse
+        // union that way leans on TS 5.5+ inferred type predicates, and this
+        // reads the same without the dependency on that inference.
+        const parsed = LogDeliveryStatementSchema.safeParse(statement);
+        return parsed.success ? [parsed.data] : [];
+      })
       .filter((statement) => statement.Condition.ArnLike['aws:SourceArn']['Fn::GetAtt'][0] === sourceLogicalId);
     expect(grants, `no log-delivery grant for ${prefix} — S3 would accept the config and deliver nothing`)
       .toHaveLength(1);
@@ -307,16 +352,43 @@ describe('VocCoreStack S3 server access logging', () => {
     // the four producer prefixes do not already give.
     //
     // No suppression is missing either. cdk-nag's AwsSolutions-S1 has a fallback
-    // branch for a bucket with no loggingConfiguration: it scans every CfnBucket
-    // in the stack and returns COMPLIANT if any of them names this one as its
-    // destination. Three do, so this bucket is compliant by construction and
-    // raises no finding — AwsSolutions-VocCoreStack-NagReport.csv records it as
-    // `Compliant`. Worth stating because the tempting wrong conclusion is that
-    // some suppression elsewhere is quietly covering it; none is.
-    const template = synthWithDeployedS3Flags();
+    // branch for a bucket with no loggingConfiguration: it scans `Stack.of(node)`
+    // for a CfnBucket naming this one as its destination and returns COMPLIANT if
+    // it finds one. TWO do — RawDataBucket and WebsiteBucket — and the count is of
+    // SAME-STACK producers only, which is the part that is easy to get wrong: the
+    // S3-import bucket writes into this destination but lives in
+    // VocIngestionStack, outside the scan, and the CloudFront distribution's
+    // `cloudfront-frontend/` prefix never counts because a distribution is not a
+    // CfnBucket. So two of the four producers satisfy the rule, this bucket is
+    // compliant by construction and raises no finding —
+    // AwsSolutions-VocCoreStack-NagReport.csv records it as `Compliant`. Worth
+    // stating because the tempting wrong conclusion is that some suppression
+    // elsewhere is quietly covering it; none is. Move RawDataBucket to another
+    // stack and only WebsiteBucket would remain — move both and the rule starts
+    // firing here with nothing else changed.
+    const template = synthCoreTemplate();
     const [, accessLogs] = bucketByLogicalIdPrefix(template, 'AccessLogsBucket');
 
     expect(accessLogs.Properties ?? {}).not.toHaveProperty('LoggingConfiguration');
+  });
+
+  it('expires everything in the access-logs bucket at 90 days, with no prefix', () => {
+    // The premise two comments in this block rest on, and the reason adding a
+    // fourth producer needed no lifecycle change at all: the rule is BUCKET-WIDE,
+    // so `website-bucket/` — and `raw-data-bucket/`, `s3-import-bucket/`,
+    // `cloudfront-frontend/` — inherit the 90-day expiry without a rule of their
+    // own. The absence of `Prefix` is the load-bearing half. Add a prefix-scoped
+    // rule (the plausible next step: "keep CloudFront logs 30 days, S3 logs 90")
+    // and every unlisted prefix accumulates forever, which is invisible in a diff
+    // and would silently falsify both the comment above and this PR's claim that
+    // the destination needed no changes.
+    const [, accessLogs] = bucketByLogicalIdPrefix(synthCoreTemplate(), 'AccessLogsBucket');
+
+    const rules = LifecycleSchema.parse(accessLogs.Properties?.LifecycleConfiguration).Rules;
+    expect(rules, 'expected exactly one lifecycle rule on the access-logs bucket').toHaveLength(1);
+    expect(rules[0].ExpirationInDays).toBe(90);
+    expect(rules[0].Status).toBe('Enabled');
+    expect(rules[0]).not.toHaveProperty('Prefix');
   });
 
   it('carries no AwsSolutions-S1 suppression on the website bucket', () => {
@@ -327,7 +399,7 @@ describe('VocCoreStack S3 server access logging', () => {
     // Narrowed to this one rule on purpose: a future suppression on this bucket
     // for some OTHER finding is a legitimate act, and it must not fail a case
     // whose whole subject is AwsSolutions-S1.
-    const [, website] = bucketByLogicalIdPrefix(synthWithDeployedS3Flags(), 'WebsiteBucket');
+    const [, website] = bucketByLogicalIdPrefix(synthCoreTemplate(), 'WebsiteBucket');
 
     const suppressions = NagMetadataSchema.parse(website.Metadata ?? {}).cdk_nag?.rules_to_suppress ?? [];
     expect(suppressions.map((rule) => rule.id)).not.toContain('AwsSolutions-S1');
