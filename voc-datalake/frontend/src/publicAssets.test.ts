@@ -36,7 +36,9 @@
  * silently skipped — a guard that quietly passes when it cannot see the
  * inventory guards nothing — so it fails with a message naming the missing
  * checkout rather than with a bare `fatal: not a git repository` under a test
- * name about `public/`.
+ * name about `public/`, and it fails ONCE: the inventory is resolved at module
+ * scope, so an unzipped source tree reports one error rather than repeating the
+ * same environmental fact under each assertion's name.
  */
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'child_process'
@@ -100,6 +102,17 @@ function trackedPublicPaths(): string[] {
 }
 
 /**
+ * Resolved once for the whole file rather than per assertion, which matters only
+ * in the failure case: each `it` calling `trackedPublicPaths()` meant an
+ * unzipped source tree reported the same "requires a git checkout" error three
+ * times under three test names, and the reader deciding whether the repo is
+ * broken has not read this file. One environmental fact, one report — the same
+ * one-defect-one-failure rule the assertions below follow, and the memoization
+ * shape `api-stack.test.ts` already uses for its synthesized template.
+ */
+const TRACKED_PUBLIC_PATHS = trackedPublicPaths()
+
+/**
  * For each allowlisted DIRECTORY, the file extensions its contents may have.
  *
  * Two facts make this necessary, neither visible from the assertions alone. The
@@ -114,6 +127,15 @@ function trackedPublicPaths(): string[] {
  * inverted jobs: a FORBIDDEN list must match broadly or something slips past, an
  * ALLOWED list must match narrowly or something slips in. `locales/en/COMMON.JSON`
  * is a distinct S3 key that i18next never requests, so it is dead CDN weight.
+ *
+ * Every allowlisted directory must appear here, asserted separately below. The
+ * per-path check is scoped to directories the inventory already accepts, so that
+ * one defect yields one failure — but the scoping means a directory that has just
+ * been allowlisted, and so passes the inventory check, would otherwise be
+ * unconstrained on everything except scripts. That is exactly the state
+ * `locales/` was in before this file declared `['.json']` for it, so allowlisting
+ * a subtree has to keep forcing the second decision: not just "may this directory
+ * be published?" but "what may live in it?".
  */
 const NESTED_ALLOWED_EXTENSIONS: Record<string, readonly string[]> = {
   // i18next-parser writes one JSON namespace per language and nothing else.
@@ -122,7 +144,13 @@ const NESTED_ALLOWED_EXTENSIONS: Record<string, readonly string[]> = {
 
 /**
  * Every entry deliberately published to the CDN, with why it must be public.
- * Keep sorted; the top-level tracked entries are compared against this exactly.
+ *
+ * Kept sorted for reviewability, but the assertion sorts a copy before comparing
+ * rather than relying on that: an unsorted literal made a correctly-allowlisted
+ * new asset appear in the diff as both added and removed, so the one author who
+ * did everything right got the least comprehensible message. Sorting at the
+ * comparison makes the ordering unenforceable-but-irrelevant instead of a
+ * documented rule with a confusing penalty.
  */
 const EXPECTED_PUBLIC_ENTRIES = [
   // Browser tab icon; requested by the browser itself, not by our code
@@ -140,12 +168,15 @@ describe('frontend public/ inventory', () => {
     // First path segment only, so `locales/en/common.json` counts as `locales`
     // and the 120 translation files do not have to be listed individually.
     const actual = [
-      ...new Set(trackedPublicPaths().map((p) => p.split('/')[0])),
+      ...new Set(TRACKED_PUBLIC_PATHS.map((p) => p.split('/')[0])),
     ].sort()
 
     // Compared as a whole rather than per-entry so the failure message names
-    // the unexpected file, which is the thing a reader needs to act on.
-    expect(actual).toEqual(EXPECTED_PUBLIC_ENTRIES)
+    // the unexpected file, which is the thing a reader needs to act on. The
+    // expected side is sorted too: comparing a sorted actual against the
+    // literal order reported a legitimately-added entry as simultaneously
+    // unexpected (+) and missing (-), which reads as a bug in the guard.
+    expect(actual).toEqual([...EXPECTED_PUBLIC_ENTRIES].sort())
   })
 
   it('publishes no JavaScript anywhere in the tree, which would be served unbundled and unlinted', () => {
@@ -165,11 +196,41 @@ describe('frontend public/ inventory', () => {
     // while the file shipped. macOS makes this ordinary rather than contrived:
     // its filesystem treats `DEAD.JS` and `dead.js` as the same file, so the
     // case a contributor gets is whichever one git recorded on `git add`.
-    const scripts = trackedPublicPaths()
-      .filter((p) => /\.[cm]?[jt]sx?$/i.test(p))
-      .sort()
+    const scripts = TRACKED_PUBLIC_PATHS.filter((p) =>
+      /\.[cm]?[jt]sx?$/i.test(p),
+    ).sort()
 
     expect(scripts).toEqual([])
+  })
+
+  it('declares the permitted file types for every allowlisted directory', () => {
+    // Asserted over the CONSTANTS, not over the tracked paths, which is what
+    // keeps it to one failure: it fires on the missing declaration itself rather
+    // than once per file inside the undeclared directory.
+    //
+    // Without this, the scoping on the assertion below leaves a gap in the
+    // intended workflow rather than in a mistake. Add `public/fonts/`, allowlist
+    // `'fonts'`, and the inventory check goes green — at which point nothing
+    // requires an extensions entry for `fonts/`, and a later `.csv` dropped in
+    // there is invisible again. Requiring the declaration up front closes that
+    // without re-reporting a directory the inventory check is already rejecting.
+    const directories = [
+      ...new Set(
+        TRACKED_PUBLIC_PATHS.filter((p) => p.includes('/')).map(
+          (p) => p.split('/')[0],
+        ),
+      ),
+    ]
+
+    const undeclared = directories
+      .filter((dir) => EXPECTED_PUBLIC_ENTRIES.includes(dir))
+      .filter((dir) => NESTED_ALLOWED_EXTENSIONS[dir] === undefined)
+      .sort()
+
+    expect(
+      undeclared,
+      'allowlisted directories with no NESTED_ALLOWED_EXTENSIONS entry — say which file types may be published from each',
+    ).toEqual([])
   })
 
   it('publishes only the declared file types inside allowlisted directories', () => {
@@ -182,14 +243,14 @@ describe('frontend public/ inventory', () => {
     // defect produces one failure: a path under a NEW directory is reported
     // there, by the message that names the decision actually needing to be made
     // (justify the directory), not by this one (declare its extensions).
-    const unexpected = trackedPublicPaths()
-      .filter((p) => p.includes('/'))
+    const unexpected = TRACKED_PUBLIC_PATHS.filter((p) => p.includes('/'))
       .filter((p) => EXPECTED_PUBLIC_ENTRIES.includes(p.split('/')[0]))
       .filter((p) => {
         const allowed = NESTED_ALLOWED_EXTENSIONS[p.split('/')[0]]
-        // An allowlisted directory with no declared extensions may hold nothing:
-        // report the path rather than treating the gap as permission.
-        return !allowed?.some((ext) => p.endsWith(ext))
+        // A directory with NO declaration is reported once by the assertion
+        // above, on the constant, rather than here once per file inside it — so
+        // skip it, and let that message name the decision that has to be made.
+        return allowed !== undefined && !allowed.some((ext) => p.endsWith(ext))
       })
       .sort()
 
