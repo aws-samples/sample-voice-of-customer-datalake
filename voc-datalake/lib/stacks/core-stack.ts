@@ -16,7 +16,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, allowlistedModelArns } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
-import { idempotencyTableSuppressions, websiteBucketSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { idempotencyTableSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 
 export interface VocCoreStackProps extends VocStackProps {
@@ -141,8 +141,9 @@ export class VocCoreStack extends VocStack {
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      serverAccessLogsBucket: this.accessLogsBucket,
+      serverAccessLogsPrefix: 'website-bucket/',
     });
-    NagSuppressions.addResourceSuppressions(this.websiteBucket, websiteBucketSuppressions);
 
     // ============================================
     // CLOUDFRONT DISTRIBUTIONS

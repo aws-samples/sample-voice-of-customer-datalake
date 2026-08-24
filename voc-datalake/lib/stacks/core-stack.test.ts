@@ -154,6 +154,69 @@ describe('VocCoreStack raw-data bucket CORS', () => {
 });
 
 /**
+ * Server access logging on the buckets that have a separate destination
+ * (Checkov CKV_AWS_18 / cdk-nag AwsSolutions-S1).
+ *
+ * The website bucket shipped without it and carried an AwsSolutions-S1
+ * suppression instead, reasoning that CloudFront's own logs covered it. They do
+ * not cover the same thing: CloudFront logs viewer requests, S3 server access
+ * logs record what actually reached the bucket — including anything that reaches
+ * it WITHOUT going through the distribution. Asserted here rather than left to
+ * the baseline hash so that removing the property reads as "the website bucket
+ * stopped logging" instead of "VocCoreStack's digest moved".
+ */
+describe('VocCoreStack S3 server access logging', () => {
+  const LoggingSchema = z.object({
+    DestinationBucketName: z.object({ Ref: z.string() }),
+    LogFilePrefix: z.string(),
+  });
+
+  /**
+   * Logical id of the access-logs bucket, resolved from the template rather than
+   * hard-coded: CDK appends an address hash to it, so the literal would need
+   * editing whenever the construct tree around it changes.
+   */
+  function bucketsByPrefix(template: Template, prefix: string) {
+    const found = Object.entries(template.findResources('AWS::S3::Bucket'))
+      .filter(([logicalId]) => logicalId.startsWith(prefix));
+    expect(found, `expected exactly one bucket named ${prefix}*`).toHaveLength(1);
+    return found[0];
+  }
+
+  it.each([
+    ['WebsiteBucket', 'website-bucket/'],
+    ['RawDataBucket', 'raw-data-bucket/'],
+  ])('ships %s logging into the access-logs bucket under %s', (prefix, logPrefix) => {
+    const template = synthCoreTemplate();
+    const [accessLogsLogicalId] = bucketsByPrefix(template, 'AccessLogsBucket');
+    const [, bucket] = bucketsByPrefix(template, prefix);
+
+    const logging = LoggingSchema.parse(bucket.Properties?.LoggingConfiguration);
+    expect(logging.DestinationBucketName.Ref).toBe(accessLogsLogicalId);
+    expect(logging.LogFilePrefix).toBe(logPrefix);
+  });
+
+  it('leaves the access-logs bucket without a destination of its own', () => {
+    // Deliberate, and the one place AwsSolutions-S1 stays unaddressed: S3 does
+    // not support a bucket delivering its own access logs to itself, so the
+    // scanner's finding here is a false positive rather than a gap.
+    const template = synthCoreTemplate();
+    const [, accessLogs] = bucketsByPrefix(template, 'AccessLogsBucket');
+
+    expect(accessLogs.Properties ?? {}).not.toHaveProperty('LoggingConfiguration');
+  });
+
+  it('carries no cdk_nag suppression on the website bucket', () => {
+    // The AwsSolutions-S1 suppression described the missing property above. With
+    // the property present the rule no longer fires, so a suppression would be
+    // dead metadata that a later audit has to re-litigate.
+    const [, website] = bucketsByPrefix(synthCoreTemplate(), 'WebsiteBucket');
+
+    expect(website.Metadata ?? {}).not.toHaveProperty('cdk_nag');
+  });
+});
+
+/**
  * Regression guards for issue #229: /avatars/* and /prototypes/* were served
  * with no viewer-side authorization at all.
  *
