@@ -96,6 +96,28 @@ export type TruncationReason =
   | 'rowsDropped';
 
 /**
+ * Did the scan fail to read the window it actually scanned?
+ *
+ * `windowClamped` is excluded deliberately, and this predicate exists to make the
+ * exclusion explicit rather than incidental. That reason fires on the REQUEST,
+ * independently of the data: for any caller asking beyond MAX_LOOKBACK_DAYS every
+ * answer carries it, including one over a fully-read window where nothing was
+ * truncated at all. Treating it as truncation made aggregate mode call such
+ * figures "a sample … NOT the complete set" and annotate the total "scan
+ * truncated" when every partition had been read to its end — inaccuracy in the
+ * opposite direction from the one this file exists to fix, and the reason a
+ * future "partial results" badge would be wrong on a complete 90-day answer.
+ *
+ * The narrowing still has to be stated, and is: `truncationNotice` renders a
+ * distinct paragraph naming the window read and the days it says nothing about.
+ * So `isPartial` continues to mean "covers less than the question asked", while
+ * this narrower predicate means "did not read what it scanned".
+ */
+export function scanWasIncomplete(reasons: TruncationReason[]): boolean {
+  return reasons.some((reason) => reason !== 'windowClamped');
+}
+
+/**
  * The share of rows a scan may lose to safeParse before the answer counts as a
  * sample rather than the window.
  *

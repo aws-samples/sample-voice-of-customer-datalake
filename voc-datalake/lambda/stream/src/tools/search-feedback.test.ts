@@ -536,9 +536,72 @@ describe('lookback window (matches shared/feedback.py MAX_LOOKBACK_DAYS)', () =>
     );
 
     expect(result.isPartial).toBe(true);
-    expect(result.formatted).not.toContain('COMPLETE set');
-    expect(result.formatted).toContain('most recent 90 days of the 365-day window');
-    expect(result.formatted).toContain('name the 90-day window');
+    expect(result.formatted).toContain('NARROWER WINDOW THAN ASKED ABOUT');
+    expect(result.formatted).toContain('at most 90 days');
+    expect(result.formatted).toContain('the question named 365 days');
+    expect(result.formatted).toContain('275 earlier days');
+  });
+
+  it('reports partial on the clamp alone, with no other cap in play', async () => {
+    // One item, one page, no LastEvaluatedKey, far below the candidate cap, every
+    // partition readable — so nothing except the clamp can set the flag, and this
+    // assertion turns on the clamp alone. That state used to report a complete
+    // answer over a fraction of the window asked about.
+    const { client } = createDateAwareDocClient({
+      [daysAgo(1)]: [makeFeedbackItem({ date: daysAgo(1) })],
+    });
+
+    const result = await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 365 });
+
+    expect(result.isPartial).toBe(true);
+    expect(result.formatted).toContain('at most 90 days');
+  });
+
+  it('does not call a clamped-but-fully-read window a truncated scan', async () => {
+    // The distinction the clamp forces, and the one this used to get wrong: every
+    // one of the 90 partitions was read to its end, so the totals ARE complete for
+    // those 90 days. Calling them "a sample … NOT the complete set" and annotating
+    // the total "scan truncated" describes a truncation that never happened — and
+    // pairs a PARTIAL header with prose saying the figures are complete.
+    const { client } = createDateAwareDocClient({
+      [daysAgo(1)]: [makeFeedbackItem({ date: daysAgo(1) })],
+    });
+
+    const result = await executeSearchFeedback(
+      client, 'test-feedback-table', { mode: 'aggregate' }, { days: 365 },
+    );
+
+    expect(result.formatted).toContain('COMPLETE set');
+    expect(result.formatted).not.toContain('PARTIAL —');
+    expect(result.formatted).not.toContain('scan truncated');
+    expect(result.formatted).not.toContain('INCOMPLETE RESULTS');
+  });
+
+  it('scans, filters and describes one and the same window', async () => {
+    // The three used to be able to disagree: the scan read `min(days, 30)` while
+    // the cutoff came from the caller's full `days`, so the filter admitted items
+    // from partitions nothing had queried. Asserted over observable behaviour
+    // rather than by reading the source — the partitions queried, the oldest item
+    // the filter keeps, and the window the prose names must all agree.
+    const inWindow = makeFeedbackItem({
+      feedback_id: 'h'.repeat(32),
+      date: daysAgo(MAX_LOOKBACK_DAYS - 1),
+      source_created_at: `${daysAgo(MAX_LOOKBACK_DAYS - 1)}T10:00:00Z`,
+    });
+    const justOutside = makeFeedbackItem({
+      feedback_id: 'i'.repeat(32),
+      date: daysAgo(MAX_LOOKBACK_DAYS),
+      source_created_at: `${daysAgo(MAX_LOOKBACK_DAYS)}T10:00:00Z`,
+    });
+    const { client, queriedDates } = createDateAwareDocClient({
+      [daysAgo(MAX_LOOKBACK_DAYS - 1)]: [inWindow, justOutside],
+    });
+
+    const result = await executeSearchFeedback(client, 'test-feedback-table', {}, { days: 365 });
+
+    expect(queriedDates).toHaveLength(MAX_LOOKBACK_DAYS);
+    expect(result.items.map((i) => i.feedback_id)).toStrictEqual(['h'.repeat(32)]);
+    expect(result.formatted).toContain(`at most ${MAX_LOOKBACK_DAYS} days`);
   });
 });
 

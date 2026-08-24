@@ -12,6 +12,7 @@ import {
   fetchCandidatesByDate,
   feedbackItemSchema,
   queryFeedbackById,
+  scanWasIncomplete,
   DAY_SCAN_CONCURRENCY,
   MAX_CANDIDATES,
   MAX_LOOKBACK_DAYS,
@@ -275,9 +276,12 @@ export async function executeSearchFeedback(
   // so "summarize all feedback" / "top issues" don't force the model to loop.
   if (mode === 'aggregate') {
     const examples = [...allMatched].sort(compareByUrgency).slice(0, limit);
+    // `scanWasIncomplete`, not `isPartial`: a clamped-but-fully-read window
+    // yields totals that ARE complete for the days they cover, so the header
+    // keeps its claim and `notice` explains which window that is.
     return {
       items: examples,
-      formatted: formatAggregate(allMatched, examples, isPartial) + notice,
+      formatted: formatAggregate(allMatched, examples, scanWasIncomplete(reasons)) + notice,
       isPartial,
     };
   }
@@ -347,6 +351,19 @@ function truncationNotice(
   requestedDays: number,
 ): string {
   if (reasons.length === 0) return '';
+  // Clamped but fully read: every day the scan covered was read to its end, so
+  // the figures are COMPLETE for those days and "do not present these totals as
+  // complete" is false. Pairing that with the aggregate header's own PARTIAL
+  // claim told the model these numbers were a sample of a window nothing had
+  // truncated. What is actually narrower than the question is the WINDOW, so
+  // that is what this says.
+  if (!scanWasIncomplete(reasons)) {
+    return `\n⚠️ NARROWER WINDOW THAN ASKED ABOUT: this search reaches back at most `
+      + `${scannedDays} days, but the question named ${requestedDays} days. The figures above `
+      + `are complete for the most recent ${scannedDays} days and say nothing about the `
+      + `${requestedDays - scannedDays} earlier days. Name the ${scannedDays}-day window when `
+      + 'you answer, and do not describe these numbers as covering the longer period.\n';
+  }
   const causes = [...new Set(reasons)].map((reason) => TRUNCATION_CLAUSES[reason]).join('; ');
   const windowRead = requestedDays > scannedDays
     ? `only the most recent ${scannedDays} days of the ${requestedDays}-day window asked about`
