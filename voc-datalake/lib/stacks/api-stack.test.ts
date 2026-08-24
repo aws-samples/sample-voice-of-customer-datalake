@@ -687,6 +687,178 @@ describe('the public ballot routes', () => {
 });
 
 
+/** ALLOWED_ORIGIN for one API Lambda, by its POWERTOOLS_SERVICE_NAME.
+ *
+ *  Returns `undefined` when the function exists but names no such variable,
+ *  which is a distinct failure from "no such function" and the two assertions
+ *  below distinguish them. */
+function allowedOriginOf(template: Template, serviceName: string): unknown {
+  const EnvSchema = z.object({
+    Properties: z.object({
+      Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }),
+    }),
+  });
+  const fn = Object.values(template.findResources('AWS::Lambda::Function')).find(
+    (candidate) => EnvSchema.safeParse(candidate).success
+      && EnvSchema.parse(candidate).Properties.Environment.Variables.POWERTOOLS_SERVICE_NAME === serviceName,
+  );
+
+  expect(fn, `no Lambda found with POWERTOOLS_SERVICE_NAME ${serviceName}`).toBeDefined();
+  return EnvSchema.parse(fn).Properties.Environment.Variables.ALLOWED_ORIGIN;
+}
+
+
+describe('the two public sets get OPPOSITE origins, on purpose', () => {
+  // Both functions serve unauthenticated routes and they answer the CORS question
+  // differently — the forms Lambda takes '*', the ballots Lambda takes the site
+  // origin. That difference is a DECISION, not an oversight, so it is pinned from
+  // both sides: changing either value alone fails here, and whoever changes one
+  // has to say why the other stayed.
+  //
+  // Forms: the widget (lambda/api/static/feedback-widget.js) is embedded on
+  // CUSTOMER sites, so the Origin is a domain this stack cannot enumerate and no
+  // single value would work.
+  //
+  // Ballots: the ballot page is a route of THIS SPA served from its own
+  // CloudFront domain, so a phone opening it sends the same Origin every other
+  // page does — and '*' there would also loosen the three facilitator routes that
+  // share that function.
+  it('gives the feedback-form Lambda the deliberate wildcard', () => {
+    expect(allowedOriginOf(apiTemplate(), 'voc-feedback-form-api')).toBe('*');
+  });
+
+  it('gives the ballots Lambda the site origin', () => {
+    expect(allowedOriginOf(apiTemplate(), 'voc-ballots-api')).toBe('https://app.example.invalid');
+  });
+
+  it('states the wildcard in the STACK, not in the handler default', () => {
+    // feedback_form_handler.py falls back to '*' when the variable is absent, so
+    // the effective value was already '*' before this was set — from a Python
+    // default, where no reader of the CDK could see it. Asserting the variable is
+    // PRESENT is therefore the whole point of this case: a value equal to the
+    // handler's fallback is indistinguishable from an omission unless presence is
+    // checked on its own.
+    expect(allowedOriginOf(apiTemplate(), 'voc-feedback-form-api')).toBeDefined();
+  });
+
+  it('keeps the two values distinct, so neither can be "fixed" into the other', () => {
+    const forms = allowedOriginOf(apiTemplate(), 'voc-feedback-form-api');
+    const ballots = allowedOriginOf(apiTemplate(), 'voc-ballots-api');
+
+    expect(forms).not.toBe(ballots);
+  });
+});
+
+
+describe('the public feedback-form routes', () => {
+  /** The three routes the embedded widget reaches with no credentials, as
+   *  `deployOptions.methodOptions` keys them: `{resource path}/{METHOD}`.
+   *
+   *  `{form_id}` is the spelling of the resource created as
+   *  `feedbackFormsResource.addResource('{form_id}')`. A key naming a path that
+   *  does not exist throttles nothing and reports nothing, so the spelling is
+   *  compared against the wired routes below rather than trusted. */
+  const PUBLIC_FORM_METHOD_KEYS = [
+    '/feedback-forms/{form_id}/config/GET',
+    '/feedback-forms/{form_id}/submit/POST',
+    '/feedback-forms/{form_id}/iframe/GET',
+  ];
+
+  const StageSchema = z.object({
+    Properties: z.object({
+      MethodSettings: z.array(z.object({
+        ResourcePath: z.string(),
+        HttpMethod: z.string(),
+        ThrottlingRateLimit: z.number().optional(),
+        ThrottlingBurstLimit: z.number().optional(),
+      })).optional(),
+    }),
+  });
+
+  /** CloudFormation stores a method setting's path in API Gateway's escaped
+   *  form, where `~1` stands for `/`. Decoded back so assertions read as routes. */
+  const decodePath = (escaped: string) => escaped.replace(/^\//, '').replace(/~1/g, '/');
+
+  function methodSettings(template: Template): { key: string; rate?: number; burst?: number }[] {
+    const stages = Object.values(template.findResources('AWS::ApiGateway::Stage'));
+
+    expect(stages.length, 'expected exactly one API stage').toBe(1);
+
+    return (StageSchema.parse(stages[0]).Properties.MethodSettings ?? []).map((s) => ({
+      key: `${decodePath(s.ResourcePath)}/${s.HttpMethod}`,
+      rate: s.ThrottlingRateLimit,
+      burst: s.ThrottlingBurstLimit,
+    }));
+  }
+
+  it('throttles all three below the stage default, at the ballots\' numbers', () => {
+    // The stage default is 100/200 for `/*/*`, and these three were the only
+    // members of INTENTIONALLY_PUBLIC_ROUTES still riding it. `submit` costs up to
+    // four backend operations per request (form read, conditional form update,
+    // feedback-table write, queue enqueue) against a ballot's single transaction.
+    const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
+
+    for (const key of PUBLIC_FORM_METHOD_KEYS) {
+      const setting = settings.get(key);
+
+      expect(setting, `${key} has no method-level throttle`).toBeDefined();
+      expect(setting?.rate).toBe(20);
+      expect(setting?.burst).toBe(40);
+    }
+  });
+
+  it('spells those throttle keys the same way the wired routes are spelled', () => {
+    const wired = new Set(apiMethods(apiTemplate()).map((m) => `${m.path}/${m.httpMethod}`));
+
+    expect(PUBLIC_FORM_METHOD_KEYS.filter((key) => !wired.has(key))).toEqual([]);
+  });
+
+  it('drops the throttle entries when skipFeedbackFormItemRoutes omits the routes', () => {
+    // The transitional deploy does not create the {form_id} subtree at all, so a
+    // method setting naming those paths would be a claim about routes this stage
+    // does not serve. Harmless to API Gateway — an unmatched setting is simply
+    // never applied — but the template should not assert what it does not deploy.
+    const keys = new Set(methodSettings(apiTemplateFlagged()).map((s) => s.key));
+
+    expect(PUBLIC_FORM_METHOD_KEYS.filter((key) => keys.has(key))).toEqual([]);
+
+    // The ballot entries are unaffected: the flag is named for the form routes and
+    // taking a prioritization meeting's throttle down with it would be unrelated.
+    expect(keys.has('/voting-sessions/{session_id}/config/GET')).toBe(true);
+    expect(keys.has('/voting-sessions/{session_id}/submit/POST')).toBe(true);
+  });
+
+  it('every method setting on the stage names a route this stage wires', () => {
+    // The general form of the two cases above, over BOTH template shapes: a
+    // setting whose path is not deployed is dead weight, and this is what makes
+    // the conditional above self-enforcing rather than a one-off.
+    for (const template of [apiTemplate(), apiTemplateFlagged()]) {
+      const wiredKeys = new Set(apiMethods(template).map((m) => `${m.path}/${m.httpMethod}`));
+      const orphans = methodSettings(template)
+        .map((s) => s.key)
+        // `*/*` is the STAGE-WIDE default that `throttlingRateLimit` /
+        // `throttlingBurstLimit` on deployOptions produce. It names no resource
+        // by design and is the one form API Gateway accepts as a wildcard.
+        .filter((key) => key !== '*/*')
+        .filter((key) => {
+          const path = key.slice(0, key.lastIndexOf('/'));
+          const verb = key.slice(key.lastIndexOf('/') + 1);
+          // `/mcp/{proxy+}/…` keys name concrete verbs served by the proxy's ANY.
+          return !wiredKeys.has(`${path}/${verb}`) && !wiredKeys.has(`${path}/ANY`);
+        });
+
+      expect(orphans).toEqual([]);
+    }
+  });
+
+  it('adds no public route — the intentional list is still exactly five', () => {
+    // A throttle is not an authorization change. This is the guard that says so.
+    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(5);
+    expect(unauthenticatedRoutes(apiTemplate())).toEqual(INTENTIONALLY_PUBLIC_ROUTES);
+  });
+});
+
+
 describe('the integrations Lambda is handed its plugin secret defaults', () => {
   // PLUGIN_SECRET_DEFAULTS is how the handler learns two things it cannot read
   // at runtime: which sources exist, and what value each key was SEEDED with.

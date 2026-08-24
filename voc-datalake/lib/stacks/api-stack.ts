@@ -494,7 +494,33 @@ export class VocApiStack extends VocStack {
       role: feedbackFormRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { AGGREGATES_TABLE: aggregatesTable.tableName, FEEDBACK_TABLE: feedbackTable.tableName, PROCESSING_QUEUE_URL: processingQueueUrl, BRAND_NAME: brandName, POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api', LOG_LEVEL: 'INFO' },
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        BRAND_NAME: brandName,
+        // '*', DELIBERATELY, and the one Lambda in this stack that gets it rather
+        // than `allowedOrigin`. The three public routes below
+        // (/feedback-forms/{form_id}/config, /submit, /iframe) are fetched by
+        // lambda/api/static/feedback-widget.js running on the CUSTOMER's own site,
+        // so the Origin the browser sends is a domain this stack has never heard
+        // of and cannot enumerate. Any single value here would break every embed.
+        //
+        // Stated HERE rather than left to the handler's own
+        // `os.environ.get('ALLOWED_ORIGIN', '*')` fallback: the effective value was
+        // already '*', but it arrived from a Python default, so a reader of this
+        // stack saw an omission where 14 other Lambdas name the variable. This
+        // makes the wildcard a recorded decision. Compare the ballots Lambda
+        // below, whose comment records the opposite choice for the same reason.
+        //
+        // The permissiveness is bounded by the ROUTES, not by this variable: every
+        // other route on this function carries the Cognito authorizer and is
+        // refused before the handler runs, and a CORS header never grants access
+        // to a caller that is not a browser anyway.
+        ALLOWED_ORIGIN: '*',
+        POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api',
+        LOG_LEVEL: 'INFO',
+      },
       layers: [apiLayer],
       logGroup: this.createLogGroup('FeedbackFormApiLogs', this.uniqueName('voc-feedback-form-api')),
     });
@@ -1030,6 +1056,41 @@ export class VocApiStack extends VocStack {
     // API GATEWAY
     // ============================================
 
+    // One-shot flag for upgrading an environment that still has the old
+    // /feedback-forms/{proxy+}. Read HERE, above the RestApi, because it decides
+    // two things that are declared far apart: whether the `{form_id}` item
+    // resources are created at all (see /feedback-forms/* below, which is where
+    // the flag is explained in full) and whether this stage carries method
+    // settings for the three public routes under them.
+    const skipFeedbackFormItemRoutes =
+      this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
+      || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
+
+    /** 20 rps / burst 40 — the pair every UNAUTHENTICATED method on this API is
+     *  held to. Named once so the ballot and feedback-form entries below cannot
+     *  drift apart by a typo in a number.
+     *
+     *  Deliberately NOT shared with the /mcp entries, which carry the same two
+     *  numbers by coincidence and for a different reason (a bearer-token brute
+     *  force, not an anonymous caller) — see the comment on them below. Tuning
+     *  one of the two sets should not silently move the other. */
+    const publicRouteThrottle = { throttlingRateLimit: 20, throttlingBurstLimit: 40 };
+
+    // The three public feedback-form methods, keyed as
+    // `{resource path}/{METHOD}`. CONDITIONAL on the flag above: when it is set
+    // the `{form_id}` subtree is not created, and a method setting naming a path
+    // that does not exist is not an error — API Gateway simply never applies it —
+    // but it is a claim in the template about routes this deploy does not serve.
+    // Omitting them keeps the transitional stage honest, and keeps the lockstep
+    // test ("every key names a wired method") true for both shapes rather than
+    // only the default one.
+    const publicFeedbackFormMethodOptions: Record<string, apigateway.MethodDeploymentOptions> =
+      skipFeedbackFormItemRoutes ? {} : {
+        '/feedback-forms/{form_id}/config/GET': publicRouteThrottle,
+        '/feedback-forms/{form_id}/submit/POST': publicRouteThrottle,
+        '/feedback-forms/{form_id}/iframe/GET': publicRouteThrottle,
+      };
+
     // API Gateway CloudWatch Logs
     const apiLogGroup = new logs.LogGroup(this, 'ApiGatewayLogs', {
       logGroupName: `/aws/apigateway/${this.uniqueName('voc-analytics-api')}`,
@@ -1044,11 +1105,13 @@ export class VocApiStack extends VocStack {
         stageName: 'v1',
         throttlingRateLimit: 100,
         throttlingBurstLimit: 200,
-        // Tighter limits on the two UNAUTHENTICATED ballot methods (see
-        // /voting-sessions/* below). Each request costs a DynamoDB read even for a
-        // session id that does not exist, and nothing in front of them asks who is
-        // calling — the session token is checked inside the handler, which means
-        // the cost is paid before the refusal.
+        // Tighter limits on every UNAUTHENTICATED method — the two ballot methods
+        // (see /voting-sessions/* below) and the three feedback-form widget
+        // methods (see /feedback-forms/* below). Each request costs a DynamoDB
+        // read even for an id that does not exist, and nothing in front of them
+        // asks who is calling — the session token, or the form's own state, is
+        // checked inside the handler, which means the cost is paid before the
+        // refusal.
         //
         // As STAGE METHOD SETTINGS rather than as a usage plan, which is what the
         // /mcp route uses: a usage plan's throttle binds per API KEY, and these
@@ -1061,8 +1124,25 @@ export class VocApiStack extends VocStack {
         // still cutting a scripted flood down to something a single small table
         // absorbs.
         methodOptions: {
-          '/voting-sessions/{session_id}/config/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
-          '/voting-sessions/{session_id}/submit/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          '/voting-sessions/{session_id}/config/GET': publicRouteThrottle,
+          '/voting-sessions/{session_id}/submit/POST': publicRouteThrottle,
+          // The SAME numbers for the three feedback-form widget methods, which
+          // were the only members of the public set still riding the stage
+          // default (100/200) — see INTENTIONALLY_PUBLIC_ROUTES in
+          // api-stack.test.ts for the full list of five.
+          //
+          // `submit` is the one that most needs it: one request reads the form,
+          // may conditionally update it, writes to the feedback table and
+          // enqueues to the processing queue — up to four backend operations,
+          // against the single transaction a ballot submission costs. `config`
+          // and `iframe` are reads, and are held to the same pair because they
+          // are reachable by exactly the same anonymous caller.
+          //
+          // Keys are spelled `{form_id}`, matching
+          // `feedbackFormsResource.addResource('{form_id}')`, and are omitted
+          // entirely when skipFeedbackFormItemRoutes is set (see
+          // publicFeedbackFormMethodOptions above).
+          ...publicFeedbackFormMethodOptions,
           // The MCP endpoint gets the same treatment for the same reason: its
           // caller holds a bearer token, not a Cognito session, and an invalid
           // token still costs a DynamoDB Query before the 401. This REPLACES the
@@ -1291,12 +1371,16 @@ export class VocApiStack extends VocStack {
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
 
-    // One-shot flag for upgrading an environment that still has the old
-    // /feedback-forms/{proxy+}. CloudFormation creates new resources before
-    // deleting old ones inside a single update, so {form_id} and {proxy+} would
-    // exist together and API Gateway rejects two variable path parts at one
-    // level. Deploy once with -c skipFeedbackFormItemRoutes=true to retire the
-    // proxy, then deploy again without it to create these routes.
+    // `skipFeedbackFormItemRoutes` — the one-shot flag for upgrading an
+    // environment that still has the old /feedback-forms/{proxy+}. Read above the
+    // RestApi (it also gates this subtree's stage method settings); this is the
+    // branch it exists for.
+    //
+    // CloudFormation creates new resources before deleting old ones inside a
+    // single update, so {form_id} and {proxy+} would exist together and API
+    // Gateway rejects two variable path parts at one level. Deploy once with
+    // -c skipFeedbackFormItemRoutes=true to retire the proxy, then deploy again
+    // without it to create these routes.
     //
     // Absent (the default, and always for fresh deployments) this is a no-op —
     // the synthesized template is identical either way. Never leave it set:
@@ -1308,10 +1392,6 @@ export class VocApiStack extends VocStack {
     // two-deploy upgrade, delete the flag, this branch and its tests — a
     // permanently available "skip the authorization-bearing routes" switch is a
     // footgun once nothing needs it.
-    const skipFeedbackFormItemRoutes =
-      this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
-      || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
-
     if (skipFeedbackFormItemRoutes) {
       cdk.Annotations.of(this).addWarningV2(
         'voc:skipFeedbackFormItemRoutes',
@@ -1327,6 +1407,12 @@ export class VocApiStack extends VocStack {
       feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
 
       // Intentionally unauthenticated: the widget runs on the customer's own site.
+      //
+      // These three are named in INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts,
+      // and all three are throttled below the stage default by
+      // `deployOptions.methodOptions` at the top of this stack — keyed by these
+      // exact paths, and pinned against them by a test, because a mistyped key
+      // throttles nothing and says nothing.
       const publicFeedbackFormMethods = [
         feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
         feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
