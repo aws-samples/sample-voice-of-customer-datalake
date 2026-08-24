@@ -894,6 +894,27 @@ describe('the public feedback-form routes', () => {
     '.kiro/steering/structure.md': ['/config', '/iframe', '/submit', '/voting-sessions'],
   } satisfies Record<string, (keyof typeof DOCUMENTED_ROUTE_KEYS)[]>;
 
+  /** Every spelling of a per-second rate, as an un-anchored alternation. THE
+   *  SHARED VOCABULARY of the two doc cases below, and shared for the same reason
+   *  `PINNED_DOCS` is: two hand-kept copies disagreed, and the disagreement was
+   *  invisible in both.
+   *
+   *  The lockstep case SELECTS candidate lines with it; the class-level guard
+   *  DISCOVERS documents with it. Those two keep their opposite biases — see the
+   *  comment on `statesALimit` — but a spelling one of them recognises and the
+   *  other does not is a gap rather than a bias, and review found the gap it
+   *  produced: discovery accepted `requests/second`, selection accepted only
+   *  `rps` / `req/s`, so a pinned document reworded to the broad-only spelling
+   *  stayed discovered while none of its lines was judged, and the failure that
+   *  followed named the document rather than the parse.
+   *
+   *  Longest alternatives first, so `requests/second` is not consumed as
+   *  `requests/s` with `econd` left over. The trailing `\/\s*s` is the bare
+   *  `100/s` form; wrapped in `\b…\b` by both users, it needs a digit or word
+   *  character before the slash and a non-word character after the `s`, so a path
+   *  segment such as `/static` or `/submissions` is not mistaken for a rate. */
+  const RATE_UNIT = String.raw`requests? per second|requests?\/sec(?:ond)?|req\/sec(?:ond)?|requests?\/s|req\/s|rps|\/\s*s`;
+
   it('gives each of the three an explicit pair, tight for submit and generous for the reads', () => {
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
 
@@ -1050,9 +1071,11 @@ describe('the public feedback-form routes', () => {
     // standard as the code — that is the answer to "should prose stay unpinned":
     // no, when it states a number a deploy can contradict.
     //
-    // Deliberately asserts only the NUMBERS, and only that each route's own pair
-    // appears on a line stating that route's limit: the prose around them is
-    // explanatory and should stay free to be reworded without a test edit.
+    // Deliberately asserts only the NUMBERS, and only on the lines that state a
+    // limit for the route: the prose around them is explanatory and should stay
+    // free to be reworded without a test edit. Where a route IS named with a
+    // limit, EVERY such line must state the template's pair — see the per-row
+    // comparison below for the false pass that "some line does" allowed.
     //
     // PER ROUTE rather than per document, which a first version got wrong and a
     // mutation caught: searching the whole file for "100 … 200" passes even after
@@ -1104,14 +1127,31 @@ describe('the public feedback-form routes', () => {
       expect(settings.get(key), `${names} has no method-level throttle to document`).toBeDefined();
     }
 
-    /** A line stating a rate limit, in either document's phrasing. PRECISE on
-     *  purpose — it selects which lines of two KNOWN documents are judged, so a
-     *  false positive here makes a legitimate line fail. Contrast the
-     *  deliberately over-inclusive discovery predicate in the case below, which
-     *  has to find UNKNOWN documents and therefore wants the opposite bias. */
-    const statesALimit = (line: string) => /\b(?:rps|req\/s)\b/.test(line);
+    /** A line stating a rate limit, in ANY spelling of a per-second rate the
+     *  discovery guard below recognises — `RATE_UNIT` is shared with it rather
+     *  than restated here, and that sharing is the point.
+     *
+     *  The two predicates keep their OPPOSITE BIASES, which is what earlier
+     *  rounds established and this deliberately does not undo: discovery is
+     *  evaluated over the WHOLE FILE and demands only a token (over-inclusive, so
+     *  a drifting third document cannot hide), while this one is evaluated PER
+     *  LINE and the parse below additionally demands an anchored burst (precise,
+     *  so a legitimate line is not failed). What they must not disagree about is
+     *  the VOCABULARY, and they did: discovery accepted `requests/second` and
+     *  `req/sec` while this accepted only `rps` and `req/s`, so a pinned document
+     *  reworded to a broad-only spelling stayed DISCOVERED (satisfying the
+     *  converse assertion) while every line of it stopped being a candidate here —
+     *  and the `rows.length > 0` guard then reported "documents no rate limit for
+     *  /config" about a document that plainly states one. The guard fired, so
+     *  nothing drifted silently, but it named the wrong cause and pointed the
+     *  author at the document instead of at the parse. Reproduced before fixing.
+     *
+     *  One alternation removes the class rather than the instance: any spelling
+     *  either predicate recognises, both recognise. The biases live in the SCOPE
+     *  and in the burst anchoring, not in the list of words for "per second". */
+    const statesALimit = (line: string) => new RegExp(String.raw`\b(?:${RATE_UNIT})\b`).test(line);
 
-    /** EVERY `<rate> rps|req/s <separator> <burst>` pair a line states, in order.
+    /** EVERY `<rate> <per-second unit> <separator> <burst>` pair a line states, in order.
      *
      *  All of them, not the first, and that is the whole point. Parsing the FIRST
      *  pair is still positional, so it picks whichever of two well-formed pairs
@@ -1135,9 +1175,15 @@ describe('the public feedback-form routes', () => {
      *  `100 req/s, burst 200` and `**100 rps / 200**` — so requiring one of those
      *  two separators accepts every current row and yields ZERO pairs for a row
      *  that states no burst, which then fails as "states no parseable pair" rather
-     *  than passing. */
+     *  than passing.
+     *
+     *  The RATE UNIT is `RATE_UNIT`, the same alternation `statesALimit` selects
+     *  with, so a line that is selected is a line this can parse. Restating a
+     *  narrower unit here would reintroduce the divergence one level down: the
+     *  line would be judged and then report "states no rate pair this test can
+     *  parse" for a spelling the selector had just accepted. */
     const allStatedPairs = (line: string): { rate: number; burst: number }[] =>
-      [...line.matchAll(/(\d+)\s*(?:rps|req\/s)\s*(?:,\s*burst\s+|\/\s*)(\d+)/g)]
+      [...line.matchAll(new RegExp(String.raw`(\d+)\s*(?:${RATE_UNIT})\s*(?:,\s*burst\s+|\/\s*)(\d+)`, 'g'))]
         .map((match) => ({ rate: Number(match[1]), burst: Number(match[2]) }));
 
     for (const [doc, routes] of Object.entries(PINNED_DOCS)) {
@@ -1146,8 +1192,8 @@ describe('the public feedback-form routes', () => {
       for (const names of routes) {
         const setting = settings.get(DOCUMENTED_ROUTE_KEYS[names]);
         // The steering file groups the two reads onto one row, so a route may be
-        // documented by more than one line and it is enough that ONE of them states
-        // the right pair — but each candidate is judged by the pairs IT states.
+        // documented by more than one line — and EVERY such line is judged, not
+        // just one of them. See the loop below for why that changed.
         const rows = lines.filter((line) => line.includes(names) && statesALimit(line));
 
         expect(rows.length, `${doc} documents no rate limit for ${names}`).toBeGreaterThan(0);
@@ -1171,6 +1217,34 @@ describe('the public feedback-form routes', () => {
         // row that publishes no burst, so the two interact. Assertion messages here
         // are load-bearing, so a message that misdescribes the failure it fires on
         // is a defect rather than a wording nit.
+        //
+        // AND EVERY ROW IS COMPARED TO THE TEMPLATE, which is the last member of
+        // the family the two previous rounds worked through — the same defect one
+        // level up, ACROSS rows rather than within a line. The comparison used to
+        // be a single `toContainEqual` over `rows.flatMap(allStatedPairs)`, which
+        // pooled the pairs of every candidate row and asked only that the correct
+        // one appear SOMEWHERE in the pool. So one correct row satisfied the
+        // assertion on behalf of every other row naming the route, and the loop
+        // here did not cover that: it bounded each row's pair COUNT and never
+        // compared a row's pair to anything. Review reproduced it by ADDING a row
+        // beside the correct one:
+        //
+        //     | `GET /…/config` | 100 req/s, burst 200 |
+        //     | `GET /…/config` (legacy deployments) | 20 req/s, burst 40 |
+        //
+        // The pool was [{100,200},{20,40}], `toContainEqual({100,200})` passed, and
+        // the document told an integrator that `/config` is 20 req/s. Adding a row
+        // is how a document grows — a version caveat, a "self-hosted" note, a
+        // per-tier table — so this is the more likely direction of drift than the
+        // single-row cases already closed.
+        //
+        // Judging each row subsumes the pooled check, so it is gone rather than
+        // kept alongside. It stays satisfiable for the legitimate multi-row case
+        // the pooling was written for: the steering doc's `GET /config`, `GET
+        // /iframe` row is matched by BOTH route names and states the pair both
+        // expect, so requiring every row to agree passes unchanged. `rows.length >
+        // 0` above still carries the "documented nowhere" case, which per-row
+        // judgement cannot express.
         for (const row of rows) {
           const pairs = allStatedPairs(row);
 
@@ -1186,12 +1260,14 @@ describe('the public feedback-form routes', () => {
             `${doc} states more than one rate pair on one line for ${names}, so which one the row `
             + `CLAIMS is ambiguous — move the aside to its own line: ${row.trim()}`,
           ).toBeLessThan(2);
-        }
 
-        expect(
-          rows.flatMap(allStatedPairs),
-          `${doc} is stale for ${names}: expected ${setting?.rate}/${setting?.burst}`,
-        ).toContainEqual({ rate: setting?.rate, burst: setting?.burst });
+          expect(
+            pairs[0],
+            `${doc} is stale for ${names}: this row states ${pairs[0]?.rate}/${pairs[0]?.burst} but the `
+            + `template deploys ${setting?.rate}/${setting?.burst} — EVERY row naming the route must `
+            + `agree, a correct row elsewhere does not excuse this one: ${row.trim()}`,
+          ).toEqual({ rate: setting?.rate, burst: setting?.burst });
+        }
       }
     }
   });
@@ -1209,19 +1285,19 @@ describe('the public feedback-form routes', () => {
     // is not obtained by writing the numbers somewhere the lockstep does not look.
     //
     // The predicate below is DELIBERATELY OVER-INCLUSIVE, which is the opposite
-    // bias from `statesALimit` in the case above, and the two are kept separate
-    // rather than shared for exactly that reason. `statesALimit` picks lines out of
-    // two KNOWN documents, so a false positive there fails a legitimate line and it
+    // bias from `statesALimit` in the case above, and the two remain separate
+    // FUNCTIONS for exactly that reason. `statesALimit` picks lines out of two
+    // KNOWN documents, so a false positive there fails a legitimate line and it
     // must be precise. This one has to DISCOVER unknown documents written by
     // someone who never read this test, so a false negative silently excuses a
     // drifting file while a false positive only asks an author to pin the file or
     // drop the figures. Two consequences, both found by review:
     //
-    //   - THE RATE TOKEN IS BROAD. Reusing `\b(?:rps|req/s)\b` would recognise only
-    //     the two spellings the two pinned documents happen to use, so a third
-    //     document writing `100 requests/second, burst 200` states the figures and
-    //     is not detected — which is precisely the "different word for per second"
-    //     a different author naturally reaches for.
+    //   - IT DEMANDS ONLY A UNIT, not a parseable rate/burst pair. Requiring the
+    //     anchored pair the lockstep parses would miss a third document that
+    //     states the rate and omits the burst, or states it in words — exactly the
+    //     document that most needs pinning. The lockstep is strict about the pair
+    //     because it must judge a row; this only needs to notice the subject.
     //   - IT IS EVALUATED OVER THE WHOLE FILE, not per line. Requiring the route
     //     and the rate on ONE line misses a table styled like the steering doc's
     //     own, whose route column reads `POST /submit` while only the heading says
@@ -1230,7 +1306,20 @@ describe('the public feedback-form routes', () => {
     //     one line about a DIFFERENT feature would have turned the converse
     //     assertion below red for an unrelated reason.
     //
-    // Verified over the tree: whole-file scope with the wide token flags exactly
+    // WHAT IS NO LONGER A DIFFERENCE is the VOCABULARY. This predicate once
+    // carried its own, wider list of spellings, on the reasoning that a third
+    // author reaches for "a different word for per second" — sound reasoning, but
+    // it left the two disagreeing over a set of spellings, and review showed the
+    // gap that opened: a PINNED document reworded to `100 requests/second, burst
+    // 200` stayed discovered here (so the converse assertion was satisfied) while
+    // no line of it was a candidate in the lockstep, which then failed with
+    // "documents no rate limit for /config" about a document that states one. The
+    // guard fired, so nothing drifted silently, but it accused the document
+    // instead of the parse. Both now share `RATE_UNIT`, so anything wide enough to
+    // be DISCOVERED is wide enough to be JUDGED, and the biases live where they
+    // belong: in the scope (file vs line) and in the burst anchoring.
+    //
+    // Verified over the tree: whole-file scope with the shared unit flags exactly
     // the two pinned documents and nothing else, so the over-inclusion costs no
     // false positive today.
     const ROOT = join(__dirname, '..', '..', '..');
@@ -1254,8 +1343,10 @@ describe('the public feedback-form routes', () => {
       });
 
     const ROUTES = ['/feedback-forms', '/voting-sessions'];
-    /** Any spelling of a per-second rate, including `100/s`. */
-    const STATES_A_RATE = /\b(?:rps|requests? per second|req\/sec|requests?\/sec(?:ond)?|req\/s|requests?\/s)\b|\d+\s*\/\s*s\b/;
+    /** Any spelling of a per-second rate — `RATE_UNIT`, the SAME alternation the
+     *  lockstep case selects and parses with, so the two cannot disagree about
+     *  which spellings count. */
+    const STATES_A_RATE = new RegExp(String.raw`\b(?:${RATE_UNIT})\b`);
     const stating = markdownFiles(ROOT).filter((rel) => {
       const text = readFileSync(join(ROOT, ...rel.split('/')), 'utf-8');
       return STATES_A_RATE.test(text) && ROUTES.some((route) => text.includes(route));
