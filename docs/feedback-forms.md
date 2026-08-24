@@ -53,7 +53,7 @@ endpoint — see the note in [API Endpoints](#api-endpoints).
 
 ## Embedding Forms
 
-### Option 1: Iframe
+Embed the form with an iframe. This is the snippet to hand to customers:
 
 ```html
 <iframe 
@@ -64,19 +64,15 @@ endpoint — see the note in [API Endpoints](#api-endpoints).
 </iframe>
 ```
 
-### Option 2: JavaScript Widget
+The iframe route returns a self-contained HTML page: the Lambda inlines
+`lambda/api/static/feedback-widget.js` into it and calls `VoCFeedbackForm.init`
+with the form's `config` and `submit` endpoints already wired, so nothing else
+needs loading.
 
-```html
-<div id="voc-feedback-form"></div>
-<script src="https://your-api.execute-api.region.amazonaws.com/v1/feedback-forms/{form_id}/widget.js"></script>
-<script>
-  VoCFeedbackForm.init({
-    container: '#voc-feedback-form',
-    apiEndpoint: 'https://your-api.execute-api.region.amazonaws.com/v1',
-    formId: '{form_id}'
-  });
-</script>
-```
+There is no standalone `widget.js` script to load. `/feedback-forms/{form_id}/`
+exposes exactly three public routes — `config`, `submit` and `iframe` — so a
+`<script src=".../widget.js">` tag fetches a path that is not wired and gets a
+`403 Missing Authentication Token` back from API Gateway, not the widget.
 
 ## Pre-Categorization
 

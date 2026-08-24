@@ -784,16 +784,24 @@ long. Schedule it accordingly if forms are live.
 
 ### The embeddable widget is served by the Lambda, not the frontend bucket
 
-There is exactly one embeddable widget: `lambda/api/static/feedback-widget.js`,
-served by the feedback-form Lambda from
-`/feedback-forms/{form_id}/widget.js`. That is the only supported embed path —
-see [Feedback Forms](feedback-forms.md) for the snippet to hand to customers.
+There is exactly one embeddable widget: `lambda/api/static/feedback-widget.js`.
+It is **not** served as a standalone file from any URL. The feedback-form Lambda
+inlines it into the HTML page returned by `/feedback-forms/{form_id}/iframe`
+(`get_form_iframe` calls `get_widget_js`), so that iframe route is the supported
+embed path — see [Feedback Forms](feedback-forms.md) for the snippet to hand to
+customers.
 
 A second, stale copy used to be published to the CDN from
 `frontend/public/feedback-widget.js`. It called the retired `/feedback-form/*`
 (singular) routes and had no callers, so it was deleted. If an old integration
 snippet points at the website bucket (`https://<distribution>/feedback-widget.js`),
-repoint it at the Lambda route above rather than restoring the file.
+repoint it at the iframe embed rather than restoring the file.
+
+There is no `/feedback-forms/{form_id}/widget.js` route, and requesting one does
+not 404. Because the per-form routes are declared explicitly rather than behind a
+`{proxy+}` (see above), a path that is not wired never reaches the Lambda, so API
+Gateway answers **403 `Missing Authentication Token`**. Treat that 403 on a
+`widget.js` URL as "this route does not exist", not as an authorization problem.
 
 ### CloudFront Cache
 
