@@ -102,29 +102,18 @@ function trackedPublicPaths(): string[] {
 /**
  * For each allowlisted DIRECTORY, the file extensions its contents may have.
  *
- * The inventory assertion below compares only first path segments, so once a
- * directory is allowlisted every file at any depth inside it is invisible to
- * that check — `locales/en/dump.csv` collapses to `locales` and passes. The
- * script assertion catches executables there, but nothing else: a tracked
- * `.csv`, `.html` or `.pdf` under `locales/` reached the CDN with no gate
- * objecting, and the sibling `localeParity.test.ts` cannot see it either
- * because it enumerates the `.json` namespaces it expects rather than whatever
- * happens to be present. `locales/` is machine-managed by i18next-parser, which
- * is exactly why it is the subtree least likely to be read.
+ * Two facts make this necessary, neither visible from the assertions alone. The
+ * inventory check compares only first path segments, so once a directory is
+ * allowlisted every file at any depth inside it is invisible to it —
+ * `locales/en/dump.csv` collapses to `locales` and passes. And the sibling
+ * `localeParity.test.ts` cannot see such a file either, because it enumerates
+ * the `.json` namespaces it expects rather than auditing what is present.
  *
- * Extensions are matched EXACTLY, lowercase, which is the opposite of the
- * case-insensitive script regex below — deliberately. The two assertions have
- * inverted jobs: the script check enumerates what is FORBIDDEN, so it must match
- * as broadly as possible or something slips past; this one enumerates what is
- * ALLOWED, so it must match as narrowly as possible or something slips in.
- * Concretely, `locales/en/COMMON.JSON` is a distinct S3 key that i18next never
- * requests (loadPath builds a lowercase `.json` URL), so it is dead weight on
- * the CDN and should fail here rather than be waved through as "a JSON file".
- *
- * A nested path under a directory with NO entry here also fails. That keeps the
- * decision conscious in the same way the file-level inventory does: allowlisting
- * a new directory forces you to say what may live in it, instead of silently
- * opening a subtree.
+ * Extensions match EXACTLY and lowercase — deliberately the opposite of the
+ * case-insensitive script regex below (see its comment), because the two have
+ * inverted jobs: a FORBIDDEN list must match broadly or something slips past, an
+ * ALLOWED list must match narrowly or something slips in. `locales/en/COMMON.JSON`
+ * is a distinct S3 key that i18next never requests, so it is dead CDN weight.
  */
 const NESTED_ALLOWED_EXTENSIONS: Record<string, readonly string[]> = {
   // i18next-parser writes one JSON namespace per language and nothing else.
@@ -188,12 +177,18 @@ describe('frontend public/ inventory', () => {
     // without this a non-script file nested in an allowlisted directory is
     // published with nothing objecting. See NESTED_ALLOWED_EXTENSIONS for why
     // the match is exact-lowercase rather than case-insensitive.
+    //
+    // Scoped to directories the inventory assertion already accepts, so one
+    // defect produces one failure: a path under a NEW directory is reported
+    // there, by the message that names the decision actually needing to be made
+    // (justify the directory), not by this one (declare its extensions).
     const unexpected = trackedPublicPaths()
       .filter((p) => p.includes('/'))
+      .filter((p) => EXPECTED_PUBLIC_ENTRIES.includes(p.split('/')[0]))
       .filter((p) => {
         const allowed = NESTED_ALLOWED_EXTENSIONS[p.split('/')[0]]
-        // No declared extensions for this directory ⇒ nothing may be nested in
-        // it, so report the path instead of treating the gap as permission.
+        // An allowlisted directory with no declared extensions may hold nothing:
+        // report the path rather than treating the gap as permission.
         return !allowed?.some((ext) => p.endsWith(ext))
       })
       .sort()

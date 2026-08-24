@@ -816,7 +816,12 @@ this is worth writing down:
 | the website bucket (`https://<distribution>/feedback-widget.js`) | **`200` + `index.html`** | the distribution maps `404 -> 200 /index.html` so SPA deep links resolve (`core-stack.ts`, pinned by `core-stack.test.ts`'s "still routes SPA deep links via the 404 rule"); custom error responses are distribution-wide, so a deleted asset takes the same rule |
 | an API path (`/feedback-forms/{form_id}/widget.js`) | **`403 Missing Authentication Token`** | no such route — the per-form routes are declared explicitly, not behind a `{proxy+}` (see above), so an unwired path never reaches the Lambda |
 
-Both verified live against a deployed stack. Consequences worth knowing: a `<script
+Both rows are derived from the checked-in template, not from a live probe: the `200`
+from the `errorResponses` `404 -> 200 /index.html` mapping in `core-stack.ts` (pinned
+by the `core-stack.test.ts` case named above), and the `403` from `api-stack.ts`
+calling `addResource` for exactly `config`, `submit`, `iframe`, `submissions` and
+`stats` under `{form_id}` — there is no `widget.js` resource, and no `{proxy+}` to
+absorb one. Consequences worth knowing: a `<script
 src>` at the bucket URL parses HTML as JavaScript and throws `Uncaught SyntaxError:
 Unexpected token '<'`, which reads as "the widget is broken" rather than "that file
 is gone" — so do not hunt for a 404 in the access logs or a `curl -I`, there is not
