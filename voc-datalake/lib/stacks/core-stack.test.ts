@@ -15,11 +15,14 @@ import { z } from 'zod';
 import { VocCoreStack } from './core-stack';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
 
+/** Fixed synth account, so resolved `aws:SourceAccount`-style values are assertable. */
+const SYNTH_ACCOUNT = '111111111111';
+
 function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
   // Skip asset bundling (Docker) — template assertions only need structure.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], skipFrontendBuildCheck: true, ...context } });
   const stack = new VocCoreStack(app, 'TestCoreStack', {
-    env: { account: '111111111111', region: 'us-east-1' },
+    env: { account: SYNTH_ACCOUNT, region: 'us-east-1' },
     brandName: 'TestBrand',
   });
   return Template.fromStack(stack);
@@ -164,6 +167,11 @@ describe('VocCoreStack raw-data bucket CORS', () => {
  * it WITHOUT going through the distribution. Asserted here rather than left to
  * the baseline hash so that removing the property reads as "the website bucket
  * stopped logging" instead of "VocCoreStack's digest moved".
+ *
+ * Each producer is checked at BOTH ends — the `LoggingConfiguration` on the
+ * source and the log-delivery grant on the destination's policy — because the
+ * source half alone can be perfectly well-formed while nothing is ever
+ * delivered.
  */
 describe('VocCoreStack S3 server access logging', () => {
   const LoggingSchema = z.object({
@@ -172,47 +180,157 @@ describe('VocCoreStack S3 server access logging', () => {
   });
 
   /**
-   * Logical id of the access-logs bucket, resolved from the template rather than
-   * hard-coded: CDK appends an address hash to it, so the literal would need
-   * editing whenever the construct tree around it changes.
+   * The log-delivery grant CDK writes onto the DESTINATION bucket's policy.
+   *
+   * `Resource` is an `Fn::Join` of the destination's Arn and `/<prefix>*`, and
+   * the condition pair is what scopes the grant to one named producer in one
+   * account rather than to any bucket anywhere that guesses the path.
    */
-  function bucketsByPrefix(template: Template, prefix: string) {
+  const LogDeliveryStatementSchema = z.object({
+    Action: z.literal('s3:PutObject'),
+    Effect: z.literal('Allow'),
+    Principal: z.object({ Service: z.literal('logging.s3.amazonaws.com') }),
+    Resource: z.object({ 'Fn::Join': z.tuple([z.literal(''), z.array(z.unknown())]) }),
+    Condition: z.object({
+      ArnLike: z.object({
+        'aws:SourceArn': z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) }),
+      }),
+      StringEquals: z.object({ 'aws:SourceAccount': z.string() }),
+    }),
+  });
+
+  /** Suppression ids on a resource, or none when the metadata block is absent. */
+  const NagMetadataSchema = z.object({
+    cdk_nag: z.object({ rules_to_suppress: z.array(z.object({ id: z.string() })) }).optional(),
+  });
+
+  /**
+   * The stack as a real deploy renders its S3 log-delivery grants.
+   *
+   * `@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy` is `true` in cdk.json, but
+   * `synthCoreTemplate()` builds a bare `App` and so reads none of those feature
+   * flags. That one flag decides HOW the grant is expressed: with it CDK adds an
+   * `s3:PutObject` statement to the destination's bucket policy, without it it
+   * falls back to a `LogDeliveryWrite` bucket ACL. Both render a
+   * `LoggingConfiguration` on the source, so asserting against the bare default
+   * would pin a grant shape that no deploy of this project ever produces.
+   */
+  function synthWithDeployedS3Flags(): Template {
+    return synthCoreTemplate({ '@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy': true });
+  }
+
+  /**
+   * Resolve one bucket from the template by logical-id prefix.
+   *
+   * By logical id and not by BucketName, per the `rawDataBucketCors()` precedent
+   * above: `uniqueDnsName()` builds names from `Aws.ACCOUNT_ID`/`Aws.REGION`
+   * pseudo-parameters, so BucketName synthesizes to an `Fn::Join` rather than a
+   * comparable string. By PREFIX because CDK appends an address hash to the id,
+   * which a hard-coded literal would have to chase every time the surrounding
+   * construct tree moves.
+   *
+   * Counts before returning, so "no such bucket" and "bucket present but
+   * malformed" surface as two distinct failures rather than one ZodError.
+   */
+  function bucketByLogicalIdPrefix(template: Template, prefix: string) {
     const found = Object.entries(template.findResources('AWS::S3::Bucket'))
       .filter(([logicalId]) => logicalId.startsWith(prefix));
     expect(found, `expected exactly one bucket named ${prefix}*`).toHaveLength(1);
     return found[0];
   }
 
+  /** Statements on the access-logs bucket's own resource policy. */
+  function accessLogsPolicyStatements(template: Template): unknown[] {
+    const policies = Object.entries(template.findResources('AWS::S3::BucketPolicy'))
+      .filter(([logicalId]) => logicalId.startsWith('AccessLogsBucketPolicy'));
+    expect(policies, 'expected exactly one AccessLogsBucket policy').toHaveLength(1);
+    const statements = policies[0][1].Properties?.PolicyDocument?.Statement;
+    expect(Array.isArray(statements), 'policy document has no Statement array').toBe(true);
+    return statements as unknown[];
+  }
+
+  // ONLY these two: the S3-import bucket is the third producer into this
+  // destination, but it is built by VocIngestionStack (`createS3ImportBucket`),
+  // so it is absent from this template and a third row here would fail on
+  // bucketByLogicalIdPrefix's count. Covering it needs a case that synthesizes
+  // the ingestion stack, and neither schema below would fit it unchanged: the
+  // destination reference becomes a cross-stack `Fn::ImportValue` rather than a
+  // `Ref`, and CDK omits the aws:SourceArn/aws:SourceAccount conditions
+  // entirely for a producer in another stack (verified against the synthesized
+  // VocCoreStack template, where the `/s3-import-bucket/*` grant carries no
+  // `Condition` at all). So this is two of three by necessity, not by oversight.
   it.each([
     ['WebsiteBucket', 'website-bucket/'],
     ['RawDataBucket', 'raw-data-bucket/'],
   ])('ships %s logging into the access-logs bucket under %s', (prefix, logPrefix) => {
-    const template = synthCoreTemplate();
-    const [accessLogsLogicalId] = bucketsByPrefix(template, 'AccessLogsBucket');
-    const [, bucket] = bucketsByPrefix(template, prefix);
+    const template = synthWithDeployedS3Flags();
+    const [accessLogsLogicalId] = bucketByLogicalIdPrefix(template, 'AccessLogsBucket');
+    const [sourceLogicalId, bucket] = bucketByLogicalIdPrefix(template, prefix);
 
     const logging = LoggingSchema.parse(bucket.Properties?.LoggingConfiguration);
     expect(logging.DestinationBucketName.Ref).toBe(accessLogsLogicalId);
     expect(logging.LogFilePrefix).toBe(logPrefix);
+
+    // The OTHER half of working server access logging, and the half that fails
+    // silently. `LoggingConfiguration` alone is a request; S3 delivers nothing
+    // unless the destination's policy also lets logging.s3.amazonaws.com PUT
+    // there. CDK writes that statement automatically, but only while the
+    // destination is a Bucket CONSTRUCT in this stack — point
+    // serverAccessLogsBucket at `Bucket.fromBucketName(...)` and the template
+    // still carries a complete-looking LoggingConfiguration with no grant behind
+    // it, announced by nothing louder than an
+    // `@aws-cdk/aws-s3:accessLogsPolicyNotAdded` warning. Without this
+    // assertion every case above still passes in that state, which is the exact
+    // failure this block exists to make legible.
+    const grants = accessLogsPolicyStatements(template)
+      .map((statement) => LogDeliveryStatementSchema.safeParse(statement))
+      .filter((parsed) => parsed.success)
+      .map((parsed) => parsed.data)
+      .filter((statement) => statement.Condition.ArnLike['aws:SourceArn']['Fn::GetAtt'][0] === sourceLogicalId);
+    expect(grants, `no log-delivery grant for ${prefix} — S3 would accept the config and deliver nothing`)
+      .toHaveLength(1);
+
+    // Scoped to this producer's own prefix, so one bucket's grant cannot be
+    // used to write over another's logs.
+    const joinParts = grants[0].Resource['Fn::Join'][1];
+    expect(joinParts.at(-1)).toBe(`/${logPrefix}*`);
+    expect(grants[0].Condition.StringEquals['aws:SourceAccount']).toBe(SYNTH_ACCOUNT);
   });
 
   it('leaves the access-logs bucket without a destination of its own', () => {
-    // Deliberate, and the one place AwsSolutions-S1 stays unaddressed: S3 does
-    // not support a bucket delivering its own access logs to itself, so the
-    // scanner's finding here is a false positive rather than a gap.
-    const template = synthCoreTemplate();
-    const [, accessLogs] = bucketsByPrefix(template, 'AccessLogsBucket');
+    // Self-targeting IS available — S3 permits the target to be the source, and
+    // in CDK a `serverAccessLogsPrefix` with no `serverAccessLogsBucket`
+    // self-targets — so this is a declined option, not an impossible one. It is
+    // declined because log deliveries themselves generate access log records:
+    // the bucket would grow on its own writes, against a lifecycle rule that is
+    // UNPREFIXED and expires everything at 90 days, and buy no visibility that
+    // the four producer prefixes do not already give.
+    //
+    // No suppression is missing either. cdk-nag's AwsSolutions-S1 has a fallback
+    // branch for a bucket with no loggingConfiguration: it scans every CfnBucket
+    // in the stack and returns COMPLIANT if any of them names this one as its
+    // destination. Three do, so this bucket is compliant by construction and
+    // raises no finding — AwsSolutions-VocCoreStack-NagReport.csv records it as
+    // `Compliant`. Worth stating because the tempting wrong conclusion is that
+    // some suppression elsewhere is quietly covering it; none is.
+    const template = synthWithDeployedS3Flags();
+    const [, accessLogs] = bucketByLogicalIdPrefix(template, 'AccessLogsBucket');
 
     expect(accessLogs.Properties ?? {}).not.toHaveProperty('LoggingConfiguration');
   });
 
-  it('carries no cdk_nag suppression on the website bucket', () => {
-    // The AwsSolutions-S1 suppression described the missing property above. With
-    // the property present the rule no longer fires, so a suppression would be
-    // dead metadata that a later audit has to re-litigate.
-    const [, website] = bucketsByPrefix(synthCoreTemplate(), 'WebsiteBucket');
+  it('carries no AwsSolutions-S1 suppression on the website bucket', () => {
+    // The retired suppression described the missing property above. With the
+    // property present the rule no longer fires, so a suppression would be dead
+    // metadata that a later audit has to re-litigate.
+    //
+    // Narrowed to this one rule on purpose: a future suppression on this bucket
+    // for some OTHER finding is a legitimate act, and it must not fail a case
+    // whose whole subject is AwsSolutions-S1.
+    const [, website] = bucketByLogicalIdPrefix(synthWithDeployedS3Flags(), 'WebsiteBucket');
 
-    expect(website.Metadata ?? {}).not.toHaveProperty('cdk_nag');
+    const suppressions = NagMetadataSchema.parse(website.Metadata ?? {}).cdk_nag?.rules_to_suppress ?? [];
+    expect(suppressions.map((rule) => rule.id)).not.toContain('AwsSolutions-S1');
   });
 });
 
