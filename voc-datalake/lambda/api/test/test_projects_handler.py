@@ -770,9 +770,15 @@ class TestGenerateDocumentDocType:
         """The allowlist is the assertion, not an implementation detail: growing
         it to the generator's four doc types is exactly the regression the
         comment beside it argues against."""
-        from projects_handler import GENERATED_DOC_TYPES
+        from projects_handler import DEFAULT_GENERATED_DOC_TYPE, GENERATED_DOC_TYPES
 
         assert GENERATED_DOC_TYPES == ('prd', 'prfaq')
+        # Stated directly, though the `generate_prd` assertions elsewhere in this
+        # class would also notice: a default outside the allowlist would make the
+        # route refuse its own fallback for every request that omits the field, and
+        # naming the invariant means that failure describes itself instead of
+        # arriving as seven tests complaining about an unexpected job type.
+        assert DEFAULT_GENERATED_DOC_TYPE in GENERATED_DOC_TYPES
 
     def test_the_routing_predicate_reads_the_allowlist_constant(self):
         """`is_chain` must not re-declare the allowlist.
@@ -788,6 +794,11 @@ class TestGenerateDocumentDocType:
         which doc types take which path and would quote the pair legitimately, so
         a whole-function match fails for a reason it does not name. This survives
         reformatting and a rename of the variable.
+
+        Comments are excluded from what is asserted on, for that same reason one
+        level down: a trailing `# ... 'prd' ...` on the statement is commentary
+        about the predicate, not a second copy of the allowlist, and failing on it
+        would again blame a predicate that is correct.
         """
         import inspect
 
@@ -803,19 +814,34 @@ class TestGenerateDocumentDocType:
         # The whole STATEMENT, not just its first line: wrapped as
         # `is_chain = (\n    doc_type in ...)` a line-only check would inspect the
         # `is_chain = (` half and a re-declared literal on the continuation would
-        # pass unseen. Consume lines until the brackets balance.
+        # pass unseen. So consume lines until the brackets balance — but count
+        # brackets on the CODE only, because an unbalanced `(` in a trailing
+        # comment (`# see api_build_prototype( for the twin`) would otherwise keep
+        # the loop swallowing lines until it happened to balance, pulling in the
+        # comments below that legitimately quote the pair and failing with a
+        # message blaming a predicate that is perfectly correct.
         assignment = ''
-        for line in lines[first:]:
+        code = ''
+        for line in lines[first:first + 10]:
             assignment += line
-            if assignment.count('(') == assignment.count(')'):
+            code += line.split('#')[0]
+            if code.count('(') == code.count(')'):
                 break
-        assert 'GENERATED_DOC_TYPES' in assignment, (
+        else:
+            raise AssertionError(
+                f'the is_chain statement never closed its brackets within 10 lines, '
+                f'so it could not be checked: {assignment.strip()}'
+            )
+        assert 'GENERATED_DOC_TYPES' in code, (
             f'the routing predicate must read the allowlist constant, not a second '
             f'copy of its literal: {assignment.strip()}'
         )
-        # No quoted doc type in the statement, which is what a re-declared literal
-        # would look like however it were spelled, spaced or wrapped.
-        assert "'prd'" not in assignment and "'prfaq'" not in assignment
+        # No quoted doc type in the CODE, which is what a re-declared literal would
+        # look like however it were spelled, spaced or wrapped.
+        assert "'prd'" not in code and "'prfaq'" not in code, (
+            f'the routing predicate re-declares the allowlist literal instead of '
+            f'reading GENERATED_DOC_TYPES: {assignment.strip()}'
+        )
 
 
 class TestDocumentCRUDEndpoints:

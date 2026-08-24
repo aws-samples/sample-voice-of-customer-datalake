@@ -67,8 +67,67 @@ def _doc_type_union() -> frozenset[str]:
     return frozenset(re.findall(r"'([^']+)'", match.group(1))) if match else frozenset()
 
 
-def _api_client_doc_type_sets() -> dict[str, frozenset[str]]:
-    """The `doc_type: 'a' | 'b'` annotations of the `generateDocument` signatures.
+# The client method whose parameters type THIS route's request body, anchored by
+# NAME rather than by tracking whichever `name: (` was seen most recently. An
+# indentation heuristic was tried first and had to be abandoned: a nested
+# function-typed field (`onProgress: (pct: number) => void`) matches `name: (`
+# too, and any rule for deciding which match ENDS the enclosing method got the
+# answer wrong for some real shape — scoping to the shallowest column seen
+# latched onto the first column-0 declaration in the file and skipped
+# `generateDocument` forever, silently. Anchoring on the name and delimiting by
+# bracket balance asks the question directly and has no such state.
+GENERATE_DOCUMENT_ANCHOR = re.compile(r'\bgenerateDocument\s*:\s*(?:async\s*)?\(')
+DOC_TYPE_ANNOTATION = re.compile(r"doc_type\??\s*:\s*((?:'[^']+'\s*\|\s*)+'[^']+')")
+
+
+def _parameter_list_end(source: str, open_paren: int) -> int | None:
+    """The index just past the `)` closing the parameter list at `open_paren`.
+
+    None when the brackets never balance, which means the extent of the method
+    could not be determined. Returning the rest of the file instead would be
+    worse than returning nothing: in `projectsApi.ts` the next `doc_type` below
+    `generateDocument` belongs to `suggestDocumentBrief`, which this file
+    deliberately does not pin, so an over-long extent would quietly reintroduce
+    the coupling. Nothing found fails the findability control loudly instead.
+
+    Quoted strings and `//` comments are skipped so a bracket inside either
+    cannot unbalance the count — the same defect class as the comment-stripping
+    in `test_the_routing_predicate_reads_the_allowlist_constant`.
+    """
+    depth = 0
+    quote = None
+    index = open_paren
+    while index < len(source):
+        char = source[index]
+        if quote is not None:
+            if char == '\\':
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in '\'"`':
+            quote = char
+        elif source.startswith('//', index):
+            newline = source.find('\n', index)
+            index = len(source) if newline == -1 else newline
+            continue
+        elif char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return None
+
+
+def _doc_type_annotations(source: str) -> dict[int, frozenset[str]]:
+    """The `doc_type: 'a' | 'b'` annotations inside `generateDocument`'s signature.
+
+    Keyed by 1-based line number. A pure function of the text so the parser
+    itself is testable — `TestTheParser` below feeds it the awkward shapes that
+    broke earlier attempts, because a lockstep test whose parser silently returns
+    nothing is a green result meaning "did not check".
 
     Scoped to that ONE client method on purpose. Matching every `doc_type`
     annotation in these files also picks up `suggestDocumentBrief`, which calls a
@@ -80,42 +139,154 @@ def _api_client_doc_type_sets() -> dict[str, frozenset[str]]:
     document route, and narrowing the test back would look like weakening a
     security check. If suggest-brief is ever worth pinning it wants its own
     constant and its own rationale.
+    """
+    found: dict[int, frozenset[str]] = {}
+    for anchor in GENERATE_DOCUMENT_ANCHOR.finditer(source):
+        open_paren = anchor.end() - 1
+        end = _parameter_list_end(source, open_paren)
+        if end is None:
+            continue
+        signature = source[open_paren:end]
+        first_line = source.count('\n', 0, open_paren) + 1
+        for match in DOC_TYPE_ANNOTATION.finditer(signature):
+            line_number = first_line + signature.count('\n', 0, match.start())
+            found[line_number] = frozenset(re.findall(r"'([^']+)'", match.group(1)))
+    return found
+
+
+def _api_client_doc_type_sets() -> dict[str, frozenset[str]]:
+    """`_doc_type_annotations` over each client source.
 
     Keyed by "file:line" so a mismatch report names the declaration that drifted
     rather than only the file.
     """
-    # The client method whose body types THIS route's request. The annotation sits
-    # on the same line in one file and a line or two below in the other, so track
-    # the enclosing property rather than matching `doc_type` anywhere.
-    method_start = re.compile(r'\b(\w+)\s*:\s*(?:async\s*)?\(')
-    annotation = re.compile(r"doc_type\??\s*:\s*((?:'[^']+'\s*\|\s*)+'[^']+')")
-
     found: dict[str, frozenset[str]] = {}
     for relative in API_CLIENT_SOURCES:
         path = _repo_root() / relative
         if not path.is_file():
             continue
-        enclosing = None
-        enclosing_column = -1
-        for line_number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-            # COLUMN-SCOPED, because a function-typed field NESTED in the request
-            # body — `onProgress: (pct: number) => void`, an abort-signal factory,
-            # any callback — also matches `name: (`. Taking every match would
-            # reassign `enclosing` to that field and silently skip the real
-            # annotation below it, returning an empty set with nothing saying so.
-            # A nested field is indented deeper than the method that contains it,
-            # so only a match at the same or lower column can END the method:
-            # `generateDocument` in projectsApi.ts sits at column 2 with its body
-            # fields at 4, and in client.ts the whole signature is one line where
-            # the method is the leftmost match.
-            for start in method_start.finditer(line):
-                if enclosing is None or start.start() <= enclosing_column:
-                    enclosing, enclosing_column = start.group(1), start.start()
-            if enclosing != 'generateDocument':
-                continue
-            for raw in annotation.findall(line):
-                found[f'{relative}:{line_number}'] = frozenset(re.findall(r"'([^']+)'", raw))
+        source = path.read_text(encoding='utf-8')
+        for line_number, declared in _doc_type_annotations(source).items():
+            found[f'{relative}:{line_number}'] = declared
     return found
+
+
+# Each value is a client source the parser must find the annotation in. Named
+# rather than inlined so the reason a shape is here sits with the shape.
+FINDABLE_SHAPES = {
+    # The shape in projectsApi.ts today: the annotation a line below the
+    # method, inside a multi-line request-body type.
+    'multi_line': """generateDocument: (projectId: string, data: {
+  doc_type: 'prd' | 'prfaq'
+}) => q,
+""",
+    # The shape in client.ts today: the whole signature on one line.
+    'single_line':
+        "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,\n",
+    # A function-typed field NESTED in the request body. It matches `name: (`
+    # as much as the method does, so a parser tracking "the most recent
+    # `name: (`" reassigns to it and skips the annotation below.
+    'nested_callback': """generateDocument: (projectId: string, data: {
+  onProgress: (pct: number) => void
+  doc_type: 'prd' | 'prfaq'
+}) => q,
+""",
+    # A column-0 function-typed declaration ABOVE the object literal. The
+    # column heuristic this parser replaced latched its threshold to 0 here and
+    # could never accept the indented `generateDocument` again, for the rest of
+    # the file — silently, which is why this case is pinned.
+    'column_zero_preamble': """label: (x: string) => void
+export const api = {
+  generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,
+}
+""",
+    # The method nested one level deeper than a sibling above it, which the
+    # same latch also refused.
+    'nested_namespace': """export const api = {
+  helper: (x: string) => x,
+  projects: {
+generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,
+  },
+}
+""",
+    # Brackets inside a string and inside a `//` comment, neither of which may
+    # unbalance the search for the end of the parameter list.
+    'bracket_in_string': """generateDocument: (p: string, d: {
+  label: ')('
+  doc_type: 'prd' | 'prfaq'
+}) => q,
+""",
+    'bracket_in_comment': """generateDocument: (p: string, d: {
+  // see runResearch( for the twin
+  doc_type: 'prd' | 'prfaq'
+}) => q,
+""",
+    # `async` between the name and the parameter list.
+    'async':
+        "generateDocument: async (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,\n",
+}
+
+
+class TestTheParser:
+    """The parser itself, on synthetic sources.
+
+    A lockstep test is only worth its positive control, and the control can only
+    report that the parser found nothing — never that a plausible restyling of the
+    client would make it find nothing. These cases are that second half: each is a
+    shape an earlier version of this parser silently returned `{}` for, which
+    would have left the equality tests below comparing empty sets.
+    """
+
+    @pytest.mark.parametrize('shape', FINDABLE_SHAPES.values(), ids=FINDABLE_SHAPES)
+    def test_the_annotation_is_found_however_the_signature_is_shaped(self, shape):
+        assert list(_doc_type_annotations(shape).values()) == [
+            frozenset({'prd', 'prfaq'})
+        ], f'parsed nothing from:\n{shape}'
+
+    def test_the_line_number_points_at_the_annotation(self):
+        """The keys are what a failure report names, so they must be right —
+        pointing a maintainer at the method's line instead of the annotation's
+        would send them to the wrong declaration in a file with several."""
+        source = (
+            'export const api = {\n'
+            '  generateDocument: (p: string, d: {\n'
+            "    doc_type: 'prd' | 'prfaq'\n"
+            '  }) => q,\n'
+            '}\n'
+        )
+        assert list(_doc_type_annotations(source)) == [3]
+
+    def test_a_sibling_methods_doc_type_is_not_collected(self):
+        """`suggestDocumentBrief` calls a different route which the handler comment
+        documents as deliberately not sharing this allowlist. Widening it must not
+        fail a test named after the document route — see this module's docstring.
+        """
+        source = (
+            "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,\n"
+            "suggestDocumentBrief: (p: string, b: "
+            "{ doc_type?: 'prd' | 'prfaq' | 'brief_only' }) => q,\n"
+        )
+        assert list(_doc_type_annotations(source).values()) == [
+            frozenset({'prd', 'prfaq'})
+        ]
+
+    def test_an_unbalanced_signature_yields_nothing_rather_than_overreaching(self):
+        """Failing to find the end of the parameter list must find NOTHING.
+
+        Falling back to "the rest of the file" would sweep in the next method's
+        `doc_type` — which in projectsApi.ts is `suggestDocumentBrief`'s, the one
+        annotation this file must not pin. An empty result is caught loudly by the
+        findability control instead.
+        """
+        source = "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq'\n"
+        assert _doc_type_annotations(source) == {}
+
+    def test_a_renamed_method_yields_nothing(self):
+        """The negative control for the anchor: if this returned annotations for
+        any method name, scoping to `generateDocument` would be doing nothing and
+        the suggest-brief exclusion above would be accidental."""
+        source = "createDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' }) => q,\n"
+        assert _doc_type_annotations(source) == {}
 
 
 class TestDocTypeLockstep:
