@@ -68,22 +68,20 @@ function cdkJsonContext(): Record<string, unknown> {
  * {@link committedFeatureFlags} derives FROM `cdkJsonContext()` against this read,
  * so `return cdkJsonContext()` here would reduce them to `f(x) === f(x)`.
  * Exported so there is one such body rather than the byte-identical copy each
- * suite used to hold.
+ * suite used to hold — which is also what makes the merge tempting now that both
+ * live in this file.
  *
- * That delegation passed all 290 cases when measured, which is why the throw below
- * is asserted rather than merely described — `cdkJsonContextStrict` in
- * synth-app.test.ts is what now catches it, via the one behaviour the two reads do
- * not share. Strict at all because an oracle that degrades to `{}` satisfies its
- * own comparison.
- *
- * Shares `PROJECT_ROOT`, so the pair catches a wrong file, key or default — not a
- * wrong root.
+ * That merge passed all 290 cases when measured, and typechecks and lints clean.
+ * Hence `cdkJsonContextStrict` in synth-app.test.ts, which is what now catches it.
+ * Strict at all because an oracle that degrades to `{}` satisfies its own
+ * comparison.
  *
  * @param cdkJsonPath file to read, defaulting to the project's cdk.json.
  *                    Injectable for the same reason {@link committedFeatureFlags}
- *                    takes its context: a fixture without a `context` block is the
- *                    only way to exercise the throw, and no production caller can
- *                    supply one.
+ *                    takes its context, and it is the seam that makes the merge
+ *                    detectable: a delegating body ignores this argument, so any
+ *                    fixture whose `context` differs from the committed one
+ *                    diverges. No production caller passes it.
  */
 export function cdkJsonContextStrict(
   cdkJsonPath: string = join(PROJECT_ROOT, 'cdk.json'),
@@ -112,14 +110,18 @@ export function cdkJsonContextStrict(
  * project `-c` default reaching them would silently invert what they measure.
  *
  * The `@aws-cdk` prefix is a deliberate HEURISTIC for "is a feature flag", NOT a
- * structural guarantee. It is a no-op on today's cdk.json — every committed key is
- * `@aws-cdk`-prefixed, and `synthCoreTemplate() must not spread cdk.json project
- * context` in lib/stacks/core-stack.test.ts goes red the day one is not — and a
- * barrier against a project key added later, but it has two known edges, both
- * recorded because a reader who takes the rule as exact draws the wrong conclusion
- * at either one. No count appears below on purpose: `aws-cdk-lib` is a caret
- * range, so any figure here goes stale on an `npm update` with no committed file
- * changing, and each claim is instead either asserted or dated.
+ * structural guarantee. It is a no-op on cdk.json as committed today — every key
+ * there is `@aws-cdk`-prefixed — and a barrier against a project key added later.
+ * That no-op is a MEASUREMENT, not something a test holds: the assertion in
+ * `spreads CDK feature flags only…` is a conjunction, failing only once cdk.json
+ * holds an unprefixed key AND this filter has stopped dropping it, so a project
+ * key committed on its own leaves that suite green. Its own comment says so.
+ *
+ * Two known edges below, both recorded because a reader who takes the rule as
+ * exact draws the wrong conclusion at either one. No count appears in them on
+ * purpose: `aws-cdk-lib` is a caret range, so any figure would go stale on an
+ * `npm update` with no committed file changing. Each claim is instead either
+ * pointed at the assertion that pins it or dated as a measurement.
  *
  * 1. Exactly one flag in `cx-api`'s `FLAGS` registry, `aws-cdk:enableDiffNoFail`,
  *    is not `@aws-cdk`-prefixed. Were cdk.json to commit it, this filter would

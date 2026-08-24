@@ -129,6 +129,46 @@ describe('pluginSystemSuppressions', () => {
 });
 
 /**
+ * The oracle two suites compare `committedFeatureFlags()` against: this file's
+ * `reads cdk.json when handed no context` and `spreads CDK feature flags only…`
+ * in lib/stacks/core-stack.test.ts.
+ *
+ * Both compare a value derived from the PRIVATE `cdkJsonContext()` against this
+ * read, so the comparisons mean something only while the two bodies stay separate.
+ * Nothing else in the project detects a merge: rewriting `cdkJsonContextStrict()`
+ * to `return cdkJsonContext()` passed all 290 cases at the parent commit,
+ * typechecks clean (`noUnusedParameters` is off, so the ignored path is fine) and
+ * meets no ESLint leg, since none covers CDK `lib/`. This suite is the only thing
+ * standing between that one-line "dedupe" and two silently vacuous comparisons.
+ */
+describe('cdkJsonContextStrict', () => {
+  it('reads the file it is handed, and throws when that file has no context block', () => {
+    // The injectable path is the lever, not the throw: a delegating body ignores
+    // the argument and returns cdk.json's real context, so ANY fixture whose
+    // context differs from it separates the two. Hence the first
+    // assertion, which also catches a body that reads the wrong file or the wrong
+    // key — neither of which the throw can see, since a strict read of the wrong
+    // file still throws on a fixture with no context.
+    const populated = join(createAssemblyDir('voc-cdkjson-'), 'cdk.json');
+    writeFileSync(populated, JSON.stringify({ context: { probe: 1 } }));
+    expect(cdkJsonContextStrict(populated)).toEqual({ probe: 1 });
+
+    // The throw pins the strictness — a lenient oracle degrading to `{}` would
+    // satisfy its own comparison, `{}` filtered being `{}` filtered. A direct
+    // guard rather than the only one: the non-emptiness assertions in the two
+    // consuming cases already fail on a missing block. Kept because they catch it
+    // by accident and this catches it by name.
+    const noContext = join(createAssemblyDir('voc-cdkjson-'), 'cdk.json');
+    writeFileSync(noContext, JSON.stringify({ app: 'npx ts-node bin/voc-datalake.ts' }));
+    expect(() => cdkJsonContextStrict(noContext)).toThrow();
+
+    // And that the default argument still points at the real cdk.json, so neither
+    // assertion above can pass against a fixture while production reads nothing.
+    expect(cdkJsonContextStrict()['@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy']).toBe(true);
+  });
+});
+
+/**
  * The `@aws-cdk` filter in `committedFeatureFlags()`, tested on synthetic context
  * rather than on cdk.json's.
  *
@@ -140,33 +180,6 @@ describe('pluginSystemSuppressions', () => {
  * learn the filter went missing. Passing context in makes the classification rule
  * itself the subject, so its removal fails a test today.
  */
-describe('cdkJsonContextStrict', () => {
-  it('throws on a cdk.json with no context block, rather than returning {}', () => {
-    // Two claims in one case, and the second is why it exists.
-    //
-    // The strictness itself: this read is the ORACLE the two cases below and
-    // `spreads CDK feature flags only…` in lib/stacks/core-stack.test.ts compare
-    // against, and an oracle that degraded to `{}` would satisfy its own
-    // comparison — `{}` filtered still equals `{}` filtered.
-    //
-    // And the independence from the private `cdkJsonContext()`. Rewriting
-    // `cdkJsonContextStrict()` to `return cdkJsonContext()` is invisible to
-    // everything else: measured, that delegation passes all 290 cases and
-    // typechecks clean, while quietly making the comparisons `f(x) === f(x)`. It
-    // fails HERE, because the delegating body ignores this path, reads the real
-    // cdk.json and returns a populated context instead of throwing. The throw is
-    // the one behaviour the two reads do not share, so it is the only thing that
-    // can pin them apart.
-    const noContext = join(createAssemblyDir('voc-cdkjson-'), 'cdk.json');
-    writeFileSync(noContext, JSON.stringify({ app: 'npx ts-node bin/voc-datalake.ts' }));
-
-    expect(() => cdkJsonContextStrict(noContext)).toThrow();
-    // The complement: the default still reads the real file, so the case above
-    // cannot pass by throwing everywhere.
-    expect(cdkJsonContextStrict()['@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy']).toBe(true);
-  });
-});
-
 describe('committedFeatureFlags', () => {
   it('keeps CDK feature flags and drops project-level context keys', () => {
     // The guarantee lib/stacks/core-stack.test.ts depends on: that suite has cases
