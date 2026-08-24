@@ -258,7 +258,11 @@ embeddable widget calls from the customer's own site.
 > | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
 > | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item`, and a static HTML render, respectively) |
 >
-> A method setting is keyed by PATH with `{id}` as a variable, so each ceiling is
+> The method-setting keys spell the variable `{form_id}` — the resource is created
+> as `addResource('{form_id}')`, so that is the path to look for in the template,
+> even though the table above uses `{id}` for brevity like the rest of this file.
+>
+> A method setting is keyed by PATH with that variable left as-is, so each ceiling is
 > shared across **every form in the deployment and every caller** — not per form
 > and not per client. 100 rps is therefore the aggregate widget page-view rate a
 > deployment supports. Above it the widget renders a flat "Feedback form

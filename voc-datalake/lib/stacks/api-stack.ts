@@ -1151,6 +1151,19 @@ export class VocApiStack extends VocStack {
       throttlingBurstLimit: 200,
     };
 
+    // NOTHING OBSERVES EITHER CEILING. There is no CloudWatch alarm and no metric
+    // filter anywhere in this stack, so a wrongly-sized limit produces no signal
+    // on the operator's side: the budget is shared deployment-wide and can be
+    // spent by traffic this account does not own or see, and a breach reaches the
+    // customer as "Feedback form unavailable." — byte-identical to a disabled
+    // form, so support looks for the wrong cause. Not a regression (these routes
+    // had no alarm at the stage default either), and out of scope for a throttle
+    // change, but it is what would make these numbers tunable in practice rather
+    // than only in principle. A single alarm on the stage's 4XXError, or better a
+    // ThrottledRequests-based one, is the smallest useful follow-up — smaller than
+    // either the per-form submission cap or the iframe caching noted above.
+
+
     // The three public feedback-form methods, keyed as
     // `{resource path}/{METHOD}`. CONDITIONAL on the flag above: when it is set
     // the `{form_id}` subtree is not created, and a method setting naming a path
@@ -1202,10 +1215,15 @@ export class VocApiStack extends VocStack {
         // never apply to the requests that matter. Method settings are keyed by
         // path and apply to every caller.
         //
-        // 20/s with a burst of 40 is roughly 30x what the feature needs — a room
-        // is bounded by MAX_BALLOT_CAP (200) ballots and submits once each — while
-        // still cutting a scripted flood down to something a single small table
-        // absorbs.
+        // The rationale for each pair lives on the CONSTANT that carries it —
+        // publicRouteThrottle and publicWidgetReadThrottle above — so there is one
+        // authoritative explanation per pair rather than a general one here that
+        // fits only some of the entries. For the two BALLOT entries specifically:
+        // 20/s with a burst of 40 is roughly 30x what the feature needs, since a
+        // room is bounded by MAX_BALLOT_CAP (200) ballots and submits once each,
+        // while still cutting a scripted flood down to something a single small
+        // table absorbs. That argument is about a bounded room and does NOT
+        // generalise to the widget reads below.
         methodOptions: {
           '/voting-sessions/{session_id}/config/GET': publicRouteThrottle,
           '/voting-sessions/{session_id}/submit/POST': publicRouteThrottle,
@@ -1233,6 +1251,20 @@ export class VocApiStack extends VocStack {
           // at this ceiling buys a per-request model invocation against a shared
           // account quota — which is the real reason 20 rps rather than any
           // DynamoDB cost, and the thing to weigh before raising it.
+          //
+          // This is an UPSTREAM BACKSTOP, not a bound on model consumption, and
+          // the difference matters to anyone tuning it. The queue decouples the
+          // two: `submit` only enqueues, and the processor is an SQS event source
+          // (batchSize 10, no maxConcurrency and no reservedConcurrentExecutions
+          // anywhere in these stacks), so what actually paces Bedrock is Lambda's
+          // account concurrency draining the queue. This ceiling bounds the
+          // STEADY-STATE arrival rate; it does not bound the burst a filled queue
+          // replays, and 20 rps sustained is still ~1.7M invocations/day. The
+          // effective control is consumer-side — maxConcurrency on the event
+          // source, or reservedConcurrentExecutions on the processor — and that is
+          // a processing-stack change, so it is DEFERRED rather than considered
+          // covered here. Recorded so the Bedrock argument above is not read as
+          // bottoming out at API Gateway.
           //
           // Keys are spelled `{form_id}`, matching
           // `feedbackFormsResource.addResource('{form_id}')`, and are omitted
@@ -1505,10 +1537,18 @@ export class VocApiStack extends VocStack {
       // Intentionally unauthenticated: the widget runs on the customer's own site.
       //
       // These three are named in INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts,
-      // and all three are throttled below the stage default by
-      // `deployOptions.methodOptions` at the top of this stack — keyed by these
-      // exact paths, and pinned against them by a test, because a mistyped key
-      // throttles nothing and says nothing.
+      // and all three carry an EXPLICIT pair in `deployOptions.methodOptions` at
+      // the top of this stack — keyed by these exact paths, and pinned against
+      // them by a test, because a mistyped key throttles nothing and says nothing.
+      //
+      // Two pairs, not one, and only ONE of them is below the stage default:
+      // `submit` is held at 20/40 (a per-request Bedrock invocation downstream),
+      // while `config` and `iframe` RESTATE the stage default's 100/200 as a
+      // ceiling of their own. Restating it is not redundant with the default —
+      // it pins the two reads to the demand THEY have (a customer's page-view
+      // rate), so a later tightening of the stage-wide number cannot silently
+      // squeeze a third party's page. See publicWidgetReadThrottle for the full
+      // argument before deleting either entry as duplicative.
       const publicFeedbackFormMethods = [
         feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
         feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),

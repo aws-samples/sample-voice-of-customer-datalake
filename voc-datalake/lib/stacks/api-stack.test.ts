@@ -788,31 +788,29 @@ describe('the two public sets get OPPOSITE origins, on purpose', () => {
   it('leaves the forms wildcard unmoved by environment=dev, unlike every other Lambda', () => {
     // The divergence the case above describes, asserted rather than only noted.
     // This is the one API Lambda no deployment-time control can tighten: the dev
-    // switch that loosens all fifteen others reaches everything BUT this value,
-    // which is already at its loosest and stays there in both contexts.
+    // switch that loosens every OTHER API Lambda (each takes
+    // `ALLOWED_ORIGIN: allowedOrigin`) reaches everything BUT this value, which is
+    // already at its loosest and stays there in both contexts. No count is stated
+    // here on purpose — a number drifts as Lambdas are added, and one of those
+    // others is not even a CORS consumer (the MCP Lambda uses ALLOWED_ORIGIN as
+    // its DNS-rebinding allowlist, see its comment in api-stack.ts).
     const dev = apiTemplateDev();
 
     expect(allowedOriginOf(dev, 'voc-feedback-form-api')).toBe('*');
+
+    // A FOIL, not a requirement of this change: it shows the switch does move a
+    // sibling on the same fixture, which is what makes the line above meaningful.
+    // This PR does not own dev-mode CORS, so a future decision to stop loosening
+    // `allowedOrigin` to '*' in dev should just update this line — it is not the
+    // asymmetry the describe block exists to protect.
     expect(allowedOriginOf(dev, 'voc-ballots-api')).toBe('*');
   });
 });
 
 
 describe('the public feedback-form routes', () => {
-  /** The three routes the embedded widget reaches with no credentials, as
-   *  `deployOptions.methodOptions` keys them: `{resource path}/{METHOD}`.
-   *
-   *  `{form_id}` is the spelling of the resource created as
-   *  `feedbackFormsResource.addResource('{form_id}')`. A key naming a path that
-   *  does not exist throttles nothing and reports nothing, so the spelling is
-   *  compared against the wired routes below rather than trusted. */
-  const PUBLIC_FORM_METHOD_KEYS = [
-    '/feedback-forms/{form_id}/config/GET',
-    '/feedback-forms/{form_id}/submit/POST',
-    '/feedback-forms/{form_id}/iframe/GET',
-  ];
-
-  /** The pair each of those three carries, and WHY it is not one pair.
+  /** The pair each of the three public widget routes carries, and WHY it is not
+   *  one pair.
    *
    *  `submit` joins the ballots at 20/40: the request itself is three operations
    *  (form get_item, conditional brand update_item, SQS send_message — it does NOT
@@ -829,22 +827,37 @@ describe('the public feedback-form routes', () => {
    *  widget shows a 429 as an unretried "Feedback form unavailable." So the
    *  bounded-room argument behind 20 rps does not reach them, and pinning their
    *  own value keeps a future tightening of the stage-wide default from silently
-   *  squeezing a third party's page. */
-  const EXPECTED_FORM_THROTTLES: Record<string, { rate: number; burst: number }> = {
+   *  squeezing a third party's page.
+   *
+   *  Keys are `deployOptions.methodOptions`' own form, `{resource path}/{METHOD}`,
+   *  and `{form_id}` is the spelling of the resource created as
+   *  `feedbackFormsResource.addResource('{form_id}')`. A key naming a path that
+   *  does not exist throttles nothing and reports nothing, so the spelling is
+   *  compared against the wired routes below rather than trusted. */
+  const EXPECTED_FORM_THROTTLES = {
     '/feedback-forms/{form_id}/config/GET': { rate: 100, burst: 200 },
     '/feedback-forms/{form_id}/submit/POST': { rate: 20, burst: 40 },
     '/feedback-forms/{form_id}/iframe/GET': { rate: 100, burst: 200 },
-  };
+  } satisfies Record<string, { rate: number; burst: number }>;
+
+  /** DERIVED from the record, not maintained beside it. Two hand-kept lists of
+   *  the same three keys can disagree, and indexing the record with a key it
+   *  lacks reads as `{rate; burst}` to the compiler (`noUncheckedIndexedAccess`
+   *  is off in this tsconfig), so a mismatch would surface as "cannot read
+   *  properties of undefined" instead of naming the missing key. The case that
+   *  needs the pairs iterates `Object.entries` for the same reason: no indexing,
+   *  so no unchecked lookup to get wrong. */
+  const PUBLIC_FORM_METHOD_KEYS = Object.keys(EXPECTED_FORM_THROTTLES);
 
   it('gives each of the three an explicit pair, tight for submit and generous for the reads', () => {
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
 
-    for (const key of PUBLIC_FORM_METHOD_KEYS) {
+    for (const [key, expected] of Object.entries(EXPECTED_FORM_THROTTLES)) {
       const setting = settings.get(key);
 
       expect(setting, `${key} has no method-level throttle`).toBeDefined();
-      expect(setting?.rate).toBe(EXPECTED_FORM_THROTTLES[key].rate);
-      expect(setting?.burst).toBe(EXPECTED_FORM_THROTTLES[key].burst);
+      expect(setting?.rate).toBe(expected.rate);
+      expect(setting?.burst).toBe(expected.burst);
     }
   });
 
@@ -903,6 +916,35 @@ describe('the public feedback-form routes', () => {
         });
 
       expect(orphans).toEqual([]);
+    }
+  });
+
+  it('gives EVERY unauthenticated route an explicit throttle, not just these three', () => {
+    // The CONVERSE of the case above, and the one that generalises this PR rather
+    // than pinning its three routes. The orphan check asks "does every setting
+    // name a wired route?"; this asks "does every route that needs a setting have
+    // one?" Without it, a SIXTH public route added later passes every other test
+    // in this file while silently riding the stage default — which is exactly the
+    // gap that existed for these three before this change, so leaving only the
+    // per-key pins would fix the instance and not the class.
+    //
+    // Quantified over the unauthenticated routes the TEMPLATE declares, not over
+    // INTENTIONALLY_PUBLIC_ROUTES, so it needs no maintenance: publishing a route
+    // puts it in scope here automatically. Both shapes, since the flagged one
+    // publishes a different (smaller) set.
+    for (const template of [apiTemplate(), apiTemplateFlagged()]) {
+      const settings = new Map(methodSettings(template).map((s) => [s.key, s]));
+      const unthrottled = unauthenticatedRoutes(template)
+        // `GET /a/b` is keyed `/a/b/GET` in deployOptions.methodOptions.
+        .map((route) => {
+          const [verb, path] = route.split(' ');
+          return `${path}/${verb}`;
+        })
+        // A rate limit with no burst, or vice versa, is not an explicit pair: the
+        // missing half falls back to the stage or account default silently.
+        .filter((key) => settings.get(key)?.rate === undefined || settings.get(key)?.burst === undefined);
+
+      expect(unthrottled, 'public routes riding the stage default').toEqual([]);
     }
   });
 
