@@ -782,14 +782,18 @@ widget stops working until the second deploy finishes. They fail closed (no data
 is served, and nothing is left unauthenticated), and the window is one deploy
 long. Schedule it accordingly if forms are live.
 
-### The embeddable widget served from the frontend bucket is stale
+### The embeddable widget is served by the Lambda, not the frontend bucket
 
-`frontend/public/feedback-widget.js` is published to the CDN but is **not** the
-widget the application uses. The live one is `lambda/api/static/feedback-widget.js`,
-served by the feedback-form Lambda. The frontend copy still calls the retired
-`/feedback-form/*` (singular) routes, so it has been broken independently of the
-authorization change above — do not debug it as a symptom of that change. It has
-no callers in the codebase; it is pending deletion or a repoint.
+There is exactly one embeddable widget: `lambda/api/static/feedback-widget.js`,
+served by the feedback-form Lambda from
+`/feedback-forms/{form_id}/widget.js`. That is the only supported embed path —
+see [Feedback Forms](feedback-forms.md) for the snippet to hand to customers.
+
+A second, stale copy used to be published to the CDN from
+`frontend/public/feedback-widget.js`. It called the retired `/feedback-form/*`
+(singular) routes and had no callers, so it was deleted. If an old integration
+snippet points at the website bucket (`https://<distribution>/feedback-widget.js`),
+repoint it at the Lambda route above rather than restoring the file.
 
 ### CloudFront Cache
 

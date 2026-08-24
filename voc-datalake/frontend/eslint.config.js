@@ -11,8 +11,6 @@ export default tseslint.config(
       'dist/**',
       'node_modules/**',
       'coverage/**',
-      'public/mockServiceWorker.js',
-      'public/feedback-widget.js',
       'mock-server.js',
       '**/*.test.ts',
       '**/*.test.tsx',
