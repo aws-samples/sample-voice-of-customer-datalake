@@ -253,6 +253,13 @@ embeddable widget calls from the customer's own site.
 > **Rate limits on the three public routes** are stage method settings in
 > `api-stack.ts`, and are EXTERNALLY OBSERVABLE to anyone embedding the widget:
 >
+> <!-- LOCKSTEPPED against the stack by `the public feedback-form routes` in
+>      voc-datalake/lib/stacks/api-stack.test.ts, which parses every line below
+>      that names a route and states a rate. Write a pair as `<rate> rps / <burst>`
+>      or `<rate> req/s, burst <burst>`; the burst must sit immediately after the
+>      `/` or the `, burst `, so `(burst N)` will not parse. Prose about throughput
+>      is not judged — only digits immediately before a per-second unit are. -->
+>
 > | Route | Rate / burst | Why |
 > |---|---|---|
 > | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
@@ -277,7 +284,7 @@ embeddable widget calls from the customer's own site.
 > a disabled form; `POST /submit` shows a modal "Failed to submit." alert and is
 > retryable; `GET /iframe` runs no widget code at all (the browser navigates to it
 > directly), so it is a raw API Gateway error page inside the customer's iframe.
-> The two `/voting-sessions/{id}/…` public routes carry 20 rps / 40 for a different
+> `GET /voting-sessions/{session_id}/config` and its sibling submit route carry 20 rps / 40 for a different
 > reason (a room is bounded by `MAX_BALLOT_CAP`).
 
 > There is no `/feedback-form/*` (singular) API. These routes are declared

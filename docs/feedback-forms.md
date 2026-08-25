@@ -122,6 +122,20 @@ The three unauthenticated routes carry per-method rate limits, set as API Gatewa
 stage method settings in `voc-datalake/lib/stacks/api-stack.ts`. They are worth
 knowing before you embed the widget, because they are observable from your page:
 
+<!-- These figures are LOCKSTEPPED against the stack: `the public feedback-form
+     routes` in voc-datalake/lib/stacks/api-stack.test.ts parses every line here
+     that names a route and states a rate, and fails if it disagrees with what
+     api-stack.ts deploys. So edit them only alongside the stack.
+
+     Write a pair as `<rate> req/s, burst <burst>` or `<rate> rps / <burst>`. The
+     parser anchors the burst to the `, burst ` or the `/` immediately after the
+     rate, deliberately, so that a row stating no burst yields nothing and fails
+     loudly rather than adopting an unrelated later number. `(burst N)` or "with a
+     burst of N" will NOT parse and the failure will say the row states no pair.
+
+     Prose ABOUT throughput is fine and is not judged — a line is only checked if
+     it carries digits immediately before a per-second unit. -->
+
 | Route | Rate / burst |
 |-------|--------------|
 | `GET /feedback-forms/{id}/config` | 100 req/s, burst 200 |

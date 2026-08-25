@@ -1178,18 +1178,15 @@ export class VocApiStack extends VocStack {
      *  feedback_form_handler.py change. Recorded so nobody reads the throttle as
      *  evidence that the route is uncacheable.
      *
-     *  DO NOT CACHE `iframe` BEFORE ESCAPING ITS INPUT. get_form_iframe
-     *  interpolates the caller-supplied form_id into a <script> block with no
-     *  escaping and no existence check, and Powertools' dynamic-route capture
-     *  group admits `'`, `(`, `)` and `;`, so the value can close the JS string
-     *  literal — a reflected XSS on this API's own origin, unauthenticated, with
-     *  no CSP and no WAF in front. Caching converts a REFLECTED XSS into a STORED
-     *  one, served to every subsequent visitor, so the escaping is a PRECONDITION
-     *  of the caching follow-up and not a parallel cleanup. The fix is a
-     *  _validated_form_id mirroring ballots_handler._validated_session_id, plus
-     *  json.dumps / html.escape at the interpolation sites. Pre-existing and out
-     *  of scope for a CDK-only change; recorded HERE because this is where the
-     *  next reader decides to implement the caching.
+     *  DO NOT CACHE `iframe` BEFORE ESCAPING ITS INPUT — issue #379. That route
+     *  reflects caller-supplied input into its response unescaped, so caching
+     *  would turn a reflected flaw into a stored one served to every subsequent
+     *  visitor. The escaping is therefore a PRECONDITION of the caching follow-up,
+     *  not a parallel cleanup. Pre-existing and out of scope for a CDK-only
+     *  change; the constraint is recorded HERE because this is where the next
+     *  reader decides to implement the caching, and the mechanism and fix are in
+     *  #379 rather than restated here — one description to keep correct, and it
+     *  stops this comment asserting a live vulnerability after #379 is closed.
      *
      *  NOTHING OBSERVES THIS CEILING EITHER — see the note on `methodOptions`
      *  below, where both pairs are applied. */

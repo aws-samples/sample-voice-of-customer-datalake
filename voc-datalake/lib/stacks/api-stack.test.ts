@@ -227,6 +227,26 @@ function apiMethods(template: Template): ApiMethod[] {
   });
 }
 
+/** Every method except CORS preflight.
+ *
+ *  OPTIONS is excluded from the authorization invariant AND from "every
+ *  unauthenticated route gets an explicit throttle", which review asked about
+ *  directly. The answer is that preflight is in scope for the CONCERN and already
+ *  satisfied, not exempt from it — and the two facts it rests on are ASSERTED by
+ *  `CORS preflight is unauthenticated and reaches no compute, which is why it is
+ *  excluded above`, not stated here as figures that would rot.
+ *
+ *  `NONE` is not a choice: a browser sends no credentials on a preflight, so
+ *  requiring an authorizer would break CORS for every caller. `MOCK` is what makes
+ *  the throttle question different in kind from the three routes this change is
+ *  about — a preflight reaches no Lambda, no DynamoDB and no Bedrock, so there is
+ *  no per-call cost to bound, only gateway requests, and the stage-wide default
+ *  (an explicit pair in its own right) already bounds those.
+ *
+ *  The trigger is therefore MOCK, and the assertion below is what fires on it: a
+ *  Lambda-backed OPTIONS would make a preflight cost real compute and would need
+ *  its own pair. Per-method pairs for every preflight buy nothing while they are
+ *  all MOCK, and would have to be maintained against every route added. */
 const nonOptions = (template: Template) => apiMethods(template).filter((m) => m.httpMethod !== 'OPTIONS');
 const unauthenticatedRoutes = (template: Template) =>
   nonOptions(template).filter((m) => m.authorizationType === 'NONE').map((m) => m.route).sort();
@@ -910,10 +930,69 @@ describe('the public feedback-form routes', () => {
    *
    *  Longest alternatives first, so `requests/second` is not consumed as
    *  `requests/s` with `econd` left over. The trailing `\/\s*s` is the bare
-   *  `100/s` form; wrapped in `\b…\b` by both users, it needs a digit or word
-   *  character before the slash and a non-word character after the `s`, so a path
-   *  segment such as `/static` or `/submissions` is not mistaken for a rate. */
+   *  `100/s` form. */
   const RATE_UNIT = String.raw`requests? per second|requests?\/sec(?:ond)?|req\/sec(?:ond)?|requests?\/s|req\/s|rps|\/\s*s`;
+
+  /** The documented names that are about a MORE SPECIFIC route than `names`: their
+   *  route key CONTAINS this name, so a line naming them is not a line about this
+   *  route.
+   *
+   *  `/voting-sessions/{session_id}/config/GET` contains `/config`, so a ballot row
+   *  spelled with its full path — which the steering file already does for the form
+   *  (`/feedback-forms/{id}/config`) — would otherwise be selected for `/config`
+   *  and judged against the FORM's 100/200, failing as a stale ceiling while
+   *  correctly publishing the ballot's 20/40. Reproduced before fixing: rewriting
+   *  the ballot row that way fails with "stale for /config: this row states 20/40
+   *  but the template deploys 100/200".
+   *
+   *  Today's ballot row writes `/{id}/…` and so does not collide — this is one
+   *  full-path rewording away, and the failure it produces accuses a document that
+   *  is correct. A separate function so `attributes a line to the most specific
+   *  route it names` can pin it without needing a document that collides. */
+  const moreSpecificThan = (names: string) => Object.entries(DOCUMENTED_ROUTE_KEYS)
+    .filter(([other, key]) => other !== names && key.includes(names))
+    .map(([other]) => other);
+
+  /** Whether `line` is a documentation row ABOUT `names`.
+   *
+   *  ONE definition, used by the lockstep loop and by `attributes a line to the
+   *  most specific route it names`. Splitting them is what a mutation caught: with
+   *  the test calling `moreSpecificThan` and the loop applying the exclusion
+   *  inline, disabling the loop's copy left every case green — the helper was
+   *  pinned and its USE was not, which is the same shape as the duplicated lists
+   *  this block already fixed twice. */
+  const isRowFor = (names: string, line: string) => line.includes(names)
+    && !moreSpecificThan(names).some((other) => line.includes(other));
+
+  /** A stated rate FIGURE: digits immediately followed by one of those units.
+   *
+   *  Both predicates below use THIS, not a bare `RATE_UNIT`, and the digits are
+   *  the whole correction. Sharing only the unit made selection as wide as
+   *  discovery, and two legitimate lines then hard-failed as "states no rate pair
+   *  this test can parse" — the false positive the comment on `statesALimit` says
+   *  the precise bias exists to avoid:
+   *
+   *    - `The /submit route sustains roughly 30x what the feature needs in
+   *      requests per second.` — prose that names a route and a unit, claims no
+   *      figure, and was judged as though it had.
+   *    - `| /submit | write | Sized for 50 MB/s of payload … |` — the bare
+   *      `\/\s*s` alternative matches ANY `<word>/s`, so `MB/s`, `GB/s`, `ops/s`
+   *      and `reads/s` all counted as stating a rate.
+   *
+   *  Both reproduced against the real documents before this changed. Requiring the
+   *  digits makes selection match what `allStatedPairs` can actually parse, which
+   *  is the property that was missing: a line is judged only if a rate figure is
+   *  there to judge. `50 MB/s` no longer qualifies because the digits are not
+   *  adjacent to the unit — `MB` sits between them.
+   *
+   *  Discovery gets the same treatment on purpose, and it does not lose reach for
+   *  its job: a third document that PUBLISHES one of these ceilings states it in
+   *  digits, which is the only form the lockstep can pin anyway (its own failure
+   *  message says "digits, not words"). What discovery stops doing is flagging a
+   *  document for mentioning throughput in prose. The two predicates keep their
+   *  opposite biases where the comment says those live — SCOPE (whole file versus
+   *  one line) and the anchored burst — not in what counts as a figure. */
+  const RATE_FIGURE = String.raw`\d+\s*(?:${RATE_UNIT})\b`;
 
   it('gives each of the three an explicit pair, tight for submit and generous for the reads', () => {
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
@@ -985,6 +1064,50 @@ describe('the public feedback-form routes', () => {
     }
   });
 
+  it('CORS preflight is unauthenticated and reaches no compute, which is why it is excluded above', () => {
+    // The two facts `nonOptions` rests on, asserted rather than described. Review
+    // asked whether the OPTIONS methods belong in the "every unauthenticated route
+    // is throttled" invariant; they do belong to the concern, and this is why they
+    // are already satisfied by the stage default.
+    //
+    // NEITHER fact is a count. The number of preflights changes with every route
+    // added, so pinning it would fail on unrelated work; what must hold is that
+    // ALL of them are still MOCK and still NONE.
+    for (const template of [apiTemplate(), apiTemplateFlagged(), apiTemplateAllPlugins()]) {
+      const preflights = apiMethods(template).filter((m) => m.httpMethod === 'OPTIONS');
+      expect(preflights.length, 'no OPTIONS methods at all — CORS is not wired, so this is vacuous').toBeGreaterThan(0);
+
+      // Unauthenticated by necessity: a browser sends no credentials on a preflight.
+      expect(
+        [...new Set(preflights.map((m) => m.authorizationType))],
+        'a preflight gained an authorizer, which breaks CORS for every caller',
+      ).toEqual(['NONE']);
+
+      // MOCK is the load-bearing one: it is why an unauthenticated preflight needs
+      // no per-method pair. A Lambda-backed OPTIONS would cost real compute per
+      // call and would have to join EXPECTED_FORM_THROTTLES' treatment instead.
+      // Parsed, not asserted — this file's convention for template values.
+      const PreflightSchema = z.object({
+        Properties: z.object({
+          HttpMethod: z.string(),
+          Integration: z.object({ Type: z.string().optional() }).optional(),
+        }),
+      });
+      const backed = Object.entries(template.findResources('AWS::ApiGateway::Method'))
+        .filter(([, resource]) => {
+          const { HttpMethod, Integration } = PreflightSchema.parse(resource).Properties;
+          return HttpMethod === 'OPTIONS' && Integration?.Type !== 'MOCK';
+        })
+        .map(([logicalId]) => logicalId);
+
+      expect(
+        backed,
+        'an OPTIONS method is no longer a MOCK integration, so a preflight now reaches compute — '
+        + 'it needs its own throttle pair, and `nonOptions` must stop excluding it',
+      ).toEqual([]);
+    }
+  });
+
   it('gives EVERY unauthenticated route an explicit throttle, not just these three', () => {
     // The CONVERSE of the case above, and the one that generalises this PR rather
     // than pinning its three routes. The orphan check asks "does every setting
@@ -1051,6 +1174,79 @@ describe('the public feedback-form routes', () => {
         .map(({ key }) => key);
 
       expect(unthrottled, 'public routes riding the stage default').toEqual([]);
+    }
+  });
+
+  it('attributes a line to the most specific route it names', () => {
+    // Pins `moreSpecificThan`, which stops a BALLOT row being judged against the
+    // FORM's ceiling. Pinned here rather than through the documents because
+    // neither document collides today — the exposure is one full-path rewording
+    // away, so a fixture is the only way to keep the guard honest.
+    //
+    // The relationship is containment between a doc-facing NAME and another
+    // route's KEY, not string length: `/voting-sessions/{session_id}/config/GET`
+    // contains `/config`, which is what makes a ballot row look like a form row.
+    expect(moreSpecificThan('/config')).toEqual(['/voting-sessions']);
+
+    // And the converse, which is what stops this over-reaching: the ballot route
+    // is not shadowed by anything, and the two form routes whose names appear in
+    // no other key are shadowed by nothing either. If this returned a value, rows
+    // would start being skipped rather than misjudged — the opposite failure.
+    expect(moreSpecificThan('/voting-sessions')).toEqual([]);
+    expect(moreSpecificThan('/iframe')).toEqual([]);
+    expect(moreSpecificThan('/submit')).toEqual([]);
+
+    // The selection rule itself: a line naming the ballot route is not a `/config`
+    // row, and a line naming only `/config` still is.
+    // `isRowFor` itself, the SAME predicate the lockstep loop filters with — not a
+    // restatement of it here. A local copy left the loop's use of it unpinned.
+    const ballotRow = '> `GET /voting-sessions/{session_id}/config` carries 20 rps / 40';
+    const formRow = '> | `GET /config`, `GET /iframe` | **100 rps / 200** |';
+
+    expect(isRowFor('/config', ballotRow), 'a ballot row must not be judged as a form row').toBe(false);
+    expect(isRowFor('/voting-sessions', ballotRow)).toBe(true);
+    expect(isRowFor('/config', formRow)).toBe(true);
+  });
+
+  it('counts a rate FIGURE, not a bare unit, so prose about throughput is not judged', () => {
+    // The predicate both doc cases select and discover with, pinned directly.
+    //
+    // Reaching it through the real documents is not enough: both defects below
+    // were found by a reviewer, not by this suite, because they are exposures to
+    // the NEXT line either document gains — every line present today happens to
+    // state a well-formed pair. Measured: with the digits removed the real-doc
+    // lockstep still PASSES, so the shapes are named here, where a revert fails
+    // immediately rather than on the next doc edit.
+    //
+    // Reproduced against the real docs/feedback-forms.md before fixing: each
+    // `MUST_NOT_SELECT` row, appended to that file, failed the lockstep case with
+    // "states no rate pair this test can parse" — a legitimate line accused of
+    // being a stale ceiling.
+    const selects = (line: string) => new RegExp(RATE_FIGURE).test(line);
+
+    const MUST_SELECT = [
+      '| `/submit` | 5 req/s, burst 10 |',
+      '| `/config` | **100 rps / 200** |',
+      'the reads allow 100 requests per second, burst 200',
+      'documented as 100 requests/second, burst 200',
+      'the bare form, 100/s / 200, is also accepted',
+    ];
+    const MUST_NOT_SELECT = [
+      // Names a route and a unit; claims no figure. Judged as though it had.
+      'The `/submit` route sustains roughly 30x what the feature needs in requests per second.',
+      // The bare `\/\s*s` alternative matches any `<word>/s`.
+      '| `/submit` | write | Sized for 50 MB/s of payload, not room-sized bursts. |',
+      'throughput of 12 GB/s across the fleet',
+      'the handler manages 40 ops/s per shard',
+      // A path segment must never read as a rate.
+      'see /feedback-forms/{form_id}/submissions for the reads',
+    ];
+
+    for (const line of MUST_SELECT) {
+      expect(selects(line), `should be judged but was not selected: ${line}`).toBe(true);
+    }
+    for (const line of MUST_NOT_SELECT) {
+      expect(selects(line), `states no figure but was selected for judgement: ${line}`).toBe(false);
     }
   });
 
@@ -1128,13 +1324,13 @@ describe('the public feedback-form routes', () => {
     }
 
     /** A line stating a rate limit, in ANY spelling of a per-second rate the
-     *  discovery guard below recognises — `RATE_UNIT` is shared with it rather
+     *  discovery guard below recognises — `RATE_FIGURE` is shared with it rather
      *  than restated here, and that sharing is the point.
      *
      *  The two predicates keep their OPPOSITE BIASES, which is what earlier
      *  rounds established and this deliberately does not undo: discovery is
-     *  evaluated over the WHOLE FILE and demands only a token (over-inclusive, so
-     *  a drifting third document cannot hide), while this one is evaluated PER
+     *  evaluated over the WHOLE FILE (over-inclusive, so a drifting third
+     *  document cannot hide), while this one is evaluated PER
      *  LINE and the parse below additionally demands an anchored burst (precise,
      *  so a legitimate line is not failed). What they must not disagree about is
      *  the VOCABULARY, and they did: discovery accepted `requests/second` and
@@ -1148,8 +1344,12 @@ describe('the public feedback-form routes', () => {
      *
      *  One alternation removes the class rather than the instance: any spelling
      *  either predicate recognises, both recognise. The biases live in the SCOPE
-     *  and in the burst anchoring, not in the list of words for "per second". */
-    const statesALimit = (line: string) => new RegExp(String.raw`\b(?:${RATE_UNIT})\b`).test(line);
+     *  and in the burst anchoring, not in the list of words for "per second".
+     *
+     *  A FIGURE, not just a unit — `RATE_FIGURE` requires digits adjacent to the
+     *  unit. Selecting on the bare unit made this as wide as discovery and failed
+     *  two legitimate lines; see `RATE_FIGURE`. */
+    const statesALimit = (line: string) => new RegExp(RATE_FIGURE).test(line);
 
     /** EVERY `<rate> <per-second unit> <separator> <burst>` pair a line states, in order.
      *
@@ -1177,11 +1377,13 @@ describe('the public feedback-form routes', () => {
      *  that states no burst, which then fails as "states no parseable pair" rather
      *  than passing.
      *
-     *  The RATE UNIT is `RATE_UNIT`, the same alternation `statesALimit` selects
-     *  with, so a line that is selected is a line this can parse. Restating a
-     *  narrower unit here would reintroduce the divergence one level down: the
-     *  line would be judged and then report "states no rate pair this test can
-     *  parse" for a spelling the selector had just accepted. */
+     *  The rate-and-unit prefix here is exactly `RATE_FIGURE`, which is what
+     *  `statesALimit` selects with, so a line that is selected is a line this can
+     *  parse — that equality is the invariant, and losing it in either direction
+     *  is a defect this file has already seen twice. A NARROWER unit here would
+     *  report "states no rate pair this test can parse" for a spelling the
+     *  selector had just accepted; a WIDER selector would judge a line that never
+     *  claimed a figure, which is what requiring the digits fixed. */
     const allStatedPairs = (line: string): { rate: number; burst: number }[] =>
       [...line.matchAll(new RegExp(String.raw`(\d+)\s*(?:${RATE_UNIT})\s*(?:,\s*burst\s+|\/\s*)(\d+)`, 'g'))]
         .map((match) => ({ rate: Number(match[1]), burst: Number(match[2]) }));
@@ -1194,7 +1396,7 @@ describe('the public feedback-form routes', () => {
         // The steering file groups the two reads onto one row, so a route may be
         // documented by more than one line — and EVERY such line is judged, not
         // just one of them. See the loop below for why that changed.
-        const rows = lines.filter((line) => line.includes(names) && statesALimit(line));
+        const rows = lines.filter((line) => isRowFor(names, line) && statesALimit(line));
 
         expect(rows.length, `${doc} documents no rate limit for ${names}`).toBeGreaterThan(0);
 
@@ -1315,11 +1517,17 @@ describe('the public feedback-form routes', () => {
     // no line of it was a candidate in the lockstep, which then failed with
     // "documents no rate limit for /config" about a document that states one. The
     // guard fired, so nothing drifted silently, but it accused the document
-    // instead of the parse. Both now share `RATE_UNIT`, so anything wide enough to
-    // be DISCOVERED is wide enough to be JUDGED, and the biases live where they
+    // instead of the parse. Both now share `RATE_FIGURE`, so anything wide enough
+    // to be DISCOVERED is wide enough to be JUDGED, and the biases live where they
     // belong: in the scope (file vs line) and in the burst anchoring.
     //
-    // Verified over the tree: whole-file scope with the shared unit flags exactly
+    // Sharing the UNIT alone was the first attempt and it over-corrected: it made
+    // selection as wide as discovery, so prose naming a route and any `<word>/s`
+    // throughput was judged as though it had stated a ceiling. `RATE_FIGURE` adds
+    // the digits both sides actually need — see its comment for the two lines that
+    // failed.
+    //
+    // Verified over the tree: whole-file scope with the shared figure flags exactly
     // the two pinned documents and nothing else, so the over-inclusion costs no
     // false positive today.
     const ROOT = join(__dirname, '..', '..', '..');
@@ -1343,10 +1551,10 @@ describe('the public feedback-form routes', () => {
       });
 
     const ROUTES = ['/feedback-forms', '/voting-sessions'];
-    /** Any spelling of a per-second rate — `RATE_UNIT`, the SAME alternation the
-     *  lockstep case selects and parses with, so the two cannot disagree about
-     *  which spellings count. */
-    const STATES_A_RATE = new RegExp(String.raw`\b(?:${RATE_UNIT})\b`);
+    /** Any spelling of a per-second rate FIGURE — `RATE_FIGURE`, the SAME shared
+     *  pattern the lockstep case selects and parses with, so the two cannot
+     *  disagree about which spellings count. */
+    const STATES_A_RATE = new RegExp(RATE_FIGURE);
     const stating = markdownFiles(ROOT).filter((rel) => {
       const text = readFileSync(join(ROOT, ...rel.split('/')), 'utf-8');
       return STATES_A_RATE.test(text) && ROUTES.some((route) => text.includes(route));
@@ -1365,6 +1573,32 @@ describe('the public feedback-form routes', () => {
       PINNED.filter((rel) => !stating.includes(rel)),
       'a document in PINNED_DOCS no longer states any public-route rate limit, so the lockstep case '
       + 'above is now asserting nothing for it — restore the figures or drop it from PINNED_DOCS',
+    ).toEqual([]);
+
+    // THE THIRD DIRECTION, and the one neither assertion above covers: a route
+    // that no document publishes at all.
+    //
+    // Both checks above are about DOCUMENTS — is this file pinned, does a pinned
+    // file still state figures. Neither looks at ROUTES, so deleting a route from
+    // every PINNED_DOCS array leaves both green while the lockstep silently stops
+    // asserting anything about that route's ceiling: its loop simply iterates one
+    // route fewer. `DOCUMENTED_ROUTE_KEYS` would still name it, and the throttle
+    // pins above would still check the template, so the only thing lost is the
+    // prose-versus-template lockstep — quietly, which is this whole block's
+    // stated failure mode applied to itself.
+    //
+    // Every key in DOCUMENTED_ROUTE_KEYS must therefore appear in at least one
+    // pinned document's route list. That is also the invariant that makes the
+    // `satisfies` type meaningful in the other direction: the type stops a route
+    // name that does not EXIST, this stops a route that exists and is UNREAD.
+    // `Set<string>`, not the inferred union: the keys being compared come from
+    // `Object.keys`, which is typed `string[]`.
+    const documentedSomewhere = new Set<string>(Object.values(PINNED_DOCS).flat());
+    expect(
+      Object.keys(DOCUMENTED_ROUTE_KEYS).filter((names) => !documentedSomewhere.has(names)),
+      'a route in DOCUMENTED_ROUTE_KEYS appears in no PINNED_DOCS array, so the lockstep case above '
+      + 'iterates past it and nothing checks its published ceiling against the template — add it to '
+      + 'the document that publishes it, or drop it from DOCUMENTED_ROUTE_KEYS',
     ).toEqual([]);
   });
 
