@@ -525,9 +525,9 @@ NARROWED_SHAPES = {
 #
 # Each maps to the message fragment its refusal must carry, so the test pins WHICH
 # of the three guards fired rather than only that something did. That matters here:
-# with a single either-message assertion, reverting DOC_TYPE_ANNOTATION to quoted
-# literals only left every one of these green — the positional guard refused them
-# all on its own — and the grammar change the fix rests on was unpinned.
+# with a single either-message assertion, dropping the identifier alternation from
+# UNION_TERM left every one of these green — the positional guard refused them all
+# on its own — and the grammar change the fix rests on was unpinned.
 WIDENED_SHAPES = {
     # Caught BY NAME: an identifier matches UNION_TERM, so it reaches the
     # not-a-literal check and the failure can say what it is.
