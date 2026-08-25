@@ -497,7 +497,14 @@ describe('stack and callers stay in step', () => {
       + 'block scan below is mis-paired and reads prose as code',
     ).toBe(0);
 
-    const fencedBlocks = [...page.matchAll(/```[^\n\r]*\r?\n([\s\S]*?)```/g)].map(([, body]) => body);
+    // BOTH patterns are `^`-anchored with `m`, and they have to be the same shape or
+    // the parity check above measures something the scan does not consume. An earlier
+    // version counted `/^```/gm` while scanning unanchored: a triple-backtick inside a
+    // prose sentence then shifted the scan's pairing while leaving the counted total
+    // even, so parity passed and the scan silently read prose as code — the guard not
+    // guarding what its own comment claimed. Anchoring fixes it at the source rather
+    // than detecting it, since a markdown fence opens at the start of a line anyway.
+    const fencedBlocks = [...page.matchAll(/^```[^\n\r]*\r?\n([\s\S]*?)^```/gm)].map(([, body]) => body);
 
     // Assert the EMBED snippet was found, not merely that some fence was.
     // Counting all fences (or worse, the character length of their joined bodies,
@@ -554,7 +561,11 @@ describe('stack and callers stay in step', () => {
     const wiredPaths = new Set(methods.map((m) => m.path));
 
     const embedPaths = callerFormsPaths(embedBlocks.join('\n'));
-    expect(embedPaths.length).toBeGreaterThan(0);
+    expect(
+      embedPaths.length,
+      'an embed block was found but no /feedback-forms path could be extracted from it — '
+      + 'the check below would then pass over an empty set',
+    ).toBeGreaterThan(0);
     expect(
       embedPaths.filter((path) => !publicPaths.has(path)),
       'the snippet names a path an unauthenticated browser cannot call — it is either unwired or behind Cognito',
