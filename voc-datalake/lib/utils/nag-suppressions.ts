@@ -23,14 +23,6 @@ export const idempotencyTableSuppressions: NagPackSuppression[] = [
   },
 ];
 
-// S3 access logging for CloudFront-fronted buckets
-export const websiteBucketSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-S1',
-    reason: 'Website bucket is served exclusively through CloudFront - CloudFront access logs provide traffic visibility',
-  },
-];
-
 // AWSLambdaBasicExecutionRole - AWS managed policy for Lambda CloudWatch logging
 export const lambdaBasicExecutionRoleSuppressions: NagPackSuppression[] = [
   {
