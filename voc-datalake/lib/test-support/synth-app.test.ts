@@ -24,10 +24,11 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import * as cdk from 'aws-cdk-lib';
-import * as cx from 'aws-cdk-lib/cx-api';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as cx from 'aws-cdk-lib/cx-api';
 import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
 import { afterAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import {
@@ -149,6 +150,10 @@ describe('cdkJsonContextStrict', () => {
     // assertion, which also catches a body that reads the wrong file or the wrong
     // key — neither of which the throw can see, since a strict read of the wrong
     // file still throws on a fixture with no context.
+    // `createAssemblyDir` for a cdk.json fixture rather than a bare `mkdtempSync`
+    // only because it registers the dir with `cleanupAssemblyDirs`, which
+    // `afterAll` above already calls. Named for its main use, generic in what it
+    // does.
     const populated = join(createAssemblyDir('voc-cdkjson-'), 'cdk.json');
     writeFileSync(populated, JSON.stringify({ context: { probe: 1 } }));
     expect(cdkJsonContextStrict(populated)).toEqual({ probe: 1 });
@@ -160,7 +165,10 @@ describe('cdkJsonContextStrict', () => {
     // by accident and this catches it by name.
     const noContext = join(createAssemblyDir('voc-cdkjson-'), 'cdk.json');
     writeFileSync(noContext, JSON.stringify({ app: 'npx ts-node bin/voc-datalake.ts' }));
-    expect(() => cdkJsonContextStrict(noContext)).toThrow();
+    // `z.ZodError`, not a bare `toThrow()`: this case's subject is a REJECTED
+    // SCHEMA, and a bare matcher also accepts the `ENOENT` a wrong fixture path
+    // raises — which would make it pass for the one reason it must not.
+    expect(() => cdkJsonContextStrict(noContext)).toThrow(z.ZodError);
 
     // And that the default argument still points at the real cdk.json, so neither
     // assertion above can pass against a fixture while production reads nothing.
@@ -236,8 +244,15 @@ describe('committedFeatureFlags', () => {
     // changing — which is exactly why this is an assertion and not a figure in
     // prose.
     const unprefixed = Object.keys(cx.FLAGS).filter((flag) => !flag.startsWith('@aws-cdk'));
-    expect(unprefixed).toEqual(['aws-cdk:enableDiffNoFail']);
-    expect(committedFeatureFlags({ 'aws-cdk:enableDiffNoFail': true })).toEqual({});
+    expect(
+      unprefixed,
+      'a CDK upgrade changed which flags are unprefixed: re-read whether the @aws-cdk '
+      + 'heuristic in committedFeatureFlags() still holds, then update this list',
+    ).toEqual(['aws-cdk:enableDiffNoFail']);
+    expect(
+      committedFeatureFlags({ 'aws-cdk:enableDiffNoFail': true }),
+      'the prefix filter must still classify the one unprefixed flag as project context',
+    ).toEqual({});
   });
 
   it('cannot use cx-api FLAGS as the predicate instead, since a committed flag has expired out of it', () => {
@@ -264,8 +279,17 @@ describe('committedFeatureFlags', () => {
     // rule that silently drops a key a project commits is unsound in general even
     // when today's instance costs nothing. That is the claim these two assertions
     // pin, and it is why the tempting swap to `key in cx.FLAGS` is a regression.
-    expect('@aws-cdk/aws-iam:standardizedServicePrincipals' in cx.FLAGS).toBe(false);
-    expect(committedFeatureFlags()).toHaveProperty('@aws-cdk/aws-iam:standardizedServicePrincipals');
+    expect(
+      '@aws-cdk/aws-iam:standardizedServicePrincipals' in cx.FLAGS,
+      'CDK re-registered this flag, so it no longer demonstrates that FLAGS is not a '
+      + 'superset of what cdk.json may commit: find another expired committed flag or '
+      + 'reconsider whether `key in cx.FLAGS` is now a safe predicate',
+    ).toBe(false);
+    expect(
+      committedFeatureFlags(),
+      'cdk.json stopped committing the expired flag this case is built on: the pair of '
+      + 'assertions no longer shows what it claims',
+    ).toHaveProperty('@aws-cdk/aws-iam:standardizedServicePrincipals');
   });
 });
 
