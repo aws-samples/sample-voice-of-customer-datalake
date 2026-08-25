@@ -276,6 +276,27 @@ def _encoded(value: str) -> str:
     return f"=?base64?{base64.b64encode(value.encode()).decode()}?="
 
 
+# The smallest arguments that get each tool past its OWN validation, for the tests
+# that loop over every registered tool. Only the tools with a required argument
+# appear; everything else is called with `{}`.
+#
+# 🔑 A `.get(name, {})` LOOKUP, not a chain of `if name == ...`, and that is what
+# server 3.8.0 changed: two of these loops carried the chain inline, so
+# `get_similar_feedback` — the third tool to require an argument — was called with
+# `{}`, refused -32602 by its own guard, and the loop failed on a missing `result`
+# key rather than on anything it was testing. One table means the next required
+# argument is added in one place.
+#
+# ⚠️ These are DELIBERATELY MINIMAL. A loop asserting something about every tool
+# should exercise each one's cheapest successful path; adding optional arguments
+# here would make an unrelated failure look like a validation problem.
+_MINIMAL_ARGUMENTS: dict[str, dict] = {
+    "get_metrics_breakdown": {"dimension": "categories"},
+    "get_feedback_detail": {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"},
+    "get_similar_feedback": {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"},
+}
+
+
 # ===========================================================================
 # Version negotiation
 # ===========================================================================
@@ -3017,7 +3038,7 @@ class TestToolCatalogueIsFilteredByAuthorization:
         assert listed, "the positive half of this test needs a non-empty list"
 
         for name in mcp_handler.TOOL_HANDLERS:
-            arguments = {"dimension": "categories"} if name == "get_metrics_breakdown" else {}
+            arguments = _MINIMAL_ARGUMENTS.get(name, {})
             status, body = _call(
                 _event("tools/call", params={"name": name, "arguments": arguments},
                        token=_TOKEN),
@@ -3458,9 +3479,7 @@ class TestAnnotationsAndCostClass:
             for tool in mcp_handler.MCP_TOOLS
         }
         for name, advertised in published.items():
-            arguments = {"dimension": "categories"} if name == "get_metrics_breakdown" else {}
-            if name == "get_feedback_detail":
-                arguments = {"feedback_id": "1ae1eb6abcd7d3a2e364f46139f98466"}
+            arguments = _MINIMAL_ARGUMENTS.get(name, {})
             status, body = _call(_event(
                 "tools/call", params={"name": name, "arguments": arguments}, token=_TOKEN,
             ))
