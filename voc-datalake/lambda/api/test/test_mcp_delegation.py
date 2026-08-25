@@ -2222,11 +2222,12 @@ class TestTheDeclaredFiltersAreHonouredByTheRoute:
         )
         held = {"days": "7", "source": "webscraper"}
 
+        # Set once: `return_value` persists across calls (there is no `side_effect`
+        # here), so the same row answers every partition query in both invocations.
         mock_feedback.query.return_value = {"Items": [straddling]}
+
         by_import = _entities_body(mock_aggregates, held,
                                    api_gateway_event, lambda_context)
-
-        mock_feedback.query.return_value = {"Items": [straddling]}
         by_review = _entities_body(mock_aggregates, {**held, "date_basis": "review"},
                                    api_gateway_event, lambda_context)
 

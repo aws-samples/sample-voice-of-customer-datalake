@@ -3345,6 +3345,16 @@ def _within_declared_bounds(tool: str, argument: str, args: dict, default: Any) 
     follows by importing `MAX_FEEDBACK_WINDOW_DAYS`: a literal duplicate does not
     fail CI when the schema moves, it just quietly disagrees.
 
+    ⚠️ THIS CLAMPS ONLY WHAT THE DECLARATION STATES, so it is NOT a promise that both
+    bounds are enforced for every argument. `offset` declares a `minimum` and
+    deliberately no `maximum` — the route's ceiling is `MAX_FEEDBACK_OFFSET`, which
+    lives in a different Lambda bundle this one must not import, so the declaration
+    names it in prose instead (see the `offset` comment in `list_feedback`). An
+    out-of-range `offset` therefore still reports the value asked for while the route
+    clamped to its own ceiling. That asymmetry is the declaration's, not this
+    helper's, and it is the honest one available: the alternative is an un-CI-able
+    copy of another bundle's constant.
+
     An absent or uncoercible value takes `default`, coerced, keeping `_as_int`'s
     contract so this cannot become the M1 defect one argument later.
     """
