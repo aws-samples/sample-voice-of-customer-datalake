@@ -31,9 +31,11 @@ Which mutation makes each assertion fail: change `ttl_days`' default in
 `aggregator/handler.py`, or `AGGREGATE_RETENTION_DAYS` in `shared/api.py`,
 without changing the other, and
 `test_the_shared_constant_equals_the_aggregators_ttl_default` fails naming both
-numbers. `test_both_writers_stamp_the_same_horizon` fails if only one of the two
-aggregator functions is changed — half the rows would then outlive the other
-half and no single constant could describe the window.
+numbers. `test_every_writer_stamps_the_same_horizon` fails if only one of the
+aggregator's writers is changed — some rows would then outlive the others and no
+single constant could describe the window. It derives the writers from `_WRITERS`
+rather than naming two inline, which is what it did until the arrival path became
+transactional and added two more.
 `test_no_call_site_overrides_the_ttl` fails if a writer is called with an explicit
 `ttl_days`, which would make the default true and the rows' real horizon something
 else; `test_each_writer_applies_the_parameter_it_takes` fails if a writer accepts
@@ -49,9 +51,20 @@ _AGGREGATOR_SOURCE = (
     Path(__file__).resolve().parents[2] / 'aggregator' / 'handler.py'
 )
 _TTL_PARAMETER = 'ttl_days'
-# The two functions that write aggregate rows. Both, because one TTL per writer
-# would mean two horizons over partitions a single window read spans.
-_WRITERS = ('update_counter', 'update_average')
+# Every function that STAMPS an aggregate row's TTL. All of them, because one TTL per
+# writer would mean two horizons over partitions a single window read spans, and
+# `AGGREGATE_RETENTION_DAYS` could then describe none of them.
+#
+# FOUR since the arrival path became transactional (issue #264): an INSERT's counters
+# and average are built as `TransactWriteItems` entries, and each of those builders
+# computes its own `#ttl` from its own `ttl_days` default. That is a third and fourth
+# copy of the horizon — on the path EVERY ingested item takes — and a lockstep naming
+# only the two single-write functions would have left them free to drift while
+# reporting the constant as honoured.
+_WRITERS = (
+    'update_counter', 'update_average',
+    '_counter_transaction_item', '_average_transaction_item',
+)
 
 
 def _aggregator_tree() -> ast.Module:
@@ -181,15 +194,26 @@ class TestAggregateRetentionLockstep:
                 'stamps is not the horizon this lockstep is about'
             )
 
-    def test_both_writers_stamp_the_same_horizon(self):
-        """`update_counter` and `update_average` write into the SAME partitions
-        that one window read spans (`METRIC#daily_total` counts beside
-        `METRIC#daily_sentiment_avg` sums), so two TTLs would mean two horizons
-        and no single constant could describe the window."""
-        assert (
-            _aggregator_ttl_default('update_counter')
-            == _aggregator_ttl_default('update_average')
-            == AGGREGATE_RETENTION_DAYS
+    def test_every_writer_stamps_the_same_horizon(self):
+        """All of them write into the SAME partitions that one window read spans
+        (`METRIC#daily_total` counts beside `METRIC#daily_sentiment_avg` sums), so two
+        TTLs would mean two horizons and no single constant could describe the window.
+
+        DERIVED FROM `_WRITERS`, not from two names written out here. This assertion
+        used to name `update_counter` and `update_average` inline, and when the arrival
+        path became transactional it went half-blind: `_WRITERS` grew the two
+        transaction builders, `test_no_call_site_overrides_the_ttl` and
+        `test_each_writer_applies_the_parameter_it_takes` covered them because they
+        iterate the tuple, and this one kept comparing the same two — so dropping the
+        transactional counter's default to 30 days failed NOTHING. Measured, not
+        supposed: that mutation now fails here and passed before.
+        """
+        horizons = {name: _aggregator_ttl_default(name) for name in _WRITERS}
+        assert set(horizons.values()) == {AGGREGATE_RETENTION_DAYS}, (
+            f'{horizons}: the aggregator stamps more than one retention horizon (or '
+            f'one that is not AGGREGATE_RETENTION_DAYS={AGGREGATE_RETENTION_DAYS}), '
+            f'so no single constant describes how far back the metrics routes may '
+            f'report a window as complete.'
         )
 
     def test_the_retention_is_narrower_than_the_widest_requestable_window(self):
