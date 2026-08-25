@@ -2037,7 +2037,7 @@ def _route_body(path: str, query: dict, event_factory, context) -> dict:
     return json.loads(response["body"])
 
 
-def _entities_body(aggregates, feedback, query: dict, event_factory, context) -> dict:
+def _entities_body(aggregates, query: dict, event_factory, context) -> dict:
     """`GET /feedback/entities`, wired for whichever branch `query` selects.
 
     `get_configured_categories` memoises MODULE-side, so a value another test module
@@ -2169,7 +2169,7 @@ class TestTheDeclaredFiltersAreHonouredByTheRoute:
             + [_stored_row(f"out-{i}", problem_summary=beyond) for i in range(50)]
         )}
 
-        body = _entities_body(mock_aggregates, mock_feedback,
+        body = _entities_body(mock_aggregates,
                               {"days": "7", "limit": str(ceiling + 300)},
                               api_gateway_event, lambda_context)
 
@@ -2191,12 +2191,59 @@ class TestTheDeclaredFiltersAreHonouredByTheRoute:
             for i in range(10)
         ]}
 
-        body = _entities_body(mock_aggregates, mock_feedback, {"days": "7", "limit": "3"},
+        body = _entities_body(mock_aggregates, {"days": "7", "limit": "3"},
                               api_gateway_event, lambda_context)
 
         assert sum(body["entities"]["issues"].values()) == 3, (
             "GET /feedback/entities no longer bounds its issues sample by `limit`; "
             "list_feedback_facets describes the parameter as doing exactly that"
+        )
+
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_facets_date_basis_selects_which_date_the_window_uses(
+        self, mock_feedback, mock_aggregates, api_gateway_event, lambda_context,
+    ):
+        """The last declaration in this PR without route-side proof.
+
+        `source` only showed that `date_basis` CAN reach the route; it did not show
+        the route applies it. So one row is seeded inside the window by its import
+        date and far outside by its review date, and only the basis changes between
+        the two calls.
+
+        🔑 `source` is passed BOTH times on purpose. `date_basis=review` is itself one
+        of the two conditions that selects the scan branch, so varying the basis alone
+        would also change the branch and compare two different code paths — the row
+        could vanish because the basis worked or because aggregates answered. Pinning
+        the branch with `source` leaves the basis as the only variable.
+        """
+        straddling = _stored_row(
+            "straddles-the-cutoff", date=_day(0), source_created_at=_iso(400),
+        )
+        held = {"days": "7", "source": "webscraper"}
+
+        mock_feedback.query.return_value = {"Items": [straddling]}
+        by_import = _entities_body(mock_aggregates, held,
+                                   api_gateway_event, lambda_context)
+
+        mock_feedback.query.return_value = {"Items": [straddling]}
+        by_review = _entities_body(mock_aggregates, {**held, "date_basis": "review"},
+                                   api_gateway_event, lambda_context)
+
+        # Asserted as in-window vs not, not as an exact count: the scan queries one
+        # partition per day and this mock answers every one of them with the same
+        # row, so the absolute figure is an artefact of the stub (it is `days`, not
+        # 1). The proposition under test is only whether the basis puts the row
+        # inside the window at all, and that is what these two assertions compare.
+        assert by_import["feedback_count"] > 0, (
+            "the row should be inside a 7-day window by its IMPORT date; if this "
+            "fails the fixture drifted, not the route"
+        )
+        assert by_review["feedback_count"] == 0, (
+            "GET /feedback/entities no longer applies `date_basis` to its window: a "
+            "row written 400 days ago still counts under the 'review' basis, so "
+            "list_feedback_facets declares a basis the route ignores and a caller "
+            "asking what customers WROTE this week gets what was IMPORTED this week"
         )
 
     @patch("metrics_handler.aggregates_table")
@@ -2286,6 +2333,40 @@ class TestListFeedbackReportsThePaginationSearchDrops:
         assert payload["offset"] == 40, (
             f"a route body without `offset` reported {payload['offset']!r} instead of "
             f"{asked}"
+        )
+
+    def test_the_reported_fallback_cannot_exceed_the_ceiling_the_tool_declares(self):
+        """🔑 `inputSchema` IS A DECLARATION, NOT AN ENFORCEMENT. `tools/call` hands a
+        handler whatever `arguments` arrived, so a caller's `limit: 500` reaches the
+        tool unchallenged — and echoing it back under a field described as the page
+        the route applied would report a page no route would ever serve, since the
+        route caps at its own ceiling.
+
+        The ceiling is read from the declaration, not written here, so the two cannot
+        drift into disagreeing. Hypothetical today because the real route always
+        echoes `limit`, which is precisely why it needs a test rather than a comment.
+        """
+        ceiling = _tool_input_schema("list_feedback")["properties"]["limit"]["maximum"]
+        payload = self._payload({"items": []}, {"limit": ceiling + 400})
+
+        assert payload["limit"] == ceiling, (
+            f"a caller's out-of-range `limit` was reported back as "
+            f"{payload['limit']!r}; list_feedback declares {ceiling} as its `maximum` "
+            f"and nothing rejects a larger value before the handler, so an unclamped "
+            f"fallback describes a page the route would never have served"
+        )
+
+    def test_a_caller_below_the_floor_is_lifted_to_it_rather_than_reported_raw(self):
+        """The other bound, for the same reason: `minimum` is declared, so a `limit: 0`
+        or a negative page is out of contract, and reporting it raw reintroduces the
+        exact zero-page loop the fallback exists to prevent."""
+        floor = _tool_input_schema("list_feedback")["properties"]["limit"]["minimum"]
+        payload = self._payload({"items": []}, {"limit": 0})
+
+        assert payload["limit"] == floor, (
+            f"a caller's `limit: 0` was reported back as {payload['limit']!r}; "
+            f"list_feedback declares {floor} as its `minimum`, and a reported page "
+            f"size of 0 makes `offset + limit` loop on one page"
         )
 
     def test_a_caller_who_asked_for_nothing_gets_the_defaults_the_tool_forwards(self):
@@ -2418,7 +2499,7 @@ class TestListFeedbackFacetsLeavesOutWhatTheRouteCannotFill:
                         problem_summary="arrived late"),
         ]}
 
-        body = _entities_body(mock_aggregates, mock_feedback, query,
+        body = _entities_body(mock_aggregates, query,
                               api_gateway_event, lambda_context)
 
         assert body["entities"]["keywords"] == {}, (

@@ -3328,6 +3328,41 @@ def _as_int(value: Any, default: Any = 0) -> int:
     return 0
 
 
+def _within_declared_bounds(tool: str, argument: str, args: dict, default: Any) -> int:
+    """A requested page value, held inside the bounds its own `inputSchema` declares.
+
+    Placed beside `_as_int` because it is the same kind of thing — a coercion that
+    refuses to let an unchecked value travel under a declaration — and because it
+    needs both `_as_int` and `_TOOL_DECLARATIONS`, so it belongs after each.
+
+    `inputSchema` is advertised to clients and enforced on nothing: `tools/call`
+    reaches a handler with whatever `arguments` arrived. A caller's `limit: 500`
+    travels unchallenged, so reporting it back under a field described as the page
+    size the route applied would be a claim the route never made — it caps at its
+    own ceiling.
+
+    Bounds are READ FROM THE DECLARATION, not restated here. Same rule `_DAYS_ARG`
+    follows by importing `MAX_FEEDBACK_WINDOW_DAYS`: a literal duplicate does not
+    fail CI when the schema moves, it just quietly disagrees.
+
+    An absent or uncoercible value takes `default`, coerced, keeping `_as_int`'s
+    contract so this cannot become the M1 defect one argument later.
+    """
+    declaration = next(
+        (d for d in _TOOL_DECLARATIONS if d['name'] == tool), None,
+    )
+    if declaration is None:                       # pragma: no cover - registry typo
+        raise KeyError(f'no declaration for tool {tool!r}')
+    schema = declaration['inputSchema'].get('properties', {}).get(argument, {})
+    value = _as_int(args.get(argument), default)
+    minimum, maximum = schema.get('minimum'), schema.get('maximum')
+    if minimum is not None:
+        value = max(value, minimum)
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
 def _as_string_list(value: Any) -> list[str]:
     """Coerce a declared-array persona field to the list of strings it promises.
 
@@ -3637,8 +3672,18 @@ def _tool_list_feedback(args: dict, token_info: dict) -> ToolResult:
     filtered candidate window, which this process never sees, so it can only be
     reported or dropped — and dropping it was the defect.
     """
-    requested_limit = args.get('limit', 50)
-    requested_offset = args.get('offset', 0)
+    # Clamped to what this tool DECLARES, because the fallback below is reported
+    # under a field described as the page the route applied. `inputSchema` is a
+    # declaration, not an enforcement — nothing rejects `limit: 500` before it gets
+    # here — so an unclamped fallback would report `limit: 500` for a page the route
+    # would have capped at 100. The route always echoes today, which makes this
+    # hypothetical rather than live, and it is exactly the "declaration looser than
+    # reality" shape the rest of this file spends its length preventing.
+    #
+    # Bounds are READ FROM THE DECLARATION rather than restated: a literal 100 here
+    # would be a second source of truth that cannot fail CI when the schema moves.
+    requested_limit = _within_declared_bounds('list_feedback', 'limit', args, 50)
+    requested_offset = _within_declared_bounds('list_feedback', 'offset', args, 0)
     body = _delegated_object(
         _domain_call('feedback_list', query={
             'days': args.get('days', 7),
