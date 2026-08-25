@@ -699,7 +699,7 @@ function PrototypePanel({
              spec, which is a document rather than a frame and can be taller than
              the screen. */
           <div className={clsx('h-full', mode.kind === 'html' ? 'overflow-hidden' : 'overflow-y-auto p-4')}>
-            {mode.kind === 'html' ? pane : <PrototypeRenderer spec={mode.spec} className={ENLARGED_SPEC_MEASURE} />}
+            {mode.kind === 'html' ? pane : <PrototypeRenderer spec={mode.spec} measureClassName={ENLARGED_SPEC_MEASURE} />}
           </div>
         )}
         t={t}

@@ -464,6 +464,34 @@ describe('getting back to the row', () => {
     expect(within(dialog).getByRole('button', { name: closeName })).toHaveFocus()
   })
 
+  it('lets Tab reach the prototype\'s own controls', async () => {
+    // The direction that has to work FIRST, and the one this overlay's geometry
+    // breaks: the panel is `[Close, <iframe>]`, so the frame is the panel's last
+    // focusable and a naive trap wraps on the very Tab that would have descended into
+    // the artifact — `preventDefault()` cancelling exactly that default action. The
+    // result is Close ⇄ frame element indefinitely, with every link and button inside
+    // the prototype unreachable by keyboard, in the dialog that exists to walk a room
+    // through it.
+    //
+    // jsdom performs no default Tab action, so the assertion is that the shell did NOT
+    // intervene: focus stays on the frame element for the browser to descend from.
+    // Focus landing back on Close is the defect.
+    const { dialog } = await openOverlay()
+    const frameDoc = prototypeDocumentIn(dialog)
+    frameDoc.body.innerHTML = '<button id="proto-next">Next screen</button>'
+    const frame = within(dialog).getByTitle(PROTOTYPE_TITLE)
+    frame.focus()
+
+    // Raised in THIS document, as a browser does for a Tab pressed while the frame
+    // ELEMENT (not its content) has focus. `user.tab()` cannot express that state.
+    act(() => {
+      frame.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    })
+
+    expect(frame).toHaveFocus()
+    expect(within(dialog).getByRole('button', { name: closeName })).not.toHaveFocus()
+  })
+
   it('leaves the row expanded underneath, so the ballot is still there on return', async () => {
     // The reason this is an overlay and not a new tab: the sliders, the team's
     // numbers and the room vote are on this page.

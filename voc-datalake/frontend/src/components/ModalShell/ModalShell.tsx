@@ -34,10 +34,19 @@
  * The keydown listener is therefore attached to every same-origin document nested
  * in the panel as well, and re-attached as frames load or arrive.
  *
+ * The trap also has to let Tab move INTO such a frame. Descending into a frame is
+ * the browser's DEFAULT action for a Tab pressed while the frame element has focus,
+ * so the wrap's `preventDefault()` cancels it — and when the frame is the panel's
+ * last focusable, which is the prototype overlay's shape, the wrap fires on exactly
+ * that keypress and the frame's content is unreachable by keyboard. See
+ * `tabWouldEnterFrame`.
+ *
  * A frame the parent cannot reach into — cross-origin, or sandboxed without
- * `allow-same-origin` — keeps the old behaviour, because there is no way to
- * observe its keys at all. A consumer embedding one of those must render its own
- * visible dismiss control; nothing here can substitute for it.
+ * `allow-same-origin` — keeps the old behaviour in both directions, because there is
+ * no way to observe its keys at all: its keys are invisible, and letting Tab descend
+ * into it would strand a keyboard user with nothing to bring them back. A consumer
+ * embedding one of those must render its own visible dismiss control; nothing here
+ * can substitute for it.
  *
  * @module components/ModalShell
  */
@@ -181,8 +190,45 @@ function tabAcrossFrame(
   return items[(from + (back ? -1 : 1) + items.length) % items.length]
 }
 
+/**
+ * Whether a forward Tab is about to move focus INTO a frame's own content, and so
+ * must be left to the browser.
+ *
+ * This is the other half of `tabAcrossFrame`, and the one the trap gets wrong by
+ * default. While an `<iframe>` ELEMENT has focus the browser's next Tab descends
+ * into that frame's first control — a default action, so any `preventDefault()`
+ * cancels it. When the frame is the panel's LAST focusable (`[Close, <iframe>]`,
+ * which is exactly the prototype enlarge overlay's shape) the wrap fires on that
+ * very keypress: `active === last`, focus is sent back to the panel's first item,
+ * and the descent never happens. Close ⇄ frame element for ever, with every link
+ * inside the artifact keyboard-unreachable — in the dialog that exists to walk
+ * through that artifact.
+ *
+ * Declining here is safe because the frame is not an exit: a Tab at the frame's own
+ * last control is raised in the frame's document and `tabAcrossFrame` brings focus
+ * back to the panel item after the frame. Focus is inside the dialog throughout.
+ *
+ * Only when the frame's content is REACHABLE, though. An opaque frame
+ * (cross-origin, or sandboxed without `allow-same-origin`) has no listener of ours
+ * inside it, so nothing would bring focus back out and declining would hand the
+ * page behind the overlay a keyboard user; the same goes for a frame with nothing
+ * focusable in it, where the browser skips straight past to whatever follows.
+ * Both keep the wrap.
+ *
+ * Backwards is deliberately not included: shift-Tab from a focused frame element
+ * moves to what precedes the frame rather than descending, so there is no default
+ * action to protect.
+ */
+function tabWouldEnterFrame(active: Element | null, back: boolean): boolean {
+  if (back || !(active instanceof HTMLIFrameElement)) return false
+  const doc = frameDocument(active)
+  // See `nestedDocuments` on why `body` is checked despite its non-null type.
+  return doc?.body ? focusable(doc.body).length > 0 : false
+}
+
 /** Where Tab must go to stay in the panel, or null when the panel's own order suffices. */
 function tabWithinPanel(items: HTMLElement[], active: Element | null, back: boolean): HTMLElement | null {
+  if (tabWouldEnterFrame(active, back)) return null
   const first = items[0]
   const last = items[items.length - 1]
   if (back && active === first) return last

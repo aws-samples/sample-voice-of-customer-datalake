@@ -28,6 +28,12 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   dismissed from the keyboard once a reader clicked into its content. A frame the page cannot read
   into — cross-origin, or sandboxed without `allow-same-origin` — still cannot be observed, so
   dialogs embedding one must offer a visible dismiss control.
+- Tab can now reach the controls inside a dialog's nested `<iframe>`. Descending into a frame is the
+  browser's default action for a Tab pressed while the frame itself has focus, and the focus trap
+  cancelled that action whenever the frame was the dialog's last focusable — which is the prototype
+  overlay's shape — so focus bounced between the dialog's own controls and every link inside the
+  artifact was unreachable by keyboard. A frame the page cannot read into, or one with nothing
+  focusable in it, keeps the old behaviour: there would be nothing inside it to bring focus back out.
 
 ### Security
 

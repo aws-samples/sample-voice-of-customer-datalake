@@ -297,31 +297,94 @@ describe('ModalShell', () => {
  * browser does and what `user.keyboard` cannot do — it targets the top document,
  * i.e. the pre-iframe state only.
  */
+/**
+ * Record the keydown listeners added to, and removed from, every frame document any
+ * code reads while the returned restore function has not been called.
+ *
+ * Installed by patching `contentDocument` rather than the documents themselves,
+ * because a frame's document does not exist until the frame is inserted and the shell
+ * attaches during that same synchronous insertion — there is no moment in between for
+ * a test to hold. Reading `contentDocument` is how the shell finds a document at all
+ * (`frameDocument()`), so wrapping the getter puts the spy in front of every attach
+ * without changing which object anyone gets: the same document is returned, with its
+ * own `addEventListener` / `removeEventListener` wrapped once.
+ */
+function spyOnFrameDocumentListeners(
+  added: EventListenerOrEventListenerObject[],
+  removed: EventListenerOrEventListenerObject[],
+): () => void {
+  const real = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
+  if (!real?.get) throw new Error('no contentDocument getter to wrap')
+  const realGet = real.get
+  const wrapped = new WeakSet<Document>()
+  Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
+    configurable: true,
+    get(): Document | null {
+      const doc: Document | null = realGet.call(this)
+      if (doc && !wrapped.has(doc)) {
+        wrapped.add(doc)
+        const realAdd = doc.addEventListener.bind(doc)
+        const realRemove = doc.removeEventListener.bind(doc)
+        doc.addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+          if (type === 'keydown') added.push(listener)
+          realAdd(type, listener, options)
+        }
+        doc.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
+          if (type === 'keydown') removed.push(listener)
+          realRemove(type, listener, options)
+        }
+      }
+      return doc
+    },
+  })
+  return () => Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', real)
+}
+
 describe('ModalShell with a nested frame', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   /**
-   * The shell with an `<iframe>` between two panel controls, its document filled
-   * with `inner` controls.
+   * The shell with an `<iframe>` among its panel controls, its document filled with
+   * `inner` controls.
    *
    * No `src`: jsdom gives a src-less frame a real about:blank document with a body,
    * where one loading over the network has `contentDocument` but no `body` — the
    * frame is a stand-in for a LOADED prototype, which is the state under test.
+   *
+   * @param options.trailing whether a control FOLLOWS the frame in the panel.
+   *   `true` (the default) is the shape the frame-exit tests need: only a following
+   *   item can show that focus resumes AFTER the frame rather than at the panel's
+   *   edge. `false` is the shape the only real consumer actually has —
+   *   `PrototypeEnlargeButton`'s panel is `[Close, <iframe>]` — where the frame is
+   *   the panel's LAST focusable and the parent-document Tab path behaves
+   *   differently. Both geometries are covered because the easier one cannot fail on
+   *   the harder one's behaviour.
+   * @param options.leading whether a control PRECEDES the frame. `false` makes the
+   *   frame the panel's first focusable, which is where the backwards wrap is
+   *   observable.
+   * @param options.inner the frame's own content, so a test can give the frame
+   *   nothing focusable — the case where Tab must NOT be allowed to descend.
    */
-  function renderFramedShell() {
+  function renderFramedShell(
+    {
+      leading = true,
+      trailing = true,
+      inner = '<button id="inner-first">inner one</button><button id="inner-last">inner two</button>',
+    } = {},
+  ) {
     render(
       <ModalShell isOpen onClose={onClose} ariaLabel="Framed dialog">
-        <button>close</button>
+        {leading ? <button>close</button> : null}
         <iframe title="prototype" />
-        <button>after</button>
+        {trailing ? <button>after</button> : null}
       </ModalShell>,
     )
     const frame = screen.getByTitle('prototype')
     const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
     if (!doc?.body) throw new Error('no frame document to write the prototype into')
-    doc.body.innerHTML = '<button id="inner-first">inner one</button><button id="inner-last">inner two</button>'
+    doc.body.innerHTML = inner
     /** Raise a key in the FRAME's document, as a browser does for a key pressed inside it. */
     const pressInFrame = (key: string, shiftKey = false) => {
       const target = doc.activeElement ?? doc.body
@@ -329,7 +392,17 @@ describe('ModalShell with a nested frame', () => {
         new (doc.defaultView ?? window).KeyboardEvent('keydown', { key, shiftKey, bubbles: true }),
       )
     }
-    return { doc, frame, pressInFrame }
+    /**
+     * Raise a key in THIS page's document, with focus wherever the test put it.
+     * `user.keyboard` cannot be used for the frame-element case: it dispatches at
+     * `document.activeElement` only after its own focus bookkeeping, and the
+     * `<iframe>` element having focus is precisely the state under test.
+     */
+    const pressInPage = (key: string, shiftKey = false) => {
+      const target = document.activeElement ?? document.body
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true }))
+    }
+    return { doc, frame, pressInFrame, pressInPage }
   }
 
   it('closes on Escape pressed inside the frame', () => {
@@ -375,6 +448,82 @@ describe('ModalShell with a nested frame', () => {
     doc.getElementById('inner-first')?.focus()
 
     pressInFrame('Tab', true)
+
+    expect(screen.getByRole('button', { name: 'close' })).toHaveFocus()
+  })
+
+  it('lets Tab into a frame that is the panel\'s last focusable', () => {
+    // The direction the trap gets wrong by default, and the geometry the tests above
+    // cannot see: with a control after the frame the frame is never `last`, so no wrap
+    // fires. `PrototypeEnlargeButton`'s panel is `[Close, <iframe>]`, where the wrap
+    // fires on the very keypress that would have descended into the artifact — and
+    // `preventDefault()` cancels exactly that default action. Close ⇄ frame element
+    // for ever, and every control inside the prototype is keyboard-unreachable in the
+    // dialog built for walking through it.
+    //
+    // jsdom performs no default Tab action, so what is asserted is that the shell did
+    // NOT intervene: focus is left on the frame element for the browser to descend
+    // from. Redirected-to-`close` is the defect.
+    const { frame, pressInPage } = renderFramedShell({ trailing: false })
+    frame.focus()
+
+    pressInPage('Tab')
+
+    expect(frame).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'close' })).not.toHaveFocus()
+  })
+
+  it('wraps shift-Tab off a focused frame that is the panel\'s first focusable', () => {
+    // Backwards there is no descent to protect — shift-Tab off a focused frame element
+    // moves to whatever precedes the frame, never into it — so the trap must still act
+    // at the panel's leading edge. Pinning it stops the entry fix above from being
+    // widened into "never intervene while a frame has focus", which would let
+    // shift-Tab out of the dialog and into the page behind.
+    const { frame, pressInPage } = renderFramedShell({ leading: false })
+    frame.focus()
+
+    pressInPage('Tab', true)
+
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus()
+  })
+
+  it('wraps Tab off a frame with nothing focusable inside it', () => {
+    // A frame the key cannot move focus within: the browser skips past it to whatever
+    // follows, which is the page behind the overlay. Declining the wrap here would
+    // strand a keyboard user outside the dialog, so an empty frame is not an entry.
+    const { frame, pressInPage } = renderFramedShell({ trailing: false, inner: '<p>no controls here</p>' })
+    frame.focus()
+
+    pressInPage('Tab')
+
+    expect(screen.getByRole('button', { name: 'close' })).toHaveFocus()
+  })
+
+  it('wraps Tab off a frame this page cannot read into', () => {
+    // Cross-origin, or `sandbox` without `allow-same-origin` — how legacy `srcDoc`
+    // prototypes render. There is no listener of ours inside such a frame to bring
+    // focus back out, so letting Tab descend would be a one-way trip out of the
+    // dialog. Today's wrap is the correct answer, and this pins that the entry fix
+    // guards on readability rather than on the element being an iframe.
+    render(
+      <ModalShell isOpen onClose={onClose} ariaLabel="Opaque dialog">
+        <button>close</button>
+        <iframe title="opaque" />
+      </ModalShell>,
+    )
+    const frame = screen.getByTitle('opaque')
+    // Stand in for the browser refusing access: `frameDocument` catches the throw for
+    // a cross-origin frame and returns null, which is the state under test. jsdom
+    // enforces neither origins nor `sandbox`, so the refusal has to be arranged.
+    Object.defineProperty(frame, 'contentDocument', {
+      configurable: true,
+      get() {
+        throw new DOMException('cross-origin', 'SecurityError')
+      },
+    })
+    frame.focus()
+
+    frame.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
 
     expect(screen.getByRole('button', { name: 'close' })).toHaveFocus()
   })
@@ -439,16 +588,34 @@ describe('ModalShell with a nested frame', () => {
     // caught by dispatching a key afterwards — the top-most guard makes a leaked
     // listener inert, so the only observable is the detach itself, and a page with
     // one of these per row would otherwise accumulate one per open.
-    const { doc } = renderFramedShell()
-    const removals: unknown[] = []
-    const realRemove = doc.removeEventListener.bind(doc)
-    doc.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
-      removals.push(type)
-      realRemove(type, listener, options)
+    //
+    // Listener IDENTITY, not just the event name: `expect(removals).toContain(
+    // 'keydown')` passed for any keydown removal on that document by anyone, so it
+    // stayed green if the shell detached the wrong handler, or only one of several —
+    // a test that could not fail on the regression it is the sole guard against. What
+    // is pinned here is that the exact function the shell ADDED is the one it removes.
+    const added: EventListenerOrEventListenerObject[] = []
+    const removed: EventListenerOrEventListenerObject[] = []
+    // The spy has to exist before the shell attaches, and there is no moment in
+    // between: jsdom creates a frame's document and fires its `load` synchronously
+    // during insertion, which is when the shell attaches. Nor can the frame realm's
+    // `EventTarget.prototype` be patched ahead of time — each frame has its own realm,
+    // reachable only once the frame exists. So the spy is installed on the way IN, by
+    // wrapping each frame document the first time anything reads it. `frameDocument()`
+    // is that read.
+    const restore = spyOnFrameDocumentListeners(added, removed)
+    try {
+      renderFramedShell()
+
+      cleanup()
+    } finally {
+      restore()
     }
 
-    cleanup()
-
-    expect(removals).toContain('keydown')
+    // Anti-vacuous: "every added listener was removed" is satisfied by adding none,
+    // which is also what a shell that stopped listening to frames at all would do —
+    // the defect the rest of this describe exists to catch.
+    expect(added.length).toBeGreaterThan(0)
+    for (const listener of added) expect(removed).toContain(listener)
   })
 })
