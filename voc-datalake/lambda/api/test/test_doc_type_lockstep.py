@@ -792,6 +792,18 @@ class TestTheUnionParser:
         with pytest.raises(AssertionError, match='continues past the terms'):
             _doc_type_union(f"export type DocType = 'prd' | 'prfaq' | {member}\n")
 
+
+class TestTheParserGuardsAreLoud:
+    """That the refusals in every parser here are `raise`, not `assert`.
+
+    Its own class because it is scoped to all three parser functions, where
+    `TestTheParser` and `TestTheUnionParser` are each scoped to one.
+    """
+
+    # The refusals `_union_members` is required to carry: no readable term at the
+    # anchor, a matched non-literal term, an unread term after the match.
+    UNION_MEMBERS_REFUSALS = 3
+
     def test_no_parser_refuses_via_a_statement_python_dash_o_would_strip(self):
         """`assert` is stripped under `python -O`, and these guards' whole purpose is
         to be the loud option — so none of them may have a mode where it is not.
@@ -801,42 +813,55 @@ class TestTheUnionParser:
         "the guard passed" from "the guard was removed", which is the whole problem.
         The property is syntactic, so the source is the only place it is visible.
 
-        Walked as an AST over the three parser functions rather than by string
-        matching, which two earlier versions of this test got wrong in opposite
-        directions. Matching `raise AssertionError` in the source text passed on a
-        body containing no raise at all, because the docstring discusses the phrase
-        by name — a test satisfied by prose about itself. Stripping the docstring
-        line-by-line then deleted any code line that happened to equal a short
-        docstring line. `ast` has neither problem: a docstring is an `Expr`, never an
-        `Assert`, so it cannot be mistaken for one or accidentally deleted.
+        Walked as an AST rather than by string matching, which two earlier versions
+        of this test got wrong in opposite directions. Matching `raise AssertionError`
+        in the source text passed on a body containing no raise at all, because the
+        docstring discusses the phrase by name — a test satisfied by prose about
+        itself. Stripping the docstring line-by-line then deleted any code line that
+        happened to equal a short docstring line. `ast` has neither problem: a
+        docstring is an `Expr`, never an `Assert`.
 
-        Covering all three functions, not just `_union_members`: the refusals live in
-        one shared helper today, but `_doc_type_union` and `_doc_type_annotations`
-        are where a future guard would most naturally be added.
+        The `assert` scan covers all three parsers, since `_doc_type_union` and
+        `_doc_type_annotations` are where a future guard would naturally be added.
+        The refusal COUNT is per-function, and only `_union_members` is required to
+        carry any: a total across the three would stay green if a guard moved out of
+        the helper and any unrelated `raise` appeared elsewhere. Verified by making
+        exactly that edit.
+
+        LIMIT worth knowing: this counts `raise` statements SYNTACTICALLY, so it
+        cannot tell a reachable refusal from one behind an `if False:`. Reachability
+        is what the behavioural cases in `TestTheParser` and `TestTheUnionParser`
+        cover — each guard has fixtures that fail when it stops firing. This test
+        answers only "are the refusals spelled in a form `-O` keeps".
         """
         import ast
         import inspect
         import textwrap
 
         asserts: list[str] = []
-        raises = 0
+        raises: dict[str, int] = {}
         for function in (_union_members, _doc_type_union, _doc_type_annotations):
+            # `getsource` starts at the def, so ast line numbers are offsets within
+            # it. Rebase onto the file so a failure names a line you can open.
+            first_line = function.__code__.co_firstlineno - 1
             tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+            raises[function.__name__] = 0
             for node in ast.walk(tree):
                 if isinstance(node, ast.Assert):
-                    asserts.append(f'{function.__name__}:{node.lineno}')
+                    asserts.append(f'{function.__name__} at line {first_line + node.lineno}')
                 elif isinstance(node, ast.Raise):
-                    raises += 1
+                    raises[function.__name__] += 1
 
         assert not asserts, (
             f'these parser guards refuse via `assert`, which `python -O` removes '
             f'entirely: {asserts}. Use `raise AssertionError(...)`.'
         )
-        # The complement: the check above is also satisfied by having no guard at
-        # all, so count the refusals that must be there.
-        assert raises >= 3, (
-            f'expected the three refusals in _union_members, found {raises} raise '
-            f'statements across the parsers'
+        # The complement: the scan above is also satisfied by there being no guard at
+        # all, so require the refusals to still be where they belong.
+        assert raises['_union_members'] >= self.UNION_MEMBERS_REFUSALS, (
+            f'_union_members should carry {self.UNION_MEMBERS_REFUSALS} refusals '
+            f'(anchor, non-literal term, unread term); found '
+            f'{raises["_union_members"]}. Counts per function: {raises}'
         )
 
 
