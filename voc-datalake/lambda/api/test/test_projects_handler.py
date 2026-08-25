@@ -2,6 +2,7 @@
 Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
+import os
 from unittest.mock import patch
 
 import pytest
@@ -435,6 +436,434 @@ class TestGeneratePersonasEndpoint:
             api_gateway_event, lambda_context,
             {'persona_count': 2, 'generate_avatars': False},
         )['generate_avatars'] is False
+
+
+class TestGenerateDocumentDocType:
+    """POST /projects/<id>/document validates `doc_type` against an allowlist.
+
+    The field arrived unchecked and steered three things at once: the job type
+    (`generate_{doc_type}`), the execution path (`doc_type in ('prd','prfaq')`
+    decides Step Functions vs a single-shot Lambda invoke) and the generator's
+    DynamoDB sort key (`{doc_type.upper()}#{doc_id}`) — with every attempt
+    billing a Bedrock call.
+
+    The allowlist is TWO values on purpose. `build_prototype` and
+    `product_report` reach the generator through their own routes, which build
+    their own doc_config, and this handler has no internal callers — so
+    narrowing it cannot affect them. Reverting the guard fails the rejection
+    tests below; widening it to four fails them too.
+
+    The body SHAPE is checked here too: a body that parses to a list or a scalar
+    used to raise AttributeError on `body.get` and answer 500, which reads as a
+    server fault for what is a malformed request.
+    """
+
+    @staticmethod
+    def _post(api_gateway_event, lambda_context, body):
+        """POST the generation route with create_job and the invoke both mocked.
+
+        Returns (response, mock_create_job, mock_invoke) so a test can assert on
+        the refusal AND on the absence of a job row.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+            body=body,
+        )
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+        return response, mock_create_job, mock_invoke
+
+    @pytest.mark.parametrize('doc_type', ['prd', 'prfaq'])
+    def test_an_accepted_doc_type_still_starts_a_job(
+        self, api_gateway_event, lambda_context, doc_type
+    ):
+        """The positive control: the guard refuses unknown values, it does not
+        refuse the field. Without this, rejecting everything would still pass
+        the refusal tests below."""
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event, lambda_context,
+            {'doc_type': doc_type, 'title': 'A feature'},
+        )
+        body = json.loads(response['body'])
+        assert body['success'] is True
+        assert body['job_id'] == 'job-1'
+        # The job type carries the doc_type through, which is the interpolation
+        # the unvalidated field used to reach.
+        assert mock_create_job.call_args.args[1] == f'generate_{doc_type}'
+        assert mock_create_job.call_args.args[3]['doc_type'] == doc_type
+        # No state machine ARN in the test environment, so the single-shot path
+        # is what runs; either way the request was accepted.
+        mock_invoke.assert_called_once()
+
+    def test_an_absent_doc_type_still_defaults_to_prd(
+        self, api_gateway_event, lambda_context
+    ):
+        """Pinning the pre-existing default: a request that says nothing about
+        doc_type behaves exactly as it did before the guard."""
+        response, mock_create_job, _ = self._post(
+            api_gateway_event, lambda_context, {'title': 'A feature'},
+        )
+        assert json.loads(response['body'])['success'] is True
+        assert mock_create_job.call_args.args[1] == 'generate_prd'
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+
+    def test_an_explicit_null_doc_type_is_resolved_not_forwarded(
+        self, api_gateway_event, lambda_context
+    ):
+        """`dict.get` cannot tell JSON null from a missing key, so null means
+        `prd` here too — and the RESOLVED value has to reach the stored config.
+        The generator's own `doc_config.get('doc_type', 'prd')` reads a present
+        null as null, and a null doc_type crashes it on `.upper()` after the job
+        row already exists."""
+        response, mock_create_job, _ = self._post(
+            api_gateway_event, lambda_context, {'doc_type': None, 'title': 'A feature'},
+        )
+        assert json.loads(response['body'])['success'] is True
+        assert mock_create_job.call_args.args[1] == 'generate_prd'
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+
+    @pytest.mark.parametrize('bad', [
+        # The two doc types the generator also serves, which have their own
+        # routes: this route must not be a second, unvalidated door to them.
+        'build_prototype',
+        'product_report',
+        # A value carrying the sort-key delimiter — the reason this field is a
+        # trust boundary at all, since the generator writes
+        # f'{doc_type.upper()}#{doc_id}' as a DynamoDB sort key.
+        'prd#injected',
+        '#',
+        '../prd',
+        # Case and whitespace are NOT folded: the generator compares with `==`,
+        # so a value it does not recognise still becomes half of a sort key.
+        'PRD',
+        ' prd',
+        'prd ',
+        # Wrong types, which would blow up on `.upper()` or serialise into the
+        # job type as a repr.
+        '',
+        [],
+        {},
+        7,
+        True,
+    ])
+    def test_a_rejected_doc_type_answers_400_and_creates_no_job(
+        self, api_gateway_event, lambda_context, bad
+    ):
+        """A 400 BEFORE create_job: refusing afterwards would leave a job row
+        describing a request that was rejected, and each attempt bills a Bedrock
+        call."""
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event, lambda_context, {'doc_type': bad, 'title': 'A feature'},
+        )
+        assert response['statusCode'] == 400
+        # The field must be NAMED in the error, so the caller is not left
+        # guessing which of the body's fields it was.
+        assert 'doc_type' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    def test_the_refusal_names_the_received_type(
+        self, api_gateway_event, lambda_context
+    ):
+        """The type is the diagnostic a caller sending the wrong shape needs, and
+        `validate_bool` in shared/api.py records the same reasoning: name the
+        type, never echo the value back."""
+        response, _, _ = self._post(
+            api_gateway_event, lambda_context, {'doc_type': 7, 'title': 'A feature'},
+        )
+        error = json.loads(response['body'])['error']
+        assert 'got int' in error
+        # The value itself stays out of the response: it is unbounded caller
+        # input and echoing it buys the caller nothing they do not have.
+        assert '7' not in error
+
+    @pytest.mark.parametrize('raw_body', [
+        # TRUTHY non-objects: these reached `body.get` and raised AttributeError.
+        '[1, 2]',       # a JSON array
+        '"prd"',        # a bare JSON string
+        '7',            # a bare JSON number
+        'true',         # a bare JSON boolean
+        # FALSY non-objects, which are the interesting half. The obvious
+        # `json_body or {}` collapses each of these into `{}` BEFORE any
+        # isinstance check can see it, so they were accepted as an empty body and
+        # started a default `prd` generation — a billed Bedrock call from a body
+        # that is not an object at all. They only fail if the shape is inspected
+        # before the falsy coercion.
+        '[]',           # an empty JSON array
+        'false',
+        '0',
+        '""',           # an empty JSON string as the WHOLE body, not as a value
+    ], ids=['array', 'string', 'number', 'boolean',
+            'empty_array', 'false', 'zero', 'empty_string'])
+    def test_a_non_object_body_answers_400_not_500(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        """A malformed body is the caller's fault, so it gets a 400 naming the
+        problem. Before the isinstance guard these raised AttributeError on
+        `body.get` and the handler's catch-all answered 500 — which reads as a
+        server fault and which a client retries differently."""
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+        )
+        # Set verbatim rather than through the fixture's `body=`, which JSON-encodes
+        # a dict: the point is a payload that parses to a NON-dict.
+        event['body'] = raw_body
+
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert 'JSON object' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    @pytest.mark.parametrize('raw_body', [
+        '{not json',        # never parses at all
+        '   ',              # whitespace only: truthy, so it IS parsed, and fails
+    ], ids=['malformed', 'whitespace'])
+    def test_an_unparseable_body_answers_400_not_500(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        """The third way this body can fail, which a hand-rolled shape check misses.
+
+        `json_body` is a cached_property calling `json.loads`, so unparseable JSON
+        raises `JSONDecodeError` AT THE ATTRIBUTE READ — before any isinstance
+        check can run — and reaches the handler's catch-all as a 500. Only reading
+        the body through `_json_object_body`, whose `except ValueError` branch owns
+        this case, turns it into the 400 the caller can act on.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+        )
+        event['body'] = raw_body
+
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        # Names the body as the problem, not the shape: this one never parsed.
+        assert 'must be JSON' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    @pytest.mark.parametrize('raw_body', [
+        'null',     # an explicit JSON null body
+        None,       # no body at all
+        '{}',       # an empty JSON object
+        # A ZERO-LENGTH body, which is what a real client sends with
+        # Content-Length: 0 — different bytes on the wire from the JSON string
+        # `""` two tests up, and the opposite answer. It defaults, but NOT via the
+        # `body is None` branch: powertools' `json_body` returns None for a falsy
+        # `decoded_body` without parsing it, so `''` never reaches the shape check.
+        # That makes this route's answer here rest on a library detail, which is
+        # exactly why it is pinned rather than left to be rediscovered.
+        '',
+    ], ids=['json_null', 'absent', 'empty_object', 'zero_length'])
+    def test_an_absent_body_still_defaults_to_prd(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        """The counterpart to the refusals above, and the reason the shape check
+        cannot simply refuse everything falsy.
+
+        A body that is absent — no body, or a literal JSON `null` — has always
+        meant "generate a PRD with the defaults", and the SPA relies on it. Only
+        a body that IS something, and that something is not an object, is a 400.
+        Without this case a guard that also refused the absent body would look
+        correct.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+        )
+        event['body'] = raw_body
+
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert json.loads(response['body'])['success'] is True
+        assert mock_create_job.call_args.args[1] == 'generate_prd'
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+        mock_invoke.assert_called_once()
+
+    def test_the_request_body_is_not_mutated_by_the_write_back(
+        self, api_gateway_event, lambda_context
+    ):
+        """The resolved doc_type reaches the stored config through a COPY.
+
+        `json_body` is a cached_property, so writing into it would rewrite the
+        request as received for the rest of the invocation — any later read
+        (middleware, an audit log) would see this route's resolution rather than
+        what the caller sent.
+        """
+        from projects_handler import app, lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+            body={'doc_type': None, 'title': 'A feature'},
+        )
+        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+                patch('projects_handler.invoke_lambda_async'):
+            lambda_handler(event, lambda_context)
+
+        # The STORED config carries the resolved value...
+        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+        # ...while the parsed request still carries the null the caller sent.
+        assert app.current_event.json_body['doc_type'] is None
+
+    @pytest.mark.parametrize('doc_type', ['prd', 'prfaq'])
+    def test_an_accepted_doc_type_reaches_the_state_machine(
+        self, api_gateway_event, lambda_context, doc_type
+    ):
+        """The chain path, which the other cases never reach.
+
+        With no DOCUMENT_STATE_MACHINE_ARN in the test environment every other
+        test here lands on the single-shot invoke, so without this the validated
+        value was never observed reaching the Step Functions input — the path
+        production actually runs.
+        """
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/document',
+            path_params={'project_id': 'proj-123'},
+            body={'doc_type': doc_type, 'title': 'A feature'},
+        )
+        with patch.dict(os.environ, {'DOCUMENT_STATE_MACHINE_ARN': 'arn:aws:states:us-east-1:1:sm/doc'}), \
+                patch('projects_handler.create_job', return_value=('job-1', {})), \
+                patch('projects_handler.boto3.client') as mock_client, \
+                patch('projects_handler.invoke_lambda_async') as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+
+        assert json.loads(response['body'])['success'] is True
+        start_execution = mock_client.return_value.start_execution
+        start_execution.assert_called_once()
+        # The validated value reaches the state machine's input, not just the job row.
+        sfn_input = json.loads(start_execution.call_args.kwargs['input'])
+        assert sfn_input['doc_config']['doc_type'] == doc_type
+        # is_chain is true for every accepted value, so the single-shot fallback
+        # is not taken when the ARN is configured.
+        mock_invoke.assert_not_called()
+
+    def test_the_allowlist_stays_at_two_values(self):
+        """The allowlist is the assertion, not an implementation detail: growing
+        it to the generator's four doc types is exactly the regression the
+        comment beside it argues against."""
+        from projects_handler import DEFAULT_GENERATED_DOC_TYPE, GENERATED_DOC_TYPES
+
+        assert GENERATED_DOC_TYPES == ('prd', 'prfaq')
+        # Stated directly, though the `generate_prd` assertions elsewhere in this
+        # class would also notice: a default outside the allowlist would make the
+        # route refuse its own fallback for every request that omits the field, and
+        # naming the invariant means that failure describes itself instead of
+        # arriving as seven tests complaining about an unexpected job type.
+        assert DEFAULT_GENERATED_DOC_TYPE in GENERATED_DOC_TYPES
+
+    def test_the_routing_predicate_reads_the_allowlist_constant(self):
+        """`is_chain` must not re-declare the allowlist.
+
+        A second copy of the literal can disagree with the set the route
+        validates against, which would route a newly accepted value down the
+        single-shot path silently. Asserting on the source is crude, but the
+        alternative — a behavioural test — cannot see the difference while the
+        two sets agree, which is precisely when the drift would be introduced.
+
+        Scoped to the assignment STATEMENT rather than the whole function, whose
+        source includes the docstring and the surrounding comments: those discuss
+        which doc types take which path and would quote the pair legitimately, so
+        a whole-function match fails for a reason it does not name. This survives
+        reformatting and a rename of the variable.
+
+        Comments are excluded from what is asserted on, for that same reason one
+        level down: a trailing `# ... 'prd' ...` on the statement is commentary
+        about the predicate, not a second copy of the allowlist, and failing on it
+        would again blame a predicate that is correct.
+        A re-declared literal counts however it is QUOTED. Python spells a string
+        literal two ways and ruff's configuration here enforces neither, so checking
+        one spelling left the case only this assertion can catch — a predicate that
+        reads the constant and carries a disagreeing copy beside it — passing on the
+        other. The literals are derived from GENERATED_DOC_TYPES for the same
+        reason: a hardcoded pair stops covering the allowlist the moment it changes.
+        """
+        import inspect
+
+        from projects_handler import GENERATED_DOC_TYPES, api_generate_document
+
+        source = inspect.getsource(api_generate_document)
+        lines = source.splitlines()
+        first = next(
+            (i for i, line in enumerate(lines) if line.strip().startswith('is_chain')),
+            None,
+        )
+        assert first is not None, 'no is_chain assignment found in api_generate_document'
+        # The whole STATEMENT, not just its first line: wrapped as
+        # `is_chain = (\n    doc_type in ...)` a line-only check would inspect the
+        # `is_chain = (` half and a re-declared literal on the continuation would
+        # pass unseen. So consume lines until the brackets balance — but count
+        # brackets on the CODE only, because an unbalanced `(` in a trailing
+        # comment (`# see api_build_prototype( for the twin`) would otherwise keep
+        # the loop swallowing lines until it happened to balance, pulling in the
+        # comments below that legitimately quote the pair and failing with a
+        # message blaming a predicate that is perfectly correct.
+        assignment = ''
+        code = ''
+        for line in lines[first:first + 10]:
+            assignment += line
+            code += line.split('#')[0]
+            if code.count('(') == code.count(')'):
+                break
+        else:
+            raise AssertionError(
+                f'the is_chain statement never closed its brackets within 10 lines, '
+                f'so it could not be checked: {assignment.strip()}'
+            )
+        assert 'GENERATED_DOC_TYPES' in code, (
+            f'the routing predicate must read the allowlist constant, not a second '
+            f'copy of its literal: {assignment.strip()}'
+        )
+        # No quoted doc type in the CODE, which is what a re-declared literal would
+        # look like however it were spelled, spaced or wrapped — including which
+        # QUOTE it is spelled with. Python has two spellings of a string literal and
+        # ruff's configuration here is defaults-only (`F` + `E4/E7/E9`), so no rule
+        # enforces one. Checking single quotes alone let through the case only this
+        # assertion can catch: a predicate that reads the constant AND carries a
+        # second, disagreeing copy beside it (`... or doc_type in ("legacy", "prd")`)
+        # — the assertion above catches a REPLACEMENT of the constant, this one
+        # catches an ADDITION, so there was nothing else standing behind it.
+        #
+        # Derived from GENERATED_DOC_TYPES rather than hardcoded, so the check
+        # cannot quietly stop covering a value the allowlist gains.
+        redeclared = sorted(
+            f'{quote}{doc_type}{quote}'
+            for doc_type in GENERATED_DOC_TYPES
+            for quote in ('"', "'")
+            if f'{quote}{doc_type}{quote}' in code
+        )
+        assert not redeclared, (
+            f'the routing predicate re-declares the allowlist literal {redeclared} '
+            f'instead of reading GENERATED_DOC_TYPES: {assignment.strip()}'
+        )
 
 
 class TestDocumentCRUDEndpoints:
