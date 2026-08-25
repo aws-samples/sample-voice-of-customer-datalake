@@ -3034,7 +3034,7 @@ class TestARedeliveredArrivalMovesNothing:
     REVERT MAP. Each entry was RUN against the source, and cites the tests that
     really failed:
       * Drop the dedupe claim from `_claimed_transaction`'s TransactItems (or route
-        `process_new_feedback` past `apply_feedback_once`) — fails
+        `process_new_feedback` past `apply_arrival_once`) — fails
         test_a_redelivered_record_leaves_every_counter_where_the_first_delivery_left_it,
         test_the_second_delivery_is_reported_as_a_skip_not_a_failure,
         test_a_replayed_record_is_counted_so_the_guard_is_not_silently_inert and
@@ -3446,6 +3446,492 @@ class TestARedeliveredArrivalMovesNothing:
         key = idempotency.scan()['Items'][0][IDEMPOTENCY_KEY_ATTRIBUTE]
         assert key.startswith('aggregator#'), key
         assert self.ID in key, key
+
+
+class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
+    """What the transactional path may build, asserted on the REQUEST it assembles.
+
+    Review of #264 found three ways this path could be right today and wrong after an
+    ordinary-looking change, all of them silent, and none of them reachable through
+    `record_handler` — so they are pinned where they are decided.
+
+    REVERT MAP, each entry RUN:
+      * Give `counter_transaction_items` or `_average_transaction_item` a `sign` again
+        and thread it — fails test_no_transaction_builder_offers_a_direction. The
+        original defect: the sign reached the counters and the average hardcoded `+1`,
+        so `sign=-1` decremented seven counters while INCREMENTING the average, and the
+        transaction guaranteed that inconsistent state committed whole. Nothing raised.
+      * Add a `counter_dimensions` entry on an EXISTING pk with a different field —
+        fails test_the_transaction_names_each_item_once, where production would answer
+        `ValidationException` for every ingested record.
+      * Strip `metric_type` from `_counter_request`, or build the transaction items
+        without going through it — fails test_an_arrival_tags_the_rows_the_gsi_reads.
+      * Spell the average's attribute names a second time in
+        `_average_transaction_item` and rename one (`total` for `sum`, say) — fails
+        test_both_average_writers_spend_one_expression, where the day would simply
+        read as having no average.
+    """
+
+    DATE = '2025-01-15'
+
+    def _items(self, item) -> list[dict]:
+        from aggregator.handler import (
+            SENTIMENT_AVG_PK,
+            _average_transaction_item,
+            _image_score,
+            counter_keys,
+            counter_transaction_items,
+        )
+
+        items = counter_transaction_items(counter_keys(item, self.DATE))
+        score = _image_score(item)
+        if score:
+            items.append(_average_transaction_item(SENTIMENT_AVG_PK, self.DATE, score))
+        return items
+
+    def test_no_transaction_builder_offers_a_direction(self):
+        """🔑 A `sign=-1` MUST NOT BE EXPRESSIBLE HERE, and the check is on the
+        signatures rather than on a call, because the defect was a parameter that
+        existed and was half honoured — the counters took it, the average ignored it.
+        A test calling with `-1` would have to assert the resulting mixed-direction
+        request is "wrong", which is a judgement; a builder that takes no direction
+        cannot produce one, which is a fact.
+
+        `_counter_transaction_item` keeps `increment` (`_counter_request` reads its SIGN
+        to decide the floor condition), so what is asserted of it is that it DEFAULTS to
+        an increment — the pair `counter_transaction_items` no longer passes.
+        """
+        from inspect import signature
+
+        from aggregator.handler import (
+            _average_transaction_item,
+            _counter_transaction_item,
+            counter_transaction_items,
+        )
+
+        for builder in (counter_transaction_items, _average_transaction_item):
+            assert 'sign' not in signature(builder).parameters, (
+                f'{builder.__name__} takes a direction again. Only the counters can '
+                f'honour one — the average row moves `sum` and `count` — so a '
+                f'reversal built here commits the counters DOWN and the average UP, '
+                f'atomically, which is worse than the split it replaced. Reversals '
+                f'stay on the single-write path; see apply_arrival_once.'
+            )
+
+        increment = signature(_counter_transaction_item).parameters['increment']
+        assert increment.default == 1, (
+            'the transactional counter builder no longer defaults to an increment, so '
+            'a decrement can reach a transaction — where its refusal, which '
+            '_reverse_a_pre_deploy_persona_row reads, cancels every other write '
+            'instead of being reported'
+        )
+
+    def test_the_transaction_names_each_item_once(self, sample_urgent_feedback_item):
+        """DynamoDB refuses two operations on ONE item, and it refuses the whole request.
+
+        So this is not a drift but an outage: every ingested record would fail with
+        `ValidationException`. What decides it is `counter_dimensions` — `counter_keys`
+        returns `(pk, date, field)`, so two dimensions on one pk with different fields
+        are two entries here and one item there. The urgent fixture, so every dimension
+        is present.
+        """
+        keys = {(item['Update']['TableName'],
+                 item['Update']['Key']['pk'],
+                 item['Update']['Key']['sk'])
+                for item in self._items(sample_urgent_feedback_item)}
+        items = self._items(sample_urgent_feedback_item)
+
+        assert len(keys) == len(items), (
+            f'{len(items)} transaction entries name only {len(keys)} distinct '
+            f'(table, pk, sk) triples. DynamoDB rejects a transaction containing two '
+            f'operations on one item and rejects the WHOLE request, so every ingested '
+            f'record would fail. If a new counter_dimensions entry shares a pk with '
+            f'an existing one, that dimension has to be a new pk or the two fields '
+            f'have to be one write.'
+        )
+        # The denominator: an empty list would satisfy the equality above.
+        assert len(items) >= 2, items
+
+    def test_an_arrival_tags_the_rows_the_gsi_reads(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """`metric_type` is what puts a row on `gsi1-by-metric-type`, and the existing
+        assertions for it inspect `update_item` kwargs — i.e. the path an arrival NO
+        LONGER TAKES.
+
+        It is written correctly today because `_counter_transaction_item` delegates to
+        the shared `_counter_request`. This is the test that fails if a future
+        transaction builder stops doing so: `/metrics/sources` and `/metrics/personas`
+        would then read an empty GSI while every count stayed correct — the "dimension
+        useless while looking populated" shape `counter_dimensions` describes at length.
+        `_counts` projects to `{pk: count}` and drops the tag, so the redelivery tests
+        cannot catch it.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        record_handler(_record('INSERT', new=sample_feedback_item, event_id='tagged'))
+
+        tags = {row['pk']: row.get('metric_type')
+                for row in aggregates.scan()['Items']}
+        source = next(pk for pk in tags if pk.startswith('METRIC#daily_source#'))
+        persona = next(pk for pk in tags if pk.startswith('METRIC#persona#'))
+
+        assert tags[source] == 'source', tags
+        assert tags[persona] == 'persona', tags
+        # And nothing else is tagged: a builder that stamped every row would put the
+        # daily total on the GSI, which both metrics routes would then double-count.
+        assert tags['METRIC#daily_total'] is None, tags
+
+    def test_both_average_writers_spend_one_expression(self):
+        """The average's attribute names exist once, as the counter's already did.
+
+        `sum` and `count` are what `get_summary` reads back, and the retention lockstep
+        compares only the writers' `ttl_days` defaults — so a second spelling here was
+        free to rename an attribute with nothing failing, and a transactional row
+        holding `total` reads as a day with no average at all. Compared as the REQUESTS
+        the two writers build, since that is the thing that must agree.
+        """
+        from aggregator.handler import (
+            SENTIMENT_AVG_PK,
+            _average_request,
+            _average_transaction_item,
+        )
+
+        transactional = _average_transaction_item(
+            SENTIMENT_AVG_PK, self.DATE, Decimal('0.5'),
+        )['Update']
+        single = _average_request(SENTIMENT_AVG_PK, self.DATE, Decimal('0.5'), 90, 1)
+
+        assert transactional['UpdateExpression'] == single['UpdateExpression']
+        assert (transactional['ExpressionAttributeNames']
+                == single['ExpressionAttributeNames']
+                == {'#sum': 'sum', '#count': 'count', '#ttl': 'ttl'})
+        # `:one` is the COUNT movement, so an arrival's is +1 in both.
+        assert transactional['ExpressionAttributeValues'][':one'] == 1
+        assert single['ExpressionAttributeValues'][':one'] == 1
+
+    def test_an_arrival_moves_the_average_in_the_same_direction_as_its_counters(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The end-to-end statement of the same thing, over the DATA.
+
+        The original defect was expressible precisely because nothing compared the two
+        directions: the counters went down while the average went up. An arrival is the
+        only direction this path has, so both must move UP together.
+        """
+        from aggregator.handler import SENTIMENT_AVG_PK, record_handler
+
+        aggregates, _ = deduped_tables
+        record_handler(_record('INSERT', new=sample_feedback_item, event_id='forwards'))
+
+        average = aggregates.get_item(
+            Key={'pk': SENTIMENT_AVG_PK, 'sk': self.DATE},
+        )['Item']
+        assert _counts(aggregates)['METRIC#daily_total'] == Decimal(1)
+        assert average['count'] == Decimal(1)
+        assert average['sum'] > Decimal(0), average
+
+    def test_the_two_arrival_paths_write_the_same_rows(
+        self, deduped_tables, sample_urgent_feedback_item
+    ):
+        """🔑 PARITY, because there are now TWO implementations of an arrival and the
+        default test path is the OLD one.
+
+        `_record(...)` omits `event_id` by default — deliberately, so the two dozen
+        "which counters does an arrival move?" tests measure dimensions rather than the
+        claim — which means every one of them exercises `apply_feedback`, the
+        non-transactional path production no longer takes for an INSERT. A dimension
+        reachable from one and not the other would be green in both directions.
+
+        Compared on the ROWS, not on the calls: `updated_at` and the TTL are stamped
+        from the clock, so the comparison is over (pk, sk, count) and the average's
+        (sum, count). Two separate fixtures would be cleaner but cannot share one moto
+        table; the same table is used twice with the day cleared between, which is why
+        the dates differ rather than the rows being deleted.
+        """
+        from aggregator.handler import SENTIMENT_AVG_PK, record_handler
+
+        aggregates, _ = deduped_tables
+
+        # The transactional path: a record carrying an eventID.
+        record_handler(_record('INSERT', new=sample_urgent_feedback_item,
+                               event_id='transactional'))
+        transactional = _counts(aggregates)
+        transactional_average = aggregates.get_item(
+            Key={'pk': SENTIMENT_AVG_PK, 'sk': self.DATE})['Item']
+
+        for pk in list(transactional) + [SENTIMENT_AVG_PK]:
+            aggregates.delete_item(Key={'pk': pk, 'sk': self.DATE})
+
+        # The single-write path: the same item, no eventID.
+        record_handler(_record('INSERT', new=sample_urgent_feedback_item))
+        single = _counts(aggregates)
+        single_average = aggregates.get_item(
+            Key={'pk': SENTIMENT_AVG_PK, 'sk': self.DATE})['Item']
+
+        assert transactional == single, (
+            'the transactional and single-write arrival paths write different counter '
+            'rows for one item, so the dimension tests — which take the single-write '
+            'path — no longer describe what production does'
+        )
+        assert (transactional_average['sum'], transactional_average['count']) == (
+            single_average['sum'], single_average['count'],
+        )
+        # The denominator, so an implementation that wrote nothing on both paths could
+        # not satisfy the equality.
+        assert transactional['METRIC#daily_total'] == Decimal(1), transactional
+        assert len(transactional) == 7, transactional
+
+
+class TestAWriteConflictIsRetriedRatherThanReported:
+    """Contention on `METRIC#daily_total` must not cost a record (review of #264).
+
+    Every record of a date moves that one row, `batchSize` is 100, and botocore does
+    NOT auto-retry `TransactionCanceledException` — so contention a plain `update_item`
+    used to absorb at the request level now arrives as a cancellation. Left to
+    propagate it is a reported record failure with only `retryAttempts: 3` left before
+    the record is DROPPED and its aggregates lost permanently, which is strictly worse
+    than the double-count the transaction was introduced to remove.
+
+    `ballots_handler._write_ballot` faces the same DynamoDB fact and reaches the same
+    answer for a different reason (a voter who cannot resubmit); the aggregator's is
+    that the stream would otherwise be the only retry budget. Both use three attempts.
+
+    REVERT MAP, each entry RUN:
+      * Delete the `_conflicted` branch from `_claimed_transaction` — fails
+        test_a_conflicted_transaction_is_re_attempted and
+        test_a_conflict_that_clears_leaves_the_record_applied.
+      * Retry ANY cancellation (drop the reason check in `_conflicted`) — fails
+        test_a_validation_failure_is_not_retried, whose subject is that a request
+        which will fail identically must not be re-sent: it spends the invocation and
+        delays the record.
+      * Retry forever — fails test_the_attempts_are_bounded, which is what keeps a
+        contended shard from holding Lambda concurrency in a tight loop.
+      * Set TRANSACT_WRITE_ATTEMPTS to 0 — fails
+        test_the_attempt_bound_leaves_at_least_one_attempt, where a record would
+        otherwise be reported "already applied" having never been written.
+    """
+
+    ID = 'a-contended-record'
+
+    @staticmethod
+    def _conflict() -> ClientError:
+        """The response shape DynamoDB sends for a contended item.
+
+        Reasons are POSITIONAL and the claim is item 0, so the conflict is placed on a
+        counter — index 1 — which is where contention really happens: the claim's key
+        is unique per record and cannot be contended by another record at all.
+        """
+        return ClientError(
+            {
+                'Error': {'Code': 'TransactionCanceledException',
+                          'Message': 'cancelled'},
+                'CancellationReasons': [
+                    {'Code': 'None'},
+                    {'Code': 'TransactionConflict', 'Message': 'conflict'},
+                ],
+            },
+            'TransactWriteItems',
+        )
+
+    def test_a_conflicted_transaction_is_re_attempted(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The first conflict is retried rather than raised, and the retry is what
+        writes the record. Without it this record is reported failed on its first
+        collision with another record of the same day."""
+        from aggregator.handler import TRANSACT_WRITE_ATTEMPTS, record_handler
+
+        aggregates, _ = deduped_tables
+        real = aggregates.meta.client.transact_write_items
+        # Conflict once, then let the real transaction through.
+        attempts = iter([self._conflict()])
+
+        def flaky(**kwargs):
+            failure = next(attempts, None)
+            if failure is not None:
+                raise failure
+            return real(**kwargs)
+
+        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
+                patch('aggregator.handler.time.sleep') as slept:
+            assert record_handler(
+                _record('INSERT', new=sample_feedback_item, event_id=self.ID)
+            ) == {"status": "success"}
+
+        assert _counts(aggregates)['METRIC#daily_total'] == Decimal(1)
+        # It WAITED, and it did not wait zero: a retry with no backoff re-collides.
+        assert slept.call_count == 1
+        assert slept.call_args.args[0] > 0
+        assert TRANSACT_WRITE_ATTEMPTS >= 2, 'the arrangement needs a retry to exist'
+
+    def test_a_conflict_that_clears_leaves_the_record_applied_exactly_once(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The counters are not applied twice by the retry, which is the property that
+        makes retrying safe at all: nothing was written by the cancelled attempt.
+
+        The positive control for the test above — an implementation that retried by
+        re-issuing only PART of the transaction would pass that one and fail this.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, idempotency = deduped_tables
+        real = aggregates.meta.client.transact_write_items
+        attempts = iter([self._conflict()])
+
+        def flaky(**kwargs):
+            failure = next(attempts, None)
+            if failure is not None:
+                raise failure
+            return real(**kwargs)
+
+        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
+                patch('aggregator.handler.time.sleep'):
+            record_handler(_record('INSERT', new=sample_feedback_item, event_id=self.ID))
+
+        counts = _counts(aggregates)
+        categories = sum(v for pk, v in counts.items()
+                         if pk.startswith('METRIC#daily_category#'))
+        assert counts['METRIC#daily_total'] == categories == Decimal(1), counts
+        assert idempotency.scan()['Count'] == 1
+
+    def test_the_attempts_are_bounded(self, deduped_tables, sample_feedback_item):
+        """A shard that is permanently contended must not hold concurrency forever.
+
+        Past the bound the record is reported failed and the STREAM redelivers it,
+        which the claim makes safe — so the in-process budget is a small optimisation
+        over that, not a replacement for it.
+        """
+        from aggregator.handler import TRANSACT_WRITE_ATTEMPTS, record_handler
+
+        aggregates, _ = deduped_tables
+        with patch.object(aggregates.meta.client, 'transact_write_items',
+                          side_effect=self._conflict()) as attempted, \
+                patch('aggregator.handler.time.sleep'):
+            with pytest.raises(ClientError):
+                record_handler(_record('INSERT', new=sample_feedback_item,
+                                       event_id=self.ID))
+
+        assert attempted.call_count == TRANSACT_WRITE_ATTEMPTS, (
+            'a permanently conflicted transaction was attempted a different number of '
+            'times than the bound allows'
+        )
+
+    def test_a_conflict_is_counted_so_the_contention_is_visible(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """A retry that succeeds is invisible, which is exactly why it needs a metric.
+
+        CONFLICTED_METRIC is how an operator sees that the batch size or the
+        parallelization factor is creating contention on the day's hot row — the trade
+        this retry makes, rather than the behaviour it produces.
+        """
+        from aggregator.handler import CONFLICTED_METRIC, record_handler
+
+        aggregates, _ = deduped_tables
+        real = aggregates.meta.client.transact_write_items
+        attempts = iter([self._conflict()])
+
+        def flaky(**kwargs):
+            failure = next(attempts, None)
+            if failure is not None:
+                raise failure
+            return real(**kwargs)
+
+        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
+                patch('aggregator.handler.time.sleep'), \
+                patch('aggregator.handler.metrics') as mock_metrics:
+            record_handler(_record('INSERT', new=sample_feedback_item, event_id=self.ID))
+
+        emitted = [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
+        assert CONFLICTED_METRIC in emitted, emitted
+
+    def test_a_validation_failure_is_not_retried(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """Only a CONFLICT is transient. A `ValidationException` will fail identically
+        on the next attempt, so re-sending it spends the invocation's time and delays
+        the record for nothing — the same reason `_write_ballot` does not retry a row
+        that has gone away.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        permanent = ClientError(
+            {
+                'Error': {'Code': 'TransactionCanceledException',
+                          'Message': 'cancelled'},
+                'CancellationReasons': [
+                    {'Code': 'None'},
+                    {'Code': 'ValidationError', 'Message': 'not a number'},
+                ],
+            },
+            'TransactWriteItems',
+        )
+        with patch.object(aggregates.meta.client, 'transact_write_items',
+                          side_effect=permanent) as attempted:
+            with pytest.raises(ClientError):
+                record_handler(_record('INSERT', new=sample_feedback_item,
+                                       event_id=self.ID))
+
+        assert attempted.call_count == 1, (
+            'a cancellation no contention caused was re-attempted; it will fail the '
+            'same way and the record is delayed by every wait'
+        )
+
+    def test_a_redelivery_is_still_a_skip_and_not_a_retry(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The claim's refusal must be read BEFORE the conflict check, or a redelivery
+        would be retried until the bound and then reported failed — a stalled shard in
+        place of a harmless duplicate, which is the outcome this whole change is meant
+        to avoid.
+        """
+        from aggregator.handler import record_handler
+
+        record = _record('INSERT', new=sample_feedback_item, event_id=self.ID)
+        assert record_handler(record) == {"status": "success"}
+
+        with patch('aggregator.handler.time.sleep') as slept:
+            assert record_handler(record) == {
+                "status": "skipped", "reason": "already applied",
+            }
+        assert slept.call_count == 0, 'a redelivery waited, so it was treated as a conflict'
+
+    def test_the_attempt_bound_leaves_at_least_one_attempt(self):
+        """The bound is a tuning number, so the assumption is a test rather than a hope.
+
+        At 0 the loop yields nothing and the function falls through — where returning
+        False would be read as "already applied", i.e. a record silently dropped and
+        the batch reported clean. `_claimed_transaction` raises there instead; this
+        pins the bound so that guard stays unreachable.
+        """
+        from aggregator.handler import TRANSACT_WRITE_ATTEMPTS
+
+        assert TRANSACT_WRITE_ATTEMPTS >= 1, (
+            'no aggregate transaction would be attempted at all, and a record never '
+            'written would be reported as one already applied'
+        )
+
+    def test_the_conflict_reason_is_not_the_exception_code(self):
+        """Two spellings of one condition, and neither is derivable from the other.
+
+        DynamoDB reports a contended item as `TransactionConflict` inside
+        `CancellationReasons` and as `TransactionConflictException` when a plain
+        request fails. Matching the wrong one here is SILENT — the retry simply never
+        fires, which looks identical to a system under no contention — so both
+        spellings are named in the module and this says why they differ.
+        """
+        from aggregator.handler import (
+            TRANSACTION_CONFLICT_REASON,
+            _TRANSIENT_READ_ERRORS,
+        )
+
+        assert TRANSACTION_CONFLICT_REASON == 'TransactionConflict'
+        assert TRANSACTION_CONFLICT_REASON not in _TRANSIENT_READ_ERRORS
+        assert f'{TRANSACTION_CONFLICT_REASON}Exception' in _TRANSIENT_READ_ERRORS
 
 
 class TestAnUnrecognizedEventIsSkippedRatherThanFatal:

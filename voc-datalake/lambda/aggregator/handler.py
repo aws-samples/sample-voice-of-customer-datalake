@@ -109,7 +109,7 @@ Known residuals
   records whose writes already landed — permanently, since nothing recomputes a
   counter from source. An INSERT now claims the record's `eventID` in the shared
   idempotency table INSIDE the same `TransactWriteItems` as its counters
-  (`apply_feedback_once`), which closes both halves at once: a redelivery moves
+  (`apply_arrival_once`), which closes both halves at once: a redelivery moves
   nothing, and a record that dies partway leaves no partial application for the
   retry to land on top of.
   ⚠️ A REVERSAL (REMOVE, and the decrement half of a MODIFY) IS NOT TRANSACTED, so
@@ -127,6 +127,22 @@ Known residuals
   guarantee for those paths is what they always did: no resurrected row, and no
   negative counter, with the tests in TestRedeliveryMovesACounterTwice pinning
   the reversal behaviour so this note and the code cannot drift apart.
+* AN ARRIVAL COSTS MORE AND CONTENDS MORE THAN IT DID, which is the price of the
+  point above and is recorded rather than hidden. DynamoDB bills a transactional
+  write at TWICE the WCU of the same write sent alone, so an arrival's writes cost
+  double what they did as independent `update_item` calls; the aggregates table is
+  PAY_PER_REQUEST, so this is a bill and not a ceiling. And every record of a date
+  moves `METRIC#daily_total`, so same-date records in one batch now CONTEND on it
+  where two plain `update_item`s would simply have serialised — a bulk import
+  through the `s3_import` plugin is exactly the shape that produces this. Bounded
+  in three places, none of them accidental: the transaction is re-attempted in
+  process with a jittered backoff (`TRANSACT_WRITE_ATTEMPTS`, and
+  CONFLICTED_METRIC is what makes the rate visible), past that bound the stream
+  redelivers, and the claim makes every one of those retries a no-op if an earlier
+  attempt landed. So contention converges rather than losing records — but if
+  CONFLICTED_METRIC climbs under import, the lever is the event source's
+  `parallelizationFactor` and `batchSize` in
+  `lib/stacks/processing-stack-consolidated.ts`, not a wider transaction.
 * NO RECONCILIATION JOB. Nothing recomputes a stored aggregate from the feedback
   table, so drift already written stays written — the point above only stops new
   drift arriving. A rebuild has to write ABSOLUTE values rather than replay
@@ -184,6 +200,8 @@ Known residuals
   once the legacy rows are gone, and strictly smaller than the over-count above.
 """
 import os
+import secrets
+import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -263,12 +281,23 @@ processor = BatchProcessor(event_type=EventType.DynamoDBStreams)
 # the condition this change exists to make survivable. Distinct from REFUSED and
 # DECLINED because it is neither a write DynamoDB rejected nor one this module
 # declined to attempt: it is a whole record correctly doing nothing.
+#
+# CONFLICTED_METRIC counts a transaction re-attempted after contention, and it is the
+# one metric here that measures a COST rather than a behaviour. Two records of the same
+# date both move `METRIC#daily_total`, and a transaction cancelled by that contention is
+# retried in process (see `_claimed_transaction`) — invisibly, since the retry then
+# succeeds. So without this the trade the retry makes is unmeasurable: a rising count
+# is contention the batch size or the parallelization factor is creating, and it is the
+# number that says whether the bound of three attempts is still generous. Not folded
+# into REFUSED_METRIC, which counts a condition DynamoDB was right to enforce; a
+# conflict is nobody being wrong.
 UPDATED_METRIC = "AggregatesUpdated"
 REVERSED_METRIC = "AggregatesReversed"
 REBUCKETED_METRIC = "AggregatesRebucketed"
 REFUSED_METRIC = "AggregateWriteRefused"
 DECLINED_METRIC = "AggregateWriteDeclined"
 REPLAYED_METRIC = "AggregateRecordReplayed"
+CONFLICTED_METRIC = "AggregateTransactionConflicted"
 
 # The two aggregate rows this module names outside `counter_dimensions`, hoisted
 # for the reason PERSONA_FIELD is named: a second unmarked copy of one of these
@@ -378,6 +407,26 @@ _TRANSIENT_READ_ERRORS = frozenset({
     'TransactionConflictException',
 })
 
+# --- Contention on the rows every record of a date shares ----------------------
+# 🔑 THE CODE DYNAMODB PUTS IN `CancellationReasons` FOR A CONTENDED ITEM, which is
+# `TransactionConflict` — NOT the `TransactionConflictException` in the set above.
+# Those are two spellings of one condition, one per API surface: the exception code on
+# a plain request, the reason code inside a cancelled transaction. Neither is
+# derivable from the other, so both are named, and this one is a constant because
+# matching it wrongly is silent — an unmatched reason simply never retries, which
+# looks exactly like a system under no contention.
+TRANSACTION_CONFLICT_REASON = 'TransactionConflict'
+
+# How many times an aggregate transaction is re-attempted in process, and how long it
+# waits first. The reasoning is `_claimed_transaction`'s; the numbers are
+# `ballots_handler`'s (BALLOT_WRITE_ATTEMPTS / BALLOT_WRITE_BACKOFF_SECONDS), and
+# deliberately so — both are a small bounded budget for contention on ONE hot item,
+# and there is no reason for this Lambda to make a different guess. Three attempts
+# spans ~150ms of backoff at most, which is nothing against a 30-second batching
+# window and far less than a stream redelivery of the whole batch.
+TRANSACT_WRITE_ATTEMPTS = 3
+TRANSACT_WRITE_BACKOFF_SECONDS = 0.05
+
 
 class CounterWrite(Enum):
     """How one `update_counter` call ended.
@@ -474,47 +523,108 @@ def _counter_request(pk: str, sk: str, field: str, increment: int,
     🔑 THE ONE PLACE A COUNTER'S UPDATE EXPRESSION IS WRITTEN, spent by both issuers:
     `update_counter`, which sends it on its own and reports how it ended, and
     `_counter_transaction_item`, which wraps the identical arguments for
-    `TransactWriteItems`. The transaction is what makes the INSERT path's eight
-    writes all-or-nothing (issue #264), and building its expression separately would
-    have meant two copies of `if_not_exists(#field, :zero) + :inc` — with the drift
-    landing on whichever path had fewer tests, which is exactly the failure mode
-    `counter_dimensions` exists to prevent one level up.
+    `TransactWriteItems`. The transaction is what makes an arrival's writes — one
+    counter per dimension, plus the average — all-or-nothing (issue #264), and
+    building its expression separately would have meant two copies of
+    `if_not_exists(#field, :zero) + :inc`, with the drift landing on whichever path
+    had fewer tests. That is exactly the failure mode `counter_dimensions` exists to
+    prevent one level up.
 
     Both callers are inside this module, so the `Key`/`UpdateExpression` shape is the
     interface rather than the argument names: `transact_write_items` spells its
     fields the same way `update_item` does, which is what lets one dict serve both
     with a rename rather than a rebuild.
+
+    THE RETURNED DICT IS COMPLETE AT THE LITERAL THAT BUILDS IT. The conditional
+    half used to be added by mutating `attr_values` through the local alias after it
+    had already been embedded, which worked (one object, two names) and meant the
+    request was not described by the expression that constructs it. It is decided
+    first and merged once now, because this is the single source of BOTH paths'
+    counter expression and the transactional one cannot report a per-item outcome —
+    so how it was assembled is the only thing a reader has to go on.
     """
-    ttl = int(datetime.now(timezone.utc).timestamp() + ttl_days * 24 * 60 * 60)
+    now = datetime.now(timezone.utc)
+    ttl = int(now.timestamp() + ttl_days * 24 * 60 * 60)
 
     # Build update expression - include metric_type for GSI if applicable
     metric_type = get_metric_type(pk)
-    update_expr = 'SET #field = if_not_exists(#field, :zero) + :inc, #ttl = :ttl, updated_at = :now'
-    attr_names = {'#field': field, '#ttl': 'ttl'}
-    attr_values: dict[str, Any] = {
-        ':inc': increment,
-        ':zero': 0,
-        ':ttl': ttl,
-        ':now': datetime.now(timezone.utc).isoformat()
-    }
+    metric_type_values = {':metric_type': metric_type} if metric_type else {}
+    # A DEcrement may not create a row and may not go below zero — see
+    # `update_counter`. Decided here rather than bolted on afterwards, so the
+    # condition, its `:floor` and the refused-item request travel together.
+    #
+    # `ReturnValuesOnConditionCheckFailure` asks for the refused item, so a refusal
+    # can say WHICH half of the condition failed. Only on the conditional path: an
+    # increment carries no condition and so cannot be refused.
+    conditional: dict[str, Any] = {
+        'ConditionExpression': 'attribute_exists(pk) AND #field >= :floor',
+        'ReturnValuesOnConditionCheckFailure': 'ALL_OLD',
+    } if increment < 0 else {}
+    floor_value = {':floor': -increment} if increment < 0 else {}
 
-    if metric_type:
-        update_expr += ', metric_type = :metric_type'
-        attr_values[':metric_type'] = metric_type
-
-    request: dict[str, Any] = {
+    return {
         'Key': {'pk': pk, 'sk': sk},
-        'UpdateExpression': update_expr,
-        'ExpressionAttributeNames': attr_names,
-        'ExpressionAttributeValues': attr_values,
+        'UpdateExpression': (
+            'SET #field = if_not_exists(#field, :zero) + :inc, #ttl = :ttl, '
+            'updated_at = :now'
+            + (', metric_type = :metric_type' if metric_type else '')
+        ),
+        'ExpressionAttributeNames': {'#field': field, '#ttl': 'ttl'},
+        'ExpressionAttributeValues': {
+            ':inc': increment,
+            ':zero': 0,
+            ':ttl': ttl,
+            ':now': now.isoformat(),
+            **metric_type_values,
+            **floor_value,
+        },
+        **conditional,
     }
-    if increment < 0:
-        request['ConditionExpression'] = 'attribute_exists(pk) AND #field >= :floor'
-        attr_values[':floor'] = -increment
-        # Ask for the refused item, so a refusal can say WHICH half of the condition
-        # failed. Only on the conditional path: an increment cannot be refused.
-        request['ReturnValuesOnConditionCheckFailure'] = 'ALL_OLD'
-    return request
+
+
+def _average_request(pk: str, sk: str, value: Decimal, ttl_days: int,
+                     sign: int) -> dict[str, Any]:
+    """One movement of a running average, as `update_item` arguments.
+
+    🔑 THE ONE PLACE THE AVERAGE'S UPDATE EXPRESSION IS WRITTEN, and the counterpart
+    of `_counter_request` for the row that misleads most: `get_summary` divides
+    `sum/count` per date and weights it into the headline `avg_sentiment`, so the two
+    attributes have to move together or the day asserts an average no item justifies.
+
+    Both issuers spend it — `update_average`, which sends it alone and reports whether
+    it landed, and `_average_transaction_item`, which wraps it for
+    `TransactWriteItems`. It was spelled out twice when the arrival path became
+    transactional (issue #264), which put `#sum`/`#count`/`#ttl` in two places on
+    paths with very different test coverage: the retention lockstep compared only the
+    `ttl_days` defaults, so an attribute NAME could have drifted between the two
+    writers with nothing failing, and a transactional row writing `total` where the
+    reader looks for `sum` reads as a day with no average at all.
+
+    `sign` carries the direction, exactly as `update_average`'s does: `:val` is
+    negated for a reversal and `:one` IS the count movement, so `sign=-1` subtracts
+    the score and decrements the count. The CONDITION for a reversal is the caller's
+    to add — see `update_average`, which is the only issuer that may make a
+    conditional average write, and `_average_transaction_item` for why a transaction
+    may not.
+    """
+    now = datetime.now(timezone.utc)
+    ttl = int(now.timestamp() + ttl_days * 24 * 60 * 60)
+    return {
+        'Key': {'pk': pk, 'sk': sk},
+        'UpdateExpression': (
+            'SET #sum = if_not_exists(#sum, :zero) + :val, '
+            '#count = if_not_exists(#count, :zero) + :one, '
+            '#ttl = :ttl, updated_at = :now'
+        ),
+        'ExpressionAttributeNames': {'#sum': 'sum', '#count': 'count', '#ttl': 'ttl'},
+        'ExpressionAttributeValues': {
+            ':val': value if sign > 0 else -value,
+            ':one': sign,
+            ':zero': Decimal('0'),
+            ':ttl': ttl,
+            ':now': now.isoformat(),
+        },
+    }
 
 
 def update_counter(pk: str, sk: str, field: str, increment: int = 1,
@@ -551,7 +661,7 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1,
     The floor is not idempotency, and this function is the path that does not have
     any: a redelivered REMOVE against a counter at 3 still lands on 2 and then 1.
     Redelivery is closed for ARRIVALS, by claiming the record's `eventID` in the same
-    transaction as its writes — see `apply_feedback_once`, and the module docstring
+    transaction as its writes — see `apply_arrival_once`, and the module docstring
     for why a conditional decrement cannot join that transaction.
 
     ConditionalCheckFailedException is therefore an expected, benign outcome of a
@@ -636,38 +746,27 @@ def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90,
     bug this module exists to remove. The coherent fix is to store per-item
     contributions so a reversal subtracts what was actually added; that is a schema
     change, and out of scope here. Recorded in the module docstring as a residual.
+
+    THE EXPRESSION IS BUILT ELSEWHERE — `_average_request` — for the reason
+    `update_counter`'s is: an arrival now sends the same movement as one
+    `TransactWriteItems` entry, and two spellings of `if_not_exists(#sum, :zero) +
+    :val` would be two sets of attribute names to keep in step, with `sum` and `count`
+    being exactly the names `get_summary` reads back. This function is the SINGLE-WRITE
+    issuer, and the only one that may make the write CONDITIONAL: a refusal is
+    information `_rebucket_average` reads, and a transaction has no per-item outcome to
+    report it with.
     """
-    ttl = int(datetime.now(timezone.utc).timestamp() + ttl_days * 24 * 60 * 60)
-
-    attr_values: dict[str, Any] = {
-        ':val': value if sign > 0 else -value,
-        ':one': sign,
-        ':zero': Decimal('0'),
-        ':ttl': ttl,
-        ':now': datetime.now(timezone.utc).isoformat()
-    }
-
-    kwargs: dict[str, Any] = {}
-    if sign < 0:
+    request = _average_request(pk, sk, value, ttl_days, sign)
+    conditional = sign < 0
+    if conditional:
         # A distinct :floor rather than reusing :one, which is -1 here.
-        kwargs['ConditionExpression'] = 'attribute_exists(pk) AND #count >= :floor'
-        attr_values[':floor'] = 1
+        request['ConditionExpression'] = 'attribute_exists(pk) AND #count >= :floor'
+        request['ExpressionAttributeValues'][':floor'] = 1
 
     try:
-        aggregates_table.update_item(
-            Key={'pk': pk, 'sk': sk},
-            UpdateExpression='''
-                SET #sum = if_not_exists(#sum, :zero) + :val,
-                    #count = if_not_exists(#count, :zero) + :one,
-                    #ttl = :ttl,
-                    updated_at = :now
-            ''',
-            ExpressionAttributeNames={'#sum': 'sum', '#count': 'count', '#ttl': 'ttl'},
-            ExpressionAttributeValues=attr_values,
-            **kwargs
-        )
+        aggregates_table.update_item(**request)
     except ClientError as e:
-        if 'ConditionExpression' not in kwargs or not is_conditional_check_failure(e):
+        if not conditional or not is_conditional_check_failure(e):
             raise
         _log_refusal('reversal of average', pk, sk)
         return False
@@ -765,12 +864,25 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     path, because the two drifting apart is the failure mode this fix exists to
     remove: a dimension added to the insert path only would go up forever and
     never come back down — precisely the shape of the original bug, just narrower.
-    This replaces eight hardcoded `update_counter` calls; an inverted copy of
-    those eight would have re-created that hazard on day one.
+    This replaces a hardcoded `update_counter` call per dimension; an inverted copy
+    of that list would have re-created the hazard on day one.
 
     URGENCY IS THE ONLY CONDITIONAL DIMENSION. Every other item below is appended
     unconditionally, because each read has a non-empty default — a reader asking
-    "which of these might be absent?" gets one answer, not two.
+    "which of these might be absent?" gets one answer, not two. So this returns SEVEN
+    dimensions for an urgent item and six otherwise; no docstring in this module states
+    the number, deliberately, because the list below is designed to be extended and a
+    count restated in prose is a fact that goes stale where nothing checks it.
+
+    ⚠️ A SECOND DIMENSION ON AN EXISTING pk IS NOW A TRANSACTION-BREAKING CHANGE.
+    `counter_keys` turns each entry into `(pk, date, field)`, and an arrival sends every
+    one of them as an entry of a single `TransactWriteItems` — where DynamoDB rejects
+    two operations on ONE item outright, failing the whole request. Two dimensions
+    sharing a pk with different FIELDS are two distinct entries here and one DynamoDB
+    item there, so adding such a pair would fail every ingested record rather than
+    counting one dimension oddly. Harmless on the single-write reversal path, which
+    issues them sequentially. `test_the_transaction_names_each_item_once` is the guard;
+    a dimension on a NEW pk, which is what every entry below is, needs nothing.
 
     The persona bucket comes from `shared.feedback.persona_bucket`, the one
     derivation this Lambda and `metrics_handler`'s scan path share, and
@@ -916,14 +1028,23 @@ def apply_counter_keys(
 
 
 def counter_transaction_items(
-    keys: set[tuple[str, str, str]], sign: int,
+    keys: set[tuple[str, str, str]],
 ) -> list[dict[str, Any]]:
-    """Every named counter's movement, as `TransactWriteItems` entries.
+    """Every named counter's INCREMENT, as `TransactWriteItems` entries.
 
     `apply_counter_keys`' counterpart for the transactional path, and it is a
     FUNCTION rather than a comprehension at the call site for the same reason that one
     is: it is the ONE place a counter key is unpacked into a transactional write, so
     there is exactly one line here deciding what a counter's sort key is.
+
+    NO `sign`, and that is the scope of the whole transactional path made structural.
+    It took one until review pointed out that the parameter was only half honoured —
+    threaded into the counters and dropped for the average, which hardcodes `+1` — so
+    a `sign=-1` call decremented every counter while INCREMENTING the average, and the
+    transaction then guaranteed that inconsistent state committed whole. Taking the
+    parameter away is what makes "reversals do not come through here" a fact about the
+    signature rather than a sentence in a docstring; see `apply_arrival_once` for why
+    a conditional decrement cannot join a transaction at all.
 
     🔑 THE UNPACKING IS SPELLED `for pk, date, field in sorted(keys)` DELIBERATELY.
     `test_streaming_categories_lockstep.py` pins the small set of expressions a
@@ -936,23 +1057,36 @@ def counter_transaction_items(
     catch. Sorted for the same reason `apply_counter_keys` sorts: a deterministic
     order for tests and logs, and here it also fixes which item a cancellation reason
     refers to.
+
+    ⚠️ ONE ENTRY PER `(pk, sk)`, WHICH IS DYNAMODB'S RULE AND NOT A PREFERENCE. See
+    `_claimed_transaction`; `counter_dimensions` is the function that decides it, and
+    `test_the_transaction_names_each_item_once` fails if it stops holding.
     """
-    return [_counter_transaction_item(pk, date, field, sign)
+    return [_counter_transaction_item(pk, date, field)
             for pk, date, field in sorted(keys)]
 
 
-def _counter_transaction_item(pk: str, sk: str, field: str, increment: int,
+def _counter_transaction_item(pk: str, sk: str, field: str, increment: int = 1,
                               ttl_days: int = 90) -> dict[str, Any]:
-    """One counter movement as a `TransactWriteItems` entry.
+    """One counter INCREMENT as a `TransactWriteItems` entry.
 
     The same request `update_counter` issues on its own — `_counter_request` builds
-    it, so the expression exists once — with the table name added and the whole thing
-    wrapped in the `{'Update': ...}` shape the transaction API takes.
+    it, so the expression exists once, including the `metric_type` tag the
+    `gsi1-by-metric-type` GSI needs on the source and persona rows — with the table
+    name added and the whole thing wrapped in the `{'Update': ...}` shape the
+    transaction API takes.
+
+    `increment` defaults to 1 and every caller leaves it there. It is still a
+    parameter because `_counter_request` reads its SIGN to decide whether the write
+    carries the floor condition, and a builder that could not express that would have
+    to re-derive the condition rather than forward it — but a NEGATIVE value must not
+    reach here, and `counter_transaction_items` no longer offers a way to pass one.
+    See `apply_arrival_once`: a decrement's refusal is information, and a transaction
+    cannot report it.
 
     `ttl_days` defaults here as it does on every other writer, and
-    `test_aggregate_retention_lockstep.py` reads the defaults of `update_counter` and
-    `update_average` because those are the two functions that STAMP a row. This one
-    only forwards, and it forwards the same number.
+    `test_aggregate_retention_lockstep.py` reads the default of all four writers
+    because every one of them stamps a row's TTL from its own copy of the number.
     """
     return {'Update': {'TableName': AGGREGATES_TABLE,
                        **_counter_request(pk, sk, field, increment, ttl_days)}}
@@ -962,36 +1096,24 @@ def _average_transaction_item(pk: str, sk: str, value: Decimal,
                               ttl_days: int = 90) -> dict[str, Any]:
     """The running average's INCREMENT half as a `TransactWriteItems` entry.
 
-    Increment only, and that is a scope statement rather than an omission. The
-    transaction exists for the INSERT path, whose average write is unconditional;
-    every DECREMENT of the average is a conditional write whose refusal
-    `_rebucket_average` has to observe to decide the pairing, and a transaction
-    reports no per-item outcome — a refused item cancels the whole transaction
-    instead. Putting a reversal in here would therefore replace a rule that reads
-    "the reversal was refused, so do not re-apply" with "the edit wrote nothing at
-    all", which is a different behaviour and not the one that class pins.
+    Increment only, and that is a scope statement rather than an omission — enforced
+    by taking no `sign` at all rather than by this paragraph. The transaction exists
+    for the arrival path, whose average write is unconditional; every DECREMENT of the
+    average is a conditional write whose refusal `_rebucket_average` has to observe to
+    decide the pairing, and a transaction reports no per-item outcome — a refused item
+    cancels the whole transaction instead. Putting a reversal in here would therefore
+    replace a rule that reads "the reversal was refused, so do not re-apply" with "the
+    edit wrote nothing at all", which is a different behaviour and not the one that
+    class pins.
 
-    The expression is `update_average`'s, spelled once here because the sign is fixed
-    at +1 on this path: `:one` is the count movement, so an increment is literally 1.
+    The expression is `update_average`'s because `_average_request` builds both: the
+    `sum`/`count` attribute names are what `get_summary` reads back, so a second
+    spelling of them here would be free to drift into a row the read path cannot see —
+    the retention lockstep compares the TTL defaults and would not have noticed.
+    `sign=1` is passed as the literal it is, since this path has no other direction.
     """
-    ttl = int(datetime.now(timezone.utc).timestamp() + ttl_days * 24 * 60 * 60)
-    return {'Update': {
-        'TableName': AGGREGATES_TABLE,
-        'Key': {'pk': pk, 'sk': sk},
-        'UpdateExpression': (
-            'SET #sum = if_not_exists(#sum, :zero) + :val, '
-            '#count = if_not_exists(#count, :zero) + :one, '
-            '#ttl = :ttl, updated_at = :now'
-        ),
-        'ExpressionAttributeNames': {'#sum': 'sum', '#count': 'count', '#ttl': 'ttl'},
-        'ExpressionAttributeValues': {
-            ':val': value,
-            ':one': 1,
-            ':zero': Decimal('0'),
-            ':ttl': ttl,
-            ':now': datetime.now(timezone.utc).isoformat(),
-        },
-    }}
+    return {'Update': {'TableName': AGGREGATES_TABLE,
+                       **_average_request(pk, sk, value, ttl_days, 1)}}
 
 
 def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
@@ -1019,31 +1141,84 @@ def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
     what gets it retried — and a transaction that failed for a reason this function
     cannot name has NOT applied anything, so a retry is the correct response.
 
-    A `TransactWriteItems` is limited to 100 items; one feedback record produces at
-    most eight counters plus the average plus the marker, so the limit is not
-    reachable from here and is not defended against — a batch is applied one record
-    at a time, deliberately, since the alternative would make one poison record fail
-    every other record's writes with it.
+    🔑 A `TransactionConflict` IS RE-ATTEMPTED IN PROCESS, up to
+    `TRANSACT_WRITE_ATTEMPTS` times with a jittered backoff, and this is the one place
+    the aggregator's calculus is worth stating because `ballots_handler._write_ballot`
+    reaches the same conclusion from the same DynamoDB fact for its own reasons.
+    `METRIC#daily_total` is written by EVERY record of a date, `batchSize` is 100, and
+    botocore does NOT auto-retry `TransactionCanceledException` (only
+    `TransactionInProgressException` and `ReplicatedWriteConflictException` carry retry
+    policies), so contention that a plain `update_item` used to absorb invisibly at the
+    request level now arrives here as a cancellation. Left to propagate it becomes a
+    reported record failure, and the record has only the event source's
+    `retryAttempts: 3` left before it is DROPPED and its aggregates lost for good —
+    which is strictly worse than the double-count this whole change exists to remove.
+    Retrying is safe by construction: nothing was written, and if a concurrent attempt
+    of the SAME record landed, the claim refuses the re-attempt. Bounded and jittered
+    rather than unbounded, because a Lambda holding concurrency in a tight loop is its
+    own outage; past the bound the record is reported failed and the stream redelivers,
+    which the claim also makes safe. CONFLICTED_METRIC is what makes the contention
+    observable rather than merely survivable.
+
+    ⚠️ EVERY ITEM MUST NAME A DIFFERENT `(pk, sk)`. DynamoDB rejects a transaction
+    containing two operations on ONE item with a `ValidationException` — the whole
+    request, so every ingested record would fail, an outage rather than a drift — and
+    what decides it is `counter_dimensions`: `counter_keys` returns `(pk, date, field)`
+    tuples, so two dimensions sharing a pk with DIFFERENT fields deduplicate to two set
+    members naming one DynamoDB item. Harmless on the single-write path (two sequential
+    `update_item`s), fatal here. Today every dimension names its pk once;
+    `test_the_transaction_names_each_item_once` is what fails if a new one stops doing
+    so, rather than production.
+
+    The 100-item cap, by contrast, is NOT reachable and is not defended against: one
+    record produces one counter per dimension, plus the average, plus the marker. A
+    batch is applied one record at a time, deliberately, since the alternative would
+    make one poison record fail every other record's writes with it.
     """
-    now = int(datetime.now(timezone.utc).timestamp())
-    try:
-        aggregates_table.meta.client.transact_write_items(
-            # The claim FIRST, so that a cancellation naming index 0 is the
-            # redelivery case and the reasons list lines up with `items` from 1.
-            TransactItems=[
-                dedupe_claim_item(IDEMPOTENCY_TABLE, dedupe_key, now), *items,
-            ],
-        )
-    except ClientError as e:
-        if not _claim_was_refused(e):
+    for attempt in range(TRANSACT_WRITE_ATTEMPTS):
+        now = int(datetime.now(timezone.utc).timestamp())
+        try:
+            aggregates_table.meta.client.transact_write_items(
+                # The claim FIRST, so that a cancellation naming index 0 is the
+                # redelivery case and the reasons list lines up with `items` from 1.
+                TransactItems=[
+                    dedupe_claim_item(IDEMPOTENCY_TABLE, dedupe_key, now), *items,
+                ],
+            )
+        except ClientError as e:
+            if _claim_was_refused(e):
+                logger.info(
+                    f"Stream record {dedupe_key} was already applied; leaving "
+                    f"{len(items)} aggregate write(s) alone"
+                )
+                metrics.add_metric(name=REPLAYED_METRIC, unit="Count", value=1)
+                return False
+            if _conflicted(e) and attempt + 1 < TRANSACT_WRITE_ATTEMPTS:
+                # Logged BEFORE the sleep, as `_write_ballot` logs its own: the line
+                # records the DECISION to re-attempt, and someone timing a slow record
+                # should see it at the moment the wait began rather than after it.
+                metrics.add_metric(name=CONFLICTED_METRIC, unit="Count", value=1)
+                logger.warning(
+                    f"Aggregate transaction for {dedupe_key} hit a write conflict; "
+                    f"retrying (attempt {attempt + 2} of {TRANSACT_WRITE_ATTEMPTS})"
+                )
+                delay = TRANSACT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
+                # Jittered, so records that collided once do not re-collide having
+                # waited the same interval.
+                time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
+                continue
             raise
-        logger.info(
-            f"Stream record {dedupe_key} was already applied; leaving "
-            f"{len(items)} aggregate write(s) alone"
-        )
-        metrics.add_metric(name=REPLAYED_METRIC, unit="Count", value=1)
-        return False
-    return True
+        return True
+    # UNREACHABLE while TRANSACT_WRITE_ATTEMPTS >= 1, and kept because falling out of
+    # this loop would be INDISTINGUISHABLE FROM A REDELIVERY: `False` here means "the
+    # record was already applied", which `record_handler` reports as a success and
+    # never retries — so a bound of 0 would silently drop every record's aggregates
+    # while reporting the batch clean. `test_the_attempt_bound_leaves_at_least_one`
+    # pins the bound; this is the guard for the case where it stops holding anyway.
+    raise RuntimeError(
+        'TRANSACT_WRITE_ATTEMPTS is not at least 1, so no aggregate transaction was '
+        'attempted. Raising rather than reporting a record that was never applied.'
+    )
 
 
 def _claim_was_refused(error: ClientError) -> bool:
@@ -1077,6 +1252,41 @@ def _claim_was_refused(error: ClientError) -> bool:
         return False
     first = reasons[0]
     return isinstance(first, Mapping) and first.get('Code') == 'ConditionalCheckFailed'
+
+
+def _conflicted(error: ClientError) -> bool:
+    """Was this cancellation contention on one of the rows, and nothing else?
+
+    The one cancellation worth re-attempting in process, and the reason is that it is
+    ORDINARY rather than exceptional: every record of a date moves
+    `METRIC#daily_total`, so same-day records arriving in one batch contend by design.
+    Read from the reasons rather than from the exception, exactly as
+    `_claim_was_refused` is, because the decision it drives is different — a retry
+    versus reporting the record failed — and only one code licenses it.
+
+    ANY reason being unreadable answers False, which routes to the raise. That is the
+    same fail-toward-the-stream direction the claim check takes: the stream redelivers
+    and the claim makes that safe, so declining to retry costs a round trip, while
+    retrying a cancellation this cannot name would spend the invocation's time on a
+    request that will fail identically (a `ValidationException` does not become valid).
+
+    `_TRANSIENT_READ_ERRORS` already names `TransactionConflictException` for the day
+    read; the spelling HERE is the reason code DynamoDB puts in `CancellationReasons`,
+    which is `TransactionConflict` without the suffix — two different strings for the
+    same condition, one per API surface, which is why neither can be derived from the
+    other.
+    """
+    response = error.response if isinstance(error.response, Mapping) else None
+    if response is None:
+        return False
+    if (response.get('Error') or {}).get('Code') != 'TransactionCanceledException':
+        return False
+    reasons = response.get('CancellationReasons')
+    if not isinstance(reasons, list) or not reasons:
+        return False
+    return any(isinstance(reason, Mapping)
+               and reason.get('Code') == TRANSACTION_CONFLICT_REASON
+               for reason in reasons)
 
 
 def _reverse_a_pre_deploy_persona_row(
@@ -1202,9 +1412,8 @@ def _reverse_a_pre_deploy_persona_row(
     return landed
 
 
-def apply_feedback_once(item: dict, sign: int, date: str, dedupe_key: str) -> bool:
-    """`apply_feedback`, but every write of it in ONE transaction keyed on
-    `dedupe_key`.
+def apply_arrival_once(item: dict, date: str, dedupe_key: str) -> bool:
+    """One ARRIVAL's every write, in ONE transaction keyed on `dedupe_key`.
 
     🔑 THE PATH THAT IS IDEMPOTENT, and it is the arrival path because that is the one
     whose writes are all unconditional and so can all be transacted. Two properties,
@@ -1214,15 +1423,26 @@ def apply_feedback_once(item: dict, sign: int, date: str, dedupe_key: str) -> bo
       the transaction cancels, and every counter stays where the first delivery left
       it — where the floor at zero could only ever no-op a decrement that was already
       at zero.
-    * A RECORD THAT FAILED PARTWAY LEAVES NOTHING PARTIAL. Eight counters plus the
-      average commit at once, so a daily total can never disagree with the sum of its
-      per-category counts. This is the half a marker alone does not fix: a marker
-      written before the writes records a half-applied record as done, and one written
-      after leaves the half-application to be re-applied on top.
+    * A RECORD THAT FAILED PARTWAY LEAVES NOTHING PARTIAL. One counter per dimension
+      plus the average commit at once, so a daily total can never disagree with the sum
+      of its per-category counts. This is the half a marker alone does not fix: a
+      marker written before the writes records a half-applied record as done, and one
+      written after leaves the half-application to be re-applied on top.
 
     Returns whether the writes were applied — False for a redelivery, which is a
     success from the batch processor's point of view and must not be reported as a
     failed record (that would redeliver it forever).
+
+    🔑 NAMED FOR THE ARRIVAL, AND TAKES NO `sign`, WHICH IS THE POINT OF THE NAME. It
+    was `apply_feedback_once(item, sign, ...)` and threaded that sign into the counters
+    while the average builder hardcoded `+1` — so a `sign=-1` call decremented every
+    counter, INCREMENTED the average, and the transaction then guaranteed the
+    inconsistent state committed whole: strictly worse than the non-transactional split
+    it exists to prevent. Nothing raised, because a half-honoured parameter has nothing
+    to raise about. The paragraph below always said reversals must not come through
+    here; the signature now says it too, which is the difference between a rule and a
+    note, and the next person to attempt transacting a reversal meets a missing
+    argument rather than a green test suite.
 
     THE REVERSAL PATHS DO NOT COME THROUGH HERE, and that is a scope decision rather
     than an oversight. Every decrement is a conditional write whose refusal the code
@@ -1236,7 +1456,7 @@ def apply_feedback_once(item: dict, sign: int, date: str, dedupe_key: str) -> bo
     already had; what they do not get is redelivery protection, which is recorded as a
     residual in the module docstring rather than half-implemented here.
     """
-    items = counter_transaction_items(counter_keys(item, date), sign)
+    items = counter_transaction_items(counter_keys(item, date))
 
     sentiment_score = _image_score(item)
     if sentiment_score:
@@ -1256,7 +1476,7 @@ def apply_feedback(item: dict, sign: int, date: str):
     """Add (`sign=1`) or reverse (`sign=-1`) one item's contribution on `date`.
 
     The NON-transactional issuer, now reached only by the reversal paths — see
-    `apply_feedback_once` for which writes may be transacted and why a decrement may
+    `apply_arrival_once` for which writes may be transacted and why a decrement may
     not be. Kept as one function serving both signs because the shared description in
     `counter_dimensions` is what stops the two directions drifting, and that argument
     is about the DIMENSIONS rather than about how the writes are issued.
@@ -1290,7 +1510,7 @@ def process_new_feedback(item: dict, dedupe_key: str | None = None) -> bool:
     already been applied, which is a redelivery and an ordinary success.
 
     `dedupe_key` is the stream record's `eventID`, unique per record, and it is what
-    makes this path idempotent — see `apply_feedback_once`. It is OPTIONAL, and None
+    makes this path idempotent — see `apply_arrival_once`. It is OPTIONAL, and None
     routes to the non-transactional path deliberately: the function must still work
     when `IDEMPOTENCY_TABLE` is unset (a CDK regression must degrade to the pre-#264
     behaviour rather than stop aggregating), and the two dozen callers in the test
@@ -1299,7 +1519,7 @@ def process_new_feedback(item: dict, dedupe_key: str | None = None) -> bool:
     """
     date = _image_date(item)
     if dedupe_key and IDEMPOTENCY_TABLE:
-        return apply_feedback_once(item, 1, date, dedupe_key)
+        return apply_arrival_once(item, date, dedupe_key)
     apply_feedback(item, 1, date)
     return True
 

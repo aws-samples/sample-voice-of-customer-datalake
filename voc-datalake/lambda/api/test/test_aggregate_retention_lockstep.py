@@ -57,10 +57,16 @@ _TTL_PARAMETER = 'ttl_days'
 #
 # FOUR since the arrival path became transactional (issue #264): an INSERT's counters
 # and average are built as `TransactWriteItems` entries, and each of those builders
-# computes its own `#ttl` from its own `ttl_days` default. That is a third and fourth
-# copy of the horizon — on the path EVERY ingested item takes — and a lockstep naming
-# only the two single-write functions would have left them free to drift while
-# reporting the constant as honoured.
+# takes its own `ttl_days` default. That is a third and fourth copy of the horizon — on
+# the path EVERY ingested item takes — and a lockstep naming only the two single-write
+# functions would have left them free to drift while reporting the constant as honoured.
+#
+# The `now + ttl_days * 24 * 60 * 60` ARITHMETIC is not in four places: `_counter_request`
+# and `_average_request` each do it once for both of their issuers, and both take
+# `ttl_days` as a REQUIRED parameter, so neither can carry a default that disagrees with
+# anything. What the four names below still own is the DEFAULT — the number a caller gets
+# when it does not say — which is the only thing a constant can describe and so the only
+# thing this file reads.
 _WRITERS = (
     'update_counter', 'update_average',
     '_counter_transaction_item', '_average_transaction_item',
