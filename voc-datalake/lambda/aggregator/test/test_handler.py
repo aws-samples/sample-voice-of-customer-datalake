@@ -155,10 +155,23 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       fails 13 tests; logging a non-transient read failure at `warning` fails
       `test_a_denied_day_read_fails_open_but_is_logged_as_an_error`.
 
+  TestARedeliveredArrivalMovesNothing
+    — issue #264. An INSERT claims the stream record's `eventID` in the SAME
+      `TransactWriteItems` as its counters, which closes both halves of the defect:
+      a redelivered record moves nothing, and a record that dies partway leaves no
+      partial application for the retry to land on top of. Deleting the claim from
+      the transaction fails four; applying the counters as separate writes with the
+      claim merely written first or last — a marker without a transaction — fails
+      the partial-application pair, which is the half that produces internally
+      inconsistent metrics. That class's own revert map has the rest, including
+      which mutation each citation was measured against and the one test there
+      that passes in both states and why that is correct.
+
   TestRedeliveryMovesACounterTwice
-    — the KNOWN RESIDUAL, pinned at what the code really does rather than at what
-      would be nice. These fail if idempotency is ever added, which is the point:
-      the module docstring's residual note and the behaviour cannot drift apart.
+    — the residual that REMAINS after that: a REVERSAL is not transacted, because
+      every decrement is a conditional write whose refusal the code above it READS
+      and a transaction reports no per-item outcome. These pin that, so the module
+      docstring's remaining residual and the behaviour cannot drift apart.
 
   TestAnUnrecognizedEventIsSkippedRatherThanFatal
     — restoring `str(record.event_name)` in place of the `raw_event` read fails
@@ -228,11 +241,22 @@ def _to_ddb(item: dict) -> dict:
     return out
 
 
-def _record(event_name: str, *, new=None, old=None, user_identity=None) -> DynamoDBRecord:
+def _record(event_name: str, *, new=None, old=None, user_identity=None,
+            event_id=None) -> DynamoDBRecord:
     """A real Powertools stream record, not a MagicMock.
 
     A MagicMock answers any attribute, so `record.user_identity` on one would be
     a truthy mock and the TTL branch could never be exercised honestly.
+
+    `event_id` is the stream's own `eventID`, which the aggregator claims to make an
+    arrival idempotent (issue #264). OMITTED BY DEFAULT, and that default is a
+    statement about what the other tests here are for: they ask which counters a
+    given event moves, and a dedupe claim would make the SECOND record built by a
+    test — a redelivery as far as the handler is concerned — write nothing, so every
+    such test would be measuring the claim instead of the dimensions. A record with
+    no id routes to the non-transactional path, exactly as it does in production when
+    `IDEMPOTENCY_TABLE` is unset, so those tests keep asserting what they always did.
+    The idempotency behaviour has its own class, where the id is passed explicitly.
     """
     body: dict = {'eventName': event_name, 'eventSource': 'aws:dynamodb', 'dynamodb': {}}
     if new is not None:
@@ -241,6 +265,8 @@ def _record(event_name: str, *, new=None, old=None, user_identity=None) -> Dynam
         body['dynamodb']['OldImage'] = _to_ddb(old)
     if user_identity is not None:
         body['userIdentity'] = user_identity
+    if event_id is not None:
+        body['eventID'] = event_id
     return DynamoDBRecord(body)
 
 
@@ -333,6 +359,84 @@ def real_aggregates_table():
         )
         with patch('aggregator.handler.aggregates_table', table):
             yield table
+
+
+@pytest.fixture
+def deduped_tables():
+    """The aggregates table AND the dedupe table, as production has them.
+
+    The claim and the counter updates go out as one `TransactWriteItems` across two
+    tables, so a fixture with only the aggregates table cannot exercise the
+    idempotency at all — the transaction would be rejected for a missing table, which
+    would look like a failing handler rather than a missing arrangement.
+
+    `AGGREGATES_TABLE` is patched as well as `aggregates_table`, because the
+    transaction item names the table by STRING while the single-write path names it by
+    resource. The module reads that env var once at import, so the name it holds is
+    whatever `lambda/conftest.py` set — and a transaction built with a different name
+    than the fixture created would fail for a reason no test is about.
+
+    Yields (aggregates, idempotency), both moto-backed: the point of the whole design
+    is a condition DynamoDB evaluates and a cancellation it reports, neither of which
+    a mock can do.
+
+    ⚠️ THE MODULE ATTRIBUTES ARE PATCHED ONLY IF THEY EXIST, which is what lets this
+    class be run against the UNFIXED handler to see it red. `patch` raises
+    AttributeError for a name a module does not define, so a fixture that named
+    `IDEMPOTENCY_TABLE` unconditionally would turn every test in the class into a
+    setup ERROR when the attribute is absent — and an error on the arrangement is not
+    evidence about the behaviour. Skipping the absent ones lets each test reach its own
+    assertion and fail on the counter it is really about.
+    """
+    with mock_aws():
+        resource = boto3.resource('dynamodb', region_name='us-east-1')
+        aggregates = resource.create_table(
+            TableName='test-aggregates',
+            KeySchema=[
+                {'AttributeName': 'pk', 'KeyType': 'HASH'},
+                {'AttributeName': 'sk', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'pk', 'AttributeType': 'S'},
+                {'AttributeName': 'sk', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        idempotency = resource.create_table(
+            TableName='test-idempotency',
+            KeySchema=[{'AttributeName': 'id', 'KeyType': 'HASH'}],
+            AttributeDefinitions=[{'AttributeName': 'id', 'AttributeType': 'S'}],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        from aggregator import handler
+
+        names = {
+            'aggregates_table': aggregates,
+            'AGGREGATES_TABLE': 'test-aggregates',
+            'IDEMPOTENCY_TABLE': 'test-idempotency',
+        }
+        patches = [patch.object(handler, name, value)
+                   for name, value in names.items() if hasattr(handler, name)]
+        for one in patches:
+            one.start()
+        try:
+            yield aggregates, idempotency
+        finally:
+            for one in patches:
+                one.stop()
+
+
+def _counts(table) -> dict[str, Decimal]:
+    """Every COUNTER row's value, by pk. One day per test, so the pk identifies it.
+
+    The running average is excluded although it too has a `count` attribute: it holds
+    a `count` of SCORES beside a `sum`, which is a different quantity from a bucket's
+    item count and does not belong in a total. Including it made an assertion about
+    "how many counter rows are there" read one high, in a way that looked like an
+    off-by-one in the handler rather than in the helper.
+    """
+    return {item['pk']: item['count'] for item in table.scan()['Items']
+            if 'count' in item and 'sum' not in item}
 
 
 class TestGetMetricType:
@@ -2850,14 +2954,30 @@ class TestUpdateAverageReportsWhetherItLanded:
 
 
 class TestRedeliveryMovesACounterTwice:
-    """The known residual, pinned at the value the code really produces.
+    """The residual that REMAINS after issue #264, pinned at what the code really does.
 
     Streams deliver at-least-once and the event source carries `retryAttempts: 3`
     with `reportBatchItemFailures: true`, so a batch that partially fails
     re-presents records whose writes already landed. The floor at zero is NOT
     idempotency — it only no-ops a redelivered REMOVE when the counter is already at
-    zero. These tests exist so the module docstring's residual and the behaviour
-    cannot drift apart: if idempotency is ever added, they fail and say so.
+    zero.
+
+    ⚠️ THE ARRIVAL PATH IS NOW CLOSED, and these tests are deliberately about the
+    REVERSAL paths only — see TestARedeliveredArrivalMovesNothing for the half that
+    was fixed. A decrement cannot join the transaction that closes it: every one is a
+    conditional write whose refusal the code above it READS (the pre-deploy persona
+    fallback triggers on `ROW_ABSENT`, the average's pairing rule on a refused
+    reversal), and `TransactWriteItems` reports no per-item outcome — one refused item
+    cancels the whole transaction instead. So transacting a reversal would turn "this
+    decrement had nothing to correct, so carry on" into "the edit wrote nothing at
+    all", disabling the aged-out-day protections that exist BY observing a refusal.
+
+    These therefore stay as they are, and they are what stops the module docstring's
+    remaining residual from drifting from the code. Note that both arrangements below
+    INSERT without an `event_id`, so their setup uses the non-transactional path
+    too — the subject is the reversal, and a claimed insert would make the second
+    insert of `test_a_redelivered_modify_moves_the_count_twice` a no-op for a reason
+    that has nothing to do with what it measures.
     """
 
     def test_a_redelivered_remove_decrements_again_above_zero(
@@ -2873,8 +2993,9 @@ class TestRedeliveryMovesACounterTwice:
 
         counts = {i['pk']: i['count'] for i in real_aggregates_table.scan()['Items']}
         # 2 is the true value: three inserts, one deletion. 1 is what redelivery
-        # produces, and what the module docstring records as a residual. If this
-        # starts failing with 2, idempotency was added — delete the residual note.
+        # produces, and what the module docstring records as the residual that
+        # remains. If this starts failing with 2, the reversal path was closed too —
+        # update that note.
         assert counts['METRIC#daily_total'] == Decimal(1)
 
     def test_a_redelivered_modify_moves_the_count_twice(
@@ -2894,6 +3015,437 @@ class TestRedeliveryMovesACounterTwice:
         # True values after one edit: product_quality 0, billing 2.
         assert counts['METRIC#daily_category#product_quality'] == Decimal(0)
         assert counts['METRIC#daily_category#billing'] == Decimal(3)
+
+
+class TestARedeliveredArrivalMovesNothing:
+    """Issue #264: the same stream record delivered twice leaves every counter alone.
+
+    Streams are at-least-once, and `retryAttempts: 3` with
+    `reportBatchItemFailures: true` means a batch that partially fails re-presents
+    records whose writes already landed. Because these counters are only ever
+    incremented and nothing recomputes them from source, that divergence is
+    PERMANENT — which is why it is closed with a claim rather than compensated for.
+
+    Every test here is moto-backed of necessity: the mechanism is a condition
+    DynamoDB evaluates (`attribute_not_exists(id)`) and a cancellation it reports,
+    and a mock can do neither — against one, a redelivery would "succeed" and every
+    assertion below would pass with the claim deleted.
+
+    REVERT MAP. Each entry was RUN against the source, and cites the tests that
+    really failed:
+      * Drop the dedupe claim from `_claimed_transaction`'s TransactItems (or route
+        `process_new_feedback` past `apply_feedback_once`) — fails
+        test_a_redelivered_record_leaves_every_counter_where_the_first_delivery_left_it,
+        test_the_second_delivery_is_reported_as_a_skip_not_a_failure,
+        test_a_replayed_record_is_counted_so_the_guard_is_not_silently_inert and
+        test_the_second_delivery_of_a_record_writes_nothing_at_all.
+      * Apply the counters as separate `update_item` calls with the claim written
+        first or last, i.e. a marker without a transaction — fails
+        test_a_record_that_fails_partway_leaves_no_counter_moved, which is the
+        partial-application half and the one that produces internally inconsistent
+        metrics.
+      * Treat ANY TransactionCanceledException as an already-applied record (drop
+        `_claim_was_refused`'s reason check) — fails
+        test_a_cancellation_that_is_not_the_claim_is_raised_for_retry, whose subject
+        is that a conflict on a counter row must be retried rather than reported
+        done: nothing was written, so calling it success loses the record.
+      * Claim a key that is not per-RECORD — the feedback id, say — fails
+        test_two_different_records_for_one_item_are_both_applied.
+      * Leave `IDEMPOTENCY_TABLE` out of the aggregator's CDK environment: caught in
+        `lib/stacks/processing-stack-consolidated.test.ts`, not here, and
+        test_an_unconfigured_dedupe_table_still_aggregates is the code side of the
+        same question — the protection degrades, the aggregation does not stop.
+
+    RED BEFORE, GREEN AFTER, measured rather than asserted: run against the pre-#264
+    handler, THIRTEEN of the fourteen tests here fail on their own assertions (not on
+    setup — the fixture patches only the module attributes that exist, deliberately, so
+    each test reaches its subject). The fourteenth,
+    test_a_record_with_no_event_id_is_applied_rather_than_dropped, PASSES both ways and
+    is recorded as such rather than dressed up: it is the fail-open control, and what
+    it guards against is a future over-correction — dropping a record that carries no
+    id. A test whose subject is "this did not change" passing before the change is the
+    correct outcome for it, and pretending otherwise is the citation problem this
+    file's revert maps exist to avoid.
+    """
+
+    ID = 'a-single-stream-record'
+
+    # A counter row that arithmetic cannot touch, used to fail one write of a record
+    # PARTWAY through it. `if_not_exists(#field, :zero) + :inc` against a string is a
+    # ValidationException, which cancels the transaction.
+    #
+    # 🔑 THE PK IS CHOSEN FOR WHERE IT SORTS. Keys are applied in sorted order, so
+    # `METRIC#daily_sentiment#negative` falls after `METRIC#daily_category#...` and
+    # before `METRIC#daily_total` — which against eight independent writes leaves the
+    # category count applied and the daily total not, the internally inconsistent
+    # state the issue names. A poison row at either END of that order would let the
+    # partial-application tests pass against the very defect they are written for.
+    _POISON_PK = 'METRIC#daily_sentiment#negative'
+    _POISON_SK = '2025-01-15'
+
+    @classmethod
+    def _poison(cls, aggregates):
+        aggregates.put_item(Item={
+            'pk': cls._POISON_PK, 'sk': cls._POISON_SK, 'count': 'not a number',
+        })
+
+    @classmethod
+    def _unpoison(cls, aggregates):
+        aggregates.delete_item(Key={'pk': cls._POISON_PK, 'sk': cls._POISON_SK})
+
+    def test_a_redelivered_record_leaves_every_counter_where_the_first_delivery_left_it(
+        self, deduped_tables, sample_urgent_feedback_item
+    ):
+        """🔑 THE ACCEPTANCE CRITERION, over EVERY counter rather than one of them.
+
+        The urgent fixture, so all eight dimensions are present — the urgent row is
+        the one conditional dimension, and a claim that covered seven writes of eight
+        is the shape this asserts against by comparing the whole table.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        record = _record('INSERT', new=sample_urgent_feedback_item, event_id=self.ID)
+
+        record_handler(record)
+        after_first = _counts(aggregates)
+        record_handler(record)
+
+        assert _counts(aggregates) == after_first, (
+            'a redelivered stream record moved a counter; the dedupe claim did not '
+            'refuse the second delivery'
+        )
+        # The denominator: an assertion that both states are EMPTY would pass with
+        # the handler doing nothing at all.
+        assert after_first['METRIC#daily_total'] == Decimal(1)
+        assert len(after_first) == 7, after_first
+
+    def test_the_second_delivery_of_a_record_writes_nothing_at_all(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """Not "writes and then corrects": the transaction never commits.
+
+        Distinct from the test above, which compares values. This one compares the
+        whole item — `updated_at` and `ttl` are restamped by any write that lands, so
+        an unchanged item is evidence that no write reached the row, which a count
+        alone cannot give. A redelivery that renewed a row's 90-day TTL would be a
+        real defect: it would keep an aged-out day alive for the day sentinel.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        record = _record('INSERT', new=sample_feedback_item, event_id=self.ID)
+
+        record_handler(record)
+        before = sorted(aggregates.scan()['Items'], key=lambda i: (i['pk'], i['sk']))
+        record_handler(record)
+
+        assert sorted(aggregates.scan()['Items'], key=lambda i: (i['pk'], i['sk'])) == before
+
+    def test_the_average_is_not_applied_twice_either(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The average is in the transaction too, and it is the row that misleads most.
+
+        `get_summary` divides `sum/count` per date and weights it by count into the
+        headline `avg_sentiment`, so a double-applied score is served-data corruption
+        rather than an off-by-one in a counter nobody reads.
+        """
+        from aggregator.handler import SENTIMENT_AVG_PK, record_handler
+
+        aggregates, _ = deduped_tables
+        record = _record('INSERT', new=sample_feedback_item, event_id=self.ID)
+
+        record_handler(record)
+        record_handler(record)
+
+        row = aggregates.get_item(Key={'pk': SENTIMENT_AVG_PK, 'sk': '2025-01-15'})['Item']
+        assert (row['count'], row['sum']) == (Decimal(1), Decimal('0.85'))
+
+    def test_the_second_delivery_is_reported_as_a_skip_not_a_failure(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """🔑 IT MUST NOT RAISE, and that is not a cosmetic preference.
+
+        `reportBatchItemFailures: true` means a record that raises is reported failed
+        and redelivered — and Streams preserve per-shard order, so a record that fails
+        forever blocks its partition. An idempotency guard that reported "already
+        done" as an error would therefore convert a harmless redelivery into a stalled
+        shard: strictly worse than the double-count it was added to prevent.
+        """
+        from aggregator.handler import record_handler
+
+        record = _record('INSERT', new=sample_feedback_item, event_id=self.ID)
+
+        assert record_handler(record) == {"status": "success"}
+        assert record_handler(record) == {"status": "skipped", "reason": "already applied"}
+
+    def test_a_replayed_record_is_counted_so_the_guard_is_not_silently_inert(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """At zero, a working guard and a deleted one look identical from outside.
+
+        REPLAYED_METRIC is what tells them apart, and it is also the signal that a
+        batch is failing and re-presenting records — the condition this change exists
+        to make survivable. UPDATED_METRIC must NOT fire for the replay: nothing was
+        updated, and a metric claiming otherwise is the blindness the per-behaviour
+        metrics exist to remove.
+        """
+        from aggregator.handler import REPLAYED_METRIC, UPDATED_METRIC, record_handler
+
+        record = _record('INSERT', new=sample_feedback_item, event_id=self.ID)
+        record_handler(record)
+
+        with patch('aggregator.handler.metrics') as mock_metrics:
+            record_handler(record)
+
+        assert [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list] == [
+            REPLAYED_METRIC,
+        ]
+        assert UPDATED_METRIC != REPLAYED_METRIC
+
+    def test_two_different_records_for_one_item_are_both_applied(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The claim is per RECORD, and the positive control for the whole class.
+
+        Keying on anything about the ITEM — its feedback_id, its source id — would
+        pass every test above while dropping the second of two genuine stream records
+        about one item. `eventID` is unique per record, which is what makes the guard
+        a redelivery test rather than a de-duplication of the feedback itself.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, idempotency = deduped_tables
+
+        record_handler(_record('INSERT', new=sample_feedback_item, event_id='first'))
+        record_handler(_record('INSERT', new=sample_feedback_item, event_id='second'))
+
+        assert _counts(aggregates)['METRIC#daily_total'] == Decimal(2)
+        assert idempotency.scan()['Count'] == 2
+
+    def test_a_record_that_fails_partway_leaves_no_counter_moved(
+        self, deduped_tables, sample_urgent_feedback_item
+    ):
+        """🔑 THE PARTIAL-APPLICATION CRITERION, which the claim alone does not meet.
+
+        This is the case that produces INTERNALLY INCONSISTENT metrics: with eight
+        independent `update_item` calls, a record that dies on its fifth has applied
+        four, so the daily total no longer equals the sum of the per-category counts —
+        and the retry applies all eight on top of those four. A marker written before
+        the writes records the half-application as done; written after, it leaves it to
+        be re-applied. Only transacting them removes the partial state itself.
+
+        ⚠️ THE FAILURE IS INJECTED MID-WAY THROUGH THE WRITES, and that is what makes
+        the arrangement honest. `_POISON_PK` sorts BETWEEN the per-category counter and
+        `METRIC#daily_total`, so against the unfixed code the category count lands, the
+        daily total does not, and the two disagree — the exact state the issue
+        describes. Poisoning the LAST write instead (the average) was the first
+        version and it proved nothing: every counter had already been applied by then,
+        so the totals agreed and the test passed against the defect it was written for.
+
+        The assertion is the one the acceptance criteria state — the daily total agrees
+        with the sum of the per-category counts — asserted over the aggregates rather
+        than over a call count, so it is about the DATA and not the shape of a request.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, idempotency = deduped_tables
+        self._poison(aggregates)
+
+        with pytest.raises(ClientError):
+            record_handler(_record('INSERT', new=sample_urgent_feedback_item,
+                                   event_id=self.ID))
+
+        # The poison row itself is excluded: the test PUT it, so its presence says
+        # nothing about what the handler wrote, and leaving it in made the assertion
+        # fail on the arrangement rather than on the behaviour.
+        counts = {pk: value for pk, value in _counts(aggregates).items()
+                  if pk != self._POISON_PK}
+        assert counts == {}, (
+            f'{counts}: some counters moved while the record failed, so the daily '
+            f'total and the per-category counts now describe different sets of items '
+            f'— the internally inconsistent state a transaction exists to prevent'
+        )
+        # And the record is NOT recorded as applied, so the retry can do the whole of
+        # it. A claim that survived the failure would be worse than no claim at all.
+        assert idempotency.scan()['Count'] == 0
+
+    def test_the_retry_of_that_record_applies_it_exactly_once(
+        self, deduped_tables, sample_urgent_feedback_item
+    ):
+        """The other half of the criterion: after the retry, the totals AGREE.
+
+        The positive control for the test above — an implementation that failed
+        closed by writing nothing ever would pass that one and fail this.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        self._poison(aggregates)
+        record = _record('INSERT', new=sample_urgent_feedback_item, event_id=self.ID)
+        with pytest.raises(ClientError):
+            record_handler(record)
+
+        # The bad row is cleared and the record is re-presented, which is what
+        # `reportBatchItemFailures: true` does.
+        self._unpoison(aggregates)
+        assert record_handler(record) == {"status": "success"}
+
+        counts = _counts(aggregates)
+        categories = sum(v for pk, v in counts.items()
+                         if pk.startswith('METRIC#daily_category#'))
+        assert counts['METRIC#daily_total'] == categories == Decimal(1), counts
+
+    def test_a_cancellation_that_is_not_the_claim_is_raised_for_retry(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """A conflict on a counter row is NOT an already-applied record.
+
+        Two records of the same day arriving together really do produce
+        `TransactionConflictException`, and calling that "already applied" would
+        silently lose the record's aggregates: nothing was written, and reporting
+        success means nothing ever will be. So the decision reads the CLAIM's own
+        cancellation reason rather than the exception being a cancellation.
+
+        Built as the response shape DynamoDB sends — reasons are positional, the claim
+        is item 0 — rather than by arranging a real conflict, which moto cannot
+        produce on demand.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        conflict = ClientError(
+            {
+                'Error': {'Code': 'TransactionCanceledException', 'Message': 'cancelled'},
+                'CancellationReasons': [
+                    {'Code': 'None'},
+                    {'Code': 'TransactionConflict', 'Message': 'conflict'},
+                ],
+            },
+            'TransactWriteItems',
+        )
+        with patch.object(aggregates.meta.client, 'transact_write_items',
+                          side_effect=conflict):
+            with pytest.raises(ClientError):
+                record_handler(_record('INSERT', new=sample_feedback_item,
+                                       event_id=self.ID))
+
+    def test_a_cancellation_whose_reasons_cannot_be_read_is_raised_too(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The fail direction of the one conclusion that reports success.
+
+        "Already applied" ends the record, so it needs positive evidence — the same
+        rule `CounterWrite.ROW_ABSENT` follows. A retry of an unapplied record is
+        correct and a retry of an applied one is refused by the claim it holds, so
+        being wrong in THIS direction costs nothing, while the other drops aggregates
+        for any response shape this could not parse.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        unreadable = ClientError(
+            {'Error': {'Code': 'TransactionCanceledException', 'Message': 'cancelled'}},
+            'TransactWriteItems',
+        )
+        with patch.object(aggregates.meta.client, 'transact_write_items',
+                          side_effect=unreadable):
+            with pytest.raises(ClientError):
+                record_handler(_record('INSERT', new=sample_feedback_item,
+                                       event_id=self.ID))
+
+    def test_an_unconfigured_dedupe_table_still_aggregates(
+        self, real_aggregates_table, sample_feedback_item
+    ):
+        """A missing table NAME degrades the protection; it must not stop the counting.
+
+        `IDEMPOTENCY_TABLE` unset is a CDK regression, and the right response to one
+        is the pre-#264 behaviour plus the warning this module logs at import — not a
+        Lambda that raises on every record and blocks its shard. `real_aggregates_table`
+        rather than `deduped_tables` IS the arrangement: that fixture is the one where
+        the name is not patched in.
+        """
+        from aggregator.handler import IDEMPOTENCY_TABLE, record_handler
+
+        assert not IDEMPOTENCY_TABLE, 'the arrangement requires an unset table name'
+
+        assert record_handler(_record('INSERT', new=sample_feedback_item,
+                                      event_id=self.ID)) == {"status": "success"}
+
+        assert _counts(real_aggregates_table)['METRIC#daily_total'] == Decimal(1)
+
+    def test_a_record_with_no_event_id_is_applied_rather_than_dropped(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The other fail-open direction, and the same judgement the module makes
+        elsewhere: aggregating a record twice is recoverable, never aggregating it is
+        not. `is_ttl_expiry` and `_day_has_aggregates` both fail in this direction.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, idempotency = deduped_tables
+
+        assert record_handler(
+            _record('INSERT', new=sample_feedback_item)
+        ) == {"status": "success"}
+
+        assert _counts(aggregates)['METRIC#daily_total'] == Decimal(1)
+        assert idempotency.scan()['Count'] == 0, 'nothing to claim without a record id'
+
+    def test_the_claim_expires_so_markers_do_not_accumulate_forever(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The marker carries the table's TTL attribute, or the table grows without end.
+
+        `lib/stacks/core-stack.ts` gives the idempotency table
+        `timeToLiveAttribute: 'expiration'`, and a marker written under any other name
+        is one DynamoDB will never delete — a leak no error and no other test reports.
+
+        The horizon is read off the item rather than restated, and what it is compared
+        against is the STREAM'S retention: a marker must outlive the window a
+        redelivery can arrive in, or the last possible redelivery finds it gone and is
+        applied twice. Asserting `> 24h` rather than `>= 24h` is the point — an
+        expiry equal to the horizon races the TTL deleting its own marker, and TTL
+        deletion is best-effort anyway. This is what caught the first version of the
+        constant, which was exactly 24 hours.
+        """
+        from datetime import timezone as tz
+
+        from aggregator.handler import record_handler
+        from shared.idempotency import (
+            IDEMPOTENCY_EXPIRY_ATTRIBUTE,
+            IDEMPOTENCY_KEY_ATTRIBUTE,
+        )
+
+        stream_retention_seconds = 24 * 60 * 60
+        _, idempotency = deduped_tables
+        record_handler(_record('INSERT', new=sample_feedback_item, event_id=self.ID))
+
+        marker = idempotency.scan()['Items'][0]
+        assert IDEMPOTENCY_KEY_ATTRIBUTE in marker
+        now = datetime.now(tz.utc).timestamp()
+        assert marker[IDEMPOTENCY_EXPIRY_ATTRIBUTE] > now + stream_retention_seconds, (
+            'the claim does not outlive the 24 hours a stream record survives, so a '
+            'late redelivery would find the marker gone and be applied again'
+        )
+
+    def test_the_claim_is_namespaced_away_from_the_processors_keys(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """One table, two writers: a stream `eventID` must not collide with a
+        `{source_platform}:{source_id}` the processor claims. A collision would make
+        one of the two silently skip real work, in whichever direction lost the race.
+        """
+        from aggregator.handler import record_handler
+        from shared.idempotency import IDEMPOTENCY_KEY_ATTRIBUTE
+
+        _, idempotency = deduped_tables
+        record_handler(_record('INSERT', new=sample_feedback_item, event_id=self.ID))
+
+        key = idempotency.scan()['Items'][0][IDEMPOTENCY_KEY_ATTRIBUTE]
+        assert key.startswith('aggregator#'), key
+        assert self.ID in key, key
 
 
 class TestAnUnrecognizedEventIsSkippedRatherThanFatal:

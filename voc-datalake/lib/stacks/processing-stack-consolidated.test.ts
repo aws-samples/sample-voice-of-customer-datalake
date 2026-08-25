@@ -254,3 +254,82 @@ describe('web-search wiring is skipped cleanly when the gateway is absent', () =
     expect(values.filter((v) => v.includes('undefined'))).toEqual([]);
   });
 });
+
+describe('the aggregator can reach the dedupe table it is already allowed to (#264)', () => {
+  /**
+   * DynamoDB Streams are at-least-once, and this Lambda's event source carries
+   * `retryAttempts: 3` with `reportBatchItemFailures: true` — so a batch that
+   * partially fails re-presents records whose counter updates already landed.
+   * The handler closes that by claiming each record's `eventID` in the idempotency
+   * table inside the same TransactWriteItems as the counters.
+   *
+   * The gap this pins was ENVIRONMENT ONLY: the shared `processingRole` has been
+   * granted `idempotencyTable.grantReadWriteData` all along for the processor, so
+   * the aggregator had the permission and not the NAME. That is exactly the shape
+   * that degrades silently — `handler.py` reads `IDEMPOTENCY_TABLE` with a default
+   * of empty and falls back to non-transactional writes with a warning, so a
+   * regression here does not fail a deploy, does not error at runtime, and shows up
+   * only as counters that drift under redelivery.
+   */
+  const template = synthProcessingTemplate();
+
+  /** The aggregation Lambda, found by its handler + description of the code asset
+   * rather than by logical id: a CDK-generated id can change with a construct-tree
+   * edit, and matching the function by what it IS keeps this test pinned to the
+   * function rather than to a name. */
+  function aggregatorEnvironment(): Record<string, unknown> {
+    const functions = Object.values(template.findResources('AWS::Lambda::Function'))
+      .filter((fn) => {
+        const vars: unknown = fn.Properties?.Environment?.Variables;
+        return (
+          typeof vars === 'object' && vars !== null &&
+          (vars as Record<string, unknown>).POWERTOOLS_SERVICE_NAME === 'voc-aggregator'
+        );
+      });
+    // The denominator: zero matches would make every assertion below vacuous, and a
+    // second match would mean this is no longer asserting about one function.
+    expect(functions).toHaveLength(1);
+    return functions[0].Properties.Environment.Variables as Record<string, unknown>;
+  }
+
+  it('passes the idempotency table name to the aggregation Lambda', () => {
+    expect(aggregatorEnvironment()).toHaveProperty('IDEMPOTENCY_TABLE');
+  });
+
+  it('names a real table rather than a literal, so the value resolves at deploy', () => {
+    // A hand-written string would synthesize as a plain value and point at a table
+    // that may not exist in this account. What a real table reference looks like is
+    // NOT pinned to one spelling: the table is created in the core stack, so it
+    // arrives here as an `Fn::ImportValue` today and would be a `Ref` if the two
+    // were ever merged into one stack — both are CloudFormation resolving the table
+    // this app created, and asserting the CloudFormation intrinsic rather than which
+    // one keeps a stack reorganisation from failing a test whose subject it is not.
+    const value = aggregatorEnvironment().IDEMPOTENCY_TABLE;
+    expect(typeof value).toBe('object');
+    expect(Object.keys(value as object).some((key) => key.startsWith('Fn::') || key === 'Ref'))
+      .toBe(true);
+  });
+
+  it('names the SAME table the processor claims into', () => {
+    // One table, two writers. Different tables would let a stream record and a
+    // feedback record be deduped against separate state, which is not wrong so much
+    // as unmeasurable — and it would silently double the tables an operator has to
+    // know about. The handler namespaces its keys (`aggregator#stream#...`) so the
+    // two cannot collide within it.
+    const processor = Object.values(template.findResources('AWS::Lambda::Function'))
+      .map((fn) => fn.Properties?.Environment?.Variables as Record<string, unknown> | undefined)
+      .find((vars) => vars?.POWERTOOLS_SERVICE_NAME === 'voc-processor');
+    expect(processor).toBeDefined();
+    expect(aggregatorEnvironment().IDEMPOTENCY_TABLE)
+      .toEqual(processor?.IDEMPOTENCY_TABLE);
+  });
+
+  it('keeps the aggregates table name too, so the transaction can name it', () => {
+    // The counters go out as transaction items, which name their table by STRING
+    // (`TableName`) rather than through the boto3 resource. So `AGGREGATES_TABLE`
+    // stopped being merely how the handler finds its table and became what the
+    // transaction is built from — losing it would break every write rather than
+    // only the dedupe.
+    expect(aggregatorEnvironment()).toHaveProperty('AGGREGATES_TABLE');
+  });
+});

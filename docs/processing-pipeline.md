@@ -218,11 +218,85 @@ Errors are logged to DynamoDB (`LOGS#processing#{source}`) and visible in Settin
 
 ## Idempotency
 
-The processor uses AWS Lambda Powertools idempotency to prevent duplicate processing:
+Both consumers deduplicate, against the same DynamoDB table, for the same reason:
+their event sources deliver at-least-once.
+
+### Processor (SQS)
+
+AWS Lambda Powertools idempotency:
 
 - Idempotency key: `{source_platform}:{source_id}`
 - Records cached for 1 hour
 - Prevents duplicate writes on SQS retries
+
+### Aggregator (DynamoDB Streams)
+
+The aggregator applies eight counter updates plus a running average per feedback
+record. Its event source is configured with `retryAttempts: 3` and
+`reportBatchItemFailures: true`, so a batch that partially fails re-presents records
+whose writes already landed — and because these counters are only ever incremented,
+that divergence is permanent.
+
+An **arrival** (`INSERT`) therefore claims the stream record's `eventID` in the
+idempotency table inside the *same* `TransactWriteItems` as its counters:
+
+- Idempotency key: `aggregator#stream#{eventID}` (namespaced, since the table is
+  shared with the processor)
+- Claims expire after 48 hours, comfortably outliving the 24 hours a stream record
+  can survive
+- A redelivered record cancels the transaction and moves nothing
+- A record that fails partway leaves *nothing* applied, so the daily total can never
+  disagree with the sum of the per-category counts
+
+A **reversal** (`REMOVE`, and the decrement half of a `MODIFY`) is *not* transacted,
+and this is deliberate. Every decrement is a conditional write
+(`attribute_exists(pk) AND #field >= :floor`) whose refusal the code above it reads to
+decide what to do next, while `TransactWriteItems` reports no per-item outcome — one
+refused item cancels the whole transaction. So a redelivered reversal still decrements
+a second time, bounded by that floor: no counter goes negative and no expired row is
+resurrected. `AggregateRecordReplayed` in CloudWatch counts the arrivals the claim
+refused.
+
+## Rebuilding aggregates for a window
+
+Aggregate rows are pre-computed counters, so any drift already stored stays stored —
+the idempotency above stops new drift arriving but repairs nothing written earlier.
+There is no scheduled reconciliation job; the procedure below is the supported repair,
+and it is short enough that a job would be out of proportion to how rarely it is
+needed.
+
+**Write absolute values. Never replay deltas.** The counter updates use
+`SET #field = if_not_exists(#field, :zero) + :inc`, so a delta replayed against a row
+that has aged out of its 90-day TTL *recreates* that row under a fresh TTL — holding a
+negative count for a date whose real totals are long gone, which
+`/metrics/summary` would then serve as that day's figures. An absolute `PUT` cannot do
+that: it either overwrites a row that is there or writes the correct value for a row
+that is not.
+
+For each date `D` in the window:
+
+1. **Recompute from source.** Query the feedback table for the items of `D` and count
+   them per dimension — total, `source_platform`, `category`, `sentiment_label`,
+   `persona_type` bucket, `urgency == 'high'`, and the category+sentiment pair. The
+   dimensions and their pk spellings are defined in one place,
+   `counter_dimensions` in `voc-datalake/lambda/aggregator/handler.py`; read them from
+   there rather than re-deriving, since a rebuild that buckets differently from the
+   writer produces rows the read path cannot find.
+2. **Write each row with `put_item`**, not `update_item`: `{pk, sk: D, count: <the
+   recomputed number>, ttl: <now + 90 days>, updated_at: <now>}`, plus
+   `metric_type` for the source and persona partitions (the `metric_type` GSI is how
+   `/metrics/sources` and `/metrics/personas` find them). For the average row, write
+   `sum` and `count` from the scored items of `D`.
+3. **Skip dates outside retention.** Aggregate rows live 90 days
+   (`AGGREGATE_RETENTION_DAYS`), and rebuilding a date older than that plants rows for
+   a day whose neighbours no longer exist — `/metrics/trends` would show one populated
+   day in an empty stretch. Rebuild only within the retention window.
+4. **Delete rows the rebuild did not write** for a date it did rebuild. A bucket that
+   has legitimately dropped to zero items still has a row holding its old count, and
+   writing only the buckets that now have items leaves that stale row behind.
+
+Do this against a copy of the table first if the window is wide: step 2 is
+destructive by design, and it is the only step that is.
 
 ## Monitoring
 
@@ -236,6 +310,18 @@ The processor uses AWS Lambda Powertools idempotency to prevent duplicate proces
 | `ValidationFailures` | Messages that failed validation |
 | `DuplicatesSkipped` | Duplicate items skipped |
 | `BedrockThrottleRetry` | Bedrock throttling events |
+
+Aggregator metrics (one per behaviour, so a reversal is not invisible behind an
+insert):
+
+| Metric | Description |
+|--------|-------------|
+| `AggregatesUpdated` | Arrivals applied |
+| `AggregatesReversed` | Deletions reversed out |
+| `AggregatesRebucketed` | Edits that moved a counter |
+| `AggregateWriteRefused` | Conditional writes DynamoDB refused (nothing to correct) |
+| `AggregateWriteDeclined` | Writes the handler chose not to attempt |
+| `AggregateRecordReplayed` | Redelivered stream records the dedupe claim refused |
 
 ### Logs
 
