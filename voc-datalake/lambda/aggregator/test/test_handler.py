@@ -167,6 +167,27 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       which mutation each citation was measured against and the one test there
       that passes in both states and why that is correct.
 
+  TestTheTransactionIsAnArrivalAndOnlyAnArrival
+    — what the transactional path may BUILD, asserted on the request rather than
+      through the handler, because none of these is reachable from a record. Giving
+      any builder a `sign` again fails one — the original defect: the sign reached the
+      counters while the average hardcoded `+1`, so `-1` decremented every counter and
+      INCREMENTED the average, atomically. A second dimension on an EXISTING pk fails
+      another, where production would answer `ValidationException` for every ingested
+      record. Bypassing `_counter_request` fails the `metric_type` one, where the GSI
+      that `/metrics/sources` and `/metrics/personas` read would silently empty while
+      every count stayed correct. Its parity test is the one to keep in mind when
+      adding a dimension test: `_record` omits `event_id` by default, so those tests
+      take the path production no longer takes for an INSERT.
+
+  TestAWriteConflictIsRetriedRatherThanReported
+    — contention on `METRIC#daily_total` must not cost a record. Botocore does not
+      auto-retry a cancelled transaction, so without the in-process retry a same-date
+      collision spends the event source's `retryAttempts: 3` and the record is then
+      DROPPED, its aggregates lost permanently — worse than the double-count. Deleting
+      the retry fails four; retrying ANY cancellation fails the one whose subject is
+      that a request which will fail identically must not be re-sent.
+
   TestRedeliveryMovesACounterTwice
     — the residual that REMAINS after that: a REVERSAL is not transacted, because
       every decrement is a conditional write whose refusal the code above it READS
