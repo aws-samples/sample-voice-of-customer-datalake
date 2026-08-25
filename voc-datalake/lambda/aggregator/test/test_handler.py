@@ -3668,8 +3668,9 @@ class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
         Compared on the ROWS, not on the calls: `updated_at` and the TTL are stamped
         from the clock, so the comparison is over (pk, sk, count) and the average's
         (sum, count). Two separate fixtures would be cleaner but cannot share one moto
-        table; the same table is used twice with the day cleared between, which is why
-        the dates differ rather than the rows being deleted.
+        table, so ONE date is used for both passes and the rows are DELETED between
+        them — which is what makes the second pass' counts comparable to the first's
+        rather than double them.
         """
         from aggregator.handler import SENTIMENT_AVG_PK, record_handler
 
@@ -3719,6 +3720,14 @@ class TestAWriteConflictIsRetriedRatherThanReported:
     answer for a different reason (a voter who cannot resubmit); the aggregator's is
     that the stream would otherwise be the only retry budget. Both use three attempts.
 
+    THROTTLING IS THE SAME PROBLEM, and it is retried for the same reason. Botocore's
+    throttling policies match the TOP-LEVEL error code, which for a cancelled
+    transaction is always `TransactionCanceledException` — the throttle is one level
+    down, inside the reasons — so nothing absorbs it and an unretried throttle costs
+    the record exactly what an unretried conflict does. This module already calls
+    throttling transient for the day READ (`_TRANSIENT_READ_ERRORS`), so the write path
+    reaching the opposite conclusion about one condition was the defect, not a policy.
+
     REVERT MAP, each entry RUN:
       * Delete the `_conflicted` branch from `_claimed_transaction` — fails
         test_a_conflicted_transaction_is_re_attempted and
@@ -3727,6 +3736,21 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         test_a_validation_failure_is_not_retried, whose subject is that a request
         which will fail identically must not be re-sent: it spends the invocation and
         delays the record.
+      * Narrow `_RETRYABLE_CANCELLATION_REASONS` back to the conflict alone — fails
+        test_a_throttled_transaction_is_re_attempted_like_a_conflict and
+        test_every_retryable_reason_is_transient_on_the_read_path_too. Measured: with
+        only `TransactionConflict` in the set, a throttled cancellation is attempted
+        ONCE and raised, so the record has only `retryAttempts: 3` left before it is
+        dropped with its aggregates lost permanently.
+      * Make `_conflicted` `any` rather than `all` — fails
+        test_a_conflict_alongside_a_permanent_reason_is_not_retried. Measured: reasons
+        `[None, TransactionConflict, ValidationError]` were re-attempted to the bound
+        (3 attempts, 2 sleeps) on a request that cannot succeed, which is the cost
+        test_a_validation_failure_is_not_retried exists to prevent.
+      * Treat `NO_CANCELLATION_REASON` as blocking — fails
+        test_a_conflicted_transaction_is_re_attempted, since a cancelled transaction
+        reports one reason per item and most items did not fail, so `'None'` is the
+        commonest entry in any real response.
       * Retry forever — fails test_the_attempts_are_bounded, which is what keeps a
         contended shard from holding Lambda concurrency in a tight loop.
       * Set TRANSACT_WRITE_ATTEMPTS to 0 — fails
@@ -3737,24 +3761,33 @@ class TestAWriteConflictIsRetriedRatherThanReported:
     ID = 'a-contended-record'
 
     @staticmethod
-    def _conflict() -> ClientError:
-        """The response shape DynamoDB sends for a contended item.
+    def _cancelled(*codes: str) -> ClientError:
+        """A cancellation naming `codes`, one reason per item, in that order.
 
-        Reasons are POSITIONAL and the claim is item 0, so the conflict is placed on a
-        counter — index 1 — which is where contention really happens: the claim's key
-        is unique per record and cannot be contended by another record at all.
+        Built as the response shape DynamoDB sends rather than by provoking a real
+        cancellation, which moto cannot produce on demand. Reasons are POSITIONAL and
+        complete — one entry per transaction item, `'None'` for every item that did not
+        fail — so the caller passes the codes in item order and the claim at index 0 is
+        normally `'None'`: its key is unique per record, so no other record can contend
+        or throttle it.
         """
         return ClientError(
             {
                 'Error': {'Code': 'TransactionCanceledException',
                           'Message': 'cancelled'},
-                'CancellationReasons': [
-                    {'Code': 'None'},
-                    {'Code': 'TransactionConflict', 'Message': 'conflict'},
-                ],
+                'CancellationReasons': [{'Code': code} for code in codes],
             },
             'TransactWriteItems',
         )
+
+    @classmethod
+    def _conflict(cls) -> ClientError:
+        """The response shape DynamoDB sends for a contended item.
+
+        The conflict sits at index 1 — a counter — which is where contention really
+        happens: the claim's key is unique per record and cannot be contended at all.
+        """
+        return cls._cancelled('None', 'TransactionConflict')
 
     def test_a_conflicted_transaction_is_re_attempted(
         self, deduped_tables, sample_feedback_item
@@ -3872,25 +3905,19 @@ class TestAWriteConflictIsRetriedRatherThanReported:
     def test_a_validation_failure_is_not_retried(
         self, deduped_tables, sample_feedback_item
     ):
-        """Only a CONFLICT is transient. A `ValidationException` will fail identically
-        on the next attempt, so re-sending it spends the invocation's time and delays
-        the record for nothing — the same reason `_write_ballot` does not retry a row
-        that has gone away.
+        """A `ValidationException` will fail identically on the next attempt, so
+        re-sending it spends the invocation's time and delays the record for nothing —
+        the same reason `_write_ballot` does not retry a row that has gone away.
+
+        The complement of the two transient reasons, and the reason
+        `_RETRYABLE_CANCELLATION_REASONS` is an allowlist rather than a denylist: a
+        reason code this module has never heard of is far more likely to be permanent
+        than transient, so an unknown one must not buy a retry.
         """
         from aggregator.handler import record_handler
 
         aggregates, _ = deduped_tables
-        permanent = ClientError(
-            {
-                'Error': {'Code': 'TransactionCanceledException',
-                          'Message': 'cancelled'},
-                'CancellationReasons': [
-                    {'Code': 'None'},
-                    {'Code': 'ValidationError', 'Message': 'not a number'},
-                ],
-            },
-            'TransactWriteItems',
-        )
+        permanent = self._cancelled('None', 'ValidationError')
         with patch.object(aggregates.meta.client, 'transact_write_items',
                           side_effect=permanent) as attempted:
             with pytest.raises(ClientError):
@@ -3901,6 +3928,144 @@ class TestAWriteConflictIsRetriedRatherThanReported:
             'a cancellation no contention caused was re-attempted; it will fail the '
             'same way and the record is delayed by every wait'
         )
+
+    @pytest.mark.parametrize('reason', ['ThrottlingError',
+                                        'ProvisionedThroughputExceeded'])
+    def test_a_throttled_transaction_is_re_attempted_like_a_conflict(
+        self, deduped_tables, sample_feedback_item, reason
+    ):
+        """🔑 A THROTTLE IS AS TRANSIENT AS A CONFLICT, AND NOTHING ELSE ABSORBS IT.
+
+        Botocore's throttling policies match the TOP-LEVEL `service_error_code`, and a
+        throttled transaction's is `TransactionCanceledException` — the throttle is one
+        level down, in the reasons — so `botocore/data/_retry.json` never matches it.
+        Unretried, a throttled arrival gets ONE attempt, then spends the event source's
+        `retryAttempts: 3`, and past that is dropped with its aggregates lost for good.
+
+        Both spellings, because `_TRANSIENT_READ_ERRORS` already calls both transient
+        for the day read (as `ThrottlingException` and
+        `ProvisionedThroughputExceededException`), and the write path reaching the
+        opposite conclusion about the same condition was the defect. Fails if
+        `_RETRYABLE_CANCELLATION_REASONS` is narrowed back to the conflict alone.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        real = aggregates.meta.client.transact_write_items
+        attempts = iter([self._cancelled('None', reason)])
+
+        def flaky(**kwargs):
+            failure = next(attempts, None)
+            if failure is not None:
+                raise failure
+            return real(**kwargs)
+
+        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
+                patch('aggregator.handler.time.sleep') as slept:
+            assert record_handler(
+                _record('INSERT', new=sample_feedback_item, event_id=self.ID)
+            ) == {"status": "success"}
+
+        # The retry is what wrote the record, and it waited first.
+        assert _counts(aggregates)['METRIC#daily_total'] == Decimal(1)
+        assert slept.call_count == 1
+
+    def test_a_conflict_alongside_a_permanent_reason_is_not_retried(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """🔑 "TRANSIENT AND NOTHING ELSE", which is why `_conflicted` is `all`.
+
+        It was `any`, so one contended item licensed the retry no matter what the other
+        reasons said — and a cancellation carrying BOTH a conflict and a
+        `ValidationError` was then re-attempted to the full bound on a request that
+        cannot succeed. That is exactly the cost
+        test_a_validation_failure_is_not_retried exists to prevent, reached whenever the
+        two coincide, which the poison-row shape elsewhere in this file makes ordinary:
+        a `ValidationError` on one item, and a collision on `METRIC#daily_total` if
+        another record of the day arrives in the same batch.
+
+        Nothing is lost by refusing: the transaction wrote nothing either way, and the
+        permanent item refuses every re-attempt identically, so a retry could only add
+        delay before reporting the same failure.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        mixed = self._cancelled('None', 'TransactionConflict', 'ValidationError')
+        with patch.object(aggregates.meta.client, 'transact_write_items',
+                          side_effect=mixed) as attempted, \
+                patch('aggregator.handler.time.sleep') as slept:
+            with pytest.raises(ClientError):
+                record_handler(_record('INSERT', new=sample_feedback_item,
+                                       event_id=self.ID))
+
+        assert attempted.call_count == 1, (
+            'a cancellation carrying a permanent reason was re-attempted because '
+            'another item merely contended; every one of those attempts fails on the '
+            'permanent item, so the bound is spent to reach the same report'
+        )
+        assert slept.call_count == 0
+
+    def test_a_cancellation_naming_no_failure_at_all_is_not_retried(
+        self, deduped_tables, sample_feedback_item
+    ):
+        """The denominator for `NO_CANCELLATION_REASON` being treated as "says nothing".
+
+        `'None'` cannot veto a retry — a cancelled transaction reports one reason per
+        item and most items did not fail, so it is the commonest entry in any real
+        response — but it must not GRANT one either, or a cancellation this module
+        cannot explain would be retried to the bound on the strength of no evidence.
+        """
+        from aggregator.handler import record_handler
+
+        aggregates, _ = deduped_tables
+        with patch.object(aggregates.meta.client, 'transact_write_items',
+                          side_effect=self._cancelled('None', 'None')) as attempted:
+            with pytest.raises(ClientError):
+                record_handler(_record('INSERT', new=sample_feedback_item,
+                                       event_id=self.ID))
+
+        assert attempted.call_count == 1
+
+    def test_every_retryable_reason_is_transient_on_the_read_path_too(self):
+        """The two paths must not disagree about one condition.
+
+        `_TRANSIENT_READ_ERRORS` decides what a transient failure of the day READ is;
+        `_RETRYABLE_CANCELLATION_REASONS` decides the same for the transactional WRITE.
+        This is what fails if one grows a member the other lacks — the divergence that
+        produced the throttling gap, where the read called it transient and the write
+        did not.
+
+        🔑 THE PAIRING IS SPELLED OUT RATHER THAN DERIVED, and that is the finding.
+        Appending `Exception` works for two of the three and NOT for the throttle: the
+        reasons list says `ThrottlingError` where the exception is `ThrottlingException`,
+        so a suffix rule would have quietly passed on a mapping it got wrong. There is
+        no algorithm relating the two vocabularies, which is exactly why both sets are
+        named in full in the module and why this table is written out here.
+        """
+        from aggregator.handler import (
+            _RETRYABLE_CANCELLATION_REASONS,
+            _TRANSIENT_READ_ERRORS,
+        )
+
+        # reason code (in CancellationReasons) -> exception code (on a plain request)
+        same_condition = {
+            'TransactionConflict': 'TransactionConflictException',
+            'ThrottlingError': 'ThrottlingException',
+            'ProvisionedThroughputExceeded': 'ProvisionedThroughputExceededException',
+        }
+
+        assert set(same_condition) == set(_RETRYABLE_CANCELLATION_REASONS), (
+            'a retryable cancellation reason has no counterpart named here, so nothing '
+            'checks whether the read path agrees it is transient'
+        )
+        for reason, exception in same_condition.items():
+            assert exception in _TRANSIENT_READ_ERRORS, (
+                f'{reason!r} is retried as a cancelled transaction but {exception!r} '
+                f'is not transient for the day read, so the two paths disagree about '
+                f'one DynamoDB condition. Add it to _TRANSIENT_READ_ERRORS, or say at '
+                f'_RETRYABLE_CANCELLATION_REASONS why the write is special.'
+            )
 
     def test_a_redelivery_is_still_a_skip_and_not_a_retry(
         self, deduped_tables, sample_feedback_item

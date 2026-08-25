@@ -263,21 +263,31 @@ refused.
 
 Two prices, both accepted deliberately:
 
-- **DynamoDB bills a transactional write at 2× the WCU** of the same write sent on its
-  own, so an arrival's writes cost double what they did as independent `update_item`
-  calls. The aggregates table is `PAY_PER_REQUEST`, so this is a bill rather than a
-  ceiling to breach.
+- **An arrival's write capacity is a little over double.** Two separate effects, and
+  conflating them understates it: DynamoDB charges a transactional write at **2× the
+  WCU** of the same write sent on its own, *and* the transaction adds a write that did
+  not exist before — the dedupe claim, which also lands in a second table. So an
+  arrival that was one write per dimension plus the average is now
+  `(dimensions + 2) × 2` WCU rather than `dimensions + 1`. Expressed against
+  `counter_dimensions` rather than as a fixed multiple, because the dimension count is
+  meant to grow. The aggregates table is `PAY_PER_REQUEST`, so this is a bill rather
+  than a ceiling to breach.
 - **Same-date records now contend.** Every record of a date moves
   `METRIC#daily_total`, and `TransactWriteItems` conflicts on a contended item where
   two plain `update_item`s would simply have serialised. A bulk import (the
   `s3_import` plugin, or `TRIM_HORIZON` after a redeploy) is the shape that produces
-  this at volume.
+  this at volume — and the same shape produces throttling, which for a transaction
+  arrives as a cancellation carrying a `ThrottlingError` *reason* rather than as a
+  throttling error, so botocore's own retry policies never match it.
 
 Contention converges rather than losing records, and it is bounded in three places:
-the transaction is re-attempted in process with a jittered backoff
-(`TRANSACT_WRITE_ATTEMPTS = 3`, matching `ballots_handler`'s `BALLOT_WRITE_ATTEMPTS`
-for the same DynamoDB reason), past that bound the stream redelivers the record, and
-the claim makes every one of those retries a no-op if an earlier attempt landed.
+the transaction is re-attempted in process with a jittered backoff whenever the
+cancellation is **transient** — contention or throttling, the reasons named in
+`_RETRYABLE_CANCELLATION_REASONS`, and never a validation failure that would fail
+identically on the next attempt (`TRANSACT_WRITE_ATTEMPTS = 3`, the same value as
+`ballots_handler`'s `BALLOT_WRITE_ATTEMPTS` for the same DynamoDB reason, though
+nothing couples the two); past that bound the stream redelivers the record; and the
+claim makes every one of those retries a no-op if an earlier attempt landed.
 
 `AggregateTransactionConflicted` in CloudWatch is the number to watch, since a retry
 that succeeds is otherwise invisible. If it climbs during an import, the levers are the
@@ -351,6 +361,7 @@ insert):
 | `AggregateWriteRefused` | Conditional writes DynamoDB refused (nothing to correct) |
 | `AggregateWriteDeclined` | Writes the handler chose not to attempt |
 | `AggregateRecordReplayed` | Redelivered stream records the dedupe claim refused |
+| `AggregateTransactionConflicted` | Transactions re-attempted after contention or throttling on a shared row |
 
 ### Logs
 

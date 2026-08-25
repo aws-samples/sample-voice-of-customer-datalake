@@ -128,13 +128,20 @@ Known residuals
   negative counter, with the tests in TestRedeliveryMovesACounterTwice pinning
   the reversal behaviour so this note and the code cannot drift apart.
 * AN ARRIVAL COSTS MORE AND CONTENDS MORE THAN IT DID, which is the price of the
-  point above and is recorded rather than hidden. DynamoDB bills a transactional
-  write at TWICE the WCU of the same write sent alone, so an arrival's writes cost
-  double what they did as independent `update_item` calls; the aggregates table is
+  point above and is recorded rather than hidden. TWO separate effects, and
+  conflating them understates the bill: DynamoDB charges a transactional write at
+  TWICE the WCU of the same write sent alone, AND the transaction adds a write that
+  did not exist before — the dedupe claim, which also lands in a second table. So an
+  arrival that was one write per dimension plus the average is now
+  `(dimensions + 2) x 2` WCU rather than `dimensions + 1`: a little over double, not
+  double. Stated in terms of `counter_dimensions` rather than as a fixed multiple
+  because the dimension count is meant to grow. The aggregates table is
   PAY_PER_REQUEST, so this is a bill and not a ceiling. And every record of a date
   moves `METRIC#daily_total`, so same-date records in one batch now CONTEND on it
   where two plain `update_item`s would simply have serialised — a bulk import
-  through the `s3_import` plugin is exactly the shape that produces this. Bounded
+  through the `s3_import` plugin is exactly the shape that produces this, and the
+  same shape produces throttling, which arrives as a cancellation too (see
+  `_RETRYABLE_CANCELLATION_REASONS`, and why botocore cannot absorb it). Bounded
   in three places, none of them accidental: the transaction is re-attempted in
   process with a jittered backoff (`TRANSACT_WRITE_ATTEMPTS`, and
   CONFLICTED_METRIC is what makes the rate visible), past that bound the stream
@@ -417,13 +424,57 @@ _TRANSIENT_READ_ERRORS = frozenset({
 # looks exactly like a system under no contention.
 TRANSACTION_CONFLICT_REASON = 'TransactionConflict'
 
+# The reason code DynamoDB uses for an item that caused no failure. Every cancelled
+# transaction's reasons list has one entry per item, so most entries are this — which
+# is why `_conflicted` has to treat it as "says nothing" rather than as unretryable.
+NO_CANCELLATION_REASON = 'None'
+
+# Every cancellation reason a re-attempt can plausibly clear, as the reason-code
+# spellings DynamoDB puts INSIDE `CancellationReasons`.
+#
+# 🔑 THROTTLING BELONGS HERE BECAUSE NOTHING ELSE ABSORBS IT. Botocore's throttling
+# retry policies match on the TOP-LEVEL `service_error_code`, and a throttled
+# transaction's top-level code is `TransactionCanceledException` — the throttle lives
+# one level down, in the reasons. DynamoDB's only per-service policies in
+# `botocore/data/_retry.json` are `ReplicatedWriteConflictException`,
+# `TransactionInProgressException` and `crc32`, none of which match. So a throttled
+# arrival that is not retried here gets ONE attempt, then spends the event source's
+# `retryAttempts: 3`, and past that is dropped with its aggregates lost permanently.
+#
+# These are the same conditions `_TRANSIENT_READ_ERRORS` already calls transient on the
+# READ side, spelled as the reasons list spells them. ⚠️ AND THE SPELLINGS ARE NOT
+# DERIVABLE FROM EACH OTHER: `TransactionConflict` and `ProvisionedThroughputExceeded`
+# do take the `Exception` suffix, but the throttle is `ThrottlingError` here and
+# `ThrottlingException` there — so no suffix rule relates the two vocabularies and both
+# sets have to be written out in full. `test_every_retryable_reason_is_transient_on_the
+# _read_path_too` holds the pairing as an explicit table for that reason. The two paths
+# must not reach opposite conclusions about one condition, and a bulk import through
+# `s3_import` is exactly the shape that produces both at volume.
+#
+# A `ValidationError` is deliberately NOT here: it will fail identically on the next
+# attempt, so re-sending it only spends the invocation and delays the record.
+_RETRYABLE_CANCELLATION_REASONS = frozenset({
+    TRANSACTION_CONFLICT_REASON,
+    'ThrottlingError',
+    'ProvisionedThroughputExceeded',
+})
+
 # How many times an aggregate transaction is re-attempted in process, and how long it
-# waits first. The reasoning is `_claimed_transaction`'s; the numbers are
-# `ballots_handler`'s (BALLOT_WRITE_ATTEMPTS / BALLOT_WRITE_BACKOFF_SECONDS), and
-# deliberately so — both are a small bounded budget for contention on ONE hot item,
-# and there is no reason for this Lambda to make a different guess. Three attempts
-# spans ~150ms of backoff at most, which is nothing against a 30-second batching
-# window and far less than a stream redelivery of the whole batch.
+# waits first. The reasoning is `_claimed_transaction`'s; the numbers equal
+# `ballots_handler`'s (BALLOT_WRITE_ATTEMPTS / BALLOT_WRITE_BACKOFF_SECONDS) because
+# both are a small bounded budget for contention on ONE hot item and there is no reason
+# for this Lambda to guess differently.
+#
+# ⚠️ THEY ARE NOT COUPLED. Nothing keeps the two pairs in step: the modules cannot
+# import each other (`api` and `aggregator` bundle separately, each excluding the
+# other), and no lockstep compares them — two tuning numbers did not seem worth a
+# shared constant in `shared/`. So they agree today by judgement, not by construction,
+# and tuning one does NOT tune the other. If they should diverge, they may.
+#
+# Three attempts means two waits, and the jitter is one-sided — see
+# `_claimed_transaction`, where the multiplier spans [0.5, 1.0) — so the total backoff
+# is 75–150ms, at most ~150ms and never more. Nothing against a 30-second batching
+# window, and far less than a stream redelivery of the whole batch.
 TRANSACT_WRITE_ATTEMPTS = 3
 TRANSACT_WRITE_BACKOFF_SECONDS = 0.05
 
@@ -1141,16 +1192,19 @@ def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
     what gets it retried — and a transaction that failed for a reason this function
     cannot name has NOT applied anything, so a retry is the correct response.
 
-    🔑 A `TransactionConflict` IS RE-ATTEMPTED IN PROCESS, up to
+    🔑 A TRANSIENT CANCELLATION IS RE-ATTEMPTED IN PROCESS, up to
     `TRANSACT_WRITE_ATTEMPTS` times with a jittered backoff, and this is the one place
     the aggregator's calculus is worth stating because `ballots_handler._write_ballot`
     reaches the same conclusion from the same DynamoDB fact for its own reasons.
+    Transient means `_RETRYABLE_CANCELLATION_REASONS`: contention and throttling, which
+    are the two conditions botocore leaves to us because it matches the top-level error
+    code and a cancelled transaction's is always `TransactionCanceledException`.
     `METRIC#daily_total` is written by EVERY record of a date, `batchSize` is 100, and
     botocore does NOT auto-retry `TransactionCanceledException` (only
     `TransactionInProgressException` and `ReplicatedWriteConflictException` carry retry
-    policies), so contention that a plain `update_item` used to absorb invisibly at the
-    request level now arrives here as a cancellation. Left to propagate it becomes a
-    reported record failure, and the record has only the event source's
+    policies), so contention and throttling that a plain `update_item` used to absorb
+    invisibly at the request level now arrive here as a cancellation. Left to propagate
+    it becomes a reported record failure, and the record has only the event source's
     `retryAttempts: 3` left before it is DROPPED and its aggregates lost for good —
     which is strictly worse than the double-count this whole change exists to remove.
     Retrying is safe by construction: nothing was written, and if a concurrent attempt
@@ -1199,12 +1253,17 @@ def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
                 # should see it at the moment the wait began rather than after it.
                 metrics.add_metric(name=CONFLICTED_METRIC, unit="Count", value=1)
                 logger.warning(
-                    f"Aggregate transaction for {dedupe_key} hit a write conflict; "
-                    f"retrying (attempt {attempt + 2} of {TRANSACT_WRITE_ATTEMPTS})"
+                    f"Aggregate transaction for {dedupe_key} was cancelled for a "
+                    f"transient reason (contention or throttling); retrying "
+                    f"(attempt {attempt + 2} of {TRANSACT_WRITE_ATTEMPTS})"
                 )
                 delay = TRANSACT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
-                # Jittered, so records that collided once do not re-collide having
-                # waited the same interval.
+                # HALF JITTER: the multiplier spans [0.5, 1.0), so the wait is 50–100%
+                # of the nominal delay above — 25–50ms, then 50–100ms — and never
+                # longer than it. Decorrelating records that collided once matters more
+                # here than the absolute wait, which is why the range is one-sided
+                # rather than the symmetric [0.5, 1.5) `randbelow(1000)` would give.
+                # `_write_ballot` jitters the same way, for the same reason.
                 time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
                 continue
             raise
@@ -1256,26 +1315,40 @@ def _claim_was_refused(error: ClientError) -> bool:
 
 
 def _conflicted(error: ClientError) -> bool:
-    """Was this cancellation contention on one of the rows, and nothing else?
+    """Is EVERY reason this cancellation gives one a re-attempt could clear?
 
-    The one cancellation worth re-attempting in process, and the reason is that it is
-    ORDINARY rather than exceptional: every record of a date moves
-    `METRIC#daily_total`, so same-day records arriving in one batch contend by design.
+    🔑 "AND NOTHING ELSE" IS THE WHOLE PREDICATE, and it is `all` rather than `any`
+    deliberately — review found the two disagreeing, with the docstring claiming a
+    scope the `any` did not enforce. One retryable reason alongside a permanent one
+    meant a cancellation that CANNOT succeed was re-attempted to the full bound: the
+    exact cost `test_a_validation_failure_is_not_retried` exists to prevent, reached
+    whenever the two coincide. That is reachable, not theoretical — a poison row is a
+    `ValidationError` on one item, and if that record also collides on
+    `METRIC#daily_total` the request now carries both.
+
+    So a reason that names a PERMANENT failure vetoes the retry even if another names
+    contention. Nothing is lost by that: the transaction wrote nothing either way, and
+    the permanent item will refuse every re-attempt identically, so the only thing a
+    retry could add is delay before the same failure is reported.
+
+    What licenses a re-attempt is `_RETRYABLE_CANCELLATION_REASONS` — contention and
+    throttling, which are the reason-code spellings of conditions
+    `_TRANSIENT_READ_ERRORS` already treats as transient on the read side. See that
+    constant for why botocore cannot absorb the throttles for us. Contention is the
+    ORDINARY one: every record of a date moves `METRIC#daily_total`, so same-day
+    records arriving in one batch contend by design.
+
+    `NO_CANCELLATION_REASON` is not a failure at all — a cancelled transaction reports
+    one reason per item and most items simply did not fail — so it says nothing and
+    cannot veto. A reasons list of nothing BUT those would mean no item failed, which
+    is not a cancellation this can explain, so at least one real retryable reason is
+    still required.
+
     Read from the reasons rather than from the exception, exactly as
-    `_claim_was_refused` is, because the decision it drives is different — a retry
-    versus reporting the record failed — and only one code licenses it.
-
-    ANY reason being unreadable answers False, which routes to the raise. That is the
-    same fail-toward-the-stream direction the claim check takes: the stream redelivers
-    and the claim makes that safe, so declining to retry costs a round trip, while
-    retrying a cancellation this cannot name would spend the invocation's time on a
-    request that will fail identically (a `ValidationException` does not become valid).
-
-    `_TRANSIENT_READ_ERRORS` already names `TransactionConflictException` for the day
-    read; the spelling HERE is the reason code DynamoDB puts in `CancellationReasons`,
-    which is `TransactionConflict` without the suffix — two different strings for the
-    same condition, one per API surface, which is why neither can be derived from the
-    other.
+    `_claim_was_refused` is, and unreadable ANYTHING answers False — the same
+    fail-toward-the-stream direction: the stream redelivers and the claim makes that
+    safe, so declining to retry costs a round trip, while retrying a cancellation this
+    cannot name spends the invocation on a request that may fail identically.
     """
     response = error.response if isinstance(error.response, Mapping) else None
     if response is None:
@@ -1285,9 +1358,14 @@ def _conflicted(error: ClientError) -> bool:
     reasons = response.get('CancellationReasons')
     if not isinstance(reasons, list) or not reasons:
         return False
-    return any(isinstance(reason, Mapping)
-               and reason.get('Code') == TRANSACTION_CONFLICT_REASON
-               for reason in reasons)
+    # An unreadable entry is not `NO_CANCELLATION_REASON` and not retryable, so it
+    # vetoes here rather than needing its own check.
+    codes = [reason.get('Code') if isinstance(reason, Mapping) else None
+             for reason in reasons]
+    blocking = [code for code in codes if code != NO_CANCELLATION_REASON]
+    if not blocking:
+        return False
+    return all(code in _RETRYABLE_CANCELLATION_REASONS for code in blocking)
 
 
 def _reverse_a_pre_deploy_persona_row(

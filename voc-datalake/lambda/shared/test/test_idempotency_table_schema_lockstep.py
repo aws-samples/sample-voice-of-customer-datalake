@@ -42,6 +42,7 @@ unscoped pattern would happily read the FEEDBACK table's `'ttl'` and report the
 idempotency table as correct (or as broken) on the strength of another table's line.
 """
 import re
+from functools import cache
 from pathlib import Path
 
 from shared.idempotency import (
@@ -61,6 +62,7 @@ _CONSTRUCT = "new dynamodb.Table(this, 'IdempotencyTable'"
 _Q = r"""['"]"""
 
 
+@cache
 def _table_block() -> str:
     """The `IdempotencyTable` construct's properties, and nothing else's.
 
@@ -71,11 +73,21 @@ def _table_block() -> str:
     both directions: green while the idempotency table's TTL was renamed, red when
     another table's was.
 
-    The block ends at the closing `});` of the construct call, found as the first
-    such line at the construct's own indentation. Read from the source text rather
-    than from a synthesized template deliberately: a synth needs Docker and an
-    esbuild bundle in this repo, which would make an attribute-name lockstep fail for
-    reasons that have nothing to do with attribute names.
+    🔑 THE BLOCK ENDS AT A `});` MATCHING THE CONSTRUCT'S OWN INDENTATION, and the
+    indentation is derived from the opening line rather than allowed to be anything.
+    An indentation-agnostic `^\\s*\\}\\);\\s*$` was the first implementation and it
+    ends at the first such line at ANY depth — so a nested call among the properties
+    would truncate the block before `timeToLiveAttribute` and fail
+    `test_the_table_has_a_ttl_at_all` while the attribute was present and correct. A
+    false red naming the wrong defect is the better direction to fail in, but this
+    file's whole value is that its reader cannot report on something it is not about,
+    and that has to include its own closing-brace match.
+
+    Read from the source text rather than from a synthesized template deliberately: a
+    synth needs Docker and an esbuild bundle in this repo, which would make an
+    attribute-name lockstep fail for reasons that have nothing to do with attribute
+    names. `@cache` because all four assertions ask for the block and `core-stack.ts`
+    is ~1200 lines; the file cannot change during a run.
     """
     source = _CORE_STACK.read_text(encoding='utf-8')
     start = source.find(_CONSTRUCT)
@@ -85,13 +97,22 @@ def _table_block() -> str:
         f'when its TTL attribute stops matching the name the writers stamp, and a '
         f'wrong TTL attribute leaks every dedupe marker silently.'
     )
+    # The construct call starts mid-line (`this.idempotencyTable = new ...`), so the
+    # indentation to match the closing brace against is the OPENING LINE's, not the
+    # column the construct name happens to sit at.
+    line_start = source.rfind('\n', 0, start) + 1
+    indent = source[line_start:start]
+    indent = indent[:len(indent) - len(indent.lstrip())]
+
     rest = source[start:]
-    end = re.search(r'^\s*\}\);\s*$', rest, re.MULTILINE)
+    end = re.search(rf'^{re.escape(indent)}\}}\);[ \t]*$', rest, re.MULTILINE)
     assert end, (
-        f'The {_CONSTRUCT} call in {_CORE_STACK.name} has no closing brace this '
-        f'helper can find, so it cannot tell where the construct ends and would '
-        f'scope every assertion below to the rest of the file — where another '
-        f"table's timeToLiveAttribute would satisfy them."
+        f'The {_CONSTRUCT} call in {_CORE_STACK.name} has no closing brace at its own '
+        f'indentation ({len(indent)} space(s)) that this helper can find, so it cannot '
+        f'tell where the construct ends and would scope every assertion below to the '
+        f"rest of the file — where another table's timeToLiveAttribute would satisfy "
+        f'them. If the construct was re-indented or reformatted, update this helper '
+        f'rather than deleting the assertions that depend on it.'
     )
     return rest[:end.end()]
 

@@ -276,20 +276,31 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
   /** Every Lambda in this stack whose service name says it is the aggregator, found
    * by that name rather than by logical id: a CDK-generated id can change with a
    * construct-tree edit, and matching the function by what it IS keeps these tests
-   * pinned to the function rather than to a name. */
-  function aggregatorFunctions(): { Properties?: any }[] {
+   * pinned to the function rather than to a name.
+   *
+   * Returns the ENVIRONMENTS rather than the resources, so the narrowing that proves
+   * each one is an object happens once, here, where it is already being done — the
+   * caller then needs no cast and the helper needs no `any`. */
+  function aggregatorEnvironments(): Record<string, unknown>[] {
     return Object.values(template.findResources('AWS::Lambda::Function'))
-      .filter((fn) => {
-        const vars: unknown = fn.Properties?.Environment?.Variables;
-        return (
-          typeof vars === 'object' && vars !== null &&
-          (vars as Record<string, unknown>).POWERTOOLS_SERVICE_NAME === 'voc-aggregator'
-        );
-      });
+      .map((fn) => fn.Properties?.Environment?.Variables as unknown)
+      .filter((vars): vars is Record<string, unknown> => (
+        typeof vars === 'object' && vars !== null &&
+        (vars as Record<string, unknown>).POWERTOOLS_SERVICE_NAME === 'voc-aggregator'
+      ));
   }
 
   function aggregatorEnvironment(): Record<string, unknown> {
-    return aggregatorFunctions()[0].Properties.Environment.Variables as Record<string, unknown>;
+    const environments = aggregatorEnvironments();
+    // ASSERTED HERE TOO, rather than only in the test below that owns the diagnosis.
+    // Indexing [0] blind is what this replaced, and on zero matches that threw
+    // `Cannot read properties of undefined` from each of the four tests — a TypeError
+    // in a CDK assertion sends the reader looking for a template-shape problem when
+    // the subject is simply gone. The duplication is cheap and this is the readable
+    // failure; `finds exactly one aggregation Lambda` still reports it as its own
+    // distinct problem.
+    expect(environments).toHaveLength(1);
+    return environments[0];
   }
 
   it('finds exactly one aggregation Lambda to assert about', () => {
@@ -300,7 +311,7 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
     // which reads as "the idempotency table name is missing" when what is really
     // wrong is that the subject is missing or ambiguous. Stated once, so the
     // diagnosis is one step shorter and names the real problem.
-    expect(aggregatorFunctions()).toHaveLength(1);
+    expect(aggregatorEnvironments()).toHaveLength(1);
   });
 
   it('passes the idempotency table name to the aggregation Lambda', () => {
