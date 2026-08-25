@@ -87,6 +87,7 @@
     "placeholder": "この優先順位付けの決定に関するメモを追加..."
   },
   "preview": {
+    "enlarge": "拡大",
     "prototypeTitle": "プロトタイプ",
     "title": "ドキュメントプレビュー",
     "viewFull": "完全なドキュメントを表示",

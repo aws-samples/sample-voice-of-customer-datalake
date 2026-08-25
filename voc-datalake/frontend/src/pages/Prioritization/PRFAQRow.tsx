@@ -15,6 +15,7 @@ import PrototypeLinkActions, { PrototypeLinkLifetimeNote } from '../../component
 import PrototypeRenderer, { HtmlPrototypeFrame } from '../../components/PrototypeRenderer'
 import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prototypeSpec'
 import LinkedFormEvidence from './LinkedFormEvidence'
+import PrototypeEnlargeButton from './PrototypeEnlargeButton'
 import RoomVotePanel from './RoomVotePanel'
 import {
   getPriorityLabel, MAX_NOTE_LENGTH, reviewersDisagreed, SCORABLE_TYPE_META, teamScoreOf,
@@ -546,20 +547,70 @@ function resolvePrototypeMode(
 }
 
 /**
+ * The prototype panel's heading, and the two things a reader can do about a pane
+ * this size.
+ *
+ * Split out of `PrototypePanel` because that function's branch count is capped by
+ * eslint's `complexity` rule at 12 and adding the enlarge control put it at 13. A
+ * genuine seam rather than an appeasement: everything here is about the AFFORDANCES,
+ * and everything left there is about resolving which artifact to render.
+ *
+ * "Open in new tab" appears only with a `prototype_url` to open — a legacy
+ * prototype is inline HTML with no address, and the blob indirection the Documents
+ * tab uses for those is not worth carrying onto a page that lists every project.
+ * The deadline beneath it is stated rather than implied, because that URL is a
+ * signed session credential (see components/PrototypeLinkActions); the page
+ * schedules its own re-signing in `Prioritization.tsx`, without which the link
+ * would 403 for anyone who parks a pitch on screen for an hour.
+ *
+ * "Enlarge" appears for EVERY prototype the panel renders, url or not: it
+ * re-renders the pane the row is already showing and needs no address of its own,
+ * so a legacy inline prototype and a JSON spec enlarge exactly as well as a signed
+ * one. It sits beside the anchor because the two answer the same question — "I
+ * cannot see this properly" — and a reader comparing them should not have to find
+ * them in different places.
+ *
+ * @param enlarged the prototype as the overlay should render it: the row's own
+ *   pane element in a box that fills the dialog.
+ */
+function PrototypePanelHeader({
+  url, noteId, documentTitle, enlarged, t,
+}: {
+  readonly url?: string
+  readonly noteId: string
+  readonly documentTitle?: string
+  readonly enlarged: ReactElement
+  readonly t: TFunction
+}): ReactElement {
+  return (
+    <>
+      <div className="flex items-center justify-between mt-2 gap-3">
+        <h4 className="font-medium text-gray-900 flex items-center gap-1.5">
+          <Wand2 size={14} className="text-orange-500" />
+          {t('preview.prototypeTitle', { defaultValue: 'Prototype' })}
+        </h4>
+        <span className="flex items-center gap-3 text-xs flex-shrink-0">
+          {url ? <PrototypeLinkActions url={url} noteId={noteId} /> : null}
+          <PrototypeEnlargeButton documentTitle={documentTitle}>{enlarged}</PrototypeEnlargeButton>
+        </span>
+      </div>
+      {/* Under the link, not beside it: this column is half a row wide, and the
+          note wraps rather than truncates — the clipped end would be the warning. */}
+      {url ? <PrototypeLinkLifetimeNote url={url} noteId={noteId} className="mt-1 text-xs" /> : null}
+    </>
+  )
+}
+
+/**
  * Renders a project's latest prototype under the PR/FAQ preview. Chooses the
  * iframe (HTML format) or the native JSON-spec renderer, or renders nothing
  * when there's no usable prototype.
  *
  * The embedded frame is 384px tall inside half a row — enough to recognise the
- * prototype, not enough to walk a room through it — so this also offers it in a
- * new tab. Only when there is a `prototype_url` to open: a legacy prototype is
- * inline HTML with no address, and the blob indirection the Documents tab uses for
- * those is not worth carrying onto a page that lists every project.
- *
- * The deadline is stated next to the link rather than left implied, because that
- * URL is a signed session credential — see components/PrototypeLinkActions. The
- * page schedules its own re-signing (`Prioritization.tsx`); without that the link
- * below would 403 for anyone who parks a pitch on screen for an hour.
+ * prototype, not enough to walk a room through it — so the header above it offers
+ * the artifact bigger, two ways: out of the app in a new tab, and filling the
+ * viewport in place. See `PrototypePanelHeader` for which of those a given
+ * prototype gets and why.
  */
 function PrototypePanel({
   prototype, t,
@@ -580,29 +631,47 @@ function PrototypePanel({
     [url, content, protoFormat],
   )
   if (mode.kind === 'none') return null
+  /**
+   * The artifact itself, described once and rendered in two boxes: the row's
+   * 384px pane and the enlarge overlay's full-viewport one.
+   *
+   * One description rather than two, because the sizing lives on the CONTAINER —
+   * this frame is `w-full h-full` either way. A second `HtmlPrototypeFrame` call
+   * written for the overlay would be free to drift from this one, and the thing it
+   * would drift away from is `useLoadedUrl`: the handling that lets a re-signed URL
+   * through without reloading the frame under a reviewer, and lets an already-dead
+   * one be replaced. A React element is a description and not an instance, so using
+   * this in both places mounts a frame per box — and the overlay's box does not
+   * exist until somebody opens it, `ModalShell` rendering nothing while closed.
+   */
+  const pane = mode.kind === 'html' ? (
+    <HtmlPrototypeFrame url={url} html={content} title={prototype?.title} className="w-full h-full border-0" />
+  ) : (
+    <PrototypeRenderer spec={mode.spec} />
+  )
   return (
     <div>
-      <div className="flex items-center justify-between mt-2 gap-3">
-        <h4 className="font-medium text-gray-900 flex items-center gap-1.5">
-          <Wand2 size={14} className="text-orange-500" />
-          {t('preview.prototypeTitle', { defaultValue: 'Prototype' })}
-        </h4>
-        {url ? (
-          <span className="flex items-center gap-3 text-xs flex-shrink-0">
-            <PrototypeLinkActions url={url} noteId={lifetimeNoteId} />
-          </span>
-        ) : null}
-      </div>
-      {/* Under the link, not beside it: this column is half a row wide, and the
-          note wraps rather than truncates — the clipped end would be the warning. */}
-      {url ? <PrototypeLinkLifetimeNote url={url} noteId={lifetimeNoteId} className="mt-1 text-xs" /> : null}
+      <PrototypePanelHeader
+        url={url}
+        noteId={lifetimeNoteId}
+        documentTitle={prototype?.title}
+        enlarged={(
+          /* Full height inside the overlay's panel, and scrollable for the JSON
+             spec, which is a document rather than a frame and can be taller than
+             the screen. */
+          <div className={clsx('h-full', mode.kind === 'html' ? 'overflow-hidden' : 'overflow-y-auto p-4')}>
+            {pane}
+          </div>
+        )}
+        t={t}
+      />
       {mode.kind === 'html' ? (
         <div className="bg-white rounded-lg border overflow-hidden mt-2 h-96">
-          <HtmlPrototypeFrame url={url} html={content} title={prototype?.title} className="w-full h-full border-0" />
+          {pane}
         </div>
       ) : (
         <div className="bg-white rounded-lg border p-3 sm:p-4 max-h-96 overflow-y-auto mt-2">
-          <PrototypeRenderer spec={mode.spec} />
+          {pane}
         </div>
       )}
     </div>
