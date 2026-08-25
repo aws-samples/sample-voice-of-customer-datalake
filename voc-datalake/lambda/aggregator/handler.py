@@ -1213,8 +1213,9 @@ def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
     # this loop would be INDISTINGUISHABLE FROM A REDELIVERY: `False` here means "the
     # record was already applied", which `record_handler` reports as a success and
     # never retries — so a bound of 0 would silently drop every record's aggregates
-    # while reporting the batch clean. `test_the_attempt_bound_leaves_at_least_one`
-    # pins the bound; this is the guard for the case where it stops holding anyway.
+    # while reporting the batch clean.
+    # `test_the_attempt_bound_leaves_at_least_one_attempt` pins the bound; this is the
+    # guard for the case where it stops holding anyway.
     raise RuntimeError(
         'TRANSACT_WRITE_ATTEMPTS is not at least 1, so no aggregate transaction was '
         'attempted. Raising rather than reporting a record that was never applied.'
