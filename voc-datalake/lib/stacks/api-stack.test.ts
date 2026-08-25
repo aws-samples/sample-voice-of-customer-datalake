@@ -409,31 +409,44 @@ describe('stack and callers stay in step', () => {
     // rather than a wrong URL. Prose is checked nowhere else, and the docs are
     // where the wrong path outlived the code by longest.
     //
-    // Only fenced `html` blocks are read, not the prose around them: the fix for
-    // that finding was to state in prose that `widget.js` does NOT exist, so
-    // scanning the whole page would fail on the very sentences that prevent the
-    // mistake recurring. What is asserted is narrower and is the thing that
-    // matters — every URL offered for pasting is one a customer's browser can
-    // actually call.
+    // Fenced blocks are read, not the prose around them: the fix for that finding
+    // was to state in prose that `widget.js` does NOT exist, so scanning the whole
+    // page would fail on the very sentences that prevent the mistake recurring.
+    // What is asserted is narrower and is the thing that matters — every URL
+    // offered for pasting is one a customer's browser can actually call.
     const page = readRepoFile(...relativePath.split('/'));
-    // `\r?` so a CRLF checkout matches. The pattern needs a newline straight
-    // after the language tag, and without it every fence misses silently — the
-    // same no-op the assertion below exists to rule out.
-    const htmlBlocks = [...page.matchAll(/```html\r?\n([\s\S]*?)```/g)].map(([, body]) => body);
+    // EVERY fence, whatever its info string — scoping this to ```html was a hole,
+    // not a narrowing. Measured on the retired URL: `widget.js` inside a ```js
+    // fence passed, and inside ```html title="embed.html" passed, while the same
+    // URL in a plain ```html fence failed. Both misses are the exact defect class
+    // this test exists to prevent, and neither is exotic: a highlighter tag is
+    // cosmetic, and what makes a URL copy-pasteable is the fence, not the label.
+    //
+    // `[^\n\r]*` consumes the tag and any info string after it, so ```HTML,
+    // ```js and ```html title="x" are all read. `\r?` so a CRLF checkout matches;
+    // a fence needs the newline straight after its info string, and without it
+    // every block misses silently — the no-op the assertion below rules out.
+    //
+    // Consequence to know before adding examples: an authenticated example in a
+    // fence (a `curl` with a bearer token against `submissions`) now fails the
+    // unauthenticated check below, correctly by these lights but inconveniently.
+    // The fix then is an explicit allowlist of such blocks, not a retreat to
+    // reading one tag — which is what let the bad URL through in the first place.
+    const fencedBlocks = [...page.matchAll(/```[^\n\r]*\r?\n([\s\S]*?)```/g)].map(([, body]) => body);
 
     // Assert the EMBED snippet was found, not merely that some fence was.
-    // Counting all html fences (or worse, the character length of their joined
-    // bodies, which is what this line used to do) is satisfiable by any
-    // unrelated block — a theming or <div> example — so retagging the embed to
-    // ```markdown, or leaving it untagged, would silently reduce the guard to
-    // checking nothing while still reporting green. Requiring a fence that
-    // actually mentions the route scopes the check to the snippet whose
-    // correctness is the point.
-    const embedBlocks = htmlBlocks.filter((body) => body.includes('/feedback-forms'));
+    // Counting all fences (or worse, the character length of their joined bodies,
+    // which is what this line used to do) is satisfiable by any unrelated block —
+    // a theming or <div> example — so moving the embed URL out of its fence into
+    // prose would silently reduce the guard to checking nothing while still
+    // reporting green. Requiring a fence that actually mentions the route scopes
+    // the check to the snippet whose correctness is the point. Retagging no longer
+    // matters, which is the point of reading every fence above.
+    const embedBlocks = fencedBlocks.filter((body) => body.includes('/feedback-forms'));
 
     expect(
       embedBlocks.length,
-      'no ```html fence containing a /feedback-forms path — did the embed snippet move or its fence language change?',
+      'no fenced block contains a /feedback-forms path — did the embed snippet move out of its fence, or its path change?',
     ).toBeGreaterThan(0);
 
     // Resolved against the UNAUTHENTICATED subset, unlike the two caller checks
