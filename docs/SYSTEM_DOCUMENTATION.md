@@ -589,17 +589,16 @@ Embeddable feedback forms for collecting customer feedback directly on websites 
 
 ### Embedding
 
-**Iframe**:
+Embed with an iframe — the Lambda inlines the widget JS into the page, so there
+is no separate script to load:
+
 ```html
 <iframe src="https://your-api/v1/feedback-forms/{form_id}/iframe" width="100%" height="500" frameborder="0"></iframe>
 ```
 
-**JavaScript Widget**:
-```html
-<div id="voc-feedback-form"></div>
-<script src="https://your-api/v1/feedback-forms/{form_id}/widget.js"></script>
-<script>VoCFeedbackForm.init({ container: '#voc-feedback-form', apiEndpoint: 'https://your-api/v1', formId: '{form_id}' });</script>
-```
+The only public per-form routes are `config`, `submit` and `iframe`; there is no
+`widget.js` route, and requesting one returns `403 Missing Authentication Token`.
+See [Feedback Forms](feedback-forms.md#embedding-forms).
 
 ### Pre-Categorization
 
