@@ -103,15 +103,18 @@ function trackedPublicPaths(): string[] {
   // An empty result is not a clean bill of health, and it needs nothing to be wrong
   // with git: run from inside a DIFFERENT repository — a copied tree, a vendored
   // checkout, a parent repo that swallowed this one — and `git ls-files -- public`
-  // exits 0 with no output because `public` is not in that index. Every assertion
-  // below would then pass over the empty set: the failure mode the catch above exists
-  // to prevent, arriving by a route it does not cover.
+  // exits 0 with no output because `public` is not in that index. Measured on that
+  // fixture: three of the five assertions below then pass vacuously, and the two that
+  // fail blame `public/` contents (`expected [] to deeply equal [ 'favicon.ico',
+  // 'locales' ]`) for what is an environmental problem. Failing here gives one report
+  // that names the cause, as the catch above does for a missing `.git`.
   if (paths.length === 0) {
     throw new Error(
       'public/ inventory came back empty: "git ls-files -- public" found nothing tracked. '
       + `Is ${FRONTEND_DIR} inside a different git repository than this one (a copied or `
-      + 'vendored tree), or has public/ been deleted? Empty is treated as a failure '
-      + 'because every assertion in this file would otherwise pass vacuously.',
+      + 'vendored tree), or has public/ been deleted? Empty is a failure rather than a '
+      + 'pass because the assertions below would otherwise either check nothing or '
+      + 'report a missing favicon for an environmental cause.',
     )
   }
 
