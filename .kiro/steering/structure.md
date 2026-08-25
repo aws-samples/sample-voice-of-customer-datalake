@@ -250,6 +250,44 @@ embeddable widget calls from the customer's own site.
 | POST | `/feedback-forms/{id}/submit` | **public** | Submit feedback |
 | GET | `/feedback-forms/{id}/iframe` | **public** | Iframe embed variant |
 
+> **Rate limits on the three public routes** are stage method settings in
+> `api-stack.ts`, and are EXTERNALLY OBSERVABLE to anyone embedding the widget:
+>
+> <!-- LOCKSTEPPED against the stack by `the public feedback-form routes` in
+>      voc-datalake/lib/stacks/api-stack.test.ts, which parses every line below
+>      that names a route and states a rate. Write a pair as `<rate> rps / <burst>`
+>      or `<rate> req/s, burst <burst>`; the burst must sit immediately after the
+>      `/` or the `, burst `, so `(burst N)` will not parse. Prose about throughput
+>      is not judged — only digits immediately before a per-second unit are. -->
+>
+> | Route | Rate / burst | Why |
+> |---|---|---|
+> | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
+> | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item`, and a static HTML render, respectively) |
+>
+> The method-setting keys spell the variable `{form_id}` — the resource is created
+> as `addResource('{form_id}')`, so that is the path to look for in the template,
+> even though the table above uses `{id}` for brevity like the rest of this file.
+>
+> These four numbers are PINNED against the synthesized template by a lockstep case
+> in `api-stack.test.ts`, so tuning them in `api-stack.ts` without updating this
+> table fails the CDK suite. The stack is the source of truth.
+>
+> A method setting is keyed by PATH with that variable left as-is, so each ceiling is
+> shared across **every form in the deployment and every caller** — not per form
+> and not per client. 100 rps is therefore the aggregate widget page-view rate a
+> deployment supports.
+>
+> Above it, **each of the three fails differently and none names the limit**, so a
+> busy embed is fixed by raising the number rather than widget-side: `GET /config`
+> renders a flat "Feedback form unavailable." with no retry, indistinguishable from
+> a disabled form; `POST /submit` shows a modal "Failed to submit." alert and is
+> retryable; `GET /iframe` runs no widget code at all (the browser navigates to it
+> directly), so it is a raw API Gateway error page inside the customer's iframe.
+> `GET /voting-sessions/{session_id}/config` carries 20 rps / 40 for a different
+> reason (a room is bounded by `MAX_BALLOT_CAP`), and its sibling
+> `POST /voting-sessions/{session_id}/submit` carries 20 rps / 40 on that same reasoning.
+
 > There is no `/feedback-form/*` (singular) API. These routes are declared
 > **explicitly** in `api-stack.ts` rather than behind a `{proxy+}`, so adding a
 > route to the handler also requires wiring it there. That is deliberate: a
