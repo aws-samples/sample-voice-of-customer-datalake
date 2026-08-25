@@ -843,6 +843,32 @@ def _json_object_body() -> dict:
     in this module have the same latent shape and predate this change, and
     sweeping ~20 pre-existing routes is its own reviewable diff rather than a
     rider on a change to one route.
+
+    Three of those unswept routes are worth naming, because a reader of this note
+    is most likely to assume the ones ADJACENT to the fixed route are covered and
+    they are not. Measured by driving `lambda_handler`, all three answer 500 for
+    unparseable JSON, and:
+
+      api_merge_documents   [1,2] -> 200, job CREATED   "hi" -> 200, job CREATED
+      api_build_prototype   [1,2] -> 500, no job        "hi" -> 500, no job
+      api_product_report    [1,2] -> 500, no job        "hi" -> 500, no job
+
+    `api_merge_documents` is the one to fix first, and the only one that is worse
+    than a 500: it still reads `json_body or {}` and calls `create_job` before
+    anything inspects the body's shape, so a JSON array or a bare string produces a
+    billed `merge_documents` job row whose `merge_config` is not an object, and the
+    async merger then dies on `merge_config.get`. That is exactly the defect this
+    route just closed — a job created from a body that was never validated — one
+    route away, and the `or {}` there collapses `[]`/`false`/`0`/`""` into "no
+    body" as well.
+
+    What is NOT the exposure, checked because it looks like one: `output_type` does
+    reach a DynamoDB sort key in `jobs/document_merger/handler.py`, but only via
+    `doc_type_prefix`, which is clamped to `prd`/`prfaq`/`doc` first — so the sort
+    key is not injectable and this is not a second instance of the trust boundary
+    that motivated `_validated_doc_type`. The unguarded call there is
+    `output_type.upper()` on an arbitrary value, which fails inside the job rather
+    than at the boundary.
     """
     try:
         body = app.current_event.json_body

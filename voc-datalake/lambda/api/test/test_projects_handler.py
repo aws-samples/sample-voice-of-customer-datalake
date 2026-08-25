@@ -799,10 +799,16 @@ class TestGenerateDocumentDocType:
         level down: a trailing `# ... 'prd' ...` on the statement is commentary
         about the predicate, not a second copy of the allowlist, and failing on it
         would again blame a predicate that is correct.
+        A re-declared literal counts however it is QUOTED. Python spells a string
+        literal two ways and ruff's configuration here enforces neither, so checking
+        one spelling left the case only this assertion can catch — a predicate that
+        reads the constant and carries a disagreeing copy beside it — passing on the
+        other. The literals are derived from GENERATED_DOC_TYPES for the same
+        reason: a hardcoded pair stops covering the allowlist the moment it changes.
         """
         import inspect
 
-        from projects_handler import api_generate_document
+        from projects_handler import GENERATED_DOC_TYPES, api_generate_document
 
         source = inspect.getsource(api_generate_document)
         lines = source.splitlines()
@@ -837,10 +843,26 @@ class TestGenerateDocumentDocType:
             f'copy of its literal: {assignment.strip()}'
         )
         # No quoted doc type in the CODE, which is what a re-declared literal would
-        # look like however it were spelled, spaced or wrapped.
-        assert "'prd'" not in code and "'prfaq'" not in code, (
-            f'the routing predicate re-declares the allowlist literal instead of '
-            f'reading GENERATED_DOC_TYPES: {assignment.strip()}'
+        # look like however it were spelled, spaced or wrapped — including which
+        # QUOTE it is spelled with. Python has two spellings of a string literal and
+        # ruff's configuration here is defaults-only (`F` + `E4/E7/E9`), so no rule
+        # enforces one. Checking single quotes alone let through the case only this
+        # assertion can catch: a predicate that reads the constant AND carries a
+        # second, disagreeing copy beside it (`... or doc_type in ("legacy", "prd")`)
+        # — the assertion above catches a REPLACEMENT of the constant, this one
+        # catches an ADDITION, so there was nothing else standing behind it.
+        #
+        # Derived from GENERATED_DOC_TYPES rather than hardcoded, so the check
+        # cannot quietly stop covering a value the allowlist gains.
+        redeclared = sorted(
+            f'{quote}{doc_type}{quote}'
+            for doc_type in GENERATED_DOC_TYPES
+            for quote in ('"', "'")
+            if f'{quote}{doc_type}{quote}' in code
+        )
+        assert not redeclared, (
+            f'the routing predicate re-declares the allowlist literal {redeclared} '
+            f'instead of reading GENERATED_DOC_TYPES: {assignment.strip()}'
         )
 
 
