@@ -915,6 +915,32 @@ def apply_counter_keys(
     return landed, outcomes
 
 
+def counter_transaction_items(
+    keys: set[tuple[str, str, str]], sign: int,
+) -> list[dict[str, Any]]:
+    """Every named counter's movement, as `TransactWriteItems` entries.
+
+    `apply_counter_keys`' counterpart for the transactional path, and it is a
+    FUNCTION rather than a comprehension at the call site for the same reason that one
+    is: it is the ONE place a counter key is unpacked into a transactional write, so
+    there is exactly one line here deciding what a counter's sort key is.
+
+    🔑 THE UNPACKING IS SPELLED `for pk, date, field in sorted(keys)` DELIBERATELY.
+    `test_streaming_categories_lockstep.py` pins the small set of expressions a
+    counter's sort key may be bound from, because the streaming reader sums a window
+    with `sk BETWEEN :oldest AND :newest` and a composite sort key sorts INSIDE a date
+    window it is unrelated to. That lockstep reads the name `date` bound from
+    `sorted(keys)`; writing this as a comprehension over `date_` (which it was first)
+    would have left this path's sort keys outside the guard entirely — a second,
+    unpinned way to key a counter, which is exactly the drift the guard exists to
+    catch. Sorted for the same reason `apply_counter_keys` sorts: a deterministic
+    order for tests and logs, and here it also fixes which item a cancellation reason
+    refers to.
+    """
+    return [_counter_transaction_item(pk, date, field, sign)
+            for pk, date, field in sorted(keys)]
+
+
 def _counter_transaction_item(pk: str, sk: str, field: str, increment: int,
                               ttl_days: int = 90) -> dict[str, Any]:
     """One counter movement as a `TransactWriteItems` entry.
@@ -1210,8 +1236,7 @@ def apply_feedback_once(item: dict, sign: int, date: str, dedupe_key: str) -> bo
     already had; what they do not get is redelivery protection, which is recorded as a
     residual in the module docstring rather than half-implemented here.
     """
-    items = [_counter_transaction_item(pk, date_, field, sign)
-             for pk, date_, field in sorted(counter_keys(item, date))]
+    items = counter_transaction_items(counter_keys(item, date), sign)
 
     sentiment_score = _image_score(item)
     if sentiment_score:
