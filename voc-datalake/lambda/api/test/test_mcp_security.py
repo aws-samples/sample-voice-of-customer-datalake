@@ -1907,8 +1907,14 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         """
         import mcp_handler
         strict = self._strict_table()
+        # The minimum each tool needs to reach its DELEGATED call rather than being
+        # refused by its own argument guard first. The assertion below (one query,
+        # the credential lookup) would pass either way, which is precisely why these
+        # matter: a tool refused at -32602 never reaches the table at all, so it
+        # would satisfy this test while proving nothing about the tool.
         args_for = {
             "get_feedback_detail": {"feedback_id": "fb-1"},
+            "get_similar_feedback": {"feedback_id": "fb-1"},
             "get_metrics_breakdown": {"dimension": "categories"},
         }
         with patch("mcp_handler.projects_table", strict), \

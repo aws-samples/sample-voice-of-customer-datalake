@@ -466,14 +466,198 @@ describe('stack and callers stay in step', () => {
   it.each([
     ['the API client', join('frontend', 'src', 'api', 'client.ts')],
     ['the embeddable widget', join('lambda', 'api', 'static', 'feedback-widget.js')],
+    ['the embed URL builder', join('frontend', 'src', 'api', 'feedbackFormUrls.ts')],
   ])('wires every /feedback-forms path %s calls', (_label, relativePath) => {
     // Callers fail opaquely now: an unwired path returns 403 rather than the
     // handler's 404, so a caller-side path with no method is a live bug.
+    //
+    // The third entry is the producer of the path the corrected docs now name as
+    // THE embed URL (#374): `feedbackFormUrls.ts` builds `/{form_id}/iframe`, and
+    // the UI hands it out as a link, a copyable string and an <iframe> snippet —
+    // yet `client.ts` mentions `iframe` nowhere, so before this the one route the
+    // docs advertise had no parity check from the code that constructs it.
+    //
+    // Asserted as "wired", matching its two siblings rather than the
+    // unauthenticated oracle below: this module runs in the authenticated
+    // dashboard, and what it produces for a stranger's browser is checked at the
+    // docs snippet.
+    //
+    // Known narrowing, inherited from `callerFormsPaths`: the returned URL is a
+    // template literal, so `${base}/feedback-forms/${encodeURIComponent(formId)}`
+    // collapses at the `)` and the `/iframe` segment is recovered from the
+    // module's docblock, which names the literal path twice. Losing those lines
+    // would quietly reduce this entry to checking `/feedback-forms/{form_id}`.
     const wiredPaths = new Set(apiMethods(apiTemplate()).map((m) => m.path));
     const referenced = callerFormsPaths(readRepoFile(...relativePath.split('/')));
 
     expect(referenced.length).toBeGreaterThan(0);
     expect(referenced.filter((path) => !wiredPaths.has(path))).toEqual([]);
+  });
+
+  // The companion to the check above, and the reason it is a separate `it` rather
+  // than a third column on that `it.each`: this PR's standing verification claim is
+  // that `api-stack.test.ts` gains tests without editing an existing assertion, so
+  // that the deletion's correctness rests on untouched oracles. Adding a column
+  // would have edited the tuples and the callback signature. Additions only.
+  //
+  // What it closes: `callerFormsPaths` extracts with a regex, so anything defeating
+  // the regex shrinks the extracted set and "every path resolves" then holds
+  // VACUOUSLY over what survived — green for the wrong reason, which `length > 0`
+  // cannot distinguish from a full extraction. Not hypothetical for the third
+  // entry: its URL is a template literal, so
+  // `${base}/feedback-forms/${encodeURIComponent(formId)}` collapses at the `)` and
+  // `/iframe` is recovered only from that module's DOCBLOCK, which names the literal
+  // path. Deleting a comment line there reduced this to checking
+  // `/feedback-forms/{form_id}` while staying green.
+  it.each([
+    ['the API client', join('frontend', 'src', 'api', 'client.ts'),
+      '/feedback-forms/{form_id}/submissions'],
+    ['the embeddable widget', join('lambda', 'api', 'static', 'feedback-widget.js'),
+      '/feedback-forms/{form_id}/config'],
+    ['the embed URL builder', join('frontend', 'src', 'api', 'feedbackFormUrls.ts'),
+      '/feedback-forms/{form_id}/iframe'],
+  ])('still extracts the path %s is checked for', (_label, relativePath, requiredPath) => {
+    const referenced = callerFormsPaths(readRepoFile(...relativePath.split('/')));
+
+    expect(
+      referenced,
+      `extraction lost ${requiredPath} — this caller's paths are no longer being checked, `
+      + 'even though the wiring assertion still passes over whatever survived',
+    ).toContain(requiredPath);
+  });
+
+  it.each([
+    ['the integrator guide', join('..', 'docs', 'feedback-forms.md')],
+    ['the system documentation', join('..', 'docs', 'SYSTEM_DOCUMENTATION.md')],
+  ])('wires every /feedback-forms path the embed snippet in %s hands to customers', (_label, relativePath) => {
+    // A copy-pasteable snippet is a caller, and it is the one caller whose
+    // failure lands on somebody outside this repo. #374 found both of these
+    // pages advertising `/feedback-forms/{form_id}/widget.js`, a route neither
+    // the handler nor the stack has ever registered — so the snippet returned
+    // 403 Missing Authentication Token, which reads as an authorization problem
+    // rather than a wrong URL. Prose is checked nowhere else, and the docs are
+    // where the wrong path outlived the code by longest.
+    //
+    // Fenced blocks are read, not the prose around them: the fix for that finding
+    // was to state in prose that `widget.js` does NOT exist, so scanning the whole
+    // page would fail on the very sentences that prevent the mistake recurring.
+    // What is asserted is narrower and is the thing that matters — every URL
+    // offered for pasting is one a customer's browser can actually call.
+    const page = readRepoFile(...relativePath.split('/'));
+    // EVERY fence, whatever its info string — scoping this to ```html was a hole,
+    // not a narrowing. Measured on the retired URL: `widget.js` inside a ```js
+    // fence passed, and inside ```html title="embed.html" passed, while the same
+    // URL in a plain ```html fence failed. Both misses are the exact defect class
+    // this test exists to prevent, and neither is exotic: a highlighter tag is
+    // cosmetic, and what makes a URL copy-pasteable is the fence, not the label.
+    //
+    // `[^\n\r]*` consumes the tag and any info string after it, so ```HTML,
+    // ```js and ```html title="x" are all read. `\r?` so a CRLF checkout matches;
+    // a fence needs the newline straight after its info string, and without it
+    // every block misses silently — the no-op the assertion below rules out.
+    //
+    // Consequence to know before adding examples: an authenticated example in a
+    // fence (a `curl` with a bearer token against `submissions`) now fails the
+    // unauthenticated check below, correctly by these lights but inconveniently.
+    // The fix then is an explicit allowlist of such blocks, not a retreat to
+    // reading one tag — which is what let the bad URL through in the first place.
+    // Pairing is what makes the scan above sound: the regex consumes fences two at a
+    // time, so a single unclosed fence shifts every subsequent pairing and blocks
+    // start reading as prose and prose as blocks — silently, which is the one failure
+    // mode this whole test exists to avoid. The ```html anchor used to make that
+    // harmless. Checked rather than assumed, and cheap. (Currently sound: 6 and 32
+    // delimiters. A four-backtick block would still count even here while confusing
+    // the scan — no such block exists in either page, and this is the guard that
+    // would have to grow if one arrived.)
+    const fenceDelimiters = (page.match(/^```/gm) ?? []).length;
+    expect(
+      fenceDelimiters % 2,
+      `odd number of \`\`\` fence delimiters (${fenceDelimiters}) — one is unclosed, so the `
+      + 'block scan below is mis-paired and reads prose as code',
+    ).toBe(0);
+
+    // BOTH patterns are `^`-anchored with `m`, and they have to be the same shape or
+    // the parity check above measures something the scan does not consume. An earlier
+    // version counted `/^```/gm` while scanning unanchored: a triple-backtick inside a
+    // prose sentence then shifted the scan's pairing while leaving the counted total
+    // even, so parity passed and the scan silently read prose as code — the guard not
+    // guarding what its own comment claimed. Anchoring fixes it at the source rather
+    // than detecting it, since a markdown fence opens at the start of a line anyway.
+    const fencedBlocks = [...page.matchAll(/^```[^\n\r]*\r?\n([\s\S]*?)^```/gm)].map(([, body]) => body);
+
+    // Assert the EMBED snippet was found, not merely that some fence was.
+    // Counting all fences (or worse, the character length of their joined bodies,
+    // which is what this line used to do) is satisfiable by any unrelated block —
+    // a theming or <div> example — so moving the embed URL out of its fence into
+    // prose would silently reduce the guard to checking nothing while still
+    // reporting green. Requiring a fence that actually mentions the route scopes
+    // the check to the snippet whose correctness is the point. Retagging no longer
+    // matters, which is the point of reading every fence above.
+    const formsBlocks = fencedBlocks.filter((body) => body.includes('/feedback-forms'));
+
+    // Reading every fence was the fix for a real hole (see above), but applying the
+    // UNAUTHENTICATED oracle to every fence overshoots: these pages are also API
+    // references, so the first `curl -H "Authorization: Bearer …" …/submissions`
+    // example added to either would fail this test — and the fix a future author
+    // reaches for is deleting the example, or narrowing back to one fence tag, which
+    // is exactly the regression that let the bad URL through. So the SCAN stays wide
+    // and the ORACLE is scoped instead.
+    //
+    // The discriminator is whether the block pastes a URL into markup a browser
+    // loads unattended. Both pages today have exactly one forms-mentioning fence and
+    // both are `<iframe src=…>`, so this splits the real content correctly; `src=`
+    // also covers the `<script src>` shape the deleted docs used, which is the one
+    // most likely to come back.
+    const isEmbedContext = (body: string) => body.includes('<iframe') || body.includes('src=');
+    const embedBlocks = formsBlocks.filter(isEmbedContext);
+    const referenceBlocks = formsBlocks.filter((body) => !isEmbedContext(body));
+
+    expect(
+      embedBlocks.length,
+      'no fenced block pastes a /feedback-forms path into markup — did the embed snippet move out of its fence, lose its src=, or change path?',
+    ).toBeGreaterThan(0);
+
+    // Resolved against the UNAUTHENTICATED subset, unlike the two caller checks
+    // above. Those run from an authorized context — `client.ts` carries a Cognito
+    // token and the widget source is inlined into a route that is already public
+    // — so "is it wired?" is their whole question. A docs snippet is the one
+    // caller for which wired is not enough: it executes in a stranger's browser
+    // with no credentials on somebody else's site, so pointing it at a wired but
+    // Cognito-protected per-form route (`submissions`, `stats`) hands out a
+    // 401/403 rather than a form. Asserting only "wired" leaves that green.
+    //
+    // Derived from the synthesized template rather than from
+    // INTENTIONALLY_PUBLIC_ROUTES, keeping this an independent oracle in the
+    // same shape as the handler-parity tests above. OPTIONS is excluded the way
+    // `nonOptions` does, since generated CORS preflights are unauthenticated by
+    // construction and would re-admit every path they cover.
+    // One synthesis, two views of it: the unauthenticated subset for pasted markup,
+    // every wired method for the rest.
+    const methods = nonOptions(apiTemplate());
+    const publicPaths = new Set(
+      methods.filter((m) => m.authorizationType === 'NONE').map((m) => m.path),
+    );
+    const wiredPaths = new Set(methods.map((m) => m.path));
+
+    const embedPaths = callerFormsPaths(embedBlocks.join('\n'));
+    expect(
+      embedPaths.length,
+      'an embed block was found but no /feedback-forms path could be extracted from it — '
+      + 'the check below would then pass over an empty set',
+    ).toBeGreaterThan(0);
+    expect(
+      embedPaths.filter((path) => !publicPaths.has(path)),
+      'the snippet names a path an unauthenticated browser cannot call — it is either unwired or behind Cognito',
+    ).toEqual([]);
+
+    // The relaxation is of the oracle, not of the check. A non-embed example may
+    // name a Cognito-protected route — that is what an API reference is for — but a
+    // path that is wired nowhere is the `widget.js` defect in a different fence, and
+    // it 403s for whoever pastes it just the same.
+    expect(
+      callerFormsPaths(referenceBlocks.join('\n')).filter((path) => !wiredPaths.has(path)),
+      'a non-embed example names a /feedback-forms path that is wired nowhere — it answers 403 Missing Authentication Token, not 404',
+    ).toEqual([]);
   });
 
   it('has no proxy resource left without explicit method options', () => {

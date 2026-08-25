@@ -6,7 +6,7 @@ Feedback Forms allow you to collect customer feedback directly through embeddabl
 
 The VoC platform provides a customizable feedback form system that:
 
-- Embeds on any website via iframe or JavaScript widget
+- Embeds on any website via an iframe
 - Supports multiple forms with different configurations
 - Routes feedback directly to the processing pipeline
 - Allows pre-categorization for targeted feedback collection
@@ -53,7 +53,7 @@ endpoint — see the note in [API Endpoints](#api-endpoints).
 
 ## Embedding Forms
 
-### Option 1: Iframe
+Embed the form with an iframe. This is the snippet to hand to customers:
 
 ```html
 <iframe 
@@ -64,19 +64,18 @@ endpoint — see the note in [API Endpoints](#api-endpoints).
 </iframe>
 ```
 
-### Option 2: JavaScript Widget
+The iframe route returns a self-contained HTML page: the Lambda inlines
+`lambda/api/static/feedback-widget.js` into it and calls `VoCFeedbackForm.init`
+with the form's `config` and `submit` endpoints already wired, so nothing else
+needs loading.
 
-```html
-<div id="voc-feedback-form"></div>
-<script src="https://your-api.execute-api.region.amazonaws.com/v1/feedback-forms/{form_id}/widget.js"></script>
-<script>
-  VoCFeedbackForm.init({
-    container: '#voc-feedback-form',
-    apiEndpoint: 'https://your-api.execute-api.region.amazonaws.com/v1',
-    formId: '{form_id}'
-  });
-</script>
-```
+There is no standalone `widget.js` script to load. That path is registered
+nowhere — not by the handler and not by the API — so a
+`<script src=".../widget.js">` tag never reaches the application at all and gets
+a `403 Missing Authentication Token` back from API Gateway, not the widget. The
+403 means "no such route" here rather than "not allowed": per-form paths are
+declared one by one instead of behind a catch-all, so an unregistered one has
+nothing to answer it.
 
 ## Pre-Categorization
 

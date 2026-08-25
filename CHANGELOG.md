@@ -10,6 +10,29 @@ releases, so a minor bump may carry changes that would be breaking in a `1.x` pr
 The version recorded here is the one in the `package.json` files. It is **not** what the dashboard
 displays: the UI's build identifier is the short git commit SHA, injected at build time.
 
+## [Unreleased]
+
+### Security
+
+- `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
+  `prfaq` before creating the job. The field steered the job type, the execution path and the
+  generated document's DynamoDB sort key straight from the request body, and each attempt billed a
+  model call.
+
+### Upgrade notes
+
+- **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
+  `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
+  too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty
+  string. The web app is unaffected — it only ever sends the two accepted values — but a script or
+  integration calling this route directly may need updating. `build_prototype` and `product_report`
+  have their own routes (`POST .../build-prototype`, `POST .../product-report`); use those instead.
+- **The same route now answers 400 when the request body is present but is not a JSON object** —
+  an array, string, number or boolean, including the falsy ones (`[]`, `false`, `0`, `""`). These
+  previously started a default `prd` generation. Unparseable JSON is a 400 too, where it was
+  previously a 500. A body that is absent altogether, a literal JSON `null`, or zero-length
+  (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
+
 ## [0.2.0] - 2026-08-19
 
 The first release since the platform moved from a single-stack sample to a workspace covering

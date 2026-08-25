@@ -87,7 +87,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "60df5a648162ad13b2a79af56a06f1d5e02564bf98d20fbfa0df3b2803c4bdda",
+      "templateSha256": "12ddceb388eaa744402d9b135f247cfaeae1bf68b74ef6656340ebd0d63117c1",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",

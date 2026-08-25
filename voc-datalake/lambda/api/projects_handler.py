@@ -307,6 +307,65 @@ def api_run_research(project_id: str):
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.'}
 
 
+DEFAULT_GENERATED_DOC_TYPE = 'prd'
+
+# What POST /projects/{id}/document accepts in `doc_type`. Mirrored in the
+# frontend's `DocType` union; `test_doc_type_lockstep.py` fails if the two drift.
+#
+# ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
+# `build_prototype`, `product_report`) and this route's docstring names the
+# latter two, which reads like an argument for admitting them here. It isn't:
+#   * `build_prototype` and `product_report` have their OWN routes
+#     (POST .../build-prototype, POST .../product-report). Each builds its own
+#     `doc_config` with its own hardcoded `doc_type` and validates its own
+#     inputs before invoking the generator directly.
+#   * `api_generate_document` has no internal callers — the only occurrence of
+#     the symbol in `lambda/` is its own `def`.
+#   * The only frontend caller of this route types the field
+#     `doc_type: 'prd' | 'prfaq'`.
+# So narrowing this route cannot affect prototype building or product reports,
+# while widening it would re-open here the unvalidated entry those two
+# deliberately avoid. The docstring sentence is about which generator paths stay
+# single-shot, not about what this route accepts.
+#
+# NOT SHARED with POST .../documents/suggest-brief, which reads `doc_type`
+# unchecked too (`projects.suggest_document_brief`). There the value only picks a
+# prompt label (`'PR-FAQ' if doc_type == 'prfaq' else 'PRD'`) and never reaches a
+# key, a job type or a routing decision, so an unrecognised value mislabels one
+# prompt rather than writing an unrecognised sort key — a different blast radius,
+# and a separate change if it is wanted.
+GENERATED_DOC_TYPES = ('prd', 'prfaq')
+
+
+def _validated_doc_type(raw: Any) -> str:
+    """Resolve the `doc_type` a document-generation request asked for.
+
+    This one body field steers the job type (`generate_{doc_type}`), the
+    execution path (chain vs single-shot invoke) and the generator's DynamoDB
+    sort key (`{doc_type.upper()}#{doc_id}`) — and every attempt bills a Bedrock
+    call, which is why it is matched rather than coerced.
+
+    Absent (or JSON null — `dict.get` cannot tell one from the other) means
+    `prd`, which is the behaviour this route has always had. Anything outside
+    GENERATED_DOC_TYPES is a 400: matched EXACTLY, with no case folding or
+    trimming, because the generator compares the value with `==` and the value
+    it does not recognise still becomes half of a sort key.
+    """
+    if raw is None:
+        return DEFAULT_GENERATED_DOC_TYPE
+    if raw not in GENERATED_DOC_TYPES:
+        # Type name but NOT the value, following `validate_bool`'s reasoning in
+        # shared/api.py: the type is the diagnostic a caller sending `[]` or `7`
+        # needs, while the value is unbounded caller input that echoing back
+        # buys nothing they do not already have. The resolver's ValidationError
+        # handler logs this same message, so the type reaches CloudWatch too.
+        raise ValidationError(
+            f'doc_type must be one of: {", ".join(GENERATED_DOC_TYPES)} '
+            f'(got {type(raw).__name__})'
+        )
+    return raw
+
+
 @app.post("/projects/<project_id>/document")
 @tracer.capture_method
 def api_generate_document(project_id: str):
@@ -318,26 +377,53 @@ def api_generate_document(project_id: str):
     async Lambda invoke when the state machine isn't configured.
 
     `build_prototype` and `product_report` doc_types stay on the single-shot
-    Lambda path (they aren't multi-step LLM chains).
+    Lambda path (they aren't multi-step LLM chains) — a statement about the
+    generator's dispatch, NOT about this route's input: see
+    GENERATED_DOC_TYPES above for why this route accepts two values.
     """
-    body = app.current_event.json_body or {}
-    doc_type = body.get('doc_type', 'prd')
-    job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', body, status='pending')
+    # The file's existing helper rather than a third spelling of it: it already
+    # answers 400 for the three ways this body can fail to be an object
+    # (unparseable, absent, parses-to-not-a-dict), and hand-rolling a subset here
+    # omitted its unparseable-JSON branch — `{not json` raised JSONDecodeError at
+    # the `json_body` read and the catch-all reported a malformed REQUEST as a
+    # server fault. See its docstring for the full reasoning.
+    body = _json_object_body()
+    # Validated BEFORE create_job, so a rejected request leaves no job row
+    # describing work nobody will do, and bills no Bedrock call.
+    doc_type = _validated_doc_type(body.get('doc_type'))
+    # A COPY, so the resolved value reaches the stored config without rewriting
+    # the request as received: `json_body` is a cached_property, and mutating it
+    # would mean any later read (middleware, an audit log, a second handler
+    # read) silently sees this route's rewrite rather than what the caller sent.
+    #
+    # The resolved value has to be in it either way — the generator's own
+    # `doc_config.get('doc_type', 'prd')` reads an explicit null as null rather
+    # than as the default, and a null crashes it on `.upper()` after the job row
+    # already exists.
+    doc_config = {**body, 'doc_type': doc_type}
+    job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', doc_config, status='pending')
 
     state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
-    is_chain = doc_type in ('prd', 'prfaq')
+    # The constant, not a second copy of its literal: a re-declared allowlist
+    # here could disagree with the one the route validates against, sending a
+    # newly accepted value down the single-shot path with nothing saying why.
+    # After `_validated_doc_type` this is always true today, so the branch below
+    # turns solely on the state machine being configured — it is kept because
+    # "which doc types are multi-step chains" and "which doc types this route
+    # accepts" are two questions that happen to share an answer, not one.
+    is_chain = doc_type in GENERATED_DOC_TYPES
 
     if state_machine_arn and is_chain:
         boto3.client('stepfunctions').start_execution(
             stateMachineArn=state_machine_arn,
             name=job_id,
-            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'doc_config': body})
+            input=json.dumps({'job_id': job_id, 'project_id': project_id, 'doc_config': doc_config})
         )
     else:
         invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
             'project_id': project_id,
             'job_id': job_id,
-            'doc_config': body
+            'doc_config': doc_config
         })
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': f'{doc_type.upper()} generation started.'}
 
@@ -735,15 +821,36 @@ def _json_object_body() -> dict:
     counted as an error, with nothing the page can say about it. Probed before
     fixing: `[1,2]`, `"hi"` and `{not json` each answered 500.
 
+    The `or {}` idiom is wrong in a THIRD way, and it is the quietest: `or`
+    collapses every falsy value, so `[]`, `false`, `0` and `""` arrive at any
+    later isinstance check already disguised as an empty object and are accepted
+    as "no body". On a route that starts a billed job from the body, that is an
+    unvalidated entry rather than a 500. Hence `is None`, not `or`: only a
+    genuinely absent body (no body, or a literal JSON `null`) defaults.
+
+    A zero-length body (`Content-Length: 0`) also defaults, though by a route
+    outside this helper: powertools' `json_body` returns None for a falsy
+    `decoded_body` without parsing it, so `''` reaches the `is None` branch below
+    rather than the refusal. Same answer as an absent body, which is the intended
+    one — pinned by test rather than left resting on that library detail.
+
     Deliberately the same helper, with the same name and contract, as
     `ballots_handler._json_object_body` — one idiom rather than two spellings of it.
     Not extracted into `shared/` while it has two copies; the third one should do
     that rather than a second refactor of the first two.
 
-    SCOPE: applied to the prioritization routes only. The other bodies in this
-    module have the same latent shape and predate this change, and sweeping ~20
-    pre-existing routes is its own reviewable diff rather than a rider on a
-    data-model change.
+    SCOPE: the prioritization routes and `api_generate_document`. The other bodies
+    in this module have the same latent shape and predate this change, and
+    sweeping ~20 pre-existing routes is its own reviewable diff rather than a
+    rider on a change to one route.
+
+    One of those routes is not merely unswept but actively defective, and it is the
+    one a reader here would most likely assume is covered: `api_merge_documents`
+    still reads `json_body or {}` and calls `create_job` BEFORE anything inspects
+    the body, so a JSON array or a bare string produces a billed job row whose
+    `merge_config` is not an object. Tracked with the measurements in issue #380;
+    the fix is to call this helper. Adopting it here rather than there was the
+    scope line, not a judgement that the other route is fine.
     """
     try:
         body = app.current_event.json_body
