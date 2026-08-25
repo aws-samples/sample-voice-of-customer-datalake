@@ -1857,6 +1857,35 @@ _IS_PARTIAL_DESCRIPTION = (
     "are then a lower bound, not a total."
 )
 
+# ---------------------------------------------------------------------------
+# `is_partial` vs `is_partial_window` — stated ONCE, here
+# ---------------------------------------------------------------------------
+#
+# Four tools now report a completeness flag and they do not all report the same
+# fact. The difference is argued here and referenced from each declaration rather
+# than re-argued beside three of them, for the reason `_DAYS_ARG` gives about
+# copies: three statements of one rule is how they stop agreeing.
+#
+#   `is_partial`        — THE ANSWER is short. On `get_metrics_summary`,
+#                         `get_metrics_breakdown` and `list_feedback_facets` it is
+#                         the route's own flag over pre-aggregated rows: a metric
+#                         read stopped early, or the window is wider than
+#                         aggregates are retained for. All three read the
+#                         description above. `search_feedback` uses the same NAME
+#                         for a soft-capped candidate scan, which is a different
+#                         cause with the same consequence, so it spells its own
+#                         description out instead of reusing this one.
+#   `is_partial_window` — THE WINDOW behind the answer is short, which is
+#                         `list_feedback`'s case alone. It is the route's own name
+#                         for the candidate window hitting the route's cap, and it
+#                         carries a second fact `is_partial` does not: `total` is a
+#                         lower bound AND the items past it are unreachable by
+#                         paging. One name for both would have to drop that half.
+#
+# `list_urgent_feedback` reports NEITHER, and that absence is load-bearing: its
+# route publishes no flag, so the tool says in `count`'s own description that the
+# number is a page rather than a window total, and names the tool that has one.
+
 _FEEDBACK_SUMMARY_PROPERTIES: dict[str, Any] = {
     "id": {"type": "string"},
     "source": {"type": "string", "description": "Source platform"},
@@ -2663,6 +2692,9 @@ _TOOL_DECLARATIONS = [
                 },
                 "offset": {"type": "integer", "description": "The offset this page starts at"},
                 "limit": {"type": "integer", "description": "The page size the route applied"},
+                # `is_partial_window`, the route's own name, and NOT the `is_partial`
+                # the other four flag-carrying tools use — the difference is argued
+                # once beside `_IS_PARTIAL_DESCRIPTION`.
                 "is_partial_window": {
                     "type": "boolean",
                     "description": (
@@ -2699,6 +2731,14 @@ _TOOL_DECLARATIONS = [
             "properties": {
                 "feedback_id": {
                     "type": "string",
+                    # DECLARED, because `_tool_get_similar_feedback` enforces it:
+                    # an empty or whitespace-only id is an `InvalidToolArgument`
+                    # before any invoke. A schema that accepted `""` while the
+                    # server refused it is the declaration-vs-enforcement gap the
+                    # `query` argument above records — the harmless direction of it,
+                    # but a validating client still learns the rule one round trip
+                    # later than it could.
+                    "minLength": 1,
                     "description": "The feedback item to find neighbours of",
                 },
                 "limit": {
@@ -2846,14 +2886,13 @@ _TOOL_DECLARATIONS = [
                     "type": "integer",
                     "description": "Items in the window, a lower bound when is_partial is true",
                 },
-                "is_partial": {
-                    "type": "boolean",
-                    "description": (
-                        "True when the window could not be counted in full — a metric "
-                        "read stopped short, or the window is wider than aggregates are "
-                        "retained for. The counts are then a lower bound, not a total."
-                    ),
-                },
+                # The shared description, not a near-copy of it: this flag is the
+                # metrics one — the route computes it from the same aggregate reads —
+                # and the first version of this declaration restated the same sentence
+                # with "counted" for "answered", which is one rule in two spellings.
+                # See the note beside `_IS_PARTIAL_DESCRIPTION` for why this is
+                # `is_partial` and `list_feedback`'s is `is_partial_window`.
+                "is_partial": {"type": "boolean", "description": _IS_PARTIAL_DESCRIPTION},
                 "categories": {
                     "type": "object",
                     "description": (
@@ -2924,6 +2963,14 @@ _TOOL_DECLARATIONS = [
                     "items": {
                         "type": "object",
                         "properties": _JOB_PROPERTIES,
+                        # Required one level DOWN for the same reason the top level
+                        # requires its two: `_project_job` writes every declared key
+                        # unconditionally (it iterates `_JOB_TYPES` and coerces each),
+                        # so all nine are promises the projection keeps. Leaving them
+                        # optional would tell a client to branch on the presence of a
+                        # field that is never absent — and would let a future
+                        # projection drop one without failing anything.
+                        "required": sorted(_JOB_PROPERTIES),
                         "additionalProperties": False,
                     },
                 },
@@ -3255,17 +3302,30 @@ def _as_string(value: Any) -> str:
     return str(value)
 
 
-def _as_int(value: Any) -> int:
-    """Coerce a declared-integer persona field, defaulting rather than lying.
+def _as_int(value: Any, default: Any = 0) -> int:
+    """Coerce a declared-integer field, defaulting rather than lying.
 
     `feedback_count` arrives from DynamoDB as a `Decimal`, and not at all on
-    rows that predate it. An unparseable value becomes 0 instead of travelling
-    as the string it was.
+    rows that predate it. An unparseable value becomes the default instead of
+    travelling as the string it was.
+
+    🔑 `default` IS COERCED TOO, and it fires on an absent OR uncoercible value
+    rather than only on absence. Both halves matter and both are the M1 rule:
+    `.get(key, fallback)` cannot correct a value of the wrong TYPE (it only fires
+    on a missing key), and a fallback RETURNED RAW would put a caller's own `"20"`
+    under an `integer` declaration — the same defect one argument later. A
+    legitimate `0` is not absence, which is why absence is tested as `is None` (or
+    `''`) rather than with `or`: `_as_int(0, 50)` is 0, and only a missing, blank
+    or uncoercible value reaches the default at all.
     """
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+    for candidate in (value, default):
+        if candidate is None or candidate == '':
+            continue
+        try:
+            return int(candidate)
+        except (TypeError, ValueError):
+            continue
+    return 0
 
 
 def _as_string_list(value: Any) -> list[str]:
@@ -3390,6 +3450,40 @@ def _project_persona(item: dict) -> dict:
     return projected
 
 
+def _delegated_object(call: DomainCall, token_info: dict, route: str) -> dict:
+    """The route's answer as the OBJECT it is declared to return, or a server fault.
+
+    🔑 ONE TREATMENT FOR EVERY PROJECTING TOOL, because the alternative was decided
+    per handler and diverged inside a single commit: `list_feedback_facets` raised
+    on a non-dict body while `list_feedback`, `list_urgent_feedback` and `list_jobs`
+    coerced the same condition into an empty answer. Both cannot be right, and the
+    difference is not cosmetic — it is what a model is told happened.
+
+    RAISING IS THE HONEST HALF. Every route behind these tools returns a JSON
+    object; a body that is not one is not a thin answer, it is a malfunction —
+    a truncated payload, a route that changed shape, a proxy that answered instead.
+    Coercing it to `{}` reports "the window is empty" or "this project has run
+    nothing", which is a claim about the CORPUS that the call never established.
+    That is the truthfulness class this file exists to protect (see
+    `analysis/BUG-mcp-tool-truthfulness-GITHUB-ISSUE.md`): a model cannot retry
+    what it was told succeeded, and "nobody said that" is unrecoverable where
+    "the call failed" is not. `DelegationUnavailable` becomes a JSON-RPC error with
+    no upstream detail in it, which is exactly "try again, this was not your fault".
+
+    ⚠️ THREE TOOLS DELIBERATELY STILL COERCE and are not routed through here:
+    `get_metrics_summary` and `get_metrics_breakdown` forward the route body
+    UNPROJECTED and declare nothing `required`, so `{}` is a shape their own
+    declaration permits — the argument recorded at `_IS_PARTIAL_DESCRIPTION` for why
+    their `is_partial` is optional stands on it. `search_feedback` predates this
+    rule. Moving those three is a behaviour change to shipped tools with its own
+    version implication, so it is not smuggled in beside five additions.
+    """
+    body = _delegate(call, token_info).payload
+    if not isinstance(body, dict):
+        raise DelegationUnavailable(f'{route} route returned no object')
+    return body
+
+
 def _get_project_payload(token_info: dict) -> tuple[dict, list[dict], list[dict]]:
     """Fetch one project from the route that owns it.
 
@@ -3399,12 +3493,11 @@ def _get_project_payload(token_info: dict) -> tuple[dict, list[dict], list[dict]
     it must not be re-derived here.
     """
     project_id = token_info['project_id']
-    body = _delegate(
+    body = _delegated_object(
         _domain_call('project_get', path_parameters={'project_id': project_id}),
         token_info,
-    ).payload
-    if not isinstance(body, dict):
-        raise DelegationUnavailable('project route returned no object')
+        'project',
+    )
     meta = body.get('project')
     personas = body.get('personas') or []
     documents = body.get('documents') or []
@@ -3481,28 +3574,32 @@ def _tool_get_feedback_detail(args: dict, token_info: dict) -> ToolResult:
     if not isinstance(feedback_id, str) or not feedback_id.strip():
         raise InvalidToolArgument('feedback_id must be a non-empty string')
 
-    body = _delegate(
+    body = _delegated_object(
         _domain_call('feedback_item',
                      path_parameters={'feedback_id': feedback_id.strip()}),
         token_info,
-    ).payload
-    if not isinstance(body, dict):
-        raise DelegationUnavailable('feedback route returned no object')
+        'feedback',
+    )
     return ToolResult(_project_feedback(body, summary=False))
 
 
-def _projected_rows(body: Any, key: str = 'items') -> list[dict]:
+def _projected_rows(body: dict, key: str = 'items') -> list[dict]:
     """The route's item list, projected as feedback summaries.
 
-    Stated once because four tools now do exactly this to the same route family,
-    and each of them needs the same two guards: a non-dict payload is no items
-    (not a crash), and a non-dict ENTRY is skipped rather than handed to
-    `_project_feedback`, which reads `.get`. Projecting before counting is what
-    keeps `count` a description of what the caller received — counting the route's
-    own list would let a skipped entry make `count` exceed `len(items)` inside one
-    payload.
+    Stated once because four tools now do exactly this to the same route family.
+    A non-dict ENTRY is skipped rather than handed to `_project_feedback`, which
+    reads `.get` — the jobs and feedback tables are written by several producers and
+    a stray scalar in a list is a shape no schema stops. Projecting before counting
+    is what keeps `count` a description of what the caller received: counting the
+    route's own list would let a skipped entry make `count` exceed `len(items)`
+    inside one payload.
+
+    `body` is a dict by contract, not by defence: every caller obtains it from
+    `_delegated_object`, which is where a non-object answer becomes the server fault
+    it is. The earlier `isinstance(body, dict)` guard here was the coercing half of
+    the inconsistency that helper records.
     """
-    rows = body.get(key, []) if isinstance(body, dict) else []
+    rows = body.get(key, [])
     if not isinstance(rows, (list, tuple)):
         return []
     return [_project_feedback(row, summary=True) for row in rows if isinstance(row, dict)]
@@ -3540,30 +3637,47 @@ def _tool_list_feedback(args: dict, token_info: dict) -> ToolResult:
     filtered candidate window, which this process never sees, so it can only be
     reported or dropped — and dropping it was the defect.
     """
-    body = _delegate(
+    requested_limit = args.get('limit', 50)
+    requested_offset = args.get('offset', 0)
+    body = _delegated_object(
         _domain_call('feedback_list', query={
             'days': args.get('days', 7),
-            'limit': args.get('limit', 50),
-            'offset': args.get('offset', 0),
+            'limit': requested_limit,
+            'offset': requested_offset,
             **_feedback_filters(args),
         }),
         token_info,
-    ).payload
+        'feedback',
+    )
     items = _projected_rows(body)
-    pagination = body if isinstance(body, dict) else {}
     return ToolResult({
         "count": len(items),
         # `_as_int` rather than a bare `.get(key, 0)`: the route's own values are
         # ints, and a default fires only on an ABSENT key — it cannot correct a
         # value of the wrong type, which is the M1 mechanism. Declared integers get
         # coerced to integers.
-        "total": _as_int(pagination.get('total')),
-        "offset": _as_int(pagination.get('offset')),
-        "limit": _as_int(pagination.get('limit')),
+        #
+        # 🔑 `offset` AND `limit` FALL BACK TO THE REQUEST, not to 0. A page size of
+        # zero is a value this route can never mean, and it is not inert: a client
+        # walking `offset + limit` never advances, so a body that merely omitted the
+        # echo turned into an infinite loop reading the same page. The effective
+        # request value is what the page actually WAS — the route's own default is
+        # what these arguments carry — so reporting it is a description of the call
+        # rather than a guess.
+        #
+        # `total` deliberately keeps the 0, because every candidate fallback is a
+        # lie: `len(items)` or `offset + count` would assert that this page is the
+        # whole filtered window, which is the last-page claim the route did not make
+        # and the exact reading `total` exists to stop being invented. Nothing in
+        # this process knows the window's size. A 0 beside a non-empty `items` is
+        # visibly self-contradictory, which is the honest signal available here.
+        "total": _as_int(body.get('total')),
+        "offset": _as_int(body.get('offset'), requested_offset),
+        "limit": _as_int(body.get('limit'), requested_limit),
         # Coerced with `bool()` for the same reason `_tool_search_feedback` coerces
         # its copy: the declaration says boolean, and a route answering `null` would
         # otherwise put a null under a boolean declaration.
-        "is_partial_window": bool(pagination.get('is_partial_window')),
+        "is_partial_window": bool(body.get('is_partial_window')),
         "items": items,
     })
 
@@ -3584,12 +3698,13 @@ def _tool_get_similar_feedback(args: dict, token_info: dict) -> ToolResult:
     if not isinstance(feedback_id, str) or not feedback_id.strip():
         raise InvalidToolArgument('feedback_id must be a non-empty string')
 
-    body = _delegate(
+    body = _delegated_object(
         _domain_call('feedback_similar',
                      path_parameters={'feedback_id': feedback_id.strip()},
                      query={'limit': args.get('limit', 8)}),
         token_info,
-    ).payload
+        'similar feedback',
+    )
     items = _projected_rows(body)
     return ToolResult({
         # The caller's own id, not the route's echo of it: the two are the same
@@ -3612,14 +3727,15 @@ def _tool_list_urgent_feedback(args: dict, token_info: dict) -> ToolResult:
     `urgent_count` for a window total; see that description for the defect this
     prevents.
     """
-    body = _delegate(
+    body = _delegated_object(
         _domain_call('feedback_urgent', query={
             'days': args.get('days', 30),
             'limit': args.get('limit', 50),
             **_feedback_filters(args),
         }),
         token_info,
-    ).payload
+        'urgent feedback',
+    )
     items = _projected_rows(body)
     return ToolResult({"count": len(items), "items": items})
 
@@ -3654,7 +3770,7 @@ def _tool_list_feedback_facets(args: dict, token_info: dict) -> ToolResult:
         that tool's own dimension description. Two tools reporting one map is the
         duplication delegation exists to remove.
     """
-    body = _delegate(
+    body = _delegated_object(
         _domain_call('feedback_entities', query={
             'days': args.get('days', 7),
             'limit': args.get('limit', 100),
@@ -3662,9 +3778,8 @@ def _tool_list_feedback_facets(args: dict, token_info: dict) -> ToolResult:
             'date_basis': args.get('date_basis'),
         }),
         token_info,
-    ).payload
-    if not isinstance(body, dict):
-        raise DelegationUnavailable('entities route returned no object')
+        'entities',
+    )
     entities = body.get('entities')
     entities = entities if isinstance(entities, dict) else {}
     return ToolResult({
@@ -3717,12 +3832,13 @@ def _tool_list_jobs(args: dict, token_info: dict) -> ToolResult:
     same answer. Making it detectable is a route change and is deliberately out of
     this slice.
     """
-    body = _delegate(
+    body = _delegated_object(
         _domain_call('project_jobs',
                      path_parameters={'project_id': token_info['project_id']}),
         token_info,
-    ).payload
-    rows = body.get('jobs') if isinstance(body, dict) else None
+        'jobs',
+    )
+    rows = body.get('jobs')
     rows = rows if isinstance(rows, (list, tuple)) else []
     jobs = [_project_job(row) for row in rows if isinstance(row, dict)]
     # `success` is dropped: it is the route's own always-true envelope field, and a

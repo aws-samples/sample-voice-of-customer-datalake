@@ -54,6 +54,21 @@ removed. The revert map:
   test_every_declared_route_is_reachable
     — DOMAIN_ROUTES is load-bearing at runtime, and a route key with no entry
       raises KeyError at call time rather than at import. This walks the table.
+
+  TestTheDeclaredFiltersAreHonouredByTheRoute
+    — everything else here answers a stub, which cannot see whether a route still
+      READS a parameter the tool declares: drop `get_urgent_feedback`'s category
+      branch and the stub-based check still passes while the tool reports an
+      unfiltered window as filtered. These drive the real route over a stubbed
+      table instead. Deleting any of that route's four filter branches fails a
+      case here, and so does moving a declared ceiling or default away from the
+      route's own — the fixtures are sized from the declaration.
+
+  TestABrokenRouteAnswerIsAFaultNotAnEmptyWindow
+    — the five tools added in 3.8.0 were written with TWO treatments for one
+      condition: some raised on a body that was not an object, some coerced it to
+      an empty answer. Making any of them coerce fails here, because "the window
+      is empty" is a claim about the corpus that a malfunctioning call never made.
 """
 
 import hashlib
@@ -62,6 +77,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
@@ -1097,7 +1113,7 @@ class TestStructuredOutput:
         serialized = json.dumps(shapes, sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
-        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.8.0", "8d4a76e902615ab7"), (
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.8.0", "1694a93761ac16a8"), (
             "a tool's published declaration changed. Move MCP_SERVER_VERSION — minor "
             "for an added field, MAJOR for a removal or a retype, because a client "
             "validates structuredContent against these schemas and caches the whole "
@@ -1861,7 +1877,12 @@ class TestTheNewReadToolsReachTheirOwnRoutes:
         """The names are the ROUTE's, not the tool's: `date_basis`, `source`,
         `category`, `sentiment`. A tool renaming one would be refused by nothing —
         the route ignores a parameter it does not know and answers the unfiltered
-        window, which reads as data rather than as an error."""
+        window, which reads as data rather than as an error.
+
+        HALF THE CHAIN, on purpose. This proves the ADAPTER sends those names; it
+        cannot prove the route still honours them, because a stub answers the same
+        body either way. `TestTheDeclaredFiltersAreHonouredByTheRoute` below is the
+        other half, and neither substitutes for the other."""
         fake = _FakeLambda({route: {}})
         _call(tool, {"category": "delivery", "sentiment": "negative",
                      "source": "webscraper", "date_basis": "review"}, fake)
@@ -1921,6 +1942,288 @@ class TestTheNewReadToolsReachTheirOwnRoutes:
         assert "not found" in result["content"][0]["text"]
 
 
+# ===========================================================================
+# The declarations, checked against the ROUTES rather than against a stub
+# ===========================================================================
+#
+# 🔑 WHY THESE RUN THE REAL ROUTE. Every check above this line answers a stub, so it
+# can only see the ADAPTER: which route was chosen, which parameter names went out,
+# what came back was reshaped. A stub answers the same body whether or not the route
+# still reads a parameter, so none of it can catch the failure that matters here —
+# a route that stops honouring `category` answers the UNFILTERED window, the tool
+# reports it as filtered, and a model concludes the corpus says something it does
+# not. That is a declaration looser than reality, which is the class this file
+# exists to close, and it is invisible to a stub by construction.
+#
+# So each check below drives `metrics_handler`'s own route over a stubbed table —
+# the convention `test_metrics_handler.py` established, `@patch('metrics_handler.
+# feedback_table')` plus the `api_gateway_event` fixture — and asserts the declared
+# filter CHANGES THE OUTCOME. Every number that appears in both a declaration and a
+# route is read from the DECLARATION and the fixture is sized from it, so the pair
+# fails whichever side moves: a declared ceiling above the route's is caught by rows
+# the route never reads, and one below it by rows it reads that the fixture did not
+# expect.
+
+
+# Local copies of the two date helpers `test_metrics_handler_date_basis.py` also
+# defines, and deliberately not shared with it: importing a sibling TEST module
+# depends on pytest's import mode and on which module loaded first, which is the
+# reason `metrics_publishing_routes.py` exists as a plain helper module instead. Two
+# one-line date expressions are not worth a third such module.
+def _day(days_ago: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+
+
+def _iso(days_ago: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+
+
+def _tool_input_schema(name: str) -> dict:
+    """The tool's OWN declared `inputSchema`, read from the live registry.
+
+    Read rather than restated, for `_tool_output_schema`'s reason: a number copied
+    into this file would keep agreeing with itself after the declaration moved.
+    """
+    for tool in mcp_handler.MCP_TOOLS:
+        if tool["name"] == name:
+            return tool["inputSchema"]
+    raise AssertionError(f"no tool named {name}")
+
+
+def _stored_row(feedback_id: str, **overrides) -> dict:
+    """One row as the tables really hold it, for driving a route directly.
+
+    `_feedback_row()` is the live-shaped ROW every adapter test uses; this adds the
+    three things a route needs and an adapter never sees: the `pk`/`sk` the urgency
+    path reads the item back by, and the two dates the window and `date_basis`
+    filter on. Imported today and written today by default, so a test that means to
+    exercise a date only has to override the one it cares about.
+    """
+    return {
+        **_feedback_row(),
+        "pk": "SOURCE#webscraper",
+        "sk": f"FEEDBACK#{feedback_id}",
+        "feedback_id": feedback_id,
+        "date": _day(0),
+        "source_created_at": _iso(0),
+        **overrides,
+    }
+
+
+def _wire_urgency_index(table, rows: list[dict]) -> None:
+    """The urgency GSI, plus the per-item read the route does after it.
+
+    `get_urgent_feedback` queries the index for keys and then reads each item back
+    by `pk`/`sk`, so a stub that answers only the query returns rows with no
+    attributes and every filter below would pass on an empty window. Keyed by
+    `(pk, sk)` rather than a fixed side_effect list so one wiring serves several
+    calls in one test.
+    """
+    table.query.return_value = {"Items": [{"pk": r["pk"], "sk": r["sk"]} for r in rows]}
+    by_key = {(r["pk"], r["sk"]): r for r in rows}
+    table.get_item.side_effect = lambda **kwargs: {
+        "Item": by_key.get((kwargs["Key"]["pk"], kwargs["Key"]["sk"]))
+    }
+
+
+def _route_body(path: str, query: dict, event_factory, context) -> dict:
+    """One real metrics route's parsed answer, or a failure naming its status."""
+    from metrics_handler import lambda_handler
+
+    response = lambda_handler(
+        event_factory(method="GET", path=path, query_params=query), context
+    )
+    assert response["statusCode"] == 200, response["body"]
+    return json.loads(response["body"])
+
+
+def _entities_body(aggregates, feedback, query: dict, event_factory, context) -> dict:
+    """`GET /feedback/entities`, wired for whichever branch `query` selects.
+
+    `get_configured_categories` memoises MODULE-side, so a value another test module
+    left behind would decide which category partitions are read. Cleared both ways,
+    as `test_metrics_partial_window` does.
+    """
+    from shared.api import clear_categories_cache
+
+    clear_categories_cache()
+    aggregates.get_item.return_value = {}
+    aggregates.query.return_value = {"Items": []}
+    try:
+        return _route_body("/feedback/entities", query, event_factory, context)
+    finally:
+        clear_categories_cache()
+
+
+# Tool argument → the row attribute the route compares it against, a value that
+# must survive the filter, and one that must not. The attribute names are the
+# ROUTE's storage names and they deliberately differ from the argument names
+# (`sentiment` reads `sentiment_label`, `source` reads `source_platform`): that
+# rename is exactly where a filter can be declared and then ignored.
+_URGENT_FILTER_CASES: tuple[tuple[str, str, str, str], ...] = (
+    ("category", "category", "delivery", "pricing"),
+    ("sentiment", "sentiment_label", "negative", "positive"),
+    ("source", "source_platform", "webscraper", "feedback-form"),
+)
+
+
+class TestTheDeclaredFiltersAreHonouredByTheRoute:
+    """Each filter `list_urgent_feedback` declares changes what the route answers.
+
+    The reviewer's question about these declarations was "does the route read all
+    four" — it does, and this is how that stays true. Deleting any one of
+    `get_urgent_feedback`'s four filter branches fails a case here, and deleting a
+    filter from the tool's inputSchema fails the declaration assertion in the same
+    test rather than passing quietly with one fewer case.
+    """
+
+    @pytest.mark.parametrize("argument,attribute,matching,other", _URGENT_FILTER_CASES)
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_filter_changes_which_items_come_back(
+        self, mock_feedback, _mock_aggregates, argument, attribute, matching, other,
+        api_gateway_event, lambda_context,
+    ):
+        """Two rows differing ONLY in the filtered attribute, so nothing else can
+        explain which one survives."""
+        assert argument in _tool_input_schema("list_urgent_feedback")["properties"], (
+            f"list_urgent_feedback no longer declares `{argument}`, so this proof "
+            f"covers a filter the tool does not offer"
+        )
+        _wire_urgency_index(mock_feedback, [
+            _stored_row("kept", **{attribute: matching}),
+            _stored_row("dropped", **{attribute: other}),
+        ])
+
+        body = _route_body("/feedback/urgent", {"days": "30", argument: matching},
+                           api_gateway_event, lambda_context)
+
+        assert [i["feedback_id"] for i in body["items"]] == ["kept"], (
+            f"GET /feedback/urgent no longer filters on `{argument}`; "
+            f"list_urgent_feedback declares it, so the declaration now promises a "
+            f"filter the route ignores and the answer is the unfiltered window"
+        )
+
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_date_basis_selects_which_of_the_two_dates_the_window_uses(
+        self, mock_feedback, _mock_aggregates, api_gateway_event, lambda_context,
+    ):
+        """One row STRADDLING the cutoff — imported today, written 200 days ago —
+        so the basis alone decides whether it is in the window. A row inside on both
+        dates would be kept either way and prove nothing."""
+        declared = _tool_input_schema("list_urgent_feedback")["properties"]["date_basis"]
+        assert declared["enum"] == ["imported", "review"], declared
+        _wire_urgency_index(mock_feedback, [
+            _stored_row("straddling", date=_day(0), source_created_at=_iso(200)),
+        ])
+
+        imported = _route_body("/feedback/urgent", {"days": "30"},
+                               api_gateway_event, lambda_context)
+        review = _route_body("/feedback/urgent", {"days": "30", "date_basis": "review"},
+                             api_gateway_event, lambda_context)
+
+        assert [i["feedback_id"] for i in imported["items"]] == ["straddling"]
+        assert review["items"] == [], (
+            "GET /feedback/urgent no longer applies `date_basis` to its window, so "
+            "list_urgent_feedback's 'review' basis is a declared no-op and a caller "
+            "asking for what customers WROTE this month gets what was IMPORTED"
+        )
+
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_page_ceiling_the_tool_declares_is_the_one_the_route_clamps_to(
+        self, mock_feedback, _mock_aggregates, api_gateway_event, lambda_context,
+    ):
+        """The fixture is SIZED from the declaration, so it fails both ways: a
+        declared ceiling above the route's leaves rows the route never reads, and one
+        below it lets rows through that the assertion does not expect."""
+        ceiling = _tool_input_schema("list_urgent_feedback")["properties"]["limit"]["maximum"]
+        _wire_urgency_index(mock_feedback, [
+            _stored_row(f"urgent-{i}") for i in range(ceiling + 25)
+        ])
+
+        body = _route_body("/feedback/urgent", {"days": "30", "limit": str(ceiling + 400)},
+                           api_gateway_event, lambda_context)
+
+        assert body["count"] == len(body["items"]) == ceiling, (
+            f"GET /feedback/urgent clamps a page to something other than "
+            f"{ceiling}; list_urgent_feedback declares that as its `maximum`, so a "
+            f"validating client now refuses values the route would have answered "
+            f"(or accepts ones it silently narrows)"
+        )
+
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_facets_sample_ceiling_the_tool_declares_is_the_routes_own(
+        self, mock_feedback, mock_aggregates, api_gateway_event, lambda_context,
+    ):
+        """`limit` bounds the `issues` SAMPLE, and only that, so the ceiling is
+        observable in which problems get counted: ask for far more than the route
+        allows and exactly `maximum` items are consulted."""
+        ceiling = _tool_input_schema("list_feedback_facets")["properties"]["limit"]["maximum"]
+        inside = "the courier left it in the rain"
+        beyond = "charged twice for one order"
+        mock_feedback.query.return_value = {"Items": (
+            [_stored_row(f"in-{i}", problem_summary=inside) for i in range(ceiling)]
+            + [_stored_row(f"out-{i}", problem_summary=beyond) for i in range(50)]
+        )}
+
+        body = _entities_body(mock_aggregates, mock_feedback,
+                              {"days": "7", "limit": str(ceiling + 300)},
+                              api_gateway_event, lambda_context)
+
+        assert body["entities"]["issues"] == {inside: ceiling}, (
+            f"GET /feedback/entities no longer clamps its issues sample to "
+            f"{ceiling}; list_feedback_facets declares that as its `maximum`, and "
+            f"the two have to be one number"
+        )
+
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_a_facets_limit_under_the_ceiling_is_respected_rather_than_ignored(
+        self, mock_feedback, mock_aggregates, api_gateway_event, lambda_context,
+    ):
+        """The other direction: a ceiling proves nothing if the route ignores the
+        parameter entirely and always samples its own default."""
+        mock_feedback.query.return_value = {"Items": [
+            _stored_row(f"row-{i}", problem_summary=f"problem number {i}")
+            for i in range(10)
+        ]}
+
+        body = _entities_body(mock_aggregates, mock_feedback, {"days": "7", "limit": "3"},
+                              api_gateway_event, lambda_context)
+
+        assert sum(body["entities"]["issues"].values()) == 3, (
+            "GET /feedback/entities no longer bounds its issues sample by `limit`; "
+            "list_feedback_facets describes the parameter as doing exactly that"
+        )
+
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_similar_default_page_size_the_tool_declares_is_the_routes_own(
+        self, mock_feedback, _mock_aggregates, api_gateway_event, lambda_context,
+    ):
+        """Called with NO `limit`, so what bounds the answer is the route's own
+        default — the number `get_similar_feedback` publishes as `default`. Seeded
+        with more neighbours than that, or the bound would not be reached."""
+        default = _tool_input_schema("get_similar_feedback")["properties"]["limit"]["default"]
+        mock_feedback.query.side_effect = [
+            {"Items": [_stored_row(_FEEDBACK_ID, category="delivery")]},
+            {"Items": [_stored_row(f"neighbour-{i}", category="delivery")
+                       for i in range(default + 12)]},
+        ]
+
+        body = _route_body(f"/feedback/{_FEEDBACK_ID}/similar", {},
+                           api_gateway_event, lambda_context)
+
+        assert body["count"] == len(body["items"]) == default, (
+            f"GET /feedback/{{id}}/similar no longer defaults to {default} "
+            f"neighbours; get_similar_feedback publishes that as its `default`, so a "
+            f"caller omitting `limit` gets a different page than the tool promises"
+        )
+
+
 # A mid-window page from `GET /feedback`: `total` above `count`, a non-zero
 # `offset`, and the cap not reached. Module-level rather than a class attribute
 # because ruff's RUF012 refuses a mutable class default, and the repo's ruff gate is
@@ -1967,6 +2270,89 @@ class TestListFeedbackReportsThePaginationSearchDrops:
         `False` — a `null` under a boolean declaration is M1's shape."""
         assert self._payload({"items": []})["is_partial_window"] is False
 
+    def test_a_body_that_omits_the_page_reports_what_was_asked_for_not_zero(self):
+        """🔑 A PAGE SIZE OF 0 IS A VALUE THE ROUTE CAN NEVER MEAN, and it is not
+        inert: a client walks a window with `offset + limit`, so a `limit: 0` never
+        advances and the same page is read forever. The effective request value is
+        what the page actually WAS, which is a description of the call rather than a
+        guess — reverting the fallback to `_as_int(...)` alone fails here."""
+        payload = self._payload({"items": []}, {"limit": 20, "offset": 40})
+        asked = "the page the caller asked for (limit 20, offset 40)"
+
+        assert payload["limit"] == 20, (
+            f"a route body without `limit` reported {payload['limit']!r} instead of "
+            f"{asked}; a page size of 0 makes `offset + limit` loop on one page"
+        )
+        assert payload["offset"] == 40, (
+            f"a route body without `offset` reported {payload['offset']!r} instead of "
+            f"{asked}"
+        )
+
+    def test_a_caller_who_asked_for_nothing_gets_the_defaults_the_tool_forwards(self):
+        """The arguments the tool sends when the caller omits them — the route's own
+        50 and 0, which is what the page was."""
+        payload = self._payload({"items": []})
+
+        assert (payload["limit"], payload["offset"]) == (50, 0), (
+            f"an omitted page reported {payload['limit']!r}/{payload['offset']!r} "
+            f"instead of the 50/0 the tool forwarded to the route on the caller's "
+            f"behalf, so the reported page is not the page that was read"
+        )
+
+    def test_a_page_of_the_wrong_type_falls_back_rather_than_travelling(self):
+        """The M1 property the fallback has to preserve: `.get(key, default)` fires
+        only on an ABSENT key, so a value of the wrong type would pass straight
+        through it. Absent and uncoercible are one case here."""
+        payload = self._payload({"items": [], "limit": "twenty", "offset": []},
+                                {"limit": 20, "offset": 40})
+
+        assert (payload["limit"], payload["offset"]) == (20, 40), (
+            f"an uncoercible `limit`/`offset` reported {payload['limit']!r}/"
+            f"{payload['offset']!r}; the fallback fires only on an absent key, which "
+            f"is the M1 mechanism — a wrong TYPE reaches the client under an "
+            f"`integer` declaration"
+        )
+
+    def test_the_callers_own_wrong_type_is_coerced_not_echoed(self):
+        """The fallback is COERCED, not returned raw. A client sending `"20"` under
+        an `integer` declaration must not have that string come back as one — the
+        same defect as the value it replaced, one argument later."""
+        payload = self._payload({"items": []}, {"limit": "20"})
+
+        assert payload["limit"] == 20, (
+            f"the caller's `\"20\"` came back as {payload['limit']!r}: the fallback is "
+            f"being returned raw instead of coerced, which puts a string under an "
+            f"`integer` declaration — the same defect one argument later"
+        )
+        assert _schema_errors(payload, _tool_output_schema("list_feedback")) == []
+
+    def test_a_first_page_is_not_mistaken_for_an_absent_one(self):
+        """The route's own `0` offset is a legitimate first page, so it must survive
+        rather than being replaced by whatever the caller asked. `or` would replace
+        it; `is None` does not."""
+        payload = self._payload({**_FEEDBACK_PAGE, "offset": 0}, {"offset": 40})
+
+        assert payload["offset"] == 0, (
+            f"the route's own `offset: 0` was reported as {payload['offset']!r}: a "
+            f"legitimate first page is being read as an absent one and replaced by "
+            f"the caller's argument"
+        )
+
+    def test_total_keeps_its_zero_because_every_fallback_would_be_a_lie(self):
+        """`len(items)` and `offset + count` both assert that this page IS the whole
+        filtered window — the last-page claim the route did not make, and precisely
+        the reading `total` exists to stop a model inventing. Nothing in this process
+        knows the window's size, so the 0 beside a non-empty `items` is the honest
+        self-contradiction."""
+        payload = self._payload({"items": [_feedback_row()]})
+
+        assert payload["count"] == 1
+        assert payload["total"] == 0, (
+            f"a route body without `total` reported {payload['total']!r}; anything but "
+            f"0 here is derived from the PAGE, which asserts that this page is the "
+            f"whole filtered window — the last-page claim the route never made"
+        )
+
     def test_count_describes_the_items_returned_not_the_routes_own_count(self):
         """Projected first, then counted, so a row the projection skipped cannot
         make `count` exceed `len(items)` inside one payload."""
@@ -2005,16 +2391,39 @@ class TestListFeedbackFacetsLeavesOutWhatTheRouteCannotFill:
         fake = _FakeLambda({self.ROUTE: body})
         return _call("list_feedback_facets", {}, fake)["result"]["structuredContent"]
 
-    def test_the_route_really_does_hardcode_an_empty_keyword_map(self):
-        """Read from `metrics_handler`'s SOURCE, so this is a claim about the route
-        rather than about a fixture. The day the route extracts keywords, this fails
-        and the field becomes declarable — which is the outcome to want."""
-        source = Path(__file__).resolve().parents[1] / "metrics_handler.py"
-        text = source.read_text(encoding="utf-8")
+    @pytest.mark.parametrize("branch,query", [
+        ("aggregates", {"days": "7"}),
+        ("scan", {"days": "7", "source": "webscraper"}),
+    ])
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_route_really_does_answer_an_empty_keyword_map(
+        self, mock_feedback, mock_aggregates, branch, query,
+        api_gateway_event, lambda_context,
+    ):
+        """DRIVEN down both of the route's branches, not read out of its source.
 
-        assert text.count("'keywords': {}") == 2, (
-            "the entities route no longer hardcodes an empty keyword map in both "
-            "branches — `list_feedback_facets` can now declare and project the field"
+        The earlier version of this counted the literal `'keywords': {}` twice in
+        `metrics_handler.py`, which a line wrap or a quote-style change flips while
+        reporting that keyword extraction had arrived. What is actually being claimed
+        is about the ANSWER, so the answer is what is asked — and asked of rows that
+        DO carry keywords, or an empty map would only show that the fixture had none.
+
+        The intent is unchanged: the day the route fills this map, this fails and
+        `list_feedback_facets` can declare and project the field. That is the outcome
+        to want, and it is a route change deliberately outside this slice.
+        """
+        mock_feedback.query.return_value = {"Items": [
+            _stored_row("with-keywords", keywords=["late", "delivery"],
+                        problem_summary="arrived late"),
+        ]}
+
+        body = _entities_body(mock_aggregates, mock_feedback, query,
+                              api_gateway_event, lambda_context)
+
+        assert body["entities"]["keywords"] == {}, (
+            f"the entities route's {branch} branch now fills entities.keywords — "
+            f"`list_feedback_facets` can declare and project the field, and should"
         )
 
     def test_keywords_is_neither_declared_nor_reported(self):
@@ -2157,16 +2566,34 @@ class TestUrgentCountIsThisPageNotTheWindow:
         assert "get_metrics_summary" in self._count_description()
         assert "urgent_count" in self._count_description()
 
-    def test_the_route_still_has_no_truncation_flag_to_report(self):
-        """Read from `metrics_handler`'s source. If the route ever grows one, this
-        fails and the caveat above can be replaced by the flag — which is the
-        outcome to want, and is a route change deliberately outside this slice."""
-        source = Path(__file__).resolve().parents[1] / "metrics_handler.py"
-        text = source.read_text(encoding="utf-8")
+    @patch("metrics_handler.aggregates_table")
+    @patch("metrics_handler.feedback_table")
+    def test_the_route_still_has_no_truncation_flag_to_report(
+        self, mock_feedback, _mock_aggregates, api_gateway_event, lambda_context,
+    ):
+        """DRIVEN into the truncating state, not read out of the route's source.
 
-        assert "return {'count': len(items), 'items': items[:limit]}" in text, (
-            "the urgent route's return shape changed — re-check whether it now "
-            "reports truncation, and if so replace the caveat with the flag"
+        The earlier version pinned the literal `return {'count': len(items),
+        'items': items[:limit]}`, which a line wrap or a quote change flips while
+        announcing that truncation reporting had arrived. The claim is about the
+        ANSWER, so the answer is what is asked — and asked with two urgent rows and
+        `limit=1`, which is exactly the state a flag would have to describe.
+
+        The intent is unchanged: if the route ever grows a flag (or a window total)
+        this fails, and the caveat in `count`'s description can be replaced by the
+        real field. That is the outcome to want, and it is a route change
+        deliberately outside this slice.
+        """
+        _wire_urgency_index(mock_feedback, [_stored_row("u1"), _stored_row("u2")])
+
+        body = _route_body("/feedback/urgent", {"days": "30", "limit": "1"},
+                           api_gateway_event, lambda_context)
+
+        assert body["count"] == 1, body
+        assert set(body) == {"count", "items"}, (
+            f"the urgent route's answer grew a field ({sorted(set(body) - {'count', 'items'})}) "
+            f"— if it now reports truncation or a window total, replace the caveat in "
+            f"list_urgent_feedback's `count` description with the real flag and declare it"
         )
 
     def test_count_equals_the_items_returned(self):
@@ -2177,3 +2604,122 @@ class TestUrgentCountIsThisPageNotTheWindow:
 
         assert payload["count"] == len(payload["items"]) == 2
         assert _schema_errors(payload, _tool_output_schema("list_urgent_feedback")) == []
+
+
+# The five tools server 3.8.0 adds, each with the arguments and the route it
+# delegates to. One list, read by both suites below, because the whole point of the
+# degradation pin is that the five cannot diverge — two copies of the list is how the
+# next tool gets added to one of them.
+_NEW_TOOL_ROUTES: tuple[tuple[str, dict, str], ...] = (
+    ("list_feedback", {}, "/feedback"),
+    ("get_similar_feedback", {"feedback_id": _FEEDBACK_ID},
+     f"/feedback/{_FEEDBACK_ID}/similar"),
+    ("list_urgent_feedback", {}, "/feedback/urgent"),
+    ("list_feedback_facets", {}, "/feedback/entities"),
+    ("list_jobs", {"project_id": _PROJECT}, f"/projects/{_PROJECT}/jobs"),
+)
+
+
+class TestABrokenRouteAnswerIsAFaultNotAnEmptyWindow:
+    """One degradation for all five, and it is the truthful one.
+
+    These handlers were written with two: `list_feedback_facets` raised on a body
+    that was not an object while `list_feedback`, `list_urgent_feedback` and
+    `list_jobs` coerced the same condition into an empty answer. Both cannot be
+    right, and the difference is not cosmetic — it is what the model is told.
+
+    Every route behind these tools returns a JSON object. A body that is not one is
+    not a thin answer, it is a malfunction: a truncated payload, a route that changed
+    shape, something else answering. Reporting it as `count: 0` claims the WINDOW is
+    empty, or that the project has run nothing — a statement about the corpus the
+    call never established, and one a model cannot retry because it was told the call
+    succeeded. "The call failed" is recoverable; "nobody said that" is not.
+
+    Making any one of the five coerce instead fails a case here.
+    """
+
+    @pytest.mark.parametrize("tool,arguments,route", _NEW_TOOL_ROUTES)
+    def test_a_non_object_body_is_a_server_fault(self, tool, arguments, route):
+        result = _call(tool, arguments, _FakeLambda({route: ["not an object"]}))
+
+        assert "result" not in result, (
+            f"{tool} answered a broken upstream with a result; a model reading "
+            f"isError:false treats the emptiness as data about the corpus"
+        )
+        assert result["error"]["code"] == -32603
+
+    @pytest.mark.parametrize("tool,arguments,route", _NEW_TOOL_ROUTES)
+    def test_the_fault_carries_no_upstream_detail(self, tool, arguments, route):
+        """The same fixed string every other server fault reports — an upstream body
+        can hold a table name or an ARN, and the topology of the account is not the
+        caller's business."""
+        result = _call(tool, arguments, _FakeLambda({route: ["not an object"]}))
+
+        assert result["error"]["message"] == "Internal error: upstream service unavailable"
+
+    @pytest.mark.parametrize("tool,arguments,route", _NEW_TOOL_ROUTES)
+    def test_an_empty_object_is_still_a_real_answer(self, tool, arguments, route):
+        """The negative control, and the reason the rule is about OBJECTS rather than
+        about emptiness. A window with nothing in it, a project that has run nothing
+        and a category with no neighbours are all real answers with a shape, and
+        turning those into faults would be the mirror defect — a working call reported
+        as a broken one, which a model retries forever."""
+        answer = _call(tool, arguments, _FakeLambda({route: {}}))
+
+        assert "error" not in answer, (
+            f"{tool} reported an EMPTY OBJECT as a server fault; that is a working "
+            f"call reported as a broken one, which a model retries forever — the rule "
+            f"is about objects, not about emptiness"
+        )
+        assert answer["result"]["isError"] is False, answer
+        assert _schema_errors(answer["result"]["structuredContent"],
+                              _tool_output_schema(tool)) == []
+
+
+class TestTheseDeclarationsStateWhatTheHandlersEnforce:
+    """The input schema is the promise a client validates against before it calls.
+
+    A schema LOOSER than the server is the harmless direction of drift — the caller
+    learns the rule one round trip later — but it is still drift, and these two are
+    one line each to close.
+    """
+
+    def test_the_similar_id_declares_the_non_empty_string_its_handler_requires(self):
+        """`_tool_get_similar_feedback` refuses a blank id before any invoke, so the
+        schema says so too. Both halves asserted, or a `minLength` could be declared
+        beside a handler that no longer guards."""
+        declared = _tool_input_schema("get_similar_feedback")["properties"]["feedback_id"]
+        refused = _call("get_similar_feedback", {"feedback_id": "   "}, _FakeLambda({}))
+
+        assert declared.get("minLength") == 1, (
+            f"get_similar_feedback's `feedback_id` declares "
+            f"{declared.get('minLength')!r} as its minimum while the handler refuses "
+            f"a blank id, so the schema is looser than the server"
+        )
+        assert refused["error"]["code"] == -32602, refused
+
+    def test_every_field_of_a_job_is_required_because_the_projection_writes_them_all(self):
+        """`_project_job` iterates the declared types and coerces each, so all nine
+        keys are written unconditionally. Declaring them optional would tell a client
+        to branch on a field that is never absent, and would let a future projection
+        drop one without failing anything.
+
+        Asserted against a REAL payload as well as against the schema, so the two
+        cannot agree with each other while disagreeing with the answer.
+        """
+        items = _tool_output_schema("list_jobs")["properties"]["jobs"]["items"]
+        fake = _FakeLambda({f"/projects/{_PROJECT}/jobs": {"success": True,
+                                                          "jobs": [_FINISHED_JOB]}})
+        payload = _call("list_jobs", {"project_id": _PROJECT},
+                        fake)["result"]["structuredContent"]
+
+        assert items.get("required") == sorted(items["properties"]), (
+            f"a job's declared fields and its required ones disagree: "
+            f"{sorted(set(items['properties']) - set(items.get('required') or []))} "
+            f"are declared without being promised, though `_project_job` writes every "
+            f"one of them unconditionally"
+        )
+        assert set(payload["jobs"][0]) == set(items["required"]), (
+            "the projection no longer writes every promised field, which is the "
+            "mirror defect — a client told to expect a key it never gets"
+        )
