@@ -13,6 +13,12 @@ export default tseslint.config(
       'coverage/**',
       'mock-server.js',
       '**/*.test.ts',
+      // #374 argues that an asset survived in `public/` because no gate read it.
+      // The guard that now reads `public/` is itself a `*.test.ts`, so shipping
+      // it under this ignore would repeat the finding it exists to prevent. One
+      // negated path rather than un-ignoring every test file: the rest of the
+      // suite carries a backlog whose cleanup is not this change.
+      '!src/publicAssets.test.ts',
       '**/*.test.tsx',
       'src/test/**/*',
       'vitest.config.ts',
@@ -109,6 +115,25 @@ export default tseslint.config(
           format: null,
         },
       ],
+    },
+  },
+  {
+    // The un-ignored guard (see the negated pattern above) is the one linted file
+    // that `tsconfig.app.json` excludes, so the project service cannot type it and
+    // every type-aware rule would report a parse error instead of a finding. Point
+    // it at `tsconfig.test.json`, which does include `src/**/*.test.ts`, rather
+    // than widening the app project to cover tests.
+    //
+    // It also runs in node, not a browser: it shells out to `git` and reads
+    // `__dirname`.
+    files: ['src/publicAssets.test.ts'],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: {
+        projectService: false,
+        project: ['./tsconfig.test.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
   },
 )
