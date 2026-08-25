@@ -284,8 +284,9 @@ embeddable widget calls from the customer's own site.
 > a disabled form; `POST /submit` shows a modal "Failed to submit." alert and is
 > retryable; `GET /iframe` runs no widget code at all (the browser navigates to it
 > directly), so it is a raw API Gateway error page inside the customer's iframe.
-> `GET /voting-sessions/{session_id}/config` and its sibling submit route carry 20 rps / 40 for a different
-> reason (a room is bounded by `MAX_BALLOT_CAP`).
+> `GET /voting-sessions/{session_id}/config` carries 20 rps / 40 for a different
+> reason (a room is bounded by `MAX_BALLOT_CAP`), and its sibling
+> `POST /voting-sessions/{session_id}/submit` carries 20 rps / 40 on that same reasoning.
 
 > There is no `/feedback-form/*` (singular) API. These routes are declared
 > **explicitly** in `api-stack.ts` rather than behind a `{proxy+}`, so adding a

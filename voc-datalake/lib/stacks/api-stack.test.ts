@@ -880,17 +880,33 @@ describe('the public feedback-form routes', () => {
    *  documents actually write (`POST /submit`, not the full path), so they are
    *  what a line has to contain to be judged.
    *
-   *  `/voting-sessions` is here as well as the three form routes, answering a
-   *  review question rather than only the task's scope. It shares
-   *  `publicRouteThrottle` with the widget's `submit` today, so it cannot drift
+   *  The ballot routes are here as well as the three form routes, answering a
+   *  review question rather than only the task's scope. They share
+   *  `publicRouteThrottle` with the widget's `submit` today, so they cannot drift
    *  from it while that constant is shared — but the named follow-up (a per-form
    *  submission cap) is precisely the thing that would DECOUPLE them, moving the
-   *  form figure and leaving the ballot prose behind with the suite still green. */
+   *  form figure and leaving the ballot prose behind with the suite still green.
+   *
+   *  BOTH ballot routes are named, by FULL PATH, and that is the fix for a hole
+   *  review found in the version that named only the ballot's config: a line
+   *  spelled `POST /voting-sessions/{session_id}/submit` contains `/submit`, was
+   *  shadowed by nothing, and was judged against the FORM's submit pair. It passed
+   *  only because both are 20/40 — that is, precisely until the follow-up above
+   *  decouples them, at which point a correct document fails and accuses itself.
+   *  Registering the route is what closes it, because the shadowing rule below is
+   *  containment between a doc-facing NAME and another route's KEY: once the
+   *  ballot's submit path is a name, it shadows `/submit` with no new mechanism,
+   *  and — the half a family-based rule would have missed — the line is judged
+   *  against the ballot submit's OWN pair rather than against the ballot config's.
+   *
+   *  Hence full paths for the ballot pair and short names for the form: each is
+   *  what its own document writes, which is the rule stated above. */
   const DOCUMENTED_ROUTE_KEYS = {
     '/config': '/feedback-forms/{form_id}/config/GET',
     '/iframe': '/feedback-forms/{form_id}/iframe/GET',
     '/submit': '/feedback-forms/{form_id}/submit/POST',
-    '/voting-sessions': '/voting-sessions/{session_id}/config/GET',
+    '/voting-sessions/{session_id}/config': '/voting-sessions/{session_id}/config/GET',
+    '/voting-sessions/{session_id}/submit': '/voting-sessions/{session_id}/submit/POST',
   } satisfies Record<string, string>;
 
   /** Every document that publishes these figures, and which routes each one
@@ -911,7 +927,10 @@ describe('the public feedback-form routes', () => {
    *  fails to compile instead of quietly asserting nothing for it. */
   const PINNED_DOCS = {
     'docs/feedback-forms.md': ['/config', '/iframe', '/submit'],
-    '.kiro/steering/structure.md': ['/config', '/iframe', '/submit', '/voting-sessions'],
+    '.kiro/steering/structure.md': [
+      '/config', '/iframe', '/submit',
+      '/voting-sessions/{session_id}/config', '/voting-sessions/{session_id}/submit',
+    ],
   } satisfies Record<string, (keyof typeof DOCUMENTED_ROUTE_KEYS)[]>;
 
   /** Every spelling of a per-second rate, as an un-anchored alternation. THE
@@ -960,8 +979,21 @@ describe('the public feedback-form routes', () => {
    *  the test calling `moreSpecificThan` and the loop applying the exclusion
    *  inline, disabling the loop's copy left every case green — the helper was
    *  pinned and its USE was not, which is the same shape as the duplicated lists
-   *  this block already fixed twice. */
+   *  this block already fixed twice.
+   *
+   *  Containment is the ONLY rule, and an intermediate version of this fix had a
+   *  second one — shadowing by route FAMILY, so that a line naming one family's
+   *  root was never a row about the other. It is deleted rather than kept: naming
+   *  the ballot's submit route in `DOCUMENTED_ROUTE_KEYS` closes the same hole
+   *  through the rule already here, and does it BETTER, because a family rule
+   *  excludes the ballot submit line from the form's pair while still judging it
+   *  against the ballot CONFIG's pair — the same wrong-pair failure one route
+   *  over, waiting for the same follow-up to decouple them. One mechanism that
+   *  judges every named route against its own pair beats two that share a hole. */
   const isRowFor = (names: string, line: string) => line.includes(names)
+    // A more specific route, whichever family it belongs to:
+    // `/voting-sessions/{session_id}/config/GET` contains `/config`, and
+    // `/voting-sessions/{session_id}/submit/POST` contains `/submit`.
     && !moreSpecificThan(names).some((other) => line.includes(other));
 
   /** A stated rate FIGURE: digits immediately followed by one of those units.
@@ -991,8 +1023,21 @@ describe('the public feedback-form routes', () => {
    *  message says "digits, not words"). What discovery stops doing is flagging a
    *  document for mentioning throughput in prose. The two predicates keep their
    *  opposite biases where the comment says those live — SCOPE (whole file versus
-   *  one line) and the anchored burst — not in what counts as a figure. */
-  const RATE_FIGURE = String.raw`\d+\s*(?:${RATE_UNIT})\b`;
+   *  one line) and the anchored burst — not in what counts as a figure.
+   *
+   *  IT CAPTURES THE FIGURE, in group 1, so that `allStatedPairs` can be BUILT from
+   *  this string instead of re-spelling it. Review found the re-spelling: the parser
+   *  wrote its own `(\d+)\s*(?:${RATE_UNIT})` while its comment asserted the prefix
+   *  was "exactly `RATE_FIGURE`" — an equality the compiler cannot check, and the
+   *  same two-hand-kept-copies shape this block has already fixed for `PINNED_DOCS`
+   *  and `PUBLIC_FORM_METHOD_KEYS`. They agreed at the time, which is what makes it
+   *  worth fixing before they stop agreeing: the invariant the comment names (a line
+   *  that is SELECTED is a line the parser can PARSE) is load-bearing, and breaking
+   *  it in either direction produces one of the two failures described above.
+   *
+   *  The capture is inert for the selector — `RegExp.test` ignores groups — so one
+   *  constant serves both without either paying for the other. */
+  const RATE_FIGURE = String.raw`(\d+)\s*(?:${RATE_UNIT})\b`;
 
   it('gives each of the three an explicit pair, tight for submit and generous for the reads', () => {
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
@@ -1186,26 +1231,48 @@ describe('the public feedback-form routes', () => {
     // The relationship is containment between a doc-facing NAME and another
     // route's KEY, not string length: `/voting-sessions/{session_id}/config/GET`
     // contains `/config`, which is what makes a ballot row look like a form row.
-    expect(moreSpecificThan('/config')).toEqual(['/voting-sessions']);
+    expect(moreSpecificThan('/config')).toEqual(['/voting-sessions/{session_id}/config']);
 
-    // And the converse, which is what stops this over-reaching: the ballot route
-    // is not shadowed by anything, and the two form routes whose names appear in
-    // no other key are shadowed by nothing either. If this returned a value, rows
-    // would start being skipped rather than misjudged — the opposite failure.
-    expect(moreSpecificThan('/voting-sessions')).toEqual([]);
+    // THE SAME RELATIONSHIP FOR SUBMIT, which review found missing. With the ballot
+    // pair named by its config alone, `/submit` was shadowed by nothing, so a line
+    // spelled `POST /voting-sessions/{session_id}/submit` was judged against the
+    // FORM's submit pair, passing only because both are 20/40 — until the per-form
+    // cap follow-up moves one of them. Naming the ballot's submit route brings it
+    // under the containment rule that was already here.
+    expect(moreSpecificThan('/submit')).toEqual(['/voting-sessions/{session_id}/submit']);
+
+    // And the converse, which is what stops this over-reaching: the ballot routes are
+    // named by full path, so nothing is more specific than either, and `/iframe`
+    // appears in no other key. If these returned a value, rows would start being
+    // skipped rather than misjudged — the opposite failure.
+    expect(moreSpecificThan('/voting-sessions/{session_id}/config')).toEqual([]);
+    expect(moreSpecificThan('/voting-sessions/{session_id}/submit')).toEqual([]);
     expect(moreSpecificThan('/iframe')).toEqual([]);
-    expect(moreSpecificThan('/submit')).toEqual([]);
 
-    // The selection rule itself: a line naming the ballot route is not a `/config`
-    // row, and a line naming only `/config` still is.
+    // The selection rule itself: a line naming a ballot route is not a form row, and
+    // a line naming only the form's short name still is.
     // `isRowFor` itself, the SAME predicate the lockstep loop filters with — not a
     // restatement of it here. A local copy left the loop's use of it unpinned.
-    const ballotRow = '> `GET /voting-sessions/{session_id}/config` carries 20 rps / 40';
+    const ballotConfigRow = '> `GET /voting-sessions/{session_id}/config` carries 20 rps / 40';
+    const ballotSubmitRow = '> `POST /voting-sessions/{session_id}/submit` carries 20 rps / 40';
     const formRow = '> | `GET /config`, `GET /iframe` | **100 rps / 200** |';
+    const formSubmitRow = '> | `POST /submit` | **20 rps / 40** |';
 
-    expect(isRowFor('/config', ballotRow), 'a ballot row must not be judged as a form row').toBe(false);
-    expect(isRowFor('/voting-sessions', ballotRow)).toBe(true);
+    expect(isRowFor('/config', ballotConfigRow), 'a ballot row must not be judged as a form row').toBe(false);
+    expect(isRowFor('/voting-sessions/{session_id}/config', ballotConfigRow)).toBe(true);
+
+    // The pair that fails without the ballot submit route registered: the ballot's
+    // submit line is not the form's row, and it IS judged — against its OWN pair,
+    // which is the half a family-based exclusion would have got wrong (it would
+    // have judged this line against the ballot CONFIG's pair instead).
+    expect(isRowFor('/submit', ballotSubmitRow), 'a ballot submit row must not be judged as the form submit row').toBe(false);
+    expect(isRowFor('/voting-sessions/{session_id}/submit', ballotSubmitRow)).toBe(true);
+    expect(isRowFor('/voting-sessions/{session_id}/config', ballotSubmitRow)).toBe(false);
+    expect(isRowFor('/voting-sessions/{session_id}/submit', ballotConfigRow)).toBe(false);
+
+    // And the form's own rows are still its rows, which is what over-reach breaks.
     expect(isRowFor('/config', formRow)).toBe(true);
+    expect(isRowFor('/submit', formSubmitRow)).toBe(true);
   });
 
   it('counts a rate FIGURE, not a bare unit, so prose about throughput is not judged', () => {
@@ -1240,6 +1307,14 @@ describe('the public feedback-form routes', () => {
       'the handler manages 40 ops/s per shard',
       // A path segment must never read as a rate.
       'see /feedback-forms/{form_id}/submissions for the reads',
+      // AND THE ONE THAT ACTUALLY EXERCISES THE TRAILING `\b`, which review found
+      // this list was missing: the row above carries no digits, so it is rejected
+      // for want of a figure whatever `\b` does — vacuous cover for the guard it
+      // was added for. Here `1/s` (stage `v1`, then a segment starting with `s`)
+      // DOES match `\d+` followed by the bare `\/\s*s` unit, and only the boundary
+      // rejects it, because `ubmissions` continues the word. Drop the `\b` and this
+      // line reads as "1 per second" and gets judged against the template.
+      'the raw reads live under /v1/submissions in the deployed stage',
     ];
 
     for (const line of MUST_SELECT) {
@@ -1377,15 +1452,23 @@ describe('the public feedback-form routes', () => {
      *  that states no burst, which then fails as "states no parseable pair" rather
      *  than passing.
      *
-     *  The rate-and-unit prefix here is exactly `RATE_FIGURE`, which is what
+     *  The rate-and-unit prefix here IS `RATE_FIGURE` — concatenated, not restated,
+     *  which is the correction review asked for. `RATE_FIGURE` is what
      *  `statesALimit` selects with, so a line that is selected is a line this can
      *  parse — that equality is the invariant, and losing it in either direction
      *  is a defect this file has already seen twice. A NARROWER unit here would
      *  report "states no rate pair this test can parse" for a spelling the
      *  selector had just accepted; a WIDER selector would judge a line that never
-     *  claimed a figure, which is what requiring the digits fixed. */
+     *  claimed a figure, which is what requiring the digits fixed.
+     *
+     *  It used to be a second spelling of that prefix with this comment claiming
+     *  they were "exactly" equal. They were, so nothing was broken — but a comment
+     *  is not a check, and the two copies could only stay equal by hand. Building
+     *  the pattern from the constant makes the invariant hold by construction, so
+     *  widening the vocabulary in one place cannot leave the other behind. Group 1
+     *  is the rate, captured by `RATE_FIGURE`; group 2 is the burst, captured here. */
     const allStatedPairs = (line: string): { rate: number; burst: number }[] =>
-      [...line.matchAll(new RegExp(String.raw`(\d+)\s*(?:${RATE_UNIT})\s*(?:,\s*burst\s+|\/\s*)(\d+)`, 'g'))]
+      [...line.matchAll(new RegExp(RATE_FIGURE + String.raw`\s*(?:,\s*burst\s+|\/\s*)(\d+)`, 'g'))]
         .map((match) => ({ rate: Number(match[1]), burst: Number(match[2]) }));
 
     for (const [doc, routes] of Object.entries(PINNED_DOCS)) {
