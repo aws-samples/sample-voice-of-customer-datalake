@@ -654,8 +654,9 @@ function PrototypePanel({
   )
   if (mode.kind === 'none') return null
   /**
-   * The artifact itself, described once and rendered in two boxes: the row's
-   * 384px pane and the enlarge overlay's full-viewport one.
+   * The artifact as the ROW shows it, and — for an HTML prototype — the very element
+   * the overlay shows too: one description rendered in two boxes, the row's 384px
+   * pane and the enlarge overlay's full-viewport one.
    *
    * One description rather than two, because the sizing lives on the CONTAINER —
    * this frame is `w-full h-full` either way. A second `HtmlPrototypeFrame` call
@@ -666,10 +667,11 @@ function PrototypePanel({
    * this in both places mounts a frame per box — and the overlay's box does not
    * exist until somebody opens it, `ModalShell` rendering nothing while closed.
    *
-   * The frame is the whole of what has to be shared. A JSON spec carries no signed
-   * URL and so nothing that can lapse under a reader, which is why the overlay is
-   * free to re-render it on a wider measure (`ENLARGED_SPEC_MEASURE`) while the row
-   * keeps the readable column its narrow pane needs.
+   * The FRAME is the whole of what has to be shared, and only the html branch has
+   * one. A JSON spec carries no signed URL, so nothing about it can lapse under a
+   * reader and nothing is at risk in rendering it twice — which is why the overlay
+   * renders its own on a wider measure (`ENLARGED_SPEC_MEASURE`) while this copy
+   * keeps the readable column the row's narrow pane needs.
    *
    * Mounting per box is also the cost of the reuse, and worth naming so nobody reads
    * "the row's pane, bigger" too literally: each box performs its own load, so the
