@@ -17,7 +17,7 @@
     "typecheck:cdk": "cd voc-datalake && npx tsc --noEmit",
     "typecheck:stream": "cd voc-datalake/lambda/stream && npx tsc --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:cdk && npm run typecheck:stream",
-    "test": "npm run test --prefix voc-datalake/frontend -- --run",
+    "test": "npm run test --prefix voc-datalake/frontend -- --run && npm run test:i18n-scripts --prefix voc-datalake/frontend",
     "test:backend": "cd voc-datalake && .venv/bin/python -m pytest -q --no-header --tb=short",
     "test:cdk": "npm run test --prefix voc-datalake",
     "test:stream": "npm run test --prefix voc-datalake/lambda/stream",

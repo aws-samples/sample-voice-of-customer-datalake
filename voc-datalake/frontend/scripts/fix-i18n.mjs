@@ -10,6 +10,8 @@ import { resolve, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 
+import { setNested } from './set-nested.mjs'
+
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 // Must match the shipped catalogues in public/locales/<lang>/ — `src/i18n/options.test.ts`
@@ -164,19 +166,6 @@ function flattenEntries(obj, prefix = '') {
 
 function getNested(obj, key) {
   return key.split('.').reduce((o, k) => o?.[k], obj)
-}
-
-const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
-
-function setNested(obj, key, val) {
-  const parts = key.split('.')
-  if (parts.some(p => UNSAFE_KEYS.has(p))) return
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {}
-    cur = cur[parts[i]]
-  }
-  cur[parts[parts.length - 1]] = val
 }
 
 // Resolve self-referencing plural values like "sidebar.messagesCount"

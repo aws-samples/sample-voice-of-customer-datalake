@@ -62,7 +62,7 @@ npm run check        # lint + typecheck:all + test + test:cdk + test:stream + te
 |---------|--------|
 | `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
 | `npm run typecheck` | Frontend only — use `typecheck:all` for frontend + CDK + stream |
-| `npm run test` | Frontend Vitest only |
+| `npm run test` | Frontend Vitest plus i18n script regression tests |
 | `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
 | `npm run test:stream` | Streaming chat Lambda Vitest |
 | `npm run test:backend` | Python pytest via `.venv/bin/python` |
