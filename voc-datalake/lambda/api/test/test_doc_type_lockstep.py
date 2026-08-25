@@ -35,10 +35,13 @@ The scanner exists only because `client.ts` and `projectsApi.ts` each spell
 `'prd' | 'prfaq'` INLINE instead of referencing the `DocType` union the picker
 already uses, so this contract has three copies in the frontend. If both signatures
 referenced `DocType`, there would be one declaration to pin, `_doc_type_union` alone
-would read it, and `_without_comments`, `_parameter_list_end`,
-`GENERATE_DOCUMENT_ANCHOR`, `DOC_TYPE_ANNOTATION`, `FINDABLE_SHAPES`,
-`WIDENED_SHAPES`, `NARROWED_SHAPES` and most of `TestTheParser` would all be
-unnecessary — collapsing a drift axis instead of testing it. That change is in
+would read it, and `_parameter_list_end`, `GENERATE_DOCUMENT_ANCHOR`,
+`DOC_TYPE_ANNOTATION_ANCHOR`, `FINDABLE_SHAPES`, `WIDENED_SHAPES`,
+`NARROWED_SHAPES` and most of `TestTheParser` would all be unnecessary —
+collapsing a drift axis instead of testing it. (`_without_comments` STAYS:
+`_doc_type_union` calls it too, and without it the `commented` shape truncates at
+the comment and `commented_out_predecessor` reads the dead union — the silent
+failure this file singles out as the worst.) That change is in
 `frontend/`, which the PR introducing this file deliberately kept out of scope, so
 it is recorded here rather than done: the next round of parser bugs should be a
 choice between extending the scanner and deleting it, not a default.
@@ -93,13 +96,13 @@ QUOTED_MEMBER = r"""(?:'[^']+'|"[^"]+")"""
 # (`'prd' | 'prfaq' | ExtraDocType`) cannot be compared against the route's
 # allowlist, and matching only the literals beside it would truncate the union and
 # PASS while the frontend can send whatever the identifier admits. Captured here
-# so `_literal_members` can refuse it by name instead.
+# so `_union_members` can refuse it by name instead.
 #
 # Widening this grammar further would be the wrong answer to the shapes it still
 # does not match — `(string & {})`, `` `${string}-draft` ``, `{ custom: string }`.
 # TypeScript admits unboundedly many type expressions, so no term pattern is
 # exhaustive, and each addition only moves where the silence starts. That is why
-# `_literal_members` also checks POSITIONALLY for a term the pattern could not
+# `_union_members` also checks POSITIONALLY for a term the pattern could not
 # read at all; see its docstring.
 UNION_TERM = rf"""(?:{QUOTED_MEMBER}|[A-Za-z_$][\w$]*)"""
 MEMBER_LITERAL = re.compile(rf'^{QUOTED_MEMBER}$')
@@ -109,9 +112,16 @@ QUOTED_TEXT = re.compile(r"""['"]([^'"]+)['"]""")
 # produces once a union exceeds the print width, so adding a third member — the
 # very drift this file exists to catch — is a realistic route into a shape the
 # previous pattern could not read at all.
-DOC_TYPE_UNION = re.compile(
-    rf'export\s+type\s+DocType\s*=\s*\|?\s*({UNION_TERM}(?:\s*\|\s*{UNION_TERM})*)'
-)
+# The TERMS of a union, matched only once an anchor below has said where the
+# right-hand side starts. Split from the anchors deliberately: while the terms and
+# the declaration were one pattern, a declaration whose FIRST term is unreadable
+# (`= (string & {}) | 'prd' | 'prfaq'`) matched NOTHING, so the parser returned an
+# empty set, the equality test passed, and only the findability control fired —
+# asking whether the type had been renamed while the declaration sat there,
+# widened. Anchoring first turns that into a refusal at the declaration.
+UNION_TERMS = re.compile(rf'{UNION_TERM}(?:\s*\|\s*{UNION_TERM})*')
+
+DOC_TYPE_UNION_ANCHOR = re.compile(r'export\s+type\s+DocType\s*=\s*\|?\s*')
 
 # The client method whose parameters type THIS route's request body, anchored by
 # NAME rather than by tracking whichever `name: (` was seen most recently. An
@@ -136,9 +146,13 @@ GENERATE_DOCUMENT_ANCHOR = re.compile(r'\bgenerateDocument\s*:\s*(?:async\s*)?\(
 # was reported as agreeing with the route — the same silent pass the union parser
 # was hardened against, on the more load-bearing of the two declarations. The union
 # is the picker's type; the signature is the wire contract.
-DOC_TYPE_ANNOTATION = re.compile(
-    rf'doc_type\??\s*:\s*({UNION_TERM}(?:\s*\|\s*{UNION_TERM})*)'
-)
+#
+# `\|?\s*` matches the union anchor's, and closes a gap this parser had from the
+# start: Prettier emits a LEADING PIPE once a union outgrows the print width, so
+# `doc_type:\n  | 'prd'\n  | 'prfaq'` read as nothing at all — widened or not. That
+# is also the likeliest route into a first-position widening, since a maintainer
+# reformatting to that shape and then adding a member lands in it.
+DOC_TYPE_ANNOTATION_ANCHOR = re.compile(r'doc_type\??\s*:\s*\|?\s*')
 
 
 def _without_comments(source: str) -> str:
@@ -204,35 +218,52 @@ def _without_comments(source: str) -> str:
     return ''.join(out)
 
 
-def _literal_members(matched: str, rest: str, what: str) -> frozenset[str]:
-    """The quoted members of a `|`-separated union, or a LOUD failure.
+def _union_members(code: str, anchor: re.Match, what: str) -> frozenset[str]:
+    """The quoted members of the union at `anchor`, or a LOUD failure.
 
-    Shared by both parsers because both had the same hole, and a guard that has to
-    be written twice is how the earlier rounds' defects happened. There are two
-    ways a union can be unreadable and both must be loud, because the quiet version
-    of either is the same thing: a PASS reporting agreement with the route while the
-    frontend admits more values than it accepts.
+    Shared by both parsers because both had the same hole, and a guard written twice
+    is how the earlier rounds' defects happened. A union can be unreadable in three
+    positions and all three must be loud, because the quiet version of any of them
+    is the same thing: a PASS reporting agreement with the route while the frontend
+    admits values it refuses.
 
-    1. A term MATCHED but is not a string literal (`ExtraDocType`, `string`).
-       UNION_TERM matches bare identifiers deliberately so they arrive here to be
-       named, rather than tightening the pattern until they stop matching — which
-       yields an empty set and a findability failure blaming a rename that never
-       happened.
+    FIRST — nothing matches at the anchor. `= (string & {}) | 'prd' | 'prfaq'`.
+    Before the anchors were split out this returned an empty set, which the equality
+    test reads as "no drift" and the findability control reports as a possible
+    rename. The worst of the three, because the message sent the maintainer looking
+    for something that had not happened.
 
-    2. A term did not match AT ALL, so the pattern stopped early and the terms
-       before it look like the whole union. `(string & {})` — the standard idiom for
-       "any string, but keep autocomplete", i.e. exactly what someone reaches for to
-       widen the picker — plus template-literal and inline object types are all in
-       this class. No term grammar is exhaustive over TypeScript's type
-       expressions, so this check is POSITIONAL rather than another alternation: if
-       what follows the match is another `|`, something was left unread, whatever
-       its shape. That makes the guard closed by construction instead of closed
-       against the shapes someone thought of.
+    MIDDLE or LAST — a term is not a string literal. Two sub-cases, and the split
+    matters because only one of them can be spelled as a pattern:
+
+      * it MATCHED and is an identifier (`ExtraDocType`, `string`, `DocType`).
+        UNION_TERM matches identifiers deliberately so they arrive here to be named,
+        rather than tightening the pattern until they stop matching — which yields
+        an empty set and, again, a rename message.
+      * it did not match, so the terms before it look like the whole union.
+        `(string & {})` — "any string, but keep autocomplete", precisely what one
+        reaches for to widen a picker — plus template-literal and inline object
+        types. No grammar is exhaustive over TypeScript's type expressions, so this
+        one is caught POSITIONALLY: a `|` after the match means a term was left
+        unread, whatever its shape.
+
+    Between the anchor check and the positional check, a value comes back only when
+    every `|`-separated term in the declaration was read AND was a literal. That is
+    the property worth having; it does not depend on anyone having enumerated the
+    shapes TypeScript admits.
 
     `raise AssertionError` rather than `assert`: `python -O` strips `assert`, and a
     guard whose entire purpose is to not be the quiet option must not have a mode
     where it silently is. `pytest.raises(AssertionError)` is unaffected.
     """
+    terms_match = UNION_TERMS.match(code, anchor.end())
+    if terms_match is None:
+        raise AssertionError(
+            f'{what} begins with a term this parser cannot read: '
+            f'{code[anchor.end():anchor.end() + 60]!r}. Returning nothing here '
+            f'would report no drift and blame a rename.'
+        )
+    matched = terms_match.group(0)
     terms = [term.strip() for term in matched.split('|') if term.strip()]
     non_literal = [term for term in terms if not MEMBER_LITERAL.match(term)]
     if non_literal:
@@ -245,14 +276,15 @@ def _literal_members(matched: str, rest: str, what: str) -> frozenset[str]:
             f'rather than teaching to resolve it — see '
             f'test_the_frontend_declarations_are_findable.'
         )
-    unread = rest.lstrip()
+    unread = code[terms_match.end():].lstrip()
     if unread.startswith('|'):
         raise AssertionError(
-            f'{what} continues past the terms this parser can read, with '
+            f'{what} continues past the terms this parser could read, with '
             f'{unread[:60]!r}. Reading only the members before it would report '
-            f'agreement with the route while the frontend admits more. Whatever '
-            f'that term is, it is not a string literal, so the two declarations '
-            f'can no longer be compared by equality.'
+            f'agreement with the route while the frontend admits more. This says '
+            f'only that the term could not be READ — a parenthesised or '
+            f'backtick-quoted literal would land here too, and is still drift the '
+            f'comparison cannot make.'
         )
     return frozenset(QUOTED_TEXT.findall(matched))
 
@@ -275,12 +307,10 @@ def _doc_type_union(source: str) -> frozenset[str]:
     UNION_TERM.
     """
     code = _without_comments(source)
-    match = DOC_TYPE_UNION.search(code)
-    if match is None:
+    anchor = DOC_TYPE_UNION_ANCHOR.search(code)
+    if anchor is None:
         return frozenset()
-    return _literal_members(
-        match.group(1), code[match.end():], 'the DocType union'
-    )
+    return _union_members(code, anchor, 'the DocType union')
 
 
 def _declared_doc_type_union() -> frozenset[str]:
@@ -361,13 +391,13 @@ def _doc_type_annotations(source: str) -> dict[int, frozenset[str]]:
             continue
         signature = code[open_paren:end]
         first_line = code.count('\n', 0, open_paren) + 1
-        for match in DOC_TYPE_ANNOTATION.finditer(signature):
+        for match in DOC_TYPE_ANNOTATION_ANCHOR.finditer(signature):
             line_number = first_line + signature.count('\n', 0, match.start())
             # The line number is in the message because a refusal has to point at
             # the declaration, not just report that one exists somewhere.
-            found[line_number] = _literal_members(
-                match.group(1),
-                signature[match.end():],
+            found[line_number] = _union_members(
+                signature,
+                match,
                 f'the generateDocument doc_type annotation on line {line_number}',
             )
     return found
@@ -493,23 +523,70 @@ NARROWED_SHAPES = {
 # beside such a term reports agreement with the route while the client can send
 # whatever it admits.
 #
-# Split by which half of `_literal_members` catches them, since the two are
-# different guards and a single dict would hide one of them going dead. The
-# identifier rows are caught by name; the rest are caught positionally, and those
-# are the ones no term grammar would have covered.
+# Each maps to the message fragment its refusal must carry, so the test pins WHICH
+# of the three guards fired rather than only that something did. That matters here:
+# with a single either-message assertion, reverting DOC_TYPE_ANNOTATION to quoted
+# literals only left every one of these green — the positional guard refused them
+# all on its own — and the grammar change the fix rests on was unpinned.
 WIDENED_SHAPES = {
+    # Caught BY NAME: an identifier matches UNION_TERM, so it reaches the
+    # not-a-literal check and the failure can say what it is.
     # What a maintainer writes to add values without touching this signature —
     # and so the realistic route to a client offering a value the route 400s.
-    'named_type': "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' | LegacyDocType }) => q,\n",
-    'bare_string': "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' | string }) => q,\n",
+    'named_type': (
+        "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' | LegacyDocType }) => q,\n",
+        'not string literals',
+    ),
+    'bare_string': (
+        "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' | string }) => q,\n",
+        'not string literals',
+    ),
+    # The shape the grammar change ALONE catches: one non-literal term, no pipe, so
+    # the positional guard has nothing to see. With quoted literals only this
+    # parsed to {} and reported no drift. It is also `doc_type: DocType`, the end
+    # state the module docstring recommends — which must fail loudly here rather
+    # than quietly, so whoever makes that frontend change is told to retire this
+    # parser instead of finding a green suite that checks nothing.
+    'single_named_type': (
+        'generateDocument: (p: string, d: { doc_type: DocType }) => q,\n',
+        'not string literals',
+    ),
+    # Caught POSITIONALLY: no term pattern matches these, so the guard sees only
+    # that a `|` follows what it could read.
     # "Any string, but keep autocomplete on the known members" — the idiom for
-    # exactly this widening, and matched by no term pattern.
-    'string_and_empty_object':
+    # exactly this widening.
+    'string_and_empty_object': (
         "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' | (string & {}) }) => q,\n",
-    'template_literal':
+        'continues past',
+    ),
+    'template_literal': (
         'generateDocument: (p: string, d: { doc_type: \'prd\' | \'prfaq\' | `${string}-draft` }) => q,\n',
-    'inline_object':
+        'continues past',
+    ),
+    'inline_object': (
         "generateDocument: (p: string, d: { doc_type: 'prd' | 'prfaq' | { custom: string } }) => q,\n",
+        'continues past',
+    ),
+    # Caught at the ANCHOR: the unreadable term comes FIRST, so nothing matches at
+    # all. This is the position the earlier fix missed entirely — it returned {},
+    # the comparison test passed, and only the findability control fired, blaming a
+    # rename that had not happened.
+    'unreadable_term_first': (
+        "generateDocument: (p: string, d: { doc_type: (string & {}) | 'prd' | 'prfaq' }) => q,\n",
+        'begins with a term',
+    ),
+    # The same, in Prettier's leading-pipe form — the likeliest route here, since
+    # reformatting to it and then adding a member lands in this class.
+    'unreadable_term_first_leading_pipe': (
+        (
+            "generateDocument: (projectId: string, data: {\n"
+            "  doc_type:\n"
+            "    | (string & {})\n"
+            "    | 'prd'\n"
+            "}) => q,\n"
+        ),
+        'begins with a term',
+    ),
 }
 
 
@@ -592,18 +669,24 @@ class TestTheParser:
         )
         assert _doc_type_annotations(source) == {}
 
-    @pytest.mark.parametrize('shape', WIDENED_SHAPES.values(), ids=WIDENED_SHAPES)
-    def test_a_widened_signature_refuses_rather_than_truncating(self, shape):
+    @pytest.mark.parametrize(
+        ('shape', 'expected'), WIDENED_SHAPES.values(), ids=WIDENED_SHAPES
+    )
+    def test_a_widened_signature_refuses_rather_than_truncating(self, shape, expected):
         """The signature is what types the request body, so this is the direction
-        that matters: every one of these returned `{'prd','prfaq'}` and reported
-        agreement with the route while the client admitted more.
+        that matters: every one of these returned `{'prd','prfaq'}` or `{}` and
+        reported agreement with the route while the client admitted more.
 
         Asserting the refusal rather than the parsed value on purpose — a test
         expecting `{'prd','prfaq','LegacyDocType'}` would pass on a parser that
         merely widened its grammar, and the point is that the two declarations can
         no longer be compared by equality at all.
+
+        The expected MESSAGE is asserted per shape, not just "some refusal": the
+        three guards are independent, and a shared either-message assertion let a
+        revert of one of them stay green.
         """
-        with pytest.raises(AssertionError, match='not string literals|continues past'):
+        with pytest.raises(AssertionError, match=expected):
             _doc_type_annotations(shape)
 
     @pytest.mark.parametrize('shape', NARROWED_SHAPES.values(), ids=NARROWED_SHAPES)
@@ -679,6 +762,25 @@ class TestTheUnionParser:
             _doc_type_union("export type DocType = 'prd' | 'prfaq' | ExtraDocType\n")
 
     @pytest.mark.parametrize('member', [
+        '(string & {})',
+        '`${string}-draft`',
+        '{ custom: string }',
+    ])
+    def test_an_unreadable_member_in_FIRST_position_refuses_at_the_anchor(self, member):
+        """The position the positional guard cannot see.
+
+        `= (string & {}) | 'prd' | 'prfaq'` matched nothing at all, because the
+        pattern required a readable term immediately after `=`. An empty set is what
+        a renamed type returns, so the equality test read "no drift" and the
+        findability control asked whether `DocType` had been renamed — while the
+        declaration sat there, widened. Splitting the anchor from the terms is what
+        turns this into a refusal; these three pin the direction the earlier fix
+        missed.
+        """
+        with pytest.raises(AssertionError, match='begins with a term'):
+            _doc_type_union(f"export type DocType = {member} | 'prd' | 'prfaq'\n")
+
+    @pytest.mark.parametrize('member', [
         # Each is legal TypeScript that UNION_TERM does not match, so the pattern
         # stopped at it and `{'prd','prfaq'}` was returned as though complete.
         '(string & {})',
@@ -697,7 +799,7 @@ class TestTheUnionParser:
 
         Fixing this by adding alternations would have been endless: TypeScript
         admits arbitrarily many type expressions. The positional check in
-        `_literal_members` closes it for shapes nobody enumerated, which is why
+        `_union_members` closes it for shapes nobody enumerated, which is why
         these three are parametrised rather than each pinned as its own grammar.
         """
         with pytest.raises(AssertionError, match='continues past the terms'):
@@ -707,17 +809,35 @@ class TestTheUnionParser:
         """`assert` is stripped under `python -O`, and this guard's whole purpose is
         to be the loud option — so it must not have a mode in which it is not.
 
-        Checked by construction rather than by launching a second interpreter: an
-        `assert` statement compiles to nothing under optimisation, so the property
-        is "the refusal is a raise", and reading the source is what pins it.
+        Read from the source rather than run under a second interpreter, because an
+        `assert` compiles to nothing under `-O`: there is no runtime observation that
+        distinguishes "the guard passed" from "the guard was removed", which is the
+        whole problem. The property is therefore syntactic — no `assert` statement in
+        the body — and the source is the only place it is visible.
+
+        The DOCSTRING is stripped before looking. Without that, this test passed on a
+        body containing no raise at all, because the docstring above discusses
+        `raise AssertionError` by name — a test satisfied by prose about itself.
+        `assert\\b` rather than `assert `, since `assert(x), msg` is stripped by `-O`
+        just as thoroughly and reads as a function call.
         """
         import inspect
 
-        source = inspect.getsource(_literal_members)
-        assert 'raise AssertionError' in source
-        assert not any(
-            line.strip().startswith('assert ') for line in source.splitlines()
-        ), 'the refusals in _literal_members must be `raise`, not `assert`'
+        body = inspect.getsource(_union_members)
+        docstring = inspect.getdoc(_union_members) or ''
+        for line in docstring.splitlines():
+            body = body.replace(line, '')
+
+        assert 'raise AssertionError' in body, (
+            'the refusals must be raises; found none outside the docstring'
+        )
+        stripped = [
+            line for line in body.splitlines() if re.match(r'\s*assert\b', line)
+        ]
+        assert not stripped, (
+            f'these refusals in _union_members are `assert`, which `python -O` '
+            f'removes: {stripped}'
+        )
 
 
 class TestDocTypeLockstep:

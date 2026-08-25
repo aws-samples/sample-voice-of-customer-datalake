@@ -849,9 +849,9 @@ def _json_object_body() -> dict:
     they are not. Measured by driving `lambda_handler`, all three answer 500 for
     unparseable JSON, and:
 
-      api_merge_documents   [1,2] -> 200, job CREATED   "hi" -> 200, job CREATED
-      api_build_prototype   [1,2] -> 500, no job        "hi" -> 500, no job
-      api_product_report    [1,2] -> 500, no job        "hi" -> 500, no job
+      api_merge_documents          [1,2] -> 200, job CREATED   "hi" -> 200, CREATED
+      api_build_prototype          [1,2] -> 500, no job        "hi" -> 500, no job
+      api_generate_product_report  [1,2] -> 500, no job        "hi" -> 500, no job
 
     `api_merge_documents` is the one to fix first, and the only one that is worse
     than a 500: it still reads `json_body or {}` and calls `create_job` before
