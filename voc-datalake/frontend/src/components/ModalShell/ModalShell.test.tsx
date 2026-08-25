@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ModalShell from './ModalShell'
 
@@ -279,5 +279,176 @@ describe('ModalShell', () => {
     await user.tab()
 
     expect(first).toHaveFocus()
+  })
+})
+
+/**
+ * A dialog whose content is an `<iframe>` — the prototype enlarge overlay (#314).
+ *
+ * A keydown raised inside a frame's own document does NOT reach the embedder, so a
+ * listener on this page's document alone stops seeing keys the moment focus enters
+ * the frame. The frame is also in `focusable()`'s selector list, so a single Tab
+ * puts it there. For an overlay whose entire purpose is that a reviewer clicks into
+ * the artifact and navigates it, that is the DOMINANT state, not an edge case:
+ * without the per-frame listeners, Escape and the Tab trap are inert for almost all
+ * of the dialog's useful life.
+ *
+ * The keys below are dispatched on the frame's own document, which is what a
+ * browser does and what `user.keyboard` cannot do — it targets the top document,
+ * i.e. the pre-iframe state only.
+ */
+describe('ModalShell with a nested frame', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  /**
+   * The shell with an `<iframe>` between two panel controls, its document filled
+   * with `inner` controls.
+   *
+   * No `src`: jsdom gives a src-less frame a real about:blank document with a body,
+   * where one loading over the network has `contentDocument` but no `body` — the
+   * frame is a stand-in for a LOADED prototype, which is the state under test.
+   */
+  function renderFramedShell() {
+    render(
+      <ModalShell isOpen onClose={onClose} ariaLabel="Framed dialog">
+        <button>close</button>
+        <iframe title="prototype" />
+        <button>after</button>
+      </ModalShell>,
+    )
+    const frame = screen.getByTitle('prototype')
+    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
+    if (!doc?.body) throw new Error('no frame document to write the prototype into')
+    doc.body.innerHTML = '<button id="inner-first">inner one</button><button id="inner-last">inner two</button>'
+    /** Raise a key in the FRAME's document, as a browser does for a key pressed inside it. */
+    const pressInFrame = (key: string, shiftKey = false) => {
+      const target = doc.activeElement ?? doc.body
+      target.dispatchEvent(
+        new (doc.defaultView ?? window).KeyboardEvent('keydown', { key, shiftKey, bubbles: true }),
+      )
+    }
+    return { doc, frame, pressInFrame }
+  }
+
+  it('closes on Escape pressed inside the frame', () => {
+    // Without the frame listener this is silent: the reviewer is inside the
+    // artifact, which is where the overlay is meant to be used, and the documented
+    // way out does nothing.
+    const { doc, pressInFrame } = renderFramedShell()
+    doc.getElementById('inner-first')?.focus()
+
+    pressInFrame('Escape')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves Tab alone while it still has somewhere to go inside the frame', () => {
+    // The trap must not fire on every Tab: a prototype is a page of its own, and
+    // yanking a reviewer out of it at the first control would make the overlay
+    // unusable for the thing it exists for.
+    const { doc, pressInFrame } = renderFramedShell()
+    const innerFirst = doc.getElementById('inner-first')
+    innerFirst?.focus()
+
+    pressInFrame('Tab')
+
+    expect(doc.activeElement).toBe(innerFirst)
+    expect(screen.getByRole('button', { name: 'after' })).not.toHaveFocus()
+  })
+
+  it('brings Tab back into the panel from the frame\'s last control', () => {
+    // Where a browser would hand focus to whatever follows the frame — the page
+    // BEHIND the overlay, which for this consumer is a second copy of the same
+    // interactive prototype.
+    const { doc, pressInFrame } = renderFramedShell()
+    doc.getElementById('inner-last')?.focus()
+
+    pressInFrame('Tab')
+
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus()
+  })
+
+  it('brings shift-Tab back into the panel from the frame\'s first control', () => {
+    const { doc, pressInFrame } = renderFramedShell()
+    doc.getElementById('inner-first')?.focus()
+
+    pressInFrame('Tab', true)
+
+    expect(screen.getByRole('button', { name: 'close' })).toHaveFocus()
+  })
+
+  it('listens to a frame that arrives after the dialog is already open', async () => {
+    // The overlay's frame does not exist on the shell's first commit in every
+    // consumer: content can arrive with a query. A one-shot scan at mount would
+    // cover the prototype overlay and quietly miss those.
+    const user = userEvent.setup()
+    function Late() {
+      const [shown, setShown] = React.useState(false)
+      return (
+        <ModalShell isOpen onClose={onClose} ariaLabel="Late dialog">
+          <button onClick={() => setShown(true)}>load</button>
+          {shown ? <iframe title="late" /> : null}
+        </ModalShell>
+      )
+    }
+    render(<Late />)
+    await user.click(screen.getByRole('button', { name: 'load' }))
+    const frame = screen.getByTitle('late')
+    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
+    if (!doc?.body) throw new Error('no late frame document')
+
+    doc.body.dispatchEvent(
+      new (doc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes only the top-most dialog for Escape raised inside a frame', () => {
+    // The stacking guard is document-position based and must keep working for a key
+    // that arrived through a frame: `ConfirmModal` opens over other modals, and one
+    // Escape closing both is the defect that guard exists for.
+    const onCloseOuter = vi.fn()
+    const onCloseInner = vi.fn()
+    render(
+      <>
+        <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
+          <button>outer-button</button>
+        </ModalShell>
+        <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
+          <iframe title="inner-frame" />
+        </ModalShell>
+      </>,
+    )
+    const frame = screen.getByTitle('inner-frame')
+    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
+    if (!doc?.body) throw new Error('no inner frame document')
+
+    doc.body.dispatchEvent(
+      new (doc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+
+    expect(onCloseInner).toHaveBeenCalledTimes(1)
+    expect(onCloseOuter).not.toHaveBeenCalled()
+  })
+
+  it('detaches the frame\'s listener when the dialog closes', () => {
+    // The listener lives on a document this shell does not own. Leaking it is not
+    // caught by dispatching a key afterwards — the top-most guard makes a leaked
+    // listener inert, so the only observable is the detach itself, and a page with
+    // one of these per row would otherwise accumulate one per open.
+    const { doc } = renderFramedShell()
+    const removals: unknown[] = []
+    const realRemove = doc.removeEventListener.bind(doc)
+    doc.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
+      removals.push(type)
+      realRemove(type, listener, options)
+    }
+
+    cleanup()
+
+    expect(removals).toContain('keydown')
   })
 })

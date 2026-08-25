@@ -25,6 +25,20 @@
  * that is Cancel, deliberately the non-destructive choice). Introducing an
  * `initialFocusRef` would change that, so it is stated here rather than implied.
  *
+ * NESTED FRAMES: a keydown raised inside an `<iframe>`'s own document does NOT
+ * propagate to the embedder — different document, different event target tree — so
+ * a listener on this document alone stops seeing keys the moment focus enters a
+ * frame, and an `<iframe>` is itself in `focusable()`'s selector list, so one Tab
+ * can put it there. That made Escape and the Tab trap inert for the whole useful
+ * life of a panel whose content IS a frame (the prototype enlarge overlay, #314).
+ * The keydown listener is therefore attached to every same-origin document nested
+ * in the panel as well, and re-attached as frames load or arrive.
+ *
+ * A frame the parent cannot reach into — cross-origin, or sandboxed without
+ * `allow-same-origin` — keeps the old behaviour, because there is no way to
+ * observe its keys at all. A consumer embedding one of those must render its own
+ * visible dismiss control; nothing here can substitute for it.
+ *
  * @module components/ModalShell
  */
 import { useEffect, useRef, type ReactNode } from 'react'
@@ -77,6 +91,10 @@ function focusable(root: HTMLElement): HTMLElement[] {
   const candidates = root.querySelectorAll<HTMLElement>(
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, [contenteditable]:not([contenteditable="false"]), audio[controls], video[controls], [tabindex]:not([tabindex="-1"])',
   )
+  // Styles are resolved through the element's OWN view, because `root` can be a
+  // nested frame's body (see `tabWouldLeave`) and a document has no obligation to
+  // compute styles for elements it does not own.
+  const styleOf = (el: Element) => (el.ownerDocument.defaultView ?? window).getComputedStyle(el)
   // NB: deliberately not using offsetParent — jsdom does no layout and returns
   // null for every element, which would filter the list empty under test.
   /**
@@ -86,14 +104,90 @@ function focusable(root: HTMLElement): HTMLElement[] {
    * Tab keypress.
    */
   const hiddenByAncestor = (el: HTMLElement): boolean =>
-    getComputedStyle(el).display === 'none' ||
+    styleOf(el).display === 'none' ||
     (el !== root && el.parentElement !== null && hiddenByAncestor(el.parentElement))
   return [...candidates].filter((el) => {
     if (el.closest('[hidden]') !== null || el.closest('[aria-hidden="true"]') !== null) return false
     if (el.closest('details:not([open])') !== null) return false
-    if (getComputedStyle(el).visibility === 'hidden') return false
+    if (styleOf(el).visibility === 'hidden') return false
     return !hiddenByAncestor(el)
   })
+}
+
+/**
+ * The document inside a frame, or null when this page is not allowed to see it.
+ *
+ * Cross-origin frames throw on access, and a `sandbox` without `allow-same-origin`
+ * (how legacy `srcDoc` prototypes are rendered) makes an otherwise same-origin
+ * frame opaque too. Both are unobservable rather than merely awkward: nothing here
+ * can see keys pressed inside them, which is why the header tells consumers
+ * embedding one to render their own visible dismiss control.
+ */
+function frameDocument(frame: HTMLIFrameElement): Document | null {
+  try {
+    return frame.contentDocument
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Every same-origin document nested under `root`, at any depth — the documents a
+ * keydown can be raised in while focus is somewhere inside this dialog.
+ */
+function nestedDocuments(root: HTMLElement): Document[] {
+  return [...root.querySelectorAll('iframe')].flatMap((frame) => {
+    const doc = frameDocument(frame)
+    // Truthiness rather than a null check: `Document['body']` is typed non-null,
+    // but a frame that has not finished loading genuinely has none yet.
+    if (!doc?.body) return []
+    return [doc, ...nestedDocuments(doc.body)]
+  })
+}
+
+/**
+ * Whether a Tab pressed inside `doc` would leave it — i.e. focus is already on
+ * that document's last focusable (or its first, going backwards).
+ *
+ * A frame with nothing focusable counts as leaving: the key cannot move focus
+ * within it, so the browser would hand focus to whatever follows the frame.
+ */
+function tabWouldLeave(doc: Document, back: boolean): boolean {
+  // See `nestedDocuments` on why `body` is checked despite its non-null type.
+  const items = doc.body ? focusable(doc.body) : []
+  if (items.length === 0) return true
+  return doc.activeElement === (back ? items[0] : items[items.length - 1])
+}
+
+/**
+ * Where Tab should go when the key came from inside a nested frame, or null to
+ * leave it to that frame.
+ *
+ * Inside the frame it is the frame's business: intervening on every Tab would
+ * yank a reviewer out of a prototype they are walking through. Only at the frame's
+ * own last (or first) control does this take over, and then it steps to the panel
+ * item after the frame rather than to the panel's edge — the frame is one stop in
+ * the panel's order, not necessarily its final one. `active` is this document's
+ * activeElement, which is the `<iframe>` ELEMENT while focus is inside it.
+ */
+function tabAcrossFrame(
+  doc: Document, items: HTMLElement[], active: Element | null, back: boolean,
+): HTMLElement | null {
+  if (!tabWouldLeave(doc, back)) return null
+  const at = active instanceof HTMLElement ? items.indexOf(active) : -1
+  // A frame nested deeper than the panel's own children is not in `items`; treat
+  // it as position 0, which still keeps focus inside the panel.
+  const from = at === -1 ? 0 : at
+  return items[(from + (back ? -1 : 1) + items.length) % items.length]
+}
+
+/** Where Tab must go to stay in the panel, or null when the panel's own order suffices. */
+function tabWithinPanel(items: HTMLElement[], active: Element | null, back: boolean): HTMLElement | null {
+  const first = items[0]
+  const last = items[items.length - 1]
+  if (back && active === first) return last
+  if (!back && active === last) return first
+  return null
 }
 
 /**
@@ -167,9 +261,17 @@ export default function ModalShell({
 
   useEffect(() => {
     if (!isOpen) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      const panel = panelRef.current
-      if (!panel) return
+    const panel = panelRef.current
+    if (!panel) return
+    /**
+     * The handler as attached to ONE document.
+     *
+     * `raisedIn` is captured rather than read off `e.currentTarget`, because a
+     * frame's Document belongs to the frame's realm: `currentTarget instanceof
+     * Document` is false for it in a real browser, silently treating a frame's
+     * keys as the page's own.
+     */
+    const keyHandlerFor = (raisedIn: Document) => (e: KeyboardEvent) => {
       // Only the top-most open dialog reacts — independent of focus and of the
       // order the shells happened to mount in.
       if (topMostShell() !== panel) return
@@ -182,19 +284,52 @@ export default function ModalShell({
 
       const items = focusable(panel)
       if (items.length === 0) return
-      const first = items[0]
-      const last = items[items.length - 1]
-      const active = document.activeElement
-      if (e.shiftKey && active === first) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault()
-        first.focus()
+      const next = raisedIn === document
+        ? tabWithinPanel(items, document.activeElement, e.shiftKey)
+        : tabAcrossFrame(raisedIn, items, document.activeElement, e.shiftKey)
+      if (next === null) return
+      e.preventDefault()
+      next.focus()
+    }
+    // Every document a key can be raised in while focus is inside this dialog:
+    // this page's, plus each same-origin frame's. Without the frames, Escape and
+    // the trap go quiet as soon as focus enters one — see NESTED FRAMES above.
+    const listening = new Map<Document, (e: KeyboardEvent) => void>()
+    /**
+     * Attach to any document not already covered. Idempotent, because it runs again
+     * whenever the panel's contents change and a frame navigation REPLACES a
+     * document rather than mutating it — the old entry is left in place, already
+     * unreachable, and detached with the rest on close.
+     */
+    const listen = (docs: readonly Document[]) => {
+      for (const doc of docs) {
+        if (listening.has(doc)) continue
+        const handler = keyHandlerFor(doc)
+        doc.addEventListener('keydown', handler)
+        listening.set(doc, handler)
       }
     }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    listen([document])
+    // A frame's document may not exist yet on this commit — the prototype overlay's
+    // frame mounts with the dialog, and other content arrives with a query — so the
+    // scan is repeated when the panel's subtree changes and when a frame loads
+    // (`load` does not bubble, but a capture-phase listener on the panel sees it).
+    const listenToFrames = () => {
+      // Cheap negative for the overwhelming majority of dialogs, which hold no frame
+      // at all: this runs on every mutation inside the panel, including the ones a
+      // form's own re-renders produce.
+      if (panel.querySelector('iframe') === null) return
+      listen(nestedDocuments(panel))
+    }
+    listenToFrames()
+    panel.addEventListener('load', listenToFrames, true)
+    const frames = new MutationObserver(listenToFrames)
+    frames.observe(panel, { childList: true, subtree: true })
+    return () => {
+      frames.disconnect()
+      panel.removeEventListener('load', listenToFrames, true)
+      for (const [doc, handler] of listening) doc.removeEventListener('keydown', handler)
+    }
   }, [isOpen, dismissable, onClose])
 
   if (!isOpen) return null

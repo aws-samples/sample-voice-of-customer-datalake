@@ -12,6 +12,23 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ## [Unreleased]
 
+### Added
+
+- An expanded prioritization row can enlarge the prototype it is showing to fill the viewport, in
+  place, so a pitch session can look at the artifact without leaving the sliders, the team's numbers
+  and the room vote behind on the page. Escape, the visible Close control and a click outside all
+  return to the row. Offered for every prototype the row renders, including a legacy inline one and a
+  JSON spec, neither of which has an address that "Open in new tab" could use.
+
+### Fixed
+
+- Shared modal dialogs now honour Escape and keep Tab inside themselves while focus is in a nested
+  same-origin `<iframe>`. Keys pressed inside a frame are raised in the frame's own document and
+  never reached the dialog, so any modal embedding one (the prototype overlay above) could not be
+  dismissed from the keyboard once a reader clicked into its content. A frame the page cannot read
+  into — cross-origin, or sandboxed without `allow-same-origin` — still cannot be observed, so
+  dialogs embedding one must offer a visible dismiss control.
+
 ### Security
 
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and

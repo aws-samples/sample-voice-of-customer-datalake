@@ -547,6 +547,22 @@ function resolvePrototypeMode(
 }
 
 /**
+ * The measure a JSON-spec prototype is laid out on inside the enlarge overlay.
+ *
+ * `PrototypeRenderer`'s own default is `max-w-2xl` — a readable column, correct in
+ * the row's half-width pane and correct in the Documents tab, and invisible in both
+ * because the pane is the tighter constraint. In a viewport-wide dialog it is the
+ * only constraint, and the result is a 672px column in a mostly-empty panel: the
+ * reader asked for the screen and got a taller version of the same column.
+ *
+ * Wider, but still capped. A spec is prose, forms and lists, and a stats grid or a
+ * list stretched to a 2560px display is harder to read than the column was, not
+ * easier. `max-w-5xl` roughly doubles the measure on a laptop while keeping lines
+ * scannable; `mx-auto` keeps it centred, as it is in the row.
+ */
+const ENLARGED_SPEC_MEASURE = 'max-w-5xl mx-auto'
+
+/**
  * The prototype panel's heading, and the two things a reader can do about a pane
  * this size.
  *
@@ -565,10 +581,16 @@ function resolvePrototypeMode(
  *
  * "Enlarge" appears for EVERY prototype the panel renders, url or not: it
  * re-renders the pane the row is already showing and needs no address of its own,
- * so a legacy inline prototype and a JSON spec enlarge exactly as well as a signed
- * one. It sits beside the anchor because the two answer the same question — "I
- * cannot see this properly" — and a reader comparing them should not have to find
- * them in different places.
+ * so a legacy inline prototype and a JSON spec get it as much as a signed one does.
+ * It sits beside the anchor because the two answer the same question — "I cannot see
+ * this properly" — and a reader comparing them should not have to find them in
+ * different places.
+ *
+ * What each KIND gains differs, and the panel says so rather than implying they are
+ * equal: an HTML prototype is a page in a frame and simply gets the viewport, while
+ * a JSON spec is a document laid out on a readable measure, so it gains the height,
+ * the scroll and a wider column (`ENLARGED_SPEC_MEASURE`) but is still capped — a
+ * stats grid stretched across a 2560px display reads worse, not better.
  *
  * @param enlarged the prototype as the overlay should render it: the row's own
  *   pane element in a box that fills the dialog.
@@ -643,6 +665,21 @@ function PrototypePanel({
    * one be replaced. A React element is a description and not an instance, so using
    * this in both places mounts a frame per box — and the overlay's box does not
    * exist until somebody opens it, `ModalShell` rendering nothing while closed.
+   *
+   * The frame is the whole of what has to be shared. A JSON spec carries no signed
+   * URL and so nothing that can lapse under a reader, which is why the overlay is
+   * free to re-render it on a wider measure (`ENLARGED_SPEC_MEASURE`) while the row
+   * keeps the readable column its narrow pane needs.
+   *
+   * Mounting per box is also the cost of the reuse, and worth naming so nobody reads
+   * "the row's pane, bigger" too literally: each box performs its own load, so the
+   * enlarged frame starts at the prototype's FIRST screen regardless of where the
+   * row's pane had got to, and both frames are live and executing while the overlay
+   * is open. Accepted, not overlooked — `HtmlPrototypeFrame` exposes no navigation
+   * state to hand over, and a live iframe cannot be moved between parents without
+   * reloading. Compare `useLoadedUrl`: the reset it exists to prevent is the same
+   * one, minus the part that made it a defect, since this one happens because a
+   * reader asked rather than on a timer they cannot see.
    */
   const pane = mode.kind === 'html' ? (
     <HtmlPrototypeFrame url={url} html={content} title={prototype?.title} className="w-full h-full border-0" />
@@ -660,7 +697,7 @@ function PrototypePanel({
              spec, which is a document rather than a frame and can be taller than
              the screen. */
           <div className={clsx('h-full', mode.kind === 'html' ? 'overflow-hidden' : 'overflow-y-auto p-4')}>
-            {pane}
+            {mode.kind === 'html' ? pane : <PrototypeRenderer spec={mode.spec} className={ENLARGED_SPEC_MEASURE} />}
           </div>
         )}
         t={t}

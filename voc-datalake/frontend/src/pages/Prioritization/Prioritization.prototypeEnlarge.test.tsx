@@ -6,7 +6,7 @@
  * without leaving the page, because the team's numbers, the reader's own sliders
  * and the room vote are all here and a new tab abandons them.
  *
- * Four properties are cheap to lose and invisible in review, so each is pinned by
+ * These properties are cheap to lose and invisible in review, so each is pinned by
  * a test that fails when it is reverted:
  *
  * 1. **The overlay is a dialog with a name, and focus goes into it.** A
@@ -15,7 +15,12 @@
  *    behind the artifact.
  * 2. **It comes back — by the close control AND by Escape — and focus returns to
  *    the trigger.** An overlay that covers the row it was opened from is a trap if
- *    only the mouse can leave it.
+ *    only the mouse can leave it. Escape is pinned twice, and the second one is the
+ *    load-bearing case: `user.keyboard` types into the TOP document, which is only
+ *    where focus is before anybody clicks into the artifact. A key pressed inside
+ *    the prototype is raised in the frame's own document, and a shell listening
+ *    only on `document` never sees it — so Escape and the Tab trap were inert for
+ *    exactly the state this overlay exists to be used in.
  * 3. **It renders the ROW'S frame.** The overlay must show the same
  *    `HtmlPrototypeFrame` the row does, because that frame carries the signed-URL
  *    handling (`useLoadedUrl`) that turns a lapsed link into a readable message
@@ -23,6 +28,10 @@
  *    against, by pinning that the enlarged pane loads the row's signed address.
  * 4. **No prototype, no control.** The affordance and the artifact appear
  *    together; an enlarge button over an empty dialog is worse than no button.
+ * 5. **A JSON spec is enlarged too, and gains WIDTH as well as height.** The other
+ *    prototype format, and the only branch where the container has a decision to
+ *    make: `PrototypeRenderer` caps itself at a readable column, invisible in the
+ *    row's narrow pane and the only constraint in a viewport-wide dialog.
  *
  * The open-in-a-new-tab anchor and the expiry note beside it are covered by
  * Prioritization.prototypeLink.test.tsx and are only re-checked here for the one
@@ -34,7 +43,7 @@
  * Prioritization.prototypeRefresh.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
@@ -114,6 +123,32 @@ const prototypeDoc = (prototypeUrl?: string) => ({
   created_at: '2025-01-03',
 })
 
+const SPEC_SCREEN_LABEL = 'Signup'
+const SPEC_HEADING = 'Create your account'
+
+/**
+ * A prototype in the OTHER format: a JSON spec, rendered natively by
+ * `PrototypeRenderer` rather than in a frame.
+ *
+ * `prototype_format` unset and no `prototype_url`, so `resolvePrototypeMode` takes
+ * the spec path — which is the half of the overlay's container the html cases never
+ * reach, and the half where the sizing question lives (a spec is laid out on a
+ * readable measure, so the row's cap has to be widened for the overlay rather than
+ * merely given more height).
+ */
+const specPrototypeDoc = () => ({
+  document_id: 'proto-1',
+  document_type: 'prototype',
+  title: PROTOTYPE_TITLE,
+  content: JSON.stringify({
+    screens: [
+      { id: 'signup', label: SPEC_SCREEN_LABEL, heading: SPEC_HEADING },
+      { id: 'done', label: 'Done', heading: 'All set' },
+    ],
+  }),
+  created_at: '2025-01-03',
+})
+
 function renderPrioritization() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter([{ path: '/', element: <Prioritization /> }])
@@ -138,6 +173,46 @@ async function expandRow() {
 const enlargeName = new RegExp(escapeRegExp(t('prioritization:preview.enlarge')), 'i')
 const closeName = new RegExp(escapeRegExp(t('common:actions.close')), 'i')
 const openLinkName = new RegExp(escapeRegExp(t('components:prototypeLink.openNewTab')), 'i')
+// Through `t`, like every other string here: the copy of the expiry note is not
+// this suite's to know, and the two catalogue keys drift independently of it.
+const lifetimeHint = new RegExp(escapeRegExp(t('components:prototypeLink.linkExpiryHint')), 'i')
+const lapsedNote = new RegExp(escapeRegExp(t('components:prototypeLink.linkExpired')), 'i')
+
+/**
+ * The prototype's OWN document inside the overlay, as it exists once the frame has
+ * loaded — the thing a reviewer is clicking around in.
+ *
+ * jsdom does not fetch a frame's `src`, so its document arrives empty and stays
+ * `readyState: 'loading'` forever. `write()` gives it the body a real load would,
+ * and the `load` event afterwards is the signal a browser raises at that moment and
+ * the one `ModalShell` re-scans on. Dispatching it is not a shortcut past the
+ * behaviour under test: without a `load` (or the mutation that added the frame) the
+ * shell has nothing to tell it a document now exists to listen to.
+ */
+function prototypeDocumentIn(dialog: HTMLElement): Document {
+  const frame = within(dialog).getByTitle(PROTOTYPE_TITLE)
+  const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
+  if (doc === null) throw new Error('the enlarged prototype is not a frame with a document')
+  doc.open()
+  doc.write('<html><body></body></html>')
+  doc.close()
+  frame.dispatchEvent(new Event('load'))
+  return doc
+}
+
+/**
+ * Raise a key in the prototype's own document, as a browser does for one pressed
+ * inside it. `act` because closing the overlay is a state update, and a dispatch
+ * React did not initiate leaves the re-render unflushed.
+ */
+function pressInside(doc: Document, key: string) {
+  act(() => {
+    const target = doc.activeElement ?? doc.body
+    target.dispatchEvent(
+      new (doc.defaultView ?? window).KeyboardEvent('keydown', { key, bubbles: true }),
+    )
+  })
+}
 
 /** Open the row, then the overlay, returning the trigger and the dialog. */
 async function openOverlay() {
@@ -214,7 +289,7 @@ describe('offering to enlarge a row\'s prototype', () => {
     expect(screen.queryByRole('button', { name: openLinkName })).not.toBeInTheDocument()
     // And the expiry stays visible beside it, rather than being displaced by the
     // new control.
-    expect(screen.getByText(/tied to your session, not a share link/i)).toBeInTheDocument()
+    expect(screen.getByText(lifetimeHint)).toBeInTheDocument()
   })
 
   it('renders nothing enlarged until the control is used', async () => {
@@ -240,7 +315,19 @@ describe('the enlarged prototype', () => {
   it('moves focus into the dialog when it opens', async () => {
     const { dialog } = await openOverlay()
 
-    expect(dialog).toContainElement(document.activeElement as HTMLElement)
+    // `contains` rather than `toContainElement(document.activeElement as …)`: the
+    // repo bans type assertions in source and this needs no widening anyway.
+    expect(dialog.contains(document.activeElement)).toBe(true)
+  })
+
+  it('announces itself as opening a dialog before focus moves there', async () => {
+    // `aria-haspopup="dialog"` is what lets a screen-reader user CHOOSE to open the
+    // overlay rather than discover they did once focus has moved. Comment-only
+    // otherwise, and the class of attribute that gets dropped in a restyle.
+    await expandRow()
+
+    expect(await screen.findByRole('button', { name: enlargeName }))
+      .toHaveAttribute('aria-haspopup', 'dialog')
   })
 
   it('renders the row\'s own frame at the row\'s signed address', async () => {
@@ -259,6 +346,46 @@ describe('the enlarged prototype', () => {
     expect(screen.getAllByTitle(PROTOTYPE_TITLE)).toHaveLength(2)
   })
 
+  it('renders a JSON spec inside the overlay, on a wider measure than the row\'s', async () => {
+    // The spec branch of the overlay's container, which no other prototype test
+    // reaches — every one of them sets `prototype_format: 'html'`, and the "legacy"
+    // case is legacy HTML, which still takes the html path.
+    //
+    // Both halves matter. That the spec RENDERS in the dialog is the claim that
+    // enlarge is offered without an address to open. That it renders on a measure
+    // the row does not use is the claim that enlarging a spec gains WIDTH:
+    // `PrototypeRenderer` caps itself at a readable column, so a viewport-wide
+    // dialog would otherwise be a 672px column in an empty panel — height gained,
+    // width not, contrary to what the panel's own comment promises.
+    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, specPrototypeDoc()] })
+
+    const { dialog } = await openOverlay()
+
+    const enlarged = within(dialog).getByRole('heading', { name: SPEC_HEADING })
+    expect(enlarged).toBeInTheDocument()
+    // Its own navigation too, i.e. the real renderer and not a static excerpt.
+    expect(within(dialog).getByRole('button', { name: SPEC_SCREEN_LABEL })).toBeInTheDocument()
+    // A class assertion because the measure is the whole point and nothing else
+    // observes it in jsdom, which does no layout. The row's own copy is the control:
+    // it must keep the narrow default while the overlay's does not.
+    const measureOf = (heading: HTMLElement) => heading.closest('div.mx-auto')?.className ?? ''
+    expect(measureOf(enlarged)).toContain('max-w-5xl')
+    const inRow = screen.getAllByRole('heading', { name: SPEC_HEADING }).filter((h) => !dialog.contains(h))
+    expect(inRow).toHaveLength(1)
+    expect(measureOf(inRow[0])).toContain('max-w-2xl')
+  })
+
+  it('offers the enlarge control for a JSON spec, which has no address to open', async () => {
+    // Same asymmetry the legacy-HTML case pins, on the other format: a spec has no
+    // signed URL, so "Open in new tab" cannot appear and "Enlarge" still must.
+    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, specPrototypeDoc()] })
+
+    await expandRow()
+
+    expect(await screen.findByRole('button', { name: enlargeName })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: openLinkName })).not.toBeInTheDocument()
+  })
+
   it('reports a lapsed link inside the overlay rather than showing a broken pane', async () => {
     // Same degradation the row's pane gets, and the reason the overlay reuses the
     // row's frame: an expired signature is announced by `HtmlPrototypeFrame`'s own
@@ -270,7 +397,7 @@ describe('the enlarged prototype', () => {
     const { dialog } = await openOverlay()
 
     // The row says so, in the note beside the anchor…
-    expect(screen.getByText(/Link expired/)).toBeInTheDocument()
+    expect(screen.getByText(lapsedNote)).toBeInTheDocument()
     // …and the overlay still renders through the same frame, which is what carries
     // that behaviour, rather than an empty box or a bespoke error of its own.
     expect(within(dialog).getByTitle(PROTOTYPE_TITLE).tagName).toBe('IFRAME')
@@ -296,6 +423,45 @@ describe('getting back to the row', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+
+  it('closes on Escape pressed while focus is inside the prototype itself', async () => {
+    // THE state this overlay is used in, and the one the test above does not reach:
+    // `user.keyboard` types into the top document, which is only where focus is
+    // before anybody clicks into the artifact. A real key pressed inside the frame is
+    // raised in the FRAME's document and never reaches the embedder, so a shell
+    // listening only on `document` goes silent exactly when a reviewer is walking the
+    // room through the prototype — Escape inert, Tab untrapped, and the frame is
+    // itself focusable so one Tab from Close lands there.
+    const { dialog, trigger } = await openOverlay()
+    const frameDoc = prototypeDocumentIn(dialog)
+    // A control of the prototype's own, focused as a reviewer clicking into it would.
+    frameDoc.body.innerHTML = '<button id="proto-next">Next screen</button>'
+    frameDoc.getElementById('proto-next')?.focus()
+
+    pressInside(frameDoc, 'Escape')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  it('keeps Tab inside the dialog from the prototype\'s last control', async () => {
+    // Where a browser hands focus to whatever follows the frame — and what follows
+    // is the page behind the overlay, whose row is showing a SECOND live copy of the
+    // same interactive prototype. A keyboard user would be tabbing through content
+    // they cannot see.
+    const { dialog } = await openOverlay()
+    const frameDoc = prototypeDocumentIn(dialog)
+    frameDoc.body.innerHTML = '<button id="proto-last">Finish</button>'
+    frameDoc.getElementById('proto-last')?.focus()
+
+    pressInside(frameDoc, 'Tab')
+
+    // A named control rather than `dialog.contains(activeElement)`: while focus is
+    // inside the frame, this document's activeElement IS the <iframe> element, which
+    // is already inside the dialog — so the containment check passes even when
+    // nothing intervened and the browser is about to hand focus to the page behind.
+    expect(within(dialog).getByRole('button', { name: closeName })).toHaveFocus()
   })
 
   it('leaves the row expanded underneath, so the ballot is still there on return', async () => {

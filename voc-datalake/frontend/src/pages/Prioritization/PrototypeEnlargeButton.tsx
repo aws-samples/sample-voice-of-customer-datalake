@@ -27,13 +27,30 @@
  * dialog opens, because `ModalShell` renders nothing while closed — so a row
  * showing a prototype pays for one frame, not two, until somebody asks.
  *
+ * What "the row's own frame, at a different size" does NOT mean is the same frame
+ * instance: each box mounts its own iframe, so opening this overlay performs a
+ * fresh load and the enlarged prototype starts at its FIRST screen no matter which
+ * screen the row's pane was showing, and both frames are live and executing while
+ * the overlay is open. Accepted rather than missed — `HtmlPrototypeFrame` exposes
+ * no navigation state to hand over, and a live iframe cannot be reparented without
+ * reloading. It is the same loss of place `useLoadedUrl` exists to prevent, minus
+ * the part that made that one a defect: this one happens because somebody asked,
+ * not on a timer they cannot see.
+ *
  * ## The dialog behaviour is `ModalShell`'s, deliberately
  *
- * Escape, the focus move in, the focus return to this trigger, `role="dialog"`
- * and `aria-modal` all come from the shared shell. The audit behind issue #283
- * found 21 of 23 overlays in this app missing dialog semantics precisely because
- * each one re-implemented them; a full-viewport overlay is not the place to start
- * that again.
+ * Escape, the focus move in, the focus return to this trigger, the Tab trap,
+ * `role="dialog"` and `aria-modal` all come from the shared shell. The audit behind
+ * issue #283 found 21 of 23 overlays in this app missing dialog semantics precisely
+ * because each one re-implemented them; a full-viewport overlay is not the place to
+ * start that again.
+ *
+ * A key pressed inside an iframe is raised in the FRAME's document and never
+ * reaches the embedder, which made both Escape and the trap inert for this overlay
+ * the moment a reviewer clicked into the prototype — i.e. for almost all of its
+ * useful life. That is fixed in the shell (see `ModalShell`'s NESTED FRAMES note)
+ * rather than here, because the next consumer to embed a frame would otherwise
+ * inherit the same silence.
  *
  * @module pages/Prioritization/PrototypeEnlargeButton
  */
@@ -59,7 +76,19 @@ export default function PrototypeEnlargeButton({
   readonly documentTitle?: string
   readonly children: ReactNode
 }): ReactElement {
-  const { t } = useTranslation('prioritization')
+  // Both namespaces this component reads, declared rather than left implicit: the
+  // dialog's dismiss control reuses `common:actions.close` instead of minting a
+  // ninth spelling of "Close", and that reach only resolves because `common` is
+  // loaded. Today every namespace is loaded at init (`i18n/options.ts`), so naming
+  // it changes nothing at runtime; it is what keeps this component correct if that
+  // ever becomes lazy, which no test would otherwise catch.
+  //
+  // EVERY key below is namespace-qualified, and must stay that way:
+  // `scripts/i18n-check.mjs` attributes an unqualified key to the single-string
+  // namespace it finds on this hook, and finds none in the array form — so an
+  // unqualified key here is filed under `common` and reported both missing-in-source
+  // and unused, i.e. as a deletion candidate.
+  const { t } = useTranslation(['prioritization', 'common'])
   const [isOpen, setIsOpen] = useState(false)
   // Names the dialog after the heading it already shows, so the accessible name
   // cannot drift from the visible one. `useId` because the page renders one of
@@ -72,15 +101,23 @@ export default function PrototypeEnlargeButton({
           without it the control announces as a plain button and a screen-reader
           user learns they are in a dialog only after focus has moved there.
           `aria-expanded` would be wrong — this is not a disclosure revealing
-          adjacent content, it is a modal that does not exist until asked for. */}
+          adjacent content, it is a modal that does not exist until asked for.
+
+          `hover:text-blue-700` and NOT the `hover:underline` of the anchor beside
+          it, following `FormQrButton`: underline on hover is what this app's links
+          do, and this control stays on the page. The two share the blue and sit
+          together because they answer the same question — "I cannot see this
+          properly" — but the hover is where a reader learns which of them is about
+          to take them somewhere. Stated because the neighbouring anchor's classes
+          are one line away and copying them looks like consistency. */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
         aria-haspopup="dialog"
-        className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700"
       >
         <Maximize2 size={12} />
-        {t('preview.enlarge')}
+        {t('prioritization:preview.enlarge', { defaultValue: 'Enlarge' })}
       </button>
       <ModalShell
         isOpen={isOpen}
@@ -94,8 +131,13 @@ export default function PrototypeEnlargeButton({
         panelClassName="h-full flex flex-col overflow-hidden"
       >
         <div className="flex items-center justify-between gap-3 border-b px-4 py-2 flex-shrink-0">
-          <h3 id={headingId} className="font-medium text-gray-900 truncate">
-            {t('preview.prototypeTitle')}
+          {/* `min-w-0 flex-1` is what makes the `truncate` fire at all: a flex item's
+              default `min-width: auto` refuses to shrink below its content, so a long
+              document title would push this row wider and overflow the panel instead
+              of ellipsising. Same shape as the `min-h-0` below, on the other axis —
+              and the `flex-1 min-w-0 … truncate` pattern CategoriesManager uses. */}
+          <h3 id={headingId} className="font-medium text-gray-900 truncate min-w-0 flex-1">
+            {t('prioritization:preview.prototypeTitle', { defaultValue: 'Prototype' })}
             {/* The artifact's own name, inside the heading rather than beside it, so
                 it is part of the dialog's accessible name instead of a second label
                 a screen reader reaches only by exploring. Omitted when the document
@@ -107,14 +149,20 @@ export default function PrototypeEnlargeButton({
           {/* Visible, and the panel's first focusable so this is where the shell
               puts focus on open. The shell's own ways out — Escape and an overlay
               click — are both invisible, and this overlay covers the row a viewer
-              would otherwise click back to. */}
+              would otherwise click back to.
+              It is also the only exit that cannot be swallowed by the artifact: a
+              cross-origin or sandboxed prototype raises its keys in a document this
+              page is not allowed to read, so Escape genuinely does not reach the
+              shell from inside one (the shell listens through same-origin frames —
+              see its NESTED FRAMES note — which is all it can do). A prototype
+              served from another origin must still be dismissable, and this is how. */}
           <button
             type="button"
             onClick={() => setIsOpen(false)}
             className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900 flex-shrink-0"
           >
             <X size={16} />
-            {t('common:actions.close')}
+            {t('common:actions.close', { defaultValue: 'Close' })}
           </button>
         </div>
         {/* `min-h-0` beside `flex-1`: a flex child's default `min-height: auto`
