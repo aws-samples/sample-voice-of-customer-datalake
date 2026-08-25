@@ -273,12 +273,12 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
    */
   const template = synthProcessingTemplate();
 
-  /** The aggregation Lambda, found by its handler + description of the code asset
-   * rather than by logical id: a CDK-generated id can change with a construct-tree
-   * edit, and matching the function by what it IS keeps this test pinned to the
-   * function rather than to a name. */
-  function aggregatorEnvironment(): Record<string, unknown> {
-    const functions = Object.values(template.findResources('AWS::Lambda::Function'))
+  /** Every Lambda in this stack whose service name says it is the aggregator, found
+   * by that name rather than by logical id: a CDK-generated id can change with a
+   * construct-tree edit, and matching the function by what it IS keeps these tests
+   * pinned to the function rather than to a name. */
+  function aggregatorFunctions(): { Properties?: any }[] {
+    return Object.values(template.findResources('AWS::Lambda::Function'))
       .filter((fn) => {
         const vars: unknown = fn.Properties?.Environment?.Variables;
         return (
@@ -286,11 +286,22 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
           (vars as Record<string, unknown>).POWERTOOLS_SERVICE_NAME === 'voc-aggregator'
         );
       });
-    // The denominator: zero matches would make every assertion below vacuous, and a
-    // second match would mean this is no longer asserting about one function.
-    expect(functions).toHaveLength(1);
-    return functions[0].Properties.Environment.Variables as Record<string, unknown>;
   }
+
+  function aggregatorEnvironment(): Record<string, unknown> {
+    return aggregatorFunctions()[0].Properties.Environment.Variables as Record<string, unknown>;
+  }
+
+  it('finds exactly one aggregation Lambda to assert about', () => {
+    // THE DENOMINATOR, and it is its own test rather than a line inside the helper.
+    // Zero matches would make every assertion below vacuously true and a second match
+    // would mean they are no longer about one function — but asserted per call, that
+    // showed up as a failure of whichever environment test happened to run first,
+    // which reads as "the idempotency table name is missing" when what is really
+    // wrong is that the subject is missing or ambiguous. Stated once, so the
+    // diagnosis is one step shorter and names the real problem.
+    expect(aggregatorFunctions()).toHaveLength(1);
+  });
 
   it('passes the idempotency table name to the aggregation Lambda', () => {
     expect(aggregatorEnvironment()).toHaveProperty('IDEMPOTENCY_TABLE');

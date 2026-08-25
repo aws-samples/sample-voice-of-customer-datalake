@@ -183,8 +183,9 @@ export class VocProcessingStack extends VocStack {
         // The dedupe marker for one stream record (issue #264). Streams deliver
         // at-least-once and this event source sets `retryAttempts: 3` with
         // `reportBatchItemFailures: true`, so a batch that partially fails
-        // re-presents records whose eight counter updates already landed —
-        // permanently, since nothing recomputes a counter from source. The
+        // re-presents records whose counter updates (one per dimension, plus the
+        // running average) already landed — permanently, since nothing recomputes a
+        // counter from source. The
         // aggregator claims each record's `eventID` in this table INSIDE the same
         // TransactWriteItems as the counters, so the claim and the counters commit
         // together or not at all.

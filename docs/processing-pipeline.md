@@ -231,7 +231,9 @@ AWS Lambda Powertools idempotency:
 
 ### Aggregator (DynamoDB Streams)
 
-The aggregator applies eight counter updates plus a running average per feedback
+The aggregator applies one counter update per dimension (`counter_dimensions` in
+`voc-datalake/lambda/aggregator/handler.py` — seven for a fully-populated item today,
+and designed to be extended) plus a running average per feedback
 record. Its event source is configured with `retryAttempts: 3` and
 `reportBatchItemFailures: true`, so a batch that partially fails re-presents records
 whose writes already landed — and because these counters are only ever incremented,
@@ -256,6 +258,33 @@ refused item cancels the whole transaction. So a redelivered reversal still decr
 a second time, bounded by that floor: no counter goes negative and no expired row is
 resurrected. `AggregateRecordReplayed` in CloudWatch counts the arrivals the claim
 refused.
+
+#### What a transaction costs, and where contention shows up
+
+Two prices, both accepted deliberately:
+
+- **DynamoDB bills a transactional write at 2× the WCU** of the same write sent on its
+  own, so an arrival's writes cost double what they did as independent `update_item`
+  calls. The aggregates table is `PAY_PER_REQUEST`, so this is a bill rather than a
+  ceiling to breach.
+- **Same-date records now contend.** Every record of a date moves
+  `METRIC#daily_total`, and `TransactWriteItems` conflicts on a contended item where
+  two plain `update_item`s would simply have serialised. A bulk import (the
+  `s3_import` plugin, or `TRIM_HORIZON` after a redeploy) is the shape that produces
+  this at volume.
+
+Contention converges rather than losing records, and it is bounded in three places:
+the transaction is re-attempted in process with a jittered backoff
+(`TRANSACT_WRITE_ATTEMPTS = 3`, matching `ballots_handler`'s `BALLOT_WRITE_ATTEMPTS`
+for the same DynamoDB reason), past that bound the stream redelivers the record, and
+the claim makes every one of those retries a no-op if an earlier attempt landed.
+
+`AggregateTransactionConflicted` in CloudWatch is the number to watch, since a retry
+that succeeds is otherwise invisible. If it climbs during an import, the levers are the
+event source's `batchSize` and `parallelizationFactor` in
+`voc-datalake/lib/stacks/processing-stack-consolidated.ts` — not a wider transaction,
+which would put the conditional reversal writes inside it and disable the aged-out-day
+protections described above.
 
 ## Rebuilding aggregates for a window
 

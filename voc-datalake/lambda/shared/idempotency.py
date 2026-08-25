@@ -160,8 +160,8 @@ def dedupe_claim_item(
     🔑 WHY NOT `idempotent_function`. That decorator is two writes around a call: an
     INPROGRESS record, the function, then a COMPLETED record carrying its result.
     The function's own writes therefore land between the two, unprotected — so a
-    record that dies partway through eight counter updates has applied some of them,
-    the marker is not COMPLETED, and the retry applies the whole eight again on top.
+    record that dies partway through a set of counter updates has applied some of them,
+    the marker is not COMPLETED, and the retry applies the whole set again on top.
     That partial-application case is the one that leaves aggregate rows disagreeing
     with each other (a daily total that does not equal the sum of its categories),
     and it is precisely what a transaction removes. The decorator also stores and

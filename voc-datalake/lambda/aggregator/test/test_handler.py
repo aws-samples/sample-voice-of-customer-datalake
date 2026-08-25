@@ -206,7 +206,7 @@ Each of those reverts was RUN, not predicted. Two more were run for the same
 reason:
 
   * having the reverse path skip one dimension — the shape an inverted
-    hand-written twin of the eight original `update_counter` calls would
+    hand-written twin of the original per-dimension `update_counter` calls would
     eventually take — fails
     `test_the_reversed_dimensions_are_exactly_the_incremented_ones`;
   * treating an absent `userIdentity` as TTL expiry fails
@@ -3076,7 +3076,7 @@ class TestARedeliveredArrivalMovesNothing:
     #
     # 🔑 THE PK IS CHOSEN FOR WHERE IT SORTS. Keys are applied in sorted order, so
     # `METRIC#daily_sentiment#negative` falls after `METRIC#daily_category#...` and
-    # before `METRIC#daily_total` — which against eight independent writes leaves the
+    # before `METRIC#daily_total` — which against independent writes leaves the
     # category count applied and the daily total not, the internally inconsistent
     # state the issue names. A poison row at either END of that order would let the
     # partial-application tests pass against the very defect they are written for.
@@ -3098,9 +3098,9 @@ class TestARedeliveredArrivalMovesNothing:
     ):
         """🔑 THE ACCEPTANCE CRITERION, over EVERY counter rather than one of them.
 
-        The urgent fixture, so all eight dimensions are present — the urgent row is
-        the one conditional dimension, and a claim that covered seven writes of eight
-        is the shape this asserts against by comparing the whole table.
+        The urgent fixture, so EVERY dimension is present — the urgent row is the one
+        conditional one — and a claim covering all of them but one is the shape this
+        asserts against by comparing the whole table rather than a count of rows.
         """
         from aggregator.handler import record_handler
 
@@ -3229,10 +3229,10 @@ class TestARedeliveredArrivalMovesNothing:
     ):
         """🔑 THE PARTIAL-APPLICATION CRITERION, which the claim alone does not meet.
 
-        This is the case that produces INTERNALLY INCONSISTENT metrics: with eight
-        independent `update_item` calls, a record that dies on its fifth has applied
-        four, so the daily total no longer equals the sum of the per-category counts —
-        and the retry applies all eight on top of those four. A marker written before
+        This is the case that produces INTERNALLY INCONSISTENT metrics: with one
+        independent `update_item` call per dimension, a record that dies partway has
+        applied the ones before it, so the daily total no longer equals the sum of the
+        per-category counts — and the retry applies every one of them on top. A marker written before
         the writes records the half-application as done; written after, it leaves it to
         be re-applied. Only transacting them removes the partial state itself.
 
