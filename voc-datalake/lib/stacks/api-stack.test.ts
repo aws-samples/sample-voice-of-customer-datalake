@@ -387,9 +387,27 @@ describe('stack and callers stay in step', () => {
   it.each([
     ['the API client', join('frontend', 'src', 'api', 'client.ts')],
     ['the embeddable widget', join('lambda', 'api', 'static', 'feedback-widget.js')],
+    ['the embed URL builder', join('frontend', 'src', 'api', 'feedbackFormUrls.ts')],
   ])('wires every /feedback-forms path %s calls', (_label, relativePath) => {
     // Callers fail opaquely now: an unwired path returns 403 rather than the
     // handler's 404, so a caller-side path with no method is a live bug.
+    //
+    // The third entry is the producer of the path the corrected docs now name as
+    // THE embed URL (#374): `feedbackFormUrls.ts` builds `/{form_id}/iframe`, and
+    // the UI hands it out as a link, a copyable string and an <iframe> snippet —
+    // yet `client.ts` mentions `iframe` nowhere, so before this the one route the
+    // docs advertise had no parity check from the code that constructs it.
+    //
+    // Asserted as "wired", matching its two siblings rather than the
+    // unauthenticated oracle below: this module runs in the authenticated
+    // dashboard, and what it produces for a stranger's browser is checked at the
+    // docs snippet.
+    //
+    // Known narrowing, inherited from `callerFormsPaths`: the returned URL is a
+    // template literal, so `${base}/feedback-forms/${encodeURIComponent(formId)}`
+    // collapses at the `)` and the `/iframe` segment is recovered from the
+    // module's docblock, which names the literal path twice. Losing those lines
+    // would quietly reduce this entry to checking `/feedback-forms/{form_id}`.
     const wiredPaths = new Set(apiMethods(apiTemplate()).map((m) => m.path));
     const referenced = callerFormsPaths(readRepoFile(...relativePath.split('/')));
 
