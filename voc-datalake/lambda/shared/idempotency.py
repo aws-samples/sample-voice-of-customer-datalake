@@ -27,7 +27,12 @@ names are declared here once (`IDEMPOTENCY_KEY_ATTRIBUTE`,
 `IDEMPOTENCY_EXPIRY_ATTRIBUTE`) rather than spelled again at either call site. The
 expiry attribute in particular has to agree with the table's
 `timeToLiveAttribute: 'expiration'` (`lib/stacks/core-stack.ts`) or markers
-accumulate forever, which no test and no error would report.
+accumulate forever — which no error and no runtime behaviour reports, so
+`test/test_idempotency_table_schema_lockstep.py` compares the constants below
+against that construct. It is a lockstep rather than a test of either side because
+every test that reads these names reads them THROUGH the constants: renaming one
+here moves the production write and its expectation together and stays green, while
+the table keeps expiring an attribute nothing writes.
 """
 
 import os
@@ -45,6 +50,7 @@ from aws_lambda_powertools.utilities.idempotency.exceptions import (
 # Re-export for convenience
 __all__ = [
     "dedupe_claim_item",
+    "DEDUPE_CLAIM_TTL_SECONDS",
     "get_idempotency_config",
     "get_persistence_layer",
     "idempotent",
