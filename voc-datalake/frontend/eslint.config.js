@@ -126,6 +126,11 @@ export default tseslint.config(
     //
     // It also runs in node, not a browser: it shells out to `git` and reads
     // `__dirname`.
+    //
+    // ⚠️ This buys LINT coverage, not typecheck coverage. `npm run typecheck` runs
+    // against `tsconfig.app.json`, which still excludes tests, so this file's types
+    // are checked only as a side effect of ESLint's project service resolving
+    // `tsconfig.test.json` here. A type error in it fails `lint`, not `typecheck`.
     files: ['src/publicAssets.test.ts'],
     languageOptions: {
       globals: globals.node,
