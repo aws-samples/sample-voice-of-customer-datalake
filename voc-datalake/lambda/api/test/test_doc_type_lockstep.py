@@ -23,28 +23,13 @@ into CI.
 Same pattern, and the same motivation, as `test_kiro_exportable_types_lockstep.py`
 and `lambda/shared/test/test_search_minimum_lockstep.py` in this repo.
 
-THE CHEAPER END STATE, recorded so choosing it stays deliberate. Those two sibling
-lockstep tests are 84 and 182 lines and read a single declaration with one regex;
-this one is far longer because it hand-parses TypeScript, and successive reviews
-have each found a new way that scanner mis-reads legal syntax — nested callback,
-column-0 latch, nested namespace, `//` comments, `/* */` comments, unbalanced
-brackets, then non-literal union members in both parsers. That is not bad luck; it
-is what parsing another language's syntax costs.
-
-The scanner exists only because `client.ts` and `projectsApi.ts` each spell
-`'prd' | 'prfaq'` INLINE instead of referencing the `DocType` union the picker
-already uses, so this contract has three copies in the frontend. If both signatures
-referenced `DocType`, there would be one declaration to pin, `_doc_type_union` alone
-would read it, and `_parameter_list_end`, `GENERATE_DOCUMENT_ANCHOR`,
-`DOC_TYPE_ANNOTATION_ANCHOR`, `FINDABLE_SHAPES`, `WIDENED_SHAPES`,
-`NARROWED_SHAPES` and most of `TestTheParser` would all be unnecessary —
-collapsing a drift axis instead of testing it. (`_without_comments` STAYS:
-`_doc_type_union` calls it too, and without it the `commented` shape truncates at
-the comment and `commented_out_predecessor` reads the dead union — the silent
-failure this file singles out as the worst.) That change is in
-`frontend/`, which the PR introducing this file deliberately kept out of scope, so
-it is recorded here rather than done: the next round of parser bugs should be a
-choice between extending the scanner and deleting it, not a default.
+MOST OF THIS FILE WANTS DELETING, and issue #381 carries the argument. In short:
+the scanner exists only because `client.ts` and `projectsApi.ts` spell
+`'prd' | 'prfaq'` INLINE rather than referencing the `DocType` union, so there are
+three copies of the contract instead of one. Point both signatures at `DocType` and
+`_doc_type_union` alone suffices. Read that issue before extending the parser
+again — several review rounds have each found a new way it mis-reads legal
+TypeScript, so a further round should be a choice, not a default.
 
 The comparisons SKIP when the frontend tree is absent (a backend-only sparse
 checkout should not report a mismatch it never measured), but
@@ -526,8 +511,10 @@ NARROWED_SHAPES = {
 # Each maps to the message fragment its refusal must carry, so the test pins WHICH
 # of the three guards fired rather than only that something did. That matters here:
 # with a single either-message assertion, dropping the identifier alternation from
-# UNION_TERM left every one of these green — the positional guard refused them all
-# on its own — and the grammar change the fix rests on was unpinned.
+# UNION_TERM left every one of these green, because one of the OTHER two guards
+# picked each of them up — measured under that mutation, 5 fall to the positional
+# guard and 3 (`single_named_type` and the two `unreadable_term_first*`) to the
+# anchor. So the grammar change the fix rests on was unpinned.
 WIDENED_SHAPES = {
     # Caught BY NAME: an identifier matches UNION_TERM, so it reaches the
     # not-a-literal check and the failure can say what it is.
@@ -805,38 +792,51 @@ class TestTheUnionParser:
         with pytest.raises(AssertionError, match='continues past the terms'):
             _doc_type_union(f"export type DocType = 'prd' | 'prfaq' | {member}\n")
 
-    def test_the_guard_survives_python_dash_o(self):
-        """`assert` is stripped under `python -O`, and this guard's whole purpose is
-        to be the loud option — so it must not have a mode in which it is not.
+    def test_no_parser_refuses_via_a_statement_python_dash_o_would_strip(self):
+        """`assert` is stripped under `python -O`, and these guards' whole purpose is
+        to be the loud option — so none of them may have a mode where it is not.
 
         Read from the source rather than run under a second interpreter, because an
-        `assert` compiles to nothing under `-O`: there is no runtime observation that
-        distinguishes "the guard passed" from "the guard was removed", which is the
-        whole problem. The property is therefore syntactic — no `assert` statement in
-        the body — and the source is the only place it is visible.
+        `assert` compiles to nothing under `-O`: no runtime observation distinguishes
+        "the guard passed" from "the guard was removed", which is the whole problem.
+        The property is syntactic, so the source is the only place it is visible.
 
-        The DOCSTRING is stripped before looking. Without that, this test passed on a
-        body containing no raise at all, because the docstring above discusses
-        `raise AssertionError` by name — a test satisfied by prose about itself.
-        `assert\\b` rather than `assert `, since `assert(x), msg` is stripped by `-O`
-        just as thoroughly and reads as a function call.
+        Walked as an AST over the three parser functions rather than by string
+        matching, which two earlier versions of this test got wrong in opposite
+        directions. Matching `raise AssertionError` in the source text passed on a
+        body containing no raise at all, because the docstring discusses the phrase
+        by name — a test satisfied by prose about itself. Stripping the docstring
+        line-by-line then deleted any code line that happened to equal a short
+        docstring line. `ast` has neither problem: a docstring is an `Expr`, never an
+        `Assert`, so it cannot be mistaken for one or accidentally deleted.
+
+        Covering all three functions, not just `_union_members`: the refusals live in
+        one shared helper today, but `_doc_type_union` and `_doc_type_annotations`
+        are where a future guard would most naturally be added.
         """
+        import ast
         import inspect
+        import textwrap
 
-        body = inspect.getsource(_union_members)
-        docstring = inspect.getdoc(_union_members) or ''
-        for line in docstring.splitlines():
-            body = body.replace(line, '')
+        asserts: list[str] = []
+        raises = 0
+        for function in (_union_members, _doc_type_union, _doc_type_annotations):
+            tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assert):
+                    asserts.append(f'{function.__name__}:{node.lineno}')
+                elif isinstance(node, ast.Raise):
+                    raises += 1
 
-        assert 'raise AssertionError' in body, (
-            'the refusals must be raises; found none outside the docstring'
+        assert not asserts, (
+            f'these parser guards refuse via `assert`, which `python -O` removes '
+            f'entirely: {asserts}. Use `raise AssertionError(...)`.'
         )
-        stripped = [
-            line for line in body.splitlines() if re.match(r'\s*assert\b', line)
-        ]
-        assert not stripped, (
-            f'these refusals in _union_members are `assert`, which `python -O` '
-            f'removes: {stripped}'
+        # The complement: the check above is also satisfied by having no guard at
+        # all, so count the refusals that must be there.
+        assert raises >= 3, (
+            f'expected the three refusals in _union_members, found {raises} raise '
+            f'statements across the parsers'
         )
 
 
