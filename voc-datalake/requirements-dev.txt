@@ -28,5 +28,5 @@ aws-lambda-powertools>=3.0.0
 jsonschema>=4.23.0,<5
 
 # Code quality — ruff is the only Python linter; the root gate runs
-# `ruff check lambda plugins` (config in ruff.toml, issue #201)
+# `ruff check lambda plugins scripts` (config in ruff.toml, issue #201)
 ruff>=0.15.0

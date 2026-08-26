@@ -177,8 +177,15 @@ jobs:
           # rather than silently yielding an empty path list.
           paths=$(python scripts/mcp_gate.py --print-paths)
           # An empty result would make pytest fall back to pytest.ini's
-          # `testpaths` and run the whole tree — green, but not this gate.
-          test -n "${paths}"
+          # `testpaths` and run the whole tree — green, but not this gate. Spelled
+          # out rather than left to `test -n`, which failed the step with no output
+          # at all: every other failure path in this job explains itself, and this
+          # is the one whose cause is least inferable from context, since the step
+          # would appear to have died after three lines for no stated reason.
+          if [ -z "${paths}" ]; then
+            echo "::error::scripts/mcp_gate.py --print-paths exited 0 but printed no path arguments, so this gate has no scope to run. pytest would otherwise fall back to pytest.ini's testpaths and run the whole tree — passing, but not as this gate. The cause is in pytest_paths() in voc-datalake/scripts/mcp_gate.py: TEST_PATH_GLOBS and EXPLICIT_TEST_PATHS are both empty, or it returned an empty tuple."
+            exit 1
+          fi
           # `|| status=$?` rather than reading `$?` on the next line: a bare
           # failing pytest would abort the step under errexit before the outcome
           # could be recorded. A command on the left of `||` is exempt, which is

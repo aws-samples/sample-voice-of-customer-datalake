@@ -17,9 +17,20 @@ same change that added this module extended that script to `scripts`.
 The convention this repo applies to every other check — that it earns its place
 by failing when the behaviour regresses — has to apply to the code that decides
 whether checks pass. So this module lives under `lambda/shared/test/` (inside
-`testpaths`, and inside the gate's own scope via `EXPLICIT_TEST_PATHS`) rather
+`testpaths`, and inside the gate's own scope via the `test_mcp_*` glob) rather
 than beside the script it tests, and the gate therefore audits its own enforcement
 on every pull request.
+
+Two layers, because two things can be neutered
+----------------------------------------------
+`TestTheGateAcceptsAHealthyRun` / `TestTheGateRejectsAShrunkenRun` cover the
+audit's LOGIC. `TestTheGateScopeIsSelfConsistent` covers its DATA — the floors
+themselves — which was the second hole: nothing asserted that a module the gate
+runs has a floor, only the converse, so deleting one line from `MODULE_FLOORS`
+was silent. Verified: dropping `'test_mcp_protocol_envelope': 285` left `926
+passed` and the audit at exit 0, and adding a module-level skip on top gave `641
+passed, 285 skipped`, still exit 0 — 285 tests asserting nothing with both CI
+steps green, via a two-line diff that never touches the pass/fail logic.
 
 The synthetic reports below are built by hand rather than by invoking pytest:
 the point is to exercise `audit()`'s decisions, including report shapes a healthy
@@ -115,11 +126,19 @@ class TestTheGateAcceptsAHealthyRun:
         report = _report_meeting_every_floor(tmp_path, test_mcp_tokens=(999, 0))
         assert mcp_gate.audit(report) == 0
 
-    def test_an_unfloored_module_does_not_redden_the_gate(self, tmp_path):
-        """A new `test_mcp_*.py` is gated the day it lands, floored later.
+    def test_an_unfloored_module_that_runs_does_not_redden_the_gate(self, tmp_path):
+        """A new `test_mcp_*.py` still runs on the PR that introduces it.
 
-        Requiring a floor before a module could be added would mean the glob
-        could not discover anything, which is the whole point of the glob.
+        Requiring a floor before a module could be added would mean the glob could
+        not discover anything, which is the whole point of the glob — so `audit()`
+        tolerates an unfloored module as long as it RUNS. What is not tolerated is an
+        unfloored module that skips (below), because there the missing floor is what
+        allowed the skip to pass unremarked.
+
+        Note this tolerance is `audit()`'s alone: `test_every_module_the_gate_runs_has_a_floor`
+        separately requires every module in the checked-out tree to be floored or
+        declared, so the untolerated case is reached only by a report describing a
+        module that is not in the tree this test suite sees.
         """
         cases = [(module, floor, 0) for module, floor in mcp_gate.MODULE_FLOORS.items()]
         cases.append(('test_mcp_brand_new', 2, 0))
@@ -163,6 +182,29 @@ class TestTheGateRejectsAShrunkenRun:
         floor = mcp_gate.MODULE_FLOORS['test_mcp_tokens']
         report = _report_meeting_every_floor(tmp_path, test_mcp_tokens=(floor - 1, 1))
         assert mcp_gate.audit(report) == 1
+
+    def test_an_unfloored_module_may_not_skip(self, tmp_path):
+        """The composite regression: floor deleted, then the module disabled.
+
+        With no floor there is nothing for a ran-count to fall below, so the floor
+        loop has no opinion and a skip would otherwise be reported as a warning and
+        nothing more. Verified before this check existed: deleting the
+        `test_mcp_protocol_envelope` floor and skipping the module gave `641 passed,
+        285 skipped` with the audit exiting 0.
+
+        This is what makes the two-line diff fail rather than merely be visible: the
+        self-consistency test catches the deleted floor, and this catches the skip
+        even if the floor's absence were somehow legitimate.
+        """
+        cases = [(module, floor, 0) for module, floor in mcp_gate.MODULE_FLOORS.items()]
+        cases.append(('test_mcp_not_floored', 0, 40))
+        assert mcp_gate.audit(_report(tmp_path, cases)) == 1
+
+    def test_an_unfloored_module_may_not_skip_even_partially(self, tmp_path):
+        """One skip is enough: with no floor, there is no threshold to be under."""
+        cases = [(module, floor, 0) for module, floor in mcp_gate.MODULE_FLOORS.items()]
+        cases.append(('test_mcp_not_floored', 39, 1))
+        assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
     def test_one_module_cannot_cover_for_another(self, tmp_path):
         """Why the floors are per-module rather than one total.
@@ -274,6 +316,69 @@ class TestTheGateScopeIsSelfConsistent:
             f'these globs match nothing: {empty}. Either the modules were renamed off the '
             'test_mcp_ prefix or the directory moved; a glob matching nothing contributes '
             'no coverage.'
+        )
+
+    def test_every_module_the_gate_runs_has_a_floor(self):
+        """The converse of the test below, and the one that closes a real hole.
+
+        `MODULE_FLOORS` is the gate's only defence against a shrinking surface, and
+        removing a line from it was silent: nothing asserted that a module the gate
+        RUNS has a floor, only that a floor names a module the gate runs. Verified
+        on this tree — deleting `'test_mcp_protocol_envelope': 285` (the largest
+        module, 285 tests) left `926 passed` with the audit exiting 0, printing only
+        a `(not floored)` note that reads like housekeeping; adding
+        `pytestmark = pytest.mark.skip(...)` on top gave `641 passed, 285 skipped`,
+        still exit 0. Two lines, each locally plausible — a floor "cleanup" and a
+        temporary skip — and 31% of the gate asserting nothing.
+
+        That is a strictly easier edit than the `return 0` mutation this module was
+        written for, since it never touches the pass/fail logic. It is the same
+        defect class one level out: that finding was "the audit's logic is
+        unprotected", this is "the audit's DATA is unprotected".
+
+        A module may be exempted, but only by saying so in `UNFLOORED_ON_PURPOSE` —
+        an exemption a reviewer sees in a diff, rather than one expressed by
+        omission and indistinguishable from a deletion.
+        """
+        root = Path(__file__).resolve().parents[3]
+        collected = {
+            path.stem
+            for glob in mcp_gate.TEST_PATH_GLOBS
+            for path in root.glob(glob)
+        } | {Path(path).stem for path in mcp_gate.EXPLICIT_TEST_PATHS}
+        unfloored = sorted(collected - set(mcp_gate.MODULE_FLOORS) - mcp_gate.UNFLOORED_ON_PURPOSE)
+        assert not unfloored, (
+            f'the gate runs these modules with no floor: {unfloored}. An unfloored module '
+            'can be skipped in its entirety without the audit objecting, because there is '
+            'no floor for its ran-count to fall below. Add a MODULE_FLOORS entry (its '
+            'current test count), or declare it in UNFLOORED_ON_PURPOSE.'
+        )
+
+    def test_no_exemption_is_stale(self):
+        """`UNFLOORED_ON_PURPOSE` must not outlive the module it exempts.
+
+        An entry naming a module the gate no longer runs is an exemption sitting
+        ready for the next module that happens to take that name — the exemption
+        would apply without anyone deciding it should.
+        """
+        root = Path(__file__).resolve().parents[3]
+        collected = {
+            path.stem
+            for glob in mcp_gate.TEST_PATH_GLOBS
+            for path in root.glob(glob)
+        } | {Path(path).stem for path in mcp_gate.EXPLICIT_TEST_PATHS}
+        stale = sorted(mcp_gate.UNFLOORED_ON_PURPOSE - collected)
+        assert not stale, (
+            f'UNFLOORED_ON_PURPOSE exempts modules the gate does not run: {stale}. Drop '
+            'them, so the exemption cannot silently apply to a future module of the same '
+            'name.'
+        )
+
+        floored = sorted(mcp_gate.UNFLOORED_ON_PURPOSE & set(mcp_gate.MODULE_FLOORS))
+        assert not floored, (
+            f'these modules are both floored and exempted from being floored: {floored}. '
+            'The exemption is dead — the floor applies — so remove it to keep the '
+            'declaration honest.'
         )
 
     def test_every_floored_module_is_actually_reachable_by_the_gate(self):

@@ -1,11 +1,12 @@
 """Guard tests for the MCP credential vocabulary, mirrored in Python and TypeScript.
 
 `shared/mcp_tokens.py` owns both axes of what a credential may do:
-`VALID_SCOPES` (which domains it may read) and `VALID_READ_REACHES` (how far).
-`projects_handler`'s mint route refuses anything outside either, and
+`VALID_SCOPES` (which domains it may read) and `VALID_READ_REACHES` (how far),
+plus `DEFAULT_READ_REACH`, the reach assumed when a stored row does not state one.
+`projects_handler`'s mint route refuses anything outside either vocabulary, and
 `mcp_handler` enforces both on every read. `frontend/src/api/mcpTokenSchema.ts`
-declares its own `MCP_SCOPES` and `READ_REACHES`, which decide what the mint
-form offers and what `normalizeApiTokens` will parse back.
+declares its own `MCP_SCOPES`, `READ_REACHES` and `DEFAULT_READ_REACH`, which
+decide what the mint form offers and what `normalizeApiTokens` will parse back.
 
 Nothing tied the two languages together, and the drift is asymmetric in a way
 that hides. `mcpTokenSchema.test.ts` pins the TypeScript side, and both Python
@@ -52,7 +53,12 @@ pretending to degrade gracefully.
 import re
 from pathlib import Path
 
-from shared.mcp_tokens import REACH_NONE, VALID_READ_REACHES, VALID_SCOPES
+from shared.mcp_tokens import (
+    DEFAULT_READ_REACH,
+    REACH_NONE,
+    VALID_READ_REACHES,
+    VALID_SCOPES,
+)
 
 
 def _repo_root() -> Path:
@@ -80,10 +86,33 @@ def _parse_string_array(name: str) -> tuple[str, ...] | None:
     return tuple(re.findall(r"'([^']*)'", match.group(1)))
 
 
-# Every declaration this module compares against. Named in one place so the
-# positive control below covers all of them — a rename of any one must fail
-# loudly rather than leave its own comparison measuring nothing.
-_MIRRORED_DECLARATIONS = ('READ_REACHES', 'OFFERED_READ_REACHES', 'MCP_SCOPES')
+def _parse_string_constant(name: str) -> str | None:
+    """The named single-quoted string constant from the schema module.
+
+    `export const DEFAULT_READ_REACH: ReadReach = 'workspace'` — a scalar rather
+    than an array, so it needs its own reader. Returns None on a miss for the same
+    reason as `_parse_string_array`: a rename must surface as the positive control
+    failing, not as a comparison against nothing.
+    """
+    if not _SCHEMA_SOURCE.exists():
+        return None
+    match = re.search(
+        rf"export\s+const\s+{re.escape(name)}\s*(?::[^=]+)?=\s*'([^']*)'",
+        _SCHEMA_SOURCE.read_text(),
+    )
+    return None if match is None else match.group(1)
+
+
+# Every declaration this module compares against, mapped to the reader that can
+# parse it. Named in one place so the positive control below covers all of them —
+# a rename of any one must fail loudly rather than leave its own comparison
+# measuring nothing.
+_MIRRORED_DECLARATIONS = {
+    'READ_REACHES': _parse_string_array,
+    'OFFERED_READ_REACHES': _parse_string_array,
+    'MCP_SCOPES': _parse_string_array,
+    'DEFAULT_READ_REACH': _parse_string_constant,
+}
 
 
 class TestTheFrontendSourceIsReadable:
@@ -103,11 +132,12 @@ class TestTheFrontendSourceIsReadable:
         )
 
     def test_every_mirrored_declaration_parses(self):
-        unparsed = [name for name in _MIRRORED_DECLARATIONS if _parse_string_array(name) is None]
+        unparsed = [name for name, read in _MIRRORED_DECLARATIONS.items() if read(name) is None]
         assert not unparsed, (
             f'parsed no {unparsed} from mcpTokenSchema.ts. Either a declaration was '
-            'renamed, or it is no longer a flat array literal this regex can read — in '
-            'both cases the comparisons below would silently measure nothing.'
+            'renamed, or it is no longer the flat array or quoted-string literal the '
+            'matching reader can read — in both cases the comparisons below would '
+            'silently measure nothing.'
         )
 
 
@@ -151,6 +181,41 @@ class TestReadReachMirror:
         assert REACH_NONE not in offered, (
             'the form now offers `none`, which mints a credential that reads nothing — '
             'intended only once a write tool exists to make such a token useful'
+        )
+
+    def test_both_languages_agree_on_the_default_reach(self):
+        """The reach assumed when a stored row does not state one.
+
+        Not a list axis, and its consequence is narrower than the two above — a
+        divergence here produces no 400, because the frontend constant is a
+        `z.enum(...).catch(...)` fallback for a row whose `read_reach` is absent or
+        unparseable. But that is precisely the case where the two must agree, and
+        `mcpTokenSchema.ts`'s own docstring says why: "Defaults mirror the backend's
+        own reading of a partial row (shared/mcp_tokens.py): an absent read_reach is
+        'workspace', because that is what enforcement assumes. Choosing a
+        safer-looking default here would be the wrong call — it would show a
+        credential as narrower than it really is."
+
+        So a drift means the UI describes a credential's reach differently from how
+        the backend enforces it — the harm that file exists to prevent — and both
+        sides were pinned only against themselves (`mcpTokenSchema.test.ts` asserts
+        `toBe('workspace')`, `test_mcp_tokens.py` asserts `== REACH_WORKSPACE`),
+        which is the same internally-consistent-by-construction shape as the axes
+        above.
+        """
+        declared = _parse_string_constant('DEFAULT_READ_REACH')
+        # Guarded rather than allowed to compare against None: a rename is the
+        # positive control's finding, not this test's.
+        assert declared is not None, (
+            'parsed no DEFAULT_READ_REACH from mcpTokenSchema.ts — see the positive '
+            'control above'
+        )
+        assert declared == DEFAULT_READ_REACH, (
+            f'the frontend assumes a partial row means {declared!r} while the backend '
+            f'enforces {DEFAULT_READ_REACH!r}. A token row with no read_reach would be '
+            'displayed with one reach and enforced with another — and if the frontend '
+            'value is the narrower of the two, the UI shows a credential as more '
+            'restricted than it actually is.'
         )
 
 
