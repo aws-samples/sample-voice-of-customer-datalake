@@ -254,3 +254,104 @@ describe('web-search wiring is skipped cleanly when the gateway is absent', () =
     expect(values.filter((v) => v.includes('undefined'))).toEqual([]);
   });
 });
+
+describe('the aggregator can reach the dedupe table it is already allowed to (#264)', () => {
+  /**
+   * DynamoDB Streams are at-least-once, and this Lambda's event source carries
+   * `retryAttempts: 3` with `reportBatchItemFailures: true` — so a batch that
+   * partially fails re-presents records whose counter updates already landed.
+   * The handler closes that by claiming each record's `eventID` in the idempotency
+   * table inside the same TransactWriteItems as the counters.
+   *
+   * The gap this pins was ENVIRONMENT ONLY: the shared `processingRole` has been
+   * granted `idempotencyTable.grantReadWriteData` all along for the processor, so
+   * the aggregator had the permission and not the NAME. That is exactly the shape
+   * that degrades silently — `handler.py` reads `IDEMPOTENCY_TABLE` with a default
+   * of empty and falls back to non-transactional writes with a warning, so a
+   * regression here does not fail a deploy, does not error at runtime, and shows up
+   * only as counters that drift under redelivery.
+   */
+  const template = synthProcessingTemplate();
+
+  /** Every Lambda in this stack whose service name says it is the aggregator, found
+   * by that name rather than by logical id: a CDK-generated id can change with a
+   * construct-tree edit, and matching the function by what it IS keeps these tests
+   * pinned to the function rather than to a name.
+   *
+   * Returns the ENVIRONMENTS rather than the resources, so the narrowing that proves
+   * each one is an object happens once, here, where it is already being done — the
+   * caller then needs no cast and the helper needs no `any`. */
+  function aggregatorEnvironments(): Record<string, unknown>[] {
+    return Object.values(template.findResources('AWS::Lambda::Function'))
+      .map((fn) => fn.Properties?.Environment?.Variables as unknown)
+      .filter((vars): vars is Record<string, unknown> => (
+        typeof vars === 'object' && vars !== null &&
+        (vars as Record<string, unknown>).POWERTOOLS_SERVICE_NAME === 'voc-aggregator'
+      ));
+  }
+
+  function aggregatorEnvironment(): Record<string, unknown> {
+    const environments = aggregatorEnvironments();
+    // ASSERTED HERE TOO, rather than only in the test below that owns the diagnosis.
+    // Indexing [0] blind is what this replaced, and on zero matches that threw
+    // `Cannot read properties of undefined` from each of the four tests — a TypeError
+    // in a CDK assertion sends the reader looking for a template-shape problem when
+    // the subject is simply gone. The duplication is cheap and this is the readable
+    // failure; `finds exactly one aggregation Lambda` still reports it as its own
+    // distinct problem.
+    expect(environments).toHaveLength(1);
+    return environments[0];
+  }
+
+  it('finds exactly one aggregation Lambda to assert about', () => {
+    // THE DENOMINATOR, and it is its own test rather than a line inside the helper.
+    // Zero matches would make every assertion below vacuously true and a second match
+    // would mean they are no longer about one function — but asserted per call, that
+    // showed up as a failure of whichever environment test happened to run first,
+    // which reads as "the idempotency table name is missing" when what is really
+    // wrong is that the subject is missing or ambiguous. Stated once, so the
+    // diagnosis is one step shorter and names the real problem.
+    expect(aggregatorEnvironments()).toHaveLength(1);
+  });
+
+  it('passes the idempotency table name to the aggregation Lambda', () => {
+    expect(aggregatorEnvironment()).toHaveProperty('IDEMPOTENCY_TABLE');
+  });
+
+  it('names a real table rather than a literal, so the value resolves at deploy', () => {
+    // A hand-written string would synthesize as a plain value and point at a table
+    // that may not exist in this account. What a real table reference looks like is
+    // NOT pinned to one spelling: the table is created in the core stack, so it
+    // arrives here as an `Fn::ImportValue` today and would be a `Ref` if the two
+    // were ever merged into one stack — both are CloudFormation resolving the table
+    // this app created, and asserting the CloudFormation intrinsic rather than which
+    // one keeps a stack reorganisation from failing a test whose subject it is not.
+    const value = aggregatorEnvironment().IDEMPOTENCY_TABLE;
+    expect(typeof value).toBe('object');
+    expect(Object.keys(value as object).some((key) => key.startsWith('Fn::') || key === 'Ref'))
+      .toBe(true);
+  });
+
+  it('names the SAME table the processor claims into', () => {
+    // One table, two writers. Different tables would let a stream record and a
+    // feedback record be deduped against separate state, which is not wrong so much
+    // as unmeasurable — and it would silently double the tables an operator has to
+    // know about. The handler namespaces its keys (`aggregator#stream#...`) so the
+    // two cannot collide within it.
+    const processor = Object.values(template.findResources('AWS::Lambda::Function'))
+      .map((fn) => fn.Properties?.Environment?.Variables as Record<string, unknown> | undefined)
+      .find((vars) => vars?.POWERTOOLS_SERVICE_NAME === 'voc-processor');
+    expect(processor).toBeDefined();
+    expect(aggregatorEnvironment().IDEMPOTENCY_TABLE)
+      .toEqual(processor?.IDEMPOTENCY_TABLE);
+  });
+
+  it('keeps the aggregates table name too, so the transaction can name it', () => {
+    // The counters go out as transaction items, which name their table by STRING
+    // (`TableName`) rather than through the boto3 resource. So `AGGREGATES_TABLE`
+    // stopped being merely how the handler finds its table and became what the
+    // transaction is built from — losing it would break every write rather than
+    // only the dedupe.
+    expect(aggregatorEnvironment()).toHaveProperty('AGGREGATES_TABLE');
+  });
+});

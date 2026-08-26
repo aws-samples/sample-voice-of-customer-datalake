@@ -22,6 +22,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Fixed
 
+- Feedback aggregation is now idempotent under DynamoDB Streams redelivery: the aggregate counter
+  updates and a per-stream-event claim commit in one DynamoDB transaction, so replaying an event is
+  a no-op instead of moving every counter a second time. `AggregateRecordReplayed` reports those
+  skips and `AggregateTransactionConflicted` reports bounded in-process retries on hot rows.
 - Shared modal dialogs now honour Escape and keep Tab inside themselves while focus is in a nested
   same-origin `<iframe>`. Keys pressed inside a frame are raised in the frame's own document and
   never reached the dialog, so any modal embedding one (the prototype overlay above) could not be

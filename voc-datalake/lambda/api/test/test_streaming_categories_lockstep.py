@@ -78,7 +78,21 @@ PYTHON_WRITER_PK_PATTERN = rf'^CATEGORIES_PK = {_Q}([^\'"]+){_Q}'
 PYTHON_WRITER_SK_PATTERN = rf'^CATEGORIES_SK = {_Q}([^\'"]+){_Q}'
 
 # The counter writers whose sort key the streaming window predicate depends on.
-AGGREGATOR_COUNTER_WRITERS = ('update_counter', 'update_average')
+#
+# FOUR, not two, since the arrival path became transactional (issue #264). An INSERT's
+# counters now go out as `TransactWriteItems` entries built by
+# `_counter_transaction_item` / `_average_transaction_item`, and those take the same
+# (pk, sk, ...) leading pair as the two single-write functions — so they are counter
+# writers in exactly the sense this file means, and leaving them out would have left
+# the sort keys of the MOST COMMON path (every ingested item) unpinned while every
+# assertion here stayed green. That is the partial-blindness failure
+# `_aggregator_counter_writes` was rewritten with `ast` to remove, arriving by a
+# different route: not a call shape the reader could not parse, but a call it was
+# never told to look for.
+AGGREGATOR_COUNTER_WRITERS = (
+    'update_counter', 'update_average',
+    '_counter_transaction_item', '_average_transaction_item',
+)
 
 # The one function that BUILDS a counter key, now that the call sites are generic
 # (`update_counter(pk, date, field)` serves both the increment and the reversal).
