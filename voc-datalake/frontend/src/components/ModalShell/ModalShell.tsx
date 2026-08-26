@@ -35,7 +35,9 @@
  * in the panel as well, at any depth, and re-attached as frames load or arrive.
  * Each nested document is watched in its own right, because a frame inserted or
  * navigated INSIDE one is invisible to the panel's own observer — a frame's document
- * is not part of its embedder's node tree.
+ * is not part of its embedder's node tree. A document that leaves the frame tree is
+ * dropped on the next scan rather than at close, so a prototype swapping an embedded
+ * frame does not accumulate a watcher per swap.
  *
  * The trap also has to let Tab move INTO such a frame. Descending into a frame is
  * the browser's DEFAULT action for a Tab pressed while the frame element has focus,
@@ -97,21 +99,40 @@ type ModalShellNameProps =
 type ModalShellProps = ModalShellBaseProps & ModalShellNameProps
 
 /**
- * Focusable descendants in DOM order, excluding anything not actually reachable.
+ * What can hold focus at all, before asking whether it is actually visible.
+ *
+ * A module constant because the cheap pre-checks in `tabWouldLeave` and
+ * `hasFocusable` need the same candidate set as `focusable` itself — two spellings
+ * of this list would let a control count as an edge in one place and not in the
+ * other.
+ */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, [contenteditable]:not([contenteditable="false"]), audio[controls], video[controls], [tabindex]:not([tabindex="-1"])'
+
+/** Candidates under `root` in DOM order, unfiltered — visibility is `reachable`'s job. */
+function focusCandidates(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)]
+}
+
+/**
+ * Whether a focus candidate under `root` is actually reachable by Tab.
  *
  * `display:none` must be checked up the ancestor chain: computed `display` of a
  * child inside a hidden container is the child's own value, so checking only the
  * element itself misses the motivating case — collapsible sections hide the
  * container, not each control. `visibility:hidden` inherits, so one check does.
+ *
+ * This is the expensive half — three `closest()` walks plus at least one style
+ * resolution per element, and `hiddenByAncestor` recurses to `root` — which is why
+ * callers that only need "is there one" or "is this an edge" short-circuit rather
+ * than building the whole filtered list. See `tabWouldLeave`.
  */
-function focusable(root: HTMLElement): HTMLElement[] {
-  const candidates = root.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, [contenteditable]:not([contenteditable="false"]), audio[controls], video[controls], [tabindex]:not([tabindex="-1"])',
-  )
+function reachable(root: HTMLElement, el: HTMLElement): boolean {
   // Styles are resolved through the element's OWN view, because `root` can be a
   // nested frame's body (see `tabWouldLeave`) and a document has no obligation to
   // compute styles for elements it does not own.
-  const styleOf = (el: Element) => (el.ownerDocument.defaultView ?? window).getComputedStyle(el)
+  const styleOf = (target: Element) =>
+    (target.ownerDocument.defaultView ?? window).getComputedStyle(target)
   // NB: deliberately not using offsetParent — jsdom does no layout and returns
   // null for every element, which would filter the list empty under test.
   /**
@@ -120,15 +141,29 @@ function focusable(root: HTMLElement): HTMLElement[] {
    * and without building an intermediate array — this runs per candidate on every
    * Tab keypress.
    */
-  const hiddenByAncestor = (el: HTMLElement): boolean =>
-    styleOf(el).display === 'none' ||
-    (el !== root && el.parentElement !== null && hiddenByAncestor(el.parentElement))
-  return [...candidates].filter((el) => {
-    if (el.closest('[hidden]') !== null || el.closest('[aria-hidden="true"]') !== null) return false
-    if (el.closest('details:not([open])') !== null) return false
-    if (styleOf(el).visibility === 'hidden') return false
-    return !hiddenByAncestor(el)
-  })
+  const hiddenByAncestor = (target: HTMLElement): boolean =>
+    styleOf(target).display === 'none' ||
+    (target !== root && target.parentElement !== null && hiddenByAncestor(target.parentElement))
+  if (el.closest('[hidden]') !== null || el.closest('[aria-hidden="true"]') !== null) return false
+  if (el.closest('details:not([open])') !== null) return false
+  if (styleOf(el).visibility === 'hidden') return false
+  return !hiddenByAncestor(el)
+}
+
+/** Focusable descendants in DOM order, excluding anything not actually reachable. */
+function focusable(root: HTMLElement): HTMLElement[] {
+  return focusCandidates(root).filter((el) => reachable(root, el))
+}
+
+/**
+ * Whether `root` holds anything Tab can reach, without building the list.
+ *
+ * `focusable(root).length > 0` answers the same question, but pays for every
+ * candidate in a document that may be a whole generated prototype page. The first
+ * reachable one settles it.
+ */
+function hasFocusable(root: HTMLElement): boolean {
+  return focusCandidates(root).some((el) => reachable(root, el))
 }
 
 /**
@@ -209,12 +244,41 @@ function nestedDocuments(root: HTMLElement): Document[] {
  * (`nestedDocuments` returns nothing for a body-less document for the same reason).
  * If the two ever need to diverge, `body` alone cannot separate them —
  * `doc.readyState` is what distinguishes "loading" from "complete and empty".
+ *
+ * `doc` here is a whole page rather than a dialog panel, and this runs on EVERY Tab
+ * a reviewer presses while walking through a prototype — where the answer is "no"
+ * for all but the last one. So it is answered WITHOUT building the filtered list:
+ * the question is only whether any reachable control lies beyond the focused one, and
+ * the first one found settles it. Building the list instead resolved styles and ran
+ * three `closest()` walks for every control in the document on each keypress (2800
+ * style resolutions for a 400-control prototype), all of it to answer "no".
+ *
+ * Reachability is still what decides — checking raw DOM position instead would be
+ * wrong, not merely approximate: with the document's last candidate hidden, the last
+ * REACHABLE control is interior to the raw list, and a Tab there does leave.
  */
 function tabWouldLeave(doc: Document, back: boolean): boolean {
   // See `nestedDocuments` on why `body` is checked despite its non-null type.
-  const items = doc.body ? focusable(doc.body) : []
-  if (items.length === 0) return true
-  return doc.activeElement === (back ? items[0] : items[items.length - 1])
+  const body = doc.body
+  if (!body) return true
+  const candidates = focusCandidates(body)
+  const active = doc.activeElement
+  // `findIndex` on identity rather than `indexOf` after an `instanceof HTMLElement`
+  // narrowing: `active` belongs to THIS document's realm, whose `HTMLElement` is a
+  // different constructor object from the page's, so the narrowing is false for every
+  // element in a frame and every position would resolve to -1. Same trap as `asFrame`,
+  // and it failed silently — the trap simply never fired inside a frame.
+  const at = candidates.findIndex((el) => el === active)
+  // Focus is not on a candidate at all — `<body>` itself, or a control this selector
+  // does not cover. It is then not an edge in either direction, so the key remains this
+  // document's business unless there is nothing here to move between at all. That is
+  // what comparing `activeElement` against the edges directly used to say too.
+  if (at === -1) return candidates.length === 0
+  // Whatever the key could still reach inside `doc`, in the direction it is going. One
+  // reachable control among them settles the question, so `some` stops at the first
+  // rather than filtering every control in the document.
+  const ahead = back ? candidates.slice(0, at) : candidates.slice(at + 1)
+  return !ahead.some((el) => reachable(body, el))
 }
 
 /**
@@ -253,6 +317,9 @@ function tabOutOfFrame(
   if (at !== -1 && next) return next
   // Nothing after it here either, so this Tab leaves the intermediate document too.
   const outer = hostFrame(owner)
+  // `items[0]` when the walk runs out of enclosing frames without reaching this
+  // document — see `tabAcrossFrame`'s fallback for the route that produces it and why
+  // moving focus beats declining.
   return outer ? tabOutOfFrame(outer, items, back) : items[0]
 }
 
@@ -277,8 +344,17 @@ function tabAcrossFrame(
   if (tabWouldEnterFrame(doc.activeElement, back, isListened)) return null
   if (!tabWouldLeave(doc, back)) return null
   const frame = hostFrame(doc)
-  // A document with no reachable host frame cannot be stepped out of by position, so
-  // fall back to the panel's first item rather than leaving focus where it is.
+  // No host frame to step out of. Not a modelled state — every document listened to was
+  // found THROUGH a frame element — but it has one route: a frame detached (or navigated)
+  // between the listener being attached and this key being handled, which discards its
+  // browsing context and leaves `defaultView` null. `reap` closes that window on the next
+  // scan, so what remains is the key already in flight.
+  //
+  // The panel's first item rather than `null`, on the same fail-closed reasoning as the
+  // `at === -1` branch in `tabOutOfFrame`: the document this key came from no longer
+  // exists, so declining hands the Tab to a browser with nowhere sensible to put focus —
+  // which means outside the dialog. A wrong stop inside the panel is recoverable with
+  // another Tab; leaving the dialog is not.
   return frame ? tabOutOfFrame(frame, items, back) : items[0]
 }
 
@@ -335,7 +411,9 @@ function tabWouldEnterFrame(
   const doc = frameDocument(frame)
   // See `nestedDocuments` on why `body` is checked despite its non-null type.
   if (!doc?.body) return false
-  return isListened(doc) && focusable(doc.body).length > 0
+  // `hasFocusable` rather than `focusable(...).length`: this also runs per keypress
+  // over a whole prototype document, and one reachable control answers it.
+  return isListened(doc) && hasFocusable(doc.body)
 }
 
 /** Where Tab must go to stay in the panel, or null when the panel's own order suffices. */
@@ -497,9 +575,9 @@ export default function ModalShell({
     const isListened = (doc: Document) => listening.has(doc)
     /**
      * Attach to any document not already covered. Idempotent, because it runs again
-     * whenever the panel's contents change and a frame navigation REPLACES a
-     * document rather than mutating it — the old entry is left in place, already
-     * unreachable, and detached with the rest on close.
+     * whenever the panel's contents change; a frame navigation REPLACES a document
+     * rather than mutating it, so the new one is picked up here and the old one is
+     * dropped by `reap`.
      *
      * Each nested document is watched in its OWN right, not just scanned once: a
      * script in the prototype can insert or navigate a frame inside it, and neither
@@ -526,6 +604,31 @@ export default function ModalShell({
         }
       }
     }
+    /** Undo everything `listen` attached for one document. */
+    const forget = (doc: Document) => {
+      const handler = listening.get(doc)
+      if (handler) doc.removeEventListener('keydown', handler)
+      listening.delete(doc)
+      watching.get(doc)?.disconnect()
+      watching.delete(doc)
+      if (doc !== document) doc.removeEventListener('load', listenToFrames, true)
+    }
+    /**
+     * Drop the documents that are no longer in the panel's frame tree.
+     *
+     * A frame that is REPLACED or navigated leaves its old document unreachable but
+     * still attached to, and a `MutationObserver` is not something to leave for the
+     * dialog's whole open lifetime: it holds the detached body it watches alive, and a
+     * prototype that swaps an embedded frame accumulated one per swap. Reaping also
+     * keeps `isListened` honest, which the Tab guards depend on — a document that is
+     * gone must not read as a safe place to send focus.
+     */
+    const reap = (live: readonly Document[]) => {
+      const keep = new Set(live)
+      for (const doc of [...listening.keys()]) {
+        if (doc !== document && !keep.has(doc)) forget(doc)
+      }
+    }
     // A frame's document may not exist yet on this commit — the prototype overlay's
     // frame mounts with the dialog, and other content arrives with a query — so the
     // scan is repeated when the panel's subtree changes and when a frame loads
@@ -533,9 +636,12 @@ export default function ModalShell({
     const listenToFrames = () => {
       // Cheap negative for the overwhelming majority of dialogs, which hold no frame
       // at all: this runs on every mutation inside the panel, including the ones a
-      // form's own re-renders produce.
-      if (panel.querySelector('iframe') === null) return
-      listen(nestedDocuments(panel))
+      // form's own re-renders produce. Nothing to reap for those either — `listening`
+      // holds only `document` until a frame is found.
+      if (panel.querySelector('iframe') === null && listening.size <= 1) return
+      const live = nestedDocuments(panel)
+      reap(live)
+      listen(live)
     }
     listen([document])
     listenToFrames()
@@ -545,11 +651,9 @@ export default function ModalShell({
     return () => {
       frames.disconnect()
       panel.removeEventListener('load', listenToFrames, true)
-      for (const observer of watching.values()) observer.disconnect()
-      for (const [doc, handler] of listening) {
-        doc.removeEventListener('keydown', handler)
-        if (doc !== document) doc.removeEventListener('load', listenToFrames, true)
-      }
+      // Through `forget`, so a document detached here and one reaped mid-open are
+      // undone by the same code and cannot drift apart.
+      for (const doc of [...listening.keys()]) forget(doc)
     }
     // `isOpen` alone: `onClose` and `dismissable` are read through refs, so a
     // consumer's inline arrow does not rebuild the observer and every frame

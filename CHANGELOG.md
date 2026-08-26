@@ -37,6 +37,16 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   This holds at any depth, so a prototype that embeds a frame of its own — a map, a video, a
   documentation pane — is reachable too, and leaving such a frame continues through the prototype's
   own content rather than jumping out of the artifact to the dialog's controls.
+- Tabbing through a large prototype inside a dialog no longer slows down with the size of the
+  prototype. Each keypress measured the whole embedded document to decide whether the key was leaving
+  it — for a 400-control page, 2800 style resolutions per keystroke, nearly all of it to conclude that
+  the key was an ordinary one the dialog should ignore. The question is now answered from the first
+  control the key can still reach.
+- A dialog whose embedded content replaces a frame of its own no longer accumulates one DOM observer
+  per replacement. Each nested document is watched so that keyboard handling follows frames the
+  content inserts itself, and a watcher for a document that had been swapped away was held until the
+  dialog closed, keeping the discarded document alive with it. Watchers are now dropped as soon as
+  their document leaves the frame tree.
 
 ### Security
 

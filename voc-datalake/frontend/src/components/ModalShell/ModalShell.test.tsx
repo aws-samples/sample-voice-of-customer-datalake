@@ -360,6 +360,39 @@ function spyOnFrameDocumentListeners(
   }
 }
 
+/**
+ * Count the `MutationObserver`s constructed, and how many have been disconnected,
+ * while the returned restore function has not been called.
+ *
+ * The observers the shell attaches to nested frame documents are not reachable from
+ * the test — they are effect-local — so the only way to see one being held is to
+ * count constructions against disconnections. `disconnect` is wrapped per instance
+ * rather than on the prototype so an observer constructed before the spy (there are
+ * none today, but a future `beforeEach` could) cannot be double-counted.
+ */
+function spyOnObservers(): { readonly live: () => number; readonly restore: () => void } {
+  const real = globalThis.MutationObserver
+  const state = { made: 0, gone: 0 }
+  class Counting extends real {
+    constructor(callback: MutationCallback) {
+      super(callback)
+      state.made += 1
+    }
+
+    override disconnect() {
+      state.gone += 1
+      super.disconnect()
+    }
+  }
+  globalThis.MutationObserver = Counting
+  return {
+    live: () => state.made - state.gone,
+    restore: () => {
+      globalThis.MutationObserver = real
+    },
+  }
+}
+
 describe('ModalShell with a nested frame', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -626,6 +659,108 @@ describe('ModalShell with a nested frame', () => {
     pressInNested('Escape')
 
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not scan the whole prototype for a Tab that stays inside it', () => {
+    // The common keypress, and the expensive one: a reviewer walking through a
+    // prototype presses Tab repeatedly, and every one of those but the last is a Tab
+    // this shell declines to act on. Deciding that by building the document's filtered
+    // focusable list resolved styles and ran three `closest()` walks for EVERY control
+    // in the frame — measured at 2800 style resolutions for the 400-control document
+    // below, per keystroke, all of it to answer "no".
+    //
+    // Counting `getComputedStyle` rather than timing: the count is the property (jsdom's
+    // style resolution is slower than a browser's, so the wall time is not a production
+    // number) and a threshold in milliseconds would be flaky on shared CI.
+    const { doc, pressInFrame } = renderFramedShell({ inner: '' })
+    const controls = 400
+    doc.body.innerHTML = Array.from(
+      { length: controls },
+      (_, i) => `<div><div><div><div><button id="c${i}">c${i}</button></div></div></div></div>`,
+    ).join('')
+    const view = doc.defaultView
+    if (!view) throw new Error('no view for the prototype document')
+    const real = view.getComputedStyle.bind(view)
+    const calls: Element[] = []
+    view.getComputedStyle = (el: Element, pseudo?: string | null) => {
+      calls.push(el)
+      return real(el, pseudo)
+    }
+    try {
+      // Mid-document, so the key has somewhere to go and the shell must not intervene.
+      doc.getElementById('c200')?.focus()
+
+      pressInFrame('Tab')
+
+      // Well under one per control: the answer comes from the first reachable control
+      // beyond the focused one, not from the whole document. The unfixed code called it
+      // 2800 times — seven times the control count — so any threshold near `controls`
+      // separates the two, and this one does not have to be re-tuned as the fixture grows.
+      expect(calls.length).toBeLessThan(controls)
+    } finally {
+      view.getComputedStyle = real
+    }
+
+    // Behaviour unchanged, which is the point: still no intervention.
+    expect(doc.activeElement).toBe(doc.getElementById('c200'))
+    expect(screen.getByRole('button', { name: 'after' })).not.toHaveFocus()
+  })
+
+  it('does not accumulate watchers for a frame the prototype keeps replacing', async () => {
+    // Each nested document is watched in its own right, and a frame that is REPLACED
+    // leaves its old document unreachable but still watched. Held to close, that was one
+    // live `MutationObserver` per swap, each keeping a detached body alive — bounded by
+    // the dialog's lifetime, but the wrong lifetime: the document is gone long before.
+    //
+    // A prototype swapping an embedded frame is what a generated page does when a
+    // reviewer navigates it, so the count grows while the overlay is simply in use.
+    const { doc } = renderFramedShell({ inner: '' })
+    const spy = spyOnObservers()
+    try {
+      const atRest = spy.live()
+      for (const _ of Array.from({ length: 8 })) {
+        doc.body.innerHTML = ''
+        addNestedFrame(doc, { inserted: true })
+        // MutationObserver callbacks are microtasks, so the scan (and the reap) runs
+        // between swaps rather than all at the end.
+        await Promise.resolve()
+        await Promise.resolve()
+      }
+
+      // One watcher for whichever nested document is current — not eight. `atRest` is
+      // the baseline because the outer frame's own watcher predates the spy.
+      expect(spy.live() - atRest).toBeLessThanOrEqual(1)
+    } finally {
+      spy.restore()
+    }
+
+    // And the surviving frame still works, so the reaping did not take the live
+    // document's listener with it.
+    const { nestedDoc, pressInNested } = addNestedFrame(doc)
+    nestedDoc.getElementById('deep')?.focus()
+    pressInNested('Escape')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('disconnects every watcher when the dialog closes', () => {
+    // The teardown half: whatever is still attached at close must go, including the
+    // per-nested-document watchers. Counted rather than inspected, because the
+    // observers are effect-local and unreachable from here.
+    const spy = spyOnObservers()
+    try {
+      const { doc } = renderFramedShell({ inner: '' })
+      addNestedFrame(doc, { inserted: true })
+      // Anti-vacuous: a shell that stopped watching frames would trivially satisfy the
+      // assertion below by never constructing one.
+      expect(spy.live()).toBeGreaterThan(0)
+
+      cleanup()
+
+      expect(spy.live()).toBe(0)
+    } finally {
+      spy.restore()
+    }
   })
 
   it('wraps Tab off a readable frame it is not listening to', async () => {
