@@ -38,6 +38,17 @@ deselected (``704/791 tests collected (87 deselected)``), and a future major may
 restyle it freely. The JUnit XML's ``<testcase>`` / ``<skipped>`` structure is a
 de-facto interchange format that predates pytest, so reading it does not couple
 this gate to pytest's console formatting.
+
+What audits this file
+---------------------
+``lambda/shared/test/test_mcp_gate_audit.py``, which the gate runs on every pull
+request via the ``lambda/shared/test/test_mcp_*.py`` glob. It exercises
+``audit()`` against synthetic reports — floors met, a module below its floor, a
+module absent, a skipped test, a missing report, a malformed report — and checks
+that the declarations below describe a surface that actually exists. Without it
+this file was the one place in the repo where an edit changed CI's verdict and no
+check ran: ``return 1 if problems else 0`` -> ``return 0`` was verified to make
+the gate pass a module-level skip on ``test_mcp_tokens.py``.
 """
 
 from __future__ import annotations
@@ -78,6 +89,15 @@ EXPLICIT_TEST_PATHS: tuple[str, ...] = (
     'lambda/shared/test/test_python_runtime_lockstep.py',
 )
 
+# `test_mcp_gate_audit.py` covers THIS file and needs no entry above: it matches
+# `lambda/shared/test/test_mcp_*.py`, so the glob gates it. That is deliberate
+# rather than incidental — `pytest.ini`'s `testpaths = lambda plugins` never
+# collects `scripts/`, and the lint gate is `ruff check lambda plugins`, so this
+# file is neither run nor linted by anything else in the repo. Neutering
+# `audit()` below to `return 0` was verified to let a module-level skip on
+# `test_mcp_tokens.py` produce `858 passed, 46 skipped` with the gate reporting
+# success. The floors protect the test surface; that module protects the floors.
+
 # Per-module floor of tests that must RUN — not be collected, not be skipped.
 #
 # Per-module rather than one total: an aggregate floor is satisfied by a module
@@ -95,7 +115,8 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_output_schema_conformance': 118,
     'test_mcp_date_basis': 5,
     'test_mcp_tokens': 46,
-    'test_mcp_reach_lockstep': 3,
+    'test_mcp_vocabulary_lockstep': 5,
+    'test_mcp_gate_audit': 20,
     'test_projects_handler': 105,
     'test_python_runtime_lockstep': 4,
 }
@@ -175,10 +196,16 @@ def audit(report: Path) -> int:
             )
 
     # Reported separately from the floors: a skip inside a module that is still
-    # above its floor is not yet a shrinkage, but it is how one starts, and the
-    # two lockstep modules skip BY DESIGN when their other-language tree is
-    # absent — which never happens on a full checkout, so it is worth surfacing
-    # rather than tolerating silently.
+    # above its floor is not yet a shrinkage, but it is how one starts, so it is
+    # surfaced rather than tolerated silently.
+    #
+    # No module in this gate skips by design. The two lockstep modules once
+    # carried `skipif` markers for a checkout missing the other language's tree,
+    # but that tolerance could never take effect — their unskipped positive
+    # controls failed on exactly such a checkout, and these floors would fail the
+    # audit on any skip regardless. Both now require a full checkout explicitly
+    # and say so in their docstrings, so ANY skip reaching this branch is
+    # unexpected.
     if inert:
         summary = ', '.join(f'{module} ({count})' for module, count in sorted(inert.items()))
         print(f'::warning::Tests were skipped or xfailed and did not assert anything: {summary}')

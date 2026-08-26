@@ -94,8 +94,10 @@ jobs:
       # assertion runs. requirements-dev.txt's own header names it as the
       # companion install for exactly this reason.
       #
-      # `lambda/shared/test/test_mcp_tokens.py` needs nothing beyond these two
-      # — it is pure Python over `shared/mcp_tokens.py`.
+      # The modules under `lambda/shared/test/` need nothing beyond these two:
+      # the token, vocabulary-mirror, runtime-lockstep and gate-audit modules are
+      # pure Python over `shared/mcp_tokens.py`, over source files read as text,
+      # and over `scripts/mcp_gate.py` respectively.
       #
       # No Lambda layer *build* is needed — these are host-side unit tests
       # importing the modules directly, not a packaged bundle. Node, AWS
@@ -140,10 +142,17 @@ jobs:
       # lambda/api/test/conftest.py, which also perform the AWS-mocking import
       # setup the MCP and API modules are collected under.
       #
-      # `$(python scripts/mcp_gate.py --print-paths)` is deliberately UNQUOTED:
-      # the script emits globs unexpanded so the shell splits and expands them
-      # here. A glob that matches nothing therefore reaches pytest, which exits
-      # 4 on an unknown path rather than quietly running a shorter list.
+      # The paths are resolved in their OWN statement before pytest runs. Inlining
+      # the substitution into the pytest command would let a failure of the script
+      # itself pass unnoticed: the substitution would expand to nothing, pytest
+      # would fall back to `pytest.ini`'s `testpaths` and run the whole tree, and
+      # the gate would audit a surface it did not define. As a separate
+      # assignment, errexit reddens the step instead.
+      #
+      # `$paths` is then deliberately UNQUOTED: the script emits globs unexpanded
+      # so the shell splits and expands them here. A glob that matches nothing
+      # therefore reaches pytest, which exits 4 on an unknown path rather than
+      # quietly running a shorter list.
       #
       # Serial by design: no -n/xdist. The suite is seconds long, and these
       # modules mutate module-level registries and environment during import,
@@ -163,18 +172,24 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         run: |
           set -uo pipefail
-          # `|| status=$?` rather than reading `$?` on the next line: GitHub runs
-          # this with `bash -e`, and `set` only turns options ON, so errexit is
-          # still in force here — a bare failing pytest would abort the step
-          # before the outcome could be recorded. A command on the left of `||`
-          # is exempt from errexit, which is what makes the capture reachable.
+          # Errexit is in force (GitHub runs this with `bash -e`, and `set` only
+          # turns options ON), so a failure of the gate script itself aborts here
+          # rather than silently yielding an empty path list.
+          paths=$(python scripts/mcp_gate.py --print-paths)
+          # An empty result would make pytest fall back to pytest.ini's
+          # `testpaths` and run the whole tree — green, but not this gate.
+          test -n "${paths}"
+          # `|| status=$?` rather than reading `$?` on the next line: a bare
+          # failing pytest would abort the step under errexit before the outcome
+          # could be recorded. A command on the left of `||` is exempt, which is
+          # what makes the capture reachable.
           status=0
-          # SC2046 is the intended behaviour here, not an oversight: the script
+          # SC2086 is the intended behaviour here, not an oversight: the script
           # prints its globs UNEXPANDED so this word-splits and glob-expands
           # them. Quoting would hand pytest one argument containing literal
           # `*`s and spaces, which it would reject as a single missing path.
-          # shellcheck disable=SC2046
-          python -m pytest $(python scripts/mcp_gate.py --print-paths) \
+          # shellcheck disable=SC2086
+          python -m pytest ${paths} \
             -o addopts="" -p no:cacheprovider \
             --junit-xml=mcp-gate-report.xml \
             --no-header --tb=short -q || status=$?
@@ -192,16 +207,22 @@ jobs:
       # and reports success indefinitely. The audit reads the JUnit report, where
       # all three appear as `<skipped>` and none of them count.
       #
-      # `if: '!cancelled()'` so a red test run is still audited. A shrunken gate
-      # and a failing test are different diagnoses and the log should carry both.
+      # `!cancelled()` so a red test run is still audited: a shrunken gate and a
+      # failing test are different diagnoses and the log should carry both. Also
+      # gated on the test step having actually run — if the install failed, the
+      # tests were skipped, and auditing then would report "no JUnit report,
+      # treat this as a failure of the run", dressing a dependency problem up as
+      # a shrunken gate.
       - name: Check the MCP gate has not shrunk
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.run-tests.outcome != 'skipped' }}
         working-directory: voc-datalake
         run: python scripts/mcp_gate.py --audit mcp-gate-report.xml
 
       # The tests' own verdict, applied after the audit so both are visible.
+      # Skipped along with the audit when the tests never ran, so an empty
+      # exit-code is never compared against '0'.
       - name: Report the test result
-        if: ${{ !cancelled() && steps.run-tests.outputs.exit-code != '0' }}
+        if: ${{ !cancelled() && steps.run-tests.outcome != 'skipped' && steps.run-tests.outputs.exit-code != '0' }}
         run: |
           echo "::error::The MCP test surface failed (pytest exit ${{ steps.run-tests.outputs.exit-code }}). See the 'Run MCP test surface' step."
           exit 1

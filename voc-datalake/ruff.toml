@@ -2,7 +2,15 @@
 #
 # Rules are ruff's defaults (pyflakes F + pycodestyle errors E4/E7/E9) — the
 # baseline every first-party file passes. The root gate runs
-# `ruff check lambda plugins` from this directory; keep it at zero.
+# `ruff check lambda plugins scripts` from this directory; keep it at zero.
+#
+# `scripts` is in that list because `scripts/mcp_gate.py` decides whether the MCP
+# CI gate passes, and it was previously outside every lint and test surface here:
+# `pytest.ini` sets `testpaths = lambda plugins`, so it was never collected, and
+# the lint gate named only `lambda plugins`, so it was never linted. A one-token
+# edit making the gate report success unconditionally would have been flagged by
+# nothing. It is now linted here and unit-tested by
+# `lambda/shared/test/test_mcp_gate_audit.py`, which the gate itself runs.
 
 extend-exclude = [
     # Vendored third-party code: local layer build output from

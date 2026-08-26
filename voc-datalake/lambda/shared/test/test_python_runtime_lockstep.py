@@ -20,11 +20,26 @@ is load-bearing.
 Same pattern as `test_search_minimum_lockstep.py` (TS ↔ Python search bound) and
 `test_indexes.py` (CDK ↔ Python GSI names): parse the other language's source and
 assert equality, so a change on either side fails CI instead of at deploy time.
+
+A full checkout is required, deliberately
+-----------------------------------------
+There is no `skipif` for a missing `lib/` tree. An earlier version carried one on
+each comparison, reasoning that a checkout without the CDK should not report a
+mismatch it never measured — but that tolerance could not take effect, for three
+reasons:
+
+1. `test_the_ci_interpreter_is_declared_and_parses` carries no marker and would
+   fail on such a checkout anyway; the markers changed which test reported the
+   problem, not whether one did.
+2. `scripts/mcp_gate.py` floors this module on tests that RAN, so any skip drops
+   it below its floor and fails the audit regardless.
+3. The CI gate — the only consumer — always has a full checkout.
+
+Failing loudly on a partial checkout is also the better behaviour here: a guard
+that quietly measures nothing is worse than one that says it cannot run.
 """
 import re
 from pathlib import Path
-
-import pytest
 
 
 def _voc_root() -> Path:
@@ -68,16 +83,11 @@ def _cdk_runtimes() -> set[str]:
 
 
 class TestPythonRuntimeMirror:
-    """The comparison SKIPS when the CDK tree is gone; the controls do not.
+    """Both sides must be readable, agree internally, and agree with each other.
 
-    A checkout without `lib/` should not report a mismatch it never measured —
-    that is an empty-set comparison masquerading as a finding, so the equality
-    test carries a `skipif`.
-
-    The two control tests carry NO skip marker on purpose: they assert the
-    sources are findable and the constants parse, which is exactly the check
-    that has to run. Skipping them would leave the equality test able to pass
-    while comparing against nothing.
+    Ordered from "can this be measured at all" to "does it hold", so a broken
+    parser reports itself rather than being reported as a mismatch. None of these
+    is skippable — see the file docstring on why a full checkout is required.
     """
 
     def test_the_ci_interpreter_is_declared_and_parses(self):
@@ -91,7 +101,6 @@ class TestPythonRuntimeMirror:
             f'parsed no major.minor from {_PYTHON_VERSION_FILE} — parser drift?'
         )
 
-    @pytest.mark.skipif(not _CDK_DIR.exists(), reason='CDK tree absent from this checkout')
     def test_the_cdk_runtime_is_findable(self):
         """The positive control for the CDK side.
 
@@ -106,7 +115,6 @@ class TestPythonRuntimeMirror:
             'see, in which case point this test at the new source'
         )
 
-    @pytest.mark.skipif(not _CDK_DIR.exists(), reason='CDK tree absent from this checkout')
     def test_the_stacks_agree_among_themselves(self):
         """One runtime across all stacks.
 
@@ -120,7 +128,6 @@ class TestPythonRuntimeMirror:
             'or teach this test which is authoritative and why the others differ.'
         )
 
-    @pytest.mark.skipif(not _CDK_DIR.exists(), reason='CDK tree absent from this checkout')
     def test_ci_tests_the_interpreter_the_stacks_deploy(self):
         """Equality, so bumping one side fails here rather than in production."""
         runtimes = _cdk_runtimes()
