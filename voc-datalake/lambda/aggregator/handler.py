@@ -131,12 +131,14 @@ Known residuals
   point above and is recorded rather than hidden. TWO separate effects, and
   conflating them understates the bill: DynamoDB charges a transactional write at
   TWICE the WCU of the same write sent alone, AND the transaction adds a write that
-  did not exist before — the dedupe claim, which also lands in a second table. So an
-  arrival that was one write per dimension plus the average is now
-  `(dimensions + 2) x 2` WCU rather than `dimensions + 1`: a little over double, not
-  double. Stated in terms of `counter_dimensions` rather than as a fixed multiple
-  because the dimension count is meant to grow. The aggregates table is
-  PAY_PER_REQUEST, so this is a bill and not a ceiling. And every record of a date
+  did not exist before — the dedupe claim, which lands in the IDEMPOTENCY table, not
+  this one. So the aggregates table pays `(dimensions + 1) x 2` and the idempotency
+  table pays `1 x 2`, for an arrival total of `(dimensions + 2) x 2` WCU rather than
+  `dimensions + 1`: a little over double, not double. Stated in terms of
+  `counter_dimensions` rather than as a fixed multiple because the dimension count is
+  meant to grow. Both tables are PAY_PER_REQUEST, so this is a bill and not a
+  ceiling — see docs/processing-pipeline.md for the same split spelled out per table.
+  And every record of a date
   moves `METRIC#daily_total`, so same-date records in one batch now CONTEND on it
   where two plain `update_item`s would simply have serialised — a bulk import
   through the `s3_import` plugin is exactly the shape that produces this, and the
