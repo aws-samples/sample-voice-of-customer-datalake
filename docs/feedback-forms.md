@@ -115,6 +115,62 @@ Customize the form appearance:
 | POST | `/feedback-forms/{id}/submit` | Submit feedback |
 | GET | `/feedback-forms/{id}/iframe` | Embeddable HTML page |
 
+### Rate limits on the three public routes
+
+The three unauthenticated routes carry per-method rate limits, set as API Gateway
+stage method settings in `voc-datalake/lib/stacks/api-stack.ts`. They are worth
+knowing before you embed the widget, because they are observable from your page:
+
+<!-- These figures are LOCKSTEPPED against the stack: `the public feedback-form
+     routes` in voc-datalake/lib/stacks/api-stack.test.ts parses every line here
+     that names a route and states a rate, and fails if it disagrees with what
+     api-stack.ts deploys. So edit them only alongside the stack.
+
+     Write a pair as `<rate> req/s, burst <burst>` or `<rate> rps / <burst>`. The
+     parser anchors the burst to the `, burst ` or the `/` immediately after the
+     rate, deliberately, so that a row stating no burst yields nothing and fails
+     loudly rather than adopting an unrelated later number. `(burst N)` or "with a
+     burst of N" will NOT parse and the failure will say the row states no pair.
+
+     Prose ABOUT throughput is fine and is not judged — a line is only checked if
+     it carries digits immediately before a per-second unit. -->
+
+| Route | Rate / burst |
+|-------|--------------|
+| `GET /feedback-forms/{id}/config` | 100 req/s, burst 200 |
+| `GET /feedback-forms/{id}/iframe` | 100 req/s, burst 200 |
+| `POST /feedback-forms/{id}/submit` | 20 req/s, burst 40 |
+
+`submit` is the tighter one because each submission enqueues a record that drives
+Comprehend, Translate and a Bedrock model invocation downstream. The two reads are
+cheap — one `get_item`, and a static HTML render — so they are held at the higher
+pair, sized for widget page-view traffic rather than for submissions.
+
+These figures are **pinned against the synthesized template** by a lockstep case in
+`voc-datalake/lib/stacks/api-stack.test.ts`, so tuning the numbers in `api-stack.ts`
+without updating this table fails the CDK suite. The stack is the source of truth;
+this table cannot silently go stale.
+
+Two properties surprise people:
+
+- **A limit is per route, not per form or per caller.** The method setting keys on
+  the path with the form id left as a variable, so one ceiling is shared across
+  every form in the deployment and every visitor. 100 req/s is therefore the
+  *aggregate* widget page-view rate a deployment supports, across all embeds.
+- **A throttled request never names the limit, and each of the three routes fails
+  differently.** Nothing surfaces "429" to the visitor, so all three symptoms are
+  easy to misattribute:
+
+  | Route | What a 429 looks like |
+  |-------|-----------------------|
+  | `GET /config` | The widget renders a flat `Feedback form unavailable.` in the container, with no retry — the *same* message a deliberately disabled form produces |
+  | `POST /submit` | A modal `Failed to submit.` alert instead, with the visitor's typed feedback still in the form. Retryable: they can press submit again |
+  | `GET /iframe` | No widget code runs at all — the browser navigates here directly, so this is a raw API Gateway error page inside your `<iframe>`, i.e. a broken frame |
+
+  If a busy page shows any of these intermittently, suspect the rate limit before
+  the form's state; the fix is raising the number in `api-stack.ts`, not a change
+  on the page.
+
 ## Processing Pipeline
 
 Submitted feedback follows the same processing pipeline as other data sources:

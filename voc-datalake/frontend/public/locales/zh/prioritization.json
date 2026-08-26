@@ -87,6 +87,7 @@
     "placeholder": "添加关于此优先级排序决策的备注..."
   },
   "preview": {
+    "enlarge": "放大",
     "prototypeTitle": "原型",
     "title": "文档预览",
     "viewFull": "查看完整文档",

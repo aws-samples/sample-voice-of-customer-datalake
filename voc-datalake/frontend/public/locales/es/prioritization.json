@@ -87,6 +87,7 @@
     "placeholder": "Agregar notas sobre esta decisión de priorización..."
   },
   "preview": {
+    "enlarge": "Ampliar",
     "prototypeTitle": "Prototipo",
     "title": "Vista previa del documento",
     "viewFull": "Ver documento completo",

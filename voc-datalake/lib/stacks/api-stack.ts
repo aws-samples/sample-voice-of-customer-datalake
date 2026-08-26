@@ -494,7 +494,54 @@ export class VocApiStack extends VocStack {
       role: feedbackFormRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { AGGREGATES_TABLE: aggregatesTable.tableName, FEEDBACK_TABLE: feedbackTable.tableName, PROCESSING_QUEUE_URL: processingQueueUrl, BRAND_NAME: brandName, POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api', LOG_LEVEL: 'INFO' },
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        BRAND_NAME: brandName,
+        // '*', DELIBERATELY, and the one Lambda in this stack that gets it rather
+        // than `allowedOrigin`. The three public routes below
+        // (/feedback-forms/{form_id}/config, /submit, /iframe) are fetched by
+        // lambda/api/static/feedback-widget.js running on the CUSTOMER's own site,
+        // so the Origin the browser sends is a domain this stack has never heard
+        // of and cannot enumerate. Any single value here would break every embed.
+        //
+        // Stated HERE rather than left to the handler's own
+        // `os.environ.get('ALLOWED_ORIGIN', '*')` fallback: the effective value was
+        // already '*', but it arrived from a Python default, so a reader of this
+        // stack saw an omission where 14 other Lambdas name the variable. This
+        // makes the wildcard a recorded decision. Compare the ballots Lambda
+        // below, whose comment records the opposite choice for the same reason.
+        //
+        // The permissiveness is bounded by the ROUTES, not by this variable: every
+        // other route on this function carries the Cognito authorizer and is
+        // refused before the handler runs, and a CORS header never grants access
+        // to a caller that is not a browser anyway.
+        //
+        // TWO CONSEQUENCES, both deliberate and both out of scope to fix here:
+        //
+        // 1. This is the ONE Lambda in this stack whose CORS origin is
+        //    INDEPENDENT OF THE `environment` CONTEXT. Every other API Lambda
+        //    takes `allowedOrigin`, which is `isDev ? '*' : https://<frontend>`
+        //    (see its declaration above), so `-c environment=dev` moves all of
+        //    them and has no effect whatsoever on this one. Nothing at deploy
+        //    time can tighten this value; changing it means editing this line.
+        //    Worth knowing before adding a deployment-time CORS control and
+        //    expecting it to cover the widget.
+        //
+        // 2. The wildcard is FUNCTION-WIDE, not route-wide. This function also
+        //    serves the authenticated /feedback-forms, /{form_id}, /submissions
+        //    and /stats routes, so their responses carry '*' too — which is the
+        //    very reasoning the ballots Lambda's comment uses to REJECT '*' for
+        //    itself. The paragraph above is why that is safe rather than why it
+        //    is tidy: the honest shape is two variables (ALLOWED_ORIGIN = the
+        //    site origin, plus a PUBLIC_ALLOWED_ORIGIN = '*' returned only on the
+        //    three widget responses), which is a feedback_form_handler.py change
+        //    and therefore a follow-up, not part of a CDK-only change.
+        ALLOWED_ORIGIN: '*',
+        POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api',
+        LOG_LEVEL: 'INFO',
+      },
       layers: [apiLayer],
       logGroup: this.createLogGroup('FeedbackFormApiLogs', this.uniqueName('voc-feedback-form-api')),
     });
@@ -1030,6 +1077,139 @@ export class VocApiStack extends VocStack {
     // API GATEWAY
     // ============================================
 
+    // One-shot flag for upgrading an environment that still has the old
+    // /feedback-forms/{proxy+}. Read HERE, above the RestApi, because it decides
+    // two things that are declared far apart: whether the `{form_id}` item
+    // resources are created at all (see /feedback-forms/* below, which is where
+    // the flag is explained in full) and whether this stage carries method
+    // settings for the three public routes under them.
+    // Read ONCE into a const — the value is compared twice, not fetched twice.
+    // `true` and `'true'` are the accepted spellings ('TRUE', '1', 'yes' are
+    // "off"); "off" means "deploy the routes", so a typo fails loudly on the
+    // first upgrade deploy rather than skipping the step silently.
+    const skipFeedbackFormItemRoutesContext: unknown = this.node.tryGetContext('skipFeedbackFormItemRoutes');
+    const skipFeedbackFormItemRoutes =
+      skipFeedbackFormItemRoutesContext === true || skipFeedbackFormItemRoutesContext === 'true';
+
+    /** 20 rps / burst 40 — the pair for an unauthenticated method whose
+     *  LEGITIMATE demand is bounded and whose per-request cost is not. Both
+     *  ballot methods (a room is capped at MAX_BALLOT_CAP ballots, one per
+     *  attendee) and the widget's `submit` (see its own comment below).
+     *
+     *  Named once so those entries cannot drift apart by a typo in a number, and
+     *  ANNOTATED so a typo in a property NAME is a compile error too: without the
+     *  annotation the object literal is not fresh at its use sites, excess-property
+     *  checking never fires, and a `throttlingBurstLmit` would deploy a rate limit
+     *  with the burst left at the account default.
+     *
+     *  Deliberately NOT shared with the /mcp entries, which carry the same two
+     *  numbers by coincidence and for a different reason (a bearer-token brute
+     *  force, not an anonymous caller) — see the comment on them below. Tuning
+     *  one of the two sets should not silently move the other.
+     *
+     *  Deliberately NOT shared with the two widget READS either, whose demand is
+     *  a third party's page-view rate — see publicWidgetReadThrottle.
+     *
+     *  NOTHING OBSERVES THIS CEILING — see the note on `methodOptions` below,
+     *  where both pairs are applied.
+     *
+     *  WHAT THIS PAIR DOES NOT CLOSE, for the widget's `submit`: it is a RATE
+     *  ceiling, not a bound on lifetime volume, and the two members of this pair
+     *  are not alike in that respect. A ballot submission has two stopping
+     *  conditions beyond the rate — a room is capped at MAX_BALLOT_CAP ballots,
+     *  and the session itself can be closed — so 20 rps is a backstop on a
+     *  quantity already bounded elsewhere. A feedback form has NEITHER: no cap on
+     *  submissions and no closable window, so 20 rps sustained is ~1.7M
+     *  submissions/day, indefinitely, from an anonymous caller. Closing that
+     *  needs a PER-FORM SUBMISSION CAP, which is durable per-form state rather
+     *  than a gateway setting (where the counter lives, what resets it, what the
+     *  widget shows when it trips) and so is a separate design, not a number to
+     *  tune here. Recorded because it is the one follow-up that addresses the
+     *  asymmetry this ceiling only narrows. */
+    const publicRouteThrottle: apigateway.MethodDeploymentOptions = {
+      throttlingRateLimit: 20,
+      throttlingBurstLimit: 40,
+    };
+
+    /** 100 rps / burst 200 for the two widget READS — `config` and `iframe`.
+     *
+     *  A DIFFERENT pair from publicRouteThrottle, on purpose. The 20 rps figure is
+     *  argued from a bounded room: MAX_BALLOT_CAP attendees submitting once each,
+     *  so 20 rps is ~30x the need. Nothing in that argument transfers here.
+     *  `config` is fetched by feedback-widget.js on EVERY PAGE LOAD of every
+     *  customer page carrying the widget, and `iframe` on every iframe render, so
+     *  the legitimate demand is a third party's traffic, which this stack cannot
+     *  bound and does not get told about. A stage method setting is keyed by PATH,
+     *  with `{form_id}` as a variable, so the ceiling is shared across every form
+     *  in the deployment AND every caller — one busy embed spends the whole
+     *  budget.
+     *
+     *  WHAT A 429 LOOKS LIKE DIFFERS BY ROUTE, which matters because none of the
+     *  three symptoms names the rate limit and two are easy to misattribute
+     *  (traced through lambda/api/static/feedback-widget.js):
+     *    - `config`: the widget shows a flat "Feedback form unavailable.", with no
+     *      retry. Note the mechanism — `r.json()` SUCCEEDS on the gateway's error
+     *      body, so `data.success` is merely falsy and control reaches that string
+     *      rather than the `.catch` ("Failed to load form."). It is byte-identical
+     *      to what a deliberately DISABLED form renders.
+     *    - `submit`: a modal `alert('Failed to submit.')` instead, on a different
+     *      code path — and the visitor has already typed their feedback. It is
+     *      retryable (`isSubmitting` is reset), unlike the reads.
+     *    - `iframe`: NO widget code runs at all. The browser navigates to this
+     *      route directly, so a 429 is a raw API Gateway error page inside the
+     *      customer's iframe — a broken frame, not any widget string.
+     *
+     *  So the number is stated as what it is: 100 rps is the AGGREGATE widget
+     *  page-view rate this deployment supports — ~8.6M/day across all embeds —
+     *  and it is the ceiling these routes already had, since it equals the stage
+     *  default. Restating it here rather than letting them ride that default is
+     *  the point: it pins the reads' ceiling to the demand THEY have, so a later
+     *  decision to tighten the stage-wide default cannot silently squeeze a
+     *  customer's page.
+     *
+     *  Cost is the reason this can be the generous side of the pair: `config` is
+     *  one get_item, and `iframe` touches no AWS service at all — it interpolates
+     *  form_id into a static HTML shell around a module-cached widget script.
+     *
+     *  CACHING, not a throttle, is the right primary control for `iframe`: the
+     *  response is a pure function of form_id and host. It is not adopted here
+     *  because both available forms are out of a CDK-only change — an API Gateway
+     *  cache is a priced cluster on the stage, and a Cache-Control header is a
+     *  feedback_form_handler.py change. Recorded so nobody reads the throttle as
+     *  evidence that the route is uncacheable.
+     *
+     *  DO NOT CACHE `iframe` BEFORE ESCAPING ITS INPUT — issue #379. That route
+     *  reflects caller-supplied input into its response unescaped, so caching
+     *  would turn a reflected flaw into a stored one served to every subsequent
+     *  visitor. The escaping is therefore a PRECONDITION of the caching follow-up,
+     *  not a parallel cleanup. Pre-existing and out of scope for a CDK-only
+     *  change; the constraint is recorded HERE because this is where the next
+     *  reader decides to implement the caching, and the mechanism and fix are in
+     *  #379 rather than restated here — one description to keep correct, and it
+     *  stops this comment asserting a live vulnerability after #379 is closed.
+     *
+     *  NOTHING OBSERVES THIS CEILING EITHER — see the note on `methodOptions`
+     *  below, where both pairs are applied. */
+    const publicWidgetReadThrottle: apigateway.MethodDeploymentOptions = {
+      throttlingRateLimit: 100,
+      throttlingBurstLimit: 200,
+    };
+
+    // The three public feedback-form methods, keyed as
+    // `{resource path}/{METHOD}`. CONDITIONAL on the flag above: when it is set
+    // the `{form_id}` subtree is not created, and a method setting naming a path
+    // that does not exist is not an error — API Gateway simply never applies it —
+    // but it is a claim in the template about routes this deploy does not serve.
+    // Omitting them keeps the transitional stage honest, and keeps the lockstep
+    // test ("every key names a wired method") true for both shapes rather than
+    // only the default one.
+    const publicFeedbackFormMethodOptions: Record<string, apigateway.MethodDeploymentOptions> =
+      skipFeedbackFormItemRoutes ? {} : {
+        '/feedback-forms/{form_id}/config/GET': publicWidgetReadThrottle,
+        '/feedback-forms/{form_id}/submit/POST': publicRouteThrottle,
+        '/feedback-forms/{form_id}/iframe/GET': publicWidgetReadThrottle,
+      };
+
     // API Gateway CloudWatch Logs
     const apiLogGroup = new logs.LogGroup(this, 'ApiGatewayLogs', {
       logGroupName: `/aws/apigateway/${this.uniqueName('voc-analytics-api')}`,
@@ -1044,11 +1224,31 @@ export class VocApiStack extends VocStack {
         stageName: 'v1',
         throttlingRateLimit: 100,
         throttlingBurstLimit: 200,
-        // Tighter limits on the two UNAUTHENTICATED ballot methods (see
-        // /voting-sessions/* below). Each request costs a DynamoDB read even for a
-        // session id that does not exist, and nothing in front of them asks who is
-        // calling — the session token is checked inside the handler, which means
-        // the cost is paid before the refusal.
+        // An EXPLICIT limit on every UNAUTHENTICATED method — the two ballot
+        // methods (see /voting-sessions/* below) and the three feedback-form
+        // widget methods (see /feedback-forms/* below). Each request costs a
+        // DynamoDB read even for an id that does not exist, and nothing in front
+        // of them asks who is calling — the session token, or the form's own
+        // state, is checked inside the handler, which means the cost is paid
+        // before the refusal.
+        //
+        // "Explicit" rather than "tighter", because the five are not all at one
+        // number. The criterion that splits them is BOUNDED vs UNBOUNDED
+        // legitimate demand, not read vs write and not cost — which matters
+        // because /voting-sessions/{session_id}/config/GET is at 20/40 and is a
+        // pure read (get_ballot_config: one get_item and a narrow projection, no
+        // write and no model call), so a cost-based reading would move it to the
+        // wrong side of its own rule:
+        //   - BOUNDED demand, held below the stage default at 20/40: the two
+        //     BALLOT methods, capped by a room of MAX_BALLOT_CAP attendees, and
+        //     the widget's `submit`, which additionally buys a Bedrock invocation
+        //     downstream per request.
+        //   - UNBOUNDED demand, restating the default's 100/200 as a limit of
+        //     their own: the two widget READS, whose callers are a third party's
+        //     page views — a rate this stack cannot bound and is not told about.
+        // Stating a value that equals the default is not a no-op: it decouples
+        // those two from a stage-wide number that may be tuned for entirely
+        // unrelated reasons.
         //
         // As STAGE METHOD SETTINGS rather than as a usage plan, which is what the
         // /mcp route uses: a usage plan's throttle binds per API KEY, and these
@@ -1056,13 +1256,81 @@ export class VocApiStack extends VocStack {
         // never apply to the requests that matter. Method settings are keyed by
         // path and apply to every caller.
         //
-        // 20/s with a burst of 40 is roughly 30x what the feature needs — a room
-        // is bounded by MAX_BALLOT_CAP (200) ballots and submits once each — while
-        // still cutting a scripted flood down to something a single small table
-        // absorbs.
+        // The rationale for each pair lives on the CONSTANT that carries it —
+        // publicRouteThrottle and publicWidgetReadThrottle above — so there is one
+        // authoritative explanation per pair rather than a general one here that
+        // fits only some of the entries. For the two BALLOT entries specifically:
+        // 20/s with a burst of 40 is roughly 30x what the feature needs, since a
+        // room is bounded by MAX_BALLOT_CAP (200) ballots and submits once each,
+        // while still cutting a scripted flood down to something a single small
+        // table absorbs. That argument is about a bounded room and does NOT
+        // generalise to the widget reads below.
+        //
+        // NOTHING OBSERVES ANY OF THESE CEILINGS. There is no CloudWatch alarm
+        // and no metric filter anywhere in this stack, so a wrongly-sized limit
+        // produces no signal on the operator's side: each budget is shared
+        // deployment-wide and can be spent by traffic this account does not own or
+        // see, and a breach reaches the customer as one of three symptoms that
+        // name neither the limit nor each other (per route — see
+        // publicWidgetReadThrottle: "Feedback form unavailable." on `config`,
+        // indistinguishable from a disabled form; an alert box on `submit`; a
+        // broken frame on `iframe`), so support looks for the wrong cause in all
+        // three. Not a regression — these routes had no alarm at the stage default
+        // either — and out of scope for a throttle change, but it is what would
+        // make these numbers tunable in practice rather than only in principle. A
+        // single alarm on the stage's 4XXError, or better a ThrottledRequests one,
+        // is the smallest useful follow-up: smaller than the per-form submission
+        // cap (see publicRouteThrottle) or the iframe caching (see
+        // publicWidgetReadThrottle). It is not added here because an alarm needs a
+        // destination to be worth anything and this stack has no SNS topic or
+        // notification path to attach one to.
         methodOptions: {
-          '/voting-sessions/{session_id}/config/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
-          '/voting-sessions/{session_id}/submit/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          '/voting-sessions/{session_id}/config/GET': publicRouteThrottle,
+          '/voting-sessions/{session_id}/submit/POST': publicRouteThrottle,
+          // The three feedback-form widget methods, which were the only members
+          // of the public set still riding the stage default — see
+          // INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts for the full list
+          // of five. TWO different pairs, not one: `submit` joins the ballots at
+          // 20/40, while `config` and `iframe` are stated at the stage default's
+          // 100/200 because their legitimate demand is a customer's page-view
+          // rate rather than a bounded room. The full argument for the split is
+          // on publicRouteThrottle / publicWidgetReadThrottle above.
+          //
+          // `submit` is the one that earns the tighter pair, and the reason is
+          // DOWNSTREAM rather than local. In the handler
+          // (submit_form_feedback in lambda/api/feedback_form_handler.py) one
+          // request costs three operations: a get_item for the form, an optional
+          // conditional update_item to anchor its brand (_anchor_form_brand), and
+          // an SQS send_message. It never writes the feedback table — and cannot:
+          // this role holds feedbackTable.grantReadData only (see above).
+          //
+          // The write happens in lambda/processor/handler.py, off the queue, and
+          // it does not arrive alone: each enqueued record drives Comprehend
+          // language detection, a Translate call, Comprehend sentiment AND a
+          // Bedrock LLM invocation (invoke_bedrock_llm). So an anonymous caller
+          // at this ceiling buys a per-request model invocation against a shared
+          // account quota — which is the real reason 20 rps rather than any
+          // DynamoDB cost, and the thing to weigh before raising it.
+          //
+          // This is an UPSTREAM BACKSTOP, not a bound on model consumption, and
+          // the difference matters to anyone tuning it. The queue decouples the
+          // two: `submit` only enqueues, and the processor is an SQS event source
+          // (batchSize 10, no maxConcurrency and no reservedConcurrentExecutions
+          // anywhere in these stacks), so what actually paces Bedrock is Lambda's
+          // account concurrency draining the queue. This ceiling bounds the
+          // STEADY-STATE arrival rate; it does not bound the burst a filled queue
+          // replays, and 20 rps sustained is still ~1.7M invocations/day. The
+          // effective control is consumer-side — maxConcurrency on the event
+          // source, or reservedConcurrentExecutions on the processor — and that is
+          // a processing-stack change, so it is DEFERRED rather than considered
+          // covered here. Recorded so the Bedrock argument above is not read as
+          // bottoming out at API Gateway.
+          //
+          // Keys are spelled `{form_id}`, matching
+          // `feedbackFormsResource.addResource('{form_id}')`, and are omitted
+          // entirely when skipFeedbackFormItemRoutes is set (see
+          // publicFeedbackFormMethodOptions above).
+          ...publicFeedbackFormMethodOptions,
           // The MCP endpoint gets the same treatment for the same reason: its
           // caller holds a bearer token, not a Cognito session, and an invalid
           // token still costs a DynamoDB Query before the 401. This REPLACES the
@@ -1291,12 +1559,16 @@ export class VocApiStack extends VocStack {
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
 
-    // One-shot flag for upgrading an environment that still has the old
-    // /feedback-forms/{proxy+}. CloudFormation creates new resources before
-    // deleting old ones inside a single update, so {form_id} and {proxy+} would
-    // exist together and API Gateway rejects two variable path parts at one
-    // level. Deploy once with -c skipFeedbackFormItemRoutes=true to retire the
-    // proxy, then deploy again without it to create these routes.
+    // `skipFeedbackFormItemRoutes` — the one-shot flag for upgrading an
+    // environment that still has the old /feedback-forms/{proxy+}. Read above the
+    // RestApi (it also gates this subtree's stage method settings); this is the
+    // branch it exists for.
+    //
+    // CloudFormation creates new resources before deleting old ones inside a
+    // single update, so {form_id} and {proxy+} would exist together and API
+    // Gateway rejects two variable path parts at one level. Deploy once with
+    // -c skipFeedbackFormItemRoutes=true to retire the proxy, then deploy again
+    // without it to create these routes.
     //
     // Absent (the default, and always for fresh deployments) this is a no-op —
     // the synthesized template is identical either way. Never leave it set:
@@ -1308,10 +1580,6 @@ export class VocApiStack extends VocStack {
     // two-deploy upgrade, delete the flag, this branch and its tests — a
     // permanently available "skip the authorization-bearing routes" switch is a
     // footgun once nothing needs it.
-    const skipFeedbackFormItemRoutes =
-      this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
-      || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
-
     if (skipFeedbackFormItemRoutes) {
       cdk.Annotations.of(this).addWarningV2(
         'voc:skipFeedbackFormItemRoutes',
@@ -1327,6 +1595,20 @@ export class VocApiStack extends VocStack {
       feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
 
       // Intentionally unauthenticated: the widget runs on the customer's own site.
+      //
+      // These three are named in INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts,
+      // and all three carry an EXPLICIT pair in `deployOptions.methodOptions` at
+      // the top of this stack — keyed by these exact paths, and pinned against
+      // them by a test, because a mistyped key throttles nothing and says nothing.
+      //
+      // Two pairs, not one, and only ONE of them is below the stage default:
+      // `submit` is held at 20/40 (a per-request Bedrock invocation downstream),
+      // while `config` and `iframe` RESTATE the stage default's 100/200 as a
+      // ceiling of their own. Restating it is not redundant with the default —
+      // it pins the two reads to the demand THEY have (a customer's page-view
+      // rate), so a later tightening of the stage-wide number cannot silently
+      // squeeze a third party's page. See publicWidgetReadThrottle for the full
+      // argument before deleting either entry as duplicative.
       const publicFeedbackFormMethods = [
         feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
         feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
