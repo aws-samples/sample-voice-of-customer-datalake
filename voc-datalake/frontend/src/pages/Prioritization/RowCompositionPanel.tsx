@@ -27,7 +27,7 @@ import clsx from 'clsx'
 import {
   FilePlus2, Lock, Pencil, Trash2,
 } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal'
 import { SCORABLE_TYPE_META } from './prioritizationUtils'
@@ -127,7 +127,6 @@ function DocumentPicker({
     // the reviewer never chose it.
     () => initialIds.filter((id) => documents.some((doc) => doc.document_id === id)),
   )
-  const legendId = useId()
   const toggle = (documentId: string) => {
     setSelected((ids) => (
       ids.includes(documentId) ? ids.filter((id) => id !== documentId) : [...ids, documentId]
@@ -136,7 +135,12 @@ function DocumentPicker({
   return (
     <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
       <fieldset>
-        <legend id={legendId} className="text-sm font-medium text-gray-700">
+        {/* A real `legend` in a real `fieldset`, which is what names the GROUP: the
+            checkboxes are one choice about one row, and a heading beside them would
+            leave a screen reader announcing seven unrelated boxes. No `id` needed —
+            the legend names the fieldset natively, and pointing an
+            `aria-labelledby` at it would restate what the element already does. */}
+        <legend className="text-sm font-medium text-gray-700">
           {t('composition.documentsLegend')}
         </legend>
         <div className="mt-2 space-y-1.5">
