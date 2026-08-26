@@ -753,11 +753,12 @@ export default function ModalShell({
      * nothing is listening to and the entry guard lets Tab descend into a frame that cannot
      * hand focus back. That fails OPEN, which is the opposite of what it looks like.
      *
-     * Not fixed here, deliberately: the fix is to stop treating `listening.has(doc)` as
-     * proof of an attached listener (re-assert the stored handler on each scan, and
-     * re-observe when `doc.body` is a different object), which changes this shell's
-     * idempotency contract for every dialog in the app — and jsdom cannot host a test for
-     * either the bug or the fix. Tracked separately rather than smuggled into this round.
+     * Not fixed here, deliberately, and tracked as **issue #386**: the fix is to stop
+     * treating `listening.has(doc)` as proof of an attached listener (re-assert the stored
+     * handler on each scan, and re-observe when `doc.body` is a different object), which
+     * changes this shell's idempotency contract for every dialog in the app — and jsdom
+     * cannot host a test for either the bug or the fix, so it cannot ship with a guard that
+     * fails on revert. #386 carries the browser reproduction and the spec citation.
      *
      * These three arrows and `listenToFrames` reference each other, so they are `const`
      * arrows read before the line that defines them — legal because nothing here runs

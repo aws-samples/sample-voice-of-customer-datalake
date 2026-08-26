@@ -27,7 +27,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   never reached the dialog, so any modal embedding one (the prototype overlay above) could not be
   dismissed from the keyboard once a reader clicked into its content. A frame the page cannot read
   into — cross-origin, or sandboxed without `allow-same-origin` — still cannot be observed, so
-  dialogs embedding one must offer a visible dismiss control.
+  dialogs embedding one must offer a visible dismiss control. One further exception is known and
+  tracked as #386: a frame whose content rewrites itself with `document.open()` keeps the same
+  document object while a compliant browser erases the listeners on it, so the dialog believes it is
+  still listening there.
 - Tab can now reach the controls inside a dialog's nested `<iframe>`. Descending into a frame is the
   browser's default action for a Tab pressed while the frame itself has focus, and the focus trap
   cancelled that action whenever the frame was the dialog's last focusable — which is the prototype
