@@ -156,7 +156,7 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_output_schema_conformance': 118,
     'test_mcp_date_basis': 5,
     'test_mcp_tokens': 46,
-    'test_mcp_vocabulary_lockstep': 6,
+    'test_mcp_vocabulary_lockstep': 13,
     'test_mcp_gate_audit': 27,
     'test_projects_handler': 105,
     'test_python_runtime_lockstep': 4,

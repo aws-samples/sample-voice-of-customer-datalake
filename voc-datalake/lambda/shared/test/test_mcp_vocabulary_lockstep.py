@@ -31,6 +31,17 @@ Same pattern as `test_search_minimum_lockstep.py` (TS ↔ Python search bound) a
 `test_indexes.py` (CDK ↔ Python GSI names): parse the other language's source and
 assert equality, so a change on either side fails CI instead of the live UI.
 
+Comments are stripped before parsing
+------------------------------------
+The readers pull every single-quoted token out of the declaration span they match,
+which meant a `//`-commented entry inside a mirrored array was read as a live
+member — see `_strip_comments`. That produced a failure in the safe DIRECTION (a
+false positive rather than a missed drift) but with an actively wrong DIAGNOSIS:
+the message named a value the form does not offer and prescribed adding it to both
+languages. For a file whose entire value is that a reader trusts its verdict about
+a language they may not be working in, a misleading message is close to as costly
+as a missed one.
+
 A full checkout is required, deliberately
 -----------------------------------------
 There is no `skipif` for a missing `frontend/` tree. An earlier version carried
@@ -69,17 +80,89 @@ def _repo_root() -> Path:
 _SCHEMA_SOURCE = _repo_root() / 'frontend' / 'src' / 'api' / 'mcpTokenSchema.ts'
 
 
+def _strip_comments(source: str) -> str:
+    """TypeScript source with `//` and `/* */` comments blanked out.
+
+    Necessary because both readers below pull every single-quoted token out of the
+    span they match, and neither has any notion of a comment. A commented-out entry
+    INSIDE a mirrored array was therefore read as a live member:
+
+        export const MCP_SCOPES = [
+          // 'personas:read' lands with the persona tool
+          'feedback:read', 'metrics:read', 'projects:read',
+        ] as const
+
+    made the scope mirror fail with "the form offers ['personas:read'] which the
+    mint route refuses" — a value the form does not offer, prescribing a fix that
+    would be wrong. The failure direction was safe (a false positive, not a missed
+    drift) but the diagnosis was not, and this file's whole value is that a reader
+    trusts its verdict about a language they may not be working in.
+
+    Comments are replaced by spaces rather than deleted so that offsets, and hence
+    the `[^\\]]*` array span, are unchanged: a comment containing a `]` must not
+    make the span end early or, worse, extend to a later bracket.
+
+    String literals are walked rather than regex-replaced, so a legitimate `'//'`
+    or `'/*'` inside a quoted value is preserved — the URL-in-a-constant case that
+    a naive `//.*$` substitution would truncate.
+    """
+    out: list[str] = []
+    index = 0
+    length = len(source)
+    while index < length:
+        char = source[index]
+        # Inside a string or template literal, nothing starts a comment. Consumed
+        # verbatim, honouring backslash escapes so an escaped quote does not end it.
+        if char in '\'"`':
+            quote = char
+            out.append(char)
+            index += 1
+            while index < length:
+                if source[index] == '\\' and index + 1 < length:
+                    out.append(source[index:index + 2])
+                    index += 2
+                    continue
+                out.append(source[index])
+                index += 1
+                if source[index - 1] == quote:
+                    break
+            continue
+        if source.startswith('//', index):
+            while index < length and source[index] != '\n':
+                out.append(' ')
+                index += 1
+            continue
+        if source.startswith('/*', index):
+            end = source.find('*/', index + 2)
+            end = length if end == -1 else end + 2
+            # Newlines kept so line-oriented reading of the result still lines up.
+            out.append(''.join('\n' if c == '\n' else ' ' for c in source[index:end]))
+            index = end
+            continue
+        out.append(char)
+        index += 1
+    return ''.join(out)
+
+
+def _schema_source() -> str | None:
+    """The schema module's text with comments blanked, or None if it is absent."""
+    if not _SCHEMA_SOURCE.exists():
+        return None
+    return _strip_comments(_SCHEMA_SOURCE.read_text())
+
+
 def _parse_string_array(name: str) -> tuple[str, ...] | None:
     """The named `as const` / typed string array from the schema module, in order.
 
     Returns None when the declaration is not found, so a rename shows up as the
     positive control failing rather than as an empty comparison passing.
     """
-    if not _SCHEMA_SOURCE.exists():
+    source = _schema_source()
+    if source is None:
         return None
     match = re.search(
         rf'export\s+const\s+{re.escape(name)}\s*(?::[^=]+)?=\s*\[([^\]]*)\]',
-        _SCHEMA_SOURCE.read_text(),
+        source,
     )
     if match is None:
         return None
@@ -94,11 +177,12 @@ def _parse_string_constant(name: str) -> str | None:
     reason as `_parse_string_array`: a rename must surface as the positive control
     failing, not as a comparison against nothing.
     """
-    if not _SCHEMA_SOURCE.exists():
+    source = _schema_source()
+    if source is None:
         return None
     match = re.search(
         rf"export\s+const\s+{re.escape(name)}\s*(?::[^=]+)?=\s*'([^']*)'",
-        _SCHEMA_SOURCE.read_text(),
+        source,
     )
     return None if match is None else match.group(1)
 
@@ -139,6 +223,128 @@ class TestTheFrontendSourceIsReadable:
             'matching reader can read — in both cases the comparisons below would '
             'silently measure nothing.'
         )
+
+
+class TestTheReadersIgnoreComments:
+    """A commented-out entry is not a member, and a comment cannot hide one.
+
+    The readers pull every single-quoted token out of the span they match, so
+    without comment-stripping a `//`-commented line inside a mirrored array was
+    parsed as live. Verified before the fix: adding
+    `// 'personas:read' lands with the persona tool` inside `MCP_SCOPES` made the
+    scope mirror fail with "the form offers ['personas:read'] which the mint route
+    refuses" — asserting something untrue about the form and prescribing the wrong
+    remedy.
+
+    These cases run against synthetic source rather than the real file, so they
+    keep testing the reader after the real file's formatting changes.
+    """
+
+    def test_a_commented_out_entry_is_not_read_as_a_member(self):
+        stripped = _strip_comments(
+            "export const MCP_SCOPES = [\n"
+            "  // 'personas:read' lands with the persona tool\n"
+            "  'feedback:read',\n"
+            "  'projects:read',\n"
+            '] as const\n'
+        )
+        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
+        assert found == ['feedback:read', 'projects:read']
+
+    def test_a_block_comment_inside_a_declaration_is_not_read(self):
+        stripped = _strip_comments(
+            "export const MCP_SCOPES = [\n"
+            "  /* 'personas:read', 'ops:read' */\n"
+            "  'feedback:read',\n"
+            '] as const\n'
+        )
+        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
+        assert found == ['feedback:read']
+
+    def test_a_trailing_comment_does_not_change_a_scalar(self):
+        stripped = _strip_comments(
+            "export const DEFAULT_READ_REACH: ReadReach = 'workspace' // not 'none'\n"
+        )
+        match = re.search(
+            r"export\s+const\s+DEFAULT_READ_REACH\s*(?::[^=]+)?=\s*'([^']*)'", stripped
+        )
+        assert match.group(1) == 'workspace'
+
+    def test_a_bracket_inside_a_comment_does_not_truncate_the_span(self):
+        """Why comments are blanked rather than deleted.
+
+        The array span is matched with `[^\\]]*`, so a `]` inside a comment would
+        end it early and the members after the comment would be lost — a silent
+        under-read, which is the dangerous direction.
+        """
+        stripped = _strip_comments(
+            "export const MCP_SCOPES = [\n"
+            '  // see ReadReach[] for the other axis\n'
+            "  'feedback:read',\n"
+            "  'projects:read',\n"
+            '] as const\n'
+        )
+        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
+        assert found == ['feedback:read', 'projects:read']
+
+    def test_a_quoted_slash_slash_is_not_treated_as_a_comment(self):
+        """`'//'` inside a string is data, not the start of a comment.
+
+        A naive `//.*$` substitution would truncate the rest of the line, dropping
+        real members declared after such a value.
+        """
+        stripped = _strip_comments(
+            "export const THINGS = ['https://example.test', 'feedback:read'] as const\n"
+        )
+        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
+        assert found == ['https://example.test', 'feedback:read']
+
+    def test_the_real_source_still_yields_non_empty_declarations(self):
+        """Comment-stripping must not break the file it exists to read.
+
+        The schema module is heavily commented — including a docblock that names
+        `'workspace'`, `'project-set'` and `'none'` in prose ABOVE the constant
+        declaring them, and a `/** ... */` block immediately before `MCP_SCOPES`.
+        A reader that stripped too little would pick those prose mentions up; one
+        that stripped too much, or mishandled the offsets, would return an empty
+        tuple here and every comparison below would pass while measuring nothing.
+
+        Deliberately asserts only shape, not values: the comparisons in the classes
+        below are what pin the values, and duplicating them here would mean two
+        places to edit for one legitimate vocabulary change.
+        """
+        empty = [
+            name
+            for name, read in _MIRRORED_DECLARATIONS.items()
+            if not read(name)
+        ]
+        assert not empty, (
+            f'parsed nothing for {empty} from the real mcpTokenSchema.ts. If the '
+            'declarations are present, comment-stripping consumed too much — the '
+            'comparisons below would then be measuring nothing.'
+        )
+
+    def test_prose_mentions_above_a_declaration_are_not_read_as_members(self):
+        """The specific over-read the real file invites.
+
+        `READ_REACHES` is preceded by a docblock listing each reach in prose
+        (`` - `workspace` — the default...``). Those are backtick-quoted rather
+        than single-quoted so they never matched, but the `MCP_SCOPES` docblock
+        does contain single-quoted names (`` `read` / `read-write` `` and
+        `'personas:read'`-shaped notes are the natural thing to add there). The
+        array span starts at the `[`, so a docblock above it is outside the span
+        anyway — this pins that, since a future reader made more permissive to
+        tolerate a formatting change could easily lose it.
+        """
+        stripped = _strip_comments(
+            "/**\n"
+            " * Mirrors VALID_SCOPES. The retired 'read-write' pair is gone.\n"
+            " */\n"
+            "export const MCP_SCOPES = ['feedback:read'] as const\n"
+        )
+        assert 'read-write' not in stripped
+        match = re.search(r'export\s+const\s+MCP_SCOPES\s*(?::[^=]+)?=\s*\[([^\]]*)\]', stripped)
+        assert re.findall(r"'([^']*)'", match.group(1)) == ['feedback:read']
 
 
 class TestReadReachMirror:
