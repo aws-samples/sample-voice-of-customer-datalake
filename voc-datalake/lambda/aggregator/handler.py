@@ -138,8 +138,8 @@ Known residuals
   `counter_dimensions` rather than as a fixed multiple because the dimension count is
   meant to grow. Both tables are PAY_PER_REQUEST, so this is a bill and not a
   ceiling — see docs/processing-pipeline.md for the same split spelled out per table.
-  And every record of a date
-  moves `METRIC#daily_total`, so same-date records in one batch now CONTEND on it
+  And every record of a date moves `METRIC#daily_total`, so same-date records in one
+  batch now CONTEND on it
   where two plain `update_item`s would simply have serialised — a bulk import
   through the `s3_import` plugin is exactly the shape that produces this, and the
   same shape produces throttling, which arrives as a cancellation too (see
