@@ -677,22 +677,21 @@ function PrototypePanel({
    * "the row's pane, bigger" too literally: each box performs its own load, so the
    * enlarged frame starts at the prototype's FIRST screen regardless of where the
    * row's pane had got to, and both frames are live and executing while the overlay
-   * is open.
-   *
-   * THE SPEC BRANCH LOSES ITS PLACE FOR A DIFFERENT REASON, and review noted the
-   * caveat above does not reach it: there is no frame and no load here, but the
-   * overlay mounts a SECOND `PrototypeRenderer`, and the active screen is that
-   * component's own `useState`. So a reader three screens into the row's spec
-   * prototype also opens at screen one. Same symptom, different mechanism, and the
-   * fix would be a different shape too — lifting `activeId` out of
-   * `PrototypeRenderer` so both copies share it, which is a change to a component
-   * the Documents tab also renders. Left as it is, deliberately, on the same
-   * reasoning as the html branch: the enlarge is an explicit act by the reader, not
-   * a reset sprung on them. Accepted, not overlooked — `HtmlPrototypeFrame` exposes no navigation
+   * is open. Accepted, not overlooked — `HtmlPrototypeFrame` exposes no navigation
    * state to hand over, and a live iframe cannot be moved between parents without
    * reloading. Compare `useLoadedUrl`: the reset it exists to prevent is the same
    * one, minus the part that made it a defect, since this one happens because a
    * reader asked rather than on a timer they cannot see.
+   *
+   * THE SPEC BRANCH LOSES ITS PLACE FOR A DIFFERENT REASON, and the caveat above
+   * does not reach it: there is no frame and no load here, but the overlay mounts a
+   * SECOND `PrototypeRenderer`, and the active screen is that component's own
+   * `useState`. So a reader three screens into the row's spec prototype also opens
+   * at screen one. Same symptom, different mechanism, and the fix would be a
+   * different shape too — lifting `activeId` out of `PrototypeRenderer` so both
+   * copies share it, which is a change to a component the Documents tab also
+   * renders. Left as it is, deliberately, on the same reasoning as the html branch:
+   * the enlarge is an explicit act by the reader, not a reset sprung on them.
    */
   const pane = mode.kind === 'html' ? (
     <HtmlPrototypeFrame url={url} html={content} title={prototype?.title} className="w-full h-full border-0" />

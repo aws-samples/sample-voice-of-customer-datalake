@@ -222,6 +222,14 @@ function asElement(node: Node): Element | null {
  * `Element` without the cross-realm `instanceof` this exists to avoid or a type
  * assertion the repo bans. `tagName` is realm-independent — `'IFRAME'` in every HTML
  * document — and `Reflect.get` reads it off an unknown without assuming a shape.
+ *
+ * DELIBERATELY STRUCTURAL, and NOT equivalent to `asFrame`, which is constructor-based:
+ * this answers a name, so it would also accept an element in an XML-ish document whose
+ * tag name happens to uppercase to `IFRAME`, and it says nothing about `<frame>` or
+ * `<object>`. That is the intended scope — only `<iframe>` is embedded by anything this
+ * shell renders, and both callers use the answer to decide whether to RE-SCAN, where a
+ * false positive costs one extra walk and `nestedDocuments` settles what is really there.
+ * Where the answer decides focus behaviour instead, `asFrame` is still the one to use.
  */
 function isFrameNode(node: unknown): boolean {
   return typeof node === 'object' && node !== null && Reflect.get(node, 'tagName') === 'IFRAME'
@@ -729,6 +737,27 @@ export default function ModalShell({
      * this consumer: the overlay's panel always holds a frame, so that guard is false
      * exactly when the cost is highest. Only a frame arriving, leaving or loading can
      * change which documents there are to listen to, so only those get a walk.
+     *
+     * ONE REPLACEMENT ROUTE IS SEEN BY NEITHER TRIGGER, unchanged by this filtering but
+     * worth naming here because the filter is where a reader will look for it: a prototype
+     * that rewrites itself through `document.open()`/`write()`/`close()` fires no `load` on
+     * the frame element and produces no childList record this observer can act on.
+     *
+     * Measured in jsdom, and the measurement is misleading in the SAFE direction, so read
+     * the spec rather than the test: `document.open()` REUSES the Document object, and
+     * jsdom leaves our keydown listener attached, so a rewritten prototype keeps working
+     * there. The HTML standard's "document open steps" say otherwise — they erase all
+     * event listeners on each shadow-including INCLUSIVE descendant of the document, the
+     * document itself included. In a compliant browser the object therefore stays in
+     * `listening` while its listener is gone, so `isListened` answers TRUE for a document
+     * nothing is listening to and the entry guard lets Tab descend into a frame that cannot
+     * hand focus back. That fails OPEN, which is the opposite of what it looks like.
+     *
+     * Not fixed here, deliberately: the fix is to stop treating `listening.has(doc)` as
+     * proof of an attached listener (re-assert the stored handler on each scan, and
+     * re-observe when `doc.body` is a different object), which changes this shell's
+     * idempotency contract for every dialog in the app — and jsdom cannot host a test for
+     * either the bug or the fix. Tracked separately rather than smuggled into this round.
      *
      * These three arrows and `listenToFrames` reference each other, so they are `const`
      * arrows read before the line that defines them — legal because nothing here runs
