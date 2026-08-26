@@ -49,6 +49,18 @@ export interface PrioritizationRowView {
    * able to state that refusal as well as withhold the control.
    */
   readonly is_frozen: boolean
+  /**
+   * Is this the row the default-row ensure minted for the project, rather than one a
+   * reviewer composed?
+   *
+   * Carried through the same `RowSchema` boundary as `is_frozen`, and degrading to
+   * FALSE for the same kind of reason: the one thing the page does with this is
+   * WITHHOLD the delete control for a project's only default row, which the API
+   * refuses with 409 ("a project's default row cannot be deleted while it is the
+   * project's only row"), and an unreadable value should leave the control offered and
+   * let the server answer rather than hide an action that may well be legal.
+   */
+  readonly is_default: boolean
   // The row's prototype (if any), resolved the same way. Surfaced under the
   // document preview so reviewers can see the demo without leaving the page.
   readonly prototype?: ProjectDocument
@@ -1385,6 +1397,46 @@ export function retainedEnsuredRows(
 }
 
 /**
+ * How many rows each project has on screen.
+ *
+ * ONE COURTESY GATE READS THIS: `api_delete_prioritization_row` refuses a project's
+ * DEFAULT row with 409 while it is that project's ONLY row, which is the state every
+ * project starts in — so without this every row on a typical page would offer an
+ * admin a delete that cannot work, behind a dialog stating an irreversible effect that
+ * will not occur.
+ *
+ * Counted off the rows already collected rather than by a request, so it is exactly as
+ * fresh as the list beside it. It is a COUNT ON SCREEN, not the partition's own, and
+ * that is fine for a courtesy: the server's 409 stays authoritative either way, so a
+ * stale count can only mean a control is offered that is then refused in words
+ * (`rowAction.deleteConflict`) — never a delete that happens when it should not.
+ */
+export function rowsPerProject(
+  rows: readonly PrioritizationRowView[],
+): ReadonlyMap<string, number> {
+  const counted = new Map<string, number>()
+  for (const row of rows) {
+    counted.set(row.project_id, (counted.get(row.project_id) ?? 0) + 1)
+  }
+  return counted
+}
+
+/**
+ * The same map with one row dropped, or the map itself when it never held it.
+ *
+ * Returned UNCHANGED when the key is absent, so a caller using this in a state updater
+ * does not re-render for a removal that removed nothing — which is the whole of what
+ * `ensuredRows` and `localEdits` need after a delete.
+ */
+export function withoutRow<T>(
+  known: Record<string, T>,
+  rowId: string,
+): Record<string, T> {
+  if (!(rowId in known)) return known
+  return Object.fromEntries(Object.entries(known).filter(([id]) => id !== rowId))
+}
+
+/**
  * Which documents a reviewer may compose a row from, per project.
  *
  * THE SAME CANDIDATE SET THE ROUTES VALIDATE AGAINST, resolved from the project read
@@ -1492,6 +1544,9 @@ export function collectRows(
       // page holds only the CALLER'S ballots, so deriving this here would read a row
       // somebody else has voted on as editable.
       is_frozen: row.is_frozen,
+      // Carried for the one courtesy gate that reads it — see the field's own comment
+      // on `PrioritizationRowView` and `rowsPerProject`.
+      is_default: row.is_default,
       prototype: byId.get(row.prototype_id) ?? latestPrototypeOf(project.documents),
     }]
   })

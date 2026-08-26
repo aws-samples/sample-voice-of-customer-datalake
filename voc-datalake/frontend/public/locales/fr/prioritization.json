@@ -69,6 +69,7 @@
     "edit": "Modifier les documents",
     "editHint": "Choisissez sur quels documents de ce projet cette ligne est évaluée. Un seul bulletin les couvre tous.",
     "locked": "Verrouillée depuis le premier bulletin — ajoutez une autre ligne pour évaluer une combinaison différente.",
+    "onlyRow": "La seule ligne par défaut d’un projet ne peut pas être supprimée — ajoutez d’abord une autre ligne, puis supprimez celle-ci.",
     "requiresOne": "Choisissez au moins un document, pour que la ligne ait quelque chose à évaluer.",
     "save": "Enregistrer les documents",
     "saveNewRow": "Ajouter la ligne",
@@ -146,15 +147,24 @@
   "rowAction": {
     "composeConflict": "La ligne n’a pas été ajoutée au projet de {{row}}. Soit le projet contient déjà le nombre maximal de lignes autorisé, soit ses documents ont changé. Rechargez la page pour voir les lignes actuelles.",
     "composeFailed": "La ligne n’a pas été ajoutée. Rien n’a été créé, vous pouvez réessayer.",
+    "composeRefused": "La ligne n’a pas été ajoutée, et la demande a été refusée plutôt qu’échouée : vérifiez votre sélection — une ligne ne peut contenir qu’un nombre limité de documents, et chacun doit toujours faire partie du projet.",
     "deleteConflict": "« {{row}} » n’a pas été supprimée : elle a changé pendant la suppression, ou c’est la seule ligne d’un projet et elle ne peut pas être supprimée. Rechargez la page pour voir les lignes actuelles.",
     "deleteFailed": "« {{row}} » n’a pas été supprimée. La ligne et ses bulletins sont inchangés, vous pouvez réessayer.",
+    "deleteRefused": "« {{row}} » n’a pas été supprimée, et la demande a été refusée plutôt qu’échouée : supprimer une ligne avec ses bulletins est une action d’administrateur, réessayer donnera donc la même réponse.",
     "dismiss": "Masquer ce message",
     "recomposeConflict": "Les documents de « {{row}} » n’ont pas été modifiés : un bulletin a déjà été déposé, sa composition est donc verrouillée. Ajoutez une autre ligne pour évaluer une combinaison différente.",
     "recomposeFailed": "Les documents de « {{row}} » n’ont pas été modifiés. Rien n’a été enregistré, vous pouvez réessayer.",
+    "recomposeRefused": "Les documents de « {{row}} » n’ont pas été modifiés, et la demande a été refusée plutôt qu’échouée : vérifiez votre sélection — une ligne ne peut contenir qu’un nombre limité de documents, et chacun doit toujours faire partie du projet.",
     "title": "Cette modification des lignes n’a pas été enregistrée"
   },
   "rowCount_one": "{{count}} proposition",
   "rowCount_other": "{{count}} propositions",
+  "rowDeleted": {
+    "description": "« {{row}} » a disparu, ainsi que {{ballots}} bulletin(s) déposé(s) sur elle.",
+    "descriptionNoCount": "« {{row}} » a disparu, ainsi que les bulletins qui y avaient été déposés. Aucun nombre de bulletins n’a été communiqué.",
+    "dismiss": "Masquer ce message",
+    "title": "La ligne a été supprimée"
+  },
   "rowUnavailable": {
     "description": "Ces projets contiennent plus de documents qu’une ligne de priorisation ne peut en assembler : ils sont absents de la liste ci-dessous plutôt que non évalués. Supprimer les documents dont un projet n’a plus besoin le fait réapparaître.",
     "title": "Certains projets n’ont pas pu recevoir de ligne"

@@ -18,7 +18,7 @@ import {
   useTranslation, Trans,
 } from 'react-i18next'
 import { useBlocker } from 'react-router-dom'
-import { apiErrorStatus, isPermanentRefusal } from '../../api/apiErrorStatus'
+import { isPermanentRefusal } from '../../api/apiErrorStatus'
 import { api } from '../../api/client'
 import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
 import { projectsKey } from '../../api/projectQueryKeys'
@@ -31,14 +31,18 @@ import {
   buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms,
 } from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
-import { EnsureRefusalPanel, RowActionFailurePanel } from './RowStatePanels'
+import { EnsureRefusalPanel, RowActionFailurePanel, RowDeletedPanel } from './RowStatePanels'
 import { useRowLifecycle } from './useRowLifecycle'
 import {
+  refusalsByProject, rowsAnswered, withoutProjects,
+} from './rowEnsureResults'
+import {
   applyBallotEdits, getScore, getTeamView, collectRows, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRow, normalizeRows, normalizeScores, ownBallotRead,
+  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRows, normalizeScores, ownBallotRead,
   overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY,
-  retainedEnsuredRows, scorableDocumentsByProject, sortRows,
+  retainedEnsuredRows, rowsPerProject, scorableDocumentsByProject, sortRows,
   teamAggregatesOf, teamOrderingAvailable, uncountableTeamRead, withEditedField,
+  withoutRow,
 } from './prioritizationUtils'
 import type {
   PrioritizationRowView, SortField, SortDirection, TeamAggregates,
@@ -48,87 +52,6 @@ import type { LinkedForm } from './formLinkUtils'
 import type {
   Project, PrioritizationScore, PrioritizationBallotEdit, PrioritizationRow,
 } from '../../api/types'
-
-/**
- * The rows a batch of row-ensure asks actually handed back, keyed by row id.
- *
- * The create route is idempotent and answers the STORED row whether it just wrote it
- * or found it, so every fulfilled ask carries a row the server holds — the same record
- * the prioritization read reports, one round trip earlier. Keeping them is what lets
- * the list survive a read that fails or has not landed.
- *
- * Each answer goes through `normalizeRow` — the SAME schema the read half is validated
- * by — rather than being trusted because its declared type says `PrioritizationRow`. A
- * fulfilled ask answering `{success: true, row: {}}` type-checks and satisfies the
- * compiler, and reading `row.row_id.length` off it threw inside this `.then`, which lost
- * every row in the batch and left the rejection unhandled. Validating instead keeps the
- * two halves of the same record held to one contract, including the document-count bound
- * `RowSchema` states.
- *
- * A fulfilled ask with no `row`, an unreadable one, or one whose id is empty contributes
- * nothing: the field is optional on the wire, and a row the page cannot address is a row
- * no ballot, aggregate or expansion could ever be looked up against.
- *
- * At module level rather than inside the effect for the reason `selectPrioritization`
- * is: this is a pure mapping over a response, and nesting it there put a closure four
- * levels deep inside a `useEffect` inside a component, which the lint budget refuses.
- */
-function rowsAnswered(
-  results: readonly PromiseSettledResult<{ readonly row?: PrioritizationRow }>[],
-): Record<string, PrioritizationRow> {
-  const answered = results.flatMap((result) => {
-    if (result.status !== 'fulfilled') return []
-    const row = normalizeRow(result.value.row)
-    return row ? [row] : []
-  })
-  return Object.fromEntries(answered.map((row) => [row.row_id, row]))
-}
-
-/**
- * The default-row asks that were REFUSED in a way the page has to state, by project.
- *
- * ONE STATUS IS REPORTED AND THE OTHERS ARE NOT, and each side of that is a decision:
- *
- *  * **409** — the project holds more documents than a row can be composed from in one
- *    read. Permanent by construction (the same answer until documents are removed) and
- *    covered by NOTHING on screen: the project just does not appear in the backlog. This
- *    is the state `createPrioritizationRow`'s docstring tracked to #339 phase 2.
- *  * **400** — the project has no PRD and no PR/FAQ. Also permanent, and already
- *    covered: the list's own empty state invites exactly that document, which is more
- *    actionable than an error panel. Kept silent, as it was.
- *  * Anything ELSE — a 500, a throttle, a network fault — is transient, released for
- *    retry by the effect and not worth a panel a reader cannot act on. A pass that
- *    keeps failing leaves the list's own states to speak.
- *
- * At module level for the reason `rowsAnswered` is: a pure mapping over settled
- * results, which the lint budget refuses to see nested inside an effect inside a
- * component.
- */
-const REPORTED_ENSURE_STATUSES = new Set([409])
-
-function refusalsByProject(
-  projectIds: readonly string[],
-  results: readonly PromiseSettledResult<unknown>[],
-): Record<string, number> {
-  const refused = results.flatMap((result, index): [string, number][] => {
-    if (result.status !== 'rejected') return []
-    const status = apiErrorStatus(result.reason)
-    if (status === null || !REPORTED_ENSURE_STATUSES.has(status)) return []
-    return [[projectIds[index], status]]
-  })
-  return Object.fromEntries(refused)
-}
-
-/** The same map with these projects dropped — see the `setEnsureRefusals` call. */
-function withoutProjects(
-  known: Record<string, number>,
-  projectIds: readonly string[],
-): Record<string, number> {
-  const dropped = new Set(projectIds)
-  return Object.fromEntries(
-    Object.entries(known).filter(([projectId]) => !dropped.has(projectId)),
-  )
-}
 
 /**
  * The prioritization read, validated at the query boundary — BOTH halves of it.
@@ -1001,6 +924,13 @@ export default function Prioritization() {
     [allProjectDetails, projects],
   )
 
+  /**
+   * How many rows each project has on screen, so a project's ONLY default row does not
+   * offer a delete the API always refuses. Counted off the list already collected — no
+   * request, and exactly as fresh as the rows beside it. See `rowsPerProject`.
+   */
+  const rowsByProject = useMemo(() => rowsPerProject(allRows), [allRows])
+
   // Project names, so the refusal panel can NAME the projects that have no row rather
   // than printing ids nobody recognises. Off the project list read, which is a
   // different query from the one that may have refused, so the names are available in
@@ -1012,16 +942,30 @@ export default function Prioritization() {
 
   /**
    * Adding a row, changing an un-frozen row's documents, and deleting a row with its
-   * ballots — plus the one failure a reader has to be told about. See `useRowLifecycle`.
+   * ballots — plus what a reader has to be told afterwards. See `useRowLifecycle`.
    *
    * `canDelete` is the caller's admin group, and it decides only whether the control is
    * OFFERED: the refusal is `require_admin`'s, server-side, before anything is read.
+   *
+   * `onRowDeleted` DROPS THE PENDING EDIT on the row that is gone, and that is not
+   * housekeeping. `api_patch_prioritization_scores` checks every named row exists before
+   * its first write and raises on any miss, deliberately, so a body naming one vanished
+   * row persists NOTHING — a stale key here would take every other row's unsaved edit
+   * down with it on the next Save. It also drops the row from `ensuredRows`, so the
+   * removal survives a later read that publishes nothing to reconcile against (a cache
+   * eviction, a failed refetch) rather than only holding while `retainedEnsuredRows`
+   * has an authoritative map to filter by.
    */
   const rowLifecycle = useRowLifecycle({
     candidatesByProject,
+    rowsByProject,
     canDelete: isAdmin,
     onRowsChanged: () => {
       void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
+    },
+    onRowDeleted: (rowId) => {
+      setLocalEdits((edits) => withoutRow(edits, rowId))
+      setEnsuredRows((known) => withoutRow(known, rowId))
     },
   })
 
@@ -1113,10 +1057,20 @@ export default function Prioritization() {
       {/* What did not happen when a reviewer added, edited or deleted a row — including
           the 409 a ballot landing first produces, which is the refusal a hidden control
           cannot prevent. Its own region beside the others, dismissable, because it
-          describes an action the reader just took rather than the state of a read. */}
+          describes an action the reader just took rather than the state of a read. Both
+          it and the receipt below move the reader to themselves: the control that
+          produced either lives inside an expanded row that may be well below this. */}
       <RowActionFailurePanel
         failure={rowLifecycle.failure}
         onDismiss={rowLifecycle.clearFailure}
+      />
+
+      {/* That a delete LANDED, and how many ballots went with it — the one write whose
+          success is otherwise indistinguishable from a filter or a failed read, and the
+          only place `ballots_deleted` can be read at all. */}
+      <RowDeletedPanel
+        deleted={rowLifecycle.deleted}
+        onDismiss={rowLifecycle.clearDeleted}
       />
 
       {/* The default-row refusals that leave a project out of the backlog with nothing

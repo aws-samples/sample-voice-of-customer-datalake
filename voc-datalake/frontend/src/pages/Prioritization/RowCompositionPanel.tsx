@@ -45,6 +45,19 @@ import type { ReactElement } from 'react'
 type OpenPicker = 'none' | 'recompose' | 'compose'
 
 /**
+ * The two pickers that actually SUBMIT something — `OpenPicker` without its closed
+ * state.
+ *
+ * Its own type so the submit path cannot be reached with `'none'`: the picker is only
+ * rendered where the mode is already known to be one of these, so passing that value
+ * down narrows the dispatch to a `switch` with no `default`, in which a fourth mode
+ * fails to compile. Two independent `if`s over the wider type would instead close the
+ * picker and issue no write — a silently discarded submission the compiler could not
+ * see — which is exactly the shape `performRowWrite` avoids in `useRowLifecycle`.
+ */
+type SubmittingPicker = Exclude<OpenPicker, 'none'>
+
+/**
  * Everything a row needs to offer its composition, in one object threaded whole
  * from the page.
  *
@@ -72,6 +85,15 @@ export interface RowCompositionActions {
    */
   readonly candidatesByProject: ReadonlyMap<string, readonly ProjectDocument[]>
   /**
+   * How many rows each project has on screen — see `rowsPerProject`.
+   *
+   * Read for ONE reason: `api_delete_prioritization_row` refuses a project's DEFAULT
+   * row while it is that project's only row, which is the state every project starts
+   * in. Without this the delete would be offered on a typical page's every row, behind
+   * a dialog stating an irreversible effect that cannot occur.
+   */
+  readonly rowsByProject: ReadonlyMap<string, number>
+  /**
    * Whether to OFFER the delete. Read off the caller's admin group; the refusal is
    * the server's (`require_admin` answers 403 before anything is read), so this is
    * the courtesy half — a non-admin is not invited to press a button that cannot
@@ -89,6 +111,28 @@ export interface RowCompositionActions {
 const NO_CANDIDATES: readonly ProjectDocument[] = []
 
 /**
+ * Would deleting this row be refused before it started?
+ *
+ * `api_delete_prioritization_row` answers 409 for a project's DEFAULT row while it is
+ * that project's only row — the state every project begins in — so offering the control
+ * there invites an action that cannot work, behind a dialog naming an irreversible
+ * effect that will not occur. A COURTESY GATE, not a protection: the server's refusal
+ * stays authoritative and `rowAction.deleteConflict` already words it, so a count that
+ * has gone stale costs at most an offered control and a sentence — never a delete that
+ * happens when it should not.
+ *
+ * A MISSING COUNT READS AS 1, which withholds the control for a default row: a row on
+ * screen is at least one row of its project, so a project with no entry is the
+ * single-row shape rather than the multi-row one.
+ */
+function isProjectsOnlyDefaultRow(
+  row: PrioritizationRowView,
+  rowsByProject: ReadonlyMap<string, number>,
+): boolean {
+  return row.is_default && (rowsByProject.get(row.project_id) ?? 1) <= 1
+}
+
+/**
  * One project's scorable documents, as chosen for a row.
  *
  * A CHECKBOX GROUP in a fieldset with a legend, so the group has an accessible name
@@ -96,11 +140,17 @@ const NO_CANDIDATES: readonly ProjectDocument[] = []
  * our own — the native control already does that, and a `div` with a click handler
  * would not.
  *
- * SELECTION STARTS FROM `initialIds` and is held here, in the picker, so closing it
- * discards a half-made choice rather than leaving it to reappear later. `key`ing the
- * element on the row's stored ids at the call site is what re-seeds it after a save
- * lands: this state is deliberately not synced to a prop, because a refetch arriving
- * mid-edit must not silently rewrite what the reviewer has ticked.
+ * SELECTION STARTS FROM `initialIds` and then belongs to the reviewer. Held here rather
+ * than in the parent, so closing the picker discards a half-made choice instead of
+ * leaving it to reappear later, and NOTHING re-seeds it while it is open: not a prop
+ * (state is seeded once, by `useState`) and not a `key` at the call site, which is only
+ * the mode. That is what makes the promise real — a background refetch changing the
+ * row's stored composition (the hourly prototype re-sign, another reviewer's recompose)
+ * must not rewrite what somebody has ticked, and a `key` carrying the stored ids used to
+ * do exactly that by remounting.
+ *
+ * REOPENING is what picks up a landed save: the picker closes on submit, so the next
+ * open reads fresh `heldIds` through `initialIds` with no remount involved.
  *
  * AT LEAST ONE is the only rule enforced here, and it is enforced by disabling Save
  * rather than by refusing after the fact: a row with nothing to score is not a row,
@@ -220,11 +270,13 @@ function DocumentPicker({
  * would leave a project whose rows are all editable with no way to score a second
  * combination at all.
  *
- * The picker CLOSES when it submits, rather than waiting for the write to land. The
- * page reports a failed compose, recompose or delete in a panel above the list —
- * including the 409 a ballot that landed first produces — so a refusal is not
- * silent; keeping the form open through an in-flight request would instead leave a
- * second Save available for a request already on its way.
+ * The picker CLOSES when it submits, and the delete dialog closes when it is confirmed,
+ * rather than either waiting for the write to land. The page reports a failed compose,
+ * recompose or delete in a panel above the list — including the 409 a ballot that landed
+ * first produces — and a delete that landed in another, and both move the reader to
+ * them, so nothing is silent; keeping either form open through an in-flight request
+ * would instead leave a second submission available for one already on its way, which
+ * is also what closing is relied on to prevent.
  */
 export default function RowCompositionPanel({
   row, composition,
@@ -233,23 +285,31 @@ export default function RowCompositionPanel({
   readonly composition: RowCompositionActions
 }): ReactElement {
   const {
-    candidatesByProject, canDelete, pending, onCompose, onRecompose, onDelete,
+    candidatesByProject, rowsByProject, canDelete, pending, onCompose, onRecompose, onDelete,
   } = composition
   const { t } = useTranslation('prioritization')
   const [openPicker, setOpenPicker] = useState<OpenPicker>('none')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const candidates = candidatesByProject.get(row.project_id) ?? NO_CANDIDATES
   const heldIds = row.documents.map((doc) => doc.document_id)
-  // The stored composition, as a `key`, so a save that lands re-seeds the picker's
-  // selection from the row's new documents instead of keeping the one the reviewer
-  // submitted. Nothing else re-seeds it, deliberately: a refetch arriving mid-edit
-  // must not rewrite what somebody has ticked.
-  const compositionKey = heldIds.join(',')
-  const submit = (documentIds: readonly string[]) => {
-    const submitting = openPicker
+  const isOnlyDefaultRow = isProjectsOnlyDefaultRow(row, rowsByProject)
+  /**
+   * Dispatch on the mode the picker was OPENED in, which is a `SubmittingPicker` by
+   * construction — the parameter is supplied where the picker is rendered, and the
+   * picker only renders when the mode is not `'none'`. So the switch has no `default`
+   * and a fourth mode fails to compile, rather than closing the picker and issuing
+   * nothing. Same idiom as `performRowWrite`.
+   */
+  const submit = (mode: SubmittingPicker, documentIds: readonly string[]) => {
     setOpenPicker('none')
-    if (submitting === 'compose') onCompose(row, documentIds)
-    if (submitting === 'recompose') onRecompose(row, documentIds)
+    switch (mode) {
+      case 'compose':
+        onCompose(row, documentIds)
+        return
+      case 'recompose':
+        onRecompose(row, documentIds)
+        return
+    }
   }
   return (
     <div data-testid={`row-composition-${row.row_id}`} className="rounded-lg border border-gray-200 bg-white p-3">
@@ -289,7 +349,7 @@ export default function RowCompositionPanel({
           <FilePlus2 size={14} aria-hidden="true" />
           {t('composition.addRow')}
         </button>
-        {canDelete ? (
+        {canDelete && !isOnlyDefaultRow ? (
           <button
             type="button"
             onClick={() => setConfirmingDelete(true)}
@@ -301,6 +361,18 @@ export default function RowCompositionPanel({
           </button>
         ) : null}
       </div>
+      {/* WHY there is no delete here, for the admin who would otherwise look for one.
+          Said in words rather than left as an absence, the same treatment the freeze
+          gets above: "a project's only default row cannot be deleted" is a fact a reader
+          can act on — by adding a second row first — and a silently missing control is
+          not. Shown only to somebody who would have been offered the control, since a
+          non-admin has no delete to explain. */}
+      {canDelete && isOnlyDefaultRow ? (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-gray-600">
+          <Lock size={14} className="mt-0.5 flex-shrink-0 text-gray-400" aria-hidden="true" />
+          {t('composition.onlyRow')}
+        </p>
+      ) : null}
       {openPicker === 'none' ? null : (
         <>
           {/* Which ask this picker is for, above the group it belongs to: the two
@@ -310,7 +382,13 @@ export default function RowCompositionPanel({
             {openPicker === 'compose' ? t('composition.addRowHint') : t('composition.editHint')}
           </p>
           <DocumentPicker
-            key={`${openPicker}:${compositionKey}`}
+            // The MODE alone, so switching between the two asks starts a fresh selection
+            // while a background refetch — which moves the row's stored composition but
+            // not this — leaves the reviewer's ticks exactly where they are. The stored
+            // ids used to be part of this key, and remounting on them silently discarded
+            // an in-progress selection; reopening the picker is what picks up a landed
+            // save, since it closes on submit.
+            key={openPicker}
             documents={candidates}
             // The row's own documents either way. For an edit that is the composition
             // being changed; for a new row it is a starting point a reviewer narrows
@@ -318,16 +396,24 @@ export default function RowCompositionPanel({
             initialIds={heldIds}
             submitLabel={openPicker === 'compose' ? t('composition.saveNewRow') : t('composition.save')}
             pending={pending}
-            onSubmit={submit}
+            // The mode is narrowed HERE, where it is already known not to be `'none'`,
+            // which is what lets `submit` dispatch exhaustively — see there.
+            onSubmit={(documentIds) => submit(openPicker, documentIds)}
             onCancel={() => setOpenPicker('none')}
             t={t}
           />
         </>
       )}
       {/* The existing shared dialog, used as it is — `ConfirmModal` already owns the
-          dialog semantics, the focus trap and the in-flight lock, and it lands initial
-          focus on Cancel, which is the right default for a destructive answer. The copy
-          names the effect a reviewer cannot see: the ballots go with the row. */}
+          dialog semantics and the focus trap, and it lands initial focus on Cancel, which
+          is the right default for a destructive answer. The copy names the effect a
+          reviewer cannot see: the ballots go with the row.
+          No `isLoading`: the dialog CLOSES on confirm, before the request is issued, which
+          is also what prevents a second confirmation — the same reasoning the picker
+          records for closing on submit. Passing the in-flight flag would have no effect,
+          since the dialog is already unmounted by the time it can be true, and would read
+          as an in-flight lock this code does not use. Whether a delete landed is reported
+          by `RowDeletedPanel`, and a refusal by `RowActionFailurePanel`. */}
       <ConfirmModal
         isOpen={confirmingDelete}
         title={t('composition.delete.title')}
@@ -335,7 +421,6 @@ export default function RowCompositionPanel({
         confirmLabel={t('composition.delete.confirm')}
         cancelLabel={t('composition.delete.cancel')}
         variant="danger"
-        isLoading={pending}
         onConfirm={() => {
           setConfirmingDelete(false)
           onDelete(row)
