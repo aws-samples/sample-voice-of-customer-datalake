@@ -12,7 +12,10 @@ gate reporting success while 46 authorization tests asserted nothing, and nothin
 in the repository noticing the edit. `pytest.ini` sets `testpaths = lambda
 plugins`, so `scripts/` is never collected by a plain `pytest` run, and
 `lint:python` named only `lambda plugins`, so the file was not linted either. The
-same change that added this module extended that script to `scripts`.
+same change that added this module extended that script to `scripts` — though only
+this test half runs in CI: no workflow invokes `lint:python`, so the lint half is a
+local gate (see `ruff.toml`'s header). Which is why the coverage that matters is
+here, not there.
 
 The convention this repo applies to every other check — that it earns its place
 by failing when the behaviour regresses — has to apply to the code that decides

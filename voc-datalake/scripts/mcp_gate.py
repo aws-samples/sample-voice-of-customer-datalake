@@ -114,7 +114,10 @@ UNFLOORED_ON_PURPOSE: frozenset[str] = frozenset()
 # rather than incidental. `pytest.ini` sets `testpaths = lambda plugins`, so
 # nothing collects `scripts/` — this file is only ever *run* as the gate's own
 # entry point, and only ever *tested* by that module. (`lint:python` was likewise
-# `ruff check lambda plugins` until the same change added `scripts`.) Neutering
+# `ruff check lambda plugins` until the same change added `scripts` — but that is a
+# LOCAL gate: no workflow invokes it, so the lint half of this file's coverage runs
+# only when someone runs it by hand, while the test half runs on every PR. See
+# ruff.toml's header.) Neutering
 # `audit()` below to `return 0` was verified to let a module-level skip on
 # `test_mcp_tokens.py` produce `858 passed, 46 skipped` with the gate reporting
 # success. The floors protect the test surface; that module protects the floors.

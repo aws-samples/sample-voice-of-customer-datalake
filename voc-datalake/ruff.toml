@@ -1,16 +1,54 @@
 # Python lint configuration (issue #201).
 #
-# Rules are ruff's defaults (pyflakes F + pycodestyle errors E4/E7/E9) — the
-# baseline every first-party file passes. The root gate runs
-# `ruff check lambda plugins scripts` from this directory; keep it at zero.
+# The root gate is `ruff check lambda plugins scripts`, run from this directory
+# by `lint:python` in the repo-root package.json.
 #
-# `scripts` is in that list because `scripts/mcp_gate.py` decides whether the MCP
-# CI gate passes, and it was previously outside every lint and test surface here:
-# `pytest.ini` sets `testpaths = lambda plugins`, so it was never collected, and
-# the lint gate named only `lambda plugins`, so it was never linted. A one-token
-# edit making the gate report success unconditionally would have been flagged by
-# nothing. It is now linted here and unit-tested by
-# `lambda/shared/test/test_mcp_gate_audit.py`, which the gate itself runs.
+# What the baseline actually is, measured
+# --------------------------------------
+# The intended rule set is ruff's historical defaults — pyflakes `F` plus
+# pycodestyle errors `E4`/`E7`/`E9`. Against THAT set the tree carries 4
+# pre-existing `E402`s (3 in `lambda/conftest.py`, 1 in
+# `lambda/api/test/conftest.py`), where imports deliberately follow `sys.path`
+# setup. So the baseline is 4, not zero; an earlier version of this comment said
+# "keep it at zero", which was never true.
+#
+# The raw count also depends on ruff's own version, because `requirements-dev.txt`
+# declares an uncapped `ruff>=0.15.0` and ruff enables more rules by default over
+# time:
+#
+#   ruff 0.15.0  ->   4 errors
+#   ruff 0.16.4  -> 518 errors  (197 I001, 150 BLE001, 30 UP045, ...)
+#
+# Restricting to the documented set (`--select F,E4,E7,E9`) gives 4 under both.
+# All of that is pre-existing and independent of the `scripts` addition:
+# `ruff check lambda plugins` on `development` is also 518 under 0.16.4, and
+# `ruff check scripts` alone is clean under both versions — so widening the path
+# was a zero-error delta.
+#
+# The invariant to hold, therefore, is "no NEW findings", compared against the
+# same ruff version — not an absolute count. Pinning the rule set here with an
+# explicit `[lint] select`, or capping ruff's minor, would make an absolute number
+# reproducible; both are repo-wide policy changes rather than something the MCP
+# gate should decide, so they are left as follow-ups.
+#
+# Why `scripts` is in the path
+# ----------------------------
+# `scripts/mcp_gate.py` decides whether the MCP CI gate passes, and it was
+# previously outside every lint and test surface here: `pytest.ini` sets
+# `testpaths = lambda plugins`, so it was never collected, and the lint gate named
+# only `lambda plugins`, so it was never linted. A one-token edit making the gate
+# report success unconditionally would have been flagged by nothing.
+#
+# Half of that is now enforced automatically and half is not, which is worth being
+# explicit about. `lambda/shared/test/test_mcp_gate_audit.py` unit-tests the file
+# and runs on every pull request, via the MCP gate's own `test_mcp_*` glob. The
+# LINT half does not run in CI at all: no workflow under `.github/workflows/`
+# invokes `lint:python`, `npm run lint` or `npm run check` (the event-logging guard
+# only mentions the latter in a comment), so `scripts/` — like `lambda/` and
+# `plugins/` before it — is linted only when someone runs the gate locally. Making
+# the lint gate a workflow is the follow-up that would close it, by the same "a
+# check that does not run protects nothing" reasoning the MCP gate applies
+# elsewhere.
 
 extend-exclude = [
     # Vendored third-party code: local layer build output from
