@@ -1,5 +1,17 @@
 # Runs the MCP-specific Python test surface on every pull request.
 #
+# What it covers today: the five modules under `lambda/api/test/`
+# (`test_mcp_security.py` — catalog and authorization, `test_mcp_delegation.py`
+# — domain delegation and route error mapping, `test_mcp_protocol_envelope.py`
+# — envelopes and negotiation, `test_mcp_output_schema_conformance.py` —
+# registry-driven output-schema conformance, `test_mcp_date_basis.py` — date
+# basis forwarding) plus `lambda/shared/test/test_mcp_tokens.py`, which owns
+# the credential format and the scope/reach vocabulary (`TOKEN_PREFIX`,
+# `VALID_SCOPES`, `VALID_READ_REACHES`, `reach_allows`, `secret_matches`) that
+# every one of those modules depends on. The shared module is gated
+# deliberately, not incidentally: an edit that narrows `VALID_READ_REACHES`
+# while leaving handler behaviour intact passes the api/test set on its own.
+#
 # Scoped on purpose: this is the MCP backend gate, not the backend suite. It
 # exists because the MCP server's regressions are the invisible kind — a tool
 # declaration that drifts from the payload it describes, a scope table that
@@ -31,9 +43,22 @@ on:
 permissions:
   contents: read
 
+# A superseded push on the same PR branch has nothing left to prove: its tree
+# is already gone. Cancelling keeps the checks list on an actively-pushed PR
+# from filling with stale in-progress entries, which is what branch protection
+# reads.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   mcp-tests:
-    name: MCP catalog, authorization, delegation, protocol and schemas
+    # Short and stable on purpose. This string is the identifier branch
+    # protection keys on, so it is the one thing here that cannot be renamed
+    # cheaply — a rename silently stops enforcing the required check. The
+    # enumeration of what the job covers lives in the header comment, where
+    # there is room for it and where changing it costs nothing.
+    name: MCP backend tests
     runs-on: ubuntu-latest
     # The suite is host-side and finishes in seconds; the ceiling is here to
     # cap a hung install or a test that starts waiting on a network call
@@ -41,6 +66,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Nothing in this job pushes, tags, or calls the API, and the next
+          # step pip-installs from the checked-out tree — which on a fork PR
+          # is untrusted content. Keep the token out of `.git/config` rather
+          # than leaving it readable there for the length of the job.
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -66,16 +97,71 @@ jobs:
       # assertion runs. requirements-dev.txt's own header names it as the
       # companion install for exactly this reason.
       #
+      # `lambda/shared/test/test_mcp_tokens.py` needs nothing beyond these two
+      # — it is pure Python over `shared/mcp_tokens.py`.
+      #
       # No Lambda layer *build* is needed — these are host-side unit tests
       # importing the modules directly, not a packaged bundle. Node, AWS
       # credentials and a container runtime are likewise absent because
       # nothing here synthesizes CDK, builds the frontend, or reaches an AWS
       # endpoint: the conftest layers mock AWS at the import boundary.
+      #
+      # Known exposure: both files bound their dependencies with `>=` and only
+      # `jsonschema` is capped (`<5`), and `.python-version` pins a floating
+      # patch of 3.14. So a breaking upstream release can turn this gate red
+      # on a pull request that changed nothing. A red run whose failure is an
+      # import error, a resolver conflict, or a message naming a third-party
+      # package is a dependency-resolution problem, not an MCP regression —
+      # triage it as such before suspecting the diff under test. Closing the
+      # hole properly means pinning (a `constraints.txt` fed to `pip install
+      # -c`, or a lockfile) across both files, which is a repository-wide
+      # policy change rather than something this gate should decide alone.
       - name: Install test and application dependencies
         run: >-
           python -m pip install --disable-pip-version-check
           -r voc-datalake/requirements-dev.txt
           -r voc-datalake/lambda/layers/processing-deps/requirements.txt
+
+      # The globs in the next two steps are the entire definition of this
+      # gate's scope, and a glob can quietly match less than it did. Renaming
+      # *every* MCP module off the `test_mcp_` prefix does redden the job —
+      # bash passes the unexpanded literal through and pytest exits 4 — but
+      # renaming one of six leaves it green with a sixth less coverage and no
+      # signal at all. This floor is the missing signal, in the spirit of the
+      # repo's `*_lockstep.py` tests: the count is allowed to grow freely and
+      # a drop has to be argued for in a diff.
+      #
+      # Raise MINIMUM_COLLECTED when modules are added; lowering it is the
+      # deliberate act of shrinking the gate, and should say why.
+      - name: Check the MCP test surface has not shrunk
+        working-directory: voc-datalake
+        env:
+          AWS_EC2_METADATA_DISABLED: "true"
+          MINIMUM_COLLECTED: "791"
+        run: |
+          set -uo pipefail
+          # Collection is run on its own rather than parsed out of the real
+          # run, so that a count this step cannot read is reported as a broken
+          # floor instead of being mistaken for a passing suite.
+          output=$(
+            python -m pytest lambda/api/test/test_mcp_*.py lambda/shared/test/test_mcp_*.py \
+              -o addopts="" -p no:cacheprovider --co -q 2>&1
+          ) || {
+            echo "${output}"
+            echo "::error::Could not collect the MCP test surface. If this says 'file or directory not found', one of the two globbed directories no longer holds any test_mcp_*.py module." >&2
+            exit 1
+          }
+          collected=$(printf '%s\n' "${output}" | sed -nE 's/^([0-9]+) tests? collected.*/\1/p' | tail -n1)
+          if [ -z "${collected}" ]; then
+            echo "${output}"
+            echo "::error::Could not read a collected-test count from pytest's output; the floor cannot be checked. pytest's --co -q summary format may have changed." >&2
+            exit 1
+          fi
+          echo "collected=${collected} minimum=${MINIMUM_COLLECTED}"
+          if [ "${collected}" -lt "${MINIMUM_COLLECTED}" ]; then
+            echo "::error::The MCP test surface collected ${collected} tests, below the committed floor of ${MINIMUM_COLLECTED}. A module was renamed off the test_mcp_ prefix, moved out of the globbed directories, or emptied. Restore it, or lower the floor in this workflow and say why." >&2
+            exit 1
+          fi
 
       # -o addopts="": pytest.ini's addopts turn every run into a
       # whole-repository coverage run (`--cov=lambda --cov=plugins`) that also
@@ -90,10 +176,10 @@ jobs:
       # lambda/api/test/conftest.py, which also perform the AWS-mocking import
       # setup the MCP and API modules are collected under.
       #
-      # The glob collects the five MCP modules that exist today — security,
-      # delegation, protocol envelope, output-schema conformance and date
-      # basis — and picks up a sixth automatically when the next MCP-specific
-      # module lands, which naming a list here would not.
+      # The globs collect the six MCP modules that exist today across the two
+      # directories that hold them, and pick up a seventh automatically when
+      # the next MCP-specific module lands in either, which naming a list here
+      # would not.
       #
       # Serial by design: no -n/xdist. The suite is seconds long, and these
       # modules mutate module-level registries and environment during import,
@@ -108,4 +194,5 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         run: >-
           python -m pytest lambda/api/test/test_mcp_*.py
+          lambda/shared/test/test_mcp_*.py
           -o addopts="" --no-header --tb=short -q

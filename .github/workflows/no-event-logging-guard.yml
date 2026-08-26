@@ -29,6 +29,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No step here pushes, tags, or calls the API, so the token has no
+          # use in the workspace. Dropped for the same reason as in
+          # `mcp-backend-tests.yml`.
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
