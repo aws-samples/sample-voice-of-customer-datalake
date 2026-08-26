@@ -8,7 +8,6 @@
  * @module components/ModalShell/frameFocus
  */
 
-
 /**
  * What can hold focus at all, before asking whether it is actually visible.
  *
@@ -304,6 +303,10 @@ export function tabOutOfFrame(
 }
 
 /**
+ * @param panelDocument the dialog's own document; Tab wraps only here.
+ */
+
+/**
  * Where Tab should go when the key came from inside a nested frame, or null to
  * leave it to that frame.
  *
@@ -339,7 +342,7 @@ export function tabAcrossFrame(
   // exists, so declining hands the Tab to a browser with nowhere sensible to put focus —
   // which means outside the dialog. A wrong stop inside the panel is recoverable with
   // another Tab; leaving the dialog is not.
-  return frame ? tabOutOfFrame(frame, panelDocument, items, back) : items[0]
+  return frame ? tabOutOfFrame(frame, panelDocument, items, back) : items[0] ?? null
 }
 
 /**

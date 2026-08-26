@@ -72,15 +72,22 @@ describe('frameFocus', () => {
 
   it('wraps a panel-document frame through the supplied panel order', () => {
     // Reverting to the page-global `document` makes this isolated panel look
-    // like an intermediate document, so focus walks its whole body instead of
-    // wrapping inside the dialog's supplied item order.
+    // like an intermediate document. The extra body control is deliberately
+    // absent from the caller's item order, so the two branches must disagree:
+    // the panel branch wraps to `first`, while the intermediate branch would
+    // step through the iframe in raw DOM order to `outside items`.
     const panelDocument = document.implementation.createHTMLDocument('isolated panel')
     panelDocument.body.innerHTML =
-      '<button>first</button><iframe title="panel frame"></iframe><button>last</button>'
-    const items = [...panelDocument.body.querySelectorAll<HTMLElement>('button, iframe')]
+      '<button id="first">first</button>' +
+      '<iframe title="panel frame"></iframe>' +
+      '<button id="outside-items">outside items</button>'
+    const items = [
+      required<HTMLIFrameElement>(panelDocument, 'iframe'),
+      required(panelDocument, '#first'),
+    ]
 
     expect(tabOutOfFrame(required(panelDocument, 'iframe'), panelDocument, items, false)).toBe(
-      required(panelDocument, 'button:last-of-type'),
+      required(panelDocument, '#first'),
     )
   })
 
