@@ -446,10 +446,11 @@ NO_CANCELLATION_REASON = 'None'
 # DERIVABLE FROM EACH OTHER: `TransactionConflict` and `ProvisionedThroughputExceeded`
 # do take the `Exception` suffix, but the throttle is `ThrottlingError` here and
 # `ThrottlingException` there — so no suffix rule relates the two vocabularies and both
-# sets have to be written out in full. `test_every_retryable_reason_is_transient_on_the
-# _read_path_too` holds the pairing as an explicit table for that reason. The two paths
-# must not reach opposite conclusions about one condition, and a bulk import through
-# `s3_import` is exactly the shape that produces both at volume.
+# sets have to be written out in full.
+# `test_every_retryable_reason_is_transient_on_the_read_path_too` holds the pairing as
+# an explicit table for that reason. The two paths must not reach opposite conclusions
+# about one condition, and a bulk import through `s3_import` is exactly the shape that
+# produces both at volume.
 #
 # A `ValidationError` is deliberately NOT here: it will fail identically on the next
 # attempt, so re-sending it only spends the invocation and delays the record.

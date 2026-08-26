@@ -185,10 +185,9 @@ export class VocProcessingStack extends VocStack {
         // `reportBatchItemFailures: true`, so a batch that partially fails
         // re-presents records whose counter updates (one per dimension, plus the
         // running average) already landed — permanently, since nothing recomputes a
-        // counter from source. The
-        // aggregator claims each record's `eventID` in this table INSIDE the same
-        // TransactWriteItems as the counters, so the claim and the counters commit
-        // together or not at all.
+        // counter from source. The aggregator claims each record's `eventID` in this
+        // table INSIDE the same TransactWriteItems as the counters, so the claim and
+        // the counters commit together or not at all.
         //
         // The shared `processingRole` is already granted this table
         // (`idempotencyTable.grantReadWriteData` above, for the processor), so this

@@ -185,7 +185,7 @@ decisions inside it that a naive implementation gets wrong. The revert map:
       auto-retry a cancelled transaction, so without the in-process retry a same-date
       collision spends the event source's `retryAttempts: 3` and the record is then
       DROPPED, its aggregates lost permanently — worse than the double-count. Deleting
-      the retry fails four; retrying ANY cancellation fails the one whose subject is
+      the retry fails two; retrying ANY cancellation fails the one whose subject is
       that a request which will fail identically must not be re-sent.
 
   TestRedeliveryMovesACounterTwice
@@ -3253,9 +3253,10 @@ class TestARedeliveredArrivalMovesNothing:
         This is the case that produces INTERNALLY INCONSISTENT metrics: with one
         independent `update_item` call per dimension, a record that dies partway has
         applied the ones before it, so the daily total no longer equals the sum of the
-        per-category counts — and the retry applies every one of them on top. A marker written before
-        the writes records the half-application as done; written after, it leaves it to
-        be re-applied. Only transacting them removes the partial state itself.
+        per-category counts — and the retry applies every one of them on top. A marker
+        written before the writes records the half-application as done; written after,
+        it leaves it to be re-applied. Only transacting them removes the partial state
+        itself.
 
         ⚠️ THE FAILURE IS INJECTED MID-WAY THROUGH THE WRITES, and that is what makes
         the arrangement honest. `_POISON_PK` sorts BETWEEN the per-category counter and
@@ -3731,7 +3732,7 @@ class TestAWriteConflictIsRetriedRatherThanReported:
     REVERT MAP, each entry RUN:
       * Delete the `_conflicted` branch from `_claimed_transaction` — fails
         test_a_conflicted_transaction_is_re_attempted and
-        test_a_conflict_that_clears_leaves_the_record_applied.
+        test_a_conflict_that_clears_leaves_the_record_applied_exactly_once.
       * Retry ANY cancellation (drop the reason check in `_conflicted`) — fails
         test_a_validation_failure_is_not_retried, whose subject is that a request
         which will fail identically must not be re-sent: it spends the invocation and
@@ -4028,7 +4029,7 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         assert attempted.call_count == 1
 
     def test_every_retryable_reason_is_transient_on_the_read_path_too(self):
-        """The two paths must not disagree about one condition.
+        """The two paths must not disagree about one condition, in EITHER direction.
 
         `_TRANSIENT_READ_ERRORS` decides what a transient failure of the day READ is;
         `_RETRYABLE_CANCELLATION_REASONS` decides the same for the transactional WRITE.
@@ -4042,6 +4043,23 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         so a suffix rule would have quietly passed on a mapping it got wrong. There is
         no algorithm relating the two vocabularies, which is exactly why both sets are
         named in full in the module and why this table is written out here.
+
+        🔑 BOTH DIRECTIONS, not just write-covers-read. A first version of this test
+        asserted `same_condition`'s keys EQUAL `_RETRYABLE_CANCELLATION_REASONS`, then
+        checked each mapped exception INTO `_TRANSIENT_READ_ERRORS` — which pins today's
+        three but would not fail if `_TRANSIENT_READ_ERRORS` grew a fourth transient
+        condition with a `CancellationReasons` counterpart nobody added to the write
+        side. That is the exact shape of the gap this test exists to prevent, just with
+        the two paths swapped: "the read calls it transient and the write does not." A
+        table that only checks read ⊇ write cannot catch write ⊇ read going missing.
+
+        A SECOND assert reusing `same_condition`'s own keys against
+        `_RETRYABLE_CANCELLATION_REASONS` would be a TAUTOLOGY, not a second direction:
+        the first assert already pins them equal, so it can never fail. Closing the
+        other direction means walking `_TRANSIENT_READ_ERRORS` itself, which is why
+        `HAS_CANCELLATION_COUNTERPART` below enumerates it in full — a member added
+        there with no `True`/`False` decision fails the completeness assert, and a
+        `True` with no reason code fails the containment assert.
         """
         from aggregator.handler import (
             _RETRYABLE_CANCELLATION_REASONS,
@@ -4065,6 +4083,47 @@ class TestAWriteConflictIsRetriedRatherThanReported:
                 f'is not transient for the day read, so the two paths disagree about '
                 f'one DynamoDB condition. Add it to _TRANSIENT_READ_ERRORS, or say at '
                 f'_RETRYABLE_CANCELLATION_REASONS why the write is special.'
+            )
+
+        # The other direction. Every `_TRANSIENT_READ_ERRORS` member, and whether it has
+        # a `CancellationReasons` counterpart at all — most do not, which is why this
+        # cannot be `set(_TRANSIENT_READ_ERRORS) == set(same_condition.values())`: five
+        # of the nine are read-only failure modes (a throttled or slow-server READ, not
+        # a cancelled transaction) with no transactional analogue. That is a fact about
+        # DynamoDB's error surface, not an oversight, so it is recorded per-member rather
+        # than derived — the same reasoning `same_condition` itself gives for being
+        # spelled out instead of computed.
+        exception_to_reason = {v: k for k, v in same_condition.items()}
+        has_cancellation_counterpart = {
+            'ProvisionedThroughputExceededException': True,
+            'ThrottlingException': True,
+            'TransactionConflictException': True,
+            'ThrottlingException.TooManyRequests': False,
+            'RequestLimitExceeded': False,
+            'InternalServerError': False,
+            'ServiceUnavailable': False,
+            'RequestTimeout': False,
+            'RequestTimeoutException': False,
+        }
+        assert set(has_cancellation_counterpart) == set(_TRANSIENT_READ_ERRORS), (
+            '_TRANSIENT_READ_ERRORS gained or lost a member with no matching entry '
+            'here, so nothing decided whether it needs a _RETRYABLE_CANCELLATION_'
+            'REASONS counterpart. Add it above with True or False.'
+        )
+        for exception, has_counterpart in has_cancellation_counterpart.items():
+            if not has_counterpart:
+                continue
+            assert exception in exception_to_reason, (
+                f'{exception!r} is marked as having a cancellation-reason counterpart '
+                f'but same_condition names none — add the pair above.'
+            )
+            reason = exception_to_reason[exception]
+            assert reason in _RETRYABLE_CANCELLATION_REASONS, (
+                f'{exception!r} is transient for the day read and is marked as having '
+                f'a cancellation-reason counterpart ({reason!r}), but that reason is '
+                f'not retried as a cancelled transaction — the reverse of the '
+                f'throttling gap this test exists to prevent. Add it to '
+                f'_RETRYABLE_CANCELLATION_REASONS.'
             )
 
     def test_a_redelivery_is_still_a_skip_and_not_a_retry(
