@@ -273,17 +273,20 @@ export function tabWouldLeave(doc: Document, back: boolean): boolean {
  * wrap — that wrap is the trap, and is the only place one belongs.
  */
 export function tabOutOfFrame(
-  frame: HTMLIFrameElement, items: HTMLElement[], back: boolean,
+  frame: HTMLIFrameElement,
+  panelDocument: Document,
+  items: HTMLElement[],
+  back: boolean,
 ): HTMLElement | null {
   const owner = frame.ownerDocument
-  // The panel is identified through an argument, not the module-global `document`,
-  // so the arithmetic stays injectable and testable across realms.
-  if (owner === items[0]?.ownerDocument) {
+  // The panel is identified by an explicit argument, independent of whether
+  // `items` happens to be empty or stale.
+  if (owner === panelDocument) {
     const at = items.indexOf(frame)
     // A frame not in `items` at all (hidden, or the panel re-rendered under us):
     // position 0 keeps focus inside the panel rather than guessing.
     const from = at === -1 ? 0 : at
-    return items[(from + (back ? -1 : 1) + items.length) % items.length]
+    return items[(from + (back ? -1 : 1) + items.length) % items.length] ?? null
   }
   // See `nestedDocuments` on why `body` is checked despite its non-null type.
   const siblings = owner.body ? focusable(owner.body) : []
@@ -297,7 +300,7 @@ export function tabOutOfFrame(
   // `items[0]` when the walk runs out of enclosing frames without reaching this
   // document — see `tabAcrossFrame`'s fallback for the route that produces it and why
   // moving focus beats declining.
-  return outer ? tabOutOfFrame(outer, items, back) : items[0]
+  return outer ? tabOutOfFrame(outer, panelDocument, items, back) : items[0] ?? null
 }
 
 /**
@@ -311,7 +314,11 @@ export function tabOutOfFrame(
  * when the frame is that document's edge too — see `tabOutOfFrame`.
  */
 export function tabAcrossFrame(
-  doc: Document, items: HTMLElement[], back: boolean, isListened: (doc: Document) => boolean,
+  doc: Document,
+  panelDocument: Document,
+  items: HTMLElement[],
+  back: boolean,
+  isListened: (doc: Document) => boolean,
 ): HTMLElement | null {
   // Entry is checked on THIS path too, against `doc`'s own activeElement: a frame
   // nested inside a frame (a generated prototype embedding a map, a video or a docs
@@ -332,7 +339,7 @@ export function tabAcrossFrame(
   // exists, so declining hands the Tab to a browser with nowhere sensible to put focus —
   // which means outside the dialog. A wrong stop inside the panel is recoverable with
   // another Tab; leaving the dialog is not.
-  return frame ? tabOutOfFrame(frame, items, back) : items[0]
+  return frame ? tabOutOfFrame(frame, panelDocument, items, back) : items[0]
 }
 
 /**

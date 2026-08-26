@@ -13,6 +13,12 @@ import {
   tabWouldLeave,
 } from './frameFocus'
 
+function required<T extends Element>(root: ParentNode, selector: string): T {
+  const found = root.querySelector<T>(selector)
+  if (found === null) throw new Error(`missing fixture element: ${selector}`)
+  return found
+}
+
 describe('frameFocus', () => {
   it('reads a document whose visible candidates are all hidden as leaving', () => {
     // Reverting to `candidates.length === 0` sees two raw controls and answers
@@ -31,19 +37,17 @@ describe('frameFocus', () => {
   it('resolves a frame constructed in another realm', () => {
     // Reverting to a page-global `instanceof HTMLIFrameElement` compares against
     // the wrong constructor and silently reports this frame as a non-frame.
-    class ForeignFrame {}
-    const frame = Object.defineProperties(
-      new ForeignFrame() as unknown as HTMLIFrameElement,
-      {
-        ownerDocument: {
-          value: {
-            defaultView: { HTMLIFrameElement: ForeignFrame },
-          },
-        },
-      },
-    )
+    const realmHost = document.createElement('iframe')
+    document.body.append(realmHost)
+    try {
+      const foreignWindow = realmHost.contentWindow
+      if (foreignWindow === null) throw new Error('jsdom did not provide an iframe realm')
+      const frame = foreignWindow.document.createElement('iframe')
 
-    expect(asFrame(frame)).toBe(frame)
+      expect(asFrame(frame)).toBe(frame)
+    } finally {
+      realmHost.remove()
+    }
   })
 
   it('resumes in the frame\'s own document instead of the panel\'s order', () => {
@@ -59,10 +63,31 @@ describe('frameFocus', () => {
     ].join('')
 
     const panelItems = [...panelDocument.body.querySelectorAll<HTMLElement>('button')]
-    const nestedFrame = nestedDocument.querySelector<HTMLIFrameElement>('iframe')!
+    const nestedFrame = required<HTMLIFrameElement>(nestedDocument, 'iframe')
 
-    expect(tabOutOfFrame(nestedFrame, panelItems, false)).toBe(
-      nestedDocument.querySelector('button'),
+    expect(tabOutOfFrame(nestedFrame, panelDocument, panelItems, false)).toBe(
+      required(nestedDocument, 'button'),
     )
+  })
+
+  it('wraps a panel-document frame through the supplied panel order', () => {
+    // Reverting to the page-global `document` makes this isolated panel look
+    // like an intermediate document, so focus walks its whole body instead of
+    // wrapping inside the dialog's supplied item order.
+    const panelDocument = document.implementation.createHTMLDocument('isolated panel')
+    panelDocument.body.innerHTML =
+      '<button>first</button><iframe title="panel frame"></iframe><button>last</button>'
+    const items = [...panelDocument.body.querySelectorAll<HTMLElement>('button, iframe')]
+
+    expect(tabOutOfFrame(required(panelDocument, 'iframe'), panelDocument, items, false)).toBe(
+      required(panelDocument, 'button:last-of-type'),
+    )
+  })
+
+  it('stays fail-closed when the panel has no focusable items', () => {
+    const panelDocument = document.implementation.createHTMLDocument('empty panel')
+    panelDocument.body.innerHTML = '<iframe title="panel frame"></iframe>'
+
+    expect(tabOutOfFrame(required(panelDocument, 'iframe'), panelDocument, [], false)).toBeNull()
   })
 })

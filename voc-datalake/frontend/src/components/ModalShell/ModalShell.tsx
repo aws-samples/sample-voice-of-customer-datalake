@@ -246,7 +246,7 @@ export default function ModalShell({
       if (items.length === 0) return
       const next = raisedIn === document
         ? tabWithinPanel(items, document.activeElement, e.shiftKey, isListened)
-        : tabAcrossFrame(raisedIn, items, e.shiftKey, isListened)
+        : tabAcrossFrame(raisedIn, document, items, e.shiftKey, isListened)
       if (next === null) return
       e.preventDefault()
       next.focus()
