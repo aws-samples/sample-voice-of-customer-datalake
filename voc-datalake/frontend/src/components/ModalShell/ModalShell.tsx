@@ -510,14 +510,6 @@ export default function ModalShell({
      * keyboard user descend into it with nothing to bring them back out.
      */
     const watching = new Map<Document, MutationObserver>()
-    /**
-     * One stable identity for every re-scan trigger, in this document and in each
-     * nested one, so all of them can be detached again. An arrow rather than a hoisted
-     * `function` because a hoisted declaration is analysed as if it could run before
-     * `panel` was narrowed, and this closes over the narrowed `panel`; it forwards to
-     * `listenToFrames` rather than being it, so the two can refer to each other.
-     */
-    const rescan = () => listenToFrames()
     const listen = (docs: readonly Document[]) => {
       for (const doc of docs) {
         if (listening.has(doc)) continue
@@ -527,8 +519,8 @@ export default function ModalShell({
         // Skipped for `document`, whose triggers are attached to the panel below —
         // narrower than this whole page's tree, and already in place.
         if (doc !== document && doc.body) {
-          doc.addEventListener('load', rescan, true)
-          const nested = new MutationObserver(rescan)
+          doc.addEventListener('load', listenToFrames, true)
+          const nested = new MutationObserver(listenToFrames)
           nested.observe(doc.body, { childList: true, subtree: true })
           watching.set(doc, nested)
         }
@@ -547,16 +539,16 @@ export default function ModalShell({
     }
     listen([document])
     listenToFrames()
-    panel.addEventListener('load', rescan, true)
-    const frames = new MutationObserver(rescan)
+    panel.addEventListener('load', listenToFrames, true)
+    const frames = new MutationObserver(listenToFrames)
     frames.observe(panel, { childList: true, subtree: true })
     return () => {
       frames.disconnect()
-      panel.removeEventListener('load', rescan, true)
+      panel.removeEventListener('load', listenToFrames, true)
       for (const observer of watching.values()) observer.disconnect()
       for (const [doc, handler] of listening) {
         doc.removeEventListener('keydown', handler)
-        if (doc !== document) doc.removeEventListener('load', rescan, true)
+        if (doc !== document) doc.removeEventListener('load', listenToFrames, true)
       }
     }
     // `isOpen` alone: `onClose` and `dismissable` are read through refs, so a
