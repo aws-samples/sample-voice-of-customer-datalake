@@ -425,6 +425,43 @@ describe('ModalShell with a nested frame', () => {
     return { doc, frame, pressInFrame, pressInPage }
   }
 
+  /**
+   * A frame inside `doc` — the shape a generated prototype embedding a map, a video
+   * or a docs frame produces without anyone choosing it.
+   *
+   * `querySelector('iframe')` rather than `instanceof HTMLIFrameElement`: the element
+   * belongs to the OUTER FRAME's realm, whose `HTMLIFrameElement` is a different
+   * constructor object from this document's — the realm trap `asFrame` exists for, and
+   * it applies to the test too. The tag-name overload types it without an assertion,
+   * which this repo bans.
+   *
+   * @param inserted whether the frame is added AFTER `doc` was first scanned, which is
+   *   what a script inside the prototype does. `false` writes it in `doc`'s initial
+   *   markup, where a static parse means the outer `load` fires with the nested
+   *   document already present, so one scan of the panel happens to catch both.
+   */
+  function addNestedFrame(doc: Document, { inserted = false, inner = '<button id="deep">deep</button>' } = {}) {
+    if (inserted) {
+      const el = doc.createElement('iframe')
+      el.title = 'nested'
+      doc.body.append(el)
+    } else {
+      doc.body.insertAdjacentHTML('beforeend', '<iframe title="nested"></iframe>')
+    }
+    const nested = doc.querySelector('iframe')
+    const nestedDoc = nested?.contentDocument
+    if (!nested || !nestedDoc?.body) throw new Error('no nested frame document')
+    nestedDoc.body.innerHTML = inner
+    /** Raise a key in the NESTED frame's document. */
+    const pressInNested = (key: string, shiftKey = false) => {
+      const target = nestedDoc.activeElement ?? nestedDoc.body
+      target.dispatchEvent(
+        new (nestedDoc.defaultView ?? window).KeyboardEvent('keydown', { key, shiftKey, bubbles: true }),
+      )
+    }
+    return { nested, nestedDoc, pressInNested }
+  }
+
   it('closes on Escape pressed inside the frame', () => {
     // Without the frame listener this is silent: the reviewer is inside the
     // artifact, which is where the overlay is meant to be used, and the documented
@@ -558,24 +595,104 @@ describe('ModalShell with a nested frame', () => {
     // As above, jsdom performs no default Tab action, so the observable is that the
     // shell did not intervene: focus stays on the nested frame element for the browser
     // to descend from, and the panel's own controls are untouched.
-    const { doc, pressInFrame } = renderFramedShell({
-      inner: '<button id="inner-first">inner one</button><iframe id="nested" title="nested"></iframe>',
-    })
-    // `querySelector('iframe')` rather than `instanceof HTMLIFrameElement`: this
-    // element belongs to the FRAME's realm, whose `HTMLIFrameElement` is a different
-    // constructor from this one — the same realm trap `raisedIn` avoids in the shell.
-    // The tag-name overload types it without an assertion.
-    const nested = doc.querySelector('iframe')
-    const nestedDoc = nested?.contentDocument
-    if (!nestedDoc?.body) throw new Error('no nested frame document')
-    nestedDoc.body.innerHTML = '<button id="deep">deep</button>'
-    nested?.focus()
+    const { doc, pressInFrame } = renderFramedShell({ inner: '<button id="inner-first">inner one</button>' })
+    const { nested } = addNestedFrame(doc)
+    nested.focus()
 
     pressInFrame('Tab')
 
     expect(doc.activeElement).toBe(nested)
     expect(screen.getByRole('button', { name: 'after' })).not.toHaveFocus()
     expect(screen.getByRole('button', { name: 'close' })).not.toHaveFocus()
+  })
+
+  it('listens to a frame inserted inside the prototype\'s own document', () => {
+    // The guarantee the entry guard rests on. Both of this page's re-scan triggers are
+    // in the TOP document — the observer watches the panel's node subtree, and the
+    // capture-phase `load` is on the panel — and neither sees a frame inserted into
+    // another frame's document, because that document is not part of the panel's node
+    // tree and a `load` raised in it never reaches the panel. So a frame a script in the
+    // prototype adds after the outer document was scanned used to be readable and
+    // UNLISTENED, and the entry guard (which checked only readability) let a keyboard
+    // user descend into it: the exiting Tab was unobserved, so focus went on out of the
+    // dialog, and Escape was dead in there too.
+    //
+    // The static-markup case passes either way, which is why it cannot stand in for
+    // this: a parsed frame's `load` waits on its subframes, so one scan catches both.
+    const { doc } = renderFramedShell()
+    const { nestedDoc, pressInNested } = addNestedFrame(doc, { inserted: true })
+
+    nestedDoc.getElementById('deep')?.focus()
+    pressInNested('Escape')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('wraps Tab off a readable frame it is not listening to', async () => {
+    // The other half of the guarantee above, and the reason the guard asks whether a
+    // document is LISTENED to rather than merely readable. An exit this shell cannot see
+    // is not an exit, so descending would be a one-way trip out of the dialog — exactly
+    // the opaque-frame case, reached with a frame that IS readable by the time Tab is
+    // pressed. Without this, "readable" and "listened" could drift back together.
+    const { doc, pressInFrame } = renderFramedShell({ inner: '' })
+    // Unreadable while it is inserted, so the shell's scan of the outer document skips
+    // it exactly as it skips a cross-origin frame, then readable afterwards. That is a
+    // real ordering rather than listener surgery: whatever the reason a frame was missed,
+    // the guard must not treat it as an entry.
+    const el = doc.createElement('iframe')
+    el.title = 'nested'
+    const real = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
+    if (!real?.get) throw new Error('no contentDocument getter to wrap')
+    Object.defineProperty(el, 'contentDocument', {
+      configurable: true,
+      get() {
+        throw new DOMException('not yet', 'SecurityError')
+      },
+    })
+    doc.body.append(el)
+    // Let the observer run and skip it — MutationObserver callbacks are microtasks.
+    await Promise.resolve()
+    Reflect.deleteProperty(el, 'contentDocument')
+    const nestedDoc = el.contentDocument
+    if (!nestedDoc?.body) throw new Error('no nested frame document')
+    nestedDoc.body.innerHTML = '<button id="deep">deep</button>'
+    el.focus()
+
+    pressInFrame('Tab')
+
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus()
+  })
+
+  it('resumes after a nested frame in the prototype\'s own document, not in the panel', () => {
+    // `items` is the PANEL's focusables and the top document's activeElement is the
+    // OUTERMOST frame element whenever focus is anywhere inside it, so resolving the
+    // exit against those collapsed every depth to the panel's order: a Tab leaving a
+    // frame nested in the prototype jumped to the panel item after the OUTER frame,
+    // skipping whatever followed the nested frame inside the prototype. Focus left the
+    // artifact entirely rather than continuing through it.
+    const { doc } = renderFramedShell({ inner: '<button id="inner-first">inner one</button>' })
+    const { nestedDoc, pressInNested } = addNestedFrame(doc, { inserted: true })
+    doc.body.insertAdjacentHTML('beforeend', '<button id="o2">after the nested frame</button>')
+    nestedDoc.getElementById('deep')?.focus()
+
+    pressInNested('Tab')
+
+    expect(doc.activeElement).toBe(doc.getElementById('o2'))
+    expect(screen.getByRole('button', { name: 'after' })).not.toHaveFocus()
+  })
+
+  it('walks out to the panel when a nested frame is the prototype\'s last focusable', () => {
+    // The recursive leg of the walk: leaving the nested frame leaves the outer document
+    // too, because the nested frame is its last focusable. Only then does the panel's
+    // order apply — and it must, or focus would be left inside a document the Tab has
+    // already logically left.
+    const { doc } = renderFramedShell({ inner: '<button id="inner-first">inner one</button>' })
+    const { nestedDoc, pressInNested } = addNestedFrame(doc, { inserted: true })
+    nestedDoc.getElementById('deep')?.focus()
+
+    pressInNested('Tab')
+
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus()
   })
 
   it('keeps the frame\'s listener attached across an unrelated re-render', async () => {
@@ -589,10 +706,12 @@ describe('ModalShell with a nested frame', () => {
     const added: EventListenerOrEventListenerObject[] = []
     const removed: EventListenerOrEventListenerObject[] = []
     // A fresh `onClose` identity per render, as every consumer of this shell writes it.
+    // Still the shared mock underneath, so the listener can be shown to WORK and not
+    // merely to be attached.
     function Rerendering() {
       const [n, setN] = React.useState(0)
       return (
-        <ModalShell isOpen onClose={() => undefined} ariaLabel="Re-rendering dialog">
+        <ModalShell isOpen onClose={() => onClose()} ariaLabel="Re-rendering dialog">
           <button onClick={() => setN(n + 1)}>bump {n}</button>
           <iframe title="prototype" />
         </ModalShell>
@@ -613,6 +732,19 @@ describe('ModalShell with a nested frame', () => {
     // detach, and would pass the assertion below.
     expect(added.length).toBeGreaterThan(0)
     expect(removed).toHaveLength(0)
+    // The bookkeeping above cannot tell a working listener from one that is merely
+    // still attached — a handler closed over a panel node the re-render replaced, or
+    // one that early-returns, keeps both counts identical while Escape silently stops
+    // closing the dialog. So the property a reader actually cares about is asserted
+    // directly: after the re-renders, a key raised inside the frame still works.
+    const frame = screen.getByTitle('prototype')
+    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
+    if (!doc?.body) throw new Error('no frame document')
+    doc.body.dispatchEvent(
+      new (doc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('listens to a frame that arrives after the dialog is already open', async () => {

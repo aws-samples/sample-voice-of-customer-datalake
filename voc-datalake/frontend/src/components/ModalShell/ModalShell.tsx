@@ -32,14 +32,22 @@
  * can put it there. That made Escape and the Tab trap inert for the whole useful
  * life of a panel whose content IS a frame (the prototype enlarge overlay, #314).
  * The keydown listener is therefore attached to every same-origin document nested
- * in the panel as well, and re-attached as frames load or arrive.
+ * in the panel as well, at any depth, and re-attached as frames load or arrive.
+ * Each nested document is watched in its own right, because a frame inserted or
+ * navigated INSIDE one is invisible to the panel's own observer — a frame's document
+ * is not part of its embedder's node tree.
  *
  * The trap also has to let Tab move INTO such a frame. Descending into a frame is
  * the browser's DEFAULT action for a Tab pressed while the frame element has focus,
  * so the wrap's `preventDefault()` cancels it — and when the frame is the panel's
  * last focusable, which is the prototype overlay's shape, the wrap fires on exactly
  * that keypress and the frame's content is unreachable by keyboard. See
- * `tabWouldEnterFrame`.
+ * `tabWouldEnterFrame`, which descends only into a frame this shell is actually
+ * listening to, so that the Tab which eventually leaves it is seen.
+ *
+ * Leaving a frame resumes at the item after it in the frame's OWN document, walking
+ * outward and wrapping only at the panel — see `tabOutOfFrame`. Resuming at the panel
+ * from any depth would skip whatever followed a nested frame inside the prototype.
  *
  * A frame the parent cannot reach into — cross-origin, or sandboxed without
  * `allow-same-origin` — keeps the old behaviour in both directions, because there is
@@ -158,6 +166,19 @@ function asFrame(el: Element | null): HTMLIFrameElement | null {
 }
 
 /**
+ * The frame element hosting `doc`, or null when `doc` is not in a frame this page
+ * can reach out of.
+ *
+ * `frameElement` is the only way back OUT of a document: a frame's own document has
+ * no other reference to the element embedding it, and the element belongs to the
+ * PARENT's realm, which is why it goes through `asFrame` rather than a bare
+ * `instanceof`.
+ */
+function hostFrame(doc: Document): HTMLIFrameElement | null {
+  return asFrame(doc.defaultView?.frameElement ?? null)
+}
+
+/**
  * Every same-origin document nested under `root`, at any depth — the documents a
  * keydown can be raised in while focus is somewhere inside this dialog.
  */
@@ -197,33 +218,68 @@ function tabWouldLeave(doc: Document, back: boolean): boolean {
 }
 
 /**
+ * The next focusable OUTSIDE `frame`, walking outward one document at a time.
+ *
+ * A frame is one stop in its own document's order, so leaving it resumes at the item
+ * after it THERE — not at the panel, which is only the right answer when the frame is
+ * a panel focusable. Reading the top document's activeElement instead (which is the
+ * outermost frame element whenever focus is anywhere inside it) collapsed every depth
+ * to the panel's order, so an exit from a frame nested inside the prototype skipped
+ * whatever followed it in the prototype's own document and jumped focus out of the
+ * artifact entirely.
+ *
+ * Recursive rather than a single step because the frame may be its document's last
+ * focusable, in which case leaving it leaves that document too, and so on outward.
+ * The walk terminates at the panel's document, where `items` applies and the edges
+ * wrap — that wrap is the trap, and is the only place one belongs.
+ */
+function tabOutOfFrame(
+  frame: HTMLIFrameElement, items: HTMLElement[], back: boolean,
+): HTMLElement | null {
+  const owner = frame.ownerDocument
+  if (owner === document) {
+    const at = items.indexOf(frame)
+    // A frame not in `items` at all (hidden, or the panel re-rendered under us):
+    // position 0 keeps focus inside the panel rather than guessing.
+    const from = at === -1 ? 0 : at
+    return items[(from + (back ? -1 : 1) + items.length) % items.length]
+  }
+  // See `nestedDocuments` on why `body` is checked despite its non-null type.
+  const siblings = owner.body ? focusable(owner.body) : []
+  const at = siblings.indexOf(frame)
+  // No wrap in an intermediate document: running off its edge means this Tab leaves
+  // that document too, which is the recursion below, not a jump to its other end.
+  const next = siblings[at + (back ? -1 : 1)]
+  if (at !== -1 && next) return next
+  // Nothing after it here either, so this Tab leaves the intermediate document too.
+  const outer = hostFrame(owner)
+  return outer ? tabOutOfFrame(outer, items, back) : items[0]
+}
+
+/**
  * Where Tab should go when the key came from inside a nested frame, or null to
  * leave it to that frame.
  *
  * Inside the frame it is the frame's business: intervening on every Tab would
  * yank a reviewer out of a prototype they are walking through. Only at the frame's
- * own last (or first) control does this take over, and then it steps to the panel
- * item after the frame rather than to the panel's edge — the frame is one stop in
- * the panel's order, not necessarily its final one. `active` is this document's
- * activeElement, which is the `<iframe>` ELEMENT while focus is inside it.
+ * own last (or first) control does this take over, and then it steps to whatever
+ * follows the frame in the frame's OWN document, walking outward to the panel only
+ * when the frame is that document's edge too — see `tabOutOfFrame`.
  */
 function tabAcrossFrame(
-  doc: Document, items: HTMLElement[], active: Element | null, back: boolean,
+  doc: Document, items: HTMLElement[], back: boolean, isListened: (doc: Document) => boolean,
 ): HTMLElement | null {
   // Entry is checked on THIS path too, against `doc`'s own activeElement: a frame
   // nested inside a frame (a generated prototype embedding a map, a video or a docs
   // frame) is that document's last focusable, so it would otherwise be read as an
   // exit and wrapped — cancelling the descent, which is the very defect
-  // `tabWouldEnterFrame` exists to prevent, one level down. Recursion makes the rest
-  // work: `nestedDocuments` attaches to frames at any depth, so the Tab that leaves
-  // the inner frame is seen here in turn.
-  if (tabWouldEnterFrame(doc.activeElement, back)) return null
+  // `tabWouldEnterFrame` exists to prevent, one level down.
+  if (tabWouldEnterFrame(doc.activeElement, back, isListened)) return null
   if (!tabWouldLeave(doc, back)) return null
-  const at = active instanceof HTMLElement ? items.indexOf(active) : -1
-  // A frame nested deeper than the panel's own children is not in `items`; treat
-  // it as position 0, which still keeps focus inside the panel.
-  const from = at === -1 ? 0 : at
-  return items[(from + (back ? -1 : 1) + items.length) % items.length]
+  const frame = hostFrame(doc)
+  // A document with no reachable host frame cannot be stepped out of by position, so
+  // fall back to the panel's first item rather than leaving focus where it is.
+  return frame ? tabOutOfFrame(frame, items, back) : items[0]
 }
 
 /**
@@ -240,16 +296,19 @@ function tabAcrossFrame(
  * inside the artifact keyboard-unreachable — in the dialog that exists to walk
  * through that artifact.
  *
- * Declining here is safe because the frame is not an exit: a Tab at the frame's own
- * last control is raised in the frame's document and `tabAcrossFrame` brings focus
- * back to the panel item after the frame. Focus is inside the dialog throughout.
+ * Declining here is safe only when a Tab inside the frame will come back to us: the
+ * exit is `tabAcrossFrame`, and it runs from a listener on the frame's OWN document.
+ * So the guard requires that document to be one this shell is currently LISTENING to,
+ * not merely one it can read. Readability is necessary but not sufficient — a frame
+ * inserted into another frame's document after that document was scanned is readable
+ * and unlistened, because both re-scan triggers (the MutationObserver on the panel's
+ * subtree, and the capture-phase `load` on the panel) live in the top document and see
+ * neither insertions into a nested document nor `load`s dispatched there. Declining for
+ * one of those let a keyboard user descend into a frame nothing could bring them out
+ * of, with Escape dead too — the trap silently ended at that frame.
  *
- * Only when the frame's content is REACHABLE, though. An opaque frame
- * (cross-origin, or sandboxed without `allow-same-origin`) has no listener of ours
- * inside it, so nothing would bring focus back out and declining would hand the
- * page behind the overlay a keyboard user; the same goes for a frame with nothing
- * focusable in it, where the browser skips straight past to whatever follows.
- * Both keep the wrap.
+ * A frame with nothing focusable in it also keeps the wrap: the browser skips straight
+ * past such a frame to whatever follows, so it is not an entry at all.
  *
  * Backwards is deliberately not included: shift-Tab from a focused frame element
  * moves to what precedes the frame rather than descending, so there is no default
@@ -264,18 +323,26 @@ function tabAcrossFrame(
  * A frame the parent cannot read into is opaque at every depth, so an opaque frame
  * inside a readable one keeps the wrap for the reason above: it would still be a
  * one-way trip.
+ *
+ * @param isListened whether this shell has a keydown listener on a given document —
+ *   i.e. whether an exiting Tab raised inside it would be seen.
  */
-function tabWouldEnterFrame(active: Element | null, back: boolean): boolean {
+function tabWouldEnterFrame(
+  active: Element | null, back: boolean, isListened: (doc: Document) => boolean,
+): boolean {
   const frame = back ? null : asFrame(active)
   if (frame === null) return false
   const doc = frameDocument(frame)
   // See `nestedDocuments` on why `body` is checked despite its non-null type.
-  return doc?.body ? focusable(doc.body).length > 0 : false
+  if (!doc?.body) return false
+  return isListened(doc) && focusable(doc.body).length > 0
 }
 
 /** Where Tab must go to stay in the panel, or null when the panel's own order suffices. */
-function tabWithinPanel(items: HTMLElement[], active: Element | null, back: boolean): HTMLElement | null {
-  if (tabWouldEnterFrame(active, back)) return null
+function tabWithinPanel(
+  items: HTMLElement[], active: Element | null, back: boolean, isListened: (doc: Document) => boolean,
+): HTMLElement | null {
+  if (tabWouldEnterFrame(active, back, isListened)) return null
   const first = items[0]
   const last = items[items.length - 1]
   if (back && active === first) return last
@@ -401,8 +468,8 @@ export default function ModalShell({
       const items = focusable(panel)
       if (items.length === 0) return
       const next = raisedIn === document
-        ? tabWithinPanel(items, document.activeElement, e.shiftKey)
-        : tabAcrossFrame(raisedIn, items, document.activeElement, e.shiftKey)
+        ? tabWithinPanel(items, document.activeElement, e.shiftKey, isListened)
+        : tabAcrossFrame(raisedIn, items, e.shiftKey, isListened)
       if (next === null) return
       e.preventDefault()
       next.focus()
@@ -411,21 +478,48 @@ export default function ModalShell({
     // this page's, plus each same-origin frame's. Without the frames, Escape and
     // the trap go quiet as soon as focus enters one — see NESTED FRAMES above.
     const listening = new Map<Document, (e: KeyboardEvent) => void>()
+    // Read by the Tab handlers: descending into a frame is only safe if a Tab raised
+    // inside it comes back to us, which requires a listener on ITS document.
+    const isListened = (doc: Document) => listening.has(doc)
     /**
      * Attach to any document not already covered. Idempotent, because it runs again
      * whenever the panel's contents change and a frame navigation REPLACES a
      * document rather than mutating it — the old entry is left in place, already
      * unreachable, and detached with the rest on close.
+     *
+     * Each nested document is watched in its OWN right, not just scanned once: a
+     * script in the prototype can insert or navigate a frame inside it, and neither
+     * the observer on the panel's subtree nor the panel's capture-phase `load` sees
+     * that — a frame's internal document is not part of its embedder's node tree, and
+     * a `load` dispatched inside one does not reach the panel. Without this, such a
+     * frame was readable but unlistened, and `tabWouldEnterFrame` would have let a
+     * keyboard user descend into it with nothing to bring them back out.
      */
+    const watching = new Map<Document, MutationObserver>()
+    /**
+     * One stable identity for every re-scan trigger, in this document and in each
+     * nested one, so all of them can be detached again. An arrow rather than a hoisted
+     * `function` because a hoisted declaration is analysed as if it could run before
+     * `panel` was narrowed, and this closes over the narrowed `panel`; it forwards to
+     * `listenToFrames` rather than being it, so the two can refer to each other.
+     */
+    const rescan = () => listenToFrames()
     const listen = (docs: readonly Document[]) => {
       for (const doc of docs) {
         if (listening.has(doc)) continue
         const handler = keyHandlerFor(doc)
         doc.addEventListener('keydown', handler)
         listening.set(doc, handler)
+        // Skipped for `document`, whose triggers are attached to the panel below —
+        // narrower than this whole page's tree, and already in place.
+        if (doc !== document && doc.body) {
+          doc.addEventListener('load', rescan, true)
+          const nested = new MutationObserver(rescan)
+          nested.observe(doc.body, { childList: true, subtree: true })
+          watching.set(doc, nested)
+        }
       }
     }
-    listen([document])
     // A frame's document may not exist yet on this commit — the prototype overlay's
     // frame mounts with the dialog, and other content arrives with a query — so the
     // scan is repeated when the panel's subtree changes and when a frame loads
@@ -437,14 +531,19 @@ export default function ModalShell({
       if (panel.querySelector('iframe') === null) return
       listen(nestedDocuments(panel))
     }
+    listen([document])
     listenToFrames()
-    panel.addEventListener('load', listenToFrames, true)
-    const frames = new MutationObserver(listenToFrames)
+    panel.addEventListener('load', rescan, true)
+    const frames = new MutationObserver(rescan)
     frames.observe(panel, { childList: true, subtree: true })
     return () => {
       frames.disconnect()
-      panel.removeEventListener('load', listenToFrames, true)
-      for (const [doc, handler] of listening) doc.removeEventListener('keydown', handler)
+      panel.removeEventListener('load', rescan, true)
+      for (const observer of watching.values()) observer.disconnect()
+      for (const [doc, handler] of listening) {
+        doc.removeEventListener('keydown', handler)
+        if (doc !== document) doc.removeEventListener('load', rescan, true)
+      }
     }
     // `isOpen` alone: `onClose` and `dismissable` are read through refs, so a
     // consumer's inline arrow does not rebuild the observer and every frame

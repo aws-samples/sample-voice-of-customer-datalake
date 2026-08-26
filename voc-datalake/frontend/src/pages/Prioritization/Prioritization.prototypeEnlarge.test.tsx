@@ -492,6 +492,31 @@ describe('getting back to the row', () => {
     expect(within(dialog).getByRole('button', { name: closeName })).not.toHaveFocus()
   })
 
+  it('keeps the trap and Escape working for a frame the prototype embeds itself', async () => {
+    // A prototype is Bedrock-generated HTML, so one embedding a map, a video or a docs
+    // frame produces a frame inside the frame without anyone choosing it. That is the
+    // shell's hardest case and this is its only real consumer, so it is pinned here as
+    // well as in the shell suite: a frame INSERTED into the prototype's document (what a
+    // script in the prototype does) is invisible to any observer watching only the
+    // panel's node tree, so it used to be readable but unlistened — and the entry guard
+    // let a keyboard user descend into it with no listener to bring them back and Escape
+    // dead inside it.
+    const { dialog, trigger } = await openOverlay()
+    const frameDoc = prototypeDocumentIn(dialog)
+    const embedded = frameDoc.createElement('iframe')
+    embedded.title = 'A map the prototype embeds'
+    frameDoc.body.append(embedded)
+    const embeddedDoc = embedded.contentDocument
+    if (!embeddedDoc?.body) throw new Error('the embedded frame has no document')
+    embeddedDoc.body.innerHTML = '<button id="pin">A pin on the map</button>'
+    embeddedDoc.getElementById('pin')?.focus()
+
+    pressInside(embeddedDoc, 'Escape')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
   it('leaves the row expanded underneath, so the ballot is still there on return', async () => {
     // The reason this is an overlay and not a new tab: the sliders, the team's
     // numbers and the room vote are on this page.

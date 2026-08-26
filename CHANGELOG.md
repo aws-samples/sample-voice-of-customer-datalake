@@ -35,7 +35,8 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   artifact was unreachable by keyboard. A frame the page cannot read into, or one with nothing
   focusable in it, keeps the old behaviour: there would be nothing inside it to bring focus back out.
   This holds at any depth, so a prototype that embeds a frame of its own — a map, a video, a
-  documentation pane — is reachable too.
+  documentation pane — is reachable too, and leaving such a frame continues through the prototype's
+  own content rather than jumping out of the artifact to the dialog's controls.
 
 ### Security
 
