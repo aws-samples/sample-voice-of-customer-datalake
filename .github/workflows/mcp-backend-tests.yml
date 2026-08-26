@@ -1,0 +1,111 @@
+# Runs the MCP-specific Python test surface on every pull request.
+#
+# Scoped on purpose: this is the MCP backend gate, not the backend suite. It
+# exists because the MCP server's regressions are the invisible kind — a tool
+# declaration that drifts from the payload it describes, a scope table that
+# stops matching its handler table, a delegated route whose error no longer
+# maps — and each of those passes a frontend build and a CDK synth. Making
+# them visible is the prerequisite for the first write-tool vertical slice,
+# where the cost of a silent catalog or authorization defect stops being a
+# read of the wrong shape.
+#
+# `no-event-logging-guard.yml` stays separate rather than gaining a second
+# job. That guard imports nothing but `re` and `pathlib` and runs with
+# `--noconftest`, so it answers in under a second and cannot be reddened by a
+# dependency problem. This workflow installs the application's dependencies
+# and loads both conftest layers, so it can. Two workflows keep the fast
+# source-only signal readable when the heavier one is broken.
+#
+# The root `test:backend` script is not reused here: it invokes
+# `.venv/bin/python`, which no fresh Actions runner has. Fixing that script's
+# portability is its own change; this job calls setup-python's interpreter
+# directly.
+name: MCP backend tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - development
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-tests:
+    name: MCP catalog, authorization, delegation, protocol and schemas
+    runs-on: ubuntu-latest
+    # The suite is host-side and finishes in seconds; the ceiling is here to
+    # cap a hung install or a test that starts waiting on a network call
+    # rather than to accommodate the run time.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          # Both installed files key the cache. Keying on only one would serve
+          # a stale wheel set whenever the other moved.
+          cache-dependency-path: |
+            voc-datalake/requirements-dev.txt
+            voc-datalake/lambda/layers/processing-deps/requirements.txt
+
+      # Two files, both needed:
+      #
+      # requirements-dev.txt supplies pytest and `jsonschema`, which
+      # test_mcp_output_schema_conformance.py uses to validate every declared
+      # `outputSchema` against a payload the tool really produces.
+      #
+      # processing-deps/requirements.txt supplies the tracer extra
+      # (`aws-lambda-powertools[tracer]`, hence aws_xray_sdk) and pydantic.
+      # The MCP handler and the domain API modules it delegates to decorate
+      # helpers with `@tracer.capture_method` at import time, so without this
+      # file collection fails on ModuleNotFoundError before a single
+      # assertion runs. requirements-dev.txt's own header names it as the
+      # companion install for exactly this reason.
+      #
+      # No Lambda layer *build* is needed — these are host-side unit tests
+      # importing the modules directly, not a packaged bundle. Node, AWS
+      # credentials and a container runtime are likewise absent because
+      # nothing here synthesizes CDK, builds the frontend, or reaches an AWS
+      # endpoint: the conftest layers mock AWS at the import boundary.
+      - name: Install test and application dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          -r voc-datalake/requirements-dev.txt
+          -r voc-datalake/lambda/layers/processing-deps/requirements.txt
+
+      # -o addopts="": pytest.ini's addopts turn every run into a
+      # whole-repository coverage run (`--cov=lambda --cov=plugins`) that also
+      # writes an HTML report. Neither is wanted from a focused gate, and the
+      # ignore flags in there are aimed at a full-tree collection this run
+      # does not perform. Clearing addopts drops only those defaults —
+      # testpaths, python_files, filterwarnings and conftest discovery are
+      # separate keys and stay in force.
+      #
+      # Unlike the event-logging guard, conftest loading is kept: these
+      # modules take fixtures from lambda/conftest.py and
+      # lambda/api/test/conftest.py, which also perform the AWS-mocking import
+      # setup the MCP and API modules are collected under.
+      #
+      # The glob collects the five MCP modules that exist today — security,
+      # delegation, protocol envelope, output-schema conformance and date
+      # basis — and picks up a sixth automatically when the next MCP-specific
+      # module lands, which naming a list here would not.
+      #
+      # Serial by design: no -n/xdist. The suite is seconds long, and these
+      # modules mutate module-level registries and environment during import,
+      # so distributing them would trade a real signal for noise.
+      - name: Run MCP test surface
+        working-directory: voc-datalake
+        env:
+          # botocore otherwise probes the EC2 instance metadata endpoint when
+          # a mocked client is built without a region, spending the connect
+          # timeout on every such client. Nothing in this job has, or should
+          # have, an AWS session.
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: >-
+          python -m pytest lambda/api/test/test_mcp_*.py
+          -o addopts="" --no-header --tb=short -q
