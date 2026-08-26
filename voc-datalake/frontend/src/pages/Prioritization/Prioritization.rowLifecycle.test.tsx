@@ -14,14 +14,15 @@
  * offered on that answer, so both sides of it have to be drivable per test.
  */
 import {
-  describe, it, expect, vi, beforeEach,
+  describe, it, expect, vi, beforeEach, afterEach,
 } from 'vitest'
 import {
-  render, screen, waitFor, within,
+  fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { stubElementScrollIntoView } from '../../test/stubScrollTo'
 
 const mockGetProjects = vi.fn()
 const mockGetProject = vi.fn()
@@ -30,6 +31,7 @@ const mockCreatePrioritizationRow = vi.fn()
 const mockCompose = vi.fn()
 const mockRecompose = vi.fn()
 const mockDelete = vi.fn()
+const mockPatchPrioritizationScores = vi.fn()
 const mockIsAdmin = vi.fn()
 
 vi.mock('../../api/projectsApi', () => ({
@@ -43,7 +45,7 @@ vi.mock('../../api/client', () => ({
   api: {
     getPrioritizationScores: () => mockGetPrioritizationScores(),
     createPrioritizationRow: (id: string) => mockCreatePrioritizationRow(id),
-    patchPrioritizationScores: () => Promise.resolve({ success: true }),
+    patchPrioritizationScores: (edits: unknown) => mockPatchPrioritizationScores(edits),
     getFeedbackForms: () => Promise.resolve({ forms: [] }),
     getFeedbackFormStats: () => Promise.resolve({ success: true, stats: null }),
   },
@@ -72,6 +74,14 @@ vi.mock('react-markdown', () => ({
 import Prioritization from './Prioritization'
 
 const ROW_ID = 'row_p1_default'
+/**
+ * A SECOND row of the same project, which is what makes the default row deletable.
+ *
+ * `api_delete_prioritization_row` refuses a default row while it is a project's only
+ * row, so the page withholds the control in that shape — see `secondRow` and the
+ * "only default row" cases.
+ */
+const SECOND_ROW_ID = 'row_p1_second'
 const PRFAQ_TITLE = 'Feature A PR/FAQ'
 const PRD_TITLE = 'Feature A PRD'
 
@@ -113,6 +123,31 @@ const storedRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+/**
+ * A reviewer-composed second row of the same project, holding the PRD alone.
+ *
+ * Present in the read wherever a delete is under test, because a project's only default
+ * row is one the API always refuses to delete and the page therefore offers no control
+ * for. `is_default: false` — this is a row somebody composed, not the minted one.
+ */
+const secondRow = (overrides: Record<string, unknown> = {}) => ({
+  row_id: SECOND_ROW_ID,
+  project_id: 'p1',
+  document_ids: ['doc_prd'],
+  prototype_id: 'doc_proto',
+  is_default: false,
+  created_at: '2025-01-01',
+  is_frozen: false,
+  ...overrides,
+})
+
+/** The read a project with two rows answers — the shape every delete case needs. */
+const twoRowRead = () => ({
+  rows: { [ROW_ID]: storedRow(), [SECOND_ROW_ID]: secondRow() },
+  scores: {},
+  aggregates: {},
+})
+
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter([{ path: '/', element: <Prioritization /> }])
@@ -144,7 +179,17 @@ function picker(): HTMLElement {
   return screen.getByRole('group', { name: /Documents this row holds/ })
 }
 
+// jsdom implements no `scrollIntoView`, and the row-state panels bring themselves into
+// view when they appear — see `useAnnouncePanel`. Stubbed here rather than at module
+// scope so it does not outlive this file.
+let restoreScrollIntoView = () => { /* replaced per test */ }
+
+afterEach(() => {
+  restoreScrollIntoView()
+})
+
 beforeEach(() => {
+  restoreScrollIntoView = stubElementScrollIntoView()
   vi.clearAllMocks()
   mockIsAdmin.mockReturnValue(false)
   mockGetProjects.mockResolvedValue({ projects: [project] })
@@ -160,6 +205,7 @@ beforeEach(() => {
   mockCompose.mockResolvedValue({ success: true, created: true })
   mockRecompose.mockResolvedValue({ success: true })
   mockDelete.mockResolvedValue({ ballots_deleted: 3 })
+  mockPatchPrioritizationScores.mockResolvedValue({ success: true })
 })
 
 describe('adding another row for a chosen project', () => {
@@ -254,6 +300,73 @@ describe('changing an un-balloted row composition', () => {
     })
   })
 
+  it('keeps the reviewer\'s ticks when a refetch moves the row underneath them', async () => {
+    // THE SELECTION IS THE REVIEWER'S. The picker used to be `key`ed on the row's stored
+    // document ids, so any read that moved them REMOUNTED it and replaced the ticks with
+    // the row's own — a silent loss of unsaved input, and the precise opposite of what
+    // the surrounding comment promised. It is reachable with no action by this reviewer:
+    // `usePrototypeLinkRefresh` invalidates the project fan-out hourly, the row-ensure
+    // invalidates the read whenever an ask reports `created`, and another reviewer's
+    // recompose moves the composition itself.
+    const queryClient = renderPage()
+    const user = userEvent.setup()
+    await waitFor(() => {
+      expect(screen.getByText(PRFAQ_TITLE)).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: new RegExp(PRFAQ_TITLE) }))
+    await screen.findByTestId(`row-composition-${ROW_ID}`)
+    await user.click(screen.getByRole('button', { name: /Edit documents/ }))
+    // Narrowed to the PR/FAQ alone, and NOT submitted.
+    await user.click(within(picker()).getByRole('checkbox', { name: new RegExp(PRD_TITLE) }))
+    expect(within(picker()).getByRole('checkbox', { name: new RegExp(PRD_TITLE) })).not.toBeChecked()
+
+    // A read lands holding a DIFFERENT composition — somebody else's recompose.
+    mockGetPrioritizationScores.mockResolvedValue({
+      rows: { [ROW_ID]: storedRow({ document_ids: ['doc_prd'] }) },
+      scores: {},
+      aggregates: {},
+    })
+    await queryClient.invalidateQueries({ queryKey: ['prioritization-scores'] })
+
+    // The reviewer's own choice survives it, and a save sends what they ticked.
+    await waitFor(() => {
+      expect(within(picker()).getByRole('checkbox', { name: new RegExp(PRFAQ_TITLE) })).toBeChecked()
+    })
+    expect(within(picker()).getByRole('checkbox', { name: new RegExp(PRD_TITLE) })).not.toBeChecked()
+    await user.click(screen.getByRole('button', { name: /Save documents/ }))
+    await waitFor(() => {
+      expect(mockRecompose).toHaveBeenCalledWith(ROW_ID, {
+        project_id: 'p1', document_ids: ['doc_prfaq'],
+      })
+    })
+  })
+
+  it('re-seeds from the row when the picker is REOPENED, which is what a landed save needs', async () => {
+    // The other half of dropping the stored ids from the `key`: nothing re-seeds an open
+    // picker, and reopening it reads the row's current documents through `initialIds`.
+    mockGetPrioritizationScores
+      .mockResolvedValueOnce({ rows: { [ROW_ID]: storedRow() }, scores: {}, aggregates: {} })
+      .mockResolvedValue({
+        rows: { [ROW_ID]: storedRow({ document_ids: ['doc_prfaq'] }) },
+        scores: {},
+        aggregates: {},
+      })
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Edit documents/ }))
+    await user.click(within(picker()).getByRole('checkbox', { name: new RegExp(PRD_TITLE) }))
+    await user.click(screen.getByRole('button', { name: /Save documents/ }))
+    await waitFor(() => {
+      expect(screen.queryByText(PRD_TITLE)).toBeNull()
+    })
+    await user.click(screen.getByRole('button', { name: /Edit documents/ }))
+
+    // The candidate list is the PROJECT'S documents, so both boxes are still offered —
+    // only the preselection follows the row, which is now the PR/FAQ alone.
+    expect(within(picker()).getByRole('checkbox', { name: new RegExp(PRFAQ_TITLE) })).toBeChecked()
+    expect(within(picker()).getByRole('checkbox', { name: new RegExp(PRD_TITLE) })).not.toBeChecked()
+  })
+
   it('shows the composition the refreshed read reports, not the one submitted', async () => {
     // The other half of "success updates the visible composition": the row's badges
     // and its expansion are built from the read, so a landed save shows through it.
@@ -321,6 +434,13 @@ describe('a frozen row', () => {
 })
 
 describe('deleting a row with its ballots', () => {
+  // Every case here needs the project to hold TWO rows: the API refuses to delete a
+  // default row while it is a project's only one, and the page withholds the control
+  // for exactly that shape — see the "only default row" cases below.
+  beforeEach(() => {
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
+  })
+
   it('shows no delete control to a reviewer who is not an admin', async () => {
     // The refusal is the server's — `require_admin` answers 403 before anything is
     // read — so this is the courtesy half: nobody is invited to press a button that
@@ -360,8 +480,8 @@ describe('deleting a row with its ballots', () => {
     // what lets the row actually disappear.
     mockIsAdmin.mockReturnValue(true)
     mockGetPrioritizationScores
-      .mockResolvedValueOnce({ rows: { [ROW_ID]: storedRow() }, scores: {}, aggregates: {} })
-      .mockResolvedValue({ rows: {}, scores: {}, aggregates: {} })
+      .mockResolvedValueOnce(twoRowRead())
+      .mockResolvedValue({ rows: { [SECOND_ROW_ID]: secondRow() }, scores: {}, aggregates: {} })
     const { user } = await openTheRow()
 
     await user.click(screen.getByRole('button', { name: /Delete row/ }))
@@ -373,6 +493,132 @@ describe('deleting a row with its ballots', () => {
     await waitFor(() => {
       expect(screen.queryByText(PRFAQ_TITLE)).toBeNull()
     })
+  })
+
+  it('reports the delete and how many ballots went with the row', async () => {
+    // `ballots_deleted` IS the evidence the deletion was complete — the row is gone, so
+    // nothing can be re-read to check — and it was parsed at the wire boundary and then
+    // discarded. A row that simply vanishes looks like a filter or a failed read, for
+    // the one action whose dialog just called it irreversible.
+    mockIsAdmin.mockReturnValue(true)
+    mockDelete.mockResolvedValue({ ballots_deleted: 3 })
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+
+    const receipt = await screen.findByRole('status', { name: /The row was deleted/ })
+    expect(within(receipt).getByText(/3 ballot/)).toBeInTheDocument()
+    expect(within(receipt).getByText(new RegExp(PRFAQ_TITLE))).toBeInTheDocument()
+  })
+
+  it('claims no number when the receipt could not be read', async () => {
+    // The wire boundary answers 0 for a body it cannot parse, deliberately, rather than
+    // failing a delete the server completed — so "0 ballots" is not a fact this page may
+    // assert. The zero case gets its own sentence.
+    mockIsAdmin.mockReturnValue(true)
+    mockDelete.mockResolvedValue({ ballots_deleted: 0 })
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+
+    const receipt = await screen.findByRole('status', { name: /The row was deleted/ })
+    expect(within(receipt).getByText(/No ballot count was reported/)).toBeInTheDocument()
+    expect(within(receipt).queryByText(/0 ballot/)).toBeNull()
+  })
+
+  it('lets a reader dismiss the receipt', async () => {
+    mockIsAdmin.mockReturnValue(true)
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+    const receipt = await screen.findByRole('status', { name: /The row was deleted/ })
+
+    await user.click(within(receipt).getByRole('button', { name: /Dismiss this message/ }))
+
+    expect(screen.queryByRole('status', { name: /The row was deleted/ })).toBeNull()
+  })
+
+  it('drops the deleted row from the next save, so the other rows survive it', async () => {
+    // THE WRITE THIS PR MADE REACHABLE. `api_patch_prioritization_scores` checks every
+    // named row exists before its first write and raises on any miss — deliberately, so
+    // a body naming one vanished row persists nothing — so a pending edit left behind on
+    // a deleted row refuses the WHOLE save and loses the edits on rows nobody touched.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores
+      .mockResolvedValueOnce(twoRowRead())
+      .mockResolvedValue({ rows: { [SECOND_ROW_ID]: secondRow() }, scores: {}, aggregates: {} })
+    const { user } = await openTheRow()
+
+    // An edit on the row about to be deleted, and one on the row that survives.
+    fireEvent.change((await screen.findAllByRole('slider'))[0], { target: { value: '5' } })
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+    await waitFor(() => {
+      expect(screen.queryByText(PRFAQ_TITLE)).toBeNull()
+    })
+    await user.click(screen.getByRole('button', { name: new RegExp(PRD_TITLE) }))
+    fireEvent.change((await screen.findAllByRole('slider'))[0], { target: { value: '4' } })
+    await user.click(screen.getByRole('button', { name: /Save/ }))
+
+    await waitFor(() => {
+      expect(mockPatchPrioritizationScores).toHaveBeenCalled()
+    })
+    // Only the surviving row is named, so the route has nothing to refuse the body over.
+    const sent: unknown = mockPatchPrioritizationScores.mock.calls[0][0]
+    expect(Object.keys(sent ?? {})).toEqual([SECOND_ROW_ID])
+  })
+})
+
+describe("a project's only default row", () => {
+  // The shape every project STARTS in: one row, minted by the default-row ensure. The
+  // API refuses to delete it ("a project's default row cannot be deleted while it is the
+  // project's only row"), so an offered control would invite an action that cannot work
+  // behind a dialog naming an irreversible effect that will not occur.
+  it('offers an admin no delete, and says why', async () => {
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue({
+      rows: { [ROW_ID]: storedRow() }, scores: {}, aggregates: {},
+    })
+
+    await openTheRow()
+
+    expect(screen.queryByRole('button', { name: /Delete row/ })).toBeNull()
+    expect(screen.getByText(/only default row cannot be deleted/)).toBeInTheDocument()
+  })
+
+  it('offers the delete once the project holds a second row', async () => {
+    // The other direction of the same gate, so it cannot pass by hiding the control
+    // unconditionally.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
+
+    await openTheRow()
+
+    expect(screen.getByRole('button', { name: /Delete row/ })).toBeInTheDocument()
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
+  it('offers the delete on a row the reviewer composed, whatever the project holds', async () => {
+    // Only a DEFAULT row is refused as a project's last one, so a composed row is
+    // deletable even when it is the only row a project has left.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue({
+      rows: { [SECOND_ROW_ID]: secondRow() }, scores: {}, aggregates: {},
+    })
+    mockCreatePrioritizationRow.mockResolvedValue({
+      success: true, created: false, row: secondRow(),
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByText(PRD_TITLE)).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: new RegExp(PRD_TITLE) }))
+
+    expect(await screen.findByRole('button', { name: /Delete row/ })).toBeInTheDocument()
   })
 })
 
@@ -420,6 +666,8 @@ describe('the page reports a row write that did not land', () => {
 
   it('states a delete that was refused, and keeps the row on screen', async () => {
     mockIsAdmin.mockReturnValue(true)
+    // Two rows, so the delete is offered at all — see the "only default row" cases.
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
     mockDelete.mockRejectedValue(new Error('API Error: 409'))
     const { user } = await openTheRow()
 
@@ -444,6 +692,57 @@ describe('the page reports a row write that did not land', () => {
     await user.click(within(alert).getByRole('button', { name: /Dismiss this message/ }))
 
     expect(screen.queryByRole('alert', { name: /That change to the rows was not saved/ })).toBeNull()
+  })
+
+  it('does not tell a reader to retry a compose the server REFUSED', async () => {
+    // The 400 for more documents than a row may hold. The picker deliberately does not
+    // enforce that bound — it is the server's — so this is the refusal the client
+    // delegates, and "nothing was saved, so you can try again" is advice that cannot
+    // work: the same selection gets the same answer.
+    mockCompose.mockRejectedValue(new Error('API Error: 400'))
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Add row/ }))
+    await user.click(screen.getByRole('button', { name: /Add the row/ }))
+
+    const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
+    expect(within(alert).getByText(/the request was refused rather than failing/i)).toBeInTheDocument()
+    expect(within(alert).queryByText(/you can try again/i)).toBeNull()
+  })
+
+  it('does not tell a non-admin to retry a delete they may not perform', async () => {
+    // `isPermanentRefusal` classifies 403 as retryable, which is right for the
+    // row-ensure's silent retry (a WAF block, a lapsed token) and wrong for a sentence
+    // in front of a person — see `isSettledRefusal`.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
+    mockDelete.mockRejectedValue(new Error('API Error: 403'))
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+
+    const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
+    expect(within(alert).getByText(/an administrator's action/i)).toBeInTheDocument()
+    expect(within(alert).queryByText(/you can try again/i)).toBeNull()
+  })
+
+  it('moves the reader to the failure, which is nowhere near the control that caused it', async () => {
+    // Every control that produces this lives inside an expanded row that may be far
+    // below the fold, while the panel renders near the top of the page. `role="alert"`
+    // announces it to a screen reader and does nothing at all for a sighted reader, so
+    // without this a refused write looks like a button that did nothing.
+    mockCompose.mockRejectedValue(new Error('API Error: 500'))
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Add row/ }))
+    await user.click(screen.getByRole('button', { name: /Add the row/ }))
+
+    const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
+    await waitFor(() => {
+      expect(alert).toHaveFocus()
+    })
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
   })
 })
 

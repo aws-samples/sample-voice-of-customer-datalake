@@ -11,7 +11,7 @@ import {
   getPriorityLabel, priorityBand, reviewersDisagreed, sortRows, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
   ownBallotRead, UNREADABLE_ROW, teamOrderingAvailable, uncountableTeamRead,
-  retainedEnsuredRows, scorableDocumentsByProject,
+  retainedEnsuredRows, rowsPerProject, scorableDocumentsByProject, withoutRow,
 } from './prioritizationUtils'
 import type { TeamAggregates, TeamAggregateRow, PrioritizationRowView } from './prioritizationUtils'
 import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
@@ -123,13 +123,13 @@ const doc = (
 /** A stored row record, as the wire sends it. */
 const storedRow = (
   row_id: string, project_id: string, document_ids: string[], prototype_id = '',
-  is_frozen = false,
+  is_frozen = false, is_default = true,
 ) => ({
   row_id,
   project_id,
   document_ids,
   prototype_id,
-  is_default: true,
+  is_default,
   created_at: '2026-01-01',
   is_frozen,
 })
@@ -416,6 +416,79 @@ describe('collectRows resolves stored rows against the documents on screen', () 
     expect(frozen[0].is_frozen).toBe(true)
     expect(editable[0].is_frozen).toBe(false)
   })
+
+  it('carries whether the row is the project default through to the view, both ways', () => {
+    // The delete control is withheld for a project's ONLY default row, which the API
+    // refuses with 409 — so a dropped field would either offer an action that cannot
+    // work or hide one that can. Nothing on this page can derive it: "default" is a fact
+    // about how the row came to exist, not about what it holds.
+    const details = [{ documents: [doc('prfaq-1', 'prfaq', 'A', '2025-01-01')] }]
+    const projects = [project('p1', 'P1')]
+
+    const minted = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], '', false, true) },
+      details, projects,
+    )
+    const composed = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], '', false, false) },
+      details, projects,
+    )
+
+    expect(minted[0].is_default).toBe(true)
+    expect(composed[0].is_default).toBe(false)
+  })
+})
+
+describe('rowsPerProject counts what the delete gate reads', () => {
+  const rowView = (row_id: string, project_id: string): PrioritizationRowView => ({
+    row_id,
+    project_id,
+    project_name: 'P',
+    documents: [],
+    title: 'T',
+    created_at: '2026-01-01',
+    is_frozen: false,
+    is_default: true,
+  })
+
+  it('counts each project rows separately', () => {
+    const counted = rowsPerProject([
+      rowView('row-1', 'p1'), rowView('row-2', 'p1'), rowView('row-3', 'p2'),
+    ])
+
+    expect(counted.get('p1')).toBe(2)
+    expect(counted.get('p2')).toBe(1)
+  })
+
+  it('reports NOTHING for a project with no row, rather than 0', () => {
+    // The caller reads an absent count as 1, which is the conservative direction for a
+    // courtesy gate — see `isProjectsOnlyDefaultRow`. A stored 0 would let that
+    // distinction be lost here instead.
+    const counted = rowsPerProject([rowView('row-1', 'p1')])
+
+    expect(counted.has('p2')).toBe(false)
+    expect(rowsPerProject([]).size).toBe(0)
+  })
+})
+
+describe('withoutRow drops what a deleted row leaves behind', () => {
+  it('removes the named row and keeps every other', () => {
+    // THE WRITE THIS EXISTS FOR. `api_patch_prioritization_scores` checks every named
+    // row exists before its first write and raises on any miss, so a pending edit left
+    // on a deleted row refuses the WHOLE body — losing the edits on rows nobody touched.
+    const edits = { 'row-1': { row_id: 'row-1' }, 'row-2': { row_id: 'row-2' } }
+
+    expect(withoutRow(edits, 'row-1')).toStrictEqual({ 'row-2': { row_id: 'row-2' } })
+  })
+
+  it('answers the SAME object when it never held the row', () => {
+    // Identity, not equality: this runs inside a state updater, and a fresh object for a
+    // removal that removed nothing would re-render the page on every settled delete of a
+    // row nobody had edited.
+    const edits = { 'row-1': { row_id: 'row-1' } }
+
+    expect(withoutRow(edits, 'row-2')).toBe(edits)
+  })
 })
 
 describe('retainedEnsuredRows lets a successful read settle what exists', () => {
@@ -660,9 +733,10 @@ const rowView = (
   project_name: 'P1',
   title,
   created_at: createdAt,
-  // Unfrozen, because the sort is indifferent to it: the freeze decides which
+  // Unfrozen and default, because the sort is indifferent to both: they decide which
   // COMPOSITION controls a row offers, not where it lands in the order.
   is_frozen: false,
+  is_default: true,
   documents: [{
     document_id: `${rowId}-doc`,
     document_type: 'prfaq' as const,
