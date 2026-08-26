@@ -141,6 +141,14 @@ UNFLOORED_ON_PURPOSE: frozenset[str] = frozenset()
 # halves of that two-line diff now fail independently — the missing floor fails
 # that test, and `audit()` refuses to tolerate skips in a module it has no floor
 # for — so neither edit alone is enough and neither is silent.
+#
+# Keyed by BARE MODULE NAME, not by path, so two modules of the same name in the
+# two gated directories would share one bucket and their counts would add. Both
+# directories are packages, so that is possible — and it let a whole module be
+# skipped while its same-named twin held the count at the floor. Rather than
+# prefix every key with a package that matters in no other case, the ambiguity is
+# refused: `_collisions` fails the audit, and
+# `test_no_two_gated_modules_share_a_stem` fails before the report even exists.
 MODULE_FLOORS: dict[str, int] = {
     'test_mcp_security': 153,
     'test_mcp_delegation': 185,
@@ -149,7 +157,7 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_date_basis': 5,
     'test_mcp_tokens': 46,
     'test_mcp_vocabulary_lockstep': 6,
-    'test_mcp_gate_audit': 24,
+    'test_mcp_gate_audit': 27,
     'test_projects_handler': 105,
     'test_python_runtime_lockstep': 4,
 }
@@ -165,33 +173,90 @@ def pytest_paths() -> tuple[str, ...]:
     return TEST_PATH_GLOBS + EXPLICIT_TEST_PATHS
 
 
+def _module_path_of(classname: str) -> str:
+    """`lambda.api.test.test_mcp_security.TestFoo` -> `lambda.api.test.test_mcp_security`.
+
+    The dotted path with the test's class segments removed. Test classes are
+    `Test*`-prefixed by `pytest.ini`'s `python_classes`, and a module-level test
+    function produces no class segment at all, so the module path is every leading
+    segment that does not start with `Test`.
+
+    Kept distinct from `_module_of` because the package prefix is what
+    distinguishes two same-named modules in the two gated directories — see
+    `_collisions`.
+    """
+    segments = [segment for segment in classname.split('.') if not segment.startswith('Test')]
+    return '.'.join(segments) if segments else classname
+
+
 def _module_of(classname: str) -> str:
     """`lambda.api.test.test_mcp_security.TestFoo` -> `test_mcp_security`.
 
-    JUnit `classname` is the dotted module path plus the test's class. Test
-    classes are `Test*`-prefixed by `pytest.ini`'s `python_classes`, and a
-    module-level test function produces no class segment at all, so the module is
-    the last segment that does not start with `Test`.
+    The bare module name, which is what `MODULE_FLOORS` is keyed on. Two modules
+    of the same name in `lambda/api/test/` and `lambda/shared/test/` therefore
+    reduce to the same key; `_collisions` below refuses that rather than letting
+    the two counts add.
     """
-    segments = [segment for segment in classname.split('.') if not segment.startswith('Test')]
-    return segments[-1] if segments else classname
+    return _module_path_of(classname).rsplit('.', 1)[-1]
 
 
-def _executed_per_module(report: Path) -> tuple[dict[str, int], dict[str, int]]:
-    """(tests that ran, tests that were skipped or xfailed) keyed by module.
+def _executed_per_module(
+    report: Path,
+) -> tuple[dict[str, int], dict[str, int], dict[str, set[str]]]:
+    """(ran, skipped-or-xfailed, contributing module paths) keyed by module name.
 
     A `<testcase>` carrying a `<skipped>` child did not run: pytest emits that
     element for `skip`, `skipif` and non-strict `xfail` alike, which is why one
     check covers all three.
+
+    The third mapping records which dotted module paths contributed to each name,
+    so a name reached from two different packages can be detected instead of
+    silently summed.
     """
     root = ElementTree.parse(report).getroot()
     executed: dict[str, int] = {}
     inert: dict[str, int] = {}
+    origins: dict[str, set[str]] = {}
     for case in root.iter('testcase'):
-        module = _module_of(case.get('classname', ''))
+        classname = case.get('classname', '')
+        path = _module_path_of(classname)
+        module = path.rsplit('.', 1)[-1]
         bucket = inert if case.find('skipped') is not None else executed
         bucket[module] = bucket.get(module, 0) + 1
-    return executed, inert
+        origins.setdefault(module, set()).add(path)
+    return executed, inert, origins
+
+
+def _collisions(origins: dict[str, set[str]]) -> list[str]:
+    """Module names reached from more than one package, which a floor cannot separate.
+
+    `MODULE_FLOORS` is keyed by bare module name, and both gated directories are
+    Python packages (`lambda/api/test/__init__.py` and
+    `lambda/shared/test/__init__.py` both exist), so
+    `lambda/api/test/test_mcp_delegation.py` and
+    `lambda/shared/test/test_mcp_delegation.py` can coexist and land in ONE
+    bucket whose count is their sum. That reopens, inside a single floor, exactly
+    what per-module floors were introduced to close: one module covering for
+    another.
+
+    Verified before this check existed — a `lambda/shared/test/test_mcp_delegation.py`
+    of 185 passing filler tests, plus `pytestmark = pytest.mark.skip(...)` on the
+    real `lambda/api/test/test_mcp_delegation.py`:
+
+        pytest -> 931 passed, 185 skipped     exit 0
+        audit  -> test_mcp_delegation: 185 ran (floor 185)
+                  total ran: 931              exit 0
+
+    185 real delegation tests asserting nothing, both steps green, and `total ran`
+    identical to a healthy run. No intent is required for this: the second file is
+    an ordinary addition and the skip is the ordinary "temporarily disabled" line.
+
+    So the ambiguity is REFUSED rather than measured through. Resolving it by
+    keying floors on the full dotted path was the alternative, and is rejected
+    because it would make every floor entry carry a package prefix that only
+    matters in the case this check makes impossible.
+    """
+    return sorted(name for name, paths in origins.items() if len(paths) > 1)
 
 
 def _fail(message: str) -> None:
@@ -209,8 +274,24 @@ def audit(report: Path) -> int:
         )
         return 1
 
-    executed, inert = _executed_per_module(report)
+    executed, inert, origins = _executed_per_module(report)
     problems: list[str] = []
+
+    # Checked BEFORE the floors, because a collision makes every count below it
+    # untrustworthy: the floor loop would compare a sum against a floor written for
+    # one of its two contributors, and could report a module comfortably above a
+    # floor it never met. Reported as its own diagnosis rather than folded into a
+    # floor failure, since the remedy is to rename one of the two files, not to
+    # restore tests or move a number.
+    for name in _collisions(origins):
+        problems.append(
+            f'{name}: two modules share this name ('
+            + ', '.join(sorted(origins[name]))
+            + '), and MODULE_FLOORS is keyed by module name, so ONE floor is being '
+            'compared against the SUM of both. That lets one of them be skipped '
+            'entirely while the other keeps the count at the floor. Rename one of the '
+            'two files so each has its own floor.'
+        )
 
     for module, floor in sorted(MODULE_FLOORS.items()):
         ran = executed.get(module, 0)

@@ -78,10 +78,15 @@ def _report(tmp_path: Path, cases: list[tuple[str, int, int]]) -> Path:
     Mirrors the element shape pytest emits: `classname` is the dotted module path
     plus a `Test`-prefixed class, and a non-executed test is a `<testcase>`
     carrying a `<skipped>` child.
+
+    A `module` may be given as a dotted path (`api.test.test_mcp_delegation`) to
+    place it in a specific package, which is what the collision tests need; a bare
+    name defaults to `lambda.shared.test`.
     """
     lines = ['<?xml version="1.0" encoding="utf-8"?>', '<testsuites><testsuite name="pytest">']
     for module, ran, skipped in cases:
-        classname = f'lambda.shared.test.{module}.TestThing'
+        prefix = 'lambda.' if '.' in module else 'lambda.shared.test.'
+        classname = f'{prefix}{module}.TestThing'
         for index in range(ran):
             lines.append(f'<testcase classname="{classname}" name="test_ran_{index}" />')
         for index in range(skipped):
@@ -206,6 +211,56 @@ class TestTheGateRejectsAShrunkenRun:
         cases.append(('test_mcp_not_floored', 39, 1))
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
+    def test_a_module_cannot_cover_for_its_same_named_twin(self, tmp_path):
+        """The collision case: one floor, two modules, counts added.
+
+        `MODULE_FLOORS` is keyed by bare module name, and both gated directories
+        are packages (`lambda/api/test/__init__.py` and
+        `lambda/shared/test/__init__.py` both exist), so a second
+        `test_mcp_delegation.py` can exist in the other tree and land in the same
+        bucket. Its tests then satisfy a floor written for the real module.
+
+        Verified before this check existed: 185 passing filler tests in
+        `lambda/shared/test/test_mcp_delegation.py` plus `pytestmark =
+        pytest.mark.skip(...)` on the real `lambda/api/test/test_mcp_delegation.py`
+        gave `931 passed, 185 skipped` with the audit at exit 0 and `total ran: 931`
+        — identical to a healthy run. `test_mcp_gate_audit.py` passed 24/24 with the
+        collision live, because its three self-consistency tests build their sets
+        with `path.stem` and perform the same collapse.
+
+        This is `test_one_module_cannot_cover_for_another` one level in: that one is
+        about two DIFFERENT floors, this is about two modules sharing ONE.
+        """
+        cases = [
+            (module, floor, 0)
+            for module, floor in mcp_gate.MODULE_FLOORS.items()
+            if module != 'test_mcp_delegation'
+        ]
+        floor = mcp_gate.MODULE_FLOORS['test_mcp_delegation']
+        # The real module, wholly skipped; the twin, passing and holding the count
+        # at exactly the floor. Summed, the bucket looks healthy.
+        cases.append(('api.test.test_mcp_delegation', 0, floor))
+        cases.append(('shared.test.test_mcp_delegation', floor, 0))
+        assert mcp_gate.audit(_report(tmp_path, cases)) == 1
+
+    def test_two_same_named_modules_fail_even_when_both_run(self, tmp_path):
+        """The ambiguity is refused, not merely detected when it happens to hide a skip.
+
+        Two same-named modules both running is not itself a shrinkage, but the floor
+        is measuring their sum, so it is no longer a statement about either one — and
+        the next skip in either would be masked. Failing here means the collision is
+        fixed when it is introduced rather than when it is first exploited.
+        """
+        cases = [
+            (module, floor, 0)
+            for module, floor in mcp_gate.MODULE_FLOORS.items()
+            if module != 'test_mcp_security'
+        ]
+        floor = mcp_gate.MODULE_FLOORS['test_mcp_security']
+        cases.append(('api.test.test_mcp_security', floor, 0))
+        cases.append(('shared.test.test_mcp_security', 3, 0))
+        assert mcp_gate.audit(_report(tmp_path, cases)) == 1
+
     def test_one_module_cannot_cover_for_another(self, tmp_path):
         """Why the floors are per-module rather than one total.
 
@@ -287,12 +342,31 @@ class TestModuleAttribution:
         assert mcp_gate._module_of(classname) == expected
 
 
+def _gated_paths() -> list[Path]:
+    """Every module file the gate resolves, as paths — globs expanded.
+
+    Paths rather than stems, because the three membership tests below compare
+    against `MODULE_FLOORS`' bare-name keys while
+    `test_no_two_gated_modules_share_a_stem` needs the full paths to tell two
+    same-named modules apart. Collapsing to stems here was what made that
+    collision invisible to all three.
+    """
+    root = Path(__file__).resolve().parents[3]
+    return [
+        path for glob in mcp_gate.TEST_PATH_GLOBS for path in sorted(root.glob(glob))
+    ] + [root / path for path in mcp_gate.EXPLICIT_TEST_PATHS]
+
+
 class TestTheGateScopeIsSelfConsistent:
     """The declaration in `mcp_gate.py` must describe a surface that exists.
 
     Every entry here is a fact that can go stale — a path that no longer exists,
     a floor for a module nothing runs — and each one degrades the gate quietly
     rather than loudly.
+
+    The three membership tests here compare bare module names, because that is
+    what `MODULE_FLOORS` is keyed on. That collapse is itself a hazard —
+    `test_no_two_gated_modules_share_a_stem` is the test that refuses it.
     """
 
     def test_every_explicitly_named_path_exists(self):
@@ -318,6 +392,46 @@ class TestTheGateScopeIsSelfConsistent:
             'no coverage.'
         )
 
+    def test_no_two_gated_modules_share_a_stem(self):
+        """Two same-named modules would share one floor, and their counts would add.
+
+        `MODULE_FLOORS` is keyed by bare module name, and the gate globs TWO
+        directories that are both Python packages
+        (`lambda/api/test/__init__.py` and `lambda/shared/test/__init__.py` both
+        exist), so `lambda/api/test/test_mcp_delegation.py` and
+        `lambda/shared/test/test_mcp_delegation.py` can coexist. One floor then
+        measures their sum, which reopens inside a single module exactly what
+        per-module floors were added to close.
+
+        Verified: a `lambda/shared/test/test_mcp_delegation.py` of 185 passing
+        filler tests, plus `pytestmark = pytest.mark.skip(...)` on the real
+        `lambda/api/test/test_mcp_delegation.py`, gave `931 passed, 185 skipped`
+        from pytest and `test_mcp_delegation: 185 ran (floor 185)`, `total ran:
+        931`, audit exit 0 — 185 real tests asserting nothing with both CI steps
+        green. This module passed 24/24 throughout, because the three tests around
+        this one build their sets with `path.stem` and so perform the same collapse.
+
+        No intent is needed to create it: the second file is an ordinary addition,
+        and moving a module between the two trees does it as a side effect. So this
+        refuses the ambiguity at the source, before any report exists, while
+        `audit()`'s own collision check catches a report that already shows it.
+        """
+        by_stem: dict[str, list[Path]] = {}
+        for path in _gated_paths():
+            by_stem.setdefault(path.stem, []).append(path)
+        collisions = {
+            stem: sorted(str(path) for path in paths)
+            for stem, paths in sorted(by_stem.items())
+            if len(set(paths)) > 1
+        }
+        assert not collisions, (
+            f'these module names are claimed by more than one gated file: {collisions}. '
+            'MODULE_FLOORS is keyed by module name, so both contribute to ONE floor and '
+            'their counts add — which lets one of them be skipped in its entirety while '
+            'the other holds the bucket at the floor. Rename one of the two files so each '
+            'gets its own floor.'
+        )
+
     def test_every_module_the_gate_runs_has_a_floor(self):
         """The converse of the test below, and the one that closes a real hole.
 
@@ -340,12 +454,7 @@ class TestTheGateScopeIsSelfConsistent:
         an exemption a reviewer sees in a diff, rather than one expressed by
         omission and indistinguishable from a deletion.
         """
-        root = Path(__file__).resolve().parents[3]
-        collected = {
-            path.stem
-            for glob in mcp_gate.TEST_PATH_GLOBS
-            for path in root.glob(glob)
-        } | {Path(path).stem for path in mcp_gate.EXPLICIT_TEST_PATHS}
+        collected = {path.stem for path in _gated_paths()}
         unfloored = sorted(collected - set(mcp_gate.MODULE_FLOORS) - mcp_gate.UNFLOORED_ON_PURPOSE)
         assert not unfloored, (
             f'the gate runs these modules with no floor: {unfloored}. An unfloored module '
@@ -361,12 +470,7 @@ class TestTheGateScopeIsSelfConsistent:
         ready for the next module that happens to take that name — the exemption
         would apply without anyone deciding it should.
         """
-        root = Path(__file__).resolve().parents[3]
-        collected = {
-            path.stem
-            for glob in mcp_gate.TEST_PATH_GLOBS
-            for path in root.glob(glob)
-        } | {Path(path).stem for path in mcp_gate.EXPLICIT_TEST_PATHS}
+        collected = {path.stem for path in _gated_paths()}
         stale = sorted(mcp_gate.UNFLOORED_ON_PURPOSE - collected)
         assert not stale, (
             f'UNFLOORED_ON_PURPOSE exempts modules the gate does not run: {stale}. Drop '
@@ -388,12 +492,7 @@ class TestTheGateScopeIsSelfConsistent:
         diagnosis (a floor naming an unreachable module) is not what that message
         suggests. Failing here says so directly.
         """
-        root = Path(__file__).resolve().parents[3]
-        collected = {
-            path.stem
-            for glob in mcp_gate.TEST_PATH_GLOBS
-            for path in root.glob(glob)
-        } | {Path(path).stem for path in mcp_gate.EXPLICIT_TEST_PATHS}
+        collected = {path.stem for path in _gated_paths()}
         unreachable = sorted(set(mcp_gate.MODULE_FLOORS) - collected)
         assert not unreachable, (
             f'MODULE_FLOORS floors modules the gate never runs: {unreachable}. Either add '
