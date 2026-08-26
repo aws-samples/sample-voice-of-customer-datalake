@@ -270,6 +270,8 @@ export function tabWouldLeave(doc: Document, back: boolean): boolean {
  * focusable, in which case leaving it leaves that document too, and so on outward.
  * The walk terminates at the panel's document, where `items` applies and the edges
  * wrap — that wrap is the trap, and is the only place one belongs.
+ *
+ * @param panelDocument the dialog's own document; Tab wraps only here.
  */
 export function tabOutOfFrame(
   frame: HTMLIFrameElement,
@@ -303,10 +305,6 @@ export function tabOutOfFrame(
 }
 
 /**
- * @param panelDocument the dialog's own document; Tab wraps only here.
- */
-
-/**
  * Where Tab should go when the key came from inside a nested frame, or null to
  * leave it to that frame.
  *
@@ -315,6 +313,8 @@ export function tabOutOfFrame(
  * own last (or first) control does this take over, and then it steps to whatever
  * follows the frame in the frame's OWN document, walking outward to the panel only
  * when the frame is that document's edge too — see `tabOutOfFrame`.
+ *
+ * @param panelDocument the dialog's own document; Tab wraps only here.
  */
 export function tabAcrossFrame(
   doc: Document,
