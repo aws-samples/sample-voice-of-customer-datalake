@@ -31,7 +31,10 @@
  * instance: each box mounts its own iframe, so opening this overlay performs a
  * fresh load and the enlarged prototype starts at its FIRST screen no matter which
  * screen the row's pane was showing, and both frames are live and executing while
- * the overlay is open. Accepted rather than missed — `HtmlPrototypeFrame` exposes
+ * the overlay is open. A JSON-spec prototype opens at its first screen too, for an
+ * unrelated reason — the overlay mounts a second `PrototypeRenderer` and the active
+ * screen is that component's own state; see `PRFAQRow`'s `pane` for why both are
+ * accepted. Accepted rather than missed — `HtmlPrototypeFrame` exposes
  * no navigation state to hand over, and a live iframe cannot be reparented without
  * reloading. It is the same loss of place `useLoadedUrl` exists to prevent, minus
  * the part that made that one a defect: this one happens because somebody asked,

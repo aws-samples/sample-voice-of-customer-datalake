@@ -201,6 +201,47 @@ function asFrame(el: Element | null): HTMLIFrameElement | null {
 }
 
 /**
+ * `node` as an element, resolved in the node's OWN realm — `asFrame` one type up.
+ *
+ * Needed because the mutation filter is handed `Node`s, and the nodes moved inside a
+ * prototype belong to its realm: a plain `node instanceof Element` is false for every
+ * one of them, so a filter built on it would quietly pass nothing through and the frame
+ * bookkeeping would stop happening. A `Document` has no `ownerDocument`, and is not an
+ * element either, so the page's constructor is a safe fallback that answers null.
+ */
+function asElement(node: Node): Element | null {
+  const ctor = node.ownerDocument?.defaultView?.Element ?? Element
+  return node instanceof ctor ? node : null
+}
+
+/**
+ * Whether a node is a frame element, decided without narrowing it first.
+ *
+ * `asFrame` needs an `Element`, and the two callers here hold an `EventTarget` (a
+ * `load`'s target) and a `Node` (a mutation record's), neither of which narrows to
+ * `Element` without the cross-realm `instanceof` this exists to avoid or a type
+ * assertion the repo bans. `tagName` is realm-independent — `'IFRAME'` in every HTML
+ * document — and `Reflect.get` reads it off an unknown without assuming a shape.
+ */
+function isFrameNode(node: unknown): boolean {
+  return typeof node === 'object' && node !== null && Reflect.get(node, 'tagName') === 'IFRAME'
+}
+
+/**
+ * Whether a moved node IS a frame or CONTAINS one.
+ *
+ * Both halves matter: `body.innerHTML = '<div><iframe/></div>'` reports the DIV as the
+ * added node, which is the shape a prototype's own script produces, so asking only about
+ * the node itself would miss the frame it brought with it and leave that document
+ * unlistened.
+ */
+function holdsFrame(node: Node): boolean {
+  if (isFrameNode(node)) return true
+  const el = asElement(node)
+  return el !== null && el.querySelector('iframe') !== null
+}
+
+/**
  * The frame element hosting `doc`, or null when `doc` is not in a frame this page
  * can reach out of.
  *
@@ -271,9 +312,24 @@ function tabWouldLeave(doc: Document, back: boolean): boolean {
   const at = candidates.findIndex((el) => el === active)
   // Focus is not on a candidate at all — `<body>` itself, or a control this selector
   // does not cover. It is then not an edge in either direction, so the key remains this
-  // document's business unless there is nothing here to move between at all. That is
-  // what comparing `activeElement` against the edges directly used to say too.
-  if (at === -1) return candidates.length === 0
+  // document's business unless there is nothing here Tab can REACH at all.
+  //
+  // REACHABLE, not raw, and that distinction is the whole of this branch. Both reviewers
+  // caught the refactor getting it wrong: a generated prototype's unopened modal or
+  // inactive screen lives in a `display:none` container, so its controls exist as
+  // candidates while none of them can be tabbed to. `candidates.length === 0` then
+  // answers "there is something here to move between", the shell declines to intervene,
+  // and the browser moves focus past the frame into the page behind the dialog — the
+  // very escape `tabWouldEnterFrame` prevents on the frame-element path via
+  // `hasFocusable`, reached instead through the in-frame keydown path once a click has
+  // put focus inside the prototype. Reproduced in jsdom before fixing: raw 2, reachable
+  // 0, where the pre-refactor `focusable(body).length === 0` correctly said "leaving".
+  //
+  // `some` over the list already built, rather than `hasFocusable(body)` — which is the
+  // same predicate and reads as the tidier call, but re-runs `querySelectorAll` over a
+  // whole prototype document that `candidates` has just walked. Keeping the short-circuit
+  // without paying for a second query is the point of this branch's shape.
+  if (at === -1) return !candidates.some((el) => reachable(body, el))
   // Whatever the key could still reach inside `doc`, in the direction it is going. One
   // reachable control among them settles the question, so `some` stops at the first
   // rather than filtering every control in the document.
@@ -529,10 +585,17 @@ export default function ModalShell({
      * unconditionally while open, so React keeps the same DOM node. That became
      * load-bearing when this effect's deps narrowed to `[isOpen]`: an inline `onClose`
      * used to re-run it on nearly every render, which refreshed the capture constantly
-     * and made a stale one impossible. What would break it now is unremarkable —
-     * wrapping `{children}` in a conditional, or giving the panel a `key` that changes —
-     * and it would break silently: the observer would watch a detached node and
-     * `topMostShell()` would never match, so Escape and the trap would simply stop.
+     * and made a stale one impossible. What would break it now is unremarkable — giving
+     * the panel a `key` that changes, or making the panel `<div>` itself conditional so
+     * React unmounts and remounts it — and it would break silently: the observer would
+     * watch a detached node and `topMostShell()` would never match, so Escape and the trap
+     * would simply stop.
+     *
+     * NOT `{children}` becoming conditional, which an earlier draft of this comment named:
+     * `panelRef` is on the panel `<div>` and `{children}` renders inside it, so emptying
+     * the children leaves the same element mounted and the capture stays valid. Review
+     * caught the wrong example, and a wrong example in a comment about an invariant is
+     * worse than none — it teaches the next reader to guard the wrong edit.
      */
     const panel = panelRef.current
     if (!panel) return
@@ -597,8 +660,8 @@ export default function ModalShell({
         // Skipped for `document`, whose triggers are attached to the panel below —
         // narrower than this whole page's tree, and already in place.
         if (doc !== document && doc.body) {
-          doc.addEventListener('load', listenToFrames, true)
-          const nested = new MutationObserver(listenToFrames)
+          doc.addEventListener('load', onFrameLoad, true)
+          const nested = new MutationObserver(onFrameMutation)
           nested.observe(doc.body, { childList: true, subtree: true })
           watching.set(doc, nested)
         }
@@ -611,7 +674,7 @@ export default function ModalShell({
       listening.delete(doc)
       watching.get(doc)?.disconnect()
       watching.delete(doc)
-      if (doc !== document) doc.removeEventListener('load', listenToFrames, true)
+      if (doc !== document) doc.removeEventListener('load', onFrameLoad, true)
     }
     /**
      * Drop the documents that are no longer in the panel's frame tree.
@@ -622,6 +685,16 @@ export default function ModalShell({
      * prototype that swaps an embedded frame accumulated one per swap. Reaping also
      * keeps `isListened` honest, which the Tab guards depend on — a document that is
      * gone must not read as a safe place to send focus.
+     *
+     * `live` is narrower than "still in the frame tree", and review was right to name it:
+     * it is what `nestedDocuments` could READ on this pass, which also excludes a frame
+     * that is merely mid-navigation or mid-`document.write` and has no `body` yet. Such a
+     * document is dropped here and re-listened on its next `load`, so there is a window
+     * where a LIVE frame reads as unlistened. That window fails closed — the entry guard
+     * declines to descend and Tab wraps into the panel instead — which is why this is
+     * recorded rather than fixed. Discriminating the two states would mean asking
+     * `doc.defaultView === null` for "really gone", and buying a narrower reap with a
+     * second notion of liveness is a worse trade than a wrap that is momentarily early.
      */
     const reap = (live: readonly Document[]) => {
       const keep = new Set(live)
@@ -643,14 +716,42 @@ export default function ModalShell({
       reap(live)
       listen(live)
     }
+    /**
+     * The two triggers, FILTERED. Review found both unfiltered, and both re-ran the
+     * recursive `nestedDocuments(panel)` walk for events that cannot change the answer:
+     *
+     *  - a capture-phase `load` on a prototype's own document fires for every image,
+     *    script and stylesheet in it, so a page with 200 assets paid 200 walks;
+     *  - the observer's callback took no arguments, so it ignored its records — any text
+     *    edit, class toggle or re-render anywhere inside the prototype re-walked the tree.
+     *
+     * The cheap `panel.querySelector('iframe')` negative in `listenToFrames` does not help
+     * this consumer: the overlay's panel always holds a frame, so that guard is false
+     * exactly when the cost is highest. Only a frame arriving, leaving or loading can
+     * change which documents there are to listen to, so only those get a walk.
+     *
+     * These three arrows and `listenToFrames` reference each other, so they are `const`
+     * arrows read before the line that defines them — legal because nothing here runs
+     * until an event fires, and kept mutually referential on purpose: making any of them
+     * a hoisted `function` would put the pair on two different declaration styles for no
+     * reason, and inlining them into the `addEventListener` calls would break `forget`,
+     * which needs the identical reference to detach.
+     */
+    const onFrameLoad = (e: Event) => {
+      if (isFrameNode(e.target)) listenToFrames()
+    }
+    const onFrameMutation = (records: readonly MutationRecord[]) => {
+      const moved = (nodes: NodeList) => [...nodes].some(holdsFrame)
+      if (records.some((r) => moved(r.addedNodes) || moved(r.removedNodes))) listenToFrames()
+    }
     listen([document])
     listenToFrames()
-    panel.addEventListener('load', listenToFrames, true)
-    const frames = new MutationObserver(listenToFrames)
+    panel.addEventListener('load', onFrameLoad, true)
+    const frames = new MutationObserver(onFrameMutation)
     frames.observe(panel, { childList: true, subtree: true })
     return () => {
       frames.disconnect()
-      panel.removeEventListener('load', listenToFrames, true)
+      panel.removeEventListener('load', onFrameLoad, true)
       // Through `forget`, so a document detached here and one reaped mid-open are
       // undone by the same code and cannot drift apart.
       for (const doc of [...listening.keys()]) forget(doc)

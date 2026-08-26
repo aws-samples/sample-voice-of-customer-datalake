@@ -481,7 +481,13 @@ describe('ModalShell with a nested frame', () => {
     } else {
       doc.body.insertAdjacentHTML('beforeend', '<iframe title="nested"></iframe>')
     }
-    const nested = doc.querySelector('iframe')
+    // The frame THIS call added — always the last one in the document, since both
+    // branches append. `doc.querySelector('iframe')` returns the FIRST, so a second call
+    // on the same document handed back the PREVIOUS frame and overwrote its content,
+    // leaving the one just added dead and every later assertion silently about the old
+    // element. Review found the swap test below in exactly that state: it ends its loop
+    // with one frame, then adds another without clearing first.
+    const nested = [...doc.querySelectorAll('iframe')].at(-1) ?? null
     const nestedDoc = nested?.contentDocument
     if (!nested || !nestedDoc?.body) throw new Error('no nested frame document')
     nestedDoc.body.innerHTML = inner
@@ -589,6 +595,32 @@ describe('ModalShell with a nested frame', () => {
     expect(screen.getByRole('button', { name: 'close' })).toHaveFocus()
   })
 
+  it('wraps Tab off a frame whose controls all exist but are hidden, pressed inside it', () => {
+    // The sibling above has ZERO raw candidates and presses in the PAGE, so it exercises
+    // `tabWouldEnterFrame`'s reachability gate. This one has TWO candidates that are all
+    // unreachable and presses INSIDE the frame, which is the only route to
+    // `tabWouldLeave`'s "focus is not on a candidate" branch — and that branch is where a
+    // refactor asking the RAW candidate count instead of the reachable one answers "there
+    // is somewhere to go here", declines to intervene, and lets the browser move focus
+    // past the frame into the page behind the dialog. Both reviewers found it; neither
+    // existing test could, because the zero-candidate fixture agrees with either reading.
+    //
+    // A `display:none` container is not a contrived fixture: it is what a generated
+    // prototype's unopened modal and inactive screens are.
+    const { doc, pressInFrame } = renderFramedShell({
+      inner: '<div style="display:none"><button>one</button><button>two</button></div>',
+    })
+    // Both halves of the state are asserted rather than arranged, so this cannot decay
+    // into the zero-candidate case it exists to be distinct from: the candidates are
+    // present, and focus sits on the frame's `<body>` rather than on one of them.
+    expect(doc.querySelectorAll('button')).toHaveLength(2)
+    expect(doc.activeElement).toBe(doc.body)
+
+    pressInFrame('Tab')
+
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus()
+  })
+
   it('wraps Tab off a frame this page cannot read into', () => {
     // Cross-origin, or `sandbox` without `allow-same-origin` — how legacy `srcDoc`
     // prototypes render. There is no listener of ours inside such a frame to bring
@@ -661,6 +693,94 @@ describe('ModalShell with a nested frame', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('re-scans when a container holding a frame is removed from the prototype', async () => {
+    // The mutation filter has to look INSIDE a moved node, not only at the node itself: a
+    // prototype's own script works in containers, so `<div><iframe/></div>` reports the DIV
+    // and a filter asking "is this a frame" drops the batch. For an INSERTION that gap
+    // hides — the frame's own `load` re-scans a moment later, and a test asserting the end
+    // state passes either way (measured: it survived the mutation).
+    //
+    // A REMOVAL is the case with no second chance. Nothing loads, so if the batch is
+    // dropped the shell keeps a listener and an `isListened` entry for a document that has
+    // gone — which is precisely what `reap` exists to prevent, and what makes a dead
+    // document read as a safe place to send focus.
+    //
+    // `nestedDocuments` descends with `querySelectorAll('iframe')`, so a call with that
+    // selector on this document is a scan of it. The spy goes on AFTER the insertion has
+    // settled, so every call it sees belongs to the removal.
+    const { doc } = renderFramedShell()
+    const box = doc.createElement('div')
+    box.innerHTML = '<iframe title="wrapped"></iframe>'
+    doc.body.append(box)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const walk = vi.spyOn(doc.body, 'querySelectorAll')
+    const scans = () => walk.mock.calls.filter(([selector]) => selector === 'iframe').length
+    try {
+      box.remove()
+      await Promise.resolve()
+
+      expect(scans()).toBeGreaterThan(0)
+    } finally {
+      walk.mockRestore()
+    }
+  })
+
+  it('listens to a second frame added beside the first in one document', () => {
+    // Two sibling frames in one prototype document — an embedded map next to an embedded
+    // video — and the second must be listened in its own right.
+    //
+    // It also pins `addNestedFrame`'s contract, which review found broken: the helper used
+    // to hand back `doc.querySelector('iframe')`, the document's FIRST frame, so a second
+    // call returned the previous frame and overwrote its content. Every assertion after
+    // such a call was quietly about the wrong element.
+    const { doc } = renderFramedShell()
+    const first = addNestedFrame(doc, { inserted: true })
+    const second = addNestedFrame(doc, { inserted: true })
+
+    expect(doc.querySelectorAll('iframe')).toHaveLength(2)
+    expect(second.nested).not.toBe(first.nested)
+
+    second.nestedDoc.getElementById('deep')?.focus()
+    second.pressInNested('Escape')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-scans for a frame\'s load but not for the prototype\'s own resource loads', () => {
+    // A capture-phase `load` on the prototype's document sees every image, script and
+    // stylesheet in it — hundreds for a generated page — and each one used to run the
+    // recursive `nestedDocuments(panel)` walk. The panel-level cheap negative cannot help
+    // here: this consumer's panel always holds a frame.
+    //
+    // Counting the walk rather than timing it, as the sibling below does for style
+    // resolutions: `nestedDocuments` descends with `querySelectorAll('iframe')`, so a call
+    // with that selector on this document IS a scan of it.
+    const { doc } = renderFramedShell({ inner: '<img id="asset" alt="" /><iframe title="nested"></iframe>' })
+    const walk = vi.spyOn(doc.body, 'querySelectorAll')
+    const scans = () => walk.mock.calls.filter(([selector]) => selector === 'iframe').length
+    try {
+      const asset = doc.getElementById('asset')
+      const nested = doc.querySelector('iframe')
+      if (!asset || !nested) throw new Error('fixture is missing the asset or the frame')
+      const before = scans()
+
+      // A resource load: ignored, or every asset in the prototype costs a tree walk.
+      asset.dispatchEvent(new (doc.defaultView ?? window).Event('load'))
+      const afterAsset = scans()
+
+      // A FRAME's load: acted on, because it can change which documents exist to listen
+      // to. Both directions in one test, so a filter that rejects everything — which would
+      // pass a negative-only assertion — fails here.
+      nested.dispatchEvent(new (doc.defaultView ?? window).Event('load'))
+
+      expect(afterAsset).toBe(before)
+      expect(scans()).toBeGreaterThan(afterAsset)
+    } finally {
+      walk.mockRestore()
+    }
+  })
+
   it('does not scan the whole prototype for a Tab that stays inside it', () => {
     // The common keypress, and the expensive one: a reviewer walking through a
     // prototype presses Tab repeatedly, and every one of those but the last is a Tab
@@ -716,29 +836,41 @@ describe('ModalShell with a nested frame', () => {
     // reviewer navigates it, so the count grows while the overlay is simply in use.
     const { doc } = renderFramedShell({ inner: '' })
     const spy = spyOnObservers()
+    // The frame that SURVIVES the swaps, kept so the assertion after the spy block is
+    // about that document rather than a freshly added one. A mutable binding is fine
+    // here: eslint ignores `*.test.tsx`, so `no-restricted-syntax` does not reach it.
+    let surviving: ReturnType<typeof addNestedFrame> | undefined
     try {
       const atRest = spy.live()
       for (const _ of Array.from({ length: 8 })) {
         doc.body.innerHTML = ''
-        addNestedFrame(doc, { inserted: true })
+        surviving = addNestedFrame(doc, { inserted: true })
         // MutationObserver callbacks are microtasks, so the scan (and the reap) runs
         // between swaps rather than all at the end.
         await Promise.resolve()
         await Promise.resolve()
       }
 
-      // One watcher for whichever nested document is current — not eight. `atRest` is
-      // the baseline because the outer frame's own watcher predates the spy.
-      expect(spy.live() - atRest).toBeLessThanOrEqual(1)
+      // EXACTLY one watcher for whichever nested document is current — not eight.
+      // `atRest` is the baseline because the outer frame's own watcher predates the spy.
+      //
+      // An equality, because review asked whether the previous `<= 1` was loose by
+      // necessity and it was not: two microtasks after the last swap the reap has already
+      // run, so the count is settled. The inequality also admitted the very failure this
+      // test is named for — one watcher leaked permanently reads as `<= 1` too.
+      expect(spy.live()).toBe(atRest + 1)
     } finally {
       spy.restore()
     }
 
-    // And the surviving frame still works, so the reaping did not take the live
-    // document's listener with it.
-    const { nestedDoc, pressInNested } = addNestedFrame(doc)
-    nestedDoc.getElementById('deep')?.focus()
-    pressInNested('Escape')
+    // And the SURVIVING frame still works, so the reaping did not take the live
+    // document's listener with it. On the loop's own last frame, deliberately: adding a
+    // fresh frame here would prove only that a new scan attaches a listener, a different
+    // and weaker claim. That is what this assertion silently did before `addNestedFrame`
+    // was fixed to hand back the frame it created rather than the document's first.
+    if (!surviving) throw new Error('the swap loop added no frame')
+    surviving.nestedDoc.getElementById('deep')?.focus()
+    surviving.pressInNested('Escape')
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -791,6 +923,17 @@ describe('ModalShell with a nested frame', () => {
     const nestedDoc = el.contentDocument
     if (!nestedDoc?.body) throw new Error('no nested frame document')
     nestedDoc.body.innerHTML = '<button id="deep">deep</button>'
+    // THE PRECONDITION, ASSERTED. Review's point was that this test arranged the
+    // readable-but-unlistened state through getter surgery and then trusted it: the Tab
+    // assertion below also passes if the frame simply has nothing reachable inside it, so
+    // a fixture that stopped taking effect would keep the test green while testing nothing.
+    // Escape is the direct observable — with no listener inside that document it is dead —
+    // so if the shell ever does pick this frame up, it fails HERE, naming the reason.
+    nestedDoc.getElementById('deep')?.focus()
+    ;(nestedDoc.activeElement ?? nestedDoc.body).dispatchEvent(
+      new (nestedDoc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    expect(onClose).not.toHaveBeenCalled()
     el.focus()
 
     pressInFrame('Tab')
