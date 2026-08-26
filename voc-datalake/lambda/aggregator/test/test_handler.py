@@ -4057,7 +4057,7 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         `_RETRYABLE_CANCELLATION_REASONS` would be a TAUTOLOGY, not a second direction:
         the first assert already pins them equal, so it can never fail. Closing the
         other direction means walking `_TRANSIENT_READ_ERRORS` itself, which is why
-        `HAS_CANCELLATION_COUNTERPART` below enumerates it in full — a member added
+        `has_cancellation_counterpart` below enumerates it in full — a member added
         there with no `True`/`False` decision fails the completeness assert, and a
         `True` with no reason code fails the containment assert.
         """
@@ -4087,12 +4087,14 @@ class TestAWriteConflictIsRetriedRatherThanReported:
 
         # The other direction. Every `_TRANSIENT_READ_ERRORS` member, and whether it has
         # a `CancellationReasons` counterpart at all — most do not, which is why this
-        # cannot be `set(_TRANSIENT_READ_ERRORS) == set(same_condition.values())`: five
-        # of the nine are read-only failure modes (a throttled or slow-server READ, not
-        # a cancelled transaction) with no transactional analogue. That is a fact about
+        # cannot be `set(_TRANSIENT_READ_ERRORS) == set(same_condition.values())`: a
+        # majority are read-only failure modes (a throttled or slow-server READ, not a
+        # cancelled transaction) with no transactional analogue. That is a fact about
         # DynamoDB's error surface, not an oversight, so it is recorded per-member rather
         # than derived — the same reasoning `same_condition` itself gives for being
-        # spelled out instead of computed.
+        # spelled out instead of computed. Not counted here on purpose: the completeness
+        # assert below already enforces every member has a decision, so a stated count
+        # is one more thing to go stale for nothing it checks.
         exception_to_reason = {v: k for k, v in same_condition.items()}
         has_cancellation_counterpart = {
             'ProvisionedThroughputExceededException': True,

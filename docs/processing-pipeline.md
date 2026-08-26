@@ -263,15 +263,19 @@ refused.
 
 Two prices, both accepted deliberately:
 
-- **An arrival's write capacity is a little over double.** Two separate effects, and
-  conflating them understates it: DynamoDB charges a transactional write at **2× the
-  WCU** of the same write sent on its own, *and* the transaction adds a write that did
-  not exist before — the dedupe claim, which also lands in a second table. So an
-  arrival that was one write per dimension plus the average is now
-  `(dimensions + 2) × 2` WCU rather than `dimensions + 1`. Expressed against
+- **An arrival's write capacity is a little over double, and it is billed on two
+  tables, not one.** Two separate effects, and conflating them understates it:
+  DynamoDB charges a transactional write at **2× the WCU** of the same write sent on
+  its own, *and* the transaction adds a write that did not exist before. That second
+  write is the dedupe claim, and it lands in the **idempotency table**, not the
+  aggregates table the counters live in — so the two effects are also two separate
+  bills. On the **aggregates table**: one write per dimension plus the average, at 2×
+  WCU, is `(counter_dimensions + 1) × 2`. On the **idempotency table**: one write, at
+  2× WCU, is `1 × 2`. Together, `(counter_dimensions + 2) × 2` WCU is the arrival's
+  total cost rather than either table's bill alone. Expressed against
   `counter_dimensions` rather than as a fixed multiple, because the dimension count is
-  meant to grow. The aggregates table is `PAY_PER_REQUEST`, so this is a bill rather
-  than a ceiling to breach.
+  meant to grow. Both tables are `PAY_PER_REQUEST`, so this is a bill rather than a
+  ceiling to breach.
 - **Same-date records now contend.** Every record of a date moves
   `METRIC#daily_total`, and `TransactWriteItems` conflicts on a contended item where
   two plain `update_item`s would simply have serialised. A bulk import (the
