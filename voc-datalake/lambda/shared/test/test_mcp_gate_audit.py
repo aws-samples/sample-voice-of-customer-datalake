@@ -10,8 +10,9 @@ That edit, plus `pytestmark = pytest.mark.skip(...)` on `test_mcp_tokens.py`,
 was verified to produce `858 passed, 46 skipped` with the audit exiting 0 — the
 gate reporting success while 46 authorization tests asserted nothing, and nothing
 in the repository noticing the edit. `pytest.ini` sets `testpaths = lambda
-plugins`, so `scripts/` is never collected, and the lint gate is `ruff check
-lambda plugins`, so it is never linted either.
+plugins`, so `scripts/` is never collected by a plain `pytest` run, and
+`lint:python` named only `lambda plugins`, so the file was not linted either. The
+same change that added this module extended that script to `scripts`.
 
 The convention this repo applies to every other check — that it earns its place
 by failing when the behaviour regresses — has to apply to the code that decides

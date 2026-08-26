@@ -91,9 +91,10 @@ EXPLICIT_TEST_PATHS: tuple[str, ...] = (
 
 # `test_mcp_gate_audit.py` covers THIS file and needs no entry above: it matches
 # `lambda/shared/test/test_mcp_*.py`, so the glob gates it. That is deliberate
-# rather than incidental — `pytest.ini`'s `testpaths = lambda plugins` never
-# collects `scripts/`, and the lint gate is `ruff check lambda plugins`, so this
-# file is neither run nor linted by anything else in the repo. Neutering
+# rather than incidental. `pytest.ini` sets `testpaths = lambda plugins`, so
+# nothing collects `scripts/` — this file is only ever *run* as the gate's own
+# entry point, and only ever *tested* by that module. (`lint:python` was likewise
+# `ruff check lambda plugins` until the same change added `scripts`.) Neutering
 # `audit()` below to `return 0` was verified to let a module-level skip on
 # `test_mcp_tokens.py` produce `858 passed, 46 skipped` with the gate reporting
 # success. The floors protect the test surface; that module protects the floors.
