@@ -239,3 +239,31 @@ class TestVocabulary:
             'a non-read scope is mintable but no write tool exists to consult it — '
             'add the scope in the same change as the tool that requires it'
         )
+
+    def test_the_reach_axis_is_exactly_these_three_values(self):
+        """The reach vocabulary, pinned by EXACT MEMBERS rather than by
+        membership.
+
+        The two assertions above this one pin the scope axis exactly
+        (`set(ALL_READ_SCOPES) == VALID_SCOPES`), but the reach axis had only
+        `DEFAULT_READ_REACH in VALID_READ_REACHES` — which is satisfied by any
+        tuple that still contains `workspace`. So dropping `REACH_NONE`, or
+        adding a fourth reach nothing enforces, passed every test in the repo.
+
+        That is not a symmetric gap. `VALID_READ_REACHES` is what
+        `projects_handler._validate_read_reach` refuses against at mint time,
+        so narrowing it silently converts a credential the UI still offers
+        into a 400 — and `mcpTokenSchema.ts` pins its own side exactly
+        (`READ_REACHES` including `'none'`), so the drift lands entirely on
+        the Python half where nothing was watching.
+
+        ORDER is asserted too, not just membership: `_validate_read_reach`
+        interpolates this tuple into the error message a client reads, and
+        `OFFERED_READ_REACHES` in the frontend is written in this order.
+        """
+        assert VALID_READ_REACHES == (REACH_WORKSPACE, REACH_PROJECT_SET, REACH_NONE), (
+            f'the reach vocabulary changed to {VALID_READ_REACHES!r} — every reach is a '
+            'mint-time boundary in projects_handler._validate_read_reach and is mirrored '
+            'in frontend/src/api/mcpTokenSchema.ts, so add or remove one in the same '
+            'change as both of those'
+        )

@@ -1,16 +1,13 @@
 # Runs the MCP-specific Python test surface on every pull request.
 #
-# What it covers today: the five modules under `lambda/api/test/`
-# (`test_mcp_security.py` — catalog and authorization, `test_mcp_delegation.py`
-# — domain delegation and route error mapping, `test_mcp_protocol_envelope.py`
-# — envelopes and negotiation, `test_mcp_output_schema_conformance.py` —
-# registry-driven output-schema conformance, `test_mcp_date_basis.py` — date
-# basis forwarding) plus `lambda/shared/test/test_mcp_tokens.py`, which owns
-# the credential format and the scope/reach vocabulary (`TOKEN_PREFIX`,
-# `VALID_SCOPES`, `VALID_READ_REACHES`, `reach_allows`, `secret_matches`) that
-# every one of those modules depends on. The shared module is gated
-# deliberately, not incidentally: an edit that narrows `VALID_READ_REACHES`
-# while leaving handler behaviour intact passes the api/test set on its own.
+# WHAT IT COVERS IS NOT DEFINED HERE. `voc-datalake/scripts/mcp_gate.py` owns
+# the path globs, the explicitly-named modules and the per-module floors, and
+# this workflow asks it for them. That indirection exists because the scope was
+# previously spelled out twice in this file — once in a collected-count step and
+# once in the run step — so widening the gate meant editing both, and editing
+# one left the floor measuring a different surface than the one being run. The
+# script's module docstring carries the inventory and the reason each module is
+# in it.
 #
 # Scoped on purpose: this is the MCP backend gate, not the backend suite. It
 # exists because the MCP server's regressions are the invisible kind — a tool
@@ -116,52 +113,19 @@ jobs:
       # hole properly means pinning (a `constraints.txt` fed to `pip install
       # -c`, or a lockfile) across both files, which is a repository-wide
       # policy change rather than something this gate should decide alone.
+      #
+      # `pytest>=8.0.0` is uncapped and a clean install currently resolves 9.x,
+      # so pytest's own major is part of that exposure. The gate deliberately
+      # does not parse pytest's console summary — `scripts/mcp_gate.py` reads the
+      # JUnit XML instead, precisely because that structure is an interchange
+      # format while the `-q` summary line is presentation output free to change
+      # in any release. A failure reading the report is therefore also a
+      # dependency symptom, not a finding about the diff.
       - name: Install test and application dependencies
         run: >-
           python -m pip install --disable-pip-version-check
           -r voc-datalake/requirements-dev.txt
           -r voc-datalake/lambda/layers/processing-deps/requirements.txt
-
-      # The globs in the next two steps are the entire definition of this
-      # gate's scope, and a glob can quietly match less than it did. Renaming
-      # *every* MCP module off the `test_mcp_` prefix does redden the job —
-      # bash passes the unexpanded literal through and pytest exits 4 — but
-      # renaming one of six leaves it green with a sixth less coverage and no
-      # signal at all. This floor is the missing signal, in the spirit of the
-      # repo's `*_lockstep.py` tests: the count is allowed to grow freely and
-      # a drop has to be argued for in a diff.
-      #
-      # Raise MINIMUM_COLLECTED when modules are added; lowering it is the
-      # deliberate act of shrinking the gate, and should say why.
-      - name: Check the MCP test surface has not shrunk
-        working-directory: voc-datalake
-        env:
-          AWS_EC2_METADATA_DISABLED: "true"
-          MINIMUM_COLLECTED: "791"
-        run: |
-          set -uo pipefail
-          # Collection is run on its own rather than parsed out of the real
-          # run, so that a count this step cannot read is reported as a broken
-          # floor instead of being mistaken for a passing suite.
-          output=$(
-            python -m pytest lambda/api/test/test_mcp_*.py lambda/shared/test/test_mcp_*.py \
-              -o addopts="" -p no:cacheprovider --co -q 2>&1
-          ) || {
-            echo "${output}"
-            echo "::error::Could not collect the MCP test surface. If this says 'file or directory not found', one of the two globbed directories no longer holds any test_mcp_*.py module." >&2
-            exit 1
-          }
-          collected=$(printf '%s\n' "${output}" | sed -nE 's/^([0-9]+) tests? collected.*/\1/p' | tail -n1)
-          if [ -z "${collected}" ]; then
-            echo "${output}"
-            echo "::error::Could not read a collected-test count from pytest's output; the floor cannot be checked. pytest's --co -q summary format may have changed." >&2
-            exit 1
-          fi
-          echo "collected=${collected} minimum=${MINIMUM_COLLECTED}"
-          if [ "${collected}" -lt "${MINIMUM_COLLECTED}" ]; then
-            echo "::error::The MCP test surface collected ${collected} tests, below the committed floor of ${MINIMUM_COLLECTED}. A module was renamed off the test_mcp_ prefix, moved out of the globbed directories, or emptied. Restore it, or lower the floor in this workflow and say why." >&2
-            exit 1
-          fi
 
       # -o addopts="": pytest.ini's addopts turn every run into a
       # whole-repository coverage run (`--cov=lambda --cov=plugins`) that also
@@ -176,15 +140,20 @@ jobs:
       # lambda/api/test/conftest.py, which also perform the AWS-mocking import
       # setup the MCP and API modules are collected under.
       #
-      # The globs collect the six MCP modules that exist today across the two
-      # directories that hold them, and pick up a seventh automatically when
-      # the next MCP-specific module lands in either, which naming a list here
-      # would not.
+      # `$(python scripts/mcp_gate.py --print-paths)` is deliberately UNQUOTED:
+      # the script emits globs unexpanded so the shell splits and expands them
+      # here. A glob that matches nothing therefore reaches pytest, which exits
+      # 4 on an unknown path rather than quietly running a shorter list.
       #
       # Serial by design: no -n/xdist. The suite is seconds long, and these
       # modules mutate module-level registries and environment during import,
       # so distributing them would trade a real signal for noise.
+      #
+      # `continue-on-error` is deliberately absent, but the audit below must run
+      # even when tests fail — otherwise a failing run would mask a shrinking
+      # one — so this step records its own outcome and the job fails at the end.
       - name: Run MCP test surface
+        id: run-tests
         working-directory: voc-datalake
         env:
           # botocore otherwise probes the EC2 instance metadata endpoint when
@@ -192,7 +161,58 @@ jobs:
           # timeout on every such client. Nothing in this job has, or should
           # have, an AWS session.
           AWS_EC2_METADATA_DISABLED: "true"
-        run: >-
-          python -m pytest lambda/api/test/test_mcp_*.py
-          lambda/shared/test/test_mcp_*.py
-          -o addopts="" --no-header --tb=short -q
+        run: |
+          set -uo pipefail
+          # `|| status=$?` rather than reading `$?` on the next line: GitHub runs
+          # this with `bash -e`, and `set` only turns options ON, so errexit is
+          # still in force here — a bare failing pytest would abort the step
+          # before the outcome could be recorded. A command on the left of `||`
+          # is exempt from errexit, which is what makes the capture reachable.
+          status=0
+          # SC2046 is the intended behaviour here, not an oversight: the script
+          # prints its globs UNEXPANDED so this word-splits and glob-expands
+          # them. Quoting would hand pytest one argument containing literal
+          # `*`s and spaces, which it would reject as a single missing path.
+          # shellcheck disable=SC2046
+          python -m pytest $(python scripts/mcp_gate.py --print-paths) \
+            -o addopts="" -p no:cacheprovider \
+            --junit-xml=mcp-gate-report.xml \
+            --no-header --tb=short -q || status=$?
+          echo "exit-code=${status}" >>"${GITHUB_OUTPUT}"
+
+      # Asserts on the tests that RAN, per module, against the floors in
+      # `scripts/mcp_gate.py`.
+      #
+      # Exit code alone is not enough, and neither was the collected-count floor
+      # this replaces: `--co` counts collected tests, and a skipped test is
+      # collected, so one line — `pytestmark = pytest.mark.skip(...)` at module
+      # scope — left the count at its floor while the module asserted nothing.
+      # `skipif` on a condition false on the runner does the same, and
+      # `xfail(strict=False)` is worse: a test that starts failing gets marked
+      # and reports success indefinitely. The audit reads the JUnit report, where
+      # all three appear as `<skipped>` and none of them count.
+      #
+      # `if: '!cancelled()'` so a red test run is still audited. A shrunken gate
+      # and a failing test are different diagnoses and the log should carry both.
+      - name: Check the MCP gate has not shrunk
+        if: ${{ !cancelled() }}
+        working-directory: voc-datalake
+        run: python scripts/mcp_gate.py --audit mcp-gate-report.xml
+
+      # The tests' own verdict, applied after the audit so both are visible.
+      - name: Report the test result
+        if: ${{ !cancelled() && steps.run-tests.outputs.exit-code != '0' }}
+        run: |
+          echo "::error::The MCP test surface failed (pytest exit ${{ steps.run-tests.outputs.exit-code }}). See the 'Run MCP test surface' step."
+          exit 1
+
+      # Kept on failure only: a green run's report says nothing the log does not,
+      # while a red one is worth having as XML when the console output is
+      # truncated or the failure is a collection error.
+      - name: Upload the JUnit report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-gate-report
+          path: voc-datalake/mcp-gate-report.xml
+          if-no-files-found: warn
