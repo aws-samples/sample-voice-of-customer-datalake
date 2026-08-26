@@ -141,6 +141,23 @@ function frameDocument(frame: HTMLIFrameElement): Document | null {
 }
 
 /**
+ * `el` as a frame, or null if it is not one.
+ *
+ * The realm-aware `instanceof`, and it has to be: an element inside a frame belongs
+ * to the FRAME's realm, whose `HTMLIFrameElement` is a different constructor object
+ * from this document's, so a plain `el instanceof HTMLIFrameElement` is false for a
+ * frame nested inside another frame. That is the same trap `raisedIn` avoids for
+ * `Document` in the keydown handler, and it fails in the direction that hurts: the
+ * frame is silently treated as an ordinary element, so `tabWouldEnterFrame` declines
+ * and the descent is cancelled.
+ */
+function asFrame(el: Element | null): HTMLIFrameElement | null {
+  if (el === null) return null
+  const ctor = el.ownerDocument.defaultView?.HTMLIFrameElement ?? HTMLIFrameElement
+  return el instanceof ctor ? el : null
+}
+
+/**
  * Every same-origin document nested under `root`, at any depth — the documents a
  * keydown can be raised in while focus is somewhere inside this dialog.
  */
@@ -160,6 +177,17 @@ function nestedDocuments(root: HTMLElement): Document[] {
  *
  * A frame with nothing focusable counts as leaving: the key cannot move focus
  * within it, so the browser would hand focus to whatever follows the frame.
+ *
+ * That covers two states the DOM cannot tell apart, deliberately treated alike.
+ * A frame LOADED with no controls in it is the case above. A frame still loading
+ * has no `body` yet, and so reaches the same answer by a different route — a Tab in
+ * those first moments is treated as an exit and wrapped back into the panel rather
+ * than allowed to descend into a document that does not exist. That is the safe
+ * reading of both: there is nothing to descend into either way, and it self-corrects
+ * on `load`, which is also when the frame's own listener is attached
+ * (`nestedDocuments` returns nothing for a body-less document for the same reason).
+ * If the two ever need to diverge, `body` alone cannot separate them —
+ * `doc.readyState` is what distinguishes "loading" from "complete and empty".
  */
 function tabWouldLeave(doc: Document, back: boolean): boolean {
   // See `nestedDocuments` on why `body` is checked despite its non-null type.
@@ -182,6 +210,14 @@ function tabWouldLeave(doc: Document, back: boolean): boolean {
 function tabAcrossFrame(
   doc: Document, items: HTMLElement[], active: Element | null, back: boolean,
 ): HTMLElement | null {
+  // Entry is checked on THIS path too, against `doc`'s own activeElement: a frame
+  // nested inside a frame (a generated prototype embedding a map, a video or a docs
+  // frame) is that document's last focusable, so it would otherwise be read as an
+  // exit and wrapped — cancelling the descent, which is the very defect
+  // `tabWouldEnterFrame` exists to prevent, one level down. Recursion makes the rest
+  // work: `nestedDocuments` attaches to frames at any depth, so the Tab that leaves
+  // the inner frame is seen here in turn.
+  if (tabWouldEnterFrame(doc.activeElement, back)) return null
   if (!tabWouldLeave(doc, back)) return null
   const at = active instanceof HTMLElement ? items.indexOf(active) : -1
   // A frame nested deeper than the panel's own children is not in `items`; treat
@@ -218,10 +254,21 @@ function tabAcrossFrame(
  * Backwards is deliberately not included: shift-Tab from a focused frame element
  * moves to what precedes the frame rather than descending, so there is no default
  * action to protect.
+ *
+ * Consulted on BOTH Tab paths, against whichever document raised the key: from
+ * `tabWithinPanel` for a frame that is a panel focusable, and from `tabAcrossFrame`
+ * for one nested inside another frame's document. The two are the same defect at
+ * different depths — a prototype is generated HTML and may embed a frame of its own
+ * without anyone choosing to — so the guard is not scoped to the panel's own level.
+ *
+ * A frame the parent cannot read into is opaque at every depth, so an opaque frame
+ * inside a readable one keeps the wrap for the reason above: it would still be a
+ * one-way trip.
  */
 function tabWouldEnterFrame(active: Element | null, back: boolean): boolean {
-  if (back || !(active instanceof HTMLIFrameElement)) return false
-  const doc = frameDocument(active)
+  const frame = back ? null : asFrame(active)
+  if (frame === null) return false
+  const doc = frameDocument(frame)
   // See `nestedDocuments` on why `body` is checked despite its non-null type.
   return doc?.body ? focusable(doc.body).length > 0 : false
 }
@@ -278,6 +325,27 @@ export default function ModalShell({
 }: ModalShellProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
+  /**
+   * The latest `onClose` and `dismissable`, read through a ref by the keydown
+   * handler so that the listener wiring below can depend on `isOpen` alone.
+   *
+   * Consumers pass `onClose` as an inline arrow — `PrototypeEnlargeButton` does, and
+   * so does most of this shell's usage — which is a fresh identity on every render.
+   * With those in the effect's deps, ONE re-render of the component holding an open
+   * dialog tore down and rebuilt everything the effect owns: the MutationObserver,
+   * the capture-phase `load` listener, and a keydown listener on every nested frame
+   * document. Symmetric, so nothing leaked, but it walked the frame tree per render
+   * and left a brief window with no listener attached — under a page that re-renders
+   * while an overlay is open (a query refetch, a slider move, the hourly re-signing
+   * this overlay exists to survive), that window recurs indefinitely.
+   */
+  const onCloseRef = useRef(onClose)
+  const dismissableRef = useRef(dismissable)
+  useEffect(() => {
+    onCloseRef.current = onClose
+    dismissableRef.current = dismissable
+  }, [onClose, dismissable])
+
   // Move focus into the dialog on open, and restore it to whatever opened the
   // dialog on close — otherwise keyboard users are dropped at the top of the page.
   useEffect(() => {
@@ -323,7 +391,9 @@ export default function ModalShell({
       if (topMostShell() !== panel) return
 
       if (e.key === 'Escape') {
-        if (dismissable) onClose()
+        // Through the refs, so this handler never has to be rebuilt to see a new
+        // `onClose` — see the refs' comment on what rebuilding it costs.
+        if (dismissableRef.current) onCloseRef.current()
         return
       }
       if (e.key !== 'Tab') return
@@ -376,7 +446,10 @@ export default function ModalShell({
       panel.removeEventListener('load', listenToFrames, true)
       for (const [doc, handler] of listening) doc.removeEventListener('keydown', handler)
     }
-  }, [isOpen, dismissable, onClose])
+    // `isOpen` alone: `onClose` and `dismissable` are read through refs, so a
+    // consumer's inline arrow does not rebuild the observer and every frame
+    // listener on each of its renders.
+  }, [isOpen])
 
   if (!isOpen) return null
 

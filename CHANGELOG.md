@@ -34,6 +34,8 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   overlay's shape — so focus bounced between the dialog's own controls and every link inside the
   artifact was unreachable by keyboard. A frame the page cannot read into, or one with nothing
   focusable in it, keeps the old behaviour: there would be nothing inside it to bring focus back out.
+  This holds at any depth, so a prototype that embeds a frame of its own — a map, a video, a
+  documentation pane — is reachable too.
 
 ### Security
 

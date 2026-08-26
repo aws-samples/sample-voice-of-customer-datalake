@@ -308,6 +308,14 @@ describe('ModalShell', () => {
  * (`frameDocument()`), so wrapping the getter puts the spy in front of every attach
  * without changing which object anyone gets: the same document is returned, with its
  * own `addEventListener` / `removeEventListener` wrapped once.
+ *
+ * `restore()` undoes BOTH halves — the prototype getter and the listener methods on
+ * every document already wrapped. Restoring only the getter would stop new documents
+ * being wrapped while leaving live closures on the old ones still pushing into these
+ * arrays, so a later test that spied, restored and then rendered another framed shell
+ * would read contributions from the previous one. The helper is therefore reusable
+ * rather than single-use, which is what a reader of the rest of this comment would
+ * assume anyway.
  */
 function spyOnFrameDocumentListeners(
   added: EventListenerOrEventListenerObject[],
@@ -317,6 +325,7 @@ function spyOnFrameDocumentListeners(
   if (!real?.get) throw new Error('no contentDocument getter to wrap')
   const realGet = real.get
   const wrapped = new WeakSet<Document>()
+  const unwrap: (() => void)[] = []
   Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
     configurable: true,
     get(): Document | null {
@@ -325,6 +334,14 @@ function spyOnFrameDocumentListeners(
         wrapped.add(doc)
         const realAdd = doc.addEventListener.bind(doc)
         const realRemove = doc.removeEventListener.bind(doc)
+        // The own properties are deleted rather than reassigned, so the document is
+        // left reading these through its prototype exactly as it did before.
+        // `Reflect.deleteProperty` rather than `delete`, which TypeScript rejects for
+        // a non-optional property and which would otherwise need a type assertion.
+        unwrap.push(() => {
+          Reflect.deleteProperty(doc, 'addEventListener')
+          Reflect.deleteProperty(doc, 'removeEventListener')
+        })
         doc.addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
           if (type === 'keydown') added.push(listener)
           realAdd(type, listener, options)
@@ -337,7 +354,10 @@ function spyOnFrameDocumentListeners(
       return doc
     },
   })
-  return () => Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', real)
+  return () => {
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', real)
+    for (const undo of unwrap) undo()
+  }
 }
 
 describe('ModalShell with a nested frame', () => {
@@ -526,6 +546,73 @@ describe('ModalShell with a nested frame', () => {
     frame.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
 
     expect(screen.getByRole('button', { name: 'close' })).toHaveFocus()
+  })
+
+  it('lets Tab into a frame nested inside the frame\'s own content', () => {
+    // The same defect one level down. A prototype is generated HTML, so a page that
+    // embeds a map, a video or a docs frame produces this shape without anyone
+    // choosing it: the nested frame is the OUTER document's last focusable, so a Tab
+    // raised in the outer document reads as an exit, wraps into the panel and cancels
+    // the descent — exactly what the panel-level entry guard was added to stop.
+    //
+    // As above, jsdom performs no default Tab action, so the observable is that the
+    // shell did not intervene: focus stays on the nested frame element for the browser
+    // to descend from, and the panel's own controls are untouched.
+    const { doc, pressInFrame } = renderFramedShell({
+      inner: '<button id="inner-first">inner one</button><iframe id="nested" title="nested"></iframe>',
+    })
+    // `querySelector('iframe')` rather than `instanceof HTMLIFrameElement`: this
+    // element belongs to the FRAME's realm, whose `HTMLIFrameElement` is a different
+    // constructor from this one — the same realm trap `raisedIn` avoids in the shell.
+    // The tag-name overload types it without an assertion.
+    const nested = doc.querySelector('iframe')
+    const nestedDoc = nested?.contentDocument
+    if (!nestedDoc?.body) throw new Error('no nested frame document')
+    nestedDoc.body.innerHTML = '<button id="deep">deep</button>'
+    nested?.focus()
+
+    pressInFrame('Tab')
+
+    expect(doc.activeElement).toBe(nested)
+    expect(screen.getByRole('button', { name: 'after' })).not.toHaveFocus()
+    expect(screen.getByRole('button', { name: 'close' })).not.toHaveFocus()
+  })
+
+  it('keeps the frame\'s listener attached across an unrelated re-render', async () => {
+    // Consumers pass `onClose` as an inline arrow, so with it in the wiring effect's
+    // deps every re-render of the component holding the dialog detached and re-attached
+    // the listener on every frame document — a frame-tree walk per render, and a window
+    // in each one where a key pressed inside the prototype is unobserved. The page this
+    // overlay lives on re-renders while it is open (a refetch, a slider, the hourly
+    // re-signing), so that window recurs rather than being a one-off.
+    const user = userEvent.setup()
+    const added: EventListenerOrEventListenerObject[] = []
+    const removed: EventListenerOrEventListenerObject[] = []
+    // A fresh `onClose` identity per render, as every consumer of this shell writes it.
+    function Rerendering() {
+      const [n, setN] = React.useState(0)
+      return (
+        <ModalShell isOpen onClose={() => undefined} ariaLabel="Re-rendering dialog">
+          <button onClick={() => setN(n + 1)}>bump {n}</button>
+          <iframe title="prototype" />
+        </ModalShell>
+      )
+    }
+    const restore = spyOnFrameDocumentListeners(added, removed)
+    try {
+      render(<Rerendering />)
+      // Nothing about the dialog changes; only the consumer's own state does, which is
+      // what a refetch or a slider move looks like from here.
+      await user.click(screen.getByRole('button', { name: /bump/ }))
+      await user.click(screen.getByRole('button', { name: /bump/ }))
+    } finally {
+      restore()
+    }
+
+    // Anti-vacuous first: a shell that never attached to the frame would also never
+    // detach, and would pass the assertion below.
+    expect(added.length).toBeGreaterThan(0)
+    expect(removed).toHaveLength(0)
   })
 
   it('listens to a frame that arrives after the dialog is already open', async () => {
