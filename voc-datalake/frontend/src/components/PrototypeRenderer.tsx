@@ -119,7 +119,35 @@ export function HtmlPrototypeFrame({
   )
 }
 
-export default function PrototypeRenderer({ spec }: { readonly spec: PrototypeSpec }) {
+/**
+ * The measure a spec prototype is laid out on when the caller does not say.
+ *
+ * A generated spec is prose, forms and lists — a document, not a canvas — so it is
+ * capped at a readable column and centred rather than stretched across whatever
+ * width it is given. Callers embedding it in a narrow pane never notice, because the
+ * pane is the tighter constraint; a caller that really does have the screen (the
+ * prioritization enlarge overlay) passes its own.
+ */
+const DEFAULT_SPEC_MEASURE = 'max-w-2xl mx-auto'
+
+/**
+ * @param measureClassName REPLACES the default measure (`max-w-2xl mx-auto`) rather
+ *   than being added to it, so a caller can widen the column instead of fighting a
+ *   cap it cannot reach — with both classes on the element, Tailwind's output order
+ *   and not the argument order would decide, and the cap would be unwidenable.
+ *
+ *   Named for the measure rather than called `className` because that name reads as
+ *   the conventional additive one, and a caller passing only spacing would silently
+ *   drop `mx-auto` and un-centre the artifact. Omit it everywhere the artifact is
+ *   embedded; the default is what the Documents tab and the prioritization row's pane
+ *   get, byte for byte.
+ */
+export default function PrototypeRenderer({
+  spec, measureClassName,
+}: {
+  readonly spec: PrototypeSpec
+  readonly measureClassName?: string
+}) {
   const screens = useMemo(
     () => spec.screens.filter((s) => s && typeof s.id === 'string'),
     [spec.screens],
@@ -137,7 +165,7 @@ export default function PrototypeRenderer({ spec }: { readonly spec: PrototypeSp
   const active = screens.find((s) => s.id === activeId) ?? screens[0]
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className={measureClassName ?? DEFAULT_SPEC_MEASURE}>
       {spec.banner ? (
         <div className="bg-amber-100 text-amber-900 text-xs text-center py-1.5 rounded-md mb-3 font-medium">
           {spec.banner}

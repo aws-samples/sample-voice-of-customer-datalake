@@ -12,6 +12,45 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ## [Unreleased]
 
+### Added
+
+- An expanded prioritization row can enlarge the prototype it is showing to fill the viewport, in
+  place, so a pitch session can look at the artifact without leaving the sliders, the team's numbers
+  and the room vote behind on the page. Escape, the visible Close control and a click outside all
+  return to the row. Offered for every prototype the row renders, including a legacy inline one and a
+  JSON spec, neither of which has an address that "Open in new tab" could use.
+
+### Fixed
+
+- Shared modal dialogs now honour Escape and keep Tab inside themselves while focus is in a nested
+  same-origin `<iframe>`. Keys pressed inside a frame are raised in the frame's own document and
+  never reached the dialog, so any modal embedding one (the prototype overlay above) could not be
+  dismissed from the keyboard once a reader clicked into its content. A frame the page cannot read
+  into — cross-origin, or sandboxed without `allow-same-origin` — still cannot be observed, so
+  dialogs embedding one must offer a visible dismiss control. One further exception is known and
+  tracked as #386: a frame whose content rewrites itself with `document.open()` keeps the same
+  document object while a compliant browser erases the listeners on it, so the dialog believes it is
+  still listening there.
+- Tab can now reach the controls inside a dialog's nested `<iframe>`. Descending into a frame is the
+  browser's default action for a Tab pressed while the frame itself has focus, and the focus trap
+  cancelled that action whenever the frame was the dialog's last focusable — which is the prototype
+  overlay's shape — so focus bounced between the dialog's own controls and every link inside the
+  artifact was unreachable by keyboard. A frame the page cannot read into, or one with nothing
+  focusable in it, keeps the old behaviour: there would be nothing inside it to bring focus back out.
+  This holds at any depth, so a prototype that embeds a frame of its own — a map, a video, a
+  documentation pane — is reachable too, and leaving such a frame continues through the prototype's
+  own content rather than jumping out of the artifact to the dialog's controls.
+- Tabbing through a large prototype inside a dialog no longer slows down with the size of the
+  prototype. Each keypress measured the whole embedded document to decide whether the key was leaving
+  it — for a 400-control page, 2800 style resolutions per keystroke, nearly all of it to conclude that
+  the key was an ordinary one the dialog should ignore. The question is now answered from the first
+  control the key can still reach.
+- A dialog whose embedded content replaces a frame of its own no longer accumulates one DOM observer
+  per replacement. Each nested document is watched so that keyboard handling follows frames the
+  content inserts itself, and a watcher for a document that had been swapped away was held until the
+  dialog closed, keeping the discarded document alive with it. Watchers are now dropped as soon as
+  their document leaves the frame tree.
+
 ### Security
 
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and

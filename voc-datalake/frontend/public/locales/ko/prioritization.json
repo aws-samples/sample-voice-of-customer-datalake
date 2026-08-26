@@ -87,6 +87,7 @@
     "placeholder": "이 우선순위 지정 결정에 대한 메모를 추가하세요..."
   },
   "preview": {
+    "enlarge": "확대",
     "prototypeTitle": "프로토타입",
     "title": "문서 미리보기",
     "viewFull": "전체 문서 보기",
