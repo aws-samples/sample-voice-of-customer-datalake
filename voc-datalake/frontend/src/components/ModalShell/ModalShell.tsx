@@ -442,6 +442,20 @@ export default function ModalShell({
 
   useEffect(() => {
     if (!isOpen) return
+    /**
+     * Captured ONCE per open, and everything below is keyed on it: the top-most check
+     * compares against it, the `load` listener and the MutationObserver attach to it,
+     * and `listenToFrames` searches it.
+     *
+     * Valid for the lifetime of an open dialog because the panel is rendered
+     * unconditionally while open, so React keeps the same DOM node. That became
+     * load-bearing when this effect's deps narrowed to `[isOpen]`: an inline `onClose`
+     * used to re-run it on nearly every render, which refreshed the capture constantly
+     * and made a stale one impossible. What would break it now is unremarkable —
+     * wrapping `{children}` in a conditional, or giving the panel a `key` that changes —
+     * and it would break silently: the observer would watch a detached node and
+     * `topMostShell()` would never match, so Escape and the trap would simply stop.
+     */
     const panel = panelRef.current
     if (!panel) return
     /**
