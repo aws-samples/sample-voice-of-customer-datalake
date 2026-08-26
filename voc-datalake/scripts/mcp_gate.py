@@ -54,6 +54,32 @@ It covers the audit's DATA as well as its logic, which was a second hole: nothin
 asserted that a module the gate runs HAS a floor, only that a floor names a module
 the gate runs, so deleting one line from ``MODULE_FLOORS`` was silent and a skip on
 the unfloored module then passed. See the comment on ``MODULE_FLOORS``.
+
+Most of this file is scaffolding
+-------------------------------
+It exists because the gate is SCOPED. A full-tree backend job — ``pytest lambda``
+plus ``plugins/`` — needs no floors at all: a deleted or renamed module simply stops
+contributing to a count nobody maintains. Measured on this branch, in a clean venv
+on the two requirement files the workflow installs, that job is ~17s install + ~52s
+run (measured on this commit: ``3695 passed`` for ``pytest lambda``, exit 0),
+against this gate's ~4s. A minute of runner time is not what the hand-maintained
+facts below are buying.
+
+So when that job lands, these go with it: ``MODULE_FLOORS``,
+``EXPLICIT_TEST_PATHS``, ``UNFLOORED_ON_PURPOSE``, ``_module_of``,
+``_module_path_of``, ``_collisions``, and all of ``test_mcp_gate_audit.py``. Do not
+invest in extending them.
+
+What does NOT retire, because running more of the existing tree would never have
+created it: the three lockstep modules — ``test_mcp_vocabulary_lockstep.py``
+(``VALID_SCOPES``/``VALID_READ_REACHES``/``DEFAULT_READ_REACH`` against
+``mcpTokenSchema.ts``) and ``test_python_runtime_lockstep.py`` (``.python-version``
+against the CDK runtime). No test in the tree read ``MCP_SCOPES`` at all before
+they existed.
+
+The one thing the follow-up must carry over is the job NAME: branch protection keys
+on ``MCP backend tests``, so a replacement job either keeps that string or the
+required check silently stops being enforced.
 """
 
 from __future__ import annotations
