@@ -54,6 +54,27 @@
       "title": "This vote could not be loaded"
     }
   },
+  "composition": {
+    "addRow": "Add row",
+    "addRowHint": "Pick the documents the new row should hold. It gets its own ballots, so this project can be scored as more than one combination.",
+    "cancel": "Cancel",
+    "delete": {
+      "cancel": "Keep the row",
+      "confirm": "Delete row and ballots",
+      "message": "This deletes the row and every ballot cast on it, including other reviewers'. The team score for this combination goes with it, and this cannot be undone.",
+      "title": "Delete this row and its ballots?"
+    },
+    "deleteAction": "Delete row",
+    "documentsLegend": "Documents this row holds",
+    "edit": "Edit documents",
+    "editHint": "Choose which of this project's documents this row is scored on. One ballot covers all of them.",
+    "locked": "Locked since the first ballot — add another row to score a different combination.",
+    "requiresOne": "Pick at least one document, so the row has something to score.",
+    "save": "Save documents",
+    "saveNewRow": "Add the row",
+    "saving": "Saving...",
+    "title": "What this row holds"
+  },
   "configureApiEndpoint": "Configure API endpoint in Settings to view prioritization.",
   "docType": {
     "prd": "PRD",
@@ -122,8 +143,22 @@
   "row": {
     "multiDocument": "{{documents}} documents, one ballot"
   },
+  "rowAction": {
+    "composeConflict": "The row was not added to {{row}}'s project. Either the project already holds as many rows as it may, or its documents changed. Reload the page to see the current rows.",
+    "composeFailed": "The row was not added. Nothing was created, so you can try again.",
+    "deleteConflict": "\"{{row}}\" was not deleted: it changed while it was being removed, or it is a project's only row and cannot be deleted. Reload the page to see the current rows.",
+    "deleteFailed": "\"{{row}}\" was not deleted. The row and its ballots are unchanged, so you can try again.",
+    "dismiss": "Dismiss this message",
+    "recomposeConflict": "The documents on \"{{row}}\" were not changed: a ballot has already been cast, so its composition is locked. Add another row to score a different combination.",
+    "recomposeFailed": "The documents on \"{{row}}\" were not changed. Nothing was saved, so you can try again.",
+    "title": "That change to the rows was not saved"
+  },
   "rowCount_one": "{{count}} proposal",
   "rowCount_other": "{{count}} proposals",
+  "rowUnavailable": {
+    "description": "These projects hold more documents than a prioritization row can be composed from, so they are missing from the list below rather than unscored. Removing documents a project no longer needs brings it back.",
+    "title": "Some projects could not be given a row"
+  },
   "scores": {
     "confidence": "Confidence",
     "confidenceDescription": "Certainty in impact and TTM estimates",

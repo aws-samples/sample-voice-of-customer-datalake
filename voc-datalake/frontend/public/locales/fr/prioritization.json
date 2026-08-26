@@ -54,6 +54,27 @@
       "title": "Ce vote n'a pas pu être chargé"
     }
   },
+  "composition": {
+    "addRow": "Ajouter une ligne",
+    "addRowHint": "Choisissez les documents que la nouvelle ligne doit contenir. Elle aura ses propres bulletins, ce projet peut donc être évalué selon plusieurs combinaisons.",
+    "cancel": "Annuler",
+    "delete": {
+      "cancel": "Conserver la ligne",
+      "confirm": "Supprimer la ligne et les bulletins",
+      "message": "Cela supprime la ligne et tous les bulletins déposés sur elle, y compris ceux des autres évaluateurs. La note de l’équipe pour cette combinaison disparaît avec elle, et c’est irréversible.",
+      "title": "Supprimer cette ligne et ses bulletins ?"
+    },
+    "deleteAction": "Supprimer la ligne",
+    "documentsLegend": "Documents contenus dans cette ligne",
+    "edit": "Modifier les documents",
+    "editHint": "Choisissez sur quels documents de ce projet cette ligne est évaluée. Un seul bulletin les couvre tous.",
+    "locked": "Verrouillée depuis le premier bulletin — ajoutez une autre ligne pour évaluer une combinaison différente.",
+    "requiresOne": "Choisissez au moins un document, pour que la ligne ait quelque chose à évaluer.",
+    "save": "Enregistrer les documents",
+    "saveNewRow": "Ajouter la ligne",
+    "saving": "Enregistrement...",
+    "title": "Ce que contient cette ligne"
+  },
   "configureApiEndpoint": "Configurez le point de terminaison API dans les paramètres pour afficher la priorisation.",
   "docType": {
     "prd": "PRD",
@@ -122,8 +143,22 @@
   "row": {
     "multiDocument": "{{documents}} documents, un seul bulletin"
   },
+  "rowAction": {
+    "composeConflict": "La ligne n’a pas été ajoutée au projet de {{row}}. Soit le projet contient déjà le nombre maximal de lignes autorisé, soit ses documents ont changé. Rechargez la page pour voir les lignes actuelles.",
+    "composeFailed": "La ligne n’a pas été ajoutée. Rien n’a été créé, vous pouvez réessayer.",
+    "deleteConflict": "« {{row}} » n’a pas été supprimée : elle a changé pendant la suppression, ou c’est la seule ligne d’un projet et elle ne peut pas être supprimée. Rechargez la page pour voir les lignes actuelles.",
+    "deleteFailed": "« {{row}} » n’a pas été supprimée. La ligne et ses bulletins sont inchangés, vous pouvez réessayer.",
+    "dismiss": "Masquer ce message",
+    "recomposeConflict": "Les documents de « {{row}} » n’ont pas été modifiés : un bulletin a déjà été déposé, sa composition est donc verrouillée. Ajoutez une autre ligne pour évaluer une combinaison différente.",
+    "recomposeFailed": "Les documents de « {{row}} » n’ont pas été modifiés. Rien n’a été enregistré, vous pouvez réessayer.",
+    "title": "Cette modification des lignes n’a pas été enregistrée"
+  },
   "rowCount_one": "{{count}} proposition",
   "rowCount_other": "{{count}} propositions",
+  "rowUnavailable": {
+    "description": "Ces projets contiennent plus de documents qu’une ligne de priorisation ne peut en assembler : ils sont absents de la liste ci-dessous plutôt que non évalués. Supprimer les documents dont un projet n’a plus besoin le fait réapparaître.",
+    "title": "Certains projets n’ont pas pu recevoir de ligne"
+  },
   "scores": {
     "confidence": "Confiance",
     "confidenceDescription": "Certitude dans les estimations d'impact et de DmM",

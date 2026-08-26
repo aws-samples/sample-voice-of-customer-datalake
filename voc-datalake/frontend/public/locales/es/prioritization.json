@@ -54,6 +54,27 @@
       "title": "No se ha podido cargar esta votación"
     }
   },
+  "composition": {
+    "addRow": "Añadir fila",
+    "addRowHint": "Elija los documentos que debe contener la nueva fila. Tendrá sus propias papeletas, así que este proyecto puede puntuarse como más de una combinación.",
+    "cancel": "Cancelar",
+    "delete": {
+      "cancel": "Conservar la fila",
+      "confirm": "Eliminar fila y papeletas",
+      "message": "Esto elimina la fila y todas las papeletas emitidas sobre ella, incluidas las de otros revisores. La puntuación del equipo para esta combinación desaparece con ella y no se puede deshacer.",
+      "title": "¿Eliminar esta fila y sus papeletas?"
+    },
+    "deleteAction": "Eliminar fila",
+    "documentsLegend": "Documentos que contiene esta fila",
+    "edit": "Editar documentos",
+    "editHint": "Elija sobre qué documentos de este proyecto se puntúa esta fila. Una sola papeleta cubre todos ellos.",
+    "locked": "Bloqueada desde la primera papeleta: añada otra fila para puntuar una combinación distinta.",
+    "requiresOne": "Elija al menos un documento, para que la fila tenga algo que puntuar.",
+    "save": "Guardar documentos",
+    "saveNewRow": "Añadir la fila",
+    "saving": "Guardando...",
+    "title": "Qué contiene esta fila"
+  },
   "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
   "docType": {
     "prd": "PRD",
@@ -122,8 +143,22 @@
   "row": {
     "multiDocument": "{{documents}} documentos, una papeleta"
   },
+  "rowAction": {
+    "composeConflict": "No se ha añadido la fila al proyecto de {{row}}. O el proyecto ya tiene todas las filas que puede tener, o sus documentos han cambiado. Vuelva a cargar la página para ver las filas actuales.",
+    "composeFailed": "No se ha añadido la fila. No se ha creado nada, así que puede volver a intentarlo.",
+    "deleteConflict": "«{{row}}» no se ha eliminado: cambió mientras se estaba borrando, o es la única fila de un proyecto y no puede eliminarse. Vuelva a cargar la página para ver las filas actuales.",
+    "deleteFailed": "«{{row}}» no se ha eliminado. La fila y sus papeletas no han cambiado, así que puede volver a intentarlo.",
+    "dismiss": "Descartar este mensaje",
+    "recomposeConflict": "Los documentos de «{{row}}» no se han cambiado: ya se ha emitido una papeleta, por lo que su composición está bloqueada. Añada otra fila para puntuar una combinación distinta.",
+    "recomposeFailed": "Los documentos de «{{row}}» no se han cambiado. No se ha guardado nada, así que puede volver a intentarlo.",
+    "title": "Ese cambio en las filas no se ha guardado"
+  },
   "rowCount_one": "{{count}} propuesta",
   "rowCount_other": "{{count}} propuestas",
+  "rowUnavailable": {
+    "description": "Estos proyectos tienen más documentos de los que puede componer una fila de priorización, así que faltan en la lista de abajo en lugar de estar sin puntuar. Eliminar los documentos que un proyecto ya no necesita lo devuelve a la lista.",
+    "title": "Algunos proyectos no han podido recibir una fila"
+  },
   "scores": {
     "confidence": "Confianza",
     "confidenceDescription": "Certeza en las estimaciones de impacto y TdC",
