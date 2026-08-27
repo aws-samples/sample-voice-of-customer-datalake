@@ -1,6 +1,12 @@
 import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'
+// The generated-document union, imported rather than respelled: the route's
+// GENERATED_DOC_TYPES allowlist is pinned against this ONE declaration
+// (lambda/api/test/test_doc_type_lockstep.py), so an inline copy here could
+// disagree with the picker's type and with the route while the lockstep test
+// still passed. Type-only, so nothing about the module graph at runtime changes.
+import type { DocType } from '../pages/ProjectDetail/types'
 import type {
   DateBasis,
   FeedbackItem,
@@ -506,7 +512,7 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
-  generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
+  generateDocument: (projectId: string, data: { doc_type: DocType; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.generateDocument(projectId, data)),
   mergeDocuments: (projectId: string, data: { output_type: 'prd' | 'prfaq' | 'custom'; title: string; instructions: string; selected_document_ids: string[]; selected_persona_ids?: string[]; use_feedback?: boolean; feedback_sources?: string[]; feedback_categories?: string[]; days?: number }) =>
     import('./projectsApi').then(m => m.projectsApi.mergeDocuments(projectId, data)),

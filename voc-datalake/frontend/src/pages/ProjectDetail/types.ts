@@ -26,6 +26,15 @@ export interface ResearchToolConfig {
   useWebSearch: boolean
 }
 
+// 🔑 The ONE frontend declaration of what POST /projects/{id}/document accepts.
+// `client.ts` and `projectsApi.ts` import it rather than respelling
+// `'prd' | 'prfaq'` inline, which is what they used to do: three copies of the
+// contract meant the two client signatures could drift from this union and from
+// the route, and the guard that reads them (issue #381) had to locate a method by
+// name and delimit its parameter list by bracket balance to check. With one
+// declaration, `lambda/api/test/test_doc_type_lockstep.py` reads this line alone
+// and pins it against `projects_handler.GENERATED_DOC_TYPES`. Widen both together
+// or that test fails.
 export type DocType = 'prd' | 'prfaq'
 
 export interface DocToolConfig {
