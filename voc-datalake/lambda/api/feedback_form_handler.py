@@ -4,6 +4,7 @@ Handles: /feedback-forms/* - multiple forms management
 """
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -124,6 +125,67 @@ LINK_FIELD_MAX_LENGTH = 128
 LINK_FIELDS = ('project_id', 'document_id')
 
 
+# ============================================
+# Form identifier
+# ============================================
+#
+# A form id is MINTED by this module and never taken from a request body — see
+# `_minted_form_id`, the one place the format is decided. Everything below is
+# derived from that one place so the two cannot drift.
+FORM_ID_LENGTH = 8
+
+# The shape a caller-supplied form id has to have before it reaches a read or a
+# rendered page (`_validated_form_id`).
+#
+# WIDER than the mint on purpose, and that width is the whole decision worth
+# arguing: the mint is `[0-9a-f]{8}`, but records seeded by hand or by an import
+# carry ids like 'website-form', and their embeddable page must keep working — a
+# validator narrowed to the mint would 404 the iframe for a form whose /config
+# and /submit still answer, which reads as "the product broke" rather than as a
+# refusal. So the bound is on the CHARACTER SET and the LENGTH instead, and every
+# character that could end a JavaScript string or open an HTML tag — the quote,
+# the parenthesis, the semicolon, '<', '>', '&', the backslash — is outside it.
+# Powertools' dynamic-route capture group admits all of those (issue #379), so
+# this pattern, not the route, is what bounds them.
+FORM_ID_MAX_LENGTH = 64
+_FORM_ID_PATTERN = re.compile(rf'^[0-9A-Za-z_-]{{1,{FORM_ID_MAX_LENGTH}}}$')
+
+
+def _minted_form_id() -> str:
+    """A new form's id: the first `FORM_ID_LENGTH` hex characters of a uuid4.
+
+    The only place a form id is created. Named so the validator below can be
+    described against one definition rather than against a literal repeated at
+    the two sites that used to spell it out.
+    """
+    return str(uuid.uuid4())[:FORM_ID_LENGTH]
+
+
+def _validated_form_id(raw: Any) -> str | None:
+    """The form id from the URL, or None if it cannot be one of ours.
+
+    Modelled on `ballots_handler._validated_session_id`, for the same two
+    reasons: a format check before any read means a probe for
+    `/feedback-forms/admin` or a 1 MB path segment costs no DynamoDB call, and
+    None rather than a raise because every caller answers the same 404 — telling
+    an anonymous caller "malformed" apart from "absent" only helps someone
+    probing.
+
+    The defect this closes (#379) is narrower than "unvalidated input", and worth
+    stating so nobody relaxes the pattern on the grounds that the render escapes
+    anyway: `get_form_iframe` returns HTML on the API's own origin, and the route
+    pattern Powertools compiles accepts `'`, `)` and `;`, so
+    `a');alert(document.domain);x=('` matched the route and used to be rendered
+    into a `<script>` block verbatim. Validation bounds what reaches the handler;
+    the structural serialization at the render site bounds what a value can do
+    once there. Both, because either alone leaves the other's failure fatal.
+    """
+    if not isinstance(raw, str):
+        return None
+    form_id = raw.strip()
+    return form_id if _FORM_ID_PATTERN.match(form_id) else None
+
+
 def validate_link_fields(body: dict) -> None:
     """Reject a malformed project_id / document_id before it is persisted.
 
@@ -241,7 +303,7 @@ def build_form_item(body: dict, form_id: str | None = None) -> dict:
     """
     validate_link_fields(body)
     now = datetime.now(timezone.utc).isoformat()
-    fid = form_id or str(uuid.uuid4())[:8]
+    fid = form_id or _minted_form_id()
     
     item = {
         'pk': 'FEEDBACK_FORM',
@@ -608,14 +670,134 @@ def submit_form_feedback(form_id: str):
         raise ServiceError('Failed to submit feedback. Please try again.')
 
 
+def _js_value(value: Any) -> str:
+    """A trusted Python value as a JavaScript expression to inline in a script.
+
+    `json.dumps` and nothing hand-written: JSON is a subset of JavaScript
+    expression syntax, so the serializer — not the template — decides where the
+    quotes go and how a quote inside the value is escaped. The spelling this
+    replaced was `'{value}'`, a handwritten quote pair around raw text, and every
+    reflected-XSS variant on this route came from a value that closed it (#379).
+    Wrapping `json.dumps(...)` in quotes of our own would reintroduce exactly
+    that: the result already carries its own, and a second pair round it makes the
+    inner ones data again.
+
+    The three replacements are for the HTML parser, which sees this text before
+    any JavaScript engine does: inside a `<script>` element `</script>` ends the
+    element wherever it appears — string literal or not — so `<` and `>` cannot be
+    left as themselves. `&` goes with them because it is the other character an
+    HTML parser gives meaning to. `html.escape` is deliberately NOT used here and
+    could not be: it produces `&#x27;` and `&lt;`, which are entities the script
+    context does not decode, so it would corrupt the value rather than protect it.
+    Escaping to `\\uXXXX` keeps the string byte-identical to the JavaScript engine
+    while making it inert to the parser above it.
+
+    U+2028 and U+2029 need the same treatment (they terminate a JavaScript line
+    but not a JSON string) and get it for free: `json.dumps` defaults to
+    `ensure_ascii=True`, which escapes every non-ASCII character.
+    """
+    return (
+        json.dumps(value)
+        .replace('<', '\\u003c')
+        .replace('>', '\\u003e')
+        .replace('&', '\\u0026')
+    )
+
+
+# Sent with the one response in this API that is HTML rather than JSON, so it is
+# the one response a browser will parse as a document on the API's own origin.
+#
+# `script-src 'unsafe-inline'` is there because the widget is INLINED into the
+# page (get_widget_js) and this is the deployment's only script host; removing it
+# means a nonce and a widget that loads from a URL, which is a bigger change than
+# this one. What the policy still buys with that in place is worth having: no
+# EXTERNAL script can load, no image, font or frame can be fetched, and the only
+# network destination is this same origin — so a value that did escape the
+# serializer above has nowhere to send anything.
+#
+# `style-src 'unsafe-inline'` is required by the page's own <style> block and by
+# the widget's `style="..."` attributes; `connect-src 'self'` is the widget's
+# fetch of /config and /submit, which are on this origin by construction
+# (api_endpoint is built from this request's own host).
+#
+# `frame-ancestors` is deliberately absent, and that is the decision this route
+# turns on: it EXISTS to be framed on customers' sites (docs/feedback-forms.md),
+# and the directive has no fallback to `default-src`, so leaving it out is how
+# "any site may embed this" is spelled. Adding it, or an X-Frame-Options header,
+# would break every embed.
+_IFRAME_SECURITY_HEADERS = {
+    'Content-Security-Policy': (
+        "default-src 'none'; "
+        "script-src 'unsafe-inline'; "
+        "style-src 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "base-uri 'none'; "
+        "form-action 'none'"
+    ),
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+}
+
+
 @app.get("/feedback-forms/<form_id>/iframe")
 @tracer.capture_method
 def get_form_iframe(form_id: str):
-    """Serve HTML page for form-specific iframe embedding."""
+    """Serve the HTML page a customer's site frames for one form.
+
+    The only route in this API that answers with a document rather than JSON, on
+    the API's own origin, unauthenticated — which is why the two gates below come
+    before a single character of HTML is produced (#379):
+
+    - The id must have the SHAPE of one of ours (`_validated_form_id`). Powertools'
+      dynamic-route capture group accepts `'`, `)` and `;`, so the route pattern
+      is no bound at all; without this, `a');alert(document.domain);x=('` matched
+      and was rendered into the script block below.
+    - The form must EXIST. This route used to read nothing, so any string matching
+      the capture group got a 200 and a page — unlike /config and /submit, which
+      404 an id the table does not have. Existence is checked through
+      `_load_form_for_query`, the same one-get_item lookup those routes' siblings
+      use, so a caller cannot mint an attacker-chosen page on this origin at all,
+      and a deleted form stops serving an embed that can only fail.
+
+    Both answer the same 404, deliberately: a malformed id and an absent one are
+    indistinguishable to an anonymous caller, which is `_validated_form_id`'s
+    reasoning and `ballots_handler._validated_session_id`'s before it.
+
+    Neither gate is trusted alone. Every value that reaches the script is built by
+    `_js_value`, so the render is safe even if the pattern is later widened or the
+    route's own regex changes underneath it.
+    """
+    validated = _validated_form_id(form_id)
+    if not validated:
+        raise NotFoundError('Form not found')
+    # Return value unused: this is the existence gate, not a projection. The
+    # page's content is a function of the id and the host, nothing stored.
+    _load_form_for_query(validated, 'Failed to load form')
+
     host = app.current_event.request_context.get('domainName', '')
     stage = app.current_event.request_context.get('stage', 'v1')
     api_endpoint = f"https://{host}/{stage}" if host else ''
-    
+
+    # ONE serialized object rather than five interpolated fields: the options
+    # object is a JSON object literal, so json.dumps writes every quote, brace and
+    # comma in it and the template writes none. `api_endpoint` goes through it too
+    # — it is derived from a request header (domainName), so it is not ours either.
+    #
+    # This is the page's ONLY reflected value, and it is in SCRIPT context, which
+    # is why `html.escape` appears nowhere below: the <title>, the container id and
+    # the <style> block are fixed text, so no request value reaches an HTML
+    # context. `html.escape(..., quote=True)` is the right tool for a value
+    # rendered as MARKUP and the wrong one inside a script, where its entities are
+    # never decoded — so if a later change puts the form id in the title or an
+    # attribute, that value needs it and NOT this function.
+    init_options = _js_value({
+        'container': '#voc-feedback-form',
+        'apiEndpoint': api_endpoint,
+        'formId': validated,
+        'configEndpoint': f'/feedback-forms/{validated}/config',
+        'submitEndpoint': f'/feedback-forms/{validated}/submit',
+    })
+
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -632,18 +814,17 @@ def get_form_iframe(form_id: str):
   <div id="voc-feedback-form"></div>
   <script>
   {get_widget_js()}
-  VoCFeedbackForm.init({{
-    container: '#voc-feedback-form',
-    apiEndpoint: '{api_endpoint}',
-    formId: '{form_id}',
-    configEndpoint: '/feedback-forms/{form_id}/config',
-    submitEndpoint: '/feedback-forms/{form_id}/submit'
-  }});
+  VoCFeedbackForm.init({init_options});
   </script>
 </body>
 </html>'''
-    
-    return Response(status_code=200, content_type="text/html", body=html)
+
+    return Response(
+        status_code=200,
+        content_type="text/html",
+        body=html,
+        headers=dict(_IFRAME_SECURITY_HEADERS),
+    )
 
 
 # ============================================

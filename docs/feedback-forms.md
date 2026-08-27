@@ -69,6 +69,16 @@ The iframe route returns a self-contained HTML page: the Lambda inlines
 with the form's `config` and `submit` endpoints already wired, so nothing else
 needs loading.
 
+It answers **404 both for a form id the service could not have issued and for one
+that is not in the table** — the same answer for either, so the response tells an
+anonymous caller nothing about which. This is the only route in the API that
+returns HTML, on the API's own origin, and its page is framed on third-party
+sites, so the id is format-checked before any read and every value written into
+the page's script is serialized with `json.dumps` rather than quoted by hand
+(issue #379). If an embed that used to work starts showing an error frame, check
+that the form still exists before suspecting the
+[rate limits](#rate-limits-on-the-three-public-routes).
+
 There is no standalone `widget.js` script to load. That path is registered
 nowhere — not by the handler and not by the API — so a
 `<script src=".../widget.js">` tag never reaches the application at all and gets
@@ -143,8 +153,9 @@ knowing before you embed the widget, because they are observable from your page:
 
 `submit` is the tighter one because each submission enqueues a record that drives
 Comprehend, Translate and a Bedrock model invocation downstream. The two reads are
-cheap — one `get_item`, and a static HTML render — so they are held at the higher
-pair, sized for widget page-view traffic rather than for submissions.
+cheap — one `get_item` each, and for `iframe` a static HTML render on top of it —
+so they are held at the higher pair, sized for widget page-view traffic rather
+than for submissions.
 
 These figures are **pinned against the synthesized template** by a lockstep case in
 `voc-datalake/lib/stacks/api-stack.test.ts`, so tuning the numbers in `api-stack.ts`

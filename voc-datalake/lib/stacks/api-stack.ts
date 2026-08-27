@@ -1167,9 +1167,10 @@ export class VocApiStack extends VocStack {
      *  decision to tighten the stage-wide default cannot silently squeeze a
      *  customer's page.
      *
-     *  Cost is the reason this can be the generous side of the pair: `config` is
-     *  one get_item, and `iframe` touches no AWS service at all — it interpolates
-     *  form_id into a static HTML shell around a module-cached widget script.
+     *  Cost is the reason this can be the generous side of the pair: both reads
+     *  are one get_item. `config` returns its projection; `iframe` reads the same
+     *  record only to confirm the form EXISTS (#379) and then renders a static
+     *  HTML shell around a module-cached widget script.
      *
      *  CACHING, not a throttle, is the right primary control for `iframe`: the
      *  response is a pure function of form_id and host. It is not adopted here
@@ -1178,15 +1179,16 @@ export class VocApiStack extends VocStack {
      *  feedback_form_handler.py change. Recorded so nobody reads the throttle as
      *  evidence that the route is uncacheable.
      *
-     *  DO NOT CACHE `iframe` BEFORE ESCAPING ITS INPUT — issue #379. That route
-     *  reflects caller-supplied input into its response unescaped, so caching
-     *  would turn a reflected flaw into a stored one served to every subsequent
-     *  visitor. The escaping is therefore a PRECONDITION of the caching follow-up,
-     *  not a parallel cleanup. Pre-existing and out of scope for a CDK-only
-     *  change; the constraint is recorded HERE because this is where the next
-     *  reader decides to implement the caching, and the mechanism and fix are in
-     *  #379 rather than restated here — one description to keep correct, and it
-     *  stops this comment asserting a live vulnerability after #379 is closed.
+     *  The PRECONDITION that used to be recorded here — do not cache `iframe`
+     *  while it reflects caller input unescaped (#379) — is MET: the handler now
+     *  refuses a form id that is not one of ours, 404s an id the table does not
+     *  hold, and emits every JavaScript value through `json.dumps`, so the
+     *  response no longer carries anything a cache could store on the caller's
+     *  behalf. Kept as a note rather than deleted because this is where the next
+     *  reader decides to implement the caching, and "was this ever checked?" is
+     *  the question they will have. Caching also freezes the existence check for
+     *  the TTL, which is a decision for that follow-up: a deleted form would keep
+     *  serving its page until the entry expires.
      *
      *  NOTHING OBSERVES THIS CEILING EITHER — see the note on `methodOptions`
      *  below, where both pairs are applied. */

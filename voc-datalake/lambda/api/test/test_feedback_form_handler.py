@@ -1,8 +1,12 @@
 """
 Tests for feedback_form_handler.py - /feedback-forms/* endpoints.
 """
+import ast
+import inspect
 import json
+import os
 import re
+import textwrap
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2143,4 +2147,472 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
             'covering the pre-anchor partition means recording the prior brand '
             'and doubling the reads on a route that already pages a whole '
             'partition. If that changed, this expectation changes with it.'
+        )
+
+
+# ============================================
+# The public iframe page (issue #379)
+# ============================================
+#
+# `GET /feedback-forms/<form_id>/iframe` is the ONE route in this API that answers
+# with a document instead of JSON, unauthenticated, on the API's own origin, and
+# it is designed to be framed on customers' sites. Before this change it
+# interpolated the caller-supplied path segment straight into a `<script>` block
+# and returned 200 without reading the table at all, so
+# `a');alert(document.domain);x=('` — which the route's own pattern accepts — was
+# rendered as executable script.
+
+# The payload from the issue, kept as one constant because three separate tests
+# assert three different things about the same string: that the ROUTE admits it,
+# that the HANDLER refuses it, and that the SERIALIZER would have made it inert
+# even if it arrived. Its three dangerous characters are the quote that closes the
+# string literal, the `)` that closes the init call and the `;` that starts a
+# second statement.
+_INJECTION_PAYLOAD = "a');alert(document.domain);x=('"
+
+
+def _iframe_event(api_gateway_event, form_id: str) -> dict:
+    """A GET of the public iframe page for `form_id`.
+
+    `resource` is spelled the way API Gateway sends it for the deployed route
+    (`/feedback-forms/{form_id}/iframe`) rather than left to the fixture's
+    path-derived default, which would embed the id itself and stop Powertools
+    matching the dynamic route for an id containing a `/`.
+
+    `domainName` is set because the page's apiEndpoint is built from it, and it is
+    a REQUEST-supplied value like the id — asserted below to be serialized too.
+    """
+    event = api_gateway_event(
+        method='GET',
+        path=f'/feedback-forms/{form_id}/iframe',
+        path_params={'form_id': form_id},
+        resource='/feedback-forms/{form_id}/iframe',
+    )
+    event['requestContext']['domainName'] = 'api.example.com'
+    return event
+
+
+def _route_pattern_for_iframe(handler) -> re.Pattern:
+    """The regex Powertools compiled for the iframe route, off the live resolver.
+
+    Read from the app rather than restated: the point of the positive control
+    below is that the FRAMEWORK accepts the payload, so a copy of powertools'
+    capture group pasted here would prove nothing about the version installed.
+    """
+    routes = [
+        route for route in handler.app._dynamic_routes
+        if route.rule.pattern.endswith('/iframe/*$')
+    ]
+    assert len(routes) == 1, (
+        f'expected exactly one dynamic /iframe route on the resolver, found '
+        f'{len(routes)} — this helper needs updating, it is not a finding about '
+        'validation.'
+    )
+    return routes[0].rule
+
+
+def _init_call_argument(page: str) -> str:
+    """The text between `VoCFeedbackForm.init(` and the end of the page.
+
+    Everything the handler wrote AFTER the opening parenthesis of the init call,
+    deliberately unparsed: the assertions below decide where the argument ends by
+    handing this to a JSON decoder, which is the whole question. Slicing at a
+    matching `)` here would answer it in the helper.
+
+    `rfind`, because the inlined widget's own docblock contains a
+    `VoCFeedbackForm.init({` usage example; the call the handler emits is the last
+    one on the page.
+    """
+    marker = 'VoCFeedbackForm.init('
+    start = page.rfind(marker)
+    assert start != -1, (
+        'the rendered page contains no VoCFeedbackForm.init( call — the embed '
+        'contract changed; this is a broken helper, not an injection finding.'
+    )
+    return page[start + len(marker):]
+
+
+def _quoted_interpolations(source: str, function_name: str) -> list[str]:
+    """Interpolations inside `function_name` that a handwritten quote pair wraps.
+
+    Derived from the handler's SOURCE with `ast`, scoped to one function, because
+    the defect being pinned is a spelling rather than an output: `'{form_id}'` in
+    an f-string is a JavaScript string literal whose quotes the template chose, so
+    the value can close them. `json.dumps` brings its own quotes; wrapping its
+    result in another pair puts the value back outside them.
+
+    Returns the offending source snippets so a failure names them. An interpolated
+    expression that is followed by a quote but not preceded by one (or the reverse)
+    is reported too: an unbalanced quote around a value is not a safe spelling
+    either, it is a broken one.
+    """
+    tree = ast.parse(source)
+    functions = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    ]
+    assert len(functions) == 1, (
+        f'expected exactly one def {function_name} in the source given, found '
+        f'{len(functions)} — a rename would otherwise make this derivation '
+        'silently scan nothing.'
+    )
+    function = functions[0]
+    offenders = []
+    for joined in (n for n in ast.walk(function) if isinstance(n, ast.JoinedStr)):
+        parts = joined.values
+        for index, part in enumerate(parts):
+            if not isinstance(part, ast.FormattedValue):
+                continue
+            before = parts[index - 1] if index else None
+            after = parts[index + 1] if index + 1 < len(parts) else None
+            preceded = (
+                isinstance(before, ast.Constant)
+                and isinstance(before.value, str)
+                and before.value.endswith(('"', "'"))
+            )
+            followed = (
+                isinstance(after, ast.Constant)
+                and isinstance(after.value, str)
+                and after.value.startswith(('"', "'"))
+            )
+            if preceded or followed:
+                # The EXPRESSION, not the `{...}` around it: the name is what a
+                # failure has to report, since it is the value whose quoting is
+                # wrong and the thing the reader has to go and fix.
+                offenders.append(ast.unparse(part.value))
+    return offenders
+
+
+class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
+    """Both gates in front of the iframe page, and the page they gate (#379).
+
+    A malformed id and an id for a form that does not exist answer the same 404,
+    and both answer it BEFORE any HTML exists — the route used to render a page
+    for any string its pattern matched, having read nothing.
+    """
+
+    def test_the_route_pattern_admits_the_payload_this_class_refuses(
+        self, feedback_form_handler
+    ):
+        """The positive control, without which every 404 below is meaningless.
+
+        If powertools' capture group refused this string, the refusals asserted
+        below would be the FRAMEWORK's and the tests would pass with
+        `_validated_form_id` deleted. Read off the compiled route on the live
+        resolver, so it tracks the installed version.
+        """
+        rule = _route_pattern_for_iframe(feedback_form_handler)
+
+        assert rule.match(f'/feedback-forms/{_INJECTION_PAYLOAD}/iframe'), (
+            f'the route pattern {rule.pattern} no longer matches '
+            f'{_INJECTION_PAYLOAD!r}, so the 404s in this class prove nothing '
+            'about the handler. If powertools narrowed its capture group, this '
+            'class needs a payload that still reaches the handler.'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_quote_paren_semicolon_id_is_refused_before_any_html(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The defect itself: this used to be 200 text/html with the payload in a
+        script block. It must be a 404, produced without touching the table —
+        format is decided before a read is paid for."""
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, _INJECTION_PAYLOAD), lambda_context
+        )
+
+        assert response['statusCode'] == 404
+        assert 'html' not in response['body'].lower()
+        assert 'alert(' not in response['body']
+        # Not echoed back in any form, either: the refusal names the resource,
+        # never the caller's string.
+        assert 'document.domain' not in response['body']
+        mock_table.get_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_an_over_long_id_is_refused_without_a_read(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """Length is bounded as well as character set, so a megabyte path segment
+        costs no DynamoDB call. Derived from the cap rather than hardcoded: a
+        literal would silently become a VALID length the day the cap is raised."""
+        too_long = 'a' * (feedback_form_handler.FORM_ID_MAX_LENGTH + 1)
+
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, too_long), lambda_context
+        )
+
+        assert response['statusCode'] == 404
+        mock_table.get_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_well_formed_id_for_an_absent_form_is_refused(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The gate the route did not have at all: /config and /submit 404 an id
+        the table does not hold, and this route rendered a page for it. An
+        attacker-chosen page on this origin is the thing that mattered, and it did
+        not need a malformed id."""
+        mock_table.get_item.return_value = {}
+
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, 'deadbeef'), lambda_context
+        )
+
+        assert response['statusCode'] == 404
+        assert 'html' not in response['body'].lower()
+        # The read HAPPENED — this is the existence gate, not the format one, and
+        # a 404 that skipped the lookup would be the format check refusing a
+        # legitimate id instead.
+        mock_table.get_item.assert_called_once()
+        assert (
+            mock_table.get_item.call_args.kwargs['Key']['sk'] == 'FORM#deadbeef'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_server_minted_id_still_serves_the_embeddable_page(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The contract that must survive the two gates: a real form's page still
+        renders, inlines the widget and points it at that form's config and submit
+        endpoints on this request's own host.
+
+        The id comes from the mint (`_minted_form_id`) rather than from a literal,
+        so a validator narrowed past the format this service actually issues fails
+        here instead of in a customer's iframe.
+        """
+        form_id = feedback_form_handler._minted_form_id()
+        mock_table.get_item.return_value = {'Item': {'form_id': form_id}}
+
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, form_id), lambda_context
+        )
+        page = response['body']
+
+        assert response['statusCode'] == 200
+        assert response['multiValueHeaders']['Content-Type'] == ['text/html']
+        assert '<div id="voc-feedback-form"></div>' in page
+        # The widget is inlined, not linked: the page has no second request to
+        # make for its own code (get_widget_js).
+        assert 'window.VoCFeedbackForm' in page
+
+        options = json.loads(_json_prefix(_init_call_argument(page)))
+        assert options['formId'] == form_id
+        assert options['configEndpoint'] == f'/feedback-forms/{form_id}/config'
+        assert options['submitEndpoint'] == f'/feedback-forms/{form_id}/submit'
+        assert options['apiEndpoint'] == 'https://api.example.com/test'
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_hand_seeded_form_id_is_still_embeddable(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The bound is wider than the mint deliberately, and this is why.
+
+        Records seeded by hand or by an import carry readable ids
+        ('website-form'), and their /config and /submit routes answer, so an
+        iframe narrowed to `[0-9a-f]{8}` would 404 a form that otherwise works —
+        which reads as the product breaking rather than as a refusal. Pinned so
+        the width is a decision rather than an accident of the pattern.
+        """
+        mock_table.get_item.return_value = {'Item': {'form_id': 'website-form_2'}}
+
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, 'website-form_2'), lambda_context
+        )
+
+        assert response['statusCode'] == 200
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_page_carries_a_policy_that_still_lets_a_customer_frame_it(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """A CSP on the only HTML response in the API — with the ONE directive it
+        must not carry.
+
+        `frame-ancestors` (and X-Frame-Options) would refuse the embed this route
+        exists for, and `frame-ancestors` has no fallback to `default-src`, so its
+        absence is the deliberate half of the header rather than an omission. The
+        asserted half is `default-src 'none'`: no external script, image or frame
+        can load, so a value that somehow escaped the serializer has nowhere to
+        send anything.
+        """
+        mock_table.get_item.return_value = {'Item': {'form_id': 'deadbeef'}}
+        event = _iframe_event(api_gateway_event, 'deadbeef')
+        # The resolver only emits a CORS header for a request that carries an
+        # Origin it is configured to allow, so the last assertion below needs one
+        # sent. In this suite that is conftest's ALLOWED_ORIGIN; the deployed
+        # Lambda is given '*' (api-stack.ts) because the embed's origin is a
+        # customer's own domain.
+        event['headers']['Origin'] = os.environ['ALLOWED_ORIGIN']
+
+        headers = feedback_form_handler.lambda_handler(event, lambda_context)[
+            'multiValueHeaders'
+        ]
+
+        policy = headers['Content-Security-Policy'][0]
+        assert "default-src 'none'" in policy
+        assert 'frame-ancestors' not in policy, (
+            'frame-ancestors refuses the embed this route exists for — see '
+            'docs/feedback-forms.md, which publishes the iframe snippet'
+        )
+        assert 'X-Frame-Options' not in headers
+        # And the CORS header is still there: adding response headers of our own
+        # must not have replaced the ones the resolver contributes.
+        assert headers['Access-Control-Allow-Origin'] == [
+            os.environ['ALLOWED_ORIGIN']
+        ]
+
+
+def _json_prefix(text: str) -> str:
+    """The longest leading substring of `text` that is one JSON value.
+
+    `raw_decode` is the point rather than a convenience: it reports where the
+    value ENDS, so the caller can assert what follows it. That is how "the input
+    could not create a second statement" is checked without a JavaScript engine —
+    if a payload had closed the argument, the decoder would stop early and the
+    remainder would carry the caller's code instead of just `);`.
+    """
+    value, end = json.JSONDecoder().raw_decode(text)
+    assert value is not None
+    return text[:end]
+
+
+class TestEveryJavaScriptValueOnTheIframePageIsSerialized:
+    """Escaping, asserted independently of the validation in front of it.
+
+    The two are not alternatives: `_validated_form_id` bounds what reaches the
+    handler, and this bounds what a value can DO once there — so widening the
+    pattern later, or a change in the route regex underneath it, cannot turn into
+    executable script. Which means these cases have to reach the serializer
+    directly, since the route now refuses the payload before rendering.
+    """
+
+    def test_the_injection_payload_serializes_to_one_inert_string(
+        self, feedback_form_handler
+    ):
+        """Quote, `)` and `;` become data: one JSON string, nothing after it.
+
+        The failing spelling — `'{form_id}'` — produced
+        `formId: 'a');alert(document.domain);x=('',` i.e. a closed string, a
+        closed call and a second statement. The assertion is therefore about the
+        REMAINDER: a serialized value that consumed the whole text cannot have
+        ended early enough to start anything.
+        """
+        serialized = feedback_form_handler._js_value(_INJECTION_PAYLOAD)
+
+        value, end = json.JSONDecoder().raw_decode(serialized)
+        assert value == _INJECTION_PAYLOAD, (
+            'the value did not survive as itself — the widget would receive a '
+            'different form id than the caller asked for'
+        )
+        assert end == len(serialized), (
+            f'the JSON value ends at {end} of {len(serialized)}; '
+            f'{serialized[end:]!r} is trailing text a JavaScript engine would '
+            'read as further code'
+        )
+        # The serializer chose the delimiters, which is why the payload's
+        # apostrophe is harmless while still being emitted as itself: the literal
+        # is double-quoted, so `'` is an ordinary character inside it and the `)`
+        # and `;` after it never leave it. Asserted this way rather than as "`'`
+        # does not appear", which would be a claim about JSON's escaping style
+        # rather than about what the value can do.
+        assert serialized.startswith('"') and serialized.endswith('"')
+        assert '"' not in serialized[1:-1], (
+            'an unescaped double quote inside the literal would close the '
+            'delimiter the serializer chose, which is the same defect one '
+            'delimiter along'
+        )
+
+    def test_a_script_closing_tag_cannot_end_the_element(
+        self, feedback_form_handler
+    ):
+        """`</script>` ends a script element wherever it appears, INCLUDING inside
+        a JavaScript string literal — the HTML parser gets there first and knows
+        nothing about quoting. So `json.dumps` alone is not enough for this
+        position, and `html.escape` would be wrong (its `&lt;` is an entity the
+        script context never decodes, corrupting the value).
+        """
+        serialized = feedback_form_handler._js_value('</script><img src=x>')
+
+        assert '<' not in serialized
+        assert '>' not in serialized
+        # Still the same string to the JavaScript engine, which is the half a
+        # naive strip-the-characters fix would lose.
+        assert json.loads(serialized) == '</script><img src=x>'
+
+    def test_no_javascript_value_is_wrapped_in_a_handwritten_quote_pair(
+        self, feedback_form_handler
+    ):
+        """The spelling, not just this render's output.
+
+        Read off `get_form_iframe`'s source with `ast`: an interpolation with a
+        quote character on either side is a template deciding where a JavaScript
+        string begins and ends, which is the defect. A serializer's output brings
+        its own quotes, so it needs none around it — and quotes around it would
+        make the ones it wrote into data.
+        """
+        source = Path(inspect.getsourcefile(feedback_form_handler)).read_text(
+            encoding='utf-8'
+        )
+        offenders = _quoted_interpolations(source, 'get_form_iframe')
+
+        assert offenders == [], (
+            f'{offenders} are interpolated inside handwritten quotes in '
+            'get_form_iframe. A JS value must be emitted through _js_value, '
+            'which quotes it itself.'
+        )
+
+    def test_the_quoted_interpolation_check_can_fail(self):
+        """Positive control for the derivation above.
+
+        Without it, an `ast` walk that found no JoinedStr at all — a template
+        moved into a helper, a parse that quietly matched nothing — would report
+        an empty list and the test above would pass while pinning nothing. The
+        input is the exact spelling this change removed.
+        """
+        source = textwrap.dedent('''
+            def get_form_iframe(form_id):
+                return f"""
+                  formId: '{form_id}',
+                  options: {init_options}
+                """
+        ''')
+
+        offenders = _quoted_interpolations(source, 'get_form_iframe')
+
+        assert offenders == ['form_id'], (
+            'the derivation did not flag the exact spelling this change removed, '
+            f'it reported {offenders} — so a green result above means nothing.'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_rendered_init_call_carries_exactly_one_statement(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """End to end, on a page that really renders: the init argument is one
+        JSON value and what follows it is only the call's own punctuation.
+
+        This is the property the route-level 404s cannot show, because they never
+        get as far as HTML — and it is the property that survives someone
+        widening the id pattern.
+        """
+        form_id = feedback_form_handler._minted_form_id()
+        mock_table.get_item.return_value = {'Item': {'form_id': form_id}}
+
+        page = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, form_id), lambda_context
+        )['body']
+
+        argument = _init_call_argument(page)
+        _value, end = json.JSONDecoder().raw_decode(argument)
+        remainder = argument[end:]
+
+        assert remainder.startswith(');'), (
+            f'the init argument is followed by {remainder[:40]!r} rather than '
+            'the call being closed immediately — anything between the value and '
+            "the `)` is code the page's own template put there"
+        )
+        # Nothing but the closing of the script and the document after it.
+        assert remainder.split(');', 1)[1].strip() == (
+            '</script>\n</body>\n</html>'
         )
