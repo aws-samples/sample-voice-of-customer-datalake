@@ -129,9 +129,16 @@ LINK_FIELDS = ('project_id', 'document_id')
 # Form identifier
 # ============================================
 #
-# A form id is MINTED by this module and never taken from a request body — see
-# `_minted_form_id`, the one place the format is decided. Everything below is
-# derived from that one place so the two cannot drift.
+# Two SEPARATE decisions, and they are deliberately not derived from each other:
+# `_minted_form_id` is the one place the format this service ISSUES is decided,
+# and `_FORM_ID_PATTERN` is a deliberately WIDER bound on what a caller may hand
+# back. Narrowing the mint therefore does not tighten the validator, and is not
+# meant to — the width is argued below and pinned in both directions by tests
+# (`test_a_hand_seeded_form_id_is_still_embeddable` for the width,
+# `test_an_over_long_id_is_refused_without_a_read` for the bound). The ONE
+# coupling that must hold — the service can always serve a page for an id it
+# issued — is checked by `test_a_minted_id_always_satisfies_the_validator`
+# rather than assumed here.
 FORM_ID_LENGTH = 8
 
 # The shape a caller-supplied form id has to have before it reaches a read or a
@@ -147,6 +154,9 @@ FORM_ID_LENGTH = 8
 # the parenthesis, the semicolon, '<', '>', '&', the backslash — is outside it.
 # Powertools' dynamic-route capture group admits all of those (issue #379), so
 # this pattern, not the route, is what bounds them.
+#
+# No whitespace either, and that is a choice rather than an oversight: see
+# `_validated_form_id`.
 FORM_ID_MAX_LENGTH = 64
 _FORM_ID_PATTERN = re.compile(rf'^[0-9A-Za-z_-]{{1,{FORM_ID_MAX_LENGTH}}}$')
 
@@ -154,22 +164,34 @@ _FORM_ID_PATTERN = re.compile(rf'^[0-9A-Za-z_-]{{1,{FORM_ID_MAX_LENGTH}}}$')
 def _minted_form_id() -> str:
     """A new form's id: the first `FORM_ID_LENGTH` hex characters of a uuid4.
 
-    The only place a form id is created. Named so the validator below can be
-    described against one definition rather than against a literal repeated at
-    the two sites that used to spell it out.
+    The only place a form id is created — it is never taken from a request body.
+
+    `.hex` rather than `str(uuid4())[:n]`, so the constant above is safe to
+    RAISE: the dashed form puts a '-' at offset 8, so slicing 9 characters of it
+    would mint an id ending in a separator, and slicing 14 would mint one holding
+    a '-' that the reader has no reason to expect. `.hex` is 32 hex characters
+    with no separators, so every length from 1 to 32 yields the format this
+    docstring claims.
     """
-    return str(uuid.uuid4())[:FORM_ID_LENGTH]
+    return uuid.uuid4().hex[:FORM_ID_LENGTH]
 
 
 def _validated_form_id(raw: Any) -> str | None:
     """The form id from the URL, or None if it cannot be one of ours.
+
+    THE authoritative statement of why this exists; the call sites point here
+    rather than restating it.
 
     Modelled on `ballots_handler._validated_session_id`, for the same two
     reasons: a format check before any read means a probe for
     `/feedback-forms/admin` or a 1 MB path segment costs no DynamoDB call, and
     None rather than a raise because every caller answers the same 404 — telling
     an anonymous caller "malformed" apart from "absent" only helps someone
-    probing.
+    probing. Like that sibling, it is applied at EVERY route that takes a form id
+    out of the URL and turns it into a key: `/config`, `/submit`, `/iframe`,
+    `/submissions` and `/stats` (the last two through `_load_form_for_query`), so
+    the cost argument above holds everywhere it is stated rather than on one route
+    only.
 
     The defect this closes (#379) is narrower than "unvalidated input", and worth
     stating so nobody relaxes the pattern on the grounds that the render escapes
@@ -177,13 +199,25 @@ def _validated_form_id(raw: Any) -> str | None:
     pattern Powertools compiles accepts `'`, `)` and `;`, so
     `a');alert(document.domain);x=('` matched the route and used to be rendered
     into a `<script>` block verbatim. Validation bounds what reaches the handler;
-    the structural serialization at the render site bounds what a value can do
-    once there. Both, because either alone leaves the other's failure fatal.
+    the structural serialization at the render site (`_js_value`) bounds what a
+    value can do once there. Both, because either alone leaves the other's
+    failure fatal.
+
+    NOT `.strip()`ed, which is where this parts company with the sibling it is
+    modelled on. There a session id is a 128-bit token and the leniency is
+    inconsequential; here it would make `' deadbeef'` an alias for `'deadbeef'`,
+    so every whitespace variant of an id would be a distinct URL serving
+    byte-identical HTML. That is a cache-key multiplier for the `Cache-Control`
+    follow-up recorded in `lib/stacks/api-stack.ts`, whose whole premise is that
+    the response is a pure function of the id and the host — with a strip it
+    would be a pure function of the STRIPPED id while the cache keys on the raw
+    path. An exact id keeps the URL-to-content mapping one-to-one, and no id this
+    service mints has whitespace to forgive
+    (`test_an_id_padded_with_whitespace_is_not_an_alias_for_the_id`).
     """
     if not isinstance(raw, str):
         return None
-    form_id = raw.strip()
-    return form_id if _FORM_ID_PATTERN.match(form_id) else None
+    return raw if _FORM_ID_PATTERN.match(raw) else None
 
 
 def validate_link_fields(body: dict) -> None:
@@ -554,10 +588,20 @@ def delete_form(form_id: str):
 @app.get("/feedback-forms/<form_id>/config")
 @tracer.capture_method
 def get_form_config_by_id(form_id: str):
-    """Get form config for widget (public endpoint)."""
+    """Get form config for widget (public endpoint).
+
+    The id is format-checked before the read, for the reason `_validated_form_id`
+    gives: this route is unauthenticated and its path segment is unbounded, so a
+    probe for `/feedback-forms/admin` or a megabyte of path must not buy a
+    DynamoDB call. Same 404 either way, so the refusal says no more than "no such
+    form" does.
+    """
+    validated = _validated_form_id(form_id)
+    if not validated:
+        raise NotFoundError('Form not found')
     try:
         response = aggregates_table.get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
         )
         item = response.get('Item')
         
@@ -576,17 +620,28 @@ def get_form_config_by_id(form_id: str):
 @app.post("/feedback-forms/<form_id>/submit")
 @tracer.capture_method
 def submit_form_feedback(form_id: str):
-    """Submit feedback to a specific form."""
+    """Submit feedback to a specific form.
+
+    The id is format-checked before the read (`_validated_form_id`), and BEFORE
+    the body is looked at: the write side of the public trio is the one route here
+    that also enqueues, so a form id that cannot be one of ours must not reach
+    either the table or the queue. The validated value is used everywhere below —
+    the key, `source_channel`, the metadata and `_anchor_form_brand` — so what is
+    stored is what was checked.
+    """
+    validated = _validated_form_id(form_id)
+    if not validated:
+        raise NotFoundError('Form not found')
     body = app.current_event.json_body or {}
-    
+
     text = body.get('text', '').strip()
     if not text:
         raise ValidationError('Feedback text is required')
-    
+
     # Get form config
     try:
         response = aggregates_table.get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
         )
         form = response.get('Item')
         
@@ -618,14 +673,14 @@ def submit_form_feedback(form_id: str):
     if not form.get('brand_name') and effective_brand:
         # Store it, so this form stops depending on the environment variable —
         # see _anchor_form_brand.
-        _anchor_form_brand(form_id, effective_brand)
+        _anchor_form_brand(validated, effective_brand)
 
     now = datetime.now(timezone.utc)
     feedback_id = str(uuid.uuid4())
 
     # Build normalized record with category routing
     metadata = {
-        'form_id': form_id,
+        'form_id': validated,
         'form_name': form.get('name', ''),
         'form_version': '2.0',
     }
@@ -639,7 +694,7 @@ def submit_form_feedback(form_id: str):
     normalized_record = {
         'id': feedback_id,
         'source_platform': 'feedback_form',
-        'source_channel': f'form_{form_id}',
+        'source_channel': f'form_{validated}',
         'text': text,
         'rating': body.get('rating'),
         'created_at': now.isoformat(),
@@ -659,7 +714,7 @@ def submit_form_feedback(form_id: str):
             QueueUrl=PROCESSING_QUEUE_URL,
             MessageBody=json.dumps(normalized_record, default=str)
         )
-        logger.info(f"Submitted feedback to form {form_id}: {feedback_id}")
+        logger.info(f"Submitted feedback to form {validated}: {feedback_id}")
         return {
             'success': True,
             'feedback_id': feedback_id,
@@ -693,11 +748,16 @@ def _js_value(value: Any) -> str:
     while making it inert to the parser above it.
 
     U+2028 and U+2029 need the same treatment (they terminate a JavaScript line
-    but not a JSON string) and get it for free: `json.dumps` defaults to
-    `ensure_ascii=True`, which escapes every non-ASCII character.
+    but not a JSON string) and get it from `ensure_ascii=True`, which escapes
+    every non-ASCII character. That is `json.dumps`'s default and is passed
+    EXPLICITLY anyway: it is load-bearing here rather than cosmetic, and
+    `ensure_ascii=False` is an inviting edit (it makes a non-ASCII value readable
+    in a debug dump) that would put those two characters back into the script
+    raw. `test_a_line_separator_cannot_end_the_statement` is what fails if it is
+    removed.
     """
     return (
-        json.dumps(value)
+        json.dumps(value, ensure_ascii=True)
         .replace('<', '\\u003c')
         .replace('>', '\\u003e')
         .replace('&', '\\u0026')
@@ -716,9 +776,26 @@ def _js_value(value: Any) -> str:
 # serializer above has nowhere to send anything.
 #
 # `style-src 'unsafe-inline'` is required by the page's own <style> block and by
-# the widget's `style="..."` attributes; `connect-src 'self'` is the widget's
+# the widget's `style.cssText` assignments; `connect-src 'self'` is the widget's
 # fetch of /config and /submit, which are on this origin by construction
 # (api_endpoint is built from this request's own host).
+#
+# Those three are what makes the page WORK, and `default-src 'none'` is the
+# fallback for everything not named — so deleting any one of them is a total,
+# silent failure of the product on a customer's site rather than a degraded page.
+# That is why the whole policy is pinned as a directive-to-sources mapping by
+# `test_the_policy_names_every_directive_the_page_needs_and_no_wildcard`, which
+# fails on a removal AND on a widening.
+#
+# There is deliberately NO `img-src`, `font-src` or `frame-src`: the widget
+# builds its UI from DOM elements, text and CSS only — no <img>, no `url(...)`,
+# no `data:` URI, no webfont — so `default-src 'none'` blocks nothing it asks
+# for. `form-action 'none'` is correct for the same kind of reason: the widget
+# submits through `fetch`, never through a <form>. Those are claims about
+# feedback-widget.js rather than about this dict, so they are derived from that
+# file by `test_the_widget_asks_for_no_asset_the_policy_would_block` instead of
+# being trusted here — the day the widget grows an icon, that test fails and
+# names the directive to add.
 #
 # `frame-ancestors` is deliberately absent, and that is the decision this route
 # turns on: it EXISTS to be framed on customers' sites (docs/feedback-forms.md),
@@ -745,23 +822,33 @@ def get_form_iframe(form_id: str):
     """Serve the HTML page a customer's site frames for one form.
 
     The only route in this API that answers with a document rather than JSON, on
-    the API's own origin, unauthenticated — which is why the two gates below come
-    before a single character of HTML is produced (#379):
+    the API's own origin, unauthenticated — which is why two gates come before a
+    single character of HTML is produced. `_validated_form_id` carries the
+    argument for the FORMAT gate and is not restated here; what is specific to
+    this route is the EXISTENCE gate below and the availability consequence of
+    having one (#379).
 
-    - The id must have the SHAPE of one of ours (`_validated_form_id`). Powertools'
-      dynamic-route capture group accepts `'`, `)` and `;`, so the route pattern
-      is no bound at all; without this, `a');alert(document.domain);x=('` matched
-      and was rendered into the script block below.
-    - The form must EXIST. This route used to read nothing, so any string matching
-      the capture group got a 200 and a page — unlike /config and /submit, which
-      404 an id the table does not have. Existence is checked through
-      `_load_form_for_query`, the same one-get_item lookup those routes' siblings
-      use, so a caller cannot mint an attacker-chosen page on this origin at all,
-      and a deleted form stops serving an embed that can only fail.
+    The form must EXIST. This route used to read nothing, so any string matching
+    the capture group got a 200 and a page — unlike /config and /submit, which
+    404 an id the table does not have. That is what let a caller mint an
+    attacker-chosen page on this origin without even needing a malformed id, and
+    it is why the check is here rather than left to the widget's own /config
+    fetch. `_load_form_for_query` is the same one-get_item lookup /stats and
+    /submissions make, so both gates answer the same 404 as every sibling.
 
-    Both answer the same 404, deliberately: a malformed id and an absent one are
-    indistinguishable to an anonymous caller, which is `_validated_form_id`'s
-    reasoning and `ballots_handler._validated_session_id`'s before it.
+    THE TRADE, because it is a new coupling and a reader hunting "why did every
+    embed go blank" needs to find it: reading anything means the route can now
+    fail. `_load_form_for_query` raises `ServiceError` if the get_item raises, so
+    an aggregates-table blip answers 500 here where this route previously served
+    a working page having read nothing — and a 500 on this route is a raw API
+    Gateway error page inside the customer's iframe, with no widget string and no
+    retry (the throttle comment in `lib/stacks/api-stack.ts` traces the same
+    symptom for a 429). Accepted rather than overlooked: a page served for a form
+    that may not exist is the defect being closed, and a page whose /config fetch
+    is about to fail against the same table has nothing to render anyway, so
+    failing at the frame is more honest than failing inside it. It is also
+    observable — `_load_form_for_query` emits `FeedbackFormReadFailed` — which is
+    what makes it a trade rather than a silent regression.
 
     Neither gate is trusted alone. Every value that reaches the script is built by
     `_js_value`, so the render is safe even if the pattern is later widened or the
@@ -865,7 +952,18 @@ def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
 
     Both failure modes previously produced HTTP 200 with total_submissions: 0 on
     the stats route, which is the exact defect issue #312 is about.
+
+    The FORMAT check is here rather than at each caller because this function is
+    the one read those routes make, so one call covers `/stats`, `/submissions`
+    and the iframe page's existence gate — `_validated_form_id`'s cost argument
+    then holds at every route that states it rather than at one. Callers keep
+    using their own `form_id` for anything else they build (`source_channel`,
+    the response's echo) with no risk of a split-brain, because the validator is
+    EXACT: it returns the string it was given or None, never a normalized
+    variant of it.
     """
+    if not _validated_form_id(form_id):
+        raise NotFoundError('Form not found')
     try:
         response = aggregates_table.get_item(
             Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}

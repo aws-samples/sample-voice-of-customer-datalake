@@ -71,13 +71,36 @@ needs loading.
 
 It answers **404 both for a form id the service could not have issued and for one
 that is not in the table** — the same answer for either, so the response tells an
-anonymous caller nothing about which. This is the only route in the API that
-returns HTML, on the API's own origin, and its page is framed on third-party
-sites, so the id is format-checked before any read and every value written into
-the page's script is serialized with `json.dumps` rather than quoted by hand
-(issue #379). If an embed that used to work starts showing an error frame, check
-that the form still exists before suspecting the
-[rate limits](#rate-limits-on-the-three-public-routes).
+anonymous caller nothing about which. All three public routes format-check the id
+before they read anything, so a malformed one is refused rather than looked up.
+
+The iframe route carries one extra concern, because it is the only route in the
+API that returns HTML, on the API's own origin, and its page is framed on
+third-party sites: every value written into that page's script is serialized with
+`json.dumps` rather than quoted by hand, **and** the characters the HTML parser
+acts on (`<`, `>`, `&`) are escaped on top of that — a `</script>` sequence ends
+the script element even inside a JavaScript string, which serializing alone does
+not prevent (issue #379). If you are extending the page, reaching for
+`json.dumps` is half the mechanism; `_js_value` in
+`voc-datalake/lambda/api/feedback_form_handler.py` is the one place to emit a
+value from, and its docstring says why.
+
+If an embed that used to work starts showing an error frame, check that the form
+still exists before suspecting the
+[rate limits](#rate-limits-on-the-three-public-routes). Two other causes to know
+about:
+
+- **The page now depends on a table read.** It confirms the form exists before
+  rendering, so a DynamoDB failure answers `500` — a raw API Gateway error page
+  inside the frame — where the route previously served a working page having read
+  nothing.
+- **The page sets a Content-Security-Policy.** It permits inline script and
+  style, and network access to the API's own origin, which is everything the
+  widget uses; it names no `img-src`, `font-src` or `frame-src`, so an asset added
+  to the widget later would be blocked until the policy names it. It deliberately
+  sets **no `frame-ancestors` and no `X-Frame-Options`**, because either would
+  refuse the embed this route exists for — if a proxy or CDN in front of the API
+  adds one, the frame will be blank on every customer site.
 
 There is no standalone `widget.js` script to load. That path is registered
 nowhere — not by the handler and not by the API — so a

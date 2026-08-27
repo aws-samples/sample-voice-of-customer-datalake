@@ -2198,15 +2198,27 @@ def _route_pattern_for_iframe(handler) -> re.Pattern:
     Read from the app rather than restated: the point of the positive control
     below is that the FRAMEWORK accepts the payload, so a copy of powertools'
     capture group pasted here would prove nothing about the version installed.
+
+    `app._dynamic_routes` is PRIVATE powertools API, used deliberately and for
+    that same reason — the installed version's compiled regex is the only thing
+    that answers the question, and it is not exposed publicly. So an upgrade that
+    renames the attribute should fail HERE, in a helper whose docstring says why
+    it reaches in, rather than anywhere else.
+
+    Selected on the full route path rather than on the `/iframe` suffix alone: a
+    second `<something>/iframe` route added later would otherwise be a candidate,
+    and this helper would either pick it or trip its own count assertion for a
+    reason that has nothing to do with the form id.
     """
     routes = [
         route for route in handler.app._dynamic_routes
         if route.rule.pattern.endswith('/iframe/*$')
+        and '/feedback-forms/' in route.rule.pattern
     ]
     assert len(routes) == 1, (
-        f'expected exactly one dynamic /iframe route on the resolver, found '
-        f'{len(routes)} — this helper needs updating, it is not a finding about '
-        'validation.'
+        f'expected exactly one dynamic /feedback-forms/<id>/iframe route on the '
+        f'resolver, found {len(routes)} — this helper needs updating, it is not '
+        'a finding about validation.'
     )
     return routes[0].rule
 
@@ -2245,6 +2257,14 @@ def _quoted_interpolations(source: str, function_name: str) -> list[str]:
     expression that is followed by a quote but not preceded by one (or the reverse)
     is reported too: an unbalanced quote around a value is not a safe spelling
     either, it is a broken one.
+
+    NOTE for whoever this fails on: an interpolation adjacent to a quote is not
+    universally wrong — `id="{html.escape(x, quote=True)}"` is the CORRECT spelling
+    for a value rendered as MARKUP, and `_js_value`'s docstring says so. This check
+    is about the page as it stands, where the only reflected value is in SCRIPT
+    context and none is in an attribute. If a legitimate HTML-context value is
+    added here, widen this derivation to allow it — do NOT remove the escaping to
+    get green.
     """
     tree = ast.parse(source)
     functions = [
@@ -2257,8 +2277,23 @@ def _quoted_interpolations(source: str, function_name: str) -> list[str]:
         'silently scan nothing.'
     )
     function = functions[0]
+    joined_strings = [
+        n for n in ast.walk(function) if isinstance(n, ast.JoinedStr)
+    ]
+    # THE VACUITY GUARD, and the reason it is an assert rather than an early
+    # return: "no offenders" and "nothing to judge" are the same empty list to the
+    # caller, and only one of them is a pass. `get_form_iframe` renders the page
+    # from an f-string, so finding none means the template moved — most plausibly
+    # into a private helper, since the function is long — and the caller's green
+    # result would be about a function that no longer renders anything.
+    assert joined_strings, (
+        f'{function_name} contains no f-string, so this derivation has nothing '
+        'to judge and a green result from it would mean nothing. If the HTML '
+        'template moved into a helper, point the caller at that helper (or scan '
+        'both) rather than deleting this guard.'
+    )
     offenders = []
-    for joined in (n for n in ast.walk(function) if isinstance(n, ast.JoinedStr)):
+    for joined in joined_strings:
         parts = joined.values
         for index, part in enumerate(parts):
             if not isinstance(part, ast.FormattedValue):
@@ -2322,7 +2357,12 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
         )
 
         assert response['statusCode'] == 404
-        assert 'html' not in response['body'].lower()
+        # "This response is not a document" — stated as the response's own
+        # content type, which is the positive assertion
+        # test_a_server_minted_id_still_serves_the_embeddable_page makes. Asserted
+        # this way rather than as "the letters h-t-m-l are absent from the body",
+        # which is a property of an unrelated JSON error message.
+        assert response['multiValueHeaders']['Content-Type'] != ['text/html']
         assert 'alert(' not in response['body']
         # Not echoed back in any form, either: the refusal names the resource,
         # never the caller's string.
@@ -2360,7 +2400,8 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
         )
 
         assert response['statusCode'] == 404
-        assert 'html' not in response['body'].lower()
+        # Not a document — see the note on the same assertion above.
+        assert response['multiValueHeaders']['Content-Type'] != ['text/html']
         # The read HAPPENED — this is the existence gate, not the format one, and
         # a 404 that skipped the lookup would be the format check refusing a
         # legitimate id instead.
@@ -2462,6 +2503,170 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
             os.environ['ALLOWED_ORIGIN']
         ]
 
+    def test_the_policy_names_every_directive_the_page_needs_and_no_wildcard(
+        self, feedback_form_handler
+    ):
+        """The FUNCTIONAL half of the policy, pinned in both directions.
+
+        The case above pins the two deliberate OMISSIONS. This one pins what the
+        page needs in order to work at all, because `default-src 'none'` is the
+        fallback for anything not named: delete `script-src 'unsafe-inline'` and
+        the inlined widget never executes, delete `style-src 'unsafe-inline'` and
+        the <style> block plus every `style.cssText` assignment is dropped, delete
+        `connect-src 'self'` and the widget's /config fetch and submit POST are
+        blocked. Each is a TOTAL, SILENT failure of the product on every customer
+        site — the frame renders an empty div, and no assertion about `default-src`
+        alone notices.
+
+        Compared as a whole mapping rather than directive by directive, so the
+        other direction fails too: widening `script-src` to `'unsafe-inline' *`, or
+        adding `img-src *`, undoes the containment argument on
+        `_IFRAME_SECURITY_HEADERS` — that a value which escaped the serializer has
+        nowhere to send anything — and an `in`-style assertion would stay green
+        through it.
+        """
+        policy = feedback_form_handler._IFRAME_SECURITY_HEADERS[
+            'Content-Security-Policy'
+        ]
+
+        directives = {}
+        for directive in policy.split(';'):
+            name, _, sources = directive.strip().partition(' ')
+            assert name not in directives, (
+                f'{name} is stated twice in the policy; a browser honours the '
+                'FIRST occurrence, so the second is silently dead'
+            )
+            directives[name] = sources.split()
+
+        assert directives == {
+            'default-src': ["'none'"],
+            'script-src': ["'unsafe-inline'"],
+            'style-src': ["'unsafe-inline'"],
+            'connect-src': ["'self'"],
+            'base-uri': ["'none'"],
+            'form-action': ["'none'"],
+        }, (
+            f'the policy is now {directives}. A REMOVAL from script-src, '
+            'style-src or connect-src breaks every embed silently (default-src '
+            "'none' is the fallback); an ADDITION or a widening undoes the "
+            'containment argument on _IFRAME_SECURITY_HEADERS. Either way this '
+            'expectation and that comment change together.'
+        )
+        # Restated as its own assertion because it is the failure worth naming:
+        # a wildcard anywhere is what turns the policy from a bound into a
+        # formality, and the mapping above would report it as a diff of quoted
+        # strings rather than as "this is now open".
+        assert not any(
+            '*' in source for sources in directives.values() for source in sources
+        ), f'a wildcard source makes the policy no bound at all: {directives}'
+
+    def test_the_widget_asks_for_no_asset_the_policy_would_block(
+        self, feedback_form_handler
+    ):
+        """`default-src 'none'` also blocks images, fonts and frames — and that is
+        only safe because the widget asks for none of them.
+
+        The policy deliberately carries no `img-src`, `font-src` or `frame-src`,
+        on the grounds that feedback-widget.js builds its UI from DOM elements,
+        text and CSS alone. That is a claim about ANOTHER file, so it is derived
+        from that file rather than trusted: the day the widget grows an icon, a
+        `url(...)` background or a webfont, this fails and names the directive the
+        policy needs — instead of the asset silently not loading in every
+        customer's iframe.
+
+        `form-action 'none'` rides on the same derivation: the widget submits
+        through `fetch`, and a real <form> would need that directive relaxed.
+
+        Read through `get_widget_js` rather than off the path, so this judges the
+        script the page actually inlines — including the fallback, if the static
+        file is ever missing.
+        """
+        widget = feedback_form_handler.get_widget_js()
+
+        # `data:` is included because it is a source EXPRESSION, not just a URL
+        # scheme: `default-src 'none'` blocks a `data:` image or font as surely as
+        # a remote one, and a `data:` URI is the shape an inlined icon takes.
+        for pattern, directive in (
+            (r'<img\b', 'img-src'),
+            (r'\.src\s*=', 'img-src (or script-src for a loaded script)'),
+            (r'url\(', 'img-src / font-src, for a CSS-referenced asset'),
+            (r'data:', 'img-src / font-src, for an inlined asset'),
+            (r'@font-face', 'font-src'),
+            (r'<iframe\b', 'frame-src'),
+            (r'<form\b', "form-action — currently 'none'"),
+        ):
+            assert not re.search(pattern, widget), (
+                f'feedback-widget.js now matches {pattern!r}, so the page needs '
+                f'{directive} in _IFRAME_SECURITY_HEADERS. Without it the asset '
+                'is blocked in every embed and nothing else reports it — '
+                "default-src 'none' fails closed and silently."
+            )
+
+    def test_a_minted_id_always_satisfies_the_validator(
+        self, feedback_form_handler
+    ):
+        """The ONE coupling between the mint and the validator that must hold.
+
+        The two are deliberately independent — the validator is wider, for the
+        reason `test_a_hand_seeded_form_id_is_still_embeddable` pins — so nothing
+        else ties `FORM_ID_LENGTH` to `_FORM_ID_PATTERN`. But an id this service
+        ISSUES must always be one it will serve a page for, or `create_form`
+        would hand back an id whose iframe 404s.
+
+        Asserted over many mints rather than one, because the failure mode is
+        value-dependent: a mint that emitted a separator, or a length raised past
+        what the pattern admits, would only show up for some draws.
+
+        Also pins the format the mint's docstring CLAIMS — hex, no separator —
+        which the pattern alone would not, since it admits `-`. That assertion is
+        what makes `FORM_ID_LENGTH` safe to RAISE: the dashed spelling of a uuid4
+        puts a '-' at offset 8, so slicing 9 or more characters of it mints an id
+        holding a separator the docstring does not describe. With this here,
+        raising the constant is a one-line change rather than a trap.
+        """
+        for _ in range(200):
+            minted = feedback_form_handler._minted_form_id()
+
+            assert feedback_form_handler._FORM_ID_PATTERN.match(minted), (
+                f'_minted_form_id() produced {minted!r}, which _validated_form_id '
+                'refuses — every public route would 404 an id this service just '
+                'issued. The mint and the pattern are independent by design, but '
+                'not in this direction.'
+            )
+            assert len(minted) == feedback_form_handler.FORM_ID_LENGTH
+            assert re.fullmatch(r'[0-9a-f]+', minted), (
+                f'_minted_form_id() produced {minted!r}, which is not the "hex '
+                'characters" its docstring describes. This is what fails if the '
+                'slice goes back to `str(uuid.uuid4())` — harmless at length 8, '
+                'a separator in the id at 9 or more.'
+            )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_an_id_padded_with_whitespace_is_not_an_alias_for_the_id(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """A form id is EXACT: `' deadbeef'` is not `'deadbeef'`.
+
+        `ballots_handler._validated_session_id`, the sibling this is modelled on,
+        `.strip()`s — harmlessly, since a session id is a 128-bit token. Inheriting
+        that here would make every whitespace variant of an id a distinct URL
+        serving byte-identical HTML, which is a cache-key multiplier for the
+        `Cache-Control` follow-up recorded in `lib/stacks/api-stack.ts` — whose
+        premise is that this response is a pure function of the id and the host.
+        With a strip it is a pure function of the STRIPPED id while the cache keys
+        on the raw path.
+
+        So the leniency is dropped rather than inherited, and pinned here so
+        re-adding it is a decision. No id this service mints has whitespace to
+        forgive (`test_a_minted_id_always_satisfies_the_validator`).
+        """
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, ' deadbeef'), lambda_context
+        )
+
+        assert response['statusCode'] == 404
+        mock_table.get_item.assert_not_called()
+
 
 def _json_prefix(text: str) -> str:
     """The longest leading substring of `text` that is one JSON value.
@@ -2540,6 +2745,53 @@ class TestEveryJavaScriptValueOnTheIframePageIsSerialized:
         # naive strip-the-characters fix would lose.
         assert json.loads(serialized) == '</script><img src=x>'
 
+    def test_an_ampersand_cannot_reach_the_html_parser(
+        self, feedback_form_handler
+    ):
+        """`&` is the other character the HTML parser gives meaning to, and it is
+        escaped by the implementation — asserted here because it was the one of the
+        three replacements nothing covered.
+
+        It matters for the same reason `<` does and for one more: an entity the
+        parser decodes could reconstitute a character the escaping above removed,
+        so leaving `&` as itself would make the `<`/`>` handling conditional on
+        the parser's behaviour rather than absolute.
+        """
+        serialized = feedback_form_handler._js_value('a &lt; b &amp; c')
+
+        assert '&' not in serialized, (
+            'an unescaped & lets the HTML parser decode an entity inside the '
+            'script, which is how a removed character comes back'
+        )
+        assert json.loads(serialized) == 'a &lt; b &amp; c'
+
+    def test_a_line_separator_cannot_end_the_statement(
+        self, feedback_form_handler
+    ):
+        """U+2028 and U+2029 terminate a JavaScript LINE but are legal, raw, inside
+        a JSON string — so a serializer that emitted them as themselves would end
+        the statement from inside the literal, which is the same defect as an
+        unescaped quote arriving by a route JSON considers valid.
+
+        They are handled by `ensure_ascii=True`, which is `json.dumps`'s default
+        AND is now passed explicitly — this case is what fails if someone writes
+        `ensure_ascii=False` to make a non-ASCII value readable in a debug dump.
+        Before this test, the safety of the two most JavaScript-specific
+        characters on the page rested on an implicit default that nothing checked.
+        """
+        # Spelled as escapes, deliberately: a literal U+2028 in this file is
+        # invisible to a reader and is exactly the character some tools
+        # normalise away, which would make the case pass by having no subject.
+        value = 'before\u2028after\u2029end'
+
+        serialized = feedback_form_handler._js_value(value)
+
+        assert '\u2028' not in serialized and '\u2029' not in serialized, (
+            'a raw U+2028/U+2029 ends the JavaScript line inside the string '
+            'literal — check that _js_value still passes ensure_ascii=True'
+        )
+        assert json.loads(serialized) == value
+
     def test_no_javascript_value_is_wrapped_in_a_handwritten_quote_pair(
         self, feedback_form_handler
     ):
@@ -2563,12 +2815,11 @@ class TestEveryJavaScriptValueOnTheIframePageIsSerialized:
         )
 
     def test_the_quoted_interpolation_check_can_fail(self):
-        """Positive control for the derivation above.
+        """Positive control for the derivation above: it flags the real defect.
 
-        Without it, an `ast` walk that found no JoinedStr at all — a template
-        moved into a helper, a parse that quietly matched nothing — would report
-        an empty list and the test above would pass while pinning nothing. The
-        input is the exact spelling this change removed.
+        Without it, a parse that quietly matched nothing would report an empty
+        list and the test above would pass while pinning nothing. The input is the
+        exact spelling this change removed.
         """
         source = textwrap.dedent('''
             def get_form_iframe(form_id):
@@ -2584,6 +2835,35 @@ class TestEveryJavaScriptValueOnTheIframePageIsSerialized:
             'the derivation did not flag the exact spelling this change removed, '
             f'it reported {offenders} — so a green result above means nothing.'
         )
+
+    def test_the_quoted_interpolation_check_refuses_to_pass_vacuously(self):
+        """The OTHER way the derivation could be meaningless: nothing to judge.
+
+        The control above proves the walk flags the defect when the template is
+        inline. It does not cover the case where `get_form_iframe` contains no
+        f-string at all — which is what happens if the ~90-line HTML template is
+        ever refactored into a private helper, a very plausible change. The walk
+        would then find no `JoinedStr`, return `[]`, and
+        `test_no_javascript_value_is_wrapped_in_a_handwritten_quote_pair` would
+        pass while checking nothing.
+
+        So that case must RAISE rather than return `[]`. The input is the
+        moved-to-helper shape, with the offending spelling sitting in the helper
+        where the derivation cannot see it: the guard has to fire on the absence
+        of a subject, not on the absence of offenders.
+        """
+        source = textwrap.dedent('''
+            def _iframe_page(form_id):
+                return f"""
+                  formId: '{form_id}'
+                """
+
+            def get_form_iframe(form_id):
+                return _iframe_page(form_id)
+        ''')
+
+        with pytest.raises(AssertionError, match='no f-string'):
+            _quoted_interpolations(source, 'get_form_iframe')
 
     @patch('feedback_form_handler.aggregates_table')
     def test_the_rendered_init_call_carries_exactly_one_statement(
@@ -2616,3 +2896,152 @@ class TestEveryJavaScriptValueOnTheIframePageIsSerialized:
         assert remainder.split(');', 1)[1].strip() == (
             '</script>\n</body>\n</html>'
         )
+
+
+class TestEveryRouteThatKeysOnAFormIdChecksItsFormatFirst:
+    """`_validated_form_id` at every route that turns a URL segment into a key.
+
+    Its docstring makes a general argument — "a format check before any read
+    means a probe for `/feedback-forms/admin` or a 1 MB path segment costs no
+    DynamoDB call" — and that argument is only true where it is applied. It was
+    applied on `/iframe` alone, so the two sibling PUBLIC routes (`/config`,
+    `/submit`) took the raw capture group straight into a `get_item`, which is the
+    cost basis the throttle pair in `lib/stacks/api-stack.ts` is argued from. The
+    two authenticated read routes reach the same check through
+    `_load_form_for_query`.
+
+    Not an injection finding on any of them — those four answer JSON through
+    `json.dumps` — but the gap is what would make the next reader of
+    `_validated_form_id` assume a protection that was not there.
+    `ballots_handler` applies its equivalent at all five of its routes; this
+    mirrors that.
+
+    Asserted as "no read happened", route by route, because that is the property
+    the comment claims and the only one a 404 alone would not distinguish from a
+    lookup that merely found nothing.
+    """
+
+    # (route path suffix, method, whether the route needs a JSON body). The
+    # malformed id must be refused BEFORE the body is considered too, which is why
+    # `/submit` is exercised with a valid one: a 404 that only happened because
+    # the body failed validation would prove nothing about the id.
+    ROUTES = (
+        ('config', 'GET', None),
+        ('submit', 'POST', {'text': 'a real submission'}),
+        ('stats', 'GET', None),
+        ('submissions', 'GET', None),
+    )
+
+    @staticmethod
+    def _malformed_ids(handler) -> tuple[str, ...]:
+        """The two shapes the pattern refuses, derived rather than restated.
+
+        The over-length one comes off `FORM_ID_MAX_LENGTH` so that raising the cap
+        does not silently turn this case into a VALID id — the same reason
+        `test_an_over_long_id_is_refused_without_a_read` derives its own.
+        """
+        return (_INJECTION_PAYLOAD, 'a' * (handler.FORM_ID_MAX_LENGTH + 1))
+
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_malformed_id_never_reaches_dynamodb_on_any_of_them(
+        self,
+        mock_table,
+        _mock_feedback_table,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
+    ):
+        """The cost argument, checked where it is stated.
+
+        A 4000-character path segment or the #379 payload must cost zero
+        `get_item` calls on every route that keys on a form id — not just on the
+        one whose rendering made it a security defect.
+        """
+        for suffix, method, body in self.ROUTES:
+            for malformed in self._malformed_ids(feedback_form_handler):
+                mock_table.reset_mock()
+                event = api_gateway_event(
+                    method=method,
+                    path=f'/feedback-forms/{malformed}/{suffix}',
+                    path_params={'form_id': malformed},
+                    body=body,
+                    resource=f'/feedback-forms/{{form_id}}/{suffix}',
+                )
+
+                response = feedback_form_handler.lambda_handler(
+                    event, lambda_context
+                )
+
+                assert response['statusCode'] == 404, (
+                    f'{method} /{suffix} answered {response["statusCode"]} for a '
+                    f'malformed id ({malformed[:20]!r}...) rather than the same '
+                    '404 every sibling gives'
+                )
+                mock_table.get_item.assert_not_called()
+                # Nor echoed: none of these four renders HTML, but a message that
+                # quotes an unbounded path segment back is its own problem.
+                assert malformed not in response['body']
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_well_formed_id_is_still_read_and_answered(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The other direction: the format gate must not have become the answer.
+
+        `/config` with a real form still reads the table and serves its
+        projection — so the 404s above are the validator refusing a shape, not a
+        route that stopped working. The id is the hand-seeded style the pattern is
+        deliberately wide enough for.
+        """
+        mock_table.get_item.return_value = {
+            'Item': {'form_id': 'website-form', 'enabled': True}
+        }
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/website-form/config',
+            path_params={'form_id': 'website-form'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['config']['enabled'] is True
+        assert (
+            mock_table.get_item.call_args.kwargs['Key']['sk']
+            == 'FORM#website-form'
+        )
+
+    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_malformed_id_never_reaches_the_queue_either(
+        self,
+        mock_table,
+        mock_sqs,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
+    ):
+        """`/submit` is the one public route that also WRITES, so its refusal has a
+        second thing to prove.
+
+        A record enqueued for a form id that cannot be one of ours would be
+        processed downstream — a Comprehend, Translate and Bedrock invocation
+        each — and would land in the feedback partition under a `source_channel`
+        no form can ever be read back through. So the refusal has to come before
+        the send, not just before the read.
+        """
+        event = api_gateway_event(
+            method='POST',
+            path=f'/feedback-forms/{_INJECTION_PAYLOAD}/submit',
+            path_params={'form_id': _INJECTION_PAYLOAD},
+            body={'text': 'a real submission'},
+            resource='/feedback-forms/{form_id}/submit',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 404
+        mock_table.get_item.assert_not_called()
+        mock_sqs.send_message.assert_not_called()

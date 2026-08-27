@@ -1172,6 +1172,14 @@ export class VocApiStack extends VocStack {
      *  record only to confirm the form EXISTS (#379) and then renders a static
      *  HTML shell around a module-cached widget script.
      *
+     *  And ZERO get_item for a form id that cannot be one of ours: all three
+     *  public routes format-check the path segment before they read
+     *  (`_validated_form_id`), so a probe for `/feedback-forms/admin` or a
+     *  megabyte of path segment costs a 404 and no table call on any of them.
+     *  That is what makes the cost figure above a bound on what a caller can
+     *  spend rather than a description of the happy path — which matters here,
+     *  because this ceiling is shared across every form and every caller.
+     *
      *  CACHING, not a throttle, is the right primary control for `iframe`: the
      *  response is a pure function of form_id and host. It is not adopted here
      *  because both available forms are out of a CDK-only change — an API Gateway
