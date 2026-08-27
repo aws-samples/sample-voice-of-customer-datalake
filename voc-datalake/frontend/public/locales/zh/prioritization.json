@@ -54,6 +54,28 @@
       "title": "无法加载本次投票"
     }
   },
+  "composition": {
+    "addRow": "添加行",
+    "addRowHint": "选择新行应包含的文档。新行有自己的选票，因此该项目可以按多个组合进行评分。",
+    "cancel": "取消",
+    "delete": {
+      "cancel": "保留该行",
+      "confirm": "删除该行及其选票",
+      "message": "这将删除该行以及在其上投出的所有选票，包括其他评审人的选票。该组合的团队评分也会一并消失，且无法撤销。",
+      "title": "删除该行及其选票？"
+    },
+    "deleteAction": "删除行",
+    "documentsLegend": "该行包含的文档",
+    "edit": "编辑文档",
+    "editHint": "选择该行根据本项目的哪些文档评分。一张选票覆盖全部文档。",
+    "locked": "自第一张选票起已锁定——添加另一行以评分不同的组合。",
+    "onlyRow": "项目唯一的默认行无法删除——请先添加另一行，然后再删除此行。",
+    "requiresOne": "请至少选择一个文档，使该行有可评分的内容。",
+    "save": "保存文档",
+    "saveNewRow": "添加该行",
+    "saving": "保存中...",
+    "title": "该行包含的内容"
+  },
   "configureApiEndpoint": "在设置中配置 API 端点以查看优先级排序。",
   "docType": {
     "prd": "PRD",
@@ -122,8 +144,32 @@
   "row": {
     "multiDocument": "{{documents}} 个文档，一张选票"
   },
+  "rowAction": {
+    "composeConflict": "未能向 {{row}} 所属项目添加行。可能该项目的行数已达上限，或其文档已发生变化。请重新加载页面查看当前的行。",
+    "composeFailed": "未能添加该行。没有创建任何内容，您可以重试。",
+    "composeRefused": "未能添加该行，且请求是被拒绝而非执行失败：请检查您的选择——一行能包含的文档数量有上限，且每个文档都必须仍在该项目中。",
+    "deleteConflict": "未能删除“{{row}}”：删除过程中它发生了变化，或它是某个项目唯一的行而无法删除。请重新加载页面查看当前的行。",
+    "deleteFailed": "未能删除“{{row}}”。该行及其选票未发生变化，您可以重试。",
+    "deleteRefused": "未能删除“{{row}}”，且请求是被拒绝而非执行失败：该行可能已被删除，或者连同选票一起删除某一行不在您的权限范围内。重试也会得到相同答复。",
+    "dismiss": "关闭此消息",
+    "recomposeConflict": "“{{row}}”的文档未被修改：已有选票投出，因此其组成已锁定。请添加另一行以评分不同的组合。",
+    "recomposeFailed": "“{{row}}”的文档未被修改。没有保存任何内容，您可以重试。",
+    "recomposeRefused": "“{{row}}”的文档未被修改，且请求是被拒绝而非执行失败：请检查您的选择——一行能包含的文档数量有上限，且每个文档都必须仍在该项目中。",
+    "title": "对行的该项修改未保存"
+  },
   "rowCount_one": "{{count}} 个提案",
   "rowCount_other": "{{count}} 个提案",
+  "rowDeleted": {
+    "descriptionNoCount": "“{{row}}”及其上投出的所有选票均已删除。未报告选票数量。",
+    "description_one": "“{{row}}”已删除，在其上投出的 {{count}} 张选票也一并删除。",
+    "description_other": "“{{row}}”已删除，在其上投出的 {{count}} 张选票也一并删除。",
+    "dismiss": "关闭此消息",
+    "title": "该行已删除"
+  },
+  "rowUnavailable": {
+    "description": "这些项目包含的文档超过了一个优先级行可以组合的数量，因此它们从下面的列表中缺失，而不是未评分。删除项目不再需要的文档即可让它重新出现。",
+    "title": "部分项目无法创建行"
+  },
   "scores": {
     "confidence": "置信度",
     "confidenceDescription": "对影响力和上市时间估计的确定性",

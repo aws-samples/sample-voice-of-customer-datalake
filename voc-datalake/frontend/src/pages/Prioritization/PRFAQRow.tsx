@@ -17,6 +17,7 @@ import { parsePrototypeSpec, looksLikeHtmlDocument } from '../../components/prot
 import LinkedFormEvidence from './LinkedFormEvidence'
 import PrototypeEnlargeButton from './PrototypeEnlargeButton'
 import RoomVotePanel from './RoomVotePanel'
+import RowCompositionPanel from './RowCompositionPanel'
 import {
   getPriorityLabel, MAX_NOTE_LENGTH, reviewersDisagreed, SCORABLE_TYPE_META, teamScoreOf,
 } from './prioritizationUtils'
@@ -24,6 +25,7 @@ import ScoreSlider from './ScoreSlider'
 import type {
   PrioritizationRowView, TeamView,
 } from './prioritizationUtils'
+import type { RowCompositionActions } from './RowCompositionPanel'
 import type { LinkedForm } from './formLinkUtils'
 import type {
   PrioritizationScore, ProjectDocument,
@@ -441,7 +443,7 @@ function RowDocument({
 }
 
 function PRFAQRowExpanded({
-  row, score, team, linkedFormsByDocument, apiEndpoint, onUpdateScore,
+  row, score, team, linkedFormsByDocument, apiEndpoint, composition, onUpdateScore,
 }: {
   readonly row: PrioritizationRowView
   readonly score: PrioritizationScore
@@ -449,6 +451,8 @@ function PRFAQRowExpanded({
   /** Per DOCUMENT, not per row — see `RowDocument`. */
   readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
   readonly apiEndpoint: string
+  /** What may be done to this row's COMPOSITION — see `RowCompositionPanel`. */
+  readonly composition: RowCompositionActions
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
 }) {
   const { t } = useTranslation('prioritization')
@@ -504,6 +508,11 @@ function PRFAQRowExpanded({
           <RoomVotePanel rowId={row.row_id} rowTitle={row.title} documentCount={row.documents.length} />
         </div>
         <div className="space-y-4">
+          {/* Directly above the documents it composes, and in the column that shows
+              them, because that is what the panel is about: which documents this one
+              ballot covers. The scoring column is deliberately untouched — a frozen
+              row stays scoreable, and only its composition stops changing. */}
+          <RowCompositionPanel row={row} composition={composition} />
           <h4 className="font-medium text-gray-900">{t('preview.title')}</h4>
           {/* Every document the row is scored on, each with its own evidence. Newest
               first, which is the order `collectRows` resolved them in and the order
@@ -731,7 +740,7 @@ function PrototypePanel({
 const NO_LINKED_FORMS: readonly LinkedForm[] = []
 
 export default function PRFAQRow({
-  row, index, score, team, linkedFormsByDocument, apiEndpoint, isExpanded, onToggle, onUpdateScore,
+  row, index, score, team, linkedFormsByDocument, apiEndpoint, composition, isExpanded, onToggle, onUpdateScore,
 }: {
   readonly row: PrioritizationRowView
   readonly index: number
@@ -764,6 +773,13 @@ export default function PRFAQRow({
    * that panel and its QR stay renderable without one.
    */
   readonly apiEndpoint: string
+  /**
+   * What a reviewer may do to this row's COMPOSITION — see `RowCompositionActions`.
+   *
+   * Threaded whole and row-agnostic, so the list passes one value to every row
+   * rather than building three closures per row on every render.
+   */
+  readonly composition: RowCompositionActions
   readonly isExpanded: boolean
   readonly onToggle: () => void
   readonly onUpdateScore: (field: keyof PrioritizationScore, value: number | string) => void
@@ -780,7 +796,7 @@ export default function PRFAQRow({
   return (
     <div className="bg-white rounded-lg border shadow-sm">
       <PRFAQRowHeader row={row} index={index} priority={priority} team={team} isExpanded={isExpanded} onToggle={onToggle} />
-      {isExpanded ? <PRFAQRowExpanded row={row} score={score} team={team} linkedFormsByDocument={linkedFormsByDocument} apiEndpoint={apiEndpoint} onUpdateScore={onUpdateScore} /> : null}
+      {isExpanded ? <PRFAQRowExpanded row={row} score={score} team={team} linkedFormsByDocument={linkedFormsByDocument} apiEndpoint={apiEndpoint} composition={composition} onUpdateScore={onUpdateScore} /> : null}
     </div>
   )
 }

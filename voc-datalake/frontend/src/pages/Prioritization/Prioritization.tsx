@@ -13,7 +13,7 @@ import {
 import {
   useState, useMemo, useId, useEffect, useRef,
 } from 'react'
-import type { ReactElement } from 'react'
+import type { ReactElement, RefObject } from 'react'
 import {
   useTranslation, Trans,
 } from 'react-i18next'
@@ -25,59 +25,33 @@ import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import ConfirmModal from '../../components/ConfirmModal'
 import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
+import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
 import {
   buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms,
 } from './formLinkUtils'
 import PRFAQRow from './PRFAQRow'
+import { EnsureRefusalPanel, RowActionFailurePanel, RowDeletedPanel } from './RowStatePanels'
+import { useRowLifecycle } from './useRowLifecycle'
+import {
+  refusalsByProject, rowsAnswered, withoutProjects,
+} from './rowEnsureResults'
 import {
   applyBallotEdits, getScore, getTeamView, collectRows, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRow, normalizeRows, normalizeScores, ownBallotRead,
-  overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY, sortRows,
+  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRows, normalizeScores, ownBallotRead,
+  overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY,
+  retainedEnsuredRows, rowsPerProject, scorableDocumentsByProject, sortRows,
   teamAggregatesOf, teamOrderingAvailable, uncountableTeamRead, withEditedField,
+  withoutRow,
 } from './prioritizationUtils'
 import type {
   PrioritizationRowView, SortField, SortDirection, TeamAggregates,
 } from './prioritizationUtils'
+import type { RowCompositionActions } from './RowCompositionPanel'
 import type { LinkedForm } from './formLinkUtils'
 import type {
   Project, PrioritizationScore, PrioritizationBallotEdit, PrioritizationRow,
 } from '../../api/types'
-
-/**
- * The rows a batch of row-ensure asks actually handed back, keyed by row id.
- *
- * The create route is idempotent and answers the STORED row whether it just wrote it
- * or found it, so every fulfilled ask carries a row the server holds — the same record
- * the prioritization read reports, one round trip earlier. Keeping them is what lets
- * the list survive a read that fails or has not landed.
- *
- * Each answer goes through `normalizeRow` — the SAME schema the read half is validated
- * by — rather than being trusted because its declared type says `PrioritizationRow`. A
- * fulfilled ask answering `{success: true, row: {}}` type-checks and satisfies the
- * compiler, and reading `row.row_id.length` off it threw inside this `.then`, which lost
- * every row in the batch and left the rejection unhandled. Validating instead keeps the
- * two halves of the same record held to one contract, including the document-count bound
- * `RowSchema` states.
- *
- * A fulfilled ask with no `row`, an unreadable one, or one whose id is empty contributes
- * nothing: the field is optional on the wire, and a row the page cannot address is a row
- * no ballot, aggregate or expansion could ever be looked up against.
- *
- * At module level rather than inside the effect for the reason `selectPrioritization`
- * is: this is a pure mapping over a response, and nesting it there put a closure four
- * levels deep inside a `useEffect` inside a component, which the lint budget refuses.
- */
-function rowsAnswered(
-  results: readonly PromiseSettledResult<{ readonly row?: PrioritizationRow }>[],
-): Record<string, PrioritizationRow> {
-  const answered = results.flatMap((result) => {
-    if (result.status !== 'fulfilled') return []
-    const row = normalizeRow(result.value.row)
-    return row ? [row] : []
-  })
-  return Object.fromEntries(answered.map((row) => [row.row_id, row]))
-}
 
 /**
  * The prioritization read, validated at the query boundary — BOTH halves of it.
@@ -104,11 +78,79 @@ function rowsAnswered(
  */
 type PrioritizationRead = Awaited<ReturnType<typeof api.getPrioritizationScores>>
 
-const selectPrioritization = (data: PrioritizationRead) => ({
-  rows: normalizeRows(data.rows),
-  scores: normalizeScores(data.scores),
-  aggregates: normalizeAggregates(data.aggregates),
-})
+const selectPrioritization = (data: PrioritizationRead) => {
+  const rawRows: unknown = data.rows
+  const rows = normalizeRows(rawRows)
+  const rowsPublished = rawRows !== undefined
+    && rawRows !== null
+    && typeof rawRows === 'object'
+    && !Array.isArray(rawRows)
+    && rows !== undefined
+    && Object.keys(rows).length === Object.keys(rawRows).length
+  return {
+    rows,
+    /**
+     * Did this response actually PUBLISH a completely readable rows map?
+     *
+     * `normalizeRows` returns `{}` for an omitted field so the page can keep merging
+     * ensure-confirmed fallback rows, returns `undefined` for an unreadable container,
+     * and drops unreadable entries from an otherwise readable map. None is fully
+     * authoritative: only a PRESENT map whose every raw key survived normalization can
+     * say an ensured row or sibling is gone. A present readable empty map remains
+     * authoritative because both key counts are zero.
+     *
+     * Asked here, where the raw field and normalized result are both in hand, so
+     * malformed containers and partially readable maps cannot settle the count, while
+     * an omitted field cannot impersonate a published empty map.
+     */
+    rowsPublished,
+    scores: normalizeScores(data.scores),
+    aggregates: normalizeAggregates(data.aggregates),
+  }
+}
+
+/**
+ * Is the per-project row count settled enough to EXPLAIN a withheld delete, as opposed
+ * to merely to withhold one?
+ *
+ * The count (`rowsPerProject` over `knownRows`) is only as complete as the reads behind
+ * it, and the two answers cost differently. Withholding the control through an unsettled
+ * window is recoverable — the reader waits, or reloads, and it appears — while the
+ * sentence explaining the absence asserts a fact about stored state ("this is the
+ * project's only default row"), and a reviewer who believes a false one acts on it by
+ * adding a row they did not want. So the gate runs on the count regardless and the
+ * explanation runs on this.
+ *
+ * THE SCORES READ MUST HAVE DELIVERED A ROWS MAP, not merely stopped being pending, and
+ * that is the condition an earlier version of this missed. Rows reach `ensuredRows` only
+ * through `rowsAnswered`, and `api_create_prioritization_row` answers a project's DEFAULT
+ * row and nothing else — a row somebody COMPOSED has no path into it at all, existing
+ * only in the scores read. So on the path this page deliberately supports (a failed
+ * scores read still listing the rows the ensure confirmed, because rows are the page's
+ * whole content) `knownRows` holds exactly one default row per project, and every one of
+ * them would be classified as its project's only row however many the partition holds.
+ *
+ * `rowsPublished` rather than `!scoresFailed`, for the same reason `retainedEnsuredRows`
+ * is handed that signal: a read that SUCCEEDED on a deployment sending no `rows` field
+ * publishes no rows either, so it is the identical blind spot with a 200 on it.
+ *
+ * The two project reads stay in it because `collectRows` and the count alike are empty
+ * until the project list lands, so a row can already be on screen from the ensure while
+ * the fan-out is still resolving its siblings.
+ *
+ * At MODULE level rather than inline: it is a rule about three reads with no dependency
+ * on anything else the component holds, and the page is at its `complexity` budget.
+ */
+function rowCountSettled({
+  loadingProjects, loadingDetails, rowsPublished,
+}: {
+  readonly loadingProjects: boolean
+  readonly loadingDetails: boolean
+  /** `undefined` while no read has delivered at all — see `selectPrioritization`. */
+  readonly rowsPublished: boolean | undefined
+}): boolean {
+  return !loadingProjects && !loadingDetails && rowsPublished === true
+}
 
 /**
  * The backlog at a glance, counted the same way the rows below are labelled.
@@ -336,7 +378,7 @@ const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
 const PRIORITIZATION_SCORES_KEY = ['prioritization-scores'] as const
 
 function PRFAQList({
-  isLoading, rows, scores, aggregates, linkedFormsByDocument, apiEndpoint, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
+  isLoading, rows, scores, aggregates, linkedFormsByDocument, apiEndpoint, composition, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
   readonly rows: PrioritizationRowView[]
@@ -359,6 +401,12 @@ function PRFAQList({
   readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
   /** Passed through to each row's linked-form panels — see PRFAQRow. */
   readonly apiEndpoint: string
+  /**
+   * What a reviewer may do to a row's COMPOSITION, threaded whole and row-agnostic
+   * so this list passes ONE value to every row rather than building callbacks per row
+   * on a page that re-renders on every slider drag. See `RowCompositionActions`.
+   */
+  readonly composition: RowCompositionActions
   readonly expandedId: string | null
   readonly onToggleExpand: (id: string) => void
   readonly onUpdateScore: (rowId: string, field: keyof PrioritizationScore, value: number | string) => void
@@ -386,6 +434,7 @@ function PRFAQList({
           team={getTeamView(aggregates, row.row_id)}
           linkedFormsByDocument={linkedFormsByDocument}
           apiEndpoint={apiEndpoint}
+          composition={composition}
           isExpanded={expandedId === row.row_id}
           onToggle={() => onToggleExpand(row.row_id)}
           onUpdateScore={(field, value) => onUpdateScore(row.row_id, field, value)}
@@ -396,7 +445,7 @@ function PRFAQList({
 }
 
 function PrioritizationHeader({
-  hasChanges, isPending, saveBlocked, rowCount, onReset, onSave,
+  hasChanges, isPending, saveBlocked, rowCount, headingRef, onReset, onSave,
 }: {
   readonly hasChanges: boolean
   readonly isPending: boolean
@@ -460,6 +509,16 @@ function PrioritizationHeader({
    * would then be right about what it is labelled.
    */
   readonly rowCount: number
+  /**
+   * WHERE A DISMISSAL LANDS when the control that produced the panel is gone.
+   *
+   * The page heading, because it is the one thing on this page guaranteed to outlive
+   * any row: a delete that landed takes its own "Delete row" button with it, and
+   * `RowDeletedPanel` is announce-only, so dismissing its Dismiss button would otherwise
+   * drop a keyboard reader on `<body>`. Focusable without joining the tab order for that
+   * one purpose — nothing tabs to a heading. See `useRowLifecycle.restoreFocus`.
+   */
+  readonly headingRef: RefObject<HTMLHeadingElement | null>
   readonly onReset: () => void
   readonly onSave: () => void
 }) {
@@ -475,7 +534,17 @@ function PrioritizationHeader({
             page has two. That is pre-existing and separate; the point here is only
             that THIS heading's accessible name stays the page's name.) */}
         <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <h1
+            ref={headingRef}
+            // Programmatically focusable only — see `headingRef`. A heading is never
+            // tabbed to, so this adds nothing to the tab order and costs the reader
+            // nothing; it is what makes a dismissal with no surviving control land
+            // somewhere a tab can reach the rows from.
+            tabIndex={-1}
+            className="text-xl sm:text-2xl font-bold text-gray-900"
+          >
+            {t('title')}
+          </h1>
           {rowCount === 0 ? null : (
             // The testid is what lets a test assert this is ABSENT without depending on
             // how a zero would have been spelled or on where the badge sits. Querying
@@ -510,6 +579,16 @@ export default function Prioritization() {
   const { t } = useTranslation('prioritization')
   const { config } = useConfigStore()
   const queryClient = useQueryClient()
+  // Whether the DELETE control is offered. The refusal itself is the server's
+  // (`require_admin` answers 403 before anything is read), so this is the courtesy
+  // half — a reviewer who may not delete is not invited to press a button that
+  // cannot work.
+  const isAdmin = useIsAdmin()
+  /**
+   * The page heading, as somewhere a dismissed panel can put focus when the control it
+   * came from no longer exists. See `PrioritizationHeader.headingRef`.
+   */
+  const pageHeading = useRef<HTMLHeadingElement>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
@@ -715,6 +794,38 @@ export default function Prioritization() {
    */
   const rowsEnsured = useRef(new Set<string>())
   const [ensuredRows, setEnsuredRows] = useState<Record<string, PrioritizationRow>>({})
+  /**
+   * Which projects the ensure route REFUSED, and with which status.
+   *
+   * The 409 this makes visible was the one refusal nothing on screen covered: a
+   * project holding more documents than one read can compose a row from simply did not
+   * appear in the backlog, with nothing saying why (`createPrioritizationRow` records
+   * it, and #339 phase 2 is where it was tracked to). It is permanent by construction
+   * — the same answer on every attempt until documents are removed — so a reader who
+   * cannot see it has no way to learn the project is missing.
+   *
+   * The 400 stays SILENT, deliberately, and that is not the same decision twice: it
+   * means "this project has no PRD or PR/FAQ to score", which is exactly what the
+   * list's own empty invitation already says, in words a reader can act on. Reporting
+   * it would put a red panel over the ordinary state of a project nobody has written a
+   * document for yet.
+   *
+   * Keyed by project rather than counted, so the panel can NAME the projects — an
+   * unnamed "some projects could not be prioritised" is not actionable.
+   *
+   * A REPORTED ENTRY PERSISTS FOR THE MOUNT, and that is the effect of one decision
+   * rather than an oversight: the 409 that reaches this panel is a permanent refusal by
+   * `isPermanentRefusal`'s reckoning, so the effect above deliberately does NOT release
+   * that project from `rowsEnsured.current` — it therefore never joins a later `pending`
+   * batch and is never re-decided. Honest, because the refusal is settled until the
+   * project's documents change, and changing them changes `projectsNeedingARow`'s output
+   * and so the whole ask. The `withoutProjects` re-decide below is NOT dead: it is live
+   * for a project refused with a status this panel does not report, which is released and
+   * asked again. Widening `REPORTED_ENSURE_STATUSES` to a TRANSIENT status would need the
+   * release changed too, or the panel would name a project the next pass has since
+   * succeeded for.
+   */
+  const [ensureRefusals, setEnsureRefusals] = useState<Record<string, number>>({})
   useEffect(() => {
     if (config.apiEndpoint.length === 0 || rowProjectIds.length === 0) return
     // Asked ONCE per project per mount, while the ask keeps succeeding. Without this
@@ -743,6 +854,15 @@ export default function Prioritization() {
         if (result.status !== 'rejected') return
         if (!isPermanentRefusal(result.reason)) rowsEnsured.current.delete(pending[index])
       })
+      // WHICH refusals a reader has to be told about, and which the page already
+      // covers in words: `refusalsByProject` owns that judgement. Every project in
+      // THIS pass is re-decided rather than merged over — an ask that has since
+      // succeeded, or failed transiently, must stop being named — while projects the
+      // pass did not ask about keep whatever was recorded for them.
+      setEnsureRefusals((known) => ({
+        ...withoutProjects(known, pending),
+        ...refusalsByProject(pending, results),
+      }))
       // The rows the asks HANDED BACK, kept rather than discarded. Each is the row the
       // server holds for that project — created just now or already there, since the
       // route is idempotent and answers the stored row either way — so it is the same
@@ -796,25 +916,29 @@ export default function Prioritization() {
    * nothing to merge, and with no asks answered yet it leaves the page's own empty
    * state, which is the honest reading of a deployment that holds no rows.
    *
-   * `ensuredRows` is STICKY for the mount, and the merge therefore cannot REMOVE a row:
-   * the read wins only where it names one, so a row that disappears from a later
-   * successful read stays on screen until the page is remounted. That is deliberate in
-   * phase 1, where nothing deletes a row — and it is the same trade the fallback exists
-   * for, since "absent from this read" is exactly what a failed or partial read looks
-   * like. Phase 2 adds deletion, and at that point the merge needs the read's absence to
-   * mean something: the cheap answer is to clear `ensuredRows` on a SUCCESSFUL read
-   * (which by then is the authority on what exists) rather than to keep merging under it.
+   * `ensuredRows` WAS STICKY for the mount, and so the merge could only ever ADD a row.
+   * Deletion makes that wrong — a row this page vouched for on mount would survive its
+   * own removal until a remount, so a delete that reported success and took its ballots
+   * with it would change nothing on screen. `retainedEnsuredRows` is the reconciliation:
+   * a read that PUBLISHED a rows map is the authority on what exists, so an ensured row
+   * absent from it is dropped; every state where nothing has said that — pending, failed,
+   * unreadable, or a deployment sending no `rows` field at all — keeps the fallback
+   * exactly as it was. Hence `rowsPublished`, which is what tells an omitted field from
+   * an empty published map.
    */
+  const knownRows = useMemo(
+    () => ({
+      ...retainedEnsuredRows(
+        ensuredRows,
+        savedScores?.rowsPublished === true ? savedScores.rows : undefined,
+      ),
+      ...(savedScores?.rows ?? {}),
+    }),
+    [savedScores, ensuredRows],
+  )
   const allRows = useMemo(
-    () => collectRows(
-      {
-        ...ensuredRows,
-        ...(savedScores?.rows ?? {}),
-      },
-      allProjectDetails,
-      projects,
-    ),
-    [savedScores, ensuredRows, allProjectDetails, projects],
+    () => collectRows(knownRows, allProjectDetails, projects),
+    [knownRows, allProjectDetails, projects],
   )
 
   // True when data is loaded, nothing is scorable, but non-scorable documents exist.
@@ -877,6 +1001,79 @@ export default function Prioritization() {
     },
   })
 
+  /**
+   * Which documents a reviewer may compose a row from, per project.
+   *
+   * The SAME project read the list is built from — no request per row — filtered to
+   * the scorable types, which is the candidate set the compose and recompose routes
+   * validate against. See `scorableDocumentsByProject`.
+   */
+  const candidatesByProject = useMemo(
+    () => scorableDocumentsByProject(allProjectDetails, projects),
+    [allProjectDetails, projects],
+  )
+
+  /**
+   * How many rows each project has, so a project's ONLY default row does not offer a
+   * delete the API always refuses. No request — these are the rows already in hand.
+   *
+   * Counted over `knownRows`, the record BEFORE `collectRows` narrows it, deliberately:
+   * a sibling row dropped for having no resolvable document (or for a project detail
+   * still in flight) would otherwise make a project holding two rows count as one.
+   * `rowsPerProject` takes the record itself, so passing the narrowed list is a compile
+   * error rather than a silent miscount — see there.
+   */
+  const rowsByProject = useMemo(() => rowsPerProject(knownRows), [knownRows])
+
+  // Whether the count may be STATED as a reason, not merely acted on. See
+  // `rowCountSettled`, at module level, which is where the reasoning lives.
+  const countSettled = rowCountSettled({
+    loadingProjects, loadingDetails, rowsPublished: savedScores?.rowsPublished,
+  })
+
+  // Project names, so the refusal panel can NAME the projects that have no row rather
+  // than printing ids nobody recognises. Off the project list read, which is a
+  // different query from the one that may have refused, so the names are available in
+  // exactly the state the panel renders in.
+  const projectNamesById = useMemo(
+    () => Object.fromEntries((projects ?? []).map((p: Project) => [p.project_id, p.name])),
+    [projects],
+  )
+
+  /**
+   * Adding a row, changing an un-frozen row's documents, and deleting a row with its
+   * ballots — plus what a reader has to be told afterwards. See `useRowLifecycle`.
+   *
+   * `canDelete` is the caller's admin group, and it decides only whether the control is
+   * OFFERED: the refusal is `require_admin`'s, server-side, before anything is read.
+   *
+   * `onRowDeleted` DROPS THE PENDING EDIT on the row that is gone, and that is not
+   * housekeeping. `api_patch_prioritization_scores` checks every named row exists before
+   * its first write and raises on any miss, deliberately, so a body naming one vanished
+   * row persists NOTHING — a stale key here would take every other row's unsaved edit
+   * down with it on the next Save. It also drops the row from `ensuredRows`, so the
+   * removal survives a later read that publishes nothing to reconcile against (a cache
+   * eviction, a failed refetch) rather than only holding while `retainedEnsuredRows`
+   * has an authoritative map to filter by.
+   */
+  const rowLifecycle = useRowLifecycle({
+    candidatesByProject,
+    rowsByProject,
+    rowCountSettled: countSettled,
+    canDelete: isAdmin,
+    // Where a dismissal lands when its own control is gone — which is EVERY dismissal of
+    // the delete receipt, since a landed delete takes the button that issued it. See
+    // `useRowLifecycle.restoreFocus`.
+    fallbackFocus: pageHeading,
+    onRowsChanged: () => {
+      void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
+    },
+    onRowDeleted: (rowId) => {
+      setLocalEdits((edits) => withoutRow(edits, rowId))
+      setEnsuredRows((known) => withoutRow(known, rowId))
+    },
+  })
+
   const blocker = useBlocker(hasChanges)
 
   // Records only the field that moved. The edit accumulates across interactions on
@@ -927,6 +1124,7 @@ export default function Prioritization() {
         // pass as well, since `collectRows` has no documents to compose rows from until
         // the reads `isLoading` tracks have landed. See `rowCount` there.
         rowCount={sortedRows.length}
+        headingRef={pageHeading}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />
@@ -961,6 +1159,29 @@ export default function Prioritization() {
           </div>
         </div>
       ) : null}
+
+      {/* What did not happen when a reviewer added, edited or deleted a row — including
+          the 409 a ballot landing first produces, which is the refusal a hidden control
+          cannot prevent. Its own region beside the others, dismissable, because it
+          describes an action the reader just took rather than the state of a read. Both
+          it and the receipt below move the reader to themselves: the control that
+          produced either lives inside an expanded row that may be well below this. */}
+      <RowActionFailurePanel
+        failure={rowLifecycle.failure}
+        onDismiss={rowLifecycle.clearFailure}
+      />
+
+      {/* That a delete LANDED, and how many ballots went with it — the one write whose
+          success is otherwise indistinguishable from a filter or a failed read, and the
+          only place `ballots_deleted` can be read at all. */}
+      <RowDeletedPanel
+        deleted={rowLifecycle.deleted}
+        onDismiss={rowLifecycle.clearDeleted}
+      />
+
+      {/* The default-row refusals that leave a project out of the backlog with nothing
+          else saying so — see `ensureRefusals`. */}
+      <EnsureRefusalPanel refusals={ensureRefusals} namesByProject={projectNamesById} />
 
       {/* Both ways a reader can be left without their own numbers — the read failed, or it
           succeeded carrying ballots that could not be read. The second used to say nothing
@@ -1020,6 +1241,7 @@ export default function Prioritization() {
         aggregates={aggregates}
         linkedFormsByDocument={linkedFormsByDocument}
         apiEndpoint={config.apiEndpoint}
+        composition={rowLifecycle.actions}
         expandedId={expandedId}
         onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
         onUpdateScore={updateScore}

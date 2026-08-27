@@ -54,6 +54,28 @@
       "title": "Não foi possível carregar esta votação"
     }
   },
+  "composition": {
+    "addRow": "Adicionar linha",
+    "addRowHint": "Escolha os documentos que a nova linha deve conter. Ela terá as suas próprias cédulas, então este projeto pode ser pontuado como mais de uma combinação.",
+    "cancel": "Cancelar",
+    "delete": {
+      "cancel": "Manter a linha",
+      "confirm": "Excluir linha e cédulas",
+      "message": "Isso exclui a linha e todas as cédulas registradas nela, inclusive as de outros revisores. A pontuação da equipe para esta combinação vai com ela, e isso não pode ser desfeito.",
+      "title": "Excluir esta linha e suas cédulas?"
+    },
+    "deleteAction": "Excluir linha",
+    "documentsLegend": "Documentos que esta linha contém",
+    "edit": "Editar documentos",
+    "editHint": "Escolha em quais documentos deste projeto esta linha é pontuada. Uma única cédula cobre todos eles.",
+    "locked": "Bloqueada desde a primeira cédula — adicione outra linha para pontuar uma combinação diferente.",
+    "onlyRow": "A única linha padrão de um projeto não pode ser excluída — adicione outra linha primeiro e depois exclua esta.",
+    "requiresOne": "Escolha pelo menos um documento, para que a linha tenha algo a pontuar.",
+    "save": "Salvar documentos",
+    "saveNewRow": "Adicionar a linha",
+    "saving": "Salvando...",
+    "title": "O que esta linha contém"
+  },
   "configureApiEndpoint": "Configure o endpoint da API em Configurações para visualizar a priorização.",
   "docType": {
     "prd": "PRD",
@@ -122,8 +144,32 @@
   "row": {
     "multiDocument": "{{documents}} documentos, uma cédula"
   },
+  "rowAction": {
+    "composeConflict": "A linha não foi adicionada ao projeto de {{row}}. Ou o projeto já tem todas as linhas que pode ter, ou seus documentos mudaram. Recarregue a página para ver as linhas atuais.",
+    "composeFailed": "A linha não foi adicionada. Nada foi criado, então você pode tentar de novo.",
+    "composeRefused": "A linha não foi adicionada, e a solicitação foi recusada em vez de falhar: verifique o que você escolheu — uma linha só pode conter um número limitado de documentos, e todos precisam continuar no projeto.",
+    "deleteConflict": "\"{{row}}\" não foi excluída: ela mudou enquanto estava sendo removida, ou é a única linha de um projeto e não pode ser excluída. Recarregue a página para ver as linhas atuais.",
+    "deleteFailed": "\"{{row}}\" não foi excluída. A linha e suas cédulas estão inalteradas, então você pode tentar de novo.",
+    "deleteRefused": "\"{{row}}\" não foi excluída, e a solicitação foi recusada em vez de falhar: a linha pode já não existir, ou excluir uma linha junto com suas cédulas pode não ser algo que cabe a você. Tentar de novo dará a mesma resposta.",
+    "dismiss": "Dispensar esta mensagem",
+    "recomposeConflict": "Os documentos de \"{{row}}\" não foram alterados: uma cédula já foi registrada, então a composição está bloqueada. Adicione outra linha para pontuar uma combinação diferente.",
+    "recomposeFailed": "Os documentos de \"{{row}}\" não foram alterados. Nada foi salvo, então você pode tentar de novo.",
+    "recomposeRefused": "Os documentos de \"{{row}}\" não foram alterados, e a solicitação foi recusada em vez de falhar: verifique o que você escolheu — uma linha só pode conter um número limitado de documentos, e todos precisam continuar no projeto.",
+    "title": "Essa alteração nas linhas não foi salva"
+  },
   "rowCount_one": "{{count}} proposta",
   "rowCount_other": "{{count}} propostas",
+  "rowDeleted": {
+    "descriptionNoCount": "\"{{row}}\" não existe mais, junto com quaisquer cédulas registradas nela. Nenhuma contagem de cédulas foi informada.",
+    "description_one": "\"{{row}}\" não existe mais, e a única cédula registrada nela foi excluída com ela.",
+    "description_other": "\"{{row}}\" não existe mais, e as {{count}} cédulas registradas nela foram excluídas com ela.",
+    "dismiss": "Dispensar esta mensagem",
+    "title": "A linha foi excluída"
+  },
+  "rowUnavailable": {
+    "description": "Estes projetos têm mais documentos do que uma linha de priorização consegue compor, então eles estão ausentes da lista abaixo em vez de não pontuados. Remover documentos de que o projeto não precisa mais o traz de volta.",
+    "title": "Alguns projetos não puderam receber uma linha"
+  },
   "scores": {
     "confidence": "Confiança",
     "confidenceDescription": "Certeza nas estimativas de impacto e TTM",

@@ -38,6 +38,29 @@ export interface PrioritizationRowView {
   readonly title: string
   /** When the leading document was created; the date sort reads this. */
   readonly created_at: string
+  /**
+   * Has a ballot landed, so the composition can no longer change?
+   *
+   * Carried from the row record through the same Zod boundary every other field
+   * crosses (`RowSchema`, which degrades an unreadable value to FALSE for the reason
+   * recorded there). A fact the row DISPLAYS and never enforces: the freeze is a
+   * condition on the write itself, so a composition change racing the first ballot
+   * answers 409 whatever this said a moment earlier — which is why the page has to be
+   * able to state that refusal as well as withhold the control.
+   */
+  readonly is_frozen: boolean
+  /**
+   * Is this the row the default-row ensure minted for the project, rather than one a
+   * reviewer composed?
+   *
+   * Carried through the same `RowSchema` boundary as `is_frozen`, and degrading to
+   * FALSE for the same kind of reason: the one thing the page does with this is
+   * WITHHOLD the delete control for a project's only default row, which the API
+   * refuses with 409 ("a project's default row cannot be deleted while it is the
+   * project's only row"), and an unreadable value should leave the control offered and
+   * let the server answer rather than hide an action that may well be legal.
+   */
+  readonly is_default: boolean
   // The row's prototype (if any), resolved the same way. Surfaced under the
   // document preview so reviewers can see the demo without leaving the page.
   readonly prototype?: ProjectDocument
@@ -1333,6 +1356,143 @@ export function projectsNeedingARow(
 }
 
 /**
+ * Which of the rows a batch of default-row asks handed back are still worth keeping.
+ *
+ * `ensuredRows` exists to cover the window the prioritization read cannot: the query
+ * failing, or not having landed, on a page whose entire content is rows. Sticky for
+ * the mount, it could only ever ADD a row — and phase 2 makes that wrong, because a
+ * deleted row would stay on screen until a remount, with a delete that reported
+ * success and changed nothing visible.
+ *
+ * So an AUTHORITATIVE read reconciles it: a read that actually published a rows map
+ * reports every row in the partition, including ones this page never asked for, and
+ * a row absent from it does not exist. `read === undefined` is every state in which
+ * nothing has said that — the query still running, a failed read with nothing cached,
+ * a response whose `rows` could not be read, and a deployment that publishes no
+ * `rows` field at all — and each keeps the fallback exactly as phase 1 had it.
+ *
+ * THAT LAST STATE IS WHY THE CALLER DECIDES, and not `normalizeRows`: an absent field
+ * normalises to `{}` (see there), which is indistinguishable from a deployment that
+ * genuinely holds no rows — and reconciling against it would empty the page on a
+ * deployment predating the field, where the asks are the only source of rows there
+ * is. `Prioritization.tsx` therefore passes `undefined` unless the response CARRIED
+ * a `rows` field, and an EMPTY published map is authoritative like any other: it
+ * says the partition holds nothing, which after a delete is the true answer.
+ *
+ * A JUST-ANSWERED CREATE is the one case this drops something real: a row the ask
+ * confirmed moments after an authoritative read that predates it is filtered out
+ * until the next read lands. That is covered rather than overlooked — the effect
+ * invalidates the read whenever an ask reports `created` — and the alternative is
+ * keeping a row the current read says is gone, which is the state deletion has to be
+ * able to produce.
+ */
+export function retainedEnsuredRows(
+  ensured: Record<string, PrioritizationRow>,
+  read: Record<string, PrioritizationRow> | undefined,
+): Record<string, PrioritizationRow> {
+  if (read === undefined) return ensured
+  return Object.fromEntries(
+    Object.entries(ensured).filter(([rowId]) => rowId in read),
+  )
+}
+
+/**
+ * How many rows each project has.
+ *
+ * ONE COURTESY GATE READS THIS: `api_delete_prioritization_row` refuses a project's
+ * DEFAULT row with 409 while it is that project's ONLY row, which is the state every
+ * project starts in — so without this every row on a typical page would offer an
+ * admin a delete that cannot work, behind a dialog stating an irreversible effect that
+ * will not occur.
+ *
+ * COUNTED OVER THE ROWS THEMSELVES, before `collectRows` narrows them, and that
+ * distinction is the whole reason this takes the bare record rather than the view list.
+ * `collectRows` DROPS a row whose project is not on screen and a row not one of whose
+ * document ids resolves — so counting its output reports a project holding two rows as
+ * holding one whenever the sibling is a row composed from a document since deleted, or
+ * one whose project detail has not landed. The gate would merely withhold a control in
+ * that window, which is recoverable; the SENTENCE beside it asserts the count as a fact
+ * about stored state, and a false one is what a reviewer acts on.
+ *
+ * THE PARAMETER IS THE STORED ROWS RECORD, and narrowly so on purpose: the one argument
+ * this function was rewritten to reject is `collectRows`' output, and a structural
+ * parameter (anything carrying a `project_id`) accepted exactly that — so an edit
+ * reverting the call site to the narrowed view list type-checked silently and put the
+ * false sentence back with only a test between it and a merge. `PrioritizationRowView[]`
+ * does not satisfy `Record<string, PrioritizationRow>`, so the miscount is now a compile
+ * error rather than a comment. Taking the record also spares the caller an
+ * `Object.values` whose result would be the wrong shape to pass anywhere else.
+ *
+ * Still a COUNT OF WHAT THIS PAGE KNOWS, not a query of the partition, and that is fine
+ * for a courtesy gate: the server's 409 stays authoritative either way, so a stale count
+ * can only mean a control is offered that is then refused in words
+ * (`rowAction.deleteConflict`) — never a delete that happens when it should not. Whether
+ * the count is settled ENOUGH TO EXPLAIN is a separate question the caller answers; see
+ * `rowCountSettled` on `RowCompositionActions`.
+ */
+export function rowsPerProject(
+  rows: Readonly<Record<string, PrioritizationRow>>,
+): ReadonlyMap<string, number> {
+  const counted = new Map<string, number>()
+  for (const row of Object.values(rows)) {
+    counted.set(row.project_id, (counted.get(row.project_id) ?? 0) + 1)
+  }
+  return counted
+}
+
+/**
+ * The same map with one row dropped, or the map itself when it never held it.
+ *
+ * Returned UNCHANGED when the key is absent, so a caller using this in a state updater
+ * does not re-render for a removal that removed nothing — which is the whole of what
+ * `ensuredRows` and `localEdits` need after a delete.
+ */
+export function withoutRow<T>(
+  known: Record<string, T>,
+  rowId: string,
+): Record<string, T> {
+  if (!(rowId in known)) return known
+  return Object.fromEntries(Object.entries(known).filter(([id]) => id !== rowId))
+}
+
+/**
+ * Which documents a reviewer may compose a row from, per project.
+ *
+ * THE SAME CANDIDATE SET THE ROUTES VALIDATE AGAINST, resolved from the project read
+ * the page already performs: `_scorable_document_ids` in `projects_handler.py` builds
+ * it from the project's own partition filtered to `SCORABLE_SK_PREFIXES`, and this is
+ * that rule read through `isScorable` — whose type table is pinned against the
+ * backend's prefixes by `test_prioritization_scorable_types_lockstep.py`. So a
+ * document offered here is one the compose route accepts, and one it refuses is not
+ * offered.
+ *
+ * A PROTOTYPE IS DELIBERATELY ABSENT, because `isScorable` excludes it: it is context
+ * a reviewer looks at rather than a document a row is scored on, and putting one in
+ * `document_ids` is refused by the route ("not a PRD or a PR/FAQ"). The row still
+ * carries the project's prototype as its own field; a reviewer simply has no choice
+ * about it.
+ *
+ * A project with no scorable document gets NO ENTRY rather than an empty list, so a
+ * lookup answering `undefined` and one answering `[]` cannot come to mean different
+ * things at a call site. Details are aligned with `projects` by INDEX, the same way
+ * `collectRows` and `projectsNeedingARow` align them.
+ */
+export function scorableDocumentsByProject(
+  allProjectDetails: readonly ({ documents?: ProjectDocument[] } | undefined)[] | undefined,
+  projects: readonly Project[] | undefined,
+): Map<string, ProjectDocument[]> {
+  const byProject = new Map<string, ProjectDocument[]>()
+  if (!allProjectDetails || !projects) return byProject
+  for (const [index, detail] of allProjectDetails.entries()) {
+    const project = projects[index]
+    if (!project || !detail) continue
+    const scorable = (detail.documents ?? []).filter(isScorable)
+    if (scorable.length > 0) byProject.set(project.project_id, scorable)
+  }
+  return byProject
+}
+
+/**
  * The rows the page renders: the server's rows, resolved against the documents on
  * screen.
  *
@@ -1399,6 +1559,13 @@ export function collectRows(
       documents,
       title: leading.title,
       created_at: leading.created_at,
+      // The row's own stored answer, not a guess from the ballots on screen: the
+      // page holds only the CALLER'S ballots, so deriving this here would read a row
+      // somebody else has voted on as editable.
+      is_frozen: row.is_frozen,
+      // Carried for the one courtesy gate that reads it — see the field's own comment
+      // on `PrioritizationRowView` and `rowsPerProject`.
+      is_default: row.is_default,
       prototype: byId.get(row.prototype_id) ?? latestPrototypeOf(project.documents),
     }]
   })

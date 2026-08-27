@@ -54,6 +54,28 @@
       "title": "Diese Abstimmung konnte nicht geladen werden"
     }
   },
+  "composition": {
+    "addRow": "Zeile hinzufügen",
+    "addRowHint": "Wählen Sie die Dokumente, die die neue Zeile enthalten soll. Sie erhält eigene Stimmzettel, sodass dieses Projekt in mehreren Kombinationen bewertet werden kann.",
+    "cancel": "Abbrechen",
+    "delete": {
+      "cancel": "Zeile behalten",
+      "confirm": "Zeile und Stimmzettel löschen",
+      "message": "Damit werden die Zeile und alle darauf abgegebenen Stimmzettel gelöscht, auch die anderer Prüfer. Die Teambewertung für diese Kombination geht mit ihr verloren, und das lässt sich nicht rückgängig machen.",
+      "title": "Diese Zeile und ihre Stimmzettel löschen?"
+    },
+    "deleteAction": "Zeile löschen",
+    "documentsLegend": "Dokumente dieser Zeile",
+    "edit": "Dokumente bearbeiten",
+    "editHint": "Wählen Sie, auf welchen Dokumenten dieses Projekts diese Zeile bewertet wird. Ein Stimmzettel gilt für alle.",
+    "locked": "Seit dem ersten Stimmzettel gesperrt — fügen Sie eine weitere Zeile hinzu, um eine andere Kombination zu bewerten.",
+    "onlyRow": "Die einzige Standardzeile eines Projekts kann nicht gelöscht werden — fügen Sie zuerst eine weitere Zeile hinzu und löschen Sie dann diese.",
+    "requiresOne": "Wählen Sie mindestens ein Dokument, damit die Zeile etwas zu bewerten hat.",
+    "save": "Dokumente speichern",
+    "saveNewRow": "Zeile hinzufügen",
+    "saving": "Speichern...",
+    "title": "Was diese Zeile enthält"
+  },
   "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um die Priorisierung anzuzeigen.",
   "docType": {
     "prd": "PRD",
@@ -122,8 +144,32 @@
   "row": {
     "multiDocument": "{{documents}} Dokumente, ein Stimmzettel"
   },
+  "rowAction": {
+    "composeConflict": "Die Zeile wurde dem Projekt von {{row}} nicht hinzugefügt. Entweder hat das Projekt schon so viele Zeilen, wie es haben darf, oder seine Dokumente haben sich geändert. Laden Sie die Seite neu, um die aktuellen Zeilen zu sehen.",
+    "composeFailed": "Die Zeile wurde nicht hinzugefügt. Es wurde nichts angelegt, Sie können es erneut versuchen.",
+    "composeRefused": "Die Zeile wurde nicht hinzugefügt, und die Anfrage wurde abgelehnt und nicht bloß nicht ausgeführt: Prüfen Sie Ihre Auswahl — eine Zeile kann nur eine begrenzte Anzahl an Dokumenten enthalten, und jedes davon muss noch im Projekt sein.",
+    "deleteConflict": "„{{row}}“ wurde nicht gelöscht: Die Zeile hat sich während des Löschens geändert, oder sie ist die einzige Zeile eines Projekts und kann nicht gelöscht werden. Laden Sie die Seite neu, um die aktuellen Zeilen zu sehen.",
+    "deleteFailed": "„{{row}}“ wurde nicht gelöscht. Zeile und Stimmzettel sind unverändert, Sie können es erneut versuchen.",
+    "deleteRefused": "„{{row}}“ wurde nicht gelöscht, und die Anfrage wurde abgelehnt und nicht bloß nicht ausgeführt: Die Zeile ist vielleicht schon gelöscht, oder das Löschen einer Zeile samt ihren Stimmzetteln steht Ihnen nicht zu. Ein erneuter Versuch führt zur gleichen Antwort.",
+    "dismiss": "Diese Meldung ausblenden",
+    "recomposeConflict": "Die Dokumente von „{{row}}“ wurden nicht geändert: Es wurde bereits ein Stimmzettel abgegeben, daher ist die Zusammensetzung gesperrt. Fügen Sie eine weitere Zeile hinzu, um eine andere Kombination zu bewerten.",
+    "recomposeFailed": "Die Dokumente von „{{row}}“ wurden nicht geändert. Es wurde nichts gespeichert, Sie können es erneut versuchen.",
+    "recomposeRefused": "Die Dokumente von „{{row}}“ wurden nicht geändert, und die Anfrage wurde abgelehnt und nicht bloß nicht ausgeführt: Prüfen Sie Ihre Auswahl — eine Zeile kann nur eine begrenzte Anzahl an Dokumenten enthalten, und jedes davon muss noch im Projekt sein.",
+    "title": "Diese Änderung an den Zeilen wurde nicht gespeichert"
+  },
   "rowCount_one": "{{count}} Vorschlag",
   "rowCount_other": "{{count}} Vorschläge",
+  "rowDeleted": {
+    "descriptionNoCount": "„{{row}}“ ist gelöscht, samt allen darauf abgegebenen Stimmzetteln. Eine Anzahl der Stimmzettel wurde nicht gemeldet.",
+    "description_one": "„{{row}}“ ist gelöscht, und der eine darauf abgegebene Stimmzettel wurde mit gelöscht.",
+    "description_other": "„{{row}}“ ist gelöscht, und die {{count}} darauf abgegebenen Stimmzettel wurden mit gelöscht.",
+    "dismiss": "Diese Meldung ausblenden",
+    "title": "Die Zeile wurde gelöscht"
+  },
+  "rowUnavailable": {
+    "description": "Diese Projekte enthalten mehr Dokumente, als sich zu einer Priorisierungszeile zusammenstellen lassen. Sie fehlen daher in der Liste unten, statt unbewertet zu sein. Werden Dokumente entfernt, die ein Projekt nicht mehr braucht, erscheint es wieder.",
+    "title": "Einige Projekte konnten keine Zeile erhalten"
+  },
   "scores": {
     "confidence": "Konfidenz",
     "confidenceDescription": "Sicherheit bei Auswirkungs- und MeZ-Schätzungen",

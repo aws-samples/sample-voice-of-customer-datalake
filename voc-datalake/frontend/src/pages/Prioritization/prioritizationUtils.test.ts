@@ -11,9 +11,12 @@ import {
   getPriorityLabel, priorityBand, reviewersDisagreed, sortRows, getTeamView, teamScoreOf,
   applyBallotEdits, withEditedField, teamAggregatesOf, teamReadDelivered, normalizeScores,
   ownBallotRead, UNREADABLE_ROW, teamOrderingAvailable, uncountableTeamRead,
+  retainedEnsuredRows, rowsPerProject, scorableDocumentsByProject, withoutRow,
 } from './prioritizationUtils'
 import type { TeamAggregates, TeamAggregateRow, PrioritizationRowView } from './prioritizationUtils'
-import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
+import type {
+  PrioritizationScore, PrioritizationAggregate, PrioritizationRow, ProjectDocument,
+} from '../../api/types'
 
 describe('getScore', () => {
   it('returns stored score when document_id exists', () => {
@@ -122,8 +125,15 @@ const doc = (
 /** A stored row record, as the wire sends it. */
 const storedRow = (
   row_id: string, project_id: string, document_ids: string[], prototype_id = '',
+  is_frozen = false, is_default = true,
 ) => ({
-  row_id, project_id, document_ids, prototype_id, is_default: true, created_at: '2026-01-01',
+  row_id,
+  project_id,
+  document_ids,
+  prototype_id,
+  is_default,
+  created_at: '2026-01-01',
+  is_frozen,
 })
 
 describe('collectRows resolves stored rows against the documents on screen', () => {
@@ -386,6 +396,209 @@ describe('collectRows resolves stored rows against the documents on screen', () 
 
     expect(rows[0].prototype).toBeUndefined()
   })
+
+  it('carries the row own frozen state through to the view, both ways', () => {
+    // The row's composition controls are decided by this, so it has to survive the
+    // whole boundary: the wire record, `RowSchema`, and the resolution against the
+    // documents on screen. Nothing on this page can DERIVE it — the read carries only
+    // the caller's own ballots, so a row somebody else has voted on looks unballoted
+    // from here — which is why a dropped field would read as editable.
+    const details = [{ documents: [doc('prfaq-1', 'prfaq', 'A', '2025-01-01')] }]
+    const projects = [project('p1', 'P1')]
+
+    const frozen = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], '', true) },
+      details, projects,
+    )
+    const editable = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], '', false) },
+      details, projects,
+    )
+
+    expect(frozen[0].is_frozen).toBe(true)
+    expect(editable[0].is_frozen).toBe(false)
+  })
+
+  it('carries whether the row is the project default through to the view, both ways', () => {
+    // The delete control is withheld for a project's ONLY default row, which the API
+    // refuses with 409 — so a dropped field would either offer an action that cannot
+    // work or hide one that can. Nothing on this page can derive it: "default" is a fact
+    // about how the row came to exist, not about what it holds.
+    const details = [{ documents: [doc('prfaq-1', 'prfaq', 'A', '2025-01-01')] }]
+    const projects = [project('p1', 'P1')]
+
+    const minted = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], '', false, true) },
+      details, projects,
+    )
+    const composed = collectRows(
+      { 'row-1': storedRow('row-1', 'p1', ['prfaq-1'], '', false, false) },
+      details, projects,
+    )
+
+    expect(minted[0].is_default).toBe(true)
+    expect(composed[0].is_default).toBe(false)
+  })
+})
+
+describe('rowsPerProject counts what the delete gate reads', () => {
+  /**
+   * A STORED row, which is the only shape this takes.
+   *
+   * `collectRows`' view list is deliberately NOT assignable to the parameter: it drops a
+   * row whose documents do not resolve, so counting its output reported a project holding
+   * two rows as holding one and the delete gate then said so in words. Narrowing the
+   * parameter to the record is what makes that argument a compile error rather than a
+   * comment, and these fixtures are the row shape for the same reason.
+   */
+  const storedRow = (row_id: string, project_id: string): PrioritizationRow => ({
+    row_id,
+    project_id,
+    document_ids: ['d1'],
+    prototype_id: '',
+    is_default: true,
+    created_at: '2026-01-01',
+    is_frozen: false,
+  })
+
+  it('counts each project rows separately', () => {
+    const counted = rowsPerProject({
+      'row-1': storedRow('row-1', 'p1'),
+      'row-2': storedRow('row-2', 'p1'),
+      'row-3': storedRow('row-3', 'p2'),
+    })
+
+    expect(counted.get('p1')).toBe(2)
+    expect(counted.get('p2')).toBe(1)
+  })
+
+  it('reports NOTHING for a project with no row, rather than 0', () => {
+    // The caller reads an absent count as 1, which is the conservative direction for a
+    // courtesy gate — see `isProjectsOnlyDefaultRow`. A stored 0 would let that
+    // distinction be lost here instead.
+    const counted = rowsPerProject({ 'row-1': storedRow('row-1', 'p1') })
+
+    expect(counted.has('p2')).toBe(false)
+    expect(rowsPerProject({}).size).toBe(0)
+  })
+
+  it('counts a row whose documents do not resolve, which is why it takes the record', () => {
+    // The reachable way a project holding two rows presented as holding one: `collectRows`
+    // drops a row not one of whose document ids resolves, an ordinary transient state of
+    // the project fan-out. Counting the record itself keeps that sibling in the count.
+    const counted = rowsPerProject({
+      'row-1': storedRow('row-1', 'p1'),
+      'row-2': { ...storedRow('row-2', 'p1'), document_ids: ['gone'] },
+    })
+
+    expect(counted.get('p1')).toBe(2)
+  })
+})
+
+describe('withoutRow drops what a deleted row leaves behind', () => {
+  it('removes the named row and keeps every other', () => {
+    // THE WRITE THIS EXISTS FOR. `api_patch_prioritization_scores` checks every named
+    // row exists before its first write and raises on any miss, so a pending edit left
+    // on a deleted row refuses the WHOLE body — losing the edits on rows nobody touched.
+    const edits = { 'row-1': { row_id: 'row-1' }, 'row-2': { row_id: 'row-2' } }
+
+    expect(withoutRow(edits, 'row-1')).toStrictEqual({ 'row-2': { row_id: 'row-2' } })
+  })
+
+  it('answers the SAME object when it never held the row', () => {
+    // Identity, not equality: this runs inside a state updater, and a fresh object for a
+    // removal that removed nothing would re-render the page on every settled delete of a
+    // row nobody had edited.
+    const edits = { 'row-1': { row_id: 'row-1' } }
+
+    expect(withoutRow(edits, 'row-2')).toBe(edits)
+  })
+})
+
+describe('retainedEnsuredRows lets a successful read settle what exists', () => {
+  // `ensuredRows` used to be sticky for the whole mount, so the merge could only ADD a
+  // row. With deletion that leaves a removed row on screen until a remount — a delete
+  // that reported success and changed nothing visible.
+
+  const ensured = {
+    'row-1': storedRow('row-1', 'p1', ['prd-1']),
+    'row-2': storedRow('row-2', 'p2', ['prd-2']),
+  }
+
+  it('drops an ensured row a published read no longer names', () => {
+    const retained = retainedEnsuredRows(ensured, {
+      'row-1': storedRow('row-1', 'p1', ['prd-1']),
+    })
+
+    expect(Object.keys(retained)).toStrictEqual(['row-1'])
+  })
+
+  it('drops every ensured row when a published read names none', () => {
+    // An EMPTY published map is authoritative like any other: after the last row of a
+    // deployment is deleted, "the partition holds nothing" is the true answer, and
+    // treating it as "the read added nothing" is what kept the deleted rows up.
+    expect(retainedEnsuredRows(ensured, {})).toStrictEqual({})
+  })
+
+  it('keeps every ensured row while no read has said anything', () => {
+    // The fallback phase 1 exists for, unchanged: the query still running, a failed one
+    // with nothing cached, a response whose rows could not be read, and a deployment
+    // sending no `rows` field at all all arrive here as `undefined`. Rows ARE this
+    // page's content, so reconciling against silence would empty it on a 500.
+    expect(retainedEnsuredRows(ensured, undefined)).toStrictEqual(ensured)
+  })
+
+  it('keeps an ensured row the read confirms, unchanged', () => {
+    // The positive control: reconciliation must not drop a row that is still there,
+    // which is what makes the fallback worth anything at all.
+    const retained = retainedEnsuredRows(ensured, ensured)
+
+    expect(Object.keys(retained).sort()).toStrictEqual(['row-1', 'row-2'])
+  })
+})
+
+describe('scorableDocumentsByProject offers what the routes accept', () => {
+  it('offers a project PRDs and PR/FAQs, and never its prototype or research', () => {
+    // The candidate set the compose and recompose routes validate against
+    // (`_scorable_document_ids`): a prototype is context a reviewer looks at rather
+    // than something a row is scored on, and the route refuses one in `document_ids`,
+    // so offering it would invite a 404 the reviewer cannot act on.
+    const byProject = scorableDocumentsByProject(
+      [{
+        documents: [
+          doc('prd-1', 'prd', 'PRD', '2025-01-01'),
+          doc('prfaq-1', 'prfaq', 'PR/FAQ', '2025-01-02'),
+          doc('proto-1', 'prototype', 'Proto', '2025-01-03'),
+          doc('research-1', 'research', 'Research', '2025-01-04'),
+        ],
+      }],
+      [project('p1', 'P1')],
+    )
+
+    expect(byProject.get('p1')?.map((d) => d.document_id)).toStrictEqual(['prd-1', 'prfaq-1'])
+  })
+
+  it('keeps each project own documents apart, and omits one with nothing scorable', () => {
+    // Ownership is the routes' trust boundary — a row is a PROJECT's set of documents,
+    // and an id from elsewhere would put another project's document inside this
+    // project's team score. A project with nothing scorable gets NO entry rather than
+    // an empty list, so `undefined` and `[]` cannot come to mean different things.
+    const byProject = scorableDocumentsByProject(
+      [
+        { documents: [doc('prd-1', 'prd', 'A', '2025-01-01')] },
+        { documents: [doc('proto-2', 'prototype', 'B', '2025-01-01')] },
+      ],
+      [project('p1', 'P1'), project('p2', 'P2')],
+    )
+
+    expect(byProject.get('p1')?.map((d) => d.document_id)).toStrictEqual(['prd-1'])
+    expect(byProject.has('p2')).toBe(false)
+  })
+
+  it('offers nothing while the project reads are missing', () => {
+    expect(scorableDocumentsByProject(undefined, undefined).size).toBe(0)
+    expect(scorableDocumentsByProject([], []).size).toBe(0)
+  })
 })
 
 describe('normalizeRows', () => {
@@ -544,6 +757,10 @@ const rowView = (
   project_name: 'P1',
   title,
   created_at: createdAt,
+  // Unfrozen and default, because the sort is indifferent to both: they decide which
+  // COMPOSITION controls a row offers, not where it lands in the order.
+  is_frozen: false,
+  is_default: true,
   documents: [{
     document_id: `${rowId}-doc`,
     document_type: 'prfaq' as const,
@@ -955,7 +1172,7 @@ describe('getPriorityLabel', () => {
       d1: aggregate({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2 }),
     }
 
-    expect(getTeamScore(aggregates, 'd1')?.displayComposite.toFixed(1)).toBe('4.0')
+    expect(getTeamScore(aggregates, 'd1')?.displayComposite?.toFixed(1)).toBe('4.0')
     expect(getPriorityLabel(getTeamView(aggregates, 'd1'), t).label).toBe('High Priority')
   })
 })
