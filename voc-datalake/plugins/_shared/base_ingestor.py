@@ -27,6 +27,7 @@ from shared.aws import (
 )
 from .circuit_breaker import CircuitBreaker
 from .audit import emit_audit_event
+from .secrets import filter_plugin_secrets
 from .sqs_utils import send_messages_to_queue
 
 # Re-export for backwards compatibility with existing handlers
@@ -71,39 +72,26 @@ class BaseIngestor(ABC):
 
     def _load_secrets(self) -> dict:
         """
-        Load API credentials from Secrets Manager.
-        
-        With per-plugin secrets isolation, each plugin has its own secret.
-        The secret keys are prefixed with the plugin ID, which we strip here.
+        Load this plugin's API credentials from the shared Secrets Manager secret.
+
+        Keys are stored namespaced as ``<plugin_id>_<key>``; ``filter_plugin_secrets``
+        returns only this plugin's namespace with the prefix stripped, and RAISES
+        rather than widening when the namespace matches nothing (issue #251 — the
+        old ``filtered if filtered else all_secrets`` turned a typo'd plugin id
+        into cross-plugin credential access). See ``_shared/secrets.py`` for why
+        the "keys with no known prefix are shared/legacy" branch, and the plugin-id
+        list it needed, are gone.
+
+        An absent SECRETS_ARN stays a warning rather than a raise: that is the
+        env-var-not-wired case, not a namespace mismatch, and no secret is read at
+        all — so there is nothing to over-share. It is also what a plugin invoked
+        outside the CDK-built environment (a local smoke run) hits.
         """
         if not SECRETS_ARN:
             logger.warning("SECRETS_ARN not configured")
             return {}
-        
-        all_secrets = get_secret(SECRETS_ARN)
-        
-        # Filter to only keys prefixed with this plugin's ID
-        prefix = f"{self.source_platform}_"
-        filtered = {}
-        for key, value in all_secrets.items():
-            if key.startswith(prefix):
-                # Strip the prefix for cleaner access
-                clean_key = key[len(prefix):]
-                filtered[clean_key] = value
-            elif not any(key.startswith(f"{p}_") for p in self._get_known_prefixes()):
-                # Include keys without any known prefix (legacy/shared keys)
-                filtered[key] = value
-        
-        return filtered if filtered else all_secrets
 
-    def _get_known_prefixes(self) -> list[str]:
-        """Get list of known plugin prefixes for secret filtering."""
-        # This could be loaded from environment or manifest
-        return [
-            "webscraper", "s3_import", "manual_import",
-            "app_reviews_ios", "app_reviews_android",
-            "synthetic_reviews",
-        ]
+        return filter_plugin_secrets(self.source_platform, get_secret(SECRETS_ARN))
 
     def get_watermark(self, key: str, default: str = None) -> str:
         """Get watermark for a specific source/key from DynamoDB."""

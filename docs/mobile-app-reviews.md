@@ -346,7 +346,7 @@ cdk deploy --all
 ## Assumptions & Limitations
 
 - **Multiple apps per plugin**: each plugin supports several app configurations, managed from the **Configured Apps** list on the Scrapers page and persisted as a JSON array via the `/integrations/{source}/apps` CRUD endpoints.
-- **Implementation prerequisite**: The `KNOWN_SOURCES` set in `_shared/schemas.py` and the `_get_known_prefixes()` list in `_shared/base_ingestor.py` must include `app_reviews_ios` and `app_reviews_android` for proper secret filtering and message validation.
+- **Implementation prerequisite**: The `KNOWN_SOURCES` set in `_shared/schemas.py` must include `app_reviews_ios` and `app_reviews_android` for message validation. Secret filtering no longer needs a per-plugin list: `_shared/secrets.py` returns only the plugin's own `<plugin_id>_*` namespace and raises a configuration error when that namespace is empty, so the `_get_known_prefixes()` list this bullet used to also require is gone (issue #251).
 - **Unofficial APIs**: Both plugins use unofficial/public endpoints. These can change without notice. The circuit breaker will auto-disable the plugin if endpoints break.
 - **Rate limiting**: Apple and Google may rate-limit aggressive scraping. `app-store-web-scraper` has built-in delays with jitter. For Google, the country shuffle and configurable `max_countries_per_run` help manage request volume.
 - **iOS review depth**: Max 500 reviews per country (10 pages × 50). High-volume apps may miss reviews between runs if the schedule is too infrequent.

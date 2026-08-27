@@ -1919,25 +1919,38 @@ for (const plugin of webhookPlugins) {
 
 Plugins share a single Secrets Manager secret, but each plugin only accesses its own keys:
 
+`BaseIngestor._load_secrets()` and `BaseWebhook._load_secrets()` both delegate to one
+helper, `plugins/_shared/secrets.py`:
+
 ```python
-# In base_ingestor.py
-class BaseIngestor:
-    def _load_secrets(self) -> dict:
-        """Load only this plugin's secrets."""
-        all_secrets = get_secret(SECRETS_ARN)
-        
-        # Filter to only keys prefixed with this plugin's ID
-        prefix = f"{self.source_platform}_"
-        return {
-            k.replace(prefix, ''): v 
-            for k, v in all_secrets.items() 
-            if k.startswith(prefix)
-        }
+# In plugins/_shared/secrets.py
+def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
+    """Return plugin_id's namespaced keys, prefix stripped — or raise."""
+    prefix = f"{plugin_id}_"
+    scoped = {
+        key[len(prefix):]: value
+        for key, value in all_secrets.items()
+        if key.startswith(prefix) and len(key) > len(prefix)
+    }
+    if not scoped:
+        raise ConfigurationError(...)  # names plugin_id and prefix, nothing else
+    return scoped
 ```
 
 This means:
 - `webscraper` plugin sees: `configs`
 - Each plugin can only access its own secrets
+
+**It fails closed** (issue #251). A prefix matching zero keys — a typo'd plugin id, an
+unknown identity, an empty secret — raises a `ConfigurationError` naming the plugin and
+the expected prefix. It used to return the *complete* shared secret in that case, on the
+theory that a plugin predating prefixing had not been migrated yet; the effect was that
+the isolation boundary held only while every plugin's prefix was correct, and a typo
+produced the maximally permissive outcome. All ingestion Lambdas share one IAM role, so
+nothing else was catching it.
+
+The error and its log name the identity and the expected prefix only — never a secret
+value, and never another plugin's key names.
 
 ### Cost Controls
 

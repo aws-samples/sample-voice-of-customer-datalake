@@ -322,7 +322,7 @@ All plugin Lambdas share a single tightly-scoped IAM role with permissions for: 
 
 ### Secrets Isolation
 
-Secrets are prefixed with plugin ID for isolation. At runtime, `BaseIngestor._load_secrets()` strips the prefix so plugins access secrets by clean key name.
+Secrets are prefixed with plugin ID for isolation. At runtime, both `BaseIngestor._load_secrets()` and `BaseWebhook._load_secrets()` delegate to `plugins/_shared/secrets.py`, which strips the prefix so plugins access secrets by clean key name. A prefix matching zero keys raises a `ConfigurationError` naming the plugin and expected prefix rather than returning the whole shared secret (issue #251).
 
 ### Lambda Bundling
 
