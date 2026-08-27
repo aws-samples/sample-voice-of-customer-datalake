@@ -12,17 +12,18 @@ gate reporting success while 46 authorization tests asserted nothing, and nothin
 in the repository noticing the edit. `pytest.ini` sets `testpaths = lambda
 plugins`, so `scripts/` is never collected by a plain `pytest` run, and
 `lint:python` named only `lambda plugins`, so the file was not linted either. The
-same change that added this module extended that script to `scripts` — though only
-this test half runs in CI: no workflow invokes `lint:python`, so the lint half is a
-local gate (see `ruff.toml`'s header). Which is why the coverage that matters is
-here, not there.
+same change that added this module extended that script to `scripts`. This test
+half runs under local `test:backend` and the manually-dispatched MCP workflow;
+`lint:python` runs only through explicit local `npm run lint` / `npm run check`
+(see `ruff.toml`'s header). Which is why the coverage that matters is here, not
+there.
 
 The convention this repo applies to every other check — that it earns its place
 by failing when the behaviour regresses — has to apply to the code that decides
 whether checks pass. So this module lives under `lambda/shared/test/` (inside
 `testpaths`, and inside the gate's own scope via the `test_mcp_*` glob) rather
 than beside the script it tests, and the gate therefore audits its own enforcement
-on every pull request.
+whenever local `test:backend` or the manual MCP workflow runs.
 
 Two layers, because two things can be neutered
 ----------------------------------------------

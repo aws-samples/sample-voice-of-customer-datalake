@@ -39,16 +39,13 @@
 # only `lambda plugins`, so it was never linted. A one-token edit making the gate
 # report success unconditionally would have been flagged by nothing.
 #
-# Half of that is now enforced automatically and half is not, which is worth being
-# explicit about. `lambda/shared/test/test_mcp_gate_audit.py` unit-tests the file
-# and runs on every pull request, via the MCP gate's own `test_mcp_*` glob. The
-# LINT half does not run in CI at all: no workflow under `.github/workflows/`
-# invokes `lint:python`, `npm run lint` or `npm run check` (the event-logging guard
-# only mentions the latter in a comment), so `scripts/` — like `lambda/` and
-# `plugins/` before it — is linted only when someone runs the gate locally. Making
-# the lint gate a workflow is the follow-up that would close it, by the same "a
-# check that does not run protects nothing" reasoning the MCP gate applies
-# elsewhere.
+# Both halves now run through explicit local/manual paths, which is worth being
+# clear about. `lambda/shared/test/test_mcp_gate_audit.py` unit-tests the file
+# under local `test:backend` and the manually-dispatched MCP workflow. The lint
+# half runs when someone invokes `npm run lint` or `npm run check`; no automatic
+# GitHub trigger invokes either half while the MCP workflow is manual-only. If
+# its pull-request/development triggers are re-enabled later, the test half
+# becomes automatic again while lint remains part of the local full check.
 
 extend-exclude = [
     # Vendored third-party code: local layer build output from

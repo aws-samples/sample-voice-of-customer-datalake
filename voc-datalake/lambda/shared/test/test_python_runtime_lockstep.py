@@ -33,7 +33,8 @@ reasons:
    problem, not whether one did.
 2. `scripts/mcp_gate.py` floors this module on tests that RAN, so any skip drops
    it below its floor and fails the audit regardless.
-3. The CI gate — the only consumer — always has a full checkout.
+3. The supported consumers — local full-backend testing and the manually-
+   dispatched MCP workflow — both use a full checkout.
 
 Failing loudly on a partial checkout is also the better behaviour here: a guard
 that quietly measures nothing is worse than one that says it cannot run.

@@ -54,7 +54,8 @@ it never measured — but that tolerance could not take effect, for three reason
    not whether one did.
 2. `scripts/mcp_gate.py` floors this module on tests that RAN, so any skip drops
    it below its floor and fails the audit regardless.
-3. The CI gate — the only consumer — always has a full checkout.
+3. The supported consumers — local full-backend testing and the manually-
+   dispatched MCP workflow — both use a full checkout.
 
 Failing loudly on a partial checkout is also the better behaviour: a mirror test
 that quietly measures nothing is the exact failure mode this file exists to

@@ -41,8 +41,9 @@ this gate to pytest's console formatting.
 
 What audits this file
 ---------------------
-``lambda/shared/test/test_mcp_gate_audit.py``, which the gate runs on every pull
-request via the ``lambda/shared/test/test_mcp_*.py`` glob. It exercises
+``lambda/shared/test/test_mcp_gate_audit.py``, which runs under local
+``test:backend`` and the manually-dispatched workflow via the
+``lambda/shared/test/test_mcp_*.py`` glob. It exercises
 ``audit()`` against synthetic reports — floors met, a module below its floor, a
 module absent, a skipped test, a missing report, a malformed report — and checks
 that the declarations below describe a surface that actually exists. Without it
@@ -76,9 +77,9 @@ created it: the two lockstep modules — ``test_mcp_vocabulary_lockstep.py``
 against the CDK runtime). No test in the tree read ``MCP_SCOPES`` at all before
 they existed.
 
-The one thing the follow-up must carry over is the job NAME: branch protection keys
-on ``MCP backend tests``, so a replacement job either keeps that string or the
-required check silently stops being enforced.
+If automatic triggers and branch protection are re-enabled later, keep the job
+name ``MCP backend tests`` stable: that string becomes the required-check
+identifier, and renaming it then would silently stop enforcement.
 """
 
 from __future__ import annotations
@@ -125,9 +126,9 @@ EXPLICIT_TEST_PATHS: tuple[str, ...] = (
 # nothing collects `scripts/` — this file is only ever *run* as the gate's own
 # entry point, and only ever *tested* by that module. (`lint:python` was likewise
 # `ruff check lambda plugins` until the same change added `scripts` — but that is a
-# LOCAL gate: no workflow invokes it, so the lint half of this file's coverage runs
-# only when someone runs it by hand, while the test half runs on every PR. See
-# ruff.toml's header.) Neutering
+# LOCAL gate: no workflow invokes `lint:python`, so the lint half runs under
+# explicit `npm run lint` / `npm run check`; the test half runs under local
+# `test:backend` and the manually-dispatched MCP workflow. See ruff.toml's header.) Neutering
 # `audit()` below to `return 0` was verified to let a module-level skip on
 # `test_mcp_tokens.py` produce `858 passed, 46 skipped` with the gate reporting
 # success. The floors protect the test surface; that module protects the floors.
