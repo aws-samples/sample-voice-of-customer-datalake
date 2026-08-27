@@ -12,7 +12,7 @@ import DataSourceWizard from '../../components/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { isWebSearchAvailable } from '../../runtimeConfig'
 import type {
-  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
+  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, DocType,
 } from './types'
 import type {
   ProjectPersona, ProjectDocument,
@@ -242,7 +242,10 @@ export function DocWizard({
   const hasPrfaq = docTypes.includes('prfaq')
   const hasPrd = docTypes.includes('prd')
 
-  const toggleDocType = (type: 'prd' | 'prfaq') => {
+  // `DocType`, not a respelt `'prd' | 'prfaq'`: this toggles membership of
+  // `docConfig.docTypes`, which IS `DocType[]`, so an inline copy here could admit a
+  // value the picker cannot hold or refuse one it can (issue #381).
+  const toggleDocType = (type: DocType) => {
     const next = docTypes.includes(type)
       ? docTypes.filter((d) => d !== type)
       : [...docTypes, type]
