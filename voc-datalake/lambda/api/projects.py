@@ -12,7 +12,8 @@ from botocore.exceptions import ClientError
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.model_config import get_active_model_id
 from shared.api import validate_days, MAX_PERSONAS_PER_GENERATION
 from shared.converse import converse_chain
 from shared.exceptions import (
@@ -655,8 +656,18 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         logger.info("[PERSONA] Step 4/6: Executing LLM chain (this may take several minutes)...")
         update_progress(20, 'executing_llm_chain')
         
+        # Resolved once and passed to converse_chain so the recorded
+        # llm_metadata.model below can never drift from what actually ran,
+        # even if the surface's active model changes between this call and
+        # the read at persona-save time.
+        persona_model_id = get_active_model_id('documents')
         try:
-            results = converse_chain(chain_steps, progress_callback=lambda p, s: update_progress(p, s), surface='documents')
+            results = converse_chain(
+                chain_steps,
+                progress_callback=lambda p, s: update_progress(p, s),
+                surface='documents',
+                model_id=persona_model_id,
+            )
             logger.info(f"[PERSONA] LLM chain returned {len(results)} results")
         except Exception as e:
             logger.error(f"[PERSONA] LLM chain execution failed: {e}")
@@ -789,7 +800,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 'created_at': now,
                 'updated_at': now,
                 'llm_metadata': {
-                    'model': BEDROCK_MODEL_ID,
+                    'model': persona_model_id,
                     'prompt_version': PERSONA_PROMPT_VERSION,
                     'generation_time_ms': llm_time
                 },
