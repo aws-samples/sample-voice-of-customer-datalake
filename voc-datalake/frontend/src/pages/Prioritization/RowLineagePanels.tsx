@@ -46,6 +46,18 @@ import type { ReactElement } from 'react'
  * screen reader, which reads the header as one button, gets the sentence as part
  * of it. The same sentence is printed in full inside the expansion
  * (`RowLineageNote`), so the sighted reader has somewhere to read it too.
+ *
+ * THE COST OF THAT, NAMED: this row header is one big `button`, so everything
+ * inside it — this sentence included — joins its accessible name, which was
+ * already long (title, type badges, band, spread, project, date, four team
+ * numbers). Accepted on the precedent `SortControls` sets, in its own words: a
+ * `title` "never appears on a touch device and screen-reader support for it is
+ * inconsistent, so the readers who most need [the answer] were the ones who could
+ * not reach it". Dropping to `title` alone would leave a screen-reader user with
+ * strictly less than a mouse user, which is the trade this page has already
+ * refused once. `aria-describedby` is not the escape either — inside a `button` a
+ * description is announced with the name anyway; it becomes the right shape only
+ * if the header is ever split so the badges sit outside the button.
  */
 export function RowLineageBadge({ lineage }: { readonly lineage: RowLineage }): ReactElement {
   const { t } = useTranslation('prioritization')
