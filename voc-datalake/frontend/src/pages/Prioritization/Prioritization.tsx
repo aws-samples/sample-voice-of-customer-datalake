@@ -79,9 +79,14 @@ import type {
 type PrioritizationRead = Awaited<ReturnType<typeof api.getPrioritizationScores>>
 
 const selectPrioritization = (data: PrioritizationRead) => {
-  const rows = normalizeRows(data.rows)
-  const rowsPublished = data.rows !== undefined && rows !== undefined
-    && Object.keys(rows).length === Object.keys(data.rows).length
+  const rawRows: unknown = data.rows
+  const rows = normalizeRows(rawRows)
+  const rowsPublished = rawRows !== undefined
+    && rawRows !== null
+    && typeof rawRows === 'object'
+    && !Array.isArray(rawRows)
+    && rows !== undefined
+    && Object.keys(rows).length === Object.keys(rawRows).length
   return {
     rows,
     /**
