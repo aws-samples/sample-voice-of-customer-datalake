@@ -27,7 +27,7 @@ import clsx from 'clsx'
 import {
   FilePlus2, Lock, Pencil, Trash2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal'
 import { SCORABLE_TYPE_META } from './prioritizationUtils'
@@ -97,7 +97,10 @@ export interface RowCompositionActions {
    * Whether that count is complete enough to be STATED as a reason, as opposed to only
    * acted on by withholding a control.
    *
-   * False while any read feeding it is still arriving. The gate below runs either way —
+   * False while any read feeding it is still arriving, AND false for a scores read that
+   * failed or published no rows map — the page still lists the rows the default-row
+   * ensure confirmed in that state, and those can only ever be DEFAULT rows, so every
+   * one of them would count as its project's only one. The gate below runs either way —
    * a momentarily absent control is recoverable, the reader waits and it appears — but
    * the sentence explaining the absence claims a fact about stored state ("this is the
    * project's only default row"), and a reviewer who believes a false one adds a row
@@ -113,9 +116,25 @@ export interface RowCompositionActions {
   readonly canDelete: boolean
   /** True while any row-composition write is in flight — see the module docstring. */
   readonly pending: boolean
-  readonly onCompose: (row: PrioritizationRowView, documentIds: readonly string[]) => void
-  readonly onRecompose: (row: PrioritizationRowView, documentIds: readonly string[]) => void
-  readonly onDelete: (row: PrioritizationRowView) => void
+  /**
+   * The three writes, each given the CONTROL THAT OWNS IT so focus has somewhere to
+   * return to when the panel reporting the outcome is dismissed.
+   *
+   * `from` is the action-row button — "Add row", "Edit documents", "Delete row" — and NOT
+   * the element that was focused at submission: the picker's Save and the confirm
+   * dialog's Confirm both unmount as they submit, so the thing focus was on is frequently
+   * detached by the time the panel appears, and a restore aimed at it lands on `<body>`.
+   * The action-row buttons survive their own submission (the picker renders below them,
+   * the dialog beside them), so they are the anchor that actually holds. `null` where
+   * there is none to name, which claims nothing. See `RowLifecycle.clearFailure`.
+   */
+  readonly onCompose: (
+    row: PrioritizationRowView, documentIds: readonly string[], from: HTMLElement | null,
+  ) => void
+  readonly onRecompose: (
+    row: PrioritizationRowView, documentIds: readonly string[], from: HTMLElement | null,
+  ) => void
+  readonly onDelete: (row: PrioritizationRowView, from: HTMLElement | null) => void
 }
 
 /** Shared empty list, so a project with no read documents allocates nothing per render. */
@@ -312,6 +331,15 @@ export default function RowCompositionPanel({
   const heldIds = row.documents.map((doc) => doc.document_id)
   const isOnlyDefaultRow = isProjectsOnlyDefaultRow(row, rowsByProject)
   /**
+   * The three action-row buttons, so a write can name the control it came from and the
+   * panel reporting its outcome has somewhere to send focus back to — see
+   * `RowCompositionActions.onCompose`. These outlive their own submission, which is the
+   * whole reason they and not the submitted control are the anchor.
+   */
+  const addRowButton = useRef<HTMLButtonElement>(null)
+  const editButton = useRef<HTMLButtonElement>(null)
+  const deleteButton = useRef<HTMLButtonElement>(null)
+  /**
    * Dispatch on the mode the picker was OPENED in, which is a `SubmittingPicker` by
    * construction — the parameter is supplied where the picker is rendered, and the
    * picker only renders when the mode is not `'none'`. So the switch has no `default`
@@ -322,10 +350,10 @@ export default function RowCompositionPanel({
     setOpenPicker('none')
     switch (mode) {
       case 'compose':
-        onCompose(row, documentIds)
+        onCompose(row, documentIds, addRowButton.current)
         return
       case 'recompose':
-        onRecompose(row, documentIds)
+        onRecompose(row, documentIds, editButton.current)
         return
     }
   }
@@ -346,6 +374,7 @@ export default function RowCompositionPanel({
         {row.is_frozen ? null : (
           <button
             type="button"
+            ref={editButton}
             onClick={() => setOpenPicker((open) => (open === 'recompose' ? 'none' : 'recompose'))}
             // The picker this button controls is its own sibling, so the relationship
             // is announced rather than left to visual proximity.
@@ -359,6 +388,7 @@ export default function RowCompositionPanel({
         )}
         <button
           type="button"
+          ref={addRowButton}
           onClick={() => setOpenPicker((open) => (open === 'compose' ? 'none' : 'compose'))}
           aria-expanded={openPicker === 'compose'}
           disabled={pending}
@@ -370,6 +400,7 @@ export default function RowCompositionPanel({
         {canDelete && !isOnlyDefaultRow ? (
           <button
             type="button"
+            ref={deleteButton}
             onClick={() => setConfirmingDelete(true)}
             disabled={pending}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
@@ -443,7 +474,11 @@ export default function RowCompositionPanel({
         variant="danger"
         onConfirm={() => {
           setConfirmingDelete(false)
-          onDelete(row)
+          // The row's own Delete control as the anchor, not the dialog's Confirm, which
+          // unmounts in this same handler — see `RowCompositionActions.onDelete`. It
+          // survives a REFUSED delete, which is when a panel is dismissed with a row
+          // still on screen; a delete that landed takes it, and then nothing is claimed.
+          onDelete(row, deleteButton.current)
         }}
         onCancel={() => setConfirmingDelete(false)}
       />

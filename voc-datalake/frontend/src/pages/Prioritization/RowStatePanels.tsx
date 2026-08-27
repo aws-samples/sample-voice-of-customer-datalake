@@ -91,7 +91,7 @@ function failureSentenceKey(failure: RowActionFailure): `prioritization:${string
 }
 
 /**
- * Bring a panel a reader did not ask for INTO VIEW, and put focus on it.
+ * Bring a panel a reader did not ask for INTO VIEW, and — where asked — put focus on it.
  *
  * Every control that produces one of these lives inside an expanded row, which can be
  * far below the fold, while the panel renders near the top of the page. `role="alert"`
@@ -105,31 +105,30 @@ function failureSentenceKey(failure: RowActionFailure): `prioritization:${string
  * while a re-render for any other reason does not steal focus back.
  *
  * `block: 'nearest'` scrolls the minimum needed and leaves a panel already on screen
- * where it is. Focus lands on the region's HEADING rather than on the region itself,
- * which is why the caller gives the heading `tabIndex={-1}`: focusing an element that
- * is ITSELF a live region makes most screen readers say the message twice — once
- * because the region changed, once because focus landed on a container whose whole
+ * where it is. Where focus is taken it lands on the region's HEADING rather than on the
+ * region itself, which is why the caller gives the heading `tabIndex={-1}`: focusing an
+ * element that is ITSELF a live region makes most screen readers say the message twice —
+ * once because the region changed, once because focus landed on a container whose whole
  * contents are then read — and the region already announced it. The heading moves the
  * sighted and keyboard reader, which is the half `role="alert"` does nothing for, and
  * announces the panel's name rather than the word "Dismiss".
  *
- * FOCUS IS RESTORED when the panel goes away, following `ModalShell`: the dismiss
- * button unmounts the element focus is on, so without this a keyboard reader who
- * dismisses the panel is dropped on `<body>` at the top of the document and has to tab
- * through the whole page to get back to the control inside the expanded row that
- * produced it. The trigger is captured with an `instanceof` guard rather than an
- * assertion, since `activeElement` is `Element | null` and only an `HTMLElement` can be
- * re-focused.
+ * `takeFocus` IS FALSE FOR THE DELETE RECEIPT, and that is the one asymmetry here. A
+ * failed write is an interruption a reader has to notice before doing anything else; a
+ * completed delete is the confirmation of something they just asked for, so its polite
+ * `role="status"` announcement is the right amount of attention and taking focus as well
+ * would pull them off whatever `ConfirmModal`'s own restore has just handed back. It
+ * still scrolls into view, which is the sighted half.
  *
- * ONLY IF THE TRIGGER IS STILL IN THE DOCUMENT, which is not the same caution as
- * `ModalShell`'s and matters more here. Two of the three controls that raise one of
- * these panels REMOVE THEMSELVES as they submit — the picker closes on submit and the
- * confirm dialog closes on confirm — so the element focus was on is frequently gone by
- * the time the panel appears, and re-focusing a detached node moves focus to `<body>`
- * in some engines rather than leaving it alone. Where the trigger survives (a refused
- * delete leaves its own "Delete row" button on screen, and the dialog's own restore has
- * already put focus back on it) the reader lands exactly where they were. Where it does
- * not, nothing is claimed and the browser keeps whatever it had — the recoverable half.
+ * NOTHING IS RESTORED FROM A CLEANUP HERE, and that is deliberate rather than missing.
+ * An effect cleanup runs on EVERY teardown — the identity changing, the panel being
+ * cleared by the reader's next write, the page unmounting — not only on a dismissal, so
+ * restoring from it pulled focus off whatever the reader had moved to in the meantime.
+ * And the anchor it could reach for (`document.activeElement` when the panel appeared) is
+ * frequently a node already detached, because the picker's Save and the confirm dialog
+ * both unmount as they submit. Dismissal restores focus explicitly instead, to the
+ * control that OWNS the write — see `RowLifecycle.clearFailure` and
+ * `RowCompositionActions.onCompose`.
  *
  * `scrollIntoView` IS CALLED ONLY IF IT EXISTS, which is not defensiveness for its own
  * sake: one of these panels is the page's only account of a write that failed, and an
@@ -138,28 +137,25 @@ function failureSentenceKey(failure: RowActionFailure): `prioritization:${string
  * outcome than a message that did not scroll. Focus is attempted either way, since
  * that is the half a keyboard reader depends on.
  */
-function useAnnouncePanel(identity: string | undefined): RefObject<HTMLHeadingElement | null> {
+function useAnnouncePanel(
+  identity: string | undefined,
+  takeFocus: boolean,
+): RefObject<HTMLHeadingElement | null> {
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
     if (identity === undefined) return
     const element = heading.current
     if (!element) return
-    // Whatever the reader was on — the control they pressed, in the row below — so the
-    // cleanup can put them back. See the docstring.
-    const active = document.activeElement
-    const trigger = active instanceof HTMLElement ? active : null
     if (typeof element.scrollIntoView === 'function') element.scrollIntoView({ block: 'nearest' })
-    element.focus()
-    return () => {
-      // Only a trigger STILL IN THE DOCUMENT: the picker and the confirm dialog both
-      // close as they submit, so the element focus was on is often detached by now, and
-      // focusing a detached node lands focus on `<body>` rather than leaving it be. See
-      // the docstring.
-      if (trigger?.isConnected === true) trigger.focus()
-    }
-  }, [identity])
+    if (takeFocus) element.focus()
+  }, [identity, takeFocus])
   return heading
 }
+
+/** Focus follows a failed write, so the reader cannot miss it — see `useAnnouncePanel`. */
+const TAKE_FOCUS = true
+/** …and not a delete that landed, which announces politely instead. See there. */
+const ANNOUNCE_ONLY = false
 
 /**
  * What did not happen when a reviewer added, edited or deleted a row.
@@ -184,6 +180,7 @@ export function RowActionFailurePanel({
   // `undefined` while no failure is on screen, which is what stops the effect firing.
   const heading = useAnnouncePanel(
     failure ? `${failure.action}:${failure.status ?? 'none'}:${failure.rowTitle}` : undefined,
+    TAKE_FOCUS,
   )
   if (!failure) return null
   return (
@@ -263,6 +260,9 @@ export function RowDeletedPanel({
   const { t } = useTranslation('prioritization')
   const heading = useAnnouncePanel(
     deleted ? `${deleted.rowTitle}:${deleted.ballotsDeleted}` : undefined,
+    // Scrolled into view but NOT focused: this confirms an action the reader asked for,
+    // and its polite announcement is the right weight — see `useAnnouncePanel`.
+    ANNOUNCE_ONLY,
   )
   if (!deleted) return null
   return (
@@ -277,8 +277,10 @@ export function RowDeletedPanel({
           <h3
             ref={heading}
             id="row-deleted-title"
-            // See `RowActionFailurePanel` — the heading is what focus lands on.
-            tabIndex={-1}
+            // NO `tabIndex`, unlike the failure panel's heading: nothing focuses this
+            // one. The ref is here for the scroll alone, and a programmatically-focusable
+            // heading nothing ever focuses would read as an in-flight intention this code
+            // does not have. See `useAnnouncePanel`.
             className="font-medium text-green-900 text-sm sm:text-base"
           >
             {t('rowDeleted.title')}

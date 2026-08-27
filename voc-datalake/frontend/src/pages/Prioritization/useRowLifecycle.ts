@@ -33,7 +33,7 @@
  */
 
 import { useMutation } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { apiErrorStatus, isPermanentRefusal } from '../../api/apiErrorStatus'
 import { prioritizationRowsApi } from '../../api/prioritizationRowsApi'
 import type { RowCompositionActions } from './RowCompositionPanel'
@@ -119,9 +119,23 @@ export interface RowLifecycle {
   readonly failure: RowActionFailure | undefined
   /** The last delete that landed, or `undefined` while none has. */
   readonly deleted: RowDeleted | undefined
-  /** Dismiss the failure panel. */
+  /**
+   * Dismiss the failure panel, PUTTING FOCUS BACK where the write came from.
+   *
+   * The two halves belong in one call because they are one event: dismissing unmounts
+   * the button the reader just pressed, so a keyboard reader is dropped on `<body>` at
+   * the top of the document unless something claims focus in the same handler. The
+   * anchor is the control that OWNS the write (see `anchorFor`), not whatever happened
+   * to be focused when the panel appeared — the picker's Save and the confirm dialog
+   * both unmount as they submit, so `document.activeElement` at that moment is
+   * frequently a node about to be detached.
+   *
+   * ONLY ON THIS PATH, deliberately. Restoring from an effect's cleanup instead fired on
+   * every teardown — an identity change, or the panel being cleared by the reader's NEXT
+   * write — and pulled focus off whatever they had moved to in the meantime.
+   */
   readonly clearFailure: () => void
-  /** Dismiss the delete-receipt panel. */
+  /** Dismiss the delete-receipt panel, restoring focus the same way. */
   readonly clearDeleted: () => void
 }
 
@@ -150,6 +164,27 @@ export function useRowLifecycle({
 }): RowLifecycle {
   const [failure, setFailure] = useState<RowActionFailure | undefined>(undefined)
   const [deleted, setDeleted] = useState<RowDeleted | undefined>(undefined)
+  /**
+   * Where to put focus back when a panel is dismissed — the control that OWNS the write,
+   * supplied by the panel that issued it.
+   *
+   * A ref rather than state: nothing renders from it, and a re-render per write would be
+   * spent for no visible difference. Held for the LAST write only, which is exactly the
+   * one either panel can be describing.
+   */
+  const anchor = useRef<HTMLElement | null>(null)
+  /**
+   * Put the reader back on the control the write came from, if it is still there.
+   *
+   * `isConnected` because it may not be: a delete that LANDED took its own "Delete row"
+   * button with the row, and focusing a detached node moves focus to `<body>` in some
+   * engines rather than leaving it alone — the very drop this exists to prevent. Where
+   * there is nothing to return to, the browser keeps whatever it has.
+   */
+  const restoreFocus = () => {
+    const element = anchor.current
+    if (element?.isConnected === true) element.focus()
+  }
   /**
    * One mutation for all three writes, keyed by the action it performs.
    *
@@ -183,7 +218,10 @@ export function useRowLifecycle({
     },
   })
 
-  const write = (input: RowWrite) => {
+  const write = (input: RowWrite, from: HTMLElement | null) => {
+    // Recorded BEFORE the request, while the control that issued it is certainly still
+    // mounted — see `anchor`.
+    anchor.current = from
     // Dropped BEFORE the request rather than only on success, so the panels describe
     // the write in flight rather than the previous one for as long as it runs.
     setFailure(undefined)
@@ -198,14 +236,22 @@ export function useRowLifecycle({
       rowCountSettled,
       canDelete,
       pending: mutation.isPending,
-      onCompose: (row, documentIds) => write({ action: 'compose', row, documentIds }),
-      onRecompose: (row, documentIds) => write({ action: 'recompose', row, documentIds }),
-      onDelete: (row) => write({ action: 'delete', row, documentIds: [] }),
+      onCompose: (row, documentIds, from) => write({ action: 'compose', row, documentIds }, from),
+      onRecompose: (row, documentIds, from) => (
+        write({ action: 'recompose', row, documentIds }, from)
+      ),
+      onDelete: (row, from) => write({ action: 'delete', row, documentIds: [] }, from),
     },
     failure,
     deleted,
-    clearFailure: () => setFailure(undefined),
-    clearDeleted: () => setDeleted(undefined),
+    clearFailure: () => {
+      setFailure(undefined)
+      restoreFocus()
+    },
+    clearDeleted: () => {
+      setDeleted(undefined)
+      restoreFocus()
+    },
   }
 }
 

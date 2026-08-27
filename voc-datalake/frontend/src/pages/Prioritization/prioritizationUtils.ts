@@ -1414,9 +1414,14 @@ export function retainedEnsuredRows(
  * that window, which is recoverable; the SENTENCE beside it asserts the count as a fact
  * about stored state, and a false one is what a reviewer acts on.
  *
- * Structural in its parameter (anything carrying a `project_id`) so both the stored
- * record and the view list satisfy it, and no caller has to choose between counting the
- * right thing and passing the type this happens to name.
+ * THE PARAMETER IS THE STORED ROWS RECORD, and narrowly so on purpose: the one argument
+ * this function was rewritten to reject is `collectRows`' output, and a structural
+ * parameter (anything carrying a `project_id`) accepted exactly that — so an edit
+ * reverting the call site to the narrowed view list type-checked silently and put the
+ * false sentence back with only a test between it and a merge. `PrioritizationRowView[]`
+ * does not satisfy `Record<string, PrioritizationRow>`, so the miscount is now a compile
+ * error rather than a comment. Taking the record also spares the caller an
+ * `Object.values` whose result would be the wrong shape to pass anywhere else.
  *
  * Still a COUNT OF WHAT THIS PAGE KNOWS, not a query of the partition, and that is fine
  * for a courtesy gate: the server's 409 stays authoritative either way, so a stale count
@@ -1426,10 +1431,10 @@ export function retainedEnsuredRows(
  * `rowCountSettled` on `RowCompositionActions`.
  */
 export function rowsPerProject(
-  rows: readonly { readonly project_id: string }[],
+  rows: Readonly<Record<string, PrioritizationRow>>,
 ): ReadonlyMap<string, number> {
   const counted = new Map<string, number>()
-  for (const row of rows) {
+  for (const row of Object.values(rows)) {
     counted.set(row.project_id, (counted.get(row.project_id) ?? 0) + 1)
   }
   return counted

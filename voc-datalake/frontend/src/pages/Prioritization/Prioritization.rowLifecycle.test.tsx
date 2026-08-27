@@ -655,6 +655,39 @@ describe("a project's only default row", () => {
     expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
   })
 
+  it('states no reason when the scores read FAILED, where only default rows are known', async () => {
+    // THE PATH THE PAGE DELIBERATELY SUPPORTS, and the one `!scoresPending` missed. A failed
+    // scores read still lists the rows the ensure confirmed — rows are this page's whole
+    // content — but rows only enter `ensuredRows` through `rowsAnswered`, and
+    // `api_create_prioritization_row` answers a project's DEFAULT row and nothing else. A
+    // row somebody COMPOSED has no path into it at all. So in this state every project reads
+    // as holding exactly one row, and the sentence asserted "this is the project's only
+    // default row" about projects that may hold three.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockRejectedValue(new Error('API Error: 500'))
+
+    await openTheRow()
+
+    // Withheld, which is recoverable — the reader reloads and it appears.
+    expect(screen.queryByRole('button', { name: /Delete row/ })).toBeNull()
+    // And nothing claimed about why, because nothing published a rows map to count.
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
+  it('states no reason for a deployment that publishes no rows field', async () => {
+    // The same blind spot with a 200 on it: a read that SUCCEEDED while sending no `rows`
+    // field publishes no rows either, so `!scoresFailed` would not have covered it. What the
+    // sentence needs is a read that actually DELIVERED a map — the same `rowsPublished`
+    // signal `retainedEnsuredRows` is handed.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
+
+    await openTheRow()
+
+    expect(screen.queryByRole('button', { name: /Delete row/ })).toBeNull()
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
   it('counts a sibling row whose documents have not resolved, so it states nothing false', async () => {
     // `collectRows` DROPS a row not one of whose document ids resolves — an ordinary
     // transient state of the project fan-out, and the reachable way a project holding two
@@ -858,14 +891,12 @@ describe('the page reports a row write that did not land', () => {
   it('puts focus back on the control that produced it when the panel is dismissed', async () => {
     // Dismissing unmounts the element focus is on, so without a restore a keyboard
     // reader is dropped on `<body>` at the top of the document and has to tab through
-    // the whole page to reach the control inside the expanded row again. `ModalShell`
-    // already captures and restores focus this way.
+    // the whole page to reach the control inside the expanded row again.
     //
-    // A REFUSED DELETE is the case where the trigger survives its own submission: the
-    // confirm dialog closes and restores focus to the "Delete row" button that opened
-    // it, which is still on screen because the row was not deleted. The picker's Save
-    // instead unmounts as it submits, and a detached node is deliberately not re-focused
-    // — see `useAnnouncePanel`.
+    // The anchor is the row's own "Delete row" button — the control that OWNS the write —
+    // and not whatever was focused when the panel appeared: the confirm dialog's Confirm
+    // unmounts in the same handler that issues the delete, so a restore aimed at it would
+    // land on `<body>`. See `RowCompositionActions.onDelete`.
     mockIsAdmin.mockReturnValue(true)
     mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
     mockDelete.mockRejectedValue(new Error('API Error: 500'))
@@ -887,6 +918,82 @@ describe('the page reports a row write that did not land', () => {
       expect(screen.getByRole('button', { name: /Delete row/ })).toHaveFocus()
     })
     expect(document.body).not.toHaveFocus()
+  })
+
+  it('does not drop a reader on <body> when a failed COMPOSE is dismissed', async () => {
+    // The case reading `document.activeElement` could never cover: the picker's Save
+    // unmounts as it submits, so the element focus was on is already detached when the
+    // panel appears and the restore was inert — measured as `document.body` having focus
+    // after the dismissal. The anchor is the "Add row" button instead, which survives its
+    // own submission because the picker renders below it.
+    mockCompose.mockRejectedValue(new Error('API Error: 500'))
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Add row/ }))
+    await user.click(screen.getByRole('button', { name: /Add the row/ }))
+    const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
+
+    await user.click(within(alert).getByRole('button', { name: /Dismiss this message/ }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Add row/ })).toHaveFocus()
+    })
+    expect(document.body).not.toHaveFocus()
+  })
+
+  it('leaves focus alone when the NEXT write clears the panel', async () => {
+    // A GUARD ON THE NEW SHAPE rather than a reproduction of a measured defect, and worth
+    // saying which. Restoring focus from the effect's cleanup ran on every teardown, not
+    // only on a dismissal, so a reader who had moved on and then started another write was
+    // liable to have focus pulled back to the previous write's anchor. In jsdom THIS case
+    // passes against the cleanup version too — measured: the anchor there is the row's
+    // Delete button, which `pending` has disabled by the time the cleanup fires, so the
+    // restore no-ops. What this pins is that an explicit dismissal is the ONLY path that
+    // claims focus, so widening it back into a teardown fails here.
+    //
+    // The clicks that clear the panel go through `fireEvent`, deliberately: `userEvent`
+    // focuses what it clicks, so the reader's own focus has to be held constant for this
+    // to measure the PANEL's behaviour rather than the click's.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
+    mockDelete.mockRejectedValue(new Error('API Error: 500'))
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+    await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
+
+    // The reader moves on to the row's note, then a second write clears the panel.
+    const note = screen.getByPlaceholderText(/notes about this prioritization/i)
+    note.focus()
+    fireEvent.click(screen.getByRole('button', { name: /Edit documents/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Save documents/ }))
+    await waitFor(() => {
+      expect(mockRecompose).toHaveBeenCalled()
+    })
+
+    // Wherever the reader put focus is where it stays — the panel's teardown claims
+    // nothing.
+    expect(note).toHaveFocus()
+  })
+
+  it('announces a delete that landed without taking focus from the reader', async () => {
+    // A completed delete is the confirmation of something the reader asked for, so its
+    // polite `role="status"` announcement is the right weight — and its own trigger is gone
+    // with the row by definition. Taking focus as well would pull them off whatever
+    // `ConfirmModal`'s restore has just handed back. It still scrolls into view.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+
+    const receipt = await screen.findByRole('status', { name: /The row was deleted/ })
+    const heading = within(receipt).getByRole('heading', { name: /The row was deleted/ })
+    expect(heading).not.toHaveFocus()
+    // Not left unreachable either: the panel brings itself into view for a sighted reader.
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
   })
 })
 

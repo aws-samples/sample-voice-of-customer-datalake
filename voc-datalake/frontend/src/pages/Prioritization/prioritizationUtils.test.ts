@@ -14,7 +14,9 @@ import {
   retainedEnsuredRows, rowsPerProject, scorableDocumentsByProject, withoutRow,
 } from './prioritizationUtils'
 import type { TeamAggregates, TeamAggregateRow, PrioritizationRowView } from './prioritizationUtils'
-import type { PrioritizationScore, PrioritizationAggregate, ProjectDocument } from '../../api/types'
+import type {
+  PrioritizationScore, PrioritizationAggregate, PrioritizationRow, ProjectDocument,
+} from '../../api/types'
 
 describe('getScore', () => {
   it('returns stored score when document_id exists', () => {
@@ -440,21 +442,31 @@ describe('collectRows resolves stored rows against the documents on screen', () 
 })
 
 describe('rowsPerProject counts what the delete gate reads', () => {
-  const rowView = (row_id: string, project_id: string): PrioritizationRowView => ({
+  /**
+   * A STORED row, which is the only shape this takes.
+   *
+   * `collectRows`' view list is deliberately NOT assignable to the parameter: it drops a
+   * row whose documents do not resolve, so counting its output reported a project holding
+   * two rows as holding one and the delete gate then said so in words. Narrowing the
+   * parameter to the record is what makes that argument a compile error rather than a
+   * comment, and these fixtures are the row shape for the same reason.
+   */
+  const storedRow = (row_id: string, project_id: string): PrioritizationRow => ({
     row_id,
     project_id,
-    project_name: 'P',
-    documents: [],
-    title: 'T',
+    document_ids: ['d1'],
+    prototype_id: '',
+    is_default: true,
     created_at: '2026-01-01',
     is_frozen: false,
-    is_default: true,
   })
 
   it('counts each project rows separately', () => {
-    const counted = rowsPerProject([
-      rowView('row-1', 'p1'), rowView('row-2', 'p1'), rowView('row-3', 'p2'),
-    ])
+    const counted = rowsPerProject({
+      'row-1': storedRow('row-1', 'p1'),
+      'row-2': storedRow('row-2', 'p1'),
+      'row-3': storedRow('row-3', 'p2'),
+    })
 
     expect(counted.get('p1')).toBe(2)
     expect(counted.get('p2')).toBe(1)
@@ -464,23 +476,22 @@ describe('rowsPerProject counts what the delete gate reads', () => {
     // The caller reads an absent count as 1, which is the conservative direction for a
     // courtesy gate — see `isProjectsOnlyDefaultRow`. A stored 0 would let that
     // distinction be lost here instead.
-    const counted = rowsPerProject([rowView('row-1', 'p1')])
+    const counted = rowsPerProject({ 'row-1': storedRow('row-1', 'p1') })
 
     expect(counted.has('p2')).toBe(false)
-    expect(rowsPerProject([]).size).toBe(0)
+    expect(rowsPerProject({}).size).toBe(0)
   })
 
-  it('counts a STORED row too, which is what keeps the count off the narrowed list', () => {
-    // The parameter is structural (anything carrying a `project_id`) so the page can count
-    // the rows record BEFORE `collectRows` narrows it. That matters: `collectRows` drops a
-    // row whose documents do not resolve, so counting its output reported a project holding
-    // two rows as holding one — and the delete gate then said so in words.
-    const stored = [
-      { row_id: 'row-1', project_id: 'p1', document_ids: ['d1'] },
-      { row_id: 'row-2', project_id: 'p1', document_ids: ['gone'] },
-    ]
+  it('counts a row whose documents do not resolve, which is why it takes the record', () => {
+    // The reachable way a project holding two rows presented as holding one: `collectRows`
+    // drops a row not one of whose document ids resolves, an ordinary transient state of
+    // the project fan-out. Counting the record itself keeps that sibling in the count.
+    const counted = rowsPerProject({
+      'row-1': storedRow('row-1', 'p1'),
+      'row-2': { ...storedRow('row-2', 'p1'), document_ids: ['gone'] },
+    })
 
-    expect(rowsPerProject(stored).get('p1')).toBe(2)
+    expect(counted.get('p1')).toBe(2)
   })
 })
 

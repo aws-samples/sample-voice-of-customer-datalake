@@ -100,6 +100,49 @@ const selectPrioritization = (data: PrioritizationRead) => ({
 })
 
 /**
+ * Is the per-project row count settled enough to EXPLAIN a withheld delete, as opposed
+ * to merely to withhold one?
+ *
+ * The count (`rowsPerProject` over `knownRows`) is only as complete as the reads behind
+ * it, and the two answers cost differently. Withholding the control through an unsettled
+ * window is recoverable — the reader waits, or reloads, and it appears — while the
+ * sentence explaining the absence asserts a fact about stored state ("this is the
+ * project's only default row"), and a reviewer who believes a false one acts on it by
+ * adding a row they did not want. So the gate runs on the count regardless and the
+ * explanation runs on this.
+ *
+ * THE SCORES READ MUST HAVE DELIVERED A ROWS MAP, not merely stopped being pending, and
+ * that is the condition an earlier version of this missed. Rows reach `ensuredRows` only
+ * through `rowsAnswered`, and `api_create_prioritization_row` answers a project's DEFAULT
+ * row and nothing else — a row somebody COMPOSED has no path into it at all, existing
+ * only in the scores read. So on the path this page deliberately supports (a failed
+ * scores read still listing the rows the ensure confirmed, because rows are the page's
+ * whole content) `knownRows` holds exactly one default row per project, and every one of
+ * them would be classified as its project's only row however many the partition holds.
+ *
+ * `rowsPublished` rather than `!scoresFailed`, for the same reason `retainedEnsuredRows`
+ * is handed that signal: a read that SUCCEEDED on a deployment sending no `rows` field
+ * publishes no rows either, so it is the identical blind spot with a 200 on it.
+ *
+ * The two project reads stay in it because `collectRows` and the count alike are empty
+ * until the project list lands, so a row can already be on screen from the ensure while
+ * the fan-out is still resolving its siblings.
+ *
+ * At MODULE level rather than inline: it is a rule about three reads with no dependency
+ * on anything else the component holds, and the page is at its `complexity` budget.
+ */
+function rowCountSettled({
+  loadingProjects, loadingDetails, rowsPublished,
+}: {
+  readonly loadingProjects: boolean
+  readonly loadingDetails: boolean
+  /** `undefined` while no read has delivered at all — see `selectPrioritization`. */
+  readonly rowsPublished: boolean | undefined
+}): boolean {
+  return !loadingProjects && !loadingDetails && rowsPublished === true
+}
+
+/**
  * The backlog at a glance, counted the same way the rows below are labelled.
  *
  * Reads the TEAM aggregate, not the caller's own map, because these cards sit
@@ -941,31 +984,17 @@ export default function Prioritization() {
    *
    * Counted over `knownRows`, the record BEFORE `collectRows` narrows it, deliberately:
    * a sibling row dropped for having no resolvable document (or for a project detail
-   * still in flight) would otherwise make a project holding two rows count as one. See
-   * `rowsPerProject`.
+   * still in flight) would otherwise make a project holding two rows count as one.
+   * `rowsPerProject` takes the record itself, so passing the narrowed list is a compile
+   * error rather than a silent miscount — see there.
    */
-  const rowsByProject = useMemo(
-    () => rowsPerProject(Object.values(knownRows)),
-    [knownRows],
-  )
+  const rowsByProject = useMemo(() => rowsPerProject(knownRows), [knownRows])
 
-  /**
-   * Is that count settled enough to EXPLAIN a withheld delete, as opposed to merely to
-   * withhold one?
-   *
-   * The count is only as complete as the reads behind it. While either the project list
-   * or the fan-out is still resolving, `knownRows` can be missing rows the partition
-   * holds — so "this is the project's only default row" would be asserted about a
-   * project whose second row simply has not arrived. Withholding the control through
-   * that window is recoverable; stating a false reason is not, because a reviewer acts
-   * on it by adding a row they did not want.
-   *
-   * Both reads, not just the fan-out: `collectRows` and the count alike are empty until
-   * the project list lands, and `savedScores` is the other source of rows — but a failed
-   * or absent scores read is exactly when `ensuredRows` is the whole truth, so it is not
-   * required here. What is required is that nothing is still ARRIVING.
-   */
-  const rowCountSettled = !loadingProjects && !loadingDetails && !scoresPending
+  // Whether the count may be STATED as a reason, not merely acted on. See
+  // `rowCountSettled`, at module level, which is where the reasoning lives.
+  const countSettled = rowCountSettled({
+    loadingProjects, loadingDetails, rowsPublished: savedScores?.rowsPublished,
+  })
 
   // Project names, so the refusal panel can NAME the projects that have no row rather
   // than printing ids nobody recognises. Off the project list read, which is a
@@ -995,7 +1024,7 @@ export default function Prioritization() {
   const rowLifecycle = useRowLifecycle({
     candidatesByProject,
     rowsByProject,
-    rowCountSettled,
+    rowCountSettled: countSettled,
     canDelete: isAdmin,
     onRowsChanged: () => {
       void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
