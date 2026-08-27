@@ -13,7 +13,8 @@ import random
 import re
 import time
 
-from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics, fetch_with_retry
+from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
+from shared.http_utils import OutboundUrlBlocked, fetch_checked_with_retry
 import requests
 
 
@@ -225,11 +226,25 @@ class WebScraperIngestor(BaseIngestor):
             return None
 
     def _scrape_page(self, config: dict, url: str) -> Generator[dict, None, None]:
-        """Scrape a single page based on configuration."""
+        """
+        Scrape a single page based on configuration.
+
+        The fetch goes through `fetch_checked_with_retry`, which applies the
+        shared outbound-URL policy to `url` immediately before the request and
+        again to every redirect target it follows (issue #244). A saved config
+        was already checked on write, but a host can start resolving internally
+        afterwards, so the destination is re-resolved here rather than trusted.
+
+        `OutboundUrlBlocked` is deliberately NOT caught: it is not a
+        `requests.RequestException`, so it escapes the handler below — which
+        would log "failed to fetch" at warning and move on — and reaches
+        `fetch_new_items`, which records it in the run's `errors`. A blocked
+        destination must be visible in the run status, not a silent skip.
+        """
         try:
             # Set Referer to the site's root so it looks like in-site navigation
             page_headers = {**self.headers, 'Referer': f"https://{urlparse(url).netloc}/"}
-            response = fetch_with_retry(url, headers=page_headers, timeout=15)
+            response = fetch_checked_with_retry(url, headers=page_headers, timeout=15)
             if response.status_code == 403:
                 logger.warning(f"Access denied (403) for {url} - site may be blocking automated requests")
                 return
@@ -399,6 +414,14 @@ class WebScraperIngestor(BaseIngestor):
                     
                     # Rate limit: randomized delay between pages to avoid bot detection
                     time.sleep(random.uniform(2.0, 5.0))
+                except OutboundUrlBlocked as e:
+                    # Logged at ERROR, unlike the generic warning below: a saved
+                    # config pointing at an internal address — or redirecting to
+                    # one — is a security signal, not a flaky page. The URL is
+                    # still only skipped so the scraper's other URLs proceed.
+                    error_msg = f"Blocked outbound URL {url}: {e}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
                 except Exception as e:
                     error_msg = f"Error scraping {url}: {str(e)}"
                     logger.warning(error_msg)

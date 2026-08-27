@@ -1,88 +1,210 @@
 """
 Tests for scrapers_handler.py - /scrapers/* endpoints.
 Manages web scraper configurations and runs.
+
+The URL-safety tests here cover this handler's USE of the shared outbound-URL
+policy — which routes call it, and what the caller sees when it refuses. The
+policy itself (address classification, resolution, redirect hops) is tested once,
+in `lambda/shared/test/test_outbound_url_policy.py`; issue #244 asked for one
+implementation, so this file must not grow a second set of address cases.
+
+Resolution is patched at `shared.http_utils.socket.getaddrinfo` — the shared
+module's import boundary — because that is where the handler's check now lives.
+A test patching `scrapers_handler.socket` would pass against a handler that had
+no check at all: this module no longer imports socket.
 """
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+PUBLIC_ADDRINFO = [(2, 1, 6, '', ('93.184.216.34', 80))]
+PRIVATE_ADDRINFO = [(2, 1, 6, '', ('10.1.2.3', 80))]
 
 
-class TestValidateUrl:
-    """Tests for validate_url SSRF protection function."""
+def _http_response(status: int, *, location: str | None = None, text: str = '') -> MagicMock:
+    """A requests.Response double for `shared.http_utils.requests.request`."""
+    response = MagicMock()
+    response.status_code = status
+    response.reason = 'reason'
+    response.headers = {'Location': location} if location else {}
+    response.text = text
+    return response
 
-    def test_rejects_empty_url(self):
-        """Rejects empty or None URL."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from scrapers_handler import validate_url
-        
-        is_valid, error = validate_url('')
-        assert is_valid is False
-        assert 'required' in error.lower()
-        
-        is_valid, error = validate_url(None)
-        assert is_valid is False
 
-    def test_rejects_non_http_schemes(self):
-        """Rejects non-HTTP/HTTPS schemes."""
-        from scrapers_handler import validate_url
-        
-        is_valid, error = validate_url('ftp://example.com')
-        assert is_valid is False
-        assert 'http' in error.lower()
-        
-        is_valid, error = validate_url('file:///etc/passwd')
-        assert is_valid is False
+class TestSaveScraperRejectsInternalDestinations:
+    """
+    POST /scrapers applies the outbound-URL policy on WRITE (issue #244).
 
-    def test_rejects_localhost(self):
-        """Rejects localhost URLs for SSRF protection."""
-        from scrapers_handler import validate_url
-        
-        is_valid, error = validate_url('http://localhost/admin')
-        assert is_valid is False
-        assert 'localhost' in error.lower()
-        
-        is_valid, error = validate_url('http://localhost.localdomain/test')
-        assert is_valid is False
+    That was the hole: the check ran only on the analyze/preview route, nothing
+    forced a preview, and the scheduled ingestor then fetched whatever was
+    saved. Removing the `validate_scraper_destinations(scraper)` call from
+    `save_scraper` turns every assertion in this class from 400 into 200.
 
-    @patch('scrapers_handler.socket.getaddrinfo')
-    def test_rejects_private_ip_addresses(self, mock_getaddrinfo):
-        """Rejects URLs resolving to private IP ranges."""
-        from scrapers_handler import validate_url
-        
-        # Mock DNS resolution to return private IP
-        mock_getaddrinfo.return_value = [
-            (2, 1, 6, '', ('192.168.1.1', 80))
-        ]
-        
-        is_valid, error = validate_url('http://internal-server.com')
-        assert is_valid is False
-        assert 'internal' in error.lower() or 'private' in error.lower()
+    `TestSaveScraper` below is the positive control — a public config still
+    saves — so a validator that refused everything could not pass this file.
+    """
 
-    @patch('scrapers_handler.socket.getaddrinfo')
-    def test_rejects_aws_metadata_ip(self, mock_getaddrinfo):
-        """Rejects URLs resolving to AWS metadata IP (169.254.x.x)."""
-        from scrapers_handler import validate_url
-        
-        mock_getaddrinfo.return_value = [
-            (2, 1, 6, '', ('169.254.169.254', 80))
-        ]
-        
-        is_valid, error = validate_url('http://metadata.internal')
-        assert is_valid is False
+    @staticmethod
+    def _post(api_gateway_event, lambda_context, scraper):
+        from scrapers_handler import lambda_handler
 
-    @patch('scrapers_handler.socket.getaddrinfo')
-    def test_accepts_valid_public_url(self, mock_getaddrinfo):
-        """Accepts valid public URLs."""
-        from scrapers_handler import validate_url
-        
-        mock_getaddrinfo.return_value = [
-            (2, 1, 6, '', ('93.184.216.34', 80))  # example.com IP
-        ]
-        
-        is_valid, error = validate_url('https://example.com/reviews')
-        assert is_valid is True
-        assert error == ''
+        return lambda_handler(
+            api_gateway_event(method='POST', path='/scrapers', body={'scraper': scraper}),
+            lambda_context,
+        )
+
+    @pytest.mark.parametrize('base_url', [
+        'http://127.0.0.1/admin',                    # loopback
+        'http://10.1.2.3/reviews',                   # private IPv4
+        'http://169.254.169.254/latest/meta-data/',  # instance metadata
+        'http://[::1]/admin',                        # loopback IPv6
+        'http://[fd00::1]/reviews',                  # unique-local IPv6
+        'ftp://example.com/reviews',                 # unsupported scheme
+    ])
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_a_config_whose_base_url_is_internal(
+        self, mock_secrets, base_url, api_gateway_event, lambda_context
+    ):
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 's1', 'name': 'Internal', 'base_url': base_url},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'base_url' in json.loads(response['body'])['error']
+        # Nothing persisted — refused before the secret was even read.
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_an_internal_url_in_the_extra_urls_list(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """`urls` reaches the ingestor exactly like `base_url` does."""
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {
+                'id': 's1', 'name': 'Mixed', 'base_url': '',
+                'urls': ['http://192.168.0.10/reviews'],
+            },
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'urls' in json.loads(response['body'])['error']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_a_public_looking_host_that_resolves_internally(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """The gap a string denylist cannot close: the name looks fine, the answer does not."""
+        mock_resolve.return_value = PRIVATE_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 's1', 'name': 'Sneaky', 'base_url': 'https://reviews.example.com/'},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'internal/private' in json.loads(response['body'])['error']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_a_host_whose_answers_mix_public_and_private(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        mock_resolve.return_value = PUBLIC_ADDRINFO + PRIVATE_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 's1', 'name': 'Mixed DNS', 'base_url': 'https://reviews.example.com/'},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_a_host_that_will_not_resolve(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """Fails closed: an unresolvable host is a 400, not a saved config."""
+        import socket
+
+        mock_resolve.side_effect = socket.gaierror('nope')
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 's1', 'name': 'Unresolvable', 'base_url': 'https://nope.example/'},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'resolve' in json.loads(response['body'])['error'].lower()
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_a_scraper_that_is_not_an_object(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """A list would sail past `.get()`-based validation as "no URLs to check"."""
+        response = self._post(
+            api_gateway_event, lambda_context, ['http://169.254.169.254/'],
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_saves_a_config_with_no_urls_configured_yet(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """
+        Positive control for the empty case: the editor ships `base_url: ''` and
+        `urls: []` for a fresh scraper, so refusing that would break the create
+        flow while still passing every "refuses" test above.
+        """
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_configs': '[]'})
+        }
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 's1', 'name': 'Draft', 'base_url': '', 'urls': []},
+        )
+
+        assert response['statusCode'] == 200, response['body']
+        mock_resolve.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_saves_a_config_whose_urls_are_all_public(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """The main positive control: ordinary public http and https still save."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_configs': '[]'})
+        }
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {
+                'id': 's1', 'name': 'Public',
+                'base_url': 'https://reviews.example.com/products',
+                'urls': ['http://reviews.example.com/page/2'],
+            },
+        )
+
+        assert response['statusCode'] == 200, response['body']
+        assert json.loads(response['body'])['success'] is True
+        saved = json.loads(
+            json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
+            ['webscraper_configs']
+        )
+        assert saved[0]['base_url'] == 'https://reviews.example.com/products'
 
 
 class TestListScrapers:
@@ -516,39 +638,44 @@ class TestGetScraperRuns:
 
 
 class TestAnalyzeUrl:
-    """Tests for POST /scrapers/analyze-url endpoint."""
+    """
+    Tests for POST /scrapers/analyze-url endpoint.
+
+    The fetch here used to be a bare `urllib.request.urlopen` on a
+    string-validated URL — which is why the preview check was bypassable even
+    when it ran (issue #244). It now goes through `fetch_checked_with_retry`, so
+    HTTP is mocked at `shared.http_utils.requests.request` and resolution at
+    `shared.http_utils.socket.getaddrinfo`.
+    """
 
     @patch('shared.converse.converse')
-    @patch('scrapers_handler.urllib.request.urlopen')
-    @patch('scrapers_handler.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
     def test_analyzes_url_and_returns_selectors(
-        self, mock_getaddrinfo, mock_urlopen, mock_converse,
+        self, mock_resolve, mock_request, mock_converse,
         api_gateway_event, lambda_context
     ):
         """Analyzes URL and returns CSS selectors using Bedrock."""
         # Arrange
-        mock_getaddrinfo.return_value = [(2, 1, 6, '', ('93.184.216.34', 80))]
-        
-        mock_response = MagicMock()
-        mock_response.read.return_value = b'<html><div class="review">Test</div></html>'
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
-        
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _http_response(
+            200, text='<html><div class="review">Test</div></html>'
+        )
+
         # Mock the converse function to return JSON with selectors
         mock_converse.return_value = '{"container_selector": ".review", "text_selector": ".review-text", "confidence": "high"}'
-        
+
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
             method='POST',
             path='/scrapers/analyze-url',
             body={'url': 'https://example.com/reviews'}
         )
-        
+
         # Act
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
-        
+
         # Assert
         assert response['statusCode'] == 200
         assert body['success'] is True
@@ -560,9 +687,9 @@ class TestAnalyzeUrl:
         assert mock_converse.call_args.kwargs['max_tokens'] >= 2048
         assert mock_converse.call_args.kwargs['surface'] == 'utility'
 
-    @patch('scrapers_handler.socket.getaddrinfo')
+    @patch('shared.http_utils.socket.getaddrinfo')
     def test_rejects_invalid_url(
-        self, mock_getaddrinfo, api_gateway_event, lambda_context
+        self, mock_resolve, api_gateway_event, lambda_context
     ):
         """Rejects invalid or dangerous URLs."""
         # Arrange - localhost should be blocked
@@ -572,47 +699,119 @@ class TestAnalyzeUrl:
             path='/scrapers/analyze-url',
             body={'url': 'http://localhost/admin'}
         )
-        
+
         # Act
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
-        
+
         # Assert - now returns 400 with error key
         assert response['statusCode'] == 400
         assert 'error' in body
         assert 'localhost' in body['error'].lower()
 
     @patch('shared.converse.converse')
-    @patch('scrapers_handler.urllib.request.urlopen')
-    @patch('scrapers_handler.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_redirect_from_the_previewed_page_into_an_internal_one(
+        self, mock_resolve, mock_request, mock_converse,
+        api_gateway_event, lambda_context
+    ):
+        """
+        The preview's own bypass: a public URL that 302s to the metadata
+        endpoint. Re-enabling automatic redirect following (or reverting the
+        fetch to urlopen, which also follows) makes this a 200 whose HTML is
+        internal — and, worse, hands that HTML to Bedrock.
+        """
+        def resolve(hostname, *_args, **_kwargs):
+            return PUBLIC_ADDRINFO if hostname == 'example.com' else PRIVATE_ADDRINFO
+
+        mock_resolve.side_effect = resolve
+        mock_request.return_value = _http_response(
+            302, location='http://metadata.internal/latest/meta-data/'
+        )
+
+        from scrapers_handler import lambda_handler
+        response = lambda_handler(
+            api_gateway_event(
+                method='POST', path='/scrapers/analyze-url',
+                body={'url': 'https://example.com/reviews'},
+            ),
+            lambda_context,
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'internal/private' in json.loads(response['body'])['error']
+        # The internal hop was never sent, and nothing reached Bedrock.
+        assert mock_request.call_count == 1
+        mock_converse.assert_not_called()
+
+    @patch('shared.converse.converse')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
     def test_handles_bedrock_failure_gracefully(
-        self, mock_getaddrinfo, mock_urlopen, mock_converse,
+        self, mock_resolve, mock_request, mock_converse,
         api_gateway_event, lambda_context
     ):
         """Returns error when Bedrock analysis fails."""
         # Arrange
-        mock_getaddrinfo.return_value = [(2, 1, 6, '', ('93.184.216.34', 80))]
-        
-        mock_response = MagicMock()
-        mock_response.read.return_value = b'<html></html>'
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
-        
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _http_response(200, text='<html></html>')
+
         # Mock converse to raise an exception
         mock_converse.side_effect = Exception('Bedrock error')
-        
+
         from scrapers_handler import lambda_handler
         event = api_gateway_event(
             method='POST',
             path='/scrapers/analyze-url',
             body={'url': 'https://example.com'}
         )
-        
+
         # Act
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
-        
+
         # Assert - now returns 500 with error key
         assert response['statusCode'] == 500
         assert 'error' in body
+
+
+class TestOnePolicyForBothCallSites:
+    """
+    The API and the ingestor must share ONE implementation (issue #244).
+
+    Copying the policy back into either module — the failure this repo has
+    already lived once, where `scrapers_handler.validate_url` existed and the
+    ingestor had no check at all — is what these two assertions catch.
+    """
+
+    def test_the_api_handler_uses_the_shared_policy_object(self):
+        import scrapers_handler
+        from shared import http_utils
+
+        assert scrapers_handler.assert_outbound_url_allowed is (
+            http_utils.assert_outbound_url_allowed
+        )
+        assert scrapers_handler.fetch_checked_with_retry is (
+            http_utils.fetch_checked_with_retry
+        )
+
+    def test_the_handler_defines_no_url_policy_of_its_own(self):
+        """
+        Asserted as a property of the module's source, not of one spelling: any
+        second address list or resolver call here means the two sides can drift.
+        """
+        import ast
+        import inspect
+
+        import scrapers_handler
+
+        tree = ast.parse(inspect.getsource(scrapers_handler))
+        names = {
+            node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+        } | {
+            node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+        }
+        assert 'getaddrinfo' not in names, 'handler resolves hostnames itself again'
+        assert 'ip_network' not in names, 'handler carries its own address denylist again'
+        assert 'urlopen' not in names, 'handler fetches outside the checked client again'

@@ -1,0 +1,284 @@
+"""
+The scheduled ingestor must re-check every destination it fetches (issue #244).
+
+Configurations are checked on write by the scrapers API, but this Lambda runs on
+a schedule with an execution role and fetches a config saved possibly months
+earlier, so the check is repeated here, immediately before each request, and on
+every redirect hop. Both sides call the SAME
+`shared.http_utils.assert_outbound_url_allowed` — that is the point of the
+issue, and `TestOnePolicyForBothCallSites` below asserts it rather than trusting
+this docstring.
+
+REVERT MAP
+----------
+- Put `fetch_with_retry` back in `_scrape_page` (no per-fetch check, redirects
+  followed by requests) -> `refuses_a_host_that_resolves_internally`,
+  `refuses_a_redirect_from_a_public_page_into_an_internal_one`.
+- Catch `OutboundUrlBlocked` inside `_scrape_page` as a fetch failure, or make
+  it a `requests.RequestException` subclass -> `records_a_blocked_url_in_the_run_errors`
+  (the URL would be skipped with a warning and the run would report success).
+- Duplicate the policy into this plugin instead of importing it
+  -> `TestOnePolicyForBothCallSites`.
+
+Nothing here touches the network: resolution and HTTP are patched at
+`shared.http_utils`'s import boundary, which is where the ingestor's fetch
+resolves them.
+"""
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+PUBLIC_ADDRINFO = [(2, 1, 6, '', ('93.184.216.34', 80))]
+INTERNAL_ADDRINFO = [(2, 1, 6, '', ('169.254.169.254', 80))]
+
+CSS_CONFIG = {
+    'id': 's1',
+    'name': 'Reviews',
+    'extraction_method': 'css',
+    'container_selector': '.review',
+    'text_selector': '.review-text',
+}
+
+REVIEW_HTML = (
+    '<html><div class="review">'
+    '<span class="review-text">A genuinely long enough review body.</span>'
+    '</div></html>'
+)
+
+
+def _response(status: int, *, location: str | None = None, text: str = '') -> MagicMock:
+    response = MagicMock()
+    response.status_code = status
+    response.reason = 'reason'
+    response.headers = {'Location': location} if location else {}
+    response.text = text
+    return response
+
+
+@pytest.fixture
+def ingestor():
+    """A real WebScraperIngestor with AWS mocked at the import boundary."""
+    with (
+        patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo,
+        patch('_shared.base_ingestor.get_s3_client'),
+        patch('_shared.base_ingestor.get_sqs_client'),
+        patch('_shared.base_ingestor.get_secret', return_value={}),
+    ):
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+        from webscraper.ingestor.handler import WebScraperIngestor
+        return WebScraperIngestor()
+
+
+class TestScrapePageChecksEveryDestination:
+    """`_scrape_page` fetches only through the checked client."""
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_host_that_resolves_internally(
+        self, mock_resolve, mock_request, ingestor
+    ):
+        """A saved host can start resolving internally after it was approved."""
+        from shared.http_utils import OutboundUrlBlocked
+
+        mock_resolve.return_value = INTERNAL_ADDRINFO
+
+        with pytest.raises(OutboundUrlBlocked, match='internal/private'):
+            list(ingestor._scrape_page(CSS_CONFIG, 'https://reviews.example.com/'))
+
+        mock_request.assert_not_called()
+
+    @pytest.mark.parametrize('url', [
+        'http://169.254.169.254/latest/meta-data/',
+        'http://10.0.0.5/reviews',
+        'http://[::1]/reviews',
+        'http://[fd00::1]/reviews',
+    ])
+    @patch('shared.http_utils.requests.request')
+    def test_refuses_direct_internal_targets_in_both_families(
+        self, mock_request, url, ingestor
+    ):
+        from shared.http_utils import OutboundUrlBlocked
+
+        with pytest.raises(OutboundUrlBlocked, match='internal/private'):
+            list(ingestor._scrape_page(CSS_CONFIG, url))
+
+        mock_request.assert_not_called()
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_redirect_from_a_public_page_into_an_internal_one(
+        self, mock_resolve, mock_request, ingestor
+    ):
+        """
+        The bypass in issue #244: an allowed public page 302s to the metadata
+        endpoint. Letting requests follow redirects makes this return HTML the
+        policy never cleared, and the items get ingested.
+        """
+        from shared.http_utils import OutboundUrlBlocked
+
+        def resolve(hostname, *_args, **_kwargs):
+            return PUBLIC_ADDRINFO if hostname == 'example.com' else INTERNAL_ADDRINFO
+
+        mock_resolve.side_effect = resolve
+        mock_request.return_value = _response(
+            302, location='http://metadata.internal/latest/meta-data/'
+        )
+
+        with pytest.raises(OutboundUrlBlocked, match='internal/private'):
+            list(ingestor._scrape_page(CSS_CONFIG, 'https://example.com/reviews'))
+
+        # Refused before the second send: exactly one request left the Lambda.
+        assert mock_request.call_count == 1
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_never_lets_the_http_client_follow_a_redirect(
+        self, mock_resolve, mock_request, ingestor
+    ):
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _response(200, text=REVIEW_HTML)
+
+        list(ingestor._scrape_page(CSS_CONFIG, 'https://example.com/reviews'))
+
+        assert mock_request.call_args.kwargs['allow_redirects'] is False
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_scrapes_a_public_page_as_before(self, mock_resolve, mock_request, ingestor):
+        """
+        Positive control: ordinary public scraping is unchanged. Without it, an
+        ingestor that refused every URL would pass every test above.
+        """
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _response(200, text=REVIEW_HTML)
+
+        items = list(ingestor._scrape_page(CSS_CONFIG, 'https://example.com/reviews'))
+
+        assert len(items) == 1
+        assert 'genuinely long enough review body' in items[0]['text']
+        assert items[0]['domain'] == 'example.com'
+        assert mock_request.call_args.kwargs['timeout'] == 15
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_follows_a_public_redirect_and_scrapes_the_final_page(
+        self, mock_resolve, mock_request, ingestor
+    ):
+        """A site's own http->https or /page/1 redirect must still be followed."""
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.side_effect = [
+            _response(301, location='https://example.com/reviews/'),
+            _response(200, text=REVIEW_HTML),
+        ]
+
+        items = list(ingestor._scrape_page(CSS_CONFIG, 'http://example.com/reviews'))
+
+        assert len(items) == 1
+        assert mock_request.call_count == 2
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_still_treats_a_403_as_a_skipped_page(
+        self, mock_resolve, mock_request, ingestor
+    ):
+        """The pre-existing bot-block path is untouched: no items, no exception."""
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _response(403)
+
+        assert list(ingestor._scrape_page(CSS_CONFIG, 'https://example.com/reviews')) == []
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_still_swallows_a_transport_failure(self, mock_resolve, mock_request, ingestor):
+        """A page that will not load is still a warning-and-continue, not a raise."""
+        import requests
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.side_effect = requests.exceptions.ConnectionError('refused')
+
+        assert list(ingestor._scrape_page(CSS_CONFIG, 'https://example.com/reviews')) == []
+
+
+class TestRunReportsABlockedUrl:
+    """A blocked destination must be visible in the run, not silently skipped."""
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_records_a_blocked_url_in_the_run_errors(
+        self, mock_resolve, mock_request, ingestor
+    ):
+        """
+        `fetch_new_items` wraps each URL in `except Exception`, so the blocked
+        URL is skipped and the scraper's other URLs continue — but the reason
+        lands in `errors` and the run reports `completed_with_errors`.
+
+        This is what `OutboundUrlBlocked` not being a `RequestException` buys:
+        `_scrape_page`'s own handler would otherwise absorb it and the run would
+        report a clean success.
+        """
+        def resolve(hostname, *_args, **_kwargs):
+            return PUBLIC_ADDRINFO if hostname == 'good.example' else INTERNAL_ADDRINFO
+
+        mock_resolve.side_effect = resolve
+        mock_request.return_value = _response(200, text=REVIEW_HTML)
+
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 's1'
+        ingestor.scraper_configs = [{
+            **CSS_CONFIG,
+            'urls': ['https://good.example/reviews', 'https://sneaky.example/reviews'],
+        }]
+
+        statuses = []
+        with (
+            patch.object(ingestor, '_update_run_status', lambda _id, u: statuses.append(u)),
+            patch.object(ingestor, 'set_watermark'),
+            patch('webscraper.ingestor.handler.time.sleep'),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        # The public URL was still scraped.
+        assert len(items) == 1
+
+        final = statuses[-1]
+        assert final['status'] == 'completed_with_errors'
+        assert any('sneaky.example' in e for e in final['errors'])
+        assert any('internal/private' in e for e in final['errors'])
+
+
+class TestOnePolicyForBothCallSites:
+    """
+    The ingestor imports the shared policy rather than carrying its own.
+
+    Issue #244's fourth acceptance criterion. The failure mode it guards is the
+    one this repo already had: `scrapers_handler.validate_url` existed, the
+    plugin had nothing, and neither side knew the other was meant to agree.
+    """
+
+    def test_uses_the_shared_checked_fetch_object(self):
+        from shared import http_utils
+        from webscraper.ingestor import handler
+
+        assert handler.fetch_checked_with_retry is http_utils.fetch_checked_with_retry
+        assert handler.OutboundUrlBlocked is http_utils.OutboundUrlBlocked
+
+    def test_defines_no_url_policy_of_its_own(self):
+        """
+        Asserted against the module's source, so it holds for any spelling of a
+        re-introduced denylist rather than one particular name.
+        """
+        import ast
+        import inspect
+
+        from webscraper.ingestor import handler
+
+        tree = ast.parse(inspect.getsource(handler))
+        names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {
+            n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
+        }
+        assert 'getaddrinfo' not in names, 'ingestor resolves hostnames itself'
+        assert 'ip_network' not in names, 'ingestor carries its own address denylist'
+        # The unchecked fetch this plugin used to call. Importing it again is the
+        # regression: it follows redirects with no per-hop check.
+        assert 'fetch_with_retry' not in names, 'ingestor fetches without the policy'

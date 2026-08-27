@@ -3,16 +3,12 @@ Scrapers API Lambda - Handles /scrapers/*
 Manages web scraper configurations and runs.
 """
 
-import ipaddress
 import json
 import os
 import re
-import socket
 import sys
-import urllib.request
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +16,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer
 from shared.aws import get_secrets_client, put_secret_json
 from shared.api import create_api_resolver, api_handler
+from shared.http_utils import (
+    OutboundUrlBlocked,
+    assert_outbound_url_allowed,
+    fetch_checked_with_retry,
+)
 from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
@@ -40,67 +41,42 @@ def require_webscraper_function():
 
 app = create_api_resolver()
 
-# Blocked hostnames and IP ranges for SSRF protection
-BLOCKED_HOSTNAMES = {'localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback'}
-BLOCKED_IP_RANGES = [
-    ipaddress.ip_network('127.0.0.0/8'),       # Loopback
-    ipaddress.ip_network('10.0.0.0/8'),        # Private Class A
-    ipaddress.ip_network('172.16.0.0/12'),     # Private Class B
-    ipaddress.ip_network('192.168.0.0/16'),    # Private Class C
-    ipaddress.ip_network('169.254.0.0/16'),    # Link-local (AWS metadata)
-    ipaddress.ip_network('::1/128'),           # IPv6 loopback
-    ipaddress.ip_network('fc00::/7'),          # IPv6 private
-    ipaddress.ip_network('fe80::/10'),         # IPv6 link-local
-]
+# Config keys naming a network destination the scheduled ingestor will fetch.
+# Kept in lockstep with `_get_urls_to_scrape` in
+# plugins/webscraper/ingestor/handler.py, which reads exactly these two — its
+# pagination URLs are derived from base_url and so share its host.
+SCRAPER_URL_FIELDS = ('base_url', 'urls')
 
 
-def validate_url(url: str) -> tuple[bool, str]:
+@tracer.capture_method
+def validate_scraper_destinations(scraper: dict) -> None:
     """
-    Validate URL to prevent SSRF attacks.
-    Returns (is_valid, error_message).
+    Apply the shared outbound-URL policy to every destination in a config.
+
+    Called on WRITE, which is what issue #244 was about: the policy used to run
+    only on the analyze/preview route, so a config was persisted unchecked and
+    the scheduled ingestor then fetched it. The ingestor re-checks each hop as
+    well — a saved host can start resolving internally later — but rejecting the
+    write is what keeps an internal target from being scheduled in the first
+    place.
+
+    Raises:
+        ValidationError: any destination is not a permitted outbound target.
+            Names the offending URL, because a config can hold several and
+            "one of your URLs is invalid" is not actionable.
     """
-    if not url or not isinstance(url, str):
-        return False, 'URL is required'
-    
-    # Parse URL
-    try:
-        parsed = urlparse(url)
-    except Exception:
-        return False, 'Invalid URL format'
-    
-    # Only allow http/https schemes
-    if parsed.scheme not in ('http', 'https'):
-        return False, 'Only http and https URLs are allowed'
-    
-    # Must have a hostname
-    hostname = parsed.hostname
-    if not hostname:
-        return False, 'URL must have a valid hostname'
-    
-    # Block known dangerous hostnames
-    hostname_lower = hostname.lower()
-    if hostname_lower in BLOCKED_HOSTNAMES:
-        return False, 'Access to localhost is not allowed'
-    
-    # Resolve hostname to IP and check against blocked ranges
-    try:
-        ip_addresses = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        for family, _, _, _, sockaddr in ip_addresses:
-            ip_str = sockaddr[0]
-            try:
-                ip = ipaddress.ip_address(ip_str)
-                for blocked_range in BLOCKED_IP_RANGES:
-                    if ip in blocked_range:
-                        return False, 'Access to internal/private IP addresses is not allowed'
-            except ValueError:
+    for field in SCRAPER_URL_FIELDS:
+        value = scraper.get(field)
+        # base_url is a string, urls a list; an absent or empty value is legal
+        # (the editor ships '' for base_url when only `urls` is used).
+        candidates = value if isinstance(value, list) else [value]
+        for url in candidates:
+            if not url:
                 continue
-    except socket.gaierror:
-        return False, 'Could not resolve hostname'
-    except Exception as e:
-        logger.warning(f"URL validation error: {e}")
-        return False, 'URL validation failed'
-    
-    return True, ''
+            try:
+                assert_outbound_url_allowed(url)
+            except OutboundUrlBlocked as e:
+                raise ValidationError(f"{field} '{url}': {e}") from e
 
 
 @app.get("/scrapers")
@@ -130,6 +106,13 @@ def save_scraper():
     scraper = body.get('scraper')
     if not scraper:
         raise ValidationError('No scraper config provided')
+    if not isinstance(scraper, dict):
+        raise ValidationError('Scraper config must be an object')
+
+    # BEFORE the try below, so its `except Exception -> ServiceError` cannot
+    # flatten this actionable 400 into an opaque 500. This route serves both
+    # create and update (there is no separate PUT), so one call covers both.
+    validate_scraper_destinations(scraper)
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
@@ -282,18 +265,22 @@ def analyze_url():
     """Use LLM to auto-detect CSS selectors for a URL."""
     body = app.current_event.json_body
     url = body.get('url')
-    
-    # Validate URL to prevent SSRF
-    is_valid, error_message = validate_url(url)
-    if not is_valid:
-        raise ValidationError(error_message)
-    
+
+    # Cheap pre-check so a bad URL is a 400 before any request is attempted.
+    # It is NOT what makes the fetch below safe — fetch_checked_with_retry
+    # re-checks the URL and every redirect target it follows, which is what
+    # closes the check-then-fetch gap in issue #244.
+    try:
+        assert_outbound_url_allowed(url)
+    except OutboundUrlBlocked as e:
+        raise ValidationError(str(e)) from e
+
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'text/html,application/xhtml+xml'}
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as response:
-            html_content = response.read().decode('utf-8', errors='ignore')
-        
+        response = fetch_checked_with_retry(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        html_content = response.text
+
         html_sample = html_content[:50000]
         from shared.converse import converse
         prompt = f"""Analyze this HTML and identify CSS selectors for extracting reviews:\n\n```html\n{html_sample}\n```\n\nReturn JSON with: container_selector, text_selector, rating_selector, author_selector, date_selector, confidence (high/medium/low), detected_reviews_count"""
@@ -307,6 +294,10 @@ def analyze_url():
             raise ServiceError('Could not parse selectors from response')
         selectors = json.loads(json_match.group())
         return {'success': True, 'selectors': selectors}
+    except OutboundUrlBlocked as e:
+        # A redirect into an internal destination is the caller's URL being
+        # refused, not a server fault: 400 with the reason, not an opaque 500.
+        raise ValidationError(str(e)) from e
     except (ValidationError, ServiceError):
         raise
     except Exception as e:
