@@ -78,26 +78,28 @@ import type {
  */
 type PrioritizationRead = Awaited<ReturnType<typeof api.getPrioritizationScores>>
 
-const selectPrioritization = (data: PrioritizationRead) => ({
-  rows: normalizeRows(data.rows),
-  /**
-   * Did this response actually PUBLISH a rows map, or merely omit the field?
-   *
-   * `normalizeRows` collapses both to `{}` — a deployment predating `rows` and one
-   * holding none read alike, which is honest for a page that merges the asks over
-   * either. `retainedEnsuredRows` needs them apart: an authoritative map's ABSENCE of
-   * a row means the row is gone, while a missing field says nothing at all, and
-   * reconciling against a field that was never sent would empty the page on an older
-   * deployment.
-   *
-   * Asked here, at the one point the raw response is in hand, rather than by widening
-   * `normalizeRows`' return: the distinction is a fact about the RESPONSE, and the
-   * three absences that function already tells apart are facts about the rows.
-   */
-  rowsPublished: data.rows !== undefined,
-  scores: normalizeScores(data.scores),
-  aggregates: normalizeAggregates(data.aggregates),
-})
+const selectPrioritization = (data: PrioritizationRead) => {
+  const rows = normalizeRows(data.rows)
+  return {
+    rows,
+    /**
+     * Did this response actually PUBLISH a readable rows map?
+     *
+     * `normalizeRows` returns `{}` for an omitted field so the page can keep merging
+     * ensure-confirmed fallback rows, but returns `undefined` for an unreadable
+     * container. Neither is authoritative: only a PRESENT field that normalized to a
+     * map can say an ensured row is gone, while a present readable empty map remains
+     * authoritative.
+     *
+     * Asked here, where both the raw field and normalized result are in hand, so an
+     * unreadable-but-present value cannot settle the count and an omitted field cannot
+     * impersonate a published empty map.
+     */
+    rowsPublished: data.rows !== undefined && rows !== undefined,
+    scores: normalizeScores(data.scores),
+    aggregates: normalizeAggregates(data.aggregates),
+  }
+}
 
 /**
  * Is the per-project row count settled enough to EXPLAIN a withheld delete, as opposed

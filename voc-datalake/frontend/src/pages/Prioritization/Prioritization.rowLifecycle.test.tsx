@@ -717,6 +717,19 @@ describe("a project's only default row", () => {
     expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
   })
 
+  it('keeps the ensured fallback visible without settling its count when rows is unreadable', async () => {
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue({
+      rows: 'garbage-not-a-map', scores: {}, aggregates: {},
+    })
+
+    await openTheRow()
+
+    expect(screen.getByRole('button', { name: new RegExp(PRFAQ_TITLE) })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Delete row/ })).toBeNull()
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
   it('counts a sibling row whose documents have not resolved, so it states nothing false', async () => {
     // `collectRows` DROPS a row not one of whose document ids resolves — an ordinary
     // transient state of the project fan-out, and the reachable way a project holding two
