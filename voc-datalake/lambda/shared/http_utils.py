@@ -13,10 +13,23 @@ imports `fetch_with_retry` from here. A second module would need no packaging
 change either, but a second *implementation* is what issue #244 asks us to
 prevent, and keeping the policy beside the fetch it guards is what stops the two
 drifting apart again.
+
+RESIDUAL RISK — this is not a sandbox
+-------------------------------------
+The check resolves the hostname, then `requests` resolves it AGAIN when it opens
+the connection. A record with a short TTL that answers publicly for the first
+lookup and internally for the second (DNS rebinding) still reaches an internal
+address; re-checking every redirect hop narrows that window to one request but
+does not close it. Closing it means pinning the validated address — connecting to
+the IP with an explicit `Host` header via a custom `HTTPAdapter` — which is a
+larger change than this module makes today. Read the guarantee as "a configured
+or redirected-to destination cannot be internal at check time", not as "no
+request can ever reach an internal address".
 """
 
 import ipaddress
 import socket
+import time
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -60,6 +73,25 @@ REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 # Hops allowed before giving up. Bounded because each hop is a fresh
 # resolve-and-check, and an unbounded chain is a free request amplifier.
 MAX_REDIRECT_HOPS = 5
+
+# Headers dropped when a redirect leaves the origin (scheme+host+port) they were
+# addressed to, matching what `requests.SessionRedirectMixin.rebuild_auth` does
+# for `Authorization`. The policy guarantees the next hop is a PUBLIC address,
+# which is what makes this necessary rather than academic: without it, a
+# credential meant for one site is handed to whatever third party that site's
+# `Location` names. Matched case-insensitively — a caller's plain dict is not a
+# `CaseInsensitiveDict`.
+CROSS_ORIGIN_SENSITIVE_HEADERS = frozenset({
+    'authorization', 'cookie', 'proxy-authorization',
+})
+
+# Headers describing a request body, dropped with the body when a hop downgrades
+# to GET (below). Leaving a Content-Type on a body-less GET describes something
+# that is no longer being sent.
+BODY_HEADERS = frozenset({'content-length', 'content-type', 'transfer-encoding'})
+
+# Body kwargs dropped alongside those headers, for the same reason.
+BODY_KWARGS = ('data', 'json', 'files')
 
 
 class OutboundUrlBlocked(ValueError):
@@ -105,6 +137,14 @@ def is_global_outbound_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address
         embedded = _embedded_ipv4(ip)
         if embedded is not None and not is_global_outbound_address(embedded):
             return False
+        # IPv6 site-local (fec0::/10) is the one internal family none of the
+        # predicates below catch: CPython reports is_global=True, is_private=
+        # False, is_reserved=False and models it only as `is_site_local`.
+        # Deprecated by RFC 3879 in favour of fc00::/7 (which `is_private` does
+        # catch), but appliances still answer on it. IPv4Address has no such
+        # property, which is why this stays inside the IPv6 branch.
+        if ip.is_site_local:
+            return False
     return (
         ip.is_global
         and not ip.is_private
@@ -133,9 +173,17 @@ def resolve_host_addresses(hostname: str) -> list[ipaddress.IPv4Address | ipaddr
 
     try:
         infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except OSError as e:
+    except (OSError, UnicodeError) as e:
         # socket.gaierror is an OSError; so is a resolver timeout. Both mean we
         # cannot know where the request would land, so it does not go out.
+        #
+        # UnicodeError covers what getaddrinfo raises BEFORE resolving: the IDNA
+        # codec raises UnicodeEncodeError (a ValueError, NOT an OSError) for a
+        # label longer than 63 bytes or an empty label ('a'*64 + '.example.com',
+        # 'a..b.com'). Catching only OSError let that escape the policy entirely,
+        # so POST /scrapers answered with an unhandled invocation error instead
+        # of the 400 the route is designed to return — the removed `validate_url`
+        # had a catch-all that turned the same input into a refusal.
         raise OutboundUrlBlocked('Could not resolve hostname') from e
 
     addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
@@ -247,6 +295,13 @@ def fetch_with_retry(
     """
     Make HTTP request with automatic retry on transient failures.
 
+    This is the UNCHECKED fetch: it applies no outbound-URL policy and lets
+    `requests` follow redirects itself, so the address the connection lands on is
+    one this module never saw. Any caller whose URL comes from a stored
+    configuration or a request body must use `fetch_checked_with_retry` instead
+    (issue #244). This one remains correct for code-constructed URLs — the
+    app-review and synthetic ingestors' fixed API endpoints.
+
     Retries on:
     - Connection errors
     - Timeouts
@@ -291,6 +346,40 @@ def fetch_with_retry(
     return response
 
 
+def _request_origin(url: str) -> tuple:
+    """Scheme, host and port a URL addresses — what "same origin" means here."""
+    parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    return (parsed.scheme, (parsed.hostname or '').lower(), port)
+
+
+def _without_headers(headers: dict | None, drop: frozenset) -> dict | None:
+    """`headers` minus `drop`, matched case-insensitively. None stays None."""
+    if not headers:
+        return headers
+    return {k: v for k, v in headers.items() if k.lower() not in drop}
+
+
+def _method_after_redirect(method: str, status_code: int) -> str:
+    """
+    What `requests.SessionRedirectMixin.rebuild_method` would do.
+
+    Reimplemented because this function owns the redirect walk: 303 and 302
+    become GET (except on HEAD), and a 301 on a POST becomes GET. Without this a
+    POST that receives a 303 was re-sent as a POST, with the original body, to a
+    destination that asked to be read instead.
+    """
+    upper = method.upper()
+    if status_code in (302, 303) and upper != 'HEAD':
+        return 'GET'
+    if status_code == 301 and upper == 'POST':
+        return 'GET'
+    return method
+
+
 def fetch_checked_with_retry(
     url: str,
     # `dict | None` rather than the sibling functions' bare `dict = None`: those
@@ -302,6 +391,7 @@ def fetch_checked_with_retry(
     timeout: int = 30,
     method: str = "GET",
     max_redirects: int = MAX_REDIRECT_HOPS,
+    total_timeout: float | None = None,
     **kwargs,
 ) -> requests.Response:
     """
@@ -315,6 +405,16 @@ def fetch_checked_with_retry(
     That ordering is the whole point of issue #244 — checking a string once and
     then letting a client chase redirects is not a check.
 
+    Owning the walk means owning the rest of `requests`' redirect semantics too,
+    and the two that matter are implemented here rather than left to a reader's
+    assumption: the method is downgraded to GET where `rebuild_method` would
+    downgrade it (with the request body and its headers dropped with it), and
+    `Authorization`/`Cookie` are dropped when a hop leaves the origin they were
+    addressed to, as `rebuild_auth` does. Neither is exercised by today's two
+    GET-only, unauthenticated callers — they are here because this is the
+    recommended fetch for any config-supplied URL, so the next caller inherits
+    them.
+
     The retry/error contract is unchanged: each hop is one `fetch_with_retry`
     call, so 429/5xx still retry with backoff and a 4xx still comes back as a
     response for the caller to inspect.
@@ -323,24 +423,47 @@ def fetch_checked_with_retry(
         max_redirects: Hops allowed after the first request. Exhausting it
             raises rather than returning the last redirect, so a caller cannot
             mistake a 302 body for the page.
+        total_timeout: Optional wall-clock budget for the WHOLE chain, in
+            seconds. Without it, a chain of slow-but-valid hops costs up to
+            `(max_redirects + 1) * timeout` plus retries, which overruns API
+            Gateway's 29 s integration limit and surfaces as a 504 instead of the
+            intended 4xx/5xx — so any caller inside a synchronous request should
+            set it. Checked between hops and used to shorten each hop's own
+            timeout, so a single hop's tenacity retries can still overshoot it;
+            it bounds the chain, not one request.
 
     Raises:
         OutboundUrlBlocked: the initial URL, or any redirect target, is not a
             permitted destination — or the chain exceeded `max_redirects`.
+        requests.exceptions.Timeout: `total_timeout` elapsed mid-chain. A
+            transport failure, not a refusal, so callers that already treat a
+            `RequestException` as "this page did not load" keep behaving that way.
     """
     # An explicit allow_redirects from a caller is dropped, not honoured:
     # following redirects inside requests is exactly the unchecked hop this
     # function exists to remove.
     kwargs.pop('allow_redirects', None)
 
+    deadline = time.monotonic() + total_timeout if total_timeout else None
+    origin = _request_origin(url)
     current_url = url
     for _ in range(max_redirects + 1):
         assert_outbound_url_allowed(current_url)
+
+        hop_timeout = timeout
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise requests.exceptions.Timeout(
+                    f'Exceeded the {total_timeout}s budget for {url}'
+                )
+            hop_timeout = min(timeout, remaining)
+
         response = fetch_with_retry(
             current_url,
             headers=headers,
             params=params,
-            timeout=timeout,
+            timeout=hop_timeout,
             method=method,
             allow_redirects=False,
             **kwargs,
@@ -353,7 +476,23 @@ def fetch_checked_with_retry(
         # Only the FIRST request carries the caller's params; re-appending them
         # to a Location that already has its own query would corrupt the target.
         params = None
-        current_url = urljoin(current_url, location)
+        next_url = urljoin(current_url, location)
+
+        next_origin = _request_origin(next_url)
+        if next_origin != origin:
+            headers = _without_headers(headers, CROSS_ORIGIN_SENSITIVE_HEADERS)
+            origin = next_origin
+
+        next_method = _method_after_redirect(method, response.status_code)
+        if next_method != method:
+            # The body does not survive the downgrade, and neither do the headers
+            # that described it.
+            method = next_method
+            headers = _without_headers(headers, BODY_HEADERS)
+            for key in BODY_KWARGS:
+                kwargs.pop(key, None)
+
+        current_url = next_url
         logger.info(f"Following checked redirect to {current_url}")
 
     raise OutboundUrlBlocked(f'Too many redirects (limit {max_redirects})')

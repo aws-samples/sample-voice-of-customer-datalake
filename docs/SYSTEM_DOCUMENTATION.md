@@ -551,10 +551,32 @@ Appends `?page=1`, `?page=2`, etc. to the URL.
 
 ### Security
 
-URL validation prevents SSRF attacks:
-- Only `http://` and `https://` schemes allowed
-- Blocked: localhost, private IP ranges, link-local addresses
-- Hostname resolution checked against blocked ranges
+One outbound-URL policy, in `lambda/shared/http_utils.py`, guards every scraper
+request against SSRF. Shared by the API and the plugin — both deployment bundles
+already stage `lambda/shared` — so there is one implementation, not one per caller.
+
+Applied at three points:
+- **On save**: `POST /scrapers` and `PUT /integrations/webscraper/credentials` (both
+  write the same `webscraper_configs` key), so an internal target cannot be scheduled.
+- **On preview**: `POST /scrapers/analyze-url`, before anything reaches Bedrock.
+- **At fetch time**: the scheduled ingestor re-checks each URL immediately before the
+  request, and again for every redirect hop — a saved host can start resolving
+  internally after it was approved.
+
+The policy itself:
+- Only `http`/`https`; URLs with embedded credentials and `localhost` aliases refused.
+- The hostname is resolved and the URL is refused if **any** answer is non-global:
+  loopback, private, link-local (including `169.254.169.254`), multicast,
+  unspecified, reserved, IPv6 site-local (`fec0::/10`), and IPv4 tunnelled inside
+  IPv6 (v4-mapped, 6to4, Teredo).
+- Fails closed: a resolver failure, an empty answer, or a mixed public/private answer
+  set is a refusal — the HTTP client picks the address from the set, not the platform.
+- Redirects are followed by the platform, never by the HTTP client, bounded at 5 hops;
+  `Authorization`/`Cookie` are dropped on a cross-origin hop.
+
+**Residual risk**: the hostname is resolved by the check and again by the HTTP client,
+so DNS rebinding across the two lookups is narrowed, not closed. Closing it requires
+pinning the validated address, which is not done today.
 
 ### Deduplication
 

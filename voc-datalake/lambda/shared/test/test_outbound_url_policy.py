@@ -19,6 +19,15 @@ REVERT MAP — which mutation each test catches
   -> `refuses_a_redirect_from_a_public_page_into_an_internal_one`.
 - Remove the hop bound -> `refuses_a_redirect_chain_longer_than_the_bound`.
 - Accept a scheme outside http/https -> `refuses_schemes_the_scraper_cannot_use`.
+- Drop the IPv6 site-local check (`fec0::/10` satisfies none of the other seven
+  predicates) -> `refuses_internal_ip_literals_in_both_families['http://[fec0::1]/']`.
+- Narrow the resolver handler back to `except OSError` -> the IDNA
+  `UnicodeEncodeError` escapes -> `refuses_hostnames_the_idna_codec_rejects`.
+- Stop dropping `Authorization`/`Cookie` on a cross-origin hop
+  -> `drops_credential_headers_when_a_redirect_leaves_the_origin`.
+- Stop downgrading the method to GET where requests would
+  -> `downgrades_the_method_to_get_exactly_where_requests_would`.
+- Ignore `total_timeout` -> `stops_following_a_chain_that_outruns_its_budget`.
 
 Every "refuses" concern has a positive control (`TestPermittedDestinations`,
 `allows_a_public_redirect_chain_and_returns_the_final_page`) so an
@@ -32,6 +41,7 @@ import ipaddress
 from unittest.mock import MagicMock, patch
 
 import pytest
+from requests.structures import CaseInsensitiveDict
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,10 +65,17 @@ def _addrinfo(*addresses: str) -> list:
 
 
 def _response(status: int, *, location: str | None = None, text: str = '') -> MagicMock:
+    """A response double whose `.headers` behaves like the real thing.
+
+    `CaseInsensitiveDict`, not a plain dict: a real server may send `location:`
+    lowercase, and a plain-dict double would pass against code that reads
+    `headers.get('Location')` from a case-SENSITIVE mapping — so the test would
+    be greener than production.
+    """
     response = MagicMock()
     response.status_code = status
     response.reason = 'reason'
-    response.headers = {'Location': location} if location else {}
+    response.headers = CaseInsensitiveDict({'Location': location} if location else {})
     response.text = text
     return response
 
@@ -130,6 +147,10 @@ class TestRefusedDestinations:
         'http://[::]/',                      # unspecified, IPv6
         'http://240.0.0.1/',                 # reserved
         'http://100.64.0.1/',                # carrier-grade NAT, not global
+        # IPv6 site-local. Deprecated by RFC 3879, and the ONE internal family
+        # that satisfies every other predicate: is_global True, is_private False,
+        # is_reserved False, is_link_local False. Only `is_site_local` catches it.
+        'http://[fec0::1]/',
     ])
     def test_refuses_internal_ip_literals_in_both_families(self, url):
         """A literal address is decided locally — never handed to the resolver."""
@@ -215,6 +236,24 @@ class TestRefusedDestinations:
 
         with pytest.raises(OutboundUrlBlocked, match='resolve'):
             assert_outbound_url_allowed('https://empty.example/')
+
+    @pytest.mark.parametrize('hostname', [
+        'a' * 64 + '.example.com',   # label longer than 63 bytes
+        'a..b.com',                  # empty label
+    ])
+    def test_refuses_hostnames_the_idna_codec_rejects(self, hostname):
+        """
+        `getaddrinfo` raises UnicodeEncodeError — a ValueError, NOT an OSError —
+        from the IDNA codec, BEFORE it resolves anything. So the resolver is
+        deliberately NOT mocked here: the codec is what raises. Catching only
+        OSError let this escape the policy unwrapped, which turned the write route
+        into an unhandled invocation error instead of the 400 it is built to
+        return.
+        """
+        from shared.http_utils import OutboundUrlBlocked, assert_outbound_url_allowed
+
+        with pytest.raises(OutboundUrlBlocked, match='resolve'):
+            assert_outbound_url_allowed(f'http://{hostname}/x')
 
 
 class TestPermittedDestinations:
@@ -399,6 +438,244 @@ class TestCheckedFetchRedirects:
             fetch_checked_with_retry('https://internal.example/')
 
         mock_request.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_follows_a_lowercase_location_header(self, mock_request, mock_resolve):
+        """HTTP header names are case-insensitive and real servers vary."""
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        first = _response(302)
+        first.headers = CaseInsensitiveDict({'location': 'https://example.com/final'})
+        mock_request.side_effect = [first, _response(200, text='final')]
+
+        response = fetch_checked_with_retry('https://example.com/')
+
+        assert response.text == 'final'
+        assert mock_request.call_args_list[1].kwargs['url'] == 'https://example.com/final'
+
+
+class TestCheckedFetchMatchesRequestsRedirectSemantics:
+    """
+    Owning the redirect walk means owning the rest of what `requests` would do.
+
+    Neither behaviour below is exercised by the two current call sites (both GET,
+    both unauthenticated). They are asserted because this is now the recommended
+    fetch for ANY config-supplied URL, so the next caller inherits whatever this
+    loop does — and a hand-rolled walk that silently drops `rebuild_auth` and
+    `rebuild_method` is a trap, not a simplification.
+    """
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_drops_credential_headers_when_a_redirect_leaves_the_origin(
+        self, mock_request, mock_resolve
+    ):
+        """
+        `requests.SessionRedirectMixin.rebuild_auth` drops Authorization across
+        hosts. The policy guarantees the next hop is PUBLIC, which is what makes
+        this matter: without it a credential meant for one site is handed to
+        whatever third party that site's Location names.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location='https://other.example/page'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            'https://example.com/',
+            headers={
+                'Authorization': 'Bearer secret',
+                'Cookie': 'session=secret',
+                'User-Agent': 'voc-scraper',
+            },
+        )
+
+        second = mock_request.call_args_list[1].kwargs['headers']
+        assert 'Authorization' not in second
+        assert 'Cookie' not in second
+        # Positive control: the harmless header survives, so "drop everything"
+        # cannot pass this test.
+        assert second['User-Agent'] == 'voc-scraper'
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_keeps_credential_headers_on_a_same_origin_redirect(
+        self, mock_request, mock_resolve
+    ):
+        """Positive control: a /page/1 redirect within the same site is not a leak."""
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location='/reviews/page/2'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            'https://example.com/reviews',
+            headers={'Authorization': 'Bearer secret'},
+        )
+
+        assert (
+            mock_request.call_args_list[1].kwargs['headers']['Authorization']
+            == 'Bearer secret'
+        )
+
+    @pytest.mark.parametrize(('method', 'status', 'expected'), [
+        ('POST', 303, 'GET'),   # 303 always means "go read this instead"
+        ('POST', 302, 'GET'),   # what every browser and requests do
+        ('POST', 301, 'GET'),
+        ('POST', 307, 'POST'),  # 307/308 exist precisely to preserve the method
+        ('POST', 308, 'POST'),
+        ('GET', 302, 'GET'),
+        ('HEAD', 303, 'HEAD'),  # rebuild_method exempts HEAD
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_downgrades_the_method_to_get_exactly_where_requests_would(
+        self, mock_request, mock_resolve, method, status, expected
+    ):
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(status, location='https://example.com/next'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry('https://example.com/', method=method, json={'a': 1})
+
+        assert mock_request.call_args_list[1].kwargs['method'] == expected
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_drops_the_body_with_the_method_it_belonged_to(
+        self, mock_request, mock_resolve
+    ):
+        """A GET carrying the original POST body describes something not being sent."""
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(303, location='https://example.com/result'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            'https://example.com/submit',
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+            json={'a': 1},
+        )
+
+        second = mock_request.call_args_list[1].kwargs
+        assert 'json' not in second
+        assert 'Content-Type' not in second['headers']
+        # Positive control: the FIRST hop did carry the body.
+        assert mock_request.call_args_list[0].kwargs['json'] == {'a': 1}
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_keeps_the_body_on_a_307_that_preserves_the_method(
+        self, mock_request, mock_resolve
+    ):
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(307, location='https://example.com/result'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry('https://example.com/submit', method='POST', json={'a': 1})
+
+        assert mock_request.call_args_list[1].kwargs['json'] == {'a': 1}
+
+
+class TestCheckedFetchTimeBudget:
+    """
+    `total_timeout` bounds the CHAIN, which a per-request timeout cannot.
+
+    Without it, six hops at `timeout=30` plus tenacity retries overruns API
+    Gateway's 29 s integration limit, and the preview route answers 504 with no
+    message instead of the 4xx/5xx it means to return.
+    """
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_shortens_a_hop_timeout_to_what_is_left_of_the_budget(
+        self, mock_request, mock_resolve
+    ):
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.return_value = _response(200, text='ok')
+
+        fetch_checked_with_retry('https://example.com/', timeout=30, total_timeout=5)
+
+        assert mock_request.call_args.kwargs['timeout'] <= 5
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_stops_following_a_chain_that_outruns_its_budget(
+        self, mock_request, mock_resolve
+    ):
+        """
+        A Timeout, not an OutboundUrlBlocked: the destination was permitted, the
+        clock ran out. Callers that already treat a RequestException as "this page
+        did not load" keep behaving that way.
+        """
+        import requests
+
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+
+        # A clock the REQUESTS move, not the readings: every hop costs 99s, so the
+        # first goes out inside the budget and the second cannot. Driven from the
+        # request rather than from an iterator of readings because
+        # `time.monotonic` is the module global and tenacity reads it too — a
+        # finite list of readings raises StopIteration inside the retry machinery
+        # instead of testing anything.
+        now = [0.0]
+
+        def slow_hop(*_args, **_kwargs):
+            now[0] += 99.0
+            return _response(302, location='https://example.com/next')
+
+        mock_request.side_effect = slow_hop
+
+        with (
+            patch('shared.http_utils.time.monotonic', lambda: now[0]),
+            pytest.raises(requests.exceptions.Timeout),
+        ):
+            fetch_checked_with_retry('https://example.com/', total_timeout=10)
+
+        # The budget stopped it well before the hop bound did.
+        assert mock_request.call_count == 1
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_leaves_the_hop_timeout_alone_when_no_budget_is_given(
+        self, mock_request, mock_resolve
+    ):
+        """Positive control: the ingestor passes no budget and must be unaffected."""
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.return_value = _response(200, text='ok')
+
+        fetch_checked_with_retry('https://example.com/', timeout=15)
+
+        assert mock_request.call_args.kwargs['timeout'] == 15
+
+
+class TestExceptionHierarchy:
 
     def test_blocked_is_not_a_requests_exception(self):
         """

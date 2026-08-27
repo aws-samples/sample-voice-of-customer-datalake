@@ -18,6 +18,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
+from shared.scraper_urls import validate_scraper_configs_json
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
@@ -84,6 +85,14 @@ app = create_api_resolver()
 # re.fullmatch is used in _validate_credential_key so anchors are not needed.
 _CREDENTIAL_KEY_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
 MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
+
+# The one source whose stored value names network destinations the platform will
+# fetch on a schedule. Its `configs` key becomes `webscraper_configs`, the same
+# key `POST /scrapers` writes, and the ingestor reads it after prefix stripping as
+# plain `configs` (`_load_scraper_configs`). Named here so the write below applies
+# the outbound-URL policy to it — see the call site.
+WEBSCRAPER_SOURCE = 'webscraper'
+WEBSCRAPER_CONFIGS_KEY = 'configs'
 
 
 def _validate_credential_key(key: str) -> None:
@@ -393,6 +402,15 @@ def update_credentials(source: str):
             raise ValidationError(
                 f"Value for key {key[:40]!r} must be a string."
             )
+
+    # This route is the SECOND write path into `webscraper_configs` — the
+    # Settings webscraper card saves the whole array through it as one `configs`
+    # string, so checking only `POST /scrapers` left the same internal
+    # destination reachable through a different route (issue #244). The check is
+    # the one in shared/scraper_urls.py, not a second implementation, and it runs
+    # before the secret is read so nothing is persisted on refusal.
+    if source == WEBSCRAPER_SOURCE and WEBSCRAPER_CONFIGS_KEY in body:
+        validate_scraper_configs_json(body[WEBSCRAPER_CONFIGS_KEY])
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)

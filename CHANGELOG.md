@@ -57,6 +57,17 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Security
 
+- Scraper configurations are validated against one outbound-URL policy on **write** — both
+  `POST /scrapers` and `PUT /integrations/webscraper/credentials`, which persist the same
+  stored configuration — and re-validated by the scheduled scraper immediately before every
+  request, including each redirect hop. The check previously ran only on the analyze/preview
+  route, nothing forced a preview before saving, and it inspected a URL string while a
+  separate request went out afterwards; so a configuration naming a private, link-local or
+  loopback address could be saved and then fetched on a schedule, and a public URL
+  redirecting to an internal one was followed. Redirects are now followed by the platform
+  rather than the HTTP client, bounded at 5 hops, with the destination re-resolved at each
+  one. A resolver failure, an empty answer, or a host resolving to a mix of public and
+  private addresses is refused rather than allowed.
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a

@@ -21,6 +21,10 @@ from shared.http_utils import (
     assert_outbound_url_allowed,
     fetch_checked_with_retry,
 )
+# The write-time check lives in shared/ because `PUT /integrations/webscraper/
+# credentials` writes the SAME `webscraper_configs` key from a different Lambda,
+# and the two handlers cannot import each other (issue #244).
+from shared.scraper_urls import validate_scraper_destinations
 from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
@@ -41,42 +45,16 @@ def require_webscraper_function():
 
 app = create_api_resolver()
 
-# Config keys naming a network destination the scheduled ingestor will fetch.
-# Kept in lockstep with `_get_urls_to_scrape` in
-# plugins/webscraper/ingestor/handler.py, which reads exactly these two — its
-# pagination URLs are derived from base_url and so share its host.
-SCRAPER_URL_FIELDS = ('base_url', 'urls')
-
-
-@tracer.capture_method
-def validate_scraper_destinations(scraper: dict) -> None:
-    """
-    Apply the shared outbound-URL policy to every destination in a config.
-
-    Called on WRITE, which is what issue #244 was about: the policy used to run
-    only on the analyze/preview route, so a config was persisted unchecked and
-    the scheduled ingestor then fetched it. The ingestor re-checks each hop as
-    well — a saved host can start resolving internally later — but rejecting the
-    write is what keeps an internal target from being scheduled in the first
-    place.
-
-    Raises:
-        ValidationError: any destination is not a permitted outbound target.
-            Names the offending URL, because a config can hold several and
-            "one of your URLs is invalid" is not actionable.
-    """
-    for field in SCRAPER_URL_FIELDS:
-        value = scraper.get(field)
-        # base_url is a string, urls a list; an absent or empty value is legal
-        # (the editor ships '' for base_url when only `urls` is used).
-        candidates = value if isinstance(value, list) else [value]
-        for url in candidates:
-            if not url:
-                continue
-            try:
-                assert_outbound_url_allowed(url)
-            except OutboundUrlBlocked as e:
-                raise ValidationError(f"{field} '{url}': {e}") from e
+# Time budget for the analyze/preview fetch, which runs INSIDE an API Gateway
+# request and so has ~29 s in total however long the Lambda's own timeout is.
+# `fetch_checked_with_retry` may follow up to MAX_REDIRECT_HOPS hops, each with
+# tenacity retries, so a per-request timeout alone bounds nothing useful here:
+# before this budget existed, a chain of slow-but-valid hops overran the
+# integration limit and surfaced as a 504 with no error message instead of the
+# 400/500 this route means to return. The per-hop value stays lower than the
+# total so a single stalled hop cannot consume the whole budget.
+PREVIEW_FETCH_HOP_TIMEOUT_SECONDS = 10
+PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS = 20
 
 
 @app.get("/scrapers")
@@ -277,7 +255,12 @@ def analyze_url():
 
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'text/html,application/xhtml+xml'}
-        response = fetch_checked_with_retry(url, headers=headers, timeout=30)
+        response = fetch_checked_with_retry(
+            url,
+            headers=headers,
+            timeout=PREVIEW_FETCH_HOP_TIMEOUT_SECONDS,
+            total_timeout=PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS,
+        )
         response.raise_for_status()
         html_content = response.text
 

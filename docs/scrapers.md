@@ -165,11 +165,39 @@ This ensures the same review scraped on different days is deduplicated.
 
 ## Security
 
-URL validation prevents SSRF (Server-Side Request Forgery) attacks:
+One outbound-URL policy, in `voc-datalake/lambda/shared/http_utils.py`, guards every
+scraper request against SSRF (Server-Side Request Forgery). It is applied at three
+points, not one:
 
-- Only `http://` and `https://` schemes allowed
-- Blocked: localhost, private IP ranges, link-local addresses
-- Hostname resolution checked against blocked ranges
+- **On save** — `POST /scrapers`, and `PUT /integrations/webscraper/credentials`
+  (the Settings card, which writes the whole configuration array). Both write paths
+  refuse a configuration naming a destination the policy will not clear, so an
+  internal target cannot be scheduled in the first place.
+- **On preview** — `POST /scrapers/analyze-url`, before anything reaches the model.
+- **At fetch time** — the scheduled ingestor re-checks each URL immediately before
+  requesting it, and again for **every redirect hop**. A host that was public when
+  it was saved can start resolving internally afterwards, so a stored approval is
+  not treated as a standing one.
+
+What the policy accepts and refuses:
+
+- Only `http` and `https`. URLs carrying embedded credentials, and `localhost`
+  aliases, are refused.
+- The hostname is **resolved**, and the URL is refused if **any** returned address
+  is non-global — loopback, private, link-local (including the instance metadata
+  address `169.254.169.254`), multicast, unspecified, reserved or IPv6 site-local,
+  in IPv4, IPv6, or IPv4 tunnelled inside IPv6 (v4-mapped, 6to4, Teredo).
+- It **fails closed**: a resolver failure, an empty answer, and a mixed
+  public/private answer set are all refusals, because the HTTP client — not the
+  platform — picks which address in an answer set to connect to.
+- Redirects are followed by the platform itself, one hop at a time, never by the
+  HTTP client, and are bounded at 5 hops. `Authorization` and `Cookie` are dropped
+  when a hop leaves the origin they were addressed to.
+
+**Residual risk.** The check resolves the hostname and the HTTP client then resolves
+it again when it connects, so a record engineered to answer differently between the
+two lookups (DNS rebinding) is narrowed but not closed. Closing it requires pinning
+the validated address, which the platform does not do today.
 
 ## Best Practices
 

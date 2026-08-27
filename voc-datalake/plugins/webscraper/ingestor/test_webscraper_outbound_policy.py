@@ -19,6 +19,7 @@ REVERT MAP
   (the URL would be skipped with a warning and the run would report success).
 - Duplicate the policy into this plugin instead of importing it
   -> `TestOnePolicyForBothCallSites`.
+- Drop the ScraperOutboundUrlBlocked counter -> `emits_a_metric_when_a_destination_is_blocked`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -28,6 +29,7 @@ resolves them.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from requests.structures import CaseInsensitiveDict
 
 PUBLIC_ADDRINFO = [(2, 1, 6, '', ('93.184.216.34', 80))]
 INTERNAL_ADDRINFO = [(2, 1, 6, '', ('169.254.169.254', 80))]
@@ -51,7 +53,10 @@ def _response(status: int, *, location: str | None = None, text: str = '') -> Ma
     response = MagicMock()
     response.status_code = status
     response.reason = 'reason'
-    response.headers = {'Location': location} if location else {}
+    # CaseInsensitiveDict, not a plain dict: a real requests.Response is one,
+    # and a real server may send `location:` lowercase — a plain-dict double
+    # would pass against code reading from a case-SENSITIVE mapping.
+    response.headers = CaseInsensitiveDict({'Location': location} if location else {})
     response.text = text
     return response
 
@@ -246,6 +251,65 @@ class TestRunReportsABlockedUrl:
         assert any('sneaky.example' in e for e in final['errors'])
         assert any('internal/private' in e for e in final['errors'])
 
+    @patch('webscraper.ingestor.handler.metrics')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_emits_a_metric_when_a_destination_is_blocked(
+        self, mock_resolve, mock_request, mock_metrics, ingestor
+    ):
+        """
+        A run's `errors` list is only visible to someone opening that run. The
+        case worth alerting on — a saved host that has started resolving
+        internally, on every scheduled run — needs a counter, because in the run
+        list it is indistinguishable from an ordinary flaky page.
+        """
+        mock_resolve.return_value = INTERNAL_ADDRINFO
+        mock_request.return_value = _response(200, text=REVIEW_HTML)
+
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 's1'
+        ingestor.scraper_configs = [{**CSS_CONFIG, 'urls': ['https://sneaky.example/reviews']}]
+
+        with (
+            patch.object(ingestor, '_update_run_status'),
+            patch.object(ingestor, 'set_watermark'),
+            patch('webscraper.ingestor.handler.time.sleep'),
+        ):
+            list(ingestor.fetch_new_items())
+
+        blocked = [
+            c for c in mock_metrics.add_metric.call_args_list
+            if c.kwargs.get('name') == 'ScraperOutboundUrlBlocked'
+        ]
+        assert blocked, 'a blocked destination emitted no metric'
+        assert blocked[0].kwargs['value'] == 1
+
+    @patch('webscraper.ingestor.handler.metrics')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_emits_no_blocked_metric_on_an_ordinary_run(
+        self, mock_resolve, mock_request, mock_metrics, ingestor
+    ):
+        """Positive control: an always-firing counter would be worse than none."""
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _response(200, text=REVIEW_HTML)
+
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 's1'
+        ingestor.scraper_configs = [{**CSS_CONFIG, 'urls': ['https://good.example/reviews']}]
+
+        with (
+            patch.object(ingestor, '_update_run_status'),
+            patch.object(ingestor, 'set_watermark'),
+            patch('webscraper.ingestor.handler.time.sleep'),
+        ):
+            list(ingestor.fetch_new_items())
+
+        assert not [
+            c for c in mock_metrics.add_metric.call_args_list
+            if c.kwargs.get('name') == 'ScraperOutboundUrlBlocked'
+        ]
+
 
 class TestOnePolicyForBothCallSites:
     """
@@ -267,6 +331,11 @@ class TestOnePolicyForBothCallSites:
         """
         Asserted against the module's source, so it holds for any spelling of a
         re-introduced denylist rather than one particular name.
+
+        Scoped to names in CALL position, plus what the module IMPORTS, rather
+        than every `Name`/`Attribute` node: an unrelated future variable that
+        happens to be spelled `getaddrinfo` should not fail this, while an actual
+        resolver call, or an import of the unchecked fetch, must.
         """
         import ast
         import inspect
@@ -274,11 +343,27 @@ class TestOnePolicyForBothCallSites:
         from webscraper.ingestor import handler
 
         tree = ast.parse(inspect.getsource(handler))
-        names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {
-            n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
+
+        called = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name):
+                called.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                called.add(node.func.attr)
+
+        imported = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
         }
-        assert 'getaddrinfo' not in names, 'ingestor resolves hostnames itself'
-        assert 'ip_network' not in names, 'ingestor carries its own address denylist'
+
+        assert 'getaddrinfo' not in called, 'ingestor resolves hostnames itself'
+        assert 'ip_network' not in called, 'ingestor carries its own address denylist'
         # The unchecked fetch this plugin used to call. Importing it again is the
         # regression: it follows redirects with no per-hop check.
-        assert 'fetch_with_retry' not in names, 'ingestor fetches without the policy'
+        assert 'fetch_with_retry' not in called | imported, (
+            'ingestor fetches without the policy'
+        )

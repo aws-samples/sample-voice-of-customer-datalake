@@ -422,6 +422,15 @@ class WebScraperIngestor(BaseIngestor):
                     error_msg = f"Blocked outbound URL {url}: {e}"
                     logger.error(error_msg)
                     errors.append(error_msg)
+                    # Emitted so a config blocked on every scheduled run is
+                    # visible without opening a run's `errors`: a run reports
+                    # completed_with_errors either way, and the ONE case worth
+                    # alerting on — a saved host that has started resolving
+                    # internally — otherwise looks like an ordinary flaky page in
+                    # the run list. Named without the scraper id, unlike the
+                    # per-scraper item counter below, so a repeatedly-blocked
+                    # config cannot fan out into unbounded metric names.
+                    metrics.add_metric(name="ScraperOutboundUrlBlocked", unit="Count", value=1)
                 except Exception as e:
                     error_msg = f"Error scraping {url}: {str(e)}"
                     logger.warning(error_msg)

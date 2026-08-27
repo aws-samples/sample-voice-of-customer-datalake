@@ -17,6 +17,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from requests.structures import CaseInsensitiveDict
 
 PUBLIC_ADDRINFO = [(2, 1, 6, '', ('93.184.216.34', 80))]
 PRIVATE_ADDRINFO = [(2, 1, 6, '', ('10.1.2.3', 80))]
@@ -27,7 +28,10 @@ def _http_response(status: int, *, location: str | None = None, text: str = '') 
     response = MagicMock()
     response.status_code = status
     response.reason = 'reason'
-    response.headers = {'Location': location} if location else {}
+    # CaseInsensitiveDict, not a plain dict: a real requests.Response is one,
+    # and a real server may send `location:` lowercase — a plain-dict double
+    # would pass against code reading from a case-SENSITIVE mapping.
+    response.headers = CaseInsensitiveDict({'Location': location} if location else {})
     response.text = text
     return response
 
@@ -155,6 +159,105 @@ class TestSaveScraperRejectsInternalDestinations:
 
         assert response['statusCode'] == 400, response['body']
         mock_secrets.put_secret_value.assert_not_called()
+
+    @pytest.mark.parametrize('base_url', [
+        'http://' + 'a' * 64 + '.example.com/x',  # label longer than 63 bytes
+        'http://a..b.com/x',                      # empty label
+    ])
+    @patch('scrapers_handler.secretsmanager')
+    def test_answers_400_for_a_hostname_the_idna_codec_rejects(
+        self, mock_secrets, base_url, api_gateway_event, lambda_context
+    ):
+        """
+        `getaddrinfo` raises UnicodeEncodeError — not an OSError — for these,
+        before resolving. It escaped the policy unwrapped, and because the check
+        deliberately runs OUTSIDE `save_scraper`'s except-Exception wrapper,
+        nothing caught it: the route answered with an unhandled invocation error
+        rather than the actionable 400 it is built around. The resolver is not
+        mocked here, because the codec is what raises.
+        """
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 's1', 'name': 'Bad label', 'base_url': base_url},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'base_url' in json.loads(response['body'])['error']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @pytest.mark.parametrize(('scraper', 'named'), [
+        ({'urls': 'https://example.com/'}, 'urls'),   # a string where a list belongs
+        ({'urls': [{'u': 'x'}]}, 'urls'),             # a dict inside the list
+        ({'base_url': ['https://example.com/']}, 'base_url'),  # the mirror case
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_names_the_field_when_it_holds_the_wrong_type(
+        self, mock_secrets, mock_resolve, scraper, named, api_gateway_event, lambda_context
+    ):
+        """
+        Mirrors `integrations_handler.update_credentials`' per-value type check.
+        Both of these were already refused, but for the wrong reason: a bare
+        string validated as one URL, and a dict reached the policy and came back
+        as 'URL is required'.
+        """
+        response = self._post(
+            api_gateway_event, lambda_context, {'id': 's1', 'name': 'Wrong type', **scraper},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert named in json.loads(response['body'])['error']
+        mock_resolve.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_more_urls_than_one_invocation_can_resolve(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """
+        Each URL costs a synchronous getaddrinfo, and this route answers through
+        API Gateway's 29 s integration limit — so an unbounded list is a 504 with
+        nothing saved rather than a 400 the caller can act on.
+        """
+        from shared.scraper_urls import MAX_SCRAPER_URLS
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {
+                'id': 's1', 'name': 'Too many',
+                'urls': [f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 1)],
+            },
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'urls' in json.loads(response['body'])['error']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_saves_a_config_at_the_url_limit(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """Positive control for the bound: exactly at the limit still saves."""
+        from shared.scraper_urls import MAX_SCRAPER_URLS
+
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_configs': '[]'})
+        }
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {
+                'id': 's1', 'name': 'At the limit',
+                'urls': [f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS)],
+            },
+        )
+
+        assert response['statusCode'] == 200, response['body']
 
     @patch('shared.http_utils.socket.getaddrinfo')
     @patch('scrapers_handler.secretsmanager')
@@ -775,6 +878,51 @@ class TestAnalyzeUrl:
         assert response['statusCode'] == 500
         assert 'error' in body
 
+    @patch('shared.converse.converse')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_bounds_the_fetch_to_the_api_gateway_budget(
+        self, mock_resolve, mock_request, mock_converse,
+        api_gateway_event, lambda_context
+    ):
+        """
+        This route answers through API Gateway's 29 s integration limit, and the
+        checked fetch may follow up to MAX_REDIRECT_HOPS hops with retries. Left
+        at the old bare `timeout=30`, a chain of slow-but-valid hops overran the
+        limit and became a 504 with no message. Asserted as the CONTRACT — a total
+        budget under the limit, and a per-hop timeout no larger — rather than as
+        the two literals, so tuning them stays free.
+        """
+        from scrapers_handler import lambda_handler
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _http_response(200, text='<html></html>')
+        mock_converse.return_value = '{"container_selector": ".review"}'
+
+        lambda_handler(
+            api_gateway_event(
+                method='POST', path='/scrapers/analyze-url',
+                body={'url': 'https://example.com/reviews'},
+            ),
+            lambda_context,
+        )
+
+        import scrapers_handler
+
+        # API Gateway's REST integration limit. Named here rather than imported
+        # because it is AWS's number, not ours.
+        api_gateway_limit = 29
+        assert 0 < scrapers_handler.PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS < api_gateway_limit
+        assert (
+            scrapers_handler.PREVIEW_FETCH_HOP_TIMEOUT_SECONDS
+            <= scrapers_handler.PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS
+        )
+        # And the budget really reached the fetch: the first hop's timeout is
+        # bounded by it, so a chain cannot outlive the invocation.
+        assert 0 < mock_request.call_args.kwargs['timeout'] <= (
+            scrapers_handler.PREVIEW_FETCH_HOP_TIMEOUT_SECONDS
+        )
+
 
 class TestOnePolicyForBothCallSites:
     """
@@ -800,6 +948,10 @@ class TestOnePolicyForBothCallSites:
         """
         Asserted as a property of the module's source, not of one spelling: any
         second address list or resolver call here means the two sides can drift.
+
+        Scoped to names in CALL position — `socket.getaddrinfo(...)`, not a
+        variable or attribute that merely happens to share the name — so an
+        unrelated future use of the word cannot make this misfire.
         """
         import ast
         import inspect
@@ -807,11 +959,14 @@ class TestOnePolicyForBothCallSites:
         import scrapers_handler
 
         tree = ast.parse(inspect.getsource(scrapers_handler))
-        names = {
-            node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
-        } | {
-            node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
-        }
-        assert 'getaddrinfo' not in names, 'handler resolves hostnames itself again'
-        assert 'ip_network' not in names, 'handler carries its own address denylist again'
-        assert 'urlopen' not in names, 'handler fetches outside the checked client again'
+        called = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name):
+                called.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                called.add(node.func.attr)
+        assert 'getaddrinfo' not in called, 'handler resolves hostnames itself again'
+        assert 'ip_network' not in called, 'handler carries its own address denylist again'
+        assert 'urlopen' not in called, 'handler fetches outside the checked client again'
