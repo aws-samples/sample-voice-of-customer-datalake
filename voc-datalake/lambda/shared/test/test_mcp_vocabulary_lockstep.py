@@ -62,6 +62,7 @@ prevent, applied to itself. So the file states the requirement instead of
 pretending to degrade gracefully.
 """
 import re
+import sys
 from pathlib import Path
 
 from shared.mcp_tokens import (
@@ -195,7 +196,7 @@ def _parse_string_constant(name: str) -> str | None:
 def _use_schema_source(tmp_path: Path, monkeypatch, source: str) -> None:
     schema_source = tmp_path / 'mcpTokenSchema.ts'
     schema_source.write_text(source)
-    monkeypatch.setitem(globals(), '_SCHEMA_SOURCE', schema_source)
+    monkeypatch.setattr(sys.modules[__name__], '_SCHEMA_SOURCE', schema_source)
 
 
 # Every declaration this module compares against, mapped to the reader that can

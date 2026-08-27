@@ -70,7 +70,7 @@ So when that job lands, these go with it: ``MODULE_FLOORS``,
 all of ``test_mcp_gate_audit.py``. Do not invest in extending them.
 
 What does NOT retire, because running more of the existing tree would never have
-created it: the three lockstep modules — ``test_mcp_vocabulary_lockstep.py``
+created it: the two lockstep modules — ``test_mcp_vocabulary_lockstep.py``
 (``VALID_SCOPES``/``VALID_READ_REACHES``/``DEFAULT_READ_REACH`` against
 ``mcpTokenSchema.ts``) and ``test_python_runtime_lockstep.py`` (``.python-version``
 against the CDK runtime). No test in the tree read ``MCP_SCOPES`` at all before
@@ -347,7 +347,9 @@ def audit(report: Path) -> int:
             + '), and MODULE_FLOORS is keyed by module name, so ONE floor is being '
             'compared against the SUM of both. That lets one of them be skipped '
             'entirely while the other keeps the count at the floor. Rename one of the '
-            'two files so each has its own floor.'
+            'two files so each has its own floor. Until the names are unique, the '
+            'audit cannot determine whether either contributor also fell below its '
+            'own floor.'
         )
 
     for module, floor in sorted(MODULE_FLOORS.items()):
