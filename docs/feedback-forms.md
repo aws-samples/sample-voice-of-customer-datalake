@@ -71,8 +71,10 @@ needs loading.
 
 It answers **404 both for a form id the service could not have issued and for one
 that is not in the table** — the same answer for either, so the response tells an
-anonymous caller nothing about which. All three public routes format-check the id
-before they read anything, so a malformed one is refused rather than looked up.
+anonymous caller nothing about which. Every route that takes a form id out of the
+URL format-checks it before reading anything, so a malformed one is refused rather
+than looked up; see
+[how a form id is checked](#how-a-form-id-is-checked-on-every-one-of-those-routes).
 
 The iframe route carries one extra concern, because it is the only route in the
 API that returns HTML, on the API's own origin, and its page is framed on
@@ -147,6 +149,30 @@ Customize the form appearance:
 | GET | `/feedback-forms/{id}/config` | Public config endpoint. **Unauthenticated** and fetched cross-origin by the embedded widget, so it returns only the widget-rendering fields, via a separate allowlist (`item_to_widget_config` in `lambda/api/feedback_form_handler.py`) rather than the projection the authenticated routes use. It never returns internal identifiers such as `project_id` / `document_id`. |
 | POST | `/feedback-forms/{id}/submit` | Submit feedback |
 | GET | `/feedback-forms/{id}/iframe` | Embeddable HTML page |
+
+### How a form id is checked, on every one of those routes
+
+Every route above that takes an id out of the URL checks its **format** before it
+reads or writes anything: an id that this service could not have issued answers
+`404 Form not found` without a lookup. Ids are up to 64 characters of letters,
+digits, `_` and `-`, with no surrounding whitespace — so ` abc123` is not a way of
+addressing `abc123`, it is a 404.
+
+Two consequences are worth knowing if you integrate against these routes, both new
+in the change that closed #379:
+
+- **`POST /{id}/submit` reports a bad id ahead of a bad body.** A request carrying
+  both a malformed id and an invalid body — an empty `text`, say — now answers
+  `404 Form not found` where it previously answered
+  `400 Feedback text is required`. This is deliberate: the id is wrong regardless
+  of what the body contains, and the check has to come first because this is the
+  one public route that enqueues work. A well-formed id with an empty `text` still
+  answers 400, unchanged.
+- **`PUT /{id}` no longer creates a form.** It updates an existing one and answers
+  `404 Form not found` for an id the table does not hold. Previously the underlying
+  write was an upsert, so a `PUT` to an unknown id silently created a record with
+  no `form_id` of its own — an unaddressable row in the list. Use
+  `POST /feedback-forms` to create a form; it mints the id.
 
 ### Rate limits on the three public routes
 

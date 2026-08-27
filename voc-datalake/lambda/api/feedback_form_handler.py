@@ -187,11 +187,24 @@ def _validated_form_id(raw: Any) -> str | None:
     `/feedback-forms/admin` or a 1 MB path segment costs no DynamoDB call, and
     None rather than a raise because every caller answers the same 404 — telling
     an anonymous caller "malformed" apart from "absent" only helps someone
-    probing. Like that sibling, it is applied at EVERY route that takes a form id
-    out of the URL and turns it into a key: `/config`, `/submit`, `/iframe`,
-    `/submissions` and `/stats` (the last two through `_load_form_for_query`), so
-    the cost argument above holds everywhere it is stated rather than on one route
-    only.
+    probing.
+
+    Like that sibling, it is applied at EVERY route that takes a form id out of
+    the URL and turns it into a key. All eight, so the claim can be read as
+    written and a reader does not have to hold a list of exceptions:
+
+    - unauthenticated: `/config`, `/submit`, `/iframe`
+    - authenticated reads: `/submissions`, `/stats` (both through
+      `_load_form_for_query`, the single read they make)
+    - authenticated CRUD: `GET`, `PUT` and `DELETE /feedback-forms/<form_id>`
+
+    The cost argument only earns its keep on the first three — the others are
+    behind Cognito, so nobody is probing them for free. They are covered anyway
+    because a universal claim is worth more than the three lines it saves: the
+    next reader of this function should not have to check which routes meant it.
+    `test_no_route_keys_on_a_form_id_without_validating_it_first` derives the list
+    from the module's own routing table rather than from this docstring, so a
+    route added later is a failure here instead of a quiet omission.
 
     The defect this closes (#379) is narrower than "unvalidated input", and worth
     stating so nobody relaxes the pattern on the grounds that the render escapes
@@ -509,10 +522,19 @@ def create_form():
 @app.get("/feedback-forms/<form_id>")
 @tracer.capture_method
 def get_form(form_id: str):
-    """Get a specific feedback form."""
+    """Get a specific feedback form.
+
+    Authenticated, so `_validated_form_id` is not buying a bound against an
+    anonymous prober here — it is buying the SAME bound at every route that turns
+    this URL segment into a key, so the claim in that function's docstring is true
+    of the module rather than of the public trio only.
+    """
+    validated = _validated_form_id(form_id)
+    if not validated:
+        raise NotFoundError('Form not found')
     try:
         response = aggregates_table.get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
         )
         item = response.get('Item')
         
@@ -530,7 +552,28 @@ def get_form(form_id: str):
 @app.put("/feedback-forms/<form_id>")
 @tracer.capture_method
 def update_form(form_id: str):
-    """Update a feedback form."""
+    """Update a feedback form.
+
+    UpdateItem is an UPSERT, which is the whole reason the two guards below are
+    here rather than only on the public routes:
+
+    - The id is format-checked first (`_validated_form_id`), so a segment that
+      could not be one of ours never becomes a key.
+    - `attribute_exists(sk)` makes this an UPDATE rather than a create. Without it
+      a PUT to an id the table does not hold WROTE one: a bare
+      {pk, sk, <updated fields>} row with no `form_id` attribute, which
+      `item_to_form` reads back as `form_id: ''` — a nameless entry in
+      `list_forms` that nothing can address or delete by id. That is the same
+      phantom-stub shape `_anchor_form_brand` already refuses for the same reason;
+      this route simply had no condition at all.
+
+    Creation is `POST /feedback-forms`, which mints the id, so nothing legitimate
+    reaches this route with an id that does not exist yet — a PUT to an absent id
+    is a client bug or a probe, and 404 is the answer both want.
+    """
+    validated = _validated_form_id(form_id)
+    if not validated:
+        raise NotFoundError('Form not found')
     body = app.current_event.json_body or {}
     validate_link_fields(body)
     now = datetime.now(timezone.utc).isoformat()
@@ -553,15 +596,24 @@ def update_form(form_id: str):
     
     try:
         response = aggregates_table.update_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'},
             UpdateExpression='SET ' + ', '.join(update_parts),
             ExpressionAttributeNames=expr_names,
             ExpressionAttributeValues=expr_values,
+            # See the docstring: this is what makes the route an update instead of
+            # a create. One round trip, and no read-then-write race — a form
+            # deleted between a check and this write would still be refused.
+            ConditionExpression='attribute_exists(sk)',
             ReturnValues='ALL_NEW'
         )
-        
+
         return {'success': True, 'form': item_to_form(response.get('Attributes', {}))}
     except Exception as e:
+        # The condition failing is not a server error: it means the form is not
+        # there, which is the same 404 `get_form` gives for the same id. Reported
+        # before the generic branch so it cannot be logged as a failure to update.
+        if _is_conditional_check_failure(e):
+            raise NotFoundError('Form not found') from e
         logger.error(f"Error updating form: {e}")
         raise ServiceError('Failed to update form')
 
@@ -569,12 +621,21 @@ def update_form(form_id: str):
 @app.delete("/feedback-forms/<form_id>")
 @tracer.capture_method
 def delete_form(form_id: str):
-    """Delete a feedback form."""
+    """Delete a feedback form.
+
+    Format-checked for the same module-wide reason as `get_form`. No
+    `attribute_exists` condition, unlike `update_form`: DeleteItem on a key that
+    is not there is a no-op rather than a write, so the idempotent 200 this
+    already returns is the honest answer and there is no phantom row to prevent.
+    """
+    validated = _validated_form_id(form_id)
+    if not validated:
+        raise NotFoundError('Form not found')
     try:
         aggregates_table.delete_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
         )
-        logger.info(f"Deleted feedback form: {form_id}")
+        logger.info(f"Deleted feedback form: {validated}")
         return {'success': True}
     except Exception as e:
         logger.error(f"Error deleting form: {e}")
@@ -780,6 +841,24 @@ def _js_value(value: Any) -> str:
 # fetch of /config and /submit, which are on this origin by construction
 # (api_endpoint is built from this request's own host).
 #
+# That construction is what `'self'` depends on, and it holds for the ONE
+# deployment topology this stack builds: API Gateway invoked directly, so
+# `requestContext.domainName` — the host the document was served from — is also
+# the host the widget fetches. `lib/stacks/api-stack.ts` takes a
+# `frontendDistribution`, but that CloudFront distribution fronts the website
+# bucket only; no behaviour points at the API, and no custom domain or base-path
+# mapping is declared for it.
+#
+# If a deployment ever puts this API behind a distribution or a custom domain that
+# rewrites Host, `'self'` and `api_endpoint` stop agreeing — `domainName` would be
+# the ORIGIN's host while the document came from the EDGE's — and the widget's own
+# fetch is refused, with nothing to see but a CSP violation in a console nobody is
+# watching. The fix then is to derive both from the same forwarded host rather
+# than to widen the directive: `connect-src` naming an explicit API host is still
+# a bound, `'self' *` is not. Out of scope here because the topology does not
+# exist yet, and recorded because this comment is where the reader of that
+# deployment's blank frame will end up.
+#
 # Those three are what makes the page WORK, and `default-src 'none'` is the
 # fallback for everything not named — so deleting any one of them is a total,
 # silent failure of the product on a customer's site rather than a degraded page.
@@ -956,17 +1035,26 @@ def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
     The FORMAT check is here rather than at each caller because this function is
     the one read those routes make, so one call covers `/stats`, `/submissions`
     and the iframe page's existence gate — `_validated_form_id`'s cost argument
-    then holds at every route that states it rather than at one. Callers keep
-    using their own `form_id` for anything else they build (`source_channel`,
-    the response's echo) with no risk of a split-brain, because the validator is
-    EXACT: it returns the string it was given or None, never a normalized
-    variant of it.
+    then holds at every route that states it rather than at one.
+
+    The key is built from the VALIDATED value, like every other call site, rather
+    than from the parameter. Those are the same string today, and relying on that
+    was a latent split rather than a saving: a validator that normalized — a
+    plausible "form ids are case-insensitive" change — would have this function
+    read `FORM#DEADBEEF` while `/config` read `FORM#deadbeef` for the same URL,
+    and `/submissions` would then filter on a `source_channel` built by its caller
+    from the raw id, which no write ever used. A silent zero, which is the exact
+    defect class this function exists to prevent (#312). Keying on the validated
+    value removes the dependency instead of documenting it;
+    `test_the_validator_returns_its_input_unchanged` pins the exactness the
+    callers' own use of `form_id` still relies on.
     """
-    if not _validated_form_id(form_id):
+    validated = _validated_form_id(form_id)
+    if not validated:
         raise NotFoundError('Form not found')
     try:
         response = aggregates_table.get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
         )
     except Exception as e:
         # Surfaced as a metric because this failure used to be invisible: it was

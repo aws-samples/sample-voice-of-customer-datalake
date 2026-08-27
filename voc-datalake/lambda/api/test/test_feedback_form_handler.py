@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
 WIDGET_SOURCE = Path(__file__).resolve().parents[1] / 'static' / 'feedback-widget.js'
@@ -2916,6 +2917,14 @@ class TestEveryRouteThatKeysOnAFormIdChecksItsFormatFirst:
     `ballots_handler` applies its equivalent at all five of its routes; this
     mirrors that.
 
+    These four are the routes an UNAUTHENTICATED caller can reach plus the two
+    authenticated reads. The authenticated CRUD trio is covered separately, by
+    `TestTheAuthenticatedCrudRoutesAreBoundedToo`, because what is at stake there
+    is a write rather than a read cost — and the whole set is derived from the
+    module's routing table by
+    `test_no_route_keys_on_a_form_id_without_validating_it_first`, so neither class
+    is the list of record.
+
     Asserted as "no read happened", route by route, because that is the property
     the comment claims and the only one a 404 alone would not distinguish from a
     lookup that merely found nothing.
@@ -3043,5 +3052,540 @@ class TestEveryRouteThatKeysOnAFormIdChecksItsFormatFirst:
         response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 404
+        mock_table.get_item.assert_not_called()
+        mock_sqs.send_message.assert_not_called()
+
+
+class TestTheAuthenticatedCrudRoutesAreBoundedToo:
+    """`GET`/`PUT`/`DELETE /feedback-forms/<form_id>`, and the write PUT used to do.
+
+    These three are behind Cognito (`authMethodOptions` in
+    `lib/stacks/api-stack.ts`), so none of this is the #379 vulnerability and the
+    cost argument for a public probe does not apply. Two other things do:
+
+    - `_validated_form_id`'s docstring claims the check is at EVERY route that
+      turns a URL segment into a key. These were the three that disproved it.
+    - `update_form` called `update_item` with no condition, and UpdateItem is an
+      UPSERT. A `PUT` to an id the table did not hold therefore CREATED a row,
+      keyed on whatever the caller put in the path.
+    """
+
+    # The three shapes, and what each must not do. Kept as data so a route added
+    # to the trio is a one-line addition rather than a fourth near-copy.
+    MALFORMED_BODY = {'name': 'pwn'}
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_no_crud_route_turns_a_malformed_id_into_a_key(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The claim, checked at the three routes that used to break it.
+
+        `get_item`, `update_item` and `delete_item` alike: a segment the pattern
+        refuses must not reach the table at all, so the refusal cannot be confused
+        with a lookup that found nothing (`GET`) or a write that happened to be
+        harmless (`DELETE`).
+        """
+        for method, body in (
+            ('GET', None),
+            ('PUT', self.MALFORMED_BODY),
+            ('DELETE', None),
+        ):
+            for malformed in (
+                _INJECTION_PAYLOAD,
+                'a' * (feedback_form_handler.FORM_ID_MAX_LENGTH + 1),
+            ):
+                mock_table.reset_mock()
+                event = api_gateway_event(
+                    method=method,
+                    path=f'/feedback-forms/{malformed}',
+                    path_params={'form_id': malformed},
+                    body=body,
+                    resource='/feedback-forms/{form_id}',
+                )
+
+                response = feedback_form_handler.lambda_handler(
+                    event, lambda_context
+                )
+
+                assert response['statusCode'] == 404, (
+                    f'{method} /feedback-forms/<malformed> answered '
+                    f'{response["statusCode"]}, not the 404 every other route '
+                    'gives for an id that cannot be one of ours'
+                )
+                mock_table.get_item.assert_not_called()
+                mock_table.update_item.assert_not_called()
+                mock_table.delete_item.assert_not_called()
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_put_to_a_malformed_id_does_not_mint_a_phantom_form(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The write, which is what made this more than a docstring problem.
+
+        Before the fix this answered **200** and called `update_item` with
+        `sk='FORM#a\\');alert(document.domain);x=(\\''`. UpdateItem being an upsert,
+        that CREATED the row — and since UPDATABLE_FIELDS does not include
+        `form_id`, the row it created had none, so `item_to_form` read it back as
+        `form_id: ''`: a nameless entry in `list_forms` that no route could then
+        address or delete by id.
+
+        The response body is asserted as well as the call, because the empty
+        `form_id` coming back to the caller is the visible half of the same defect.
+        """
+        event = api_gateway_event(
+            method='PUT',
+            path=f'/feedback-forms/{_INJECTION_PAYLOAD}',
+            path_params={'form_id': _INJECTION_PAYLOAD},
+            body=self.MALFORMED_BODY,
+            resource='/feedback-forms/{form_id}',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 404
+        mock_table.update_item.assert_not_called()
+        assert '"form_id":""' not in response['body'].replace(' ', '')
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_put_to_a_well_formed_absent_id_is_refused_by_the_table(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The other half, and the reason a format check alone was not the fix.
+
+        `deadbeef` is a perfectly well-formed id, so the validator passes it and
+        the upsert would still have created a row for a form that does not exist.
+        `attribute_exists(sk)` is what refuses it, and the route must report that
+        as the same 404 `GET` gives rather than as a 500 — a condition failing is
+        the table answering the question, not an error.
+        """
+        mock_table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'ConditionalCheckFailedException',
+                       'Message': 'The conditional request failed'}},
+            'UpdateItem',
+        )
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/feedback-forms/deadbeef',
+            path_params={'form_id': 'deadbeef'},
+            body={'name': 'a rename of a form that is not there'},
+            resource='/feedback-forms/{form_id}',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 404
+        assert 'Form not found' in response['body']
+        # The condition is on the request, not just in the docstring: without it
+        # the write above would have succeeded and this test would need the mock
+        # to fail for a different reason.
+        assert (
+            mock_table.update_item.call_args.kwargs['ConditionExpression']
+            == 'attribute_exists(sk)'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_put_to_a_form_that_exists_still_updates_it(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The contract the two guards must not have broken.
+
+        A real form still updates and still answers with the new record — so the
+        404s above are the id or the condition refusing, not the route having
+        stopped working.
+        """
+        mock_table.update_item.return_value = {
+            'Attributes': {'form_id': 'deadbeef', 'name': 'Updated', 'enabled': True}
+        }
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/feedback-forms/deadbeef',
+            path_params={'form_id': 'deadbeef'},
+            body={'name': 'Updated'},
+            resource='/feedback-forms/{form_id}',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['form']['name'] == 'Updated'
+        assert (
+            mock_table.update_item.call_args.kwargs['Key']['sk'] == 'FORM#deadbeef'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_delete_of_an_absent_form_stays_idempotent(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """`delete_form` deliberately gets NO existence condition, unlike `PUT`.
+
+        DeleteItem on a missing key writes nothing, so there is no phantom row to
+        prevent and the idempotent 200 is the honest answer — a caller retrying a
+        delete should not get a 404 for having succeeded the first time. Pinned so
+        the asymmetry with `update_form` reads as a decision rather than as the
+        condition having been forgotten on one of the two writes.
+        """
+        event = api_gateway_event(
+            method='DELETE',
+            path='/feedback-forms/deadbeef',
+            path_params={'form_id': 'deadbeef'},
+            resource='/feedback-forms/{form_id}',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert mock_table.delete_item.call_args.kwargs['Key']['sk'] == (
+            'FORM#deadbeef'
+        )
+        assert 'ConditionExpression' not in mock_table.delete_item.call_args.kwargs
+
+
+def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
+    """Every `@app.<method>` route whose path captures `<form_id>`, from source.
+
+    Returns route path -> handler function name, read off the module with `ast`
+    rather than listed here. The two classes above name their routes explicitly,
+    which is what makes their failures legible; this exists so neither of those
+    lists is what the module is measured against. A route added later appears here
+    for free, and if it does not validate its id the test below fails naming it.
+
+    Only `<form_id>` counts: `/feedback-forms` and `POST /feedback-forms` take no
+    id out of the URL and have nothing to check.
+    """
+    tree = ast.parse(source)
+    routes = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            target = decorator.func
+            # `@app.get(...)`, `@app.put(...)` and so on — the attribute is the
+            # HTTP method and the object has to be `app`, so `@tracer.capture_method`
+            # (not a Call with a string argument) and any other decorator are out.
+            if not isinstance(target, ast.Attribute):
+                continue
+            if not (isinstance(target.value, ast.Name) and target.value.id == 'app'):
+                continue
+            if not decorator.args:
+                continue
+            path = decorator.args[0]
+            if not (isinstance(path, ast.Constant) and isinstance(path.value, str)):
+                continue
+            if '<form_id>' in path.value:
+                routes[f'{target.attr.upper()} {path.value}'] = node.name
+    assert routes, (
+        'no @app route capturing <form_id> was found in the handler source — the '
+        'derivation found nothing to judge, so a green result below would be '
+        'meaningless. If the routes moved or the decorator spelling changed, fix '
+        'this helper; do not delete the assertion.'
+    )
+    return routes
+
+
+def _validates_its_form_id(source: str, function_name: str) -> bool:
+    """Does `function_name` reach `_validated_form_id` before it keys on anything?
+
+    True if the function calls it directly, or calls `_load_form_for_query` — the
+    one read `/stats` and `/submissions` make, which validates on their behalf.
+    Following the delegation rather than requiring the direct call is the point:
+    the alternative is a test that demands a particular spelling and fails on a
+    legitimate refactor.
+    """
+    tree = ast.parse(source)
+    functions = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    ]
+    assert len(functions) == 1, (
+        f'expected exactly one def {function_name}, found {len(functions)}'
+    )
+    called = {
+        node.func.id
+        for node in ast.walk(functions[0])
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    return bool(called & {'_validated_form_id', '_load_form_for_query'})
+
+
+class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
+    """`_validated_form_id`'s docstring says EVERY route; this is what checks it.
+
+    That claim was false when it was written — `/config`, `/submit`, `/iframe`,
+    `/stats` and `/submissions` were covered and the authenticated CRUD trio was
+    not, while the docstring enumerated five routes as if they were all of them.
+    A prose list is the wrong instrument for a universal claim: it goes stale
+    silently, and the reader who trusts it assumes a protection that is not there.
+
+    So the universe is derived from the module's own routing table instead.
+    """
+
+    def test_no_route_keys_on_a_form_id_without_validating_it_first(
+        self, feedback_form_handler
+    ):
+        """Every `<form_id>` route validates, or the failure names the ones that do
+        not.
+
+        This is the test that makes the docstring's "EVERY" audit itself. A route
+        added later is included automatically, so the next person to write
+        `@app.get("/feedback-forms/<form_id>/something")` finds out here rather
+        than in a review.
+        """
+        source = Path(inspect.getsourcefile(feedback_form_handler)).read_text(
+            encoding='utf-8'
+        )
+        routes = _routes_keying_on_a_form_id(source)
+
+        unbounded = sorted(
+            f'{route} ({function})'
+            for route, function in routes.items()
+            if not _validates_its_form_id(source, function)
+        )
+
+        assert unbounded == [], (
+            f'{unbounded} take a form id out of the URL without reaching '
+            '_validated_form_id (directly or through _load_form_for_query), so '
+            "that function's docstring no longer describes the module. Add the "
+            'check rather than narrowing the claim: the value of a universal '
+            'bound is that a reader does not have to hold the exceptions.'
+        )
+
+    def test_the_derivation_sees_the_routes_this_module_actually_has(
+        self, feedback_form_handler
+    ):
+        """The positive control: the walk finds the whole surface, not a subset.
+
+        Without this, `_routes_keying_on_a_form_id` returning only the routes that
+        happen to pass would make the test above vacuous in the most convincing
+        way possible — a green run over an empty-ish universe. The eight are named
+        here because THIS is the assertion that is supposed to fail when the
+        surface changes, prompting a decision about the new route.
+        """
+        source = Path(inspect.getsourcefile(feedback_form_handler)).read_text(
+            encoding='utf-8'
+        )
+
+        assert set(_routes_keying_on_a_form_id(source)) == {
+            'GET /feedback-forms/<form_id>',
+            'PUT /feedback-forms/<form_id>',
+            'DELETE /feedback-forms/<form_id>',
+            'GET /feedback-forms/<form_id>/config',
+            'POST /feedback-forms/<form_id>/submit',
+            'GET /feedback-forms/<form_id>/iframe',
+            'GET /feedback-forms/<form_id>/submissions',
+            'GET /feedback-forms/<form_id>/stats',
+        }
+
+    def test_the_derivation_can_fail(self):
+        """A route that keys on an id and does not check it must be REPORTED.
+
+        The control for the check itself: fed a module with one unvalidated route,
+        `_validates_its_form_id` has to say so. Otherwise the test above passes
+        because the derivation always returns True, which is indistinguishable
+        from a module that is correct.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/new-thing")
+            def get_new_thing(form_id: str):
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+
+            @app.get("/feedback-forms/<form_id>/checked")
+            def get_checked(form_id: str):
+                validated = _validated_form_id(form_id)
+                return validated
+            '''
+        )
+
+        routes = _routes_keying_on_a_form_id(source)
+        assert routes == {
+            'GET /feedback-forms/<form_id>/new-thing': 'get_new_thing',
+            'GET /feedback-forms/<form_id>/checked': 'get_checked',
+        }
+        assert not _validates_its_form_id(source, 'get_new_thing')
+        # And the delegating spelling is accepted, so the check is about reaching
+        # the validator rather than about naming it.
+        assert _validates_its_form_id(source, 'get_checked')
+
+    def test_the_derivation_accepts_the_delegating_spelling(self):
+        """`/stats` and `/submissions` validate through `_load_form_for_query`.
+
+        Pinned separately from the direct call because it is the one that would be
+        lost first: a stricter derivation that demanded `_validated_form_id` by
+        name would report those two as unbounded, and the tempting fix would be to
+        add a redundant second call to each rather than to fix the test.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/stats")
+            def get_form_stats(form_id: str):
+                form = _load_form_for_query(form_id, 'Failed')
+                return form
+            '''
+        )
+
+        assert _validates_its_form_id(source, 'get_form_stats')
+
+
+class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
+    """`_validated_form_id` returns what it was given, and that is load-bearing.
+
+    Callers use their own `form_id` for things that are not the key —
+    `source_channel` in `/submissions`, the id echoed in a response — so the
+    validated value and the parameter have to be the same string. `.strip()` was
+    removed for a related reason, but exactness is the broader property and it was
+    carried entirely by a sentence in a docstring.
+    """
+
+    def test_the_validator_returns_its_input_unchanged(self, feedback_form_handler):
+        """Identity, not merely truthiness.
+
+        A normalizing validator — lower-casing, say, for a plausible "form ids are
+        case-insensitive" change — would pass every existing test while splitting
+        the module: `/stats` would read the record its key names and then filter
+        submissions on a `source_channel` its CALLER built from the raw id, which
+        no write ever used. Zero submissions for a form that has them, which is
+        the false zero `_load_form_for_query` exists to prevent (#312).
+
+        So the invariant gets a test instead of a sentence. If ids ever should be
+        case-insensitive, the normalization belongs at the mint and at every read
+        alike, and this test is the place to come and argue with.
+        """
+        for valid in (
+            'deadbeef',
+            'DEADBEEF',
+            'website-form_2',
+            'a',
+            'a' * feedback_form_handler.FORM_ID_MAX_LENGTH,
+            feedback_form_handler._minted_form_id(),
+        ):
+            assert feedback_form_handler._validated_form_id(valid) == valid, (
+                f'{valid!r} came back as '
+                f'{feedback_form_handler._validated_form_id(valid)!r} — a '
+                'normalized return splits the key a route reads from the '
+                'source_channel it filters on'
+            )
+
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_key_a_query_route_reads_is_the_id_in_its_url(
+        self,
+        mock_table,
+        mock_feedback_table,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
+    ):
+        """The consequence, end to end on the route where it would surface.
+
+        `_load_form_for_query` keys on the VALIDATED value while its callers build
+        `source_channel` from the parameter. Both are asserted here against the id
+        in the URL, so the two halves cannot drift apart without a failure — which
+        is the only way this defect would ever have been noticed, since it produces
+        a plausible-looking zero rather than an error.
+        """
+        mock_table.get_item.return_value = {
+            'Item': {'form_id': 'DeadBeef', 'brand_name': 'acme'}
+        }
+        mock_feedback_table.query.return_value = {'Items': []}
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/DeadBeef/submissions',
+            path_params={'form_id': 'DeadBeef'},
+            resource='/feedback-forms/{form_id}/submissions',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert mock_table.get_item.call_args.kwargs['Key']['sk'] == 'FORM#DeadBeef'
+        assert (
+            mock_feedback_table.query.call_args.kwargs[
+                'ExpressionAttributeValues'
+            ][':sc']
+            == 'form_DeadBeef'
+        )
+
+
+class TestTheSubmitRouteChecksTheIdBeforeTheBody:
+    """The one input shape whose ERROR CLASS changed, pinned as a decision.
+
+    Putting the format check above `app.current_event.json_body` is deliberate —
+    `/submit` is the only public route that enqueues, so an id that cannot be one
+    of ours must reach neither the table nor the queue, whatever the body says.
+
+    The side effect is a contract change: a request carrying BOTH a malformed id
+    and an invalid body used to be told about the body (400) and is now told about
+    the id (404). That is the better answer — the id is wrong regardless of what
+    the body contains — but it is observable to an integrator whose client
+    distinguishes "fix your input" from "this form is gone", so it is recorded in
+    `docs/feedback-forms.md` as well as here, and pinned so the ordering is a
+    decision rather than an artefact of statement order.
+    """
+
+    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_malformed_id_with_an_invalid_body_reports_the_id(
+        self,
+        mock_table,
+        mock_sqs,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
+    ):
+        """404 for the id, not 400 for the empty text — and no read, no send."""
+        event = api_gateway_event(
+            method='POST',
+            path=f'/feedback-forms/{_INJECTION_PAYLOAD}/submit',
+            path_params={'form_id': _INJECTION_PAYLOAD},
+            body={'text': ''},
+            resource='/feedback-forms/{form_id}/submit',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 404
+        assert 'Form not found' in response['body']
+        assert 'Feedback text is required' not in response['body']
+        mock_table.get_item.assert_not_called()
+        mock_sqs.send_message.assert_not_called()
+
+    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_well_formed_id_with_an_invalid_body_still_reports_the_body(
+        self,
+        mock_table,
+        mock_sqs,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
+    ):
+        """The other side of the precedence, which is what makes it a precedence.
+
+        With an id that could be ours, the empty `text` is still a 400 — so the
+        404 above is the id being refused first, not the route having lost its body
+        validation. Without this case, deleting the text check would leave the case
+        above green.
+        """
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms/deadbeef/submit',
+            path_params={'form_id': 'deadbeef'},
+            body={'text': ''},
+            resource='/feedback-forms/{form_id}/submit',
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert 'Feedback text is required' in response['body']
+        # Still before any read: the body is refused on its own terms, and the
+        # form's existence was never the question.
         mock_table.get_item.assert_not_called()
         mock_sqs.send_message.assert_not_called()

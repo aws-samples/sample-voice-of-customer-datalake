@@ -61,6 +61,21 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a
   model call.
+- The public embeddable feedback form page, `GET /feedback-forms/{form_id}/iframe`, no longer
+  reflects its form id into the page it returns. The id was interpolated into a `<script>` block
+  inside handwritten quotes, so a path the route's own pattern accepts —
+  `a');alert(document.domain);x=('` — came back as executable script on the API's own origin, to any
+  visitor who could be sent the link (#379). The id is now format-checked before the page is built,
+  every value the page inlines is serialized rather than quoted by hand, and the response carries a
+  Content-Security-Policy. The page also confirms the form exists first, so an attacker-chosen id no
+  longer produces a page at all. Embedding is unaffected: no `frame-ancestors` and no
+  `X-Frame-Options` are set, deliberately.
+- Every route that takes a form id out of the URL now checks its format before reading or writing,
+  so a probe or an unbounded path segment costs no DynamoDB call on the unauthenticated ones.
+- `PUT /feedback-forms/{form_id}` no longer creates a record. The write was an unconditional
+  `UpdateItem`, which is an upsert, so a request naming an id the table did not hold created a row
+  with no `form_id` of its own — one that read back with an empty id and could not afterwards be
+  addressed or deleted by id. It is now conditional on the form existing.
 
 ### Upgrade notes
 
@@ -75,6 +90,19 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   previously started a default `prd` generation. Unparseable JSON is a 400 too, where it was
   previously a 500. A body that is absent altogether, a literal JSON `null`, or zero-length
   (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
+- **A feedback form id that this service could not have issued now answers 404 on every route that
+  takes one out of the URL**, before any read. Ids are at most 64 characters of letters, digits, `_`
+  and `-`; surrounding whitespace is no longer trimmed, so ` abc123` is a 404 rather than another way
+  of writing `abc123`. Forms created through this platform are unaffected — the ids it mints are
+  8 hex characters — and a hand-seeded id like `website-form` still works.
+- **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
+  request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
+  answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route
+  had to refuse before enqueueing anything. A well-formed id with an empty `text` still answers 400.
+- **`PUT /feedback-forms/{form_id}` answers 404 for a form that does not exist**, instead of creating
+  one. Create through `POST /feedback-forms`, which mints the id. Any phantom rows an earlier version
+  created are visible in `GET /feedback-forms` as entries with an empty `form_id`; they have to be
+  removed directly from the aggregates table, since no route can address them by id.
 
 ## [0.2.0] - 2026-08-19
 
