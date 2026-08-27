@@ -150,7 +150,7 @@
     "composeRefused": "No se ha añadido la fila, y la solicitud se ha rechazado en lugar de fallar: revise lo que ha elegido — una fila solo puede contener un número limitado de documentos, y todos deben seguir estando en el proyecto.",
     "deleteConflict": "«{{row}}» no se ha eliminado: cambió mientras se estaba borrando, o es la única fila de un proyecto y no puede eliminarse. Vuelva a cargar la página para ver las filas actuales.",
     "deleteFailed": "«{{row}}» no se ha eliminado. La fila y sus papeletas no han cambiado, así que puede volver a intentarlo.",
-    "deleteRefused": "No se ha eliminado «{{row}}», y la solicitud se ha rechazado en lugar de fallar: eliminar una fila junto con sus papeletas es una acción de administrador, así que volver a intentarlo dará la misma respuesta.",
+    "deleteRefused": "No se ha eliminado «{{row}}», y la solicitud se ha rechazado en lugar de fallar: puede que la fila ya no exista, o que eliminar una fila junto con sus papeletas no sea algo que le corresponda hacer. Volver a intentarlo dará la misma respuesta.",
     "dismiss": "Descartar este mensaje",
     "recomposeConflict": "Los documentos de «{{row}}» no se han cambiado: ya se ha emitido una papeleta, por lo que su composición está bloqueada. Añada otra fila para puntuar una combinación distinta.",
     "recomposeFailed": "Los documentos de «{{row}}» no se han cambiado. No se ha guardado nada, así que puede volver a intentarlo.",
@@ -160,8 +160,9 @@
   "rowCount_one": "{{count}} propuesta",
   "rowCount_other": "{{count}} propuestas",
   "rowDeleted": {
-    "description": "«{{row}}» ya no existe, y con ella se han eliminado {{ballots}} papeleta(s) emitidas.",
     "descriptionNoCount": "«{{row}}» ya no existe, junto con las papeletas que se hubieran emitido. No se ha informado del número de papeletas.",
+    "description_one": "«{{row}}» ya no existe, y con ella se ha eliminado la única papeleta emitida.",
+    "description_other": "«{{row}}» ya no existe, y con ella se han eliminado las {{count}} papeletas emitidas.",
     "dismiss": "Descartar este mensaje",
     "title": "La fila se ha eliminado"
   },

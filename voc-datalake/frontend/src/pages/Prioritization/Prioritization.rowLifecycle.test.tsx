@@ -512,6 +512,39 @@ describe('deleting a row with its ballots', () => {
     expect(within(receipt).getByText(new RegExp(PRFAQ_TITLE))).toBeInTheDocument()
   })
 
+  it('writes a single ballot in the singular', async () => {
+    // The counted sentence is a real i18next plural now, not "{{ballots}} ballot(s)".
+    // This catalog already ships `rowCount_one`/`rowCount_other` in all eight locales and
+    // `localeParity.test.ts` pins the set, so a missing form fails a test here rather
+    // than rendering a raw key path at a reader.
+    mockIsAdmin.mockReturnValue(true)
+    mockDelete.mockResolvedValue({ ballots_deleted: 1 })
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+
+    const receipt = await screen.findByRole('status', { name: /The row was deleted/ })
+    expect(within(receipt).getByText(/the one ballot cast on it/)).toBeInTheDocument()
+    // Neither the plural form nor the old "ballot(s)" hedge, and never a raw key path.
+    expect(within(receipt).queryByText(/ballots cast/)).toBeNull()
+    expect(within(receipt).queryByText(/ballot\(s\)/)).toBeNull()
+    expect(within(receipt).queryByText(/rowDeleted\./)).toBeNull()
+  })
+
+  it('writes several ballots in the plural, with the count', async () => {
+    mockIsAdmin.mockReturnValue(true)
+    mockDelete.mockResolvedValue({ ballots_deleted: 3 })
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+
+    const receipt = await screen.findByRole('status', { name: /The row was deleted/ })
+    expect(within(receipt).getByText(/the 3 ballots cast on it/)).toBeInTheDocument()
+    expect(within(receipt).queryByText(/ballot\(s\)/)).toBeNull()
+  })
+
   it('claims no number when the receipt could not be read', async () => {
     // The wire boundary answers 0 for a body it cannot parse, deliberately, rather than
     // failing a delete the server completed — so "0 ballots" is not a fact this page may
@@ -598,6 +631,52 @@ describe("a project's only default row", () => {
     await openTheRow()
 
     expect(screen.getByRole('button', { name: /Delete row/ })).toBeInTheDocument()
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
+  it('states no reason while the row count is still arriving', async () => {
+    // THE COUNT IS ONLY AS COMPLETE AS THE READS BEHIND IT. Withholding the control while
+    // one is in flight is recoverable — the reader waits and it appears — but the sentence
+    // asserts a fact about stored state, and a reviewer who believes a false one acts on
+    // it by adding a row they did not want. So the gate runs and the explanation does not.
+    //
+    // The scores read never settles here, which is the state the page is in for the whole
+    // of the fan-out: the rows on screen come from the ensure route's own answer, so a row
+    // renders while `scoresPending` is still true.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockReturnValue(new Promise(() => { /* never settles */ }))
+
+    await openTheRow()
+
+    // No control, because a default row that counts as its project's only one is one the
+    // API refuses — the conservative direction for a courtesy gate.
+    expect(screen.queryByRole('button', { name: /Delete row/ })).toBeNull()
+    // And no claim about why, because the count is not settled enough to make one.
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
+  it('counts a sibling row whose documents have not resolved, so it states nothing false', async () => {
+    // `collectRows` DROPS a row not one of whose document ids resolves — an ordinary
+    // transient state of the project fan-out, and the reachable way a project holding two
+    // rows presented as holding one. Counting its output therefore reported the default
+    // row as the project's only one and said so in words. The count is taken over the
+    // rows themselves, BEFORE that narrowing.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue({
+      rows: {
+        [ROW_ID]: storedRow(),
+        // A real second row of the same project, holding a document the project read on
+        // screen does not (yet) name.
+        [SECOND_ROW_ID]: secondRow({ document_ids: ['doc_not_yet_read'] }),
+      },
+      scores: {},
+      aggregates: {},
+    })
+
+    await openTheRow()
+
+    // Two rows exist, so the default row is deletable and nothing claims otherwise.
+    expect(await screen.findByRole('button', { name: /Delete row/ })).toBeInTheDocument()
     expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
   })
 
@@ -723,7 +802,33 @@ describe('the page reports a row write that did not land', () => {
     await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
 
     const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
-    expect(within(alert).getByText(/an administrator's action/i)).toBeInTheDocument()
+    // "may not be yours to do" — the permission named as one POSSIBILITY, since the
+    // same sentence covers the 404 below.
+    expect(within(alert).getByText(/may not be yours to do/i)).toBeInTheDocument()
+    expect(within(alert).queryByText(/you can try again/i)).toBeNull()
+  })
+
+  it('does not blame permission for a delete of a row that is already gone', async () => {
+    // `isSettledRefusal` routes every settled non-409 to the one `deleteRefused`
+    // sentence, and 403 is not the only status that reaches it: 404 is what
+    // `api_delete_prioritization_row` raises for a row another admin already removed,
+    // and 400 for a malformed id. Copy asserting "this is an administrator's action"
+    // therefore told a reader who HAS the permission to go and ask for one nobody can
+    // grant — so the sentence names the possibilities and asserts none.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
+    mockDelete.mockRejectedValue(new Error('API Error: 404'))
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+
+    const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
+    // The settled sentence, and it offers the row already being gone as a reading.
+    expect(within(alert).getByText(/the request was refused rather than failing/i)).toBeInTheDocument()
+    expect(within(alert).getByText(/may already be gone/i)).toBeInTheDocument()
+    // Not an assertion about permission, which is what would misdirect an admin.
+    expect(within(alert).queryByText(/is an administrator's action/i)).toBeNull()
     expect(within(alert).queryByText(/you can try again/i)).toBeNull()
   })
 
@@ -732,6 +837,10 @@ describe('the page reports a row write that did not land', () => {
     // below the fold, while the panel renders near the top of the page. `role="alert"`
     // announces it to a screen reader and does nothing at all for a sighted reader, so
     // without this a refused write looks like a button that did nothing.
+    //
+    // Focus lands on the panel's HEADING rather than the region: focusing a live region
+    // makes most screen readers announce it twice, once for the region changing and once
+    // for focus landing on a container whose contents are then read.
     mockCompose.mockRejectedValue(new Error('API Error: 500'))
     const { user } = await openTheRow()
 
@@ -740,9 +849,44 @@ describe('the page reports a row write that did not land', () => {
 
     const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
     await waitFor(() => {
-      expect(alert).toHaveFocus()
+      expect(within(alert).getByRole('heading', { name: /That change to the rows was not saved/ }))
+        .toHaveFocus()
     })
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
+  })
+
+  it('puts focus back on the control that produced it when the panel is dismissed', async () => {
+    // Dismissing unmounts the element focus is on, so without a restore a keyboard
+    // reader is dropped on `<body>` at the top of the document and has to tab through
+    // the whole page to reach the control inside the expanded row again. `ModalShell`
+    // already captures and restores focus this way.
+    //
+    // A REFUSED DELETE is the case where the trigger survives its own submission: the
+    // confirm dialog closes and restores focus to the "Delete row" button that opened
+    // it, which is still on screen because the row was not deleted. The picker's Save
+    // instead unmounts as it submits, and a detached node is deliberately not re-focused
+    // — see `useAnnouncePanel`.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue(twoRowRead())
+    mockDelete.mockRejectedValue(new Error('API Error: 500'))
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+    const alert = await screen.findByRole('alert', { name: /That change to the rows was not saved/ })
+    await waitFor(() => {
+      expect(within(alert).getByRole('heading', { name: /That change to the rows was not saved/ }))
+        .toHaveFocus()
+    })
+
+    await user.click(within(alert).getByRole('button', { name: /Dismiss this message/ }))
+
+    // Back on the row's own Delete control, and NOT dropped on `<body>` at the top of
+    // the document.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Delete row/ })).toHaveFocus()
+    })
+    expect(document.body).not.toHaveFocus()
   })
 })
 

@@ -1397,7 +1397,7 @@ export function retainedEnsuredRows(
 }
 
 /**
- * How many rows each project has on screen.
+ * How many rows each project has.
  *
  * ONE COURTESY GATE READS THIS: `api_delete_prioritization_row` refuses a project's
  * DEFAULT row with 409 while it is that project's ONLY row, which is the state every
@@ -1405,14 +1405,28 @@ export function retainedEnsuredRows(
  * admin a delete that cannot work, behind a dialog stating an irreversible effect that
  * will not occur.
  *
- * Counted off the rows already collected rather than by a request, so it is exactly as
- * fresh as the list beside it. It is a COUNT ON SCREEN, not the partition's own, and
- * that is fine for a courtesy: the server's 409 stays authoritative either way, so a
- * stale count can only mean a control is offered that is then refused in words
- * (`rowAction.deleteConflict`) — never a delete that happens when it should not.
+ * COUNTED OVER THE ROWS THEMSELVES, before `collectRows` narrows them, and that
+ * distinction is the whole reason this takes the bare record rather than the view list.
+ * `collectRows` DROPS a row whose project is not on screen and a row not one of whose
+ * document ids resolves — so counting its output reports a project holding two rows as
+ * holding one whenever the sibling is a row composed from a document since deleted, or
+ * one whose project detail has not landed. The gate would merely withhold a control in
+ * that window, which is recoverable; the SENTENCE beside it asserts the count as a fact
+ * about stored state, and a false one is what a reviewer acts on.
+ *
+ * Structural in its parameter (anything carrying a `project_id`) so both the stored
+ * record and the view list satisfy it, and no caller has to choose between counting the
+ * right thing and passing the type this happens to name.
+ *
+ * Still a COUNT OF WHAT THIS PAGE KNOWS, not a query of the partition, and that is fine
+ * for a courtesy gate: the server's 409 stays authoritative either way, so a stale count
+ * can only mean a control is offered that is then refused in words
+ * (`rowAction.deleteConflict`) — never a delete that happens when it should not. Whether
+ * the count is settled ENOUGH TO EXPLAIN is a separate question the caller answers; see
+ * `rowCountSettled` on `RowCompositionActions`.
  */
 export function rowsPerProject(
-  rows: readonly PrioritizationRowView[],
+  rows: readonly { readonly project_id: string }[],
 ): ReadonlyMap<string, number> {
   const counted = new Map<string, number>()
   for (const row of rows) {

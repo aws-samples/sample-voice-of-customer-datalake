@@ -150,7 +150,7 @@
     "composeRefused": "La ligne n’a pas été ajoutée, et la demande a été refusée plutôt qu’échouée : vérifiez votre sélection — une ligne ne peut contenir qu’un nombre limité de documents, et chacun doit toujours faire partie du projet.",
     "deleteConflict": "« {{row}} » n’a pas été supprimée : elle a changé pendant la suppression, ou c’est la seule ligne d’un projet et elle ne peut pas être supprimée. Rechargez la page pour voir les lignes actuelles.",
     "deleteFailed": "« {{row}} » n’a pas été supprimée. La ligne et ses bulletins sont inchangés, vous pouvez réessayer.",
-    "deleteRefused": "« {{row}} » n’a pas été supprimée, et la demande a été refusée plutôt qu’échouée : supprimer une ligne avec ses bulletins est une action d’administrateur, réessayer donnera donc la même réponse.",
+    "deleteRefused": "« {{row}} » n’a pas été supprimée, et la demande a été refusée plutôt qu’échouée : la ligne a peut-être déjà disparu, ou la suppression d’une ligne avec ses bulletins ne vous est peut-être pas permise. Réessayer donnera la même réponse.",
     "dismiss": "Masquer ce message",
     "recomposeConflict": "Les documents de « {{row}} » n’ont pas été modifiés : un bulletin a déjà été déposé, sa composition est donc verrouillée. Ajoutez une autre ligne pour évaluer une combinaison différente.",
     "recomposeFailed": "Les documents de « {{row}} » n’ont pas été modifiés. Rien n’a été enregistré, vous pouvez réessayer.",
@@ -160,8 +160,9 @@
   "rowCount_one": "{{count}} proposition",
   "rowCount_other": "{{count}} propositions",
   "rowDeleted": {
-    "description": "« {{row}} » a disparu, ainsi que {{ballots}} bulletin(s) déposé(s) sur elle.",
     "descriptionNoCount": "« {{row}} » a disparu, ainsi que les bulletins qui y avaient été déposés. Aucun nombre de bulletins n’a été communiqué.",
+    "description_one": "« {{row}} » a disparu, ainsi que le seul bulletin déposé sur elle.",
+    "description_other": "« {{row}} » a disparu, ainsi que les {{count}} bulletins déposés sur elle.",
     "dismiss": "Masquer ce message",
     "title": "La ligne a été supprimée"
   },

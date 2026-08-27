@@ -733,8 +733,19 @@ export default function Prioritization() {
    * document for yet.
    *
    * Keyed by project rather than counted, so the panel can NAME the projects — an
-   * unnamed "some projects could not be prioritised" is not actionable — and so a
-   * retried ask that later succeeds can clear its own entry.
+   * unnamed "some projects could not be prioritised" is not actionable.
+   *
+   * A REPORTED ENTRY PERSISTS FOR THE MOUNT, and that is the effect of one decision
+   * rather than an oversight: the 409 that reaches this panel is a permanent refusal by
+   * `isPermanentRefusal`'s reckoning, so the effect above deliberately does NOT release
+   * that project from `rowsEnsured.current` — it therefore never joins a later `pending`
+   * batch and is never re-decided. Honest, because the refusal is settled until the
+   * project's documents change, and changing them changes `projectsNeedingARow`'s output
+   * and so the whole ask. The `withoutProjects` re-decide below is NOT dead: it is live
+   * for a project refused with a status this panel does not report, which is released and
+   * asked again. Widening `REPORTED_ENSURE_STATUSES` to a TRANSIENT status would need the
+   * release changed too, or the panel would name a project the next pass has since
+   * succeeded for.
    */
   const [ensureRefusals, setEnsureRefusals] = useState<Record<string, number>>({})
   useEffect(() => {
@@ -837,19 +848,19 @@ export default function Prioritization() {
    * exactly as it was. Hence `rowsPublished`, which is what tells an omitted field from
    * an empty published map.
    */
+  const knownRows = useMemo(
+    () => ({
+      ...retainedEnsuredRows(
+        ensuredRows,
+        savedScores?.rowsPublished === true ? savedScores.rows : undefined,
+      ),
+      ...(savedScores?.rows ?? {}),
+    }),
+    [savedScores, ensuredRows],
+  )
   const allRows = useMemo(
-    () => collectRows(
-      {
-        ...retainedEnsuredRows(
-          ensuredRows,
-          savedScores?.rowsPublished === true ? savedScores.rows : undefined,
-        ),
-        ...(savedScores?.rows ?? {}),
-      },
-      allProjectDetails,
-      projects,
-    ),
-    [savedScores, ensuredRows, allProjectDetails, projects],
+    () => collectRows(knownRows, allProjectDetails, projects),
+    [knownRows, allProjectDetails, projects],
   )
 
   // True when data is loaded, nothing is scorable, but non-scorable documents exist.
@@ -925,11 +936,36 @@ export default function Prioritization() {
   )
 
   /**
-   * How many rows each project has on screen, so a project's ONLY default row does not
-   * offer a delete the API always refuses. Counted off the list already collected — no
-   * request, and exactly as fresh as the rows beside it. See `rowsPerProject`.
+   * How many rows each project has, so a project's ONLY default row does not offer a
+   * delete the API always refuses. No request — these are the rows already in hand.
+   *
+   * Counted over `knownRows`, the record BEFORE `collectRows` narrows it, deliberately:
+   * a sibling row dropped for having no resolvable document (or for a project detail
+   * still in flight) would otherwise make a project holding two rows count as one. See
+   * `rowsPerProject`.
    */
-  const rowsByProject = useMemo(() => rowsPerProject(allRows), [allRows])
+  const rowsByProject = useMemo(
+    () => rowsPerProject(Object.values(knownRows)),
+    [knownRows],
+  )
+
+  /**
+   * Is that count settled enough to EXPLAIN a withheld delete, as opposed to merely to
+   * withhold one?
+   *
+   * The count is only as complete as the reads behind it. While either the project list
+   * or the fan-out is still resolving, `knownRows` can be missing rows the partition
+   * holds — so "this is the project's only default row" would be asserted about a
+   * project whose second row simply has not arrived. Withholding the control through
+   * that window is recoverable; stating a false reason is not, because a reviewer acts
+   * on it by adding a row they did not want.
+   *
+   * Both reads, not just the fan-out: `collectRows` and the count alike are empty until
+   * the project list lands, and `savedScores` is the other source of rows — but a failed
+   * or absent scores read is exactly when `ensuredRows` is the whole truth, so it is not
+   * required here. What is required is that nothing is still ARRIVING.
+   */
+  const rowCountSettled = !loadingProjects && !loadingDetails && !scoresPending
 
   // Project names, so the refusal panel can NAME the projects that have no row rather
   // than printing ids nobody recognises. Off the project list read, which is a
@@ -959,6 +995,7 @@ export default function Prioritization() {
   const rowLifecycle = useRowLifecycle({
     candidatesByProject,
     rowsByProject,
+    rowCountSettled,
     canDelete: isAdmin,
     onRowsChanged: () => {
       void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })

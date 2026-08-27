@@ -126,11 +126,13 @@ export interface RowLifecycle {
 }
 
 export function useRowLifecycle({
-  candidatesByProject, rowsByProject, canDelete, onRowsChanged, onRowDeleted,
+  candidatesByProject, rowsByProject, rowCountSettled, canDelete, onRowsChanged, onRowDeleted,
 }: {
   readonly candidatesByProject: ReadonlyMap<string, readonly ProjectDocument[]>
   /** How many rows each project has, for the delete's courtesy gate — see the panel. */
   readonly rowsByProject: ReadonlyMap<string, number>
+  /** Whether that count may be STATED as a reason, not only acted on — see the panel. */
+  readonly rowCountSettled: boolean
   readonly canDelete: boolean
   /** Refresh the authoritative read — the page owns the query key. */
   readonly onRowsChanged: () => void
@@ -193,6 +195,7 @@ export function useRowLifecycle({
     actions: {
       candidatesByProject,
       rowsByProject,
+      rowCountSettled,
       canDelete,
       pending: mutation.isPending,
       onCompose: (row, documentIds) => write({ action: 'compose', row, documentIds }),

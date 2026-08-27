@@ -150,7 +150,7 @@
     "composeRefused": "The row was not added, and the request was refused rather than failing: check what you picked — a row can hold only so many documents, and every one of them must still be in the project.",
     "deleteConflict": "\"{{row}}\" was not deleted: it changed while it was being removed, or it is a project's only row and cannot be deleted. Reload the page to see the current rows.",
     "deleteFailed": "\"{{row}}\" was not deleted. The row and its ballots are unchanged, so you can try again.",
-    "deleteRefused": "\"{{row}}\" was not deleted, and the request was refused rather than failing: deleting a row together with its ballots is an administrator's action, so trying again will get the same answer.",
+    "deleteRefused": "\"{{row}}\" was not deleted, and the request was refused rather than failing: the row may already be gone, or deleting a row together with its ballots may not be yours to do. Trying again will get the same answer.",
     "dismiss": "Dismiss this message",
     "recomposeConflict": "The documents on \"{{row}}\" were not changed: a ballot has already been cast, so its composition is locked. Add another row to score a different combination.",
     "recomposeFailed": "The documents on \"{{row}}\" were not changed. Nothing was saved, so you can try again.",
@@ -160,8 +160,9 @@
   "rowCount_one": "{{count}} proposal",
   "rowCount_other": "{{count}} proposals",
   "rowDeleted": {
-    "description": "\"{{row}}\" is gone, and {{ballots}} ballot(s) cast on it went with it.",
     "descriptionNoCount": "\"{{row}}\" is gone, together with any ballots cast on it. No ballot count was reported.",
+    "description_one": "\"{{row}}\" is gone, and the one ballot cast on it went with it.",
+    "description_other": "\"{{row}}\" is gone, and the {{count}} ballots cast on it went with it.",
     "dismiss": "Dismiss this message",
     "title": "The row was deleted"
   },

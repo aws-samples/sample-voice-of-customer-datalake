@@ -150,7 +150,7 @@
     "composeRefused": "Die Zeile wurde nicht hinzugefügt, und die Anfrage wurde abgelehnt und nicht bloß nicht ausgeführt: Prüfen Sie Ihre Auswahl — eine Zeile kann nur eine begrenzte Anzahl an Dokumenten enthalten, und jedes davon muss noch im Projekt sein.",
     "deleteConflict": "„{{row}}“ wurde nicht gelöscht: Die Zeile hat sich während des Löschens geändert, oder sie ist die einzige Zeile eines Projekts und kann nicht gelöscht werden. Laden Sie die Seite neu, um die aktuellen Zeilen zu sehen.",
     "deleteFailed": "„{{row}}“ wurde nicht gelöscht. Zeile und Stimmzettel sind unverändert, Sie können es erneut versuchen.",
-    "deleteRefused": "„{{row}}“ wurde nicht gelöscht, und die Anfrage wurde abgelehnt und nicht bloß nicht ausgeführt: Eine Zeile samt ihren Stimmzetteln zu löschen ist eine Administratoraktion, ein erneuter Versuch führt also zur gleichen Antwort.",
+    "deleteRefused": "„{{row}}“ wurde nicht gelöscht, und die Anfrage wurde abgelehnt und nicht bloß nicht ausgeführt: Die Zeile ist vielleicht schon gelöscht, oder das Löschen einer Zeile samt ihren Stimmzetteln steht Ihnen nicht zu. Ein erneuter Versuch führt zur gleichen Antwort.",
     "dismiss": "Diese Meldung ausblenden",
     "recomposeConflict": "Die Dokumente von „{{row}}“ wurden nicht geändert: Es wurde bereits ein Stimmzettel abgegeben, daher ist die Zusammensetzung gesperrt. Fügen Sie eine weitere Zeile hinzu, um eine andere Kombination zu bewerten.",
     "recomposeFailed": "Die Dokumente von „{{row}}“ wurden nicht geändert. Es wurde nichts gespeichert, Sie können es erneut versuchen.",
@@ -160,8 +160,9 @@
   "rowCount_one": "{{count}} Vorschlag",
   "rowCount_other": "{{count}} Vorschläge",
   "rowDeleted": {
-    "description": "„{{row}}“ ist gelöscht, und {{ballots}} darauf abgegebene(r) Stimmzettel wurde(n) mit gelöscht.",
     "descriptionNoCount": "„{{row}}“ ist gelöscht, samt allen darauf abgegebenen Stimmzetteln. Eine Anzahl der Stimmzettel wurde nicht gemeldet.",
+    "description_one": "„{{row}}“ ist gelöscht, und der eine darauf abgegebene Stimmzettel wurde mit gelöscht.",
+    "description_other": "„{{row}}“ ist gelöscht, und die {{count}} darauf abgegebenen Stimmzettel wurden mit gelöscht.",
     "dismiss": "Diese Meldung ausblenden",
     "title": "Die Zeile wurde gelöscht"
   },

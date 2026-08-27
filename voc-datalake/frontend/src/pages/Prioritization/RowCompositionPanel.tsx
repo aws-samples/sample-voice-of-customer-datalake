@@ -94,6 +94,17 @@ export interface RowCompositionActions {
    */
   readonly rowsByProject: ReadonlyMap<string, number>
   /**
+   * Whether that count is complete enough to be STATED as a reason, as opposed to only
+   * acted on by withholding a control.
+   *
+   * False while any read feeding it is still arriving. The gate below runs either way —
+   * a momentarily absent control is recoverable, the reader waits and it appears — but
+   * the sentence explaining the absence claims a fact about stored state ("this is the
+   * project's only default row"), and a reviewer who believes a false one adds a row
+   * they did not want. See `rowCountSettled` in `Prioritization.tsx`.
+   */
+  readonly rowCountSettled: boolean
+  /**
    * Whether to OFFER the delete. Read off the caller's admin group; the refusal is
    * the server's (`require_admin` answers 403 before anything is read), so this is
    * the courtesy half — a non-admin is not invited to press a button that cannot
@@ -124,6 +135,12 @@ const NO_CANDIDATES: readonly ProjectDocument[] = []
  * A MISSING COUNT READS AS 1, which withholds the control for a default row: a row on
  * screen is at least one row of its project, so a project with no entry is the
  * single-row shape rather than the multi-row one.
+ *
+ * WITHHOLDING IS ALL THIS DECIDES, never what to SAY about it. The count is only as
+ * complete as the reads behind it, so a project that genuinely holds two rows can
+ * present as one while a read is still arriving — and the sentence explaining the
+ * absence would then assert something false about stored state. `rowCountSettled` is
+ * what keeps the two apart.
  */
 function isProjectsOnlyDefaultRow(
   row: PrioritizationRowView,
@@ -285,7 +302,8 @@ export default function RowCompositionPanel({
   readonly composition: RowCompositionActions
 }): ReactElement {
   const {
-    candidatesByProject, rowsByProject, canDelete, pending, onCompose, onRecompose, onDelete,
+    candidatesByProject, rowsByProject, rowCountSettled, canDelete, pending,
+    onCompose, onRecompose, onDelete,
   } = composition
   const { t } = useTranslation('prioritization')
   const [openPicker, setOpenPicker] = useState<OpenPicker>('none')
@@ -366,8 +384,10 @@ export default function RowCompositionPanel({
           gets above: "a project's only default row cannot be deleted" is a fact a reader
           can act on — by adding a second row first — and a silently missing control is
           not. Shown only to somebody who would have been offered the control, since a
-          non-admin has no delete to explain. */}
-      {canDelete && isOnlyDefaultRow ? (
+          non-admin has no delete to explain, and only where the count behind it has
+          settled — see `rowCountSettled`. Where it has not, the control is simply absent
+          for the moment, which is the recoverable half of the same caution. */}
+      {canDelete && isOnlyDefaultRow && rowCountSettled ? (
         <p className="mt-2 flex items-start gap-1.5 text-xs text-gray-600">
           <Lock size={14} className="mt-0.5 flex-shrink-0 text-gray-400" aria-hidden="true" />
           {t('composition.onlyRow')}

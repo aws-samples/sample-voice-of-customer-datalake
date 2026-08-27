@@ -469,6 +469,19 @@ describe('rowsPerProject counts what the delete gate reads', () => {
     expect(counted.has('p2')).toBe(false)
     expect(rowsPerProject([]).size).toBe(0)
   })
+
+  it('counts a STORED row too, which is what keeps the count off the narrowed list', () => {
+    // The parameter is structural (anything carrying a `project_id`) so the page can count
+    // the rows record BEFORE `collectRows` narrows it. That matters: `collectRows` drops a
+    // row whose documents do not resolve, so counting its output reported a project holding
+    // two rows as holding one — and the delete gate then said so in words.
+    const stored = [
+      { row_id: 'row-1', project_id: 'p1', document_ids: ['d1'] },
+      { row_id: 'row-2', project_id: 'p1', document_ids: ['gone'] },
+    ]
+
+    expect(rowsPerProject(stored).get('p1')).toBe(2)
+  })
 })
 
 describe('withoutRow drops what a deleted row leaves behind', () => {
