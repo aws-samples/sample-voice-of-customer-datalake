@@ -730,6 +730,24 @@ describe("a project's only default row", () => {
     expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
   })
 
+  it('does not settle the count when a readable row map drops a malformed sibling', async () => {
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue({
+      rows: {
+        [ROW_ID]: storedRow(),
+        malformed_sibling: 'garbage-not-a-row',
+      },
+      scores: {},
+      aggregates: {},
+    })
+
+    await openTheRow()
+
+    expect(screen.getByRole('button', { name: new RegExp(PRFAQ_TITLE) })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Delete row/ })).toBeNull()
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
   it('counts a sibling row whose documents have not resolved, so it states nothing false', async () => {
     // `collectRows` DROPS a row not one of whose document ids resolves — an ordinary
     // transient state of the project fan-out, and the reachable way a project holding two
