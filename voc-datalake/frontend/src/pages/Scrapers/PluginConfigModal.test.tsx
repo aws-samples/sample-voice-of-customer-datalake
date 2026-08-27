@@ -59,13 +59,13 @@ describe('PluginConfigModal', () => {
   })
 
   it('renders plugin name and description', () => {
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     expect(screen.getByText('Android App Reviews')).toBeInTheDocument()
     expect(screen.getByText('Collect reviews from Google Play Store')).toBeInTheDocument()
   })
 
   it('displays configured apps after loading', async () => {
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => {
       expect(screen.getByText('Zara')).toBeInTheDocument()
       expect(screen.getByText('H&M')).toBeInTheDocument()
@@ -74,13 +74,13 @@ describe('PluginConfigModal', () => {
 
   it('shows empty state when no apps configured', async () => {
     mockGetAppConfigs.mockResolvedValue({ apps: [] })
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('No apps configured yet')).toBeInTheDocument() })
   })
 
   it('opens add form when Add App clicked', async () => {
     const user = userEvent.setup()
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
     await user.click(screen.getByRole('button', { name: /add app/i }))
     expect(screen.getByText('Add New App')).toBeInTheDocument()
@@ -88,7 +88,7 @@ describe('PluginConfigModal', () => {
 
   it('saves new app config when form submitted', async () => {
     const user = userEvent.setup()
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
     await user.click(screen.getByRole('button', { name: /add app/i }))
     await user.type(screen.getByPlaceholderText('my-app'), 'Nike')
@@ -101,41 +101,74 @@ describe('PluginConfigModal', () => {
 
   it('shows delete confirmation when delete clicked', async () => {
     const user = userEvent.setup()
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
-    const deleteButtons = screen.getAllByTitle('Delete')
+    const deleteButtons = screen.getAllByTestId('plugin-app-delete')
     await user.click(deleteButtons[0])
     expect(screen.getByText('Delete App')).toBeInTheDocument()
   })
 
   it('calls close when Close button clicked', async () => {
     const user = userEvent.setup()
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await user.click(screen.getByRole('button', { name: /close/i }))
     // eslint-disable-next-line vitest/prefer-called-with
     expect(onClose).toHaveBeenCalled()
   })
 
   it('shows Run Now when apps exist', async () => {
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
     expect(screen.getByRole('button', { name: /run now/i })).toBeInTheDocument()
   })
 
   it('hides Run Now when no apps', async () => {
     mockGetAppConfigs.mockResolvedValue({ apps: [] })
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('No apps configured yet')).toBeInTheDocument() })
     expect(screen.queryByRole('button', { name: /run now/i })).not.toBeInTheDocument()
   })
 
   it('cancels add form without saving', async () => {
     const user = userEvent.setup()
-    render(<PluginConfigModal plugin={plugin} onClose={onClose} />, { wrapper: createWrapper() })
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
     await user.click(screen.getByRole('button', { name: /add app/i }))
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(screen.queryByText('Add New App')).not.toBeInTheDocument()
     expect(mockSaveAppConfig).not.toHaveBeenCalled()
+  })
+
+  describe('as a non-admin (issue #359 admin gates)', () => {
+    it('disables the schedule toggle and explains why', async () => {
+      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
+      await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+      const toggle = screen.getByRole('checkbox')
+      expect(toggle).toBeDisabled()
+      const hint = screen.getByText('Admin access required')
+      expect(hint).toBeTruthy()
+      expect(toggle.getAttribute('aria-describedby')).toBe(hint.id)
+    })
+
+    it('hides the add/edit/delete affordances for app configs', async () => {
+      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
+      await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+      expect(screen.queryByTestId('plugin-add-app')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('plugin-app-edit')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('plugin-app-delete')).not.toBeInTheDocument()
+    })
+
+    it('hides the empty-state add link for non-admins', async () => {
+      mockGetAppConfigs.mockResolvedValue({ apps: [] })
+      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
+      await waitFor(() => { expect(screen.getByText('No apps configured yet')).toBeInTheDocument() })
+      expect(screen.queryByTestId('plugin-add-first-app')).not.toBeInTheDocument()
+    })
+
+    it('keeps the read-only view and Run Now reachable', async () => {
+      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
+      await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+      expect(screen.getByRole('button', { name: /run now/i })).toBeInTheDocument()
+    })
   })
 })

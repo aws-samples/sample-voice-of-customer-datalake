@@ -172,12 +172,24 @@
     "titlePlaceholder": "Título de la reseña (opcional)"
   },
   "pluginConfig": {
+    "adminRequired": "Se requiere acceso de administrador",
+    "addApp": "Agregar app",
+    "addFirstApp": "Agrega tu primera app",
+    "addNewApp": "Agregar nueva app",
+    "cancel": "Cancelar",
+    "configuredApps": "Apps configuradas",
     "automaticSchedule": "Programación automática",
     "close": "Cerrar",
     "configuration": "Configuración",
+    "deleteAppMessage": "¿Seguro que quieres eliminar esta configuración de app?",
+    "deleteAppTitle": "Eliminar app",
+    "delete": "Eliminar",
     "disabled": "Deshabilitado",
+    "edit": "Editar",
+    "editApp": "Editar app",
     "enabled": "Habilitado",
     "hide": "Ocultar",
+    "noAppsConfigured": "Aún no hay apps configuradas",
     "runNow": "Ejecutar ahora",
     "runTriggered": "Ejecución iniciada",
     "save": "Guardar",
@@ -185,7 +197,8 @@
     "scheduleDescription": "Ejecutar esta fuente según su programación configurada",
     "select": "Seleccionar...",
     "show": "Mostrar",
-    "test": "Probar"
+    "test": "Probar",
+    "unnamedApp": "App sin nombre"
   },
   "refresh": "Actualizar",
   "status": {

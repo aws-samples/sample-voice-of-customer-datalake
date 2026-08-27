@@ -161,12 +161,24 @@
     "titlePlaceholder": "レビュータイトル（オプション）"
   },
   "pluginConfig": {
+    "adminRequired": "管理者アクセスが必要です",
+    "addApp": "アプリを追加",
+    "addFirstApp": "最初のアプリを追加",
+    "addNewApp": "新しいアプリを追加",
+    "cancel": "キャンセル",
+    "configuredApps": "設定済みアプリ",
     "automaticSchedule": "自動スケジュール",
     "close": "閉じる",
     "configuration": "設定",
+    "deleteAppMessage": "このアプリ設定を削除してもよろしいですか？",
+    "deleteAppTitle": "アプリを削除",
+    "delete": "削除",
     "disabled": "無効",
+    "edit": "編集",
+    "editApp": "アプリを編集",
     "enabled": "有効",
     "hide": "非表示",
+    "noAppsConfigured": "アプリはまだ設定されていません",
     "runNow": "今すぐ実行",
     "runTriggered": "実行が開始されました",
     "save": "保存",
@@ -174,7 +186,8 @@
     "scheduleDescription": "設定されたスケジュールでこのソースを実行",
     "select": "選択...",
     "show": "表示",
-    "test": "テスト"
+    "test": "テスト",
+    "unnamedApp": "名前のないアプリ"
   },
   "refresh": "更新",
   "status": {

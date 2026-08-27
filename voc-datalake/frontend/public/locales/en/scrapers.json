@@ -161,12 +161,24 @@
     "titlePlaceholder": "Review title (optional)"
   },
   "pluginConfig": {
+    "adminRequired": "Admin access required",
+    "addApp": "Add App",
+    "addFirstApp": "Add your first app",
+    "addNewApp": "Add New App",
+    "cancel": "Cancel",
+    "configuredApps": "Configured Apps",
     "automaticSchedule": "Automatic Schedule",
     "close": "Close",
     "configuration": "Configuration",
+    "deleteAppMessage": "Are you sure you want to remove this app configuration?",
+    "deleteAppTitle": "Delete App",
+    "delete": "Delete",
     "disabled": "Disabled",
+    "edit": "Edit",
+    "editApp": "Edit App",
     "enabled": "Enabled",
     "hide": "Hide",
+    "noAppsConfigured": "No apps configured yet",
     "runNow": "Run Now",
     "runTriggered": "Run triggered",
     "save": "Save",
@@ -174,7 +186,8 @@
     "scheduleDescription": "Run this source on its configured schedule",
     "select": "Select...",
     "show": "Show",
-    "test": "Test"
+    "test": "Test",
+    "unnamedApp": "Unnamed App"
   },
   "refresh": "Refresh",
   "status": {

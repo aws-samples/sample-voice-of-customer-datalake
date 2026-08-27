@@ -161,12 +161,24 @@
     "titlePlaceholder": "Bewertungstitel (optional)"
   },
   "pluginConfig": {
+    "adminRequired": "Administratorzugriff erforderlich",
+    "addApp": "App hinzufügen",
+    "addFirstApp": "Erste App hinzufügen",
+    "addNewApp": "Neue App hinzufügen",
+    "cancel": "Abbrechen",
+    "configuredApps": "Konfigurierte Apps",
     "automaticSchedule": "Automatischer Zeitplan",
     "close": "Schließen",
     "configuration": "Konfiguration",
+    "deleteAppMessage": "Möchten Sie diese App-Konfiguration wirklich entfernen?",
+    "deleteAppTitle": "App löschen",
+    "delete": "Löschen",
     "disabled": "Deaktiviert",
+    "edit": "Bearbeiten",
+    "editApp": "App bearbeiten",
     "enabled": "Aktiviert",
     "hide": "Ausblenden",
+    "noAppsConfigured": "Noch keine Apps konfiguriert",
     "runNow": "Jetzt ausführen",
     "runTriggered": "Ausführung gestartet",
     "save": "Speichern",
@@ -174,7 +186,8 @@
     "scheduleDescription": "Diese Quelle nach konfiguriertem Zeitplan ausführen",
     "select": "Auswählen...",
     "show": "Anzeigen",
-    "test": "Testen"
+    "test": "Testen",
+    "unnamedApp": "Unbenannte App"
   },
   "refresh": "Aktualisieren",
   "status": {

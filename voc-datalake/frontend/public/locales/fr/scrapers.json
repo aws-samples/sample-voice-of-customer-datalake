@@ -172,12 +172,24 @@
     "titlePlaceholder": "Titre de l'avis (optionnel)"
   },
   "pluginConfig": {
+    "adminRequired": "Accès administrateur requis",
+    "addApp": "Ajouter une application",
+    "addFirstApp": "Ajoutez votre première application",
+    "addNewApp": "Ajouter une nouvelle application",
+    "cancel": "Annuler",
+    "configuredApps": "Applications configurées",
     "automaticSchedule": "Planification automatique",
     "close": "Fermer",
     "configuration": "Paramétrage",
+    "deleteAppMessage": "Voulez-vous vraiment supprimer cette configuration d'application ?",
+    "deleteAppTitle": "Supprimer l'application",
+    "delete": "Supprimer",
     "disabled": "Désactivé",
+    "edit": "Modifier",
+    "editApp": "Modifier l'application",
     "enabled": "Activé",
     "hide": "Masquer",
+    "noAppsConfigured": "Aucune application configurée",
     "runNow": "Exécuter maintenant",
     "runTriggered": "Exécution lancée",
     "save": "Enregistrer",
@@ -185,7 +197,8 @@
     "scheduleDescription": "Exécuter cette source selon sa planification configurée",
     "select": "Sélectionner...",
     "show": "Afficher",
-    "test": "Tester"
+    "test": "Tester",
+    "unnamedApp": "Application sans nom"
   },
   "refresh": "Actualiser",
   "status": {

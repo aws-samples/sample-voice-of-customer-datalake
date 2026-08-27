@@ -161,12 +161,24 @@
     "titlePlaceholder": "리뷰 제목 (선택사항)"
   },
   "pluginConfig": {
+    "adminRequired": "관리자 권한이 필요합니다",
+    "addApp": "앱 추가",
+    "addFirstApp": "첫 앱 추가",
+    "addNewApp": "새 앱 추가",
+    "cancel": "취소",
+    "configuredApps": "구성된 앱",
     "automaticSchedule": "자동 일정",
     "close": "닫기",
     "configuration": "구성",
+    "deleteAppMessage": "이 앱 구성을 제거하시겠습니까?",
+    "deleteAppTitle": "앱 삭제",
+    "delete": "삭제",
     "disabled": "비활성화됨",
+    "edit": "편집",
+    "editApp": "앱 편집",
     "enabled": "활성화됨",
     "hide": "숨기기",
+    "noAppsConfigured": "아직 구성된 앱이 없습니다",
     "runNow": "지금 실행",
     "runTriggered": "실행이 시작되었습니다",
     "save": "저장",
@@ -174,7 +186,8 @@
     "scheduleDescription": "구성된 일정에 따라 이 소스 실행",
     "select": "선택...",
     "show": "표시",
-    "test": "테스트"
+    "test": "테스트",
+    "unnamedApp": "이름 없는 앱"
   },
   "refresh": "새로고침",
   "status": {

@@ -286,7 +286,8 @@ class TestAdminGateOnCredentialsRoutes:
         body = json.loads(response['body'])
         assert body.get('success') is False
 
-    def test_non_admin_write_rejected(self, api_gateway_event, lambda_context):
+    @patch('integrations_handler.secretsmanager')
+    def test_non_admin_write_rejected(self, mock_secrets, api_gateway_event, lambda_context):
         """Non-admin caller gets 403 on PUT /integrations/<source>/credentials.
 
         Regression: test_non_admin_write_rejected
@@ -306,6 +307,8 @@ class TestAdminGateOnCredentialsRoutes:
         )
         body = json.loads(response['body'])
         assert body.get('success') is False
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
 
     @patch('integrations_handler.secretsmanager')
     def test_admin_read_succeeds(self, mock_secrets, api_gateway_event, lambda_context):
@@ -344,6 +347,8 @@ class TestAdminGateOnCredentialsRoutes:
         )
         response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200
+        written = json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
+        assert written['webscraper_api_key'] == 'new-value'
 
     def test_non_admin_status_rejected(self, api_gateway_event, lambda_context):
         """Non-admin caller gets 403 on GET /integrations/status.
@@ -406,6 +411,256 @@ class TestAdminGateOnCredentialsRoutes:
         # Each value above differs from its seeded default, so each source is configured.
         for plugin_id in PLUGIN_IDS:
             assert body[plugin_id]['configured'] is True, plugin_id
+
+
+class TestAdminGateOnAppConfigRoutes:
+    """
+    Admin gate: non-admin callers must receive 403 on the write (POST) and
+    delete (DELETE) /integrations/<source>/apps routes.
+
+    Both routes mutate the same shared Secrets Manager blob that the
+    credentials routes write, so they carry the same gate that #307 applied
+    to PUT .../credentials.
+
+    Reverting the require_admin call in either handler causes the
+    corresponding test to return 200/other status instead of 403.
+    """
+
+    @patch.dict('integrations_handler.APP_CONFIG_SECRET_FIELDS', {'app_reviews_android': {'api_token'}}, clear=False)
+    @patch('integrations_handler.secretsmanager')
+    def test_non_admin_list_app_configs_allowed(self, mock_secrets, api_gateway_event, lambda_context):
+        """Non-admin viewers can read app configs, with secret fields redacted."""
+        stored_configs = [
+            {
+                'id': 'a1',
+                'app_name': 'Zara',
+                'package_name': 'com.inditex.zara',
+                'api_token': 'do-not-return',
+            },
+        ]
+        expected_configs = [
+            {'id': 'a1', 'app_name': 'Zara', 'package_name': 'com.inditex.zara'},
+        ]
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'app_reviews_android_configs': json.dumps(stored_configs)
+            })
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='GET',
+            path='/integrations/app_reviews_android/apps',
+            path_params={'source': 'app_reviews_android'},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['apps'] == expected_configs
+        mock_secrets.get_secret_value.assert_called_once()
+
+    def test_app_config_secret_field_denylist_matches_manifest(self):
+        """Future secret app-config fields must be added to the redaction denylist."""
+        from pathlib import Path
+
+        from integrations_handler import APP_CONFIG_PLUGINS, APP_CONFIG_SECRET_FIELDS
+
+        manifest_path = Path(__file__).resolve().parents[3] / 'frontend' / 'src' / 'plugins' / 'manifests.json'
+        manifests = json.loads(manifest_path.read_text())
+        missing: dict[str, list[str]] = {}
+        for plugin in manifests:
+            plugin_id = plugin.get('id')
+            if plugin_id not in APP_CONFIG_PLUGINS:
+                continue
+            secret_fields = {
+                field['key'] for field in plugin.get('config', []) if field.get('secret') is True
+            }
+            uncovered = secret_fields - APP_CONFIG_SECRET_FIELDS.get(plugin_id, set())
+            if uncovered:
+                missing[plugin_id] = sorted(uncovered)
+
+        assert not missing, f'app-config secret fields missing backend redaction coverage: {missing}'
+
+    @patch('integrations_handler.secretsmanager')
+    def test_non_admin_save_app_config_rejected_and_secret_untouched(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """Non-admin caller gets 403 on POST and the secret is never read or written."""
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='POST',
+            path='/integrations/app_reviews_android/apps',
+            path_params={'source': 'app_reviews_android'},
+            body={'app': {'id': 'abc12345', 'app_name': 'Zara'}},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 403, (
+            f"Expected 403 for non-admin POST apps, got {response['statusCode']}"
+        )
+        body = json.loads(response['body'])
+        assert body.get('success') is False
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_non_admin_delete_rejected_and_secret_untouched(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """Non-admin caller gets 403 on DELETE and the secret is never read or written."""
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='DELETE',
+            path='/integrations/app_reviews_android/apps/abc12345',
+            path_params={'source': 'app_reviews_android', 'app_id': 'abc12345'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 403, (
+            f"Expected 403 for non-admin DELETE apps, got {response['statusCode']}"
+        )
+        body = json.loads(response['body'])
+        assert body.get('success') is False
+        mock_secrets.get_secret_value.assert_not_called()
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_admin_write_app_config_succeeds(self, mock_secrets, api_gateway_event, lambda_context):
+        """Admin caller can save and persist an app config."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({})
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/integrations/app_reviews_android/apps',
+            path_params={'source': 'app_reviews_android'},
+            body={'app': {'app_name': 'Zara'}},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+        body = json.loads(response['body'])
+        assert body['success'] is True
+
+        written = json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
+        apps = json.loads(written['app_reviews_android_configs'])
+        assert len(apps) == 1
+        assert apps[0]['app_name'] == 'Zara'
+        assert apps[0]['id'] != ''
+
+    @patch('integrations_handler.secretsmanager')
+    def test_admin_delete_succeeds(self, mock_secrets, api_gateway_event, lambda_context):
+        """Admin caller can delete an app config (positive-path control)."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'app_reviews_android_configs': json.dumps([
+                    {'id': 'abc12345', 'app_name': 'Zara'},
+                ]),
+            })
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='DELETE',
+            path='/integrations/app_reviews_android/apps/abc12345',
+            path_params={'source': 'app_reviews_android', 'app_id': 'abc12345'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+
+        written = json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
+        assert json.loads(written['app_reviews_android_configs']) == []
+
+
+class TestAdminGateOnSourceScheduleRoutes:
+    """
+    Admin gate: non-admin callers must receive 403 on PUT /sources/<source>/enable
+    and PUT /sources/<source>/disable.
+
+    Disabling a source stops all ingestion for it, which is not a
+    viewer-level action (issue #359).
+
+    Reverting the require_admin call in either handler causes the
+    corresponding test to return 200 instead of 403.
+    """
+
+    def test_non_admin_enable_rejected(self, api_gateway_event, lambda_context):
+        """Non-admin caller gets 403 on PUT /sources/<source>/enable."""
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='PUT',
+            path='/sources/webscraper/enable',
+            path_params={'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 403, (
+            f"Expected 403 for non-admin enable, got {response['statusCode']}"
+        )
+        body = json.loads(response['body'])
+        assert body.get('success') is False
+
+    @patch('integrations_handler.events_client')
+    def test_non_admin_disable_rejected_and_rule_untouched(
+        self, mock_events, api_gateway_event, lambda_context
+    ):
+        """Non-admin caller gets 403 on disable and the EventBridge rule is untouched."""
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='PUT',
+            path='/sources/webscraper/disable',
+            path_params={'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 403, (
+            f"Expected 403 for non-admin disable, got {response['statusCode']}"
+        )
+        body = json.loads(response['body'])
+        assert body.get('success') is False
+        mock_events.disable_rule.assert_not_called()
+
+    @patch('integrations_handler.events_client')
+    def test_admin_enable_succeeds(self, mock_events, api_gateway_event, lambda_context):
+        """Admin caller can enable a schedule (positive-path control)."""
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/sources/webscraper/enable',
+            path_params={'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+        body = json.loads(response['body'])
+        assert body['enabled'] is True
+        mock_events.enable_rule.assert_called_once()
+
+    @patch('integrations_handler.events_client')
+    def test_admin_disable_succeeds(self, mock_events, api_gateway_event, lambda_context):
+        """Admin caller can disable a schedule (positive-path control)."""
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/sources/webscraper/disable',
+            path_params={'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+        body = json.loads(response['body'])
+        assert body['enabled'] is False
+        mock_events.disable_rule.assert_called_once()
 
 
 class TestFreshDeployReportsNothingConfigured:
