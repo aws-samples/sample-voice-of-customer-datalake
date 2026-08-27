@@ -1,17 +1,14 @@
 # Runs the raw-event logging guard (issue #245) on every pull request.
 #
-# Deliberately narrow: this executes ONE test file, not the backend suite.
-# The guard depends only on `re` and `pathlib`, so it needs no application
-# dependencies and no Lambda layer build, and it finishes in well under a
-# second.  The rest of the suite currently cannot run in a bare environment
-# (it needs pydantic, aws_xray_sdk and the built layers), so attempting it
-# here would produce a permanently red, ignored check — which is worse than
-# no check at all.
+# Deliberately narrow: this executes ONE test file, not the backend suite. It is
+# a fast standard-library source-only signal that does not install or import
+# application dependencies.
 #
-# The repo's real gate is `npm run check` in the root package.json, which chains
-# lint, typecheck:all, the frontend/CDK/stream suites and test:backend.  Widening
-# this workflow towards that would first need the deps missing from
-# requirements-dev.txt and the layer build.
+# Host-side Lambda tests run after installing `voc-datalake/requirements-dev.txt`
+# plus `voc-datalake/lambda/layers/processing-deps/requirements.txt`, without
+# building layers, Node, AWS credentials/session, or a container. The repo's
+# real broader gate is `npm run check` in the root package.json. Full backend CI
+# is a follow-up, not environment-blocked.
 name: no-event-logging guard
 
 on:
@@ -29,6 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No step here pushes, tags, or calls the API, so the token has no
+          # use in the workspace. Dropped for the same reason as in
+          # `mcp-backend-tests.yml`.
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:

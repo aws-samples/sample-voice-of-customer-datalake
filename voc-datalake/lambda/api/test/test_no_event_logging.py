@@ -137,8 +137,11 @@ How this guard is executed
 ``.github/workflows/no-event-logging-guard.yml`` runs this file on every pull
 request and on pushes to ``development``.  That workflow deliberately runs this
 one file rather than the whole backend suite: the guard imports only ``re`` and
-``pathlib``, so it needs no application dependencies and no Lambda layer build,
-whereas the rest of the suite cannot yet run in a bare environment.
+``pathlib``, so it needs no application dependencies and no Lambda layer build.
+The broader host-side Lambda suite also runs without built layers after installing
+``requirements-dev.txt`` plus ``lambda/layers/processing-deps/requirements.txt``;
+full backend CI is a separate follow-up, not an environment prerequisite for this
+source-only signal.
 
 It is also picked up by the local backend gate, ``npm run test:backend``
 (``pytest``; ``pytest.ini`` sets ``testpaths = lambda plugins``).
