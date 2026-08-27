@@ -61,7 +61,7 @@ It exists because the gate is SCOPED. A full-tree backend job — ``pytest lambd
 plus ``plugins/`` — needs no floors at all: a deleted or renamed module simply stops
 contributing to a count nobody maintains. Measured on this branch, in a clean venv
 on the two requirement files the workflow installs, that job is ~17s install + ~52s
-run (measured on this commit: ``3696 passed`` for ``pytest lambda``, exit 0),
+run (measured on this commit: ``3697 passed`` for ``pytest lambda``, exit 0),
 against this gate's ~4s. A minute of runner time is not what the hand-maintained
 facts below are buying.
 
@@ -170,7 +170,7 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_date_basis': 5,
     'test_mcp_tokens': 46,
     'test_mcp_vocabulary_lockstep': 13,
-    'test_mcp_gate_audit': 28,
+    'test_mcp_gate_audit': 29,
     'test_projects_handler': 105,
     'test_python_runtime_lockstep': 4,
 }
@@ -325,7 +325,14 @@ def audit(report: Path) -> int:
         if path.is_file()
     }
     declared_paths.update((root / path).resolve() for path in EXPLICIT_TEST_PATHS)
-    for path in sorted(set(_convention_mcp_test_paths()) - declared_paths):
+    convention_paths = set(_convention_mcp_test_paths())
+    if not convention_paths:
+        shrinkage_problems.append(
+            'independent first-party MCP discovery found no tests. This likely means the '
+            'gate resolved the wrong repository root or is running from a copied script; '
+            'without a positive control, the scope-completeness comparison is vacuous.'
+        )
+    for path in sorted(convention_paths - declared_paths):
         shrinkage_problems.append(
             f'{path.relative_to(root).as_posix()}: convention-discovered MCP test is '
             'outside TEST_PATH_GLOBS + EXPLICIT_TEST_PATHS. A narrowed glob plus '

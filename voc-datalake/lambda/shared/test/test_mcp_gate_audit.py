@@ -196,6 +196,21 @@ class TestTheGateRejectsAShrunkenRun:
         for path in shared_paths:
             assert f'MCP gate shrank — {path}:' in output
 
+    def test_an_empty_independent_discovery_fails_the_audit(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """A missing positive control cannot make scope completeness pass vacuously."""
+        monkeypatch.setattr(mcp_gate, '_convention_mcp_test_paths', lambda: ())
+
+        assert mcp_gate.audit(_report_meeting_every_floor(tmp_path)) == 1
+
+        assert (
+            '::error::MCP gate shrank — independent first-party MCP discovery found no '
+            'tests. This likely means the gate resolved the wrong repository root or is '
+            'running from a copied script; without a positive control, the '
+            'scope-completeness comparison is vacuous.'
+        ) in capsys.readouterr().out.splitlines()
+
     def test_a_module_below_its_floor_fails(self, tmp_path):
         report = _report_meeting_every_floor(tmp_path, test_mcp_security=(152, 0))
         assert mcp_gate.audit(report) == 1
@@ -557,7 +572,7 @@ class TestTheGateScopeIsSelfConsistent:
         `MODULE_FLOORS` is the gate's only defence against a shrinking surface, and
         removing a line from it was silent: nothing asserted that a module the gate
         RUNS has a floor, only that a floor names a module the gate runs. Verified
-        on this tree — deleting `'test_mcp_protocol_envelope': 285` (the largest
+        before this check existed — deleting `'test_mcp_protocol_envelope': 285` (the largest
         module, 285 tests) left `926 passed` with the audit exiting 0, printing only
         a `(not floored)` note that reads like housekeeping; adding
         `pytestmark = pytest.mark.skip(...)` on top gave `641 passed, 285 skipped`,
@@ -582,7 +597,7 @@ class TestTheGateScopeIsSelfConsistent:
         discovered_paths = set(_independently_discovered_first_party_mcp_tests())
         assert Path(__file__).resolve() in discovered_paths, (
             'independent MCP discovery did not find this test module; empty or '
-            'wrong-root discovery would make the completeness checks below pass '
+            'wrong-root discovery would make the completeness check below pass '
             'vacuously'
         )
         ungated = sorted(
