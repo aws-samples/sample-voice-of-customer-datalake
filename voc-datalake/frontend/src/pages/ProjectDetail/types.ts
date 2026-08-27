@@ -2,7 +2,7 @@
  * Shared types for ProjectDetail components
  */
 import type {
-  ProjectPersona, Project,
+  ProjectPersona, Project, DocType,
 } from '../../api/types'
 
 export type Tab = 'overview' | 'personas' | 'product' | 'documents' | 'chat' | 'mcp'
@@ -26,16 +26,12 @@ export interface ResearchToolConfig {
   useWebSearch: boolean
 }
 
-// 🔑 The ONE frontend declaration of what POST /projects/{id}/document accepts.
-// `client.ts` and `projectsApi.ts` import it rather than respelling
-// `'prd' | 'prfaq'` inline, which is what they used to do: three copies of the
-// contract meant the two client signatures could drift from this union and from
-// the route, and the guard that reads them (issue #381) had to locate a method by
-// name and delimit its parameter list by bracket balance to check. With one
-// declaration, `lambda/api/test/test_doc_type_lockstep.py` reads this line alone
-// and pins it against `projects_handler.GENERATED_DOC_TYPES`. Widen both together
-// or that test fails.
-export type DocType = 'prd' | 'prfaq'
+// What POST /projects/{id}/document accepts, RE-EXPORTED for the picker — the
+// declaration itself lives in `api/types.ts` beside the other wire types, because
+// that route owns the contract and the lockstep test pins it there. It was declared
+// here and imported by the two clients, which pointed `api/` at `pages/`; issue #381
+// turned it round. Do not respell `'prd' | 'prfaq'` from either side.
+export type { DocType } from '../../api/types'
 
 export interface DocToolConfig {
   // Which documents to generate. Both can be selected to generate PRD + PR-FAQ

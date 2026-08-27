@@ -401,6 +401,47 @@ export interface ProjectPersona {
   source_breakdown?: Record<string, number>
 }
 
+// 🔑 The ONE declaration of what POST /projects/{id}/document accepts in
+// `doc_type`. `projects_handler.GENERATED_DOC_TYPES` is pinned against THIS line by
+// lambda/api/test/test_doc_type_lockstep.py, so widen both together or that test
+// fails. Keep it a union of string LITERALS: the lockstep parser refuses a derived
+// spelling (`typeof GENERATED_DOC_TYPES[number]`) rather than resolving it.
+//
+// It lives here, beside the other wire types, rather than in
+// `pages/ProjectDetail/types.ts` where it was declared before: the route owns this
+// contract, and `api/` importing from `pages/` inverted the layering. The document
+// picker re-exports it from there (issue #381).
+export type DocType = 'prd' | 'prfaq'
+
+// The POST /projects/{id}/document request body, named so that BOTH
+// `generateDocument` signatures — `projectsApi.ts` and the `client.ts` wrapper that
+// forwards to it — reference one declaration instead of restating the shape.
+//
+// 🔑 Why a named type and not just `doc_type: DocType` in each signature: the
+// `projectsApi` one is the TERMINAL consumer (its `data` is only spread into
+// `JSON.stringify`), so widening its annotation inline is an assignability error
+// NOWHERE — `tsc` accepts it and the request goes out with a value the route 400s.
+// Only the shared name closes that, and `test_doc_type_lockstep.py` asserts both
+// signatures still spell it.
+export interface GenerateDocumentBody {
+  doc_type: DocType
+  title: string
+  feature_idea: string
+  data_sources: {
+    feedback: boolean;
+    personas: boolean;
+    documents: boolean;
+    research: boolean
+  }
+  selected_persona_ids: string[]
+  selected_document_ids: string[]
+  feedback_sources: string[]
+  feedback_categories: string[]
+  days: number
+  customer_questions?: string[]
+  response_language?: string
+}
+
 export interface ProjectDocument {
   document_id: string
   document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'

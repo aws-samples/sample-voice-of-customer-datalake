@@ -4,12 +4,11 @@ frontend can SEND must not drift apart.
 `projects_handler.GENERATED_DOC_TYPES` is what POST /projects/{id}/document
 validates against — anything outside it is a 400 raised before `create_job`. The
 frontend declares the same set ONCE, as the `DocType` union in
-`frontend/src/pages/ProjectDetail/types.ts`: the picker is built from it and both
-`generateDocument` client signatures import it, so there is a single declaration to
-pin. Nothing tied the two languages together, and the failure is user-visible
-rather than loud: a client offering a value the route refuses turns a click into an
-HTTP 400 from a document picker, and a client omitting one silently drops a feature
-the backend supports.
+`frontend/src/api/types.ts`, and reaches this route through ONE named request body,
+`GenerateDocumentBody`, whose `doc_type` field is that union. Nothing tied the two
+languages together, and the failure is user-visible rather than loud: a client
+offering a value the route refuses turns a click into an HTTP 400 from a document
+picker, and a client omitting one silently drops a feature the backend supports.
 
 Same pattern, and the same motivation, as `test_kiro_exportable_types_lockstep.py`
 and `lambda/shared/test/test_search_minimum_lockstep.py`.
@@ -18,16 +17,40 @@ WHY THIS FILE IS SHORT NOW, and why it must not grow back (issue #381). It carri
 ~300 lines of TypeScript scanner — `_parameter_list_end`,
 `GENERATE_DOCUMENT_ANCHOR`, `DOC_TYPE_ANNOTATION_ANCHOR`, `FINDABLE_SHAPES`,
 `WIDENED_SHAPES`, `NARROWED_SHAPES` — for one reason: `client.ts` and
-`projectsApi.ts` spelled `'prd' | 'prfaq'` INLINE, so the contract existed in three
-places and checking the two inline copies meant locating a method by name inside an
-object literal and delimiting its parameter list by bracket balance. Successive
-review rounds on PR #377 each found a new way that mis-read legal TypeScript
-(nested callback, column-0 latch, nested namespace, `//` and `/* */` comments,
-unbalanced brackets, non-literal terms, an unreadable first term) — every one a
-defect in the scanner, not in the contract. Both signatures now say
-`doc_type: DocType`, which removes the drift axis instead of testing it: the copies
-can no longer disagree, and TypeScript, not a regex, enforces it. If a signature
-respells the union inline again, the fix is the import, not a parser.
+`projectsApi.ts` spelled `'prd' | 'prfaq'` INLINE inside their `generateDocument`
+signatures, so the contract existed in three places and checking the two inline
+copies meant locating a method by name inside an object literal and delimiting its
+parameter list by bracket balance. Every review round on that scanner found another
+shape of legal TypeScript it mis-read; none found a defect in the contract. Both
+signatures now take `GenerateDocumentBody`, which removes the drift axis rather
+than testing it.
+
+WHAT ENFORCES WHICH HALF, measured rather than assumed — the compiler does NOT do
+all of it, and an earlier version of this docstring claimed it did:
+  * `DocType` -> the route's allowlist: THIS file, by parsing the declaration.
+    Nothing in TypeScript knows what Python accepts.
+  * `GenerateDocumentBody.doc_type` -> `DocType`: the compiler, because the field
+    references the union by name.
+  * The two `generateDocument` signatures -> `GenerateDocumentBody`: the compiler
+    for `client.ts`, which forwards its `data` into `projectsApi.generateDocument`
+    and so gets a TS2345 if it widens; NOTHING for `projectsApi.generateDocument`,
+    which is the terminal consumer — its `data` is only spread into
+    `JSON.stringify`, so an inline object literal in that one signature type-checks
+    however wide it is. That is why the body is a NAMED type and why
+    `test_both_client_signatures_use_the_shared_request_body` asserts by text that
+    both signatures still name it. A widening now has to edit
+    `GenerateDocumentBody` itself, where the field is `DocType` and this file's
+    comparison sees it.
+
+A LITERAL UNION IS THE REQUIRED SHAPE for `DocType`. A derivation
+(`typeof GENERATED_DOC_TYPES[number]`, as `KIRO_EXPORTABLE_DOC_TYPES` uses one
+directory away) is refused by `_doc_type_union`, deliberately and permanently:
+resolving an alias means evaluating TypeScript, which is what the deleted scanner
+tried and is the whole reason it was deleted. If the frontend wants a runtime array
+of doc types, declare the array FROM the union (`const DOC_TYPES: DocType[] = [...]`)
+rather than the union from the array, so the pinned declaration stays a literal
+union. The same answer applies to `test_kiro_exportable_types_lockstep.py`, which
+therefore cannot share this parser.
 
 `suggestDocumentBrief` also takes a `doc_type` and is still NOT pinned here: it
 calls a different route which the comment above GENERATED_DOC_TYPES documents as
@@ -49,6 +72,12 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     moved, leaving the equality test comparing empty sets.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
     itself, in both directions.
+  * `test_both_client_signatures_use_the_shared_request_body` — a signature
+    respelling the body inline again, which is a compiler error in `client.ts` and
+    NOTHING in `projectsApi.ts` (see above). Text, not a parse: it asks whether the
+    shared name appears, so it needs no model of TypeScript and cannot mis-read a
+    restyling. A rename of `GenerateDocumentBody` fails it too, which is correct —
+    the constant here is what the two files must agree on.
   * `TestContractDriftIsCaught` — a parser that returns the allowlist however the
     union is edited, and its opposite, one that reports drift for a comment.
   * `TestTheUnionParser` — a legal restyling the parser reads wrongly or silently
@@ -67,7 +96,17 @@ import pytest
 # The TypeScript declaration that must agree with GENERATED_DOC_TYPES. Update this
 # path if the file moves; a stale path fails the findability test rather than
 # silently skipping.
-DOC_TYPE_UNION_SOURCE = 'frontend/src/pages/ProjectDetail/types.ts'
+DOC_TYPE_UNION_SOURCE = 'frontend/src/api/types.ts'
+
+# The named request body both `generateDocument` signatures must take, and the two
+# files that must take it. `client.ts` only wraps `projectsApi.ts`, so a body type
+# in one and an inline object literal in the other is the shape this pins against —
+# see the docstring: the compiler catches that in one file and not the other.
+REQUEST_BODY_TYPE = 'GenerateDocumentBody'
+GENERATE_DOCUMENT_CLIENTS = (
+    'frontend/src/api/projectsApi.ts',
+    'frontend/src/api/client.ts',
+)
 
 
 def _repo_root() -> Path:
@@ -262,10 +301,18 @@ UNION_SHAPES = {
     'commented_out_predecessor':
         "// export type DocType = 'prd' | 'prfaq' | 'legacy'\n"
         "export type DocType = 'prd' | 'prfaq'\n",
-    # The shape types.ts has today: a leading comment explaining why this is the
-    # only copy. It must not be read as the union.
+    # A DOCUMENTING comment — one whose subject IS this declaration — that quotes the
+    # declaration to say what not to do with it. Distinct from the case above, which
+    # is dead code: this one is prose a maintainer is invited to write, and the
+    # comment `types.ts` carries today already quotes the members
+    # (``respelling `'prd' | 'prfaq'` inline``). It becomes the first `re.search`
+    # match the moment someone quotes the whole `export type` line in it, which is a
+    # natural edit in a comment about that line. An earlier version of this fixture
+    # quoted NEITHER, so it parsed the same whether `_without_comments` ran or not
+    # and pinned nothing.
     'documented': (
-        '// 🔑 The ONE frontend declaration. Do not respell it inline; import it.\n'
+        '// 🔑 The ONE declaration. Not '
+        "`export type DocType = 'prd' | 'legacy'` — import this one.\n"
         "export type DocType = 'prd' | 'prfaq'\n"
     ),
 }
@@ -367,20 +414,51 @@ class TestTheUnionParser:
             f'these parser guards refuse via `assert`, which `python -O` removes '
             f'entirely: {asserts}. Use `raise AssertionError(...)`.'
         )
-        assert len(raises) >= self.EXPECTED_REFUSALS, (
-            f'_doc_type_union should carry {self.EXPECTED_REFUSALS} refusals '
+        # EXACTLY, now that one function carries all three: `>=` also passed on a
+        # guard duplicated rather than moved, and there is no reason for a fourth
+        # raise in a parser with three unreadable positions.
+        assert len(raises) == self.EXPECTED_REFUSALS, (
+            f'_doc_type_union should carry exactly {self.EXPECTED_REFUSALS} refusals '
             f'(anchor, non-literal term, unread term); found {len(raises)}'
         )
 
 
-# Edits to the exported union that MUST break the equality test below. One per
-# direction, because the two are user-visible in different ways: an added member is
-# a 400 from a picker, a removed one a backend capability nobody can reach.
-DRIFTED_UNIONS = {
-    'member_added': "export type DocType = 'prd' | 'prfaq' | 'onepager'\n",
-    'member_removed': "export type DocType = 'prd'\n",
-    'member_replaced': "export type DocType = 'prd' | 'onepager'\n",
-}
+def _rendered_union(members, comment: str = '') -> str:
+    """`export type DocType = ...` over `members`.
+
+    With a `comment`, one member per line and the comment after the FIRST — the
+    position where it truncates the union if it is not stripped.
+
+    Rendered from the members rather than written out because the controls below
+    compare against the LIVE allowlist: fixtures pinned to today's two values would
+    turn a legitimate widening of the contract into three extra failures in the one
+    file whose job is to point at the single real one.
+    """
+    quoted = [f"'{member}'" for member in members]
+    if not comment:
+        return f"export type DocType = {' | '.join(quoted)}\n"
+    terms = [f'  | {term}' for term in quoted]
+    terms[0] = f'{terms[0]} {comment}'
+    return 'export type DocType =\n' + '\n'.join(terms) + '\n'
+
+
+def _member_the_route_refuses(accepted: frozenset[str]) -> str:
+    """A doc_type value outside `accepted`, for the widening mutations.
+
+    Derived rather than hardcoded for the same reason: if `onepager` is ever added
+    to the allowlist, a mutation using it would compare EQUAL and the control would
+    pass while measuring nothing.
+    """
+    candidate = 'onepager'
+    while candidate in accepted:
+        candidate = f'{candidate}_unaccepted'
+    return candidate
+
+
+# The three ways the exported union can drift from the allowlist. Named, and turned
+# into sources inside the test, because deriving them needs the handler imported —
+# which the tests here do in their bodies, not at collection time.
+DRIFT_KINDS = ('member_added', 'member_removed', 'member_replaced')
 
 
 class TestContractDriftIsCaught:
@@ -392,25 +470,57 @@ class TestContractDriftIsCaught:
     satisfied by a parser that always agrees or always refuses.
     """
 
-    @pytest.mark.parametrize('source', DRIFTED_UNIONS.values(), ids=DRIFTED_UNIONS)
-    def test_a_changed_member_no_longer_matches_the_route(self, source):
+    @pytest.mark.parametrize('kind', DRIFT_KINDS)
+    def test_a_changed_member_no_longer_matches_the_route(self, kind):
+        """Each direction is user-visible in a different way: an added member is a
+        400 from a picker, a removed one a backend capability nobody can reach."""
         from projects_handler import GENERATED_DOC_TYPES
+
+        accepted = tuple(GENERATED_DOC_TYPES)
+        extra = _member_the_route_refuses(frozenset(accepted))
+        if kind != 'member_added' and len(accepted) < 2:
+            # Removing from a one-member allowlist leaves no union at all, which the
+            # parser REFUSES rather than returning a set to compare — a different
+            # test than this one. Skipped rather than silently reinterpreted.
+            pytest.skip('the route accepts one value; there is nothing to drop')
+        mutations = {
+            'member_added': (*accepted, extra),
+            'member_removed': accepted[:-1],
+            'member_replaced': (*accepted[:-1], extra),
+        }
+        source = _rendered_union(mutations[kind])
 
         assert _doc_type_union(source) != frozenset(GENERATED_DOC_TYPES), (
             f'this edit to DocType compares EQUAL to the route\'s allowlist, so '
             f'the lockstep test below cannot see it:\n{source}'
         )
 
-    @pytest.mark.parametrize('shape', ['commented', 'commented_out_predecessor'])
+    @pytest.mark.parametrize(
+        'shape', ['between_members', 'commented_out_predecessor', 'documented']
+    )
     def test_a_legal_comment_leaves_the_result_matching_the_route(self, shape):
-        """Restricted to the two comment shapes on purpose: the rest of
-        `UNION_SHAPES` is reformatting, already pinned above against the same two
-        members. A comment is the case where the parser reads the WRONG declaration
-        rather than none, so `_without_comments` is the only thing standing between
-        it and a report of drift the frontend does not have."""
+        """Restricted to the comment shapes on purpose: the rest of `UNION_SHAPES` is
+        reformatting, already pinned above against its own members. A comment is the
+        case where the parser reads the WRONG declaration rather than none, so
+        `_without_comments` is the only thing standing between it and a report of
+        drift the frontend does not have.
+
+        All three quote or carry a full declaration, so each goes red if
+        `_without_comments` is stubbed to a pass-through — which is how to check that
+        they measure what they claim.
+        """
         from projects_handler import GENERATED_DOC_TYPES
 
-        assert _doc_type_union(UNION_SHAPES[shape]) == frozenset(GENERATED_DOC_TYPES)
+        accepted = tuple(GENERATED_DOC_TYPES)
+        live = _rendered_union(accepted)
+        dead = _rendered_union((*accepted, _member_the_route_refuses(frozenset(accepted))))
+        shapes = {
+            'between_members': _rendered_union(accepted, '// the default'),
+            'commented_out_predecessor': f'// {dead}{live}',
+            'documented': f'// The ONE declaration. Not `{dead.strip()}`.\n{live}',
+        }
+
+        assert _doc_type_union(shapes[shape]) == frozenset(GENERATED_DOC_TYPES)
 
 
 class TestDocTypeLockstep:
@@ -438,9 +548,11 @@ class TestDocTypeLockstep:
         frontend never offers is a backend capability no user can reach. Both are
         drift, so neither direction is allowed.
 
-        This is the whole contract now that both `generateDocument` signatures import
-        `DocType` instead of respelling it: TypeScript rejects a request body outside
-        the union, and this test pins the union to the allowlist.
+        This half of the contract is only checkable HERE: TypeScript has no idea
+        what Python accepts. The compiler's half is that
+        `GenerateDocumentBody.doc_type` references this union by name, which
+        `test_both_client_signatures_use_the_shared_request_body` keeps true of both
+        signatures.
         """
         from projects_handler import GENERATED_DOC_TYPES
 
@@ -453,3 +565,41 @@ class TestDocTypeLockstep:
             f'  Accepted but never offered (unreachable): '
             f'{sorted(frozenset(GENERATED_DOC_TYPES) - declared)}'
         )
+
+    @pytest.mark.skipif(
+        not _frontend_tree_present(), reason='frontend tree absent from this checkout'
+    )
+    def test_both_client_signatures_use_the_shared_request_body(self):
+        """Neither `generateDocument` may respell the body inline again.
+
+        The axis the deleted scanner covered, at ~1/60th of its size, and it is
+        genuinely uncovered otherwise: widening `projectsApi.generateDocument`'s
+        annotation type-checks cleanly (measured — `tsc -p tsconfig.app.json
+        --noEmit` exits 0), because that `data` is only spread into `JSON.stringify`
+        and so is compared against nothing. `client.ts` is compiler-protected by
+        forwarding into it; this test is what covers the other one.
+
+        Deliberately TEXT and not a parse. It asks whether each file mentions the
+        shared type at all — no method location, no parameter-list extent, no model
+        of TypeScript, so none of the ways the scanner mis-read legal code apply. It
+        cannot tell WHERE the name is used, which is the trade: `GenerateDocumentBody`
+        imported but the signature widened anyway would pass here. `noUnusedLocals`
+        makes that combination a compiler error, so the two together close it.
+        """
+        for relative in GENERATE_DOCUMENT_CLIENTS:
+            path = _repo_root() / relative
+            assert path.is_file(), f'{relative} moved — update GENERATE_DOCUMENT_CLIENTS'
+            source = _without_comments(path.read_text(encoding='utf-8'))
+            assert 'generateDocument' in source, (
+                f'{relative} no longer mentions generateDocument. If the method '
+                f'moved, point GENERATE_DOCUMENT_CLIENTS at its new home; if this '
+                f'client dropped it, drop the entry.'
+            )
+            assert REQUEST_BODY_TYPE in source, (
+                f'{relative} does not name {REQUEST_BODY_TYPE}, so its '
+                f'generateDocument body is spelled inline. In projectsApi.ts nothing '
+                f'checks such an annotation — the request goes out with whatever it '
+                f'admits and the route 400s it. Take {REQUEST_BODY_TYPE} (declared '
+                f'in {DOC_TYPE_UNION_SOURCE}) instead, and widen the contract there '
+                f'if that is what is wanted.'
+            )

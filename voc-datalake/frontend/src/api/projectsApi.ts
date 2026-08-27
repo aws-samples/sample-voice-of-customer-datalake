@@ -2,15 +2,12 @@
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
 import { fetchApi } from './client'
 import { getDateBasisBodyParams } from './baseUrl'
-// The generated-document union, imported rather than respelled: the route's
-// GENERATED_DOC_TYPES allowlist is pinned against this ONE declaration
-// (lambda/api/test/test_doc_type_lockstep.py), so an inline copy here could
-// disagree with the picker's type and with the route while the lockstep test
-// still passed. Type-only, so nothing about the module graph at runtime changes.
-import type { DocType } from '../pages/ProjectDetail/types'
 import type {
   Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
   ProductContext, ProductDoc, ProductInterviewTurnResponse,
+  // The document-generation request body; see its declaration for why it is a
+  // named type rather than an object literal spelled out here.
+  GenerateDocumentBody,
 } from './types'
 
 export const projectsApi = {
@@ -120,24 +117,7 @@ export const projectsApi = {
       body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
     }),
 
-  generateDocument: (projectId: string, data: {
-    doc_type: DocType
-    title: string
-    feature_idea: string
-    data_sources: {
-      feedback: boolean;
-      personas: boolean;
-      documents: boolean;
-      research: boolean
-    }
-    selected_persona_ids: string[]
-    selected_document_ids: string[]
-    feedback_sources: string[]
-    feedback_categories: string[]
-    days: number
-    customer_questions?: string[]
-    response_language?: string
-  }) =>
+  generateDocument: (projectId: string, data: GenerateDocumentBody) =>
     fetchApi<{
       success: boolean;
       job_id: string;

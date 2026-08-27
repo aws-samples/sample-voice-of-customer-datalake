@@ -321,10 +321,8 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 #     inputs before invoking the generator directly.
 #   * `api_generate_document` has no internal callers — the only occurrence of
 #     the symbol in `lambda/` is its own `def`.
-#   * The only frontend caller of this route types the field `doc_type: DocType`,
-#     the union declared once in `frontend/src/pages/ProjectDetail/types.ts` and
-#     imported by both client signatures (it used to be respelled inline in each;
-#     issue #381 collapsed the copies).
+#   * The only frontend caller types the field as `DocType`, declared once in
+#     `frontend/src/api/types.ts` (issue #381).
 # So narrowing this route cannot affect prototype building or product reports,
 # while widening it would re-open here the unvalidated entry those two
 # deliberately avoid. The docstring sentence is about which generator paths stay
