@@ -555,10 +555,11 @@ def converse_chain(
     progress_callback: Callable[[int, str], None] | None = None,
     max_retries: int = DEFAULT_MAX_RETRIES,
     surface: str = DEFAULT_SURFACE,
+    model_id: str | None = None,
 ) -> list[str]:
     """
     Execute a chain of LLM calls, each building on the previous.
-    
+
     Each step can have:
         - system: System prompt
         - user: User message (use {previous} to inject previous result)
@@ -567,14 +568,19 @@ def converse_chain(
         - step_name: Optional name for progress reporting
         - surface: Optional per-step AI surface override (defaults to the
           chain-level `surface`)
-    
+
     Args:
         steps: List of step configurations
         progress_callback: Optional callback(progress: int, step: str) to report progress
         max_retries: Maximum retry attempts for throttling (default: 5)
         surface: AI surface whose configured model the steps resolve to when
             they don't set their own model (default: the neutral fallback).
-    
+        model_id: Explicit model ID override applied to every step. When None,
+            each step resolves its own model from `surface` independently, the
+            same as calling `converse` directly. Pass this when the caller
+            needs to record which model produced the chain's output (e.g. in
+            stored metadata) so that record can't drift from what actually ran.
+
     Returns:
         List of results from each step
     """
@@ -615,6 +621,7 @@ def converse_chain(
                 system_prompt=system,
                 max_tokens=max_tokens,
                 thinking_budget=thinking_budget,
+                model_id=step.get('model_id', model_id),
                 surface=step.get('surface', surface),
                 max_retries=max_retries,
                 step_name=step_name,
