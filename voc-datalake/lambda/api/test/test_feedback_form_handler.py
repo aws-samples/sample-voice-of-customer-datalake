@@ -2596,11 +2596,25 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
             (r'<iframe\b', 'frame-src'),
             (r'<form\b', "form-action — currently 'none'"),
         ):
-            assert not re.search(pattern, widget), (
-                f'feedback-widget.js now matches {pattern!r}, so the page needs '
-                f'{directive} in _IFRAME_SECURITY_HEADERS. Without it the asset '
-                'is blocked in every embed and nothing else reports it — '
-                "default-src 'none' fails closed and silently."
+            match = re.search(pattern, widget)
+            # The MATCHED TEXT and its line, not just the pattern that fired.
+            # Several of these patterns are broad on purpose — `data:` matches a
+            # Content-Type literal or the word in a comment as readily as a real
+            # URI — so a failure has to hand the reader the thing to look at.
+            # Otherwise the message points at CSP for what may be a false
+            # positive, and the derivation gets deleted rather than narrowed.
+            context = ''
+            if match:
+                line_number = widget.count('\n', 0, match.start()) + 1
+                line = widget.splitlines()[line_number - 1].strip()
+                context = f' at line {line_number}: {line[:120]!r}'
+            assert not match, (
+                f'feedback-widget.js now matches {pattern!r}{context}, so the '
+                f'page needs {directive} in _IFRAME_SECURITY_HEADERS. Without it '
+                'the asset is blocked in every embed and nothing else reports '
+                "it — default-src 'none' fails closed and silently. If the match "
+                'is not a real asset request, narrow the pattern rather than '
+                'dropping the case.'
             )
 
     def test_a_minted_id_always_satisfies_the_validator(
