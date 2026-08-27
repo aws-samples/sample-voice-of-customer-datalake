@@ -143,10 +143,11 @@ class TestTheGateAcceptsAHealthyRun:
         unfloored module that skips (below), because there the missing floor is what
         allowed the skip to pass unremarked.
 
-        Note this tolerance is `audit()`'s alone: `test_every_module_the_gate_runs_has_a_floor`
-        separately requires every module in the checked-out tree to be floored or
-        declared, so the untolerated case is reached only by a report describing a
-        module that is not in the tree this test suite sees.
+        Note this tolerance is `audit()`'s alone:
+        `test_every_module_the_gate_runs_has_a_floor` separately requires every
+        module in the checked-out tree to be floored, so the tolerated case is
+        reached only by a report describing a module that is not in the tree this
+        test suite sees.
         """
         cases = [(module, floor, 0) for module, floor in mcp_gate.MODULE_FLOORS.items()]
         cases.append(('test_mcp_brand_new', 2, 0))
@@ -167,10 +168,11 @@ class TestTheGateRejectsAShrunkenRun:
         the reduced set of floors, matching the formerly green failure mode.
         """
         shared_glob = 'lambda/shared/test/test_mcp_*.py'
-        shared_paths = (
-            'lambda/shared/test/test_mcp_gate_audit.py',
-            'lambda/shared/test/test_mcp_tokens.py',
-            'lambda/shared/test/test_mcp_vocabulary_lockstep.py',
+        root = Path(__file__).resolve().parents[3]
+        shared_paths = tuple(
+            path.relative_to(root).as_posix()
+            for path in sorted(root.glob(shared_glob))
+            if path.is_file()
         )
         shared_modules = {Path(path).stem for path in shared_paths}
         monkeypatch.setattr(
@@ -252,7 +254,9 @@ class TestTheGateRejectsAShrunkenRun:
         cases.append(('test_mcp_not_floored', 39, 1))
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
-    def test_a_module_cannot_cover_for_its_same_named_twin(self, tmp_path):
+    def test_a_module_cannot_cover_for_its_same_named_twin(
+        self, tmp_path, capsys
+    ):
         """The collision case: one floor, two modules, counts added.
 
         `MODULE_FLOORS` is keyed by bare module name, and both gated directories
@@ -265,9 +269,9 @@ class TestTheGateRejectsAShrunkenRun:
         `lambda/shared/test/test_mcp_delegation.py` plus `pytestmark =
         pytest.mark.skip(...)` on the real `lambda/api/test/test_mcp_delegation.py`
         gave `931 passed, 185 skipped` with the audit at exit 0 and `total ran: 931`
-        — identical to a healthy run. `test_mcp_gate_audit.py` passed 24/24 with the
-        collision live, because its three self-consistency tests build their sets
-        with `path.stem` and perform the same collapse.
+        — identical to a healthy run. This module passed all of its tests at the
+        time (24 tests) with the collision live, because its three self-consistency
+        tests build their sets with `path.stem` and perform the same collapse.
 
         This is `test_one_module_cannot_cover_for_another` one level in: that one is
         about two DIFFERENT floors, this is about two modules sharing ONE.
@@ -284,7 +288,23 @@ class TestTheGateRejectsAShrunkenRun:
         cases.append(('shared.test.test_mcp_delegation', floor, 0))
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
-    def test_two_same_named_modules_fail_even_when_both_run(self, tmp_path):
+        output = capsys.readouterr().out
+        assert (
+            f'test_mcp_delegation: {floor} ran (COLLISION: count combines multiple '
+            f'modules; floor {floor} is not meaningful)' in output
+        )
+        assert (
+            '::error::MCP gate ambiguous — test_mcp_delegation: two modules share '
+            'this name (lambda.api.test.test_mcp_delegation, '
+            'lambda.shared.test.test_mcp_delegation)' in output
+        )
+        assert 'ONE floor is being compared against the SUM of both' in output
+        assert 'Rename one of the two files so each has its own floor.' in output
+        assert 'MCP gate shrank — test_mcp_delegation:' not in output
+
+    def test_two_same_named_modules_fail_even_when_both_run(
+        self, tmp_path, capsys
+    ):
         """The ambiguity is refused, not merely detected when it happens to hide a skip.
 
         Two same-named modules both running is not itself a shrinkage, but the floor
@@ -298,9 +318,18 @@ class TestTheGateRejectsAShrunkenRun:
             if module != 'test_mcp_security'
         ]
         floor = mcp_gate.MODULE_FLOORS['test_mcp_security']
-        cases.append(('api.test.test_mcp_security', floor, 0))
+        cases.append(('api.test.test_mcp_security', floor - 4, 0))
         cases.append(('shared.test.test_mcp_security', 3, 0))
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
+
+        output = capsys.readouterr().out
+        assert (
+            '::error::MCP gate ambiguous — test_mcp_security: two modules share this '
+            'name (lambda.api.test.test_mcp_security, '
+            'lambda.shared.test.test_mcp_security)' in output
+        )
+        assert 'below its floor' not in output
+        assert 'MCP gate shrank — test_mcp_security:' not in output
 
     def test_one_module_cannot_cover_for_another(self, tmp_path):
         """Why the floors are per-module rather than one total.
@@ -383,6 +412,25 @@ class TestModuleAttribution:
         assert mcp_gate._module_of(classname) == expected
 
 
+def _independently_discovered_first_party_mcp_tests() -> tuple[Path, ...]:
+    """Recursively scan first-party MCP tests without production gate declarations.
+
+    This intentionally duplicates the production scanner's contract so a change to
+    its helper, globs, explicit paths, or floors cannot make this oracle agree with
+    the same regression.
+    """
+    root = Path(mcp_gate.__file__).resolve().parents[1]
+    layers = (root / 'lambda' / 'layers').resolve()
+    return tuple(
+        sorted(
+            resolved
+            for path in root.glob('lambda/**/test_mcp_*.py')
+            if path.is_file()
+            and not (resolved := path.resolve()).is_relative_to(layers)
+        )
+    )
+
+
 def _gated_paths() -> list[Path]:
     """Every module file the gate resolves, as paths — globs expanded.
 
@@ -428,8 +476,10 @@ class TestTheGateScopeIsSelfConsistent:
         )
         assert not missing_required, (
             f'EXPLICIT_TEST_PATHS no longer gates semantically required boundary modules: '
-            f'{missing_required}. These paths cannot match the test_mcp_* convention, so '
-            'keep them explicitly declared.'
+            f'{missing_required}. Their current filenames do not match the test_mcp_* '
+            'convention, so keep them explicitly declared. If a legitimate rename moved '
+            "one, update this test's independent required_paths oracle as well as "
+            'EXPLICIT_TEST_PATHS.'
         )
 
         stale = sorted(
@@ -468,8 +518,9 @@ class TestTheGateScopeIsSelfConsistent:
         `lambda/api/test/test_mcp_delegation.py`, gave `931 passed, 185 skipped`
         from pytest and `test_mcp_delegation: 185 ran (floor 185)`, `total ran:
         931`, audit exit 0 — 185 real tests asserting nothing with both CI steps
-        green. This module passed 24/24 throughout, because the three tests around
-        this one build their sets with `path.stem` and so perform the same collapse.
+        green. This module passed all of its tests at the time (24 tests), because
+        the three tests around this one build their sets with `path.stem` and so
+        perform the same collapse.
 
         No intent is needed to create it: the second file is an ordinary addition,
         and moving a module between the two trees does it as a side effect. So this
@@ -514,17 +565,13 @@ class TestTheGateScopeIsSelfConsistent:
         own helper and declarations. Otherwise narrowing a glob while deleting
         the floors it reached would leave this test self-consistent too.
 
-        A module may be exempted, but only by saying so in `UNFLOORED_ON_PURPOSE` —
-        an exemption a reviewer sees in a diff, rather than one expressed by
-        omission and indistinguishable from a deletion.
+        Every checked-out module must have a numeric floor. A report-only module may
+        still be tolerated by `audit()` when it actually runs, but checked-out gate
+        scope cannot rely on that transient state.
         """
         root = Path(__file__).resolve().parents[3]
         gated_paths = {path.resolve() for path in _gated_paths()}
-        discovered_paths = {
-            path.resolve()
-            for path in root.glob('lambda/**/test_mcp_*.py')
-            if path.is_file()
-        }
+        discovered_paths = set(_independently_discovered_first_party_mcp_tests())
         ungated = sorted(
             path.relative_to(root).as_posix() for path in discovered_paths - gated_paths
         )
@@ -536,35 +583,30 @@ class TestTheGateScopeIsSelfConsistent:
         )
 
         collected = {path.stem for path in gated_paths}
-        unfloored = sorted(collected - set(mcp_gate.MODULE_FLOORS) - mcp_gate.UNFLOORED_ON_PURPOSE)
+        unfloored = sorted(collected - set(mcp_gate.MODULE_FLOORS))
         assert not unfloored, (
-            f'the gate runs these modules with no floor: {unfloored}. An unfloored module '
-            'can be skipped in its entirety without the audit objecting, because there is '
-            'no floor for its ran-count to fall below. Add a MODULE_FLOORS entry (its '
-            'current test count), or declare it in UNFLOORED_ON_PURPOSE.'
+            f'the gate runs these modules with no floor: {unfloored}. Without a numeric '
+            'floor the audit cannot detect a module disappearing from the report or a '
+            'lower executed count. Add a MODULE_FLOORS entry with its current test count.'
         )
 
-    def test_no_exemption_is_stale(self):
-        """`UNFLOORED_ON_PURPOSE` must not outlive the module it exempts.
+    def test_first_party_discovery_excludes_layers_without_narrowing_future_directories(
+        self, tmp_path, monkeypatch
+    ):
+        """Vendored layer tests stay out while future first-party trees stay in."""
+        root = tmp_path / 'fake-repo'
+        script = root / 'scripts' / 'mcp_gate.py'
+        vendored = root / 'lambda' / 'layers' / 'python' / 'vendor' / 'test_mcp_vendor.py'
+        future = root / 'lambda' / 'jobs' / 'nested' / 'test_mcp_future.py'
+        for path in (script, vendored, future):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('')
 
-        An entry naming a module the gate no longer runs is an exemption sitting
-        ready for the next module that happens to take that name — the exemption
-        would apply without anyone deciding it should.
-        """
-        collected = {path.stem for path in _gated_paths()}
-        stale = sorted(mcp_gate.UNFLOORED_ON_PURPOSE - collected)
-        assert not stale, (
-            f'UNFLOORED_ON_PURPOSE exempts modules the gate does not run: {stale}. Drop '
-            'them, so the exemption cannot silently apply to a future module of the same '
-            'name.'
-        )
+        monkeypatch.setattr(mcp_gate, '__file__', str(script))
+        expected = (future.resolve(),)
 
-        floored = sorted(mcp_gate.UNFLOORED_ON_PURPOSE & set(mcp_gate.MODULE_FLOORS))
-        assert not floored, (
-            f'these modules are both floored and exempted from being floored: {floored}. '
-            'The exemption is dead — the floor applies — so remove it to keep the '
-            'declaration honest.'
-        )
+        assert mcp_gate._convention_mcp_test_paths() == expected
+        assert _independently_discovered_first_party_mcp_tests() == expected
 
     def test_every_floored_module_is_actually_reachable_by_the_gate(self):
         """A floor for a module the gate does not run can never be met.

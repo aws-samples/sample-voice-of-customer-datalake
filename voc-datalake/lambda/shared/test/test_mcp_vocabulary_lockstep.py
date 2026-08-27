@@ -105,6 +105,11 @@ def _strip_comments(source: str) -> str:
     String literals are walked rather than regex-replaced, so a legitimate `'//'`
     or `'/*'` inside a quoted value is preserved — the URL-in-a-constant case that
     a naive `//.*$` substitution would truncate.
+
+    This does not parse JavaScript/TypeScript regular-expression literals. An
+    unescaped comment opener inside one would be blanked; the current schema has
+    no such literal, and that under-read fails the positive or mirror checks rather
+    than silently passing.
     """
     out: list[str] = []
     index = 0
@@ -187,6 +192,12 @@ def _parse_string_constant(name: str) -> str | None:
     return None if match is None else match.group(1)
 
 
+def _use_schema_source(tmp_path: Path, monkeypatch, source: str) -> None:
+    schema_source = tmp_path / 'mcpTokenSchema.ts'
+    schema_source.write_text(source)
+    monkeypatch.setitem(globals(), '_SCHEMA_SOURCE', schema_source)
+
+
 # Every declaration this module compares against, mapped to the reader that can
 # parse it. Named in one place so the positive control below covers all of them —
 # a rename of any one must fail loudly rather than leave its own comparison
@@ -240,64 +251,74 @@ class TestTheReadersIgnoreComments:
     keep testing the reader after the real file's formatting changes.
     """
 
-    def test_a_commented_out_entry_is_not_read_as_a_member(self):
-        stripped = _strip_comments(
+    def test_a_commented_out_entry_is_not_read_as_a_member(self, tmp_path, monkeypatch):
+        _use_schema_source(
+            tmp_path,
+            monkeypatch,
             "export const MCP_SCOPES = [\n"
-            "  // 'personas:read' lands with the persona tool\n"
-            "  'feedback:read',\n"
-            "  'projects:read',\n"
-            '] as const\n'
+            "  // 'line:ignored' is retired\n"
+            "  'line:first',\n"
+            "  'line:second',\n"
+            '] as const\n',
         )
-        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
-        assert found == ['feedback:read', 'projects:read']
+        assert _parse_string_array('MCP_SCOPES') == ('line:first', 'line:second')
 
-    def test_a_block_comment_inside_a_declaration_is_not_read(self):
-        stripped = _strip_comments(
+    def test_a_block_comment_inside_a_declaration_is_not_read(
+        self, tmp_path, monkeypatch
+    ):
+        _use_schema_source(
+            tmp_path,
+            monkeypatch,
             "export const MCP_SCOPES = [\n"
-            "  /* 'personas:read', 'ops:read' */\n"
-            "  'feedback:read',\n"
-            '] as const\n'
+            "  /* 'block:ignored', 'block:also-ignored' */\n"
+            "  'block:live',\n"
+            '] as const\n',
         )
-        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
-        assert found == ['feedback:read']
+        assert _parse_string_array('MCP_SCOPES') == ('block:live',)
 
-    def test_a_trailing_comment_does_not_change_a_scalar(self):
-        stripped = _strip_comments(
-            "export const DEFAULT_READ_REACH: ReadReach = 'workspace' // not 'none'\n"
+    def test_a_trailing_comment_does_not_change_a_scalar(self, tmp_path, monkeypatch):
+        _use_schema_source(
+            tmp_path,
+            monkeypatch,
+            "export const DEFAULT_READ_REACH: ReadReach = 'scalar-live' "
+            "// not 'scalar-ignored'\n",
         )
-        match = re.search(
-            r"export\s+const\s+DEFAULT_READ_REACH\s*(?::[^=]+)?=\s*'([^']*)'", stripped
-        )
-        assert match.group(1) == 'workspace'
+        assert _parse_string_constant('DEFAULT_READ_REACH') == 'scalar-live'
 
-    def test_a_bracket_inside_a_comment_does_not_truncate_the_span(self):
+    def test_a_bracket_inside_a_comment_does_not_truncate_the_span(
+        self, tmp_path, monkeypatch
+    ):
         """Why comments are blanked rather than deleted.
 
         The array span is matched with `[^\\]]*`, so a `]` inside a comment would
         end it early and the members after the comment would be lost — a silent
         under-read, which is the dangerous direction.
         """
-        stripped = _strip_comments(
+        _use_schema_source(
+            tmp_path,
+            monkeypatch,
             "export const MCP_SCOPES = [\n"
-            '  // see ReadReach[] for the other axis\n'
-            "  'feedback:read',\n"
-            "  'projects:read',\n"
-            '] as const\n'
+            '  // see BracketReach[] for the other axis\n'
+            "  'bracket:first',\n"
+            "  'bracket:second',\n"
+            '] as const\n',
         )
-        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
-        assert found == ['feedback:read', 'projects:read']
+        assert _parse_string_array('MCP_SCOPES') == ('bracket:first', 'bracket:second')
 
-    def test_a_quoted_slash_slash_is_not_treated_as_a_comment(self):
+    def test_a_quoted_slash_slash_is_not_treated_as_a_comment(
+        self, tmp_path, monkeypatch
+    ):
         """`'//'` inside a string is data, not the start of a comment.
 
         A naive `//.*$` substitution would truncate the rest of the line, dropping
         real members declared after such a value.
         """
-        stripped = _strip_comments(
-            "export const THINGS = ['https://example.test', 'feedback:read'] as const\n"
+        _use_schema_source(
+            tmp_path,
+            monkeypatch,
+            "export const THINGS = ['https://example.test', 'url:after'] as const\n",
         )
-        found = re.findall(r"'([^']*)'", re.search(r'=\s*\[([^\]]*)\]', stripped).group(1))
-        assert found == ['https://example.test', 'feedback:read']
+        assert _parse_string_array('THINGS') == ('https://example.test', 'url:after')
 
     def test_the_real_source_still_yields_non_empty_declarations(self):
         """Comment-stripping must not break the file it exists to read.
@@ -324,7 +345,9 @@ class TestTheReadersIgnoreComments:
             'comparisons below would then be measuring nothing.'
         )
 
-    def test_prose_mentions_above_a_declaration_are_not_read_as_members(self):
+    def test_prose_mentions_above_a_declaration_are_not_read_as_members(
+        self, tmp_path, monkeypatch
+    ):
         """The specific over-read the real file invites.
 
         `READ_REACHES` is preceded by a docblock listing each reach in prose
@@ -336,15 +359,15 @@ class TestTheReadersIgnoreComments:
         anyway — this pins that, since a future reader made more permissive to
         tolerate a formatting change could easily lose it.
         """
-        stripped = _strip_comments(
+        _use_schema_source(
+            tmp_path,
+            monkeypatch,
             "/**\n"
-            " * Mirrors VALID_SCOPES. The retired 'read-write' pair is gone.\n"
+            " * Mirrors VALID_SCOPES. The retired 'prose:ignored' scope is gone.\n"
             " */\n"
-            "export const MCP_SCOPES = ['feedback:read'] as const\n"
+            "export const MCP_SCOPES = ['prose:live'] as const\n",
         )
-        assert 'read-write' not in stripped
-        match = re.search(r'export\s+const\s+MCP_SCOPES\s*(?::[^=]+)?=\s*\[([^\]]*)\]', stripped)
-        assert re.findall(r"'([^']*)'", match.group(1)) == ['feedback:read']
+        assert _parse_string_array('MCP_SCOPES') == ('prose:live',)
 
 
 class TestReadReachMirror:

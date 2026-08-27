@@ -61,14 +61,13 @@ It exists because the gate is SCOPED. A full-tree backend job — ``pytest lambd
 plus ``plugins/`` — needs no floors at all: a deleted or renamed module simply stops
 contributing to a count nobody maintains. Measured on this branch, in a clean venv
 on the two requirement files the workflow installs, that job is ~17s install + ~52s
-run (measured on this commit: ``3695 passed`` for ``pytest lambda``, exit 0),
+run (measured on this commit: ``3696 passed`` for ``pytest lambda``, exit 0),
 against this gate's ~4s. A minute of runner time is not what the hand-maintained
 facts below are buying.
 
 So when that job lands, these go with it: ``MODULE_FLOORS``,
-``EXPLICIT_TEST_PATHS``, ``UNFLOORED_ON_PURPOSE``, ``_module_of``,
-``_module_path_of``, ``_collisions``, and all of ``test_mcp_gate_audit.py``. Do not
-invest in extending them.
+``EXPLICIT_TEST_PATHS``, ``_module_of``, ``_module_path_of``, ``_collisions``, and
+all of ``test_mcp_gate_audit.py``. Do not invest in extending them.
 
 What does NOT retire, because running more of the existing tree would never have
 created it: the three lockstep modules — ``test_mcp_vocabulary_lockstep.py``
@@ -120,21 +119,6 @@ EXPLICIT_TEST_PATHS: tuple[str, ...] = (
     'lambda/shared/test/test_python_runtime_lockstep.py',
 )
 
-# Modules the gate runs WITHOUT a floor, declared rather than merely omitted.
-#
-# Empty, and expected to stay that way. Every module in this gate arrived in the
-# same commit as its floor, so the "lands unfloored, floored later" flow was
-# hypothetical — and an absent floor was indistinguishable in the log from a
-# DELETED one, which is the two-line regression this list exists to make
-# unreachable by omission. `test_mcp_gate_audit.py` asserts that every module the
-# globs and EXPLICIT_TEST_PATHS resolve to is either floored or named here, so
-# exempting one is a visible declaration a reviewer sees in a diff.
-#
-# An entry here still does not buy silence: `audit()` fails outright if an
-# unfloored module reports any skips, because with no floor to fall below a skip
-# would otherwise draw a warning and nothing more.
-UNFLOORED_ON_PURPOSE: frozenset[str] = frozenset()
-
 # `test_mcp_gate_audit.py` covers THIS file and needs no entry above: it matches
 # `lambda/shared/test/test_mcp_*.py`, so the glob gates it. That is deliberate
 # rather than incidental. `pytest.ini` sets `testpaths = lambda plugins`, so
@@ -159,11 +143,11 @@ UNFLOORED_ON_PURPOSE: frozenset[str] = frozenset()
 # removing an entry, is the deliberate act of shrinking the gate and should say
 # why in the commit that does it.
 #
-# EVERY module the gate runs must appear here, or be declared in
-# UNFLOORED_ON_PURPOSE above. That is not a convention but an assertion —
-# `test_mcp_gate_audit.py`'s `test_every_module_the_gate_runs_has_a_floor` — because
-# a floor is the gate's only defence and deleting one line was verified to remove
-# it silently. Dropping `'test_mcp_protocol_envelope': 285` and then adding
+# EVERY module the gate runs must appear here. That is not a convention but an
+# assertion — `test_mcp_gate_audit.py`'s
+# `test_every_module_the_gate_runs_has_a_floor` — because a floor is the gate's
+# only defence and deleting one line was verified to remove it silently. Dropping
+# `'test_mcp_protocol_envelope': 285` and then adding
 # `pytestmark = pytest.mark.skip(...)` to that module gave `641 passed, 285
 # skipped` with the audit exiting 0: 31% of the surface asserting nothing, both CI
 # steps green, and the only trace a log line that read like housekeeping. Both
@@ -294,19 +278,29 @@ def _fail(message: str) -> None:
 
 
 def _convention_mcp_test_paths() -> tuple[Path, ...]:
-    """Existing convention-named MCP tests, independent of the gate's declarations."""
+    """Recursively find first-party MCP tests, excluding vendored/generated layers.
+
+    Discovery is rooted from this script rather than the current working directory
+    and deliberately remains independent of the gate's declarations.
+    """
     root = Path(__file__).resolve().parents[1]
+    layers = (root / 'lambda' / 'layers').resolve()
     return tuple(
         sorted(
-            path.resolve()
+            resolved
             for path in root.glob('lambda/**/test_mcp_*.py')
             if path.is_file()
+            and not (resolved := path.resolve()).is_relative_to(layers)
         )
     )
 
 
 def audit(report: Path) -> int:
-    """Compare a run's JUnit XML against MODULE_FLOORS. 0 if the gate held."""
+    """Audit the JUnit report and the current checkout's declared MCP test scope.
+
+    The report and checkout must describe the same commit; an artifact from another
+    commit must be audited from that commit's checkout.
+    """
     if not report.exists():
         _fail(
             f'No JUnit report at {report}. The test step did not produce one, so the '
@@ -316,7 +310,8 @@ def audit(report: Path) -> int:
         return 1
 
     executed, inert, origins = _executed_per_module(report)
-    problems: list[str] = []
+    shrinkage_problems: list[str] = []
+    collision_problems: list[str] = []
 
     # This oracle deliberately does not derive from TEST_PATH_GLOBS or floors. If a
     # glob and every floor it used to reach are deleted together, all declaration-
@@ -331,7 +326,7 @@ def audit(report: Path) -> int:
     }
     declared_paths.update((root / path).resolve() for path in EXPLICIT_TEST_PATHS)
     for path in sorted(set(_convention_mcp_test_paths()) - declared_paths):
-        problems.append(
+        shrinkage_problems.append(
             f'{path.relative_to(root).as_posix()}: convention-discovered MCP test is '
             'outside TEST_PATH_GLOBS + EXPLICIT_TEST_PATHS. A narrowed glob plus '
             'removal of the corresponding MODULE_FLOORS entries is otherwise '
@@ -340,13 +335,13 @@ def audit(report: Path) -> int:
         )
 
     # Checked BEFORE the floors, because a collision makes every count below it
-    # untrustworthy: the floor loop would compare a sum against a floor written for
-    # one of its two contributors, and could report a module comfortably above a
-    # floor it never met. Reported as its own diagnosis rather than folded into a
-    # floor failure, since the remedy is to rename one of the two files, not to
-    # restore tests or move a number.
-    for name in _collisions(origins):
-        problems.append(
+    # untrustworthy. The floor loop skips those names: it would otherwise compare a
+    # sum against a floor written for one contributor and prescribe the wrong remedy.
+    # Reported as its own diagnosis rather than folded into a floor failure, since the
+    # remedy is to rename one of the two files, not to restore tests or move a number.
+    colliding_modules = set(_collisions(origins))
+    for name in sorted(colliding_modules):
+        collision_problems.append(
             f'{name}: two modules share this name ('
             + ', '.join(sorted(origins[name]))
             + '), and MODULE_FLOORS is keyed by module name, so ONE floor is being '
@@ -356,10 +351,12 @@ def audit(report: Path) -> int:
         )
 
     for module, floor in sorted(MODULE_FLOORS.items()):
+        if module in colliding_modules:
+            continue
         ran = executed.get(module, 0)
         skipped = inert.get(module, 0)
         if ran == 0 and skipped == 0:
-            problems.append(
+            shrinkage_problems.append(
                 f'{module}: no tests at all (floor {floor}). The module was renamed off '
                 'the test_mcp_ prefix, moved out of a globbed directory, deleted, or '
                 'failed to import. Restore it, or change the floor in '
@@ -367,7 +364,7 @@ def audit(report: Path) -> int:
             )
         elif ran < floor:
             detail = f' and {skipped} skipped or xfailed' if skipped else ''
-            problems.append(
+            shrinkage_problems.append(
                 f'{module}: {ran} tests ran{detail}, below its floor of {floor}. '
                 'A skipped test asserts nothing, so it does not count towards the floor. '
                 'Restore the tests, or change the floor in '
@@ -390,22 +387,11 @@ def audit(report: Path) -> int:
     for module, skipped in sorted(inert.items()):
         if module in MODULE_FLOORS:
             continue
-        if module in UNFLOORED_ON_PURPOSE:
-            cause = (
-                'It is declared in UNFLOORED_ON_PURPOSE, but that exempts it from '
-                'having a floor, not from running: a module admitted unfloored still '
-                'may not assert nothing. Remove the skip.'
-            )
-        else:
-            cause = (
-                'Either its MODULE_FLOORS entry was deleted — which is how the gate gets '
-                'shrunk without any check complaining — or it arrived unfloored and was '
-                'then disabled. Give it a floor, or declare it in UNFLOORED_ON_PURPOSE '
-                'and remove the skip.'
-            )
-        problems.append(
+        shrinkage_problems.append(
             f'{module}: {skipped} tests skipped or xfailed and the module has no floor, '
-            f'so no floor could object. {cause}'
+            'so no floor could object. Either its MODULE_FLOORS entry was deleted, or '
+            'the report contains a new module that arrived without a floor and was then '
+            'disabled. Give it a floor and remove the skip.'
         )
 
     # Reported separately from the floors: a skip inside a module that is still
@@ -424,26 +410,26 @@ def audit(report: Path) -> int:
         print(f'::warning::Tests were skipped or xfailed and did not assert anything: {summary}')
 
     for module, ran in sorted(executed.items()):
-        if module in MODULE_FLOORS:
-            marker = ''
-        elif module in UNFLOORED_ON_PURPOSE:
-            marker = '  (unfloored by declaration)'
-        else:
-            # Distinguished from the line above deliberately. "No floor" used to
-            # print identically whether a module had just arrived or had had its
-            # floor deleted, so the one output that would reveal a deletion read as
-            # routine housekeeping. An arrival is now something someone declared;
-            # anything else is an undeclared gap, and this says so.
-            marker = '  (UNFLOORED and undeclared — add it to MODULE_FLOORS)'
-        print(f'{module}: {ran} ran (floor {MODULE_FLOORS.get(module, 0)}){marker}')
+        floor = MODULE_FLOORS.get(module, 0)
+        if module in colliding_modules:
+            print(
+                f'{module}: {ran} ran (COLLISION: count combines multiple modules; '
+                f'floor {floor} is not meaningful)'
+            )
+            continue
+        marker = '' if module in MODULE_FLOORS else '  (UNFLOORED — add it to MODULE_FLOORS)'
+        print(f'{module}: {ran} ran (floor {floor}){marker}')
     print(f'total ran: {sum(executed.values())}')
 
     # Each problem carries its own remedy rather than sharing a generic suffix:
     # "change the floor and say why" is right for a module below its floor and
-    # wrong for one that has no floor at all.
-    for problem in problems:
+    # wrong for one that has no floor at all. Collisions are ambiguity, not proof
+    # that the gate shrank, so they use a neutral annotation.
+    for problem in shrinkage_problems:
         _fail(f'MCP gate shrank — {problem}')
-    return 1 if problems else 0
+    for problem in collision_problems:
+        _fail(f'MCP gate ambiguous — {problem}')
+    return 1 if shrinkage_problems or collision_problems else 0
 
 
 def main() -> int:
