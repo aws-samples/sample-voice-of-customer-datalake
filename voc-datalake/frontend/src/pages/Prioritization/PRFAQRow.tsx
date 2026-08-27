@@ -19,6 +19,9 @@ import PrototypeEnlargeButton from './PrototypeEnlargeButton'
 import RoomVotePanel from './RoomVotePanel'
 import RowCompositionPanel from './RowCompositionPanel'
 import {
+  RowLineageBadge, RowLineageNote, RowStaleBadge,
+} from './RowLineagePanels'
+import {
   getPriorityLabel, MAX_NOTE_LENGTH, reviewersDisagreed, SCORABLE_TYPE_META, teamScoreOf,
 } from './prioritizationUtils'
 import ScoreSlider from './ScoreSlider'
@@ -282,6 +285,17 @@ function PRFAQRowHeader({
             <RowDocumentBadges documents={row.documents} t={t} />
             <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', priority.color)}>{priority.label}</span>
             <DisagreementBadge team={team} />
+            {/* What these documents say about EACH OTHER, beside the number they
+                produced: a reviewer ranking a backlog is choosing which rows to
+                open, and "the evidence behind this row is one generation" is
+                exactly what the ranked list could not say. Never a gate — every
+                state stays scorable and keeps every control. */}
+            <RowLineageBadge lineage={row.lineage} />
+            {/* And, for a FROZEN row only, that the project has moved past the
+                documents its ballots were cast on. Its own badge rather than a
+                fourth lineage state, because a coherent row can be superseded —
+                see `RowStaleBadge`. */}
+            <RowStaleBadge lineage={row.lineage} />
           </div>
           <div className="flex items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-gray-500">
             <span className="truncate">{row.project_name}</span>
@@ -513,6 +527,12 @@ function PRFAQRowExpanded({
               ballot covers. The scoring column is deliberately untouched — a frozen
               row stays scoreable, and only its composition stops changing. */}
           <RowCompositionPanel row={row} composition={composition} />
+          {/* The badge's reason in full, and — for a stale frozen row — the action
+              that IS available, directly under the "Add row" button it names. The
+              header's copy of the reason is announced rather than printed, because
+              a sentence per row would bury the numbers beside it; this is where a
+              sighted reader reads it. */}
+          <RowLineageNote lineage={row.lineage} />
           <h4 className="font-medium text-gray-900">{t('preview.title')}</h4>
           {/* Every document the row is scored on, each with its own evidence. Newest
               first, which is the order `collectRows` resolved them in and the order

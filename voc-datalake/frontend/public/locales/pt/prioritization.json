@@ -99,6 +99,18 @@
     "description": "Pontue cada documento em: <strong>Impacto</strong>, <strong>Tempo para o Mercado</strong>, <strong>Alinhamento Estratégico</strong> e <strong>Confiança</strong>.",
     "title": "Framework de Priorização"
   },
+  "lineage": {
+    "absent": "Sem linhagem",
+    "absentReason": "Nenhum destes documentos registra a partir de que foi criado — a resposta habitual para um documento escrito à mão ou criado antes de a linhagem ser registrada. A linha continua pontuável; apenas não há nada com que verificar a combinação.",
+    "coherent": "Uma geração",
+    "coherentReason": "Nada nesta linha cruza gerações: não há dois documentos que sejam versões do mesmo tipo, e cada origem registrada pertence a este conjunto. Uma cédula cobre uma geração da ideia.",
+    "crossGeneration": "Cruza gerações",
+    "repeatedTypeReason": "Esta linha contém mais de uma versão do mesmo tipo de documento, então uma cédula cobre duas gerações ao mesmo tempo. Ela continua pontuável — adicione uma linha se quiser pontuar uma única geração.",
+    "stale": "Superada",
+    "staleAction": "Esta linha está bloqueada, portanto seus documentos e suas cédulas permanecem como estão. Use “Adicionar linha” para pontuar a combinação mais recente.",
+    "staleReason": "Existe uma versão mais recente de cada tipo de documento desta linha, e esses documentos mais recentes formam uma combinação coerente.",
+    "supersededSourceReason": "Um destes documentos foi criado a partir de uma versão anterior de outro documento desta linha, então a combinação cruza gerações. Ela continua pontuável."
+  },
   "loading": "Carregando documentos...",
   "noteTooLong": {
     "description": "As notas são limitadas a {{max}} caracteres, e uma nota mais longa é recusada em vez de encurtada. Reduza a nota da linha que você editou e salve novamente. Nada foi salvo ainda.",

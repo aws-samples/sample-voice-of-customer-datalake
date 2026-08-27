@@ -99,6 +99,18 @@
     "description": "Évaluez chaque document sur : <strong>Impact</strong>, <strong>Délai de mise sur le marché</strong>, <strong>Adéquation stratégique</strong> et <strong>Confiance</strong>.",
     "title": "Cadre de priorisation"
   },
+  "lineage": {
+    "absent": "Aucune filiation",
+    "absentReason": "Aucun de ces documents n'indique à partir de quoi il a été créé — la réponse habituelle pour un document rédigé à la main ou créé avant l'enregistrement de la filiation. La ligne reste notable ; il n'y a simplement rien pour vérifier la combinaison.",
+    "coherent": "Une génération",
+    "coherentReason": "Rien dans cette ligne ne franchit les générations : aucun de ces documents n'est une autre version du même type, et chaque source enregistrée appartient à cet ensemble. Un seul bulletin couvre une génération de l'idée.",
+    "crossGeneration": "Franchit les générations",
+    "repeatedTypeReason": "Cette ligne contient plusieurs versions du même type de document : un bulletin couvre donc deux générations à la fois. Elle reste notable — ajoutez une ligne si vous voulez noter une seule génération.",
+    "stale": "Dépassée",
+    "staleAction": "Cette ligne est verrouillée : ses documents et ses bulletins restent tels quels. Utilisez « Ajouter une ligne » pour noter la combinaison plus récente.",
+    "staleReason": "Une version plus récente de chaque type de document de cette ligne existe, et ces documents plus récents forment une combinaison cohérente.",
+    "supersededSourceReason": "L'un de ces documents a été créé à partir d'une version antérieure d'un autre document de cette ligne : la combinaison franchit donc les générations. Elle reste notable."
+  },
   "loading": "Chargement des documents...",
   "noteTooLong": {
     "description": "Les notes sont limitées à {{max}} caractères, et une note plus longue est refusée plutôt que tronquée. Raccourcissez la note de la ligne modifiée, puis enregistrez de nouveau. Rien n'a encore été enregistré.",
