@@ -156,6 +156,44 @@ class TestTheGateAcceptsAHealthyRun:
 class TestTheGateRejectsAShrunkenRun:
     """Each case here is a way the surface shrinks while pytest still exits 0."""
 
+    def test_a_glob_and_its_floors_cannot_be_deleted_together(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Independent discovery rejects a self-consistent declaration shrink.
+
+        Removing the shared glob also removes this module from the real pytest run,
+        so this regression has to exercise the runtime audit rather than relying on
+        the structural tests below. The synthetic report intentionally contains only
+        the reduced set of floors, matching the formerly green failure mode.
+        """
+        shared_glob = 'lambda/shared/test/test_mcp_*.py'
+        shared_paths = (
+            'lambda/shared/test/test_mcp_gate_audit.py',
+            'lambda/shared/test/test_mcp_tokens.py',
+            'lambda/shared/test/test_mcp_vocabulary_lockstep.py',
+        )
+        shared_modules = {Path(path).stem for path in shared_paths}
+        monkeypatch.setattr(
+            mcp_gate,
+            'TEST_PATH_GLOBS',
+            tuple(glob for glob in mcp_gate.TEST_PATH_GLOBS if glob != shared_glob),
+        )
+        monkeypatch.setattr(
+            mcp_gate,
+            'MODULE_FLOORS',
+            {
+                module: floor
+                for module, floor in mcp_gate.MODULE_FLOORS.items()
+                if module not in shared_modules
+            },
+        )
+
+        assert mcp_gate.audit(_report_meeting_every_floor(tmp_path)) == 1
+
+        output = capsys.readouterr().out
+        for path in shared_paths:
+            assert f'MCP gate shrank — {path}:' in output
+
     def test_a_module_below_its_floor_fails(self, tmp_path):
         report = _report_meeting_every_floor(tmp_path, test_mcp_security=(152, 0))
         assert mcp_gate.audit(report) == 1
@@ -372,16 +410,35 @@ class TestTheGateScopeIsSelfConsistent:
     `test_no_two_gated_modules_share_a_stem` is the test that refuses it.
     """
 
-    def test_every_explicitly_named_path_exists(self):
-        """A typo in `EXPLICIT_TEST_PATHS` makes pytest exit 4 in CI.
+    def test_semantically_required_paths_are_explicit_and_all_explicit_paths_exist(self):
+        """Required boundary modules stay gated, and stale explicit paths fail clearly.
 
-        Catching it here names the offending entry instead of leaving a reader to
-        infer it from a "file or directory not found" and three floor errors.
+        The two required paths intentionally do not match the `test_mcp_` prefix,
+        so recursive convention discovery cannot protect them. Keep this oracle
+        independent of EXPLICIT_TEST_PATHS, then separately reject stale entries.
         """
         root = Path(__file__).resolve().parents[3]
-        missing = [path for path in mcp_gate.EXPLICIT_TEST_PATHS if not (root / path).exists()]
-        assert not missing, (
-            f'EXPLICIT_TEST_PATHS names paths that do not exist: {missing}. pytest exits 4 '
+        explicit_paths = {(root / path).resolve() for path in mcp_gate.EXPLICIT_TEST_PATHS}
+        required_paths = {
+            (root / 'lambda/api/test/test_projects_handler.py').resolve(),
+            (root / 'lambda/shared/test/test_python_runtime_lockstep.py').resolve(),
+        }
+        missing_required = sorted(
+            path.relative_to(root).as_posix() for path in required_paths - explicit_paths
+        )
+        assert not missing_required, (
+            f'EXPLICIT_TEST_PATHS no longer gates semantically required boundary modules: '
+            f'{missing_required}. These paths cannot match the test_mcp_* convention, so '
+            'keep them explicitly declared.'
+        )
+
+        stale = sorted(
+            path.relative_to(root).as_posix()
+            for path in explicit_paths
+            if not path.is_file()
+        )
+        assert not stale, (
+            f'EXPLICIT_TEST_PATHS names paths that are not files: {stale}. pytest exits 4 '
             'on an unknown path, so CI fails without saying which entry is wrong.'
         )
 
@@ -453,11 +510,32 @@ class TestTheGateScopeIsSelfConsistent:
         defect class one level out: that finding was "the audit's logic is
         unprotected", this is "the audit's DATA is unprotected".
 
+        The recursive discovery below is deliberately independent of the gate's
+        own helper and declarations. Otherwise narrowing a glob while deleting
+        the floors it reached would leave this test self-consistent too.
+
         A module may be exempted, but only by saying so in `UNFLOORED_ON_PURPOSE` —
         an exemption a reviewer sees in a diff, rather than one expressed by
         omission and indistinguishable from a deletion.
         """
-        collected = {path.stem for path in _gated_paths()}
+        root = Path(__file__).resolve().parents[3]
+        gated_paths = {path.resolve() for path in _gated_paths()}
+        discovered_paths = {
+            path.resolve()
+            for path in root.glob('lambda/**/test_mcp_*.py')
+            if path.is_file()
+        }
+        ungated = sorted(
+            path.relative_to(root).as_posix() for path in discovered_paths - gated_paths
+        )
+        assert not ungated, (
+            f'convention-discovered MCP modules are outside the gate: {ungated}. A '
+            'narrowed glob plus removal of the corresponding MODULE_FLOORS entries is '
+            'otherwise self-consistent and would silently shrink the gate. Add every '
+            'path to TEST_PATH_GLOBS or EXPLICIT_TEST_PATHS.'
+        )
+
+        collected = {path.stem for path in gated_paths}
         unfloored = sorted(collected - set(mcp_gate.MODULE_FLOORS) - mcp_gate.UNFLOORED_ON_PURPOSE)
         assert not unfloored, (
             f'the gate runs these modules with no floor: {unfloored}. An unfloored module '

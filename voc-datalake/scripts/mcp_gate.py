@@ -186,7 +186,7 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_date_basis': 5,
     'test_mcp_tokens': 46,
     'test_mcp_vocabulary_lockstep': 13,
-    'test_mcp_gate_audit': 27,
+    'test_mcp_gate_audit': 28,
     'test_projects_handler': 105,
     'test_python_runtime_lockstep': 4,
 }
@@ -293,6 +293,18 @@ def _fail(message: str) -> None:
     print(f'::error::{message}')
 
 
+def _convention_mcp_test_paths() -> tuple[Path, ...]:
+    """Existing convention-named MCP tests, independent of the gate's declarations."""
+    root = Path(__file__).resolve().parents[1]
+    return tuple(
+        sorted(
+            path.resolve()
+            for path in root.glob('lambda/**/test_mcp_*.py')
+            if path.is_file()
+        )
+    )
+
+
 def audit(report: Path) -> int:
     """Compare a run's JUnit XML against MODULE_FLOORS. 0 if the gate held."""
     if not report.exists():
@@ -305,6 +317,27 @@ def audit(report: Path) -> int:
 
     executed, inert, origins = _executed_per_module(report)
     problems: list[str] = []
+
+    # This oracle deliberately does not derive from TEST_PATH_GLOBS or floors. If a
+    # glob and every floor it used to reach are deleted together, all declaration-
+    # based checks remain self-consistent while pytest quietly runs less. Compare
+    # normalized paths before reducing anything to the bare stems used by floors.
+    root = Path(__file__).resolve().parents[1]
+    declared_paths = {
+        path.resolve()
+        for pattern in TEST_PATH_GLOBS
+        for path in root.glob(pattern)
+        if path.is_file()
+    }
+    declared_paths.update((root / path).resolve() for path in EXPLICIT_TEST_PATHS)
+    for path in sorted(set(_convention_mcp_test_paths()) - declared_paths):
+        problems.append(
+            f'{path.relative_to(root).as_posix()}: convention-discovered MCP test is '
+            'outside TEST_PATH_GLOBS + EXPLICIT_TEST_PATHS. A narrowed glob plus '
+            'removal of the corresponding MODULE_FLOORS entries is otherwise '
+            'self-consistent and would silently shrink the gate. Add this path to the '
+            'declared MCP execution scope.'
+        )
 
     # Checked BEFORE the floors, because a collision makes every count below it
     # untrustworthy: the floor loop would compare a sum against a floor written for
