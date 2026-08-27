@@ -743,6 +743,19 @@ describe("a project's only default row", () => {
     expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
   })
 
+  it('keeps the ensured fallback visible without settling its count when rows is an array', async () => {
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores.mockResolvedValue({
+      rows: [], scores: {}, aggregates: {},
+    })
+
+    await openTheRow()
+
+    expect(screen.getByRole('button', { name: new RegExp(PRFAQ_TITLE) })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Delete row/ })).toBeNull()
+    expect(screen.queryByText(/only default row cannot be deleted/)).toBeNull()
+  })
+
   it('does not settle the count when a readable row map drops a malformed sibling', async () => {
     mockIsAdmin.mockReturnValue(true)
     mockGetPrioritizationScores.mockResolvedValue({

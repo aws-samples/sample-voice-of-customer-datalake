@@ -1172,7 +1172,7 @@ describe('getPriorityLabel', () => {
       d1: aggregate({ impact: 4, time_to_market: 4, confidence: 4, strategic_fit: 4, reviewer_count: 2 }),
     }
 
-    expect(getTeamScore(aggregates, 'd1')?.displayComposite.toFixed(1)).toBe('4.0')
+    expect(getTeamScore(aggregates, 'd1')?.displayComposite?.toFixed(1)).toBe('4.0')
     expect(getPriorityLabel(getTeamView(aggregates, 'd1'), t).label).toBe('High Priority')
   })
 })
