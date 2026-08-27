@@ -120,6 +120,14 @@ function failureSentenceKey(failure: RowActionFailure): `prioritization:${string
  * would pull them off whatever `ConfirmModal`'s own restore has just handed back. It
  * still scrolls into view, which is the sighted half.
  *
+ * NOT TAKING FOCUS DOES NOT MEAN NOT RESTORING IT, and the receipt is exactly where the
+ * two come apart. A keyboard reader reaches the announce-only receipt by tabbing to its
+ * Dismiss button, so the element focus is on when they dismiss is the one the click
+ * unmounts — a drop to `<body>` whether or not this hook ever moved them. Dismissal is
+ * therefore restored for BOTH panels, and the receipt's own anchor is always gone (a
+ * landed delete takes the "Delete row" button with the row), which is why the restore has
+ * a page-level fallback. See `RowLifecycle.clearDeleted`.
+ *
  * NOTHING IS RESTORED FROM A CLEANUP HERE, and that is deliberate rather than missing.
  * An effect cleanup runs on EVERY teardown — the identity changing, the panel being
  * cleared by the reader's next write, the page unmounting — not only on a dismissal, so

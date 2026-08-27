@@ -574,6 +574,35 @@ describe('deleting a row with its ballots', () => {
     expect(screen.queryByRole('status', { name: /The row was deleted/ })).toBeNull()
   })
 
+  it('does not drop a reader on <body> when the receipt is dismissed', async () => {
+    // THE ONE PATH WHERE THE ANCHOR IS GUARANTEED GONE. Dismissal restores focus to the
+    // control that owns the write, and for a delete that is the row's own "Delete row"
+    // button — which the completed delete unmounts along with the row. The receipt is
+    // announce-only, so focus was never moved into it: a keyboard reader arrives by
+    // tabbing to Dismiss, and dismissing unmounts the element focus is on. Declining to
+    // claim focus therefore does not leave them where they were, it drops them on
+    // `<body>` at the top of the document — measured, before the fallback existed.
+    //
+    // The page heading is where it lands instead: the one thing here that outlives any
+    // row, and close enough that a tab from it reaches the rows.
+    mockIsAdmin.mockReturnValue(true)
+    mockGetPrioritizationScores
+      .mockResolvedValueOnce(twoRowRead())
+      .mockResolvedValue({ rows: { [SECOND_ROW_ID]: secondRow() }, scores: {}, aggregates: {} })
+    const { user } = await openTheRow()
+
+    await user.click(screen.getByRole('button', { name: /Delete row/ }))
+    await user.click(screen.getByRole('button', { name: /Delete row and ballots/ }))
+    const receipt = await screen.findByRole('status', { name: /The row was deleted/ })
+
+    await user.click(within(receipt).getByRole('button', { name: /Dismiss this message/ }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^Prioritization$/ })).toHaveFocus()
+    })
+    expect(document.body).not.toHaveFocus()
+  })
+
   it('drops the deleted row from the next save, so the other rows survive it', async () => {
     // THE WRITE THIS PR MADE REACHABLE. `api_patch_prioritization_scores` checks every
     // named row exists before its first write and raises on any miss — deliberately, so

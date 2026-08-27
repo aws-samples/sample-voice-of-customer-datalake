@@ -39,6 +39,7 @@ import { prioritizationRowsApi } from '../../api/prioritizationRowsApi'
 import type { RowCompositionActions } from './RowCompositionPanel'
 import type { PrioritizationRowView } from './prioritizationUtils'
 import type { ProjectDocument } from '../../api/types'
+import type { RefObject } from 'react'
 
 /** Which of the three writes a failure is about. */
 export type RowAction = 'compose' | 'recompose' | 'delete'
@@ -135,12 +136,24 @@ export interface RowLifecycle {
    * write — and pulled focus off whatever they had moved to in the meantime.
    */
   readonly clearFailure: () => void
-  /** Dismiss the delete-receipt panel, restoring focus the same way. */
+  /**
+   * Dismiss the delete-receipt panel, restoring focus the same way — with a FALLBACK,
+   * which this one always needs.
+   *
+   * The anchor for a delete is the row's own "Delete row" button, and a delete that
+   * LANDED took it with the row: this is the one path where the anchor is guaranteed
+   * detached, so the anchor alone can restore nothing. And the receipt is announce-only,
+   * so focus was never moved into it — a keyboard reader arrives by tabbing to its
+   * Dismiss button, and dismissing unmounts the element focus is on. Without the fallback
+   * that is a drop to `<body>` on every keyboard dismissal of the receipt. See
+   * `restoreFocus`.
+   */
   readonly clearDeleted: () => void
 }
 
 export function useRowLifecycle({
-  candidatesByProject, rowsByProject, rowCountSettled, canDelete, onRowsChanged, onRowDeleted,
+  candidatesByProject, rowsByProject, rowCountSettled, canDelete, fallbackFocus,
+  onRowsChanged, onRowDeleted,
 }: {
   readonly candidatesByProject: ReadonlyMap<string, readonly ProjectDocument[]>
   /** How many rows each project has, for the delete's courtesy gate — see the panel. */
@@ -148,6 +161,15 @@ export function useRowLifecycle({
   /** Whether that count may be STATED as a reason, not only acted on — see the panel. */
   readonly rowCountSettled: boolean
   readonly canDelete: boolean
+  /**
+   * Somewhere on the page that OUTLIVES any row, for a dismissal whose own anchor is
+   * gone — see `restoreFocus`. The page supplies its heading; anything that survives a
+   * row's removal and can hold focus will do.
+   *
+   * Optional so a caller with nowhere durable to point is not made to invent one: the
+   * chain then ends where it did before, claiming nothing.
+   */
+  readonly fallbackFocus?: RefObject<HTMLElement | null>
   /** Refresh the authoritative read — the page owns the query key. */
   readonly onRowsChanged: () => void
   /**
@@ -171,19 +193,44 @@ export function useRowLifecycle({
    * A ref rather than state: nothing renders from it, and a re-render per write would be
    * spent for no visible difference. Held for the LAST write only, which is exactly the
    * one either panel can be describing.
+   *
+   * ONE REF SERVES BOTH PANELS because at most one of them can be on screen: `write`
+   * clears `failure` AND `deleted` before every request, `onSuccess` sets only `deleted`
+   * and `onError` only `failure`. That invariant is load-bearing rather than incidental —
+   * were a stale `deleted` ever left to survive a later failed write, this ref would name
+   * the newer write while the older panel was still rendered, and dismissing it would
+   * send the reader somewhere they had never been.
    */
   const anchor = useRef<HTMLElement | null>(null)
   /**
-   * Put the reader back on the control the write came from, if it is still there.
+   * Put the reader back where the write came from when a panel is dismissed — the
+   * control that issued it, or failing that somewhere on the page that outlives a row.
    *
-   * `isConnected` because it may not be: a delete that LANDED took its own "Delete row"
-   * button with the row, and focusing a detached node moves focus to `<body>` in some
-   * engines rather than leaving it alone — the very drop this exists to prevent. Where
-   * there is nothing to return to, the browser keeps whatever it has.
+   * `isConnected` FIRST, because the anchor may be gone: a delete that LANDED took its
+   * own "Delete row" button with the row, and focusing a detached node moves focus to
+   * `<body>` in some engines rather than leaving it alone — the very drop this exists to
+   * prevent.
+   *
+   * AND THEN A FALLBACK, because "leave it alone" is not a safe answer here. The element
+   * focus is on when a dismissal happens is the Dismiss button itself, which the same
+   * click unmounts — so declining to claim focus does not leave the reader where they
+   * were, it drops them on `<body>` at the top of the document. That is guaranteed for
+   * the delete receipt, whose anchor is always detached and which is announce-only, so a
+   * keyboard reader reaches it by tabbing to Dismiss and has nothing else focused to keep.
+   * The page heading is not where they pressed the control, but it is a named place on
+   * this page from which a tab reaches the rows — which `<body>` is not.
+   *
+   * Nothing is claimed only when there is no fallback either, which is the honest end of
+   * the chain rather than a state this page reaches.
    */
   const restoreFocus = () => {
     const element = anchor.current
-    if (element?.isConnected === true) element.focus()
+    if (element?.isConnected === true) {
+      element.focus()
+      return
+    }
+    const fallback = fallbackFocus?.current
+    if (fallback?.isConnected === true) fallback.focus()
   }
   /**
    * One mutation for all three writes, keyed by the action it performs.

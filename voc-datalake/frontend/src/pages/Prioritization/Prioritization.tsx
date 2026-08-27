@@ -13,7 +13,7 @@ import {
 import {
   useState, useMemo, useId, useEffect, useRef,
 } from 'react'
-import type { ReactElement } from 'react'
+import type { ReactElement, RefObject } from 'react'
 import {
   useTranslation, Trans,
 } from 'react-i18next'
@@ -435,7 +435,7 @@ function PRFAQList({
 }
 
 function PrioritizationHeader({
-  hasChanges, isPending, saveBlocked, rowCount, onReset, onSave,
+  hasChanges, isPending, saveBlocked, rowCount, headingRef, onReset, onSave,
 }: {
   readonly hasChanges: boolean
   readonly isPending: boolean
@@ -499,6 +499,16 @@ function PrioritizationHeader({
    * would then be right about what it is labelled.
    */
   readonly rowCount: number
+  /**
+   * WHERE A DISMISSAL LANDS when the control that produced the panel is gone.
+   *
+   * The page heading, because it is the one thing on this page guaranteed to outlive
+   * any row: a delete that landed takes its own "Delete row" button with it, and
+   * `RowDeletedPanel` is announce-only, so dismissing its Dismiss button would otherwise
+   * drop a keyboard reader on `<body>`. Focusable without joining the tab order for that
+   * one purpose — nothing tabs to a heading. See `useRowLifecycle.restoreFocus`.
+   */
+  readonly headingRef: RefObject<HTMLHeadingElement | null>
   readonly onReset: () => void
   readonly onSave: () => void
 }) {
@@ -514,7 +524,17 @@ function PrioritizationHeader({
             page has two. That is pre-existing and separate; the point here is only
             that THIS heading's accessible name stays the page's name.) */}
         <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <h1
+            ref={headingRef}
+            // Programmatically focusable only — see `headingRef`. A heading is never
+            // tabbed to, so this adds nothing to the tab order and costs the reader
+            // nothing; it is what makes a dismissal with no surviving control land
+            // somewhere a tab can reach the rows from.
+            tabIndex={-1}
+            className="text-xl sm:text-2xl font-bold text-gray-900"
+          >
+            {t('title')}
+          </h1>
           {rowCount === 0 ? null : (
             // The testid is what lets a test assert this is ABSENT without depending on
             // how a zero would have been spelled or on where the badge sits. Querying
@@ -554,6 +574,11 @@ export default function Prioritization() {
   // half — a reviewer who may not delete is not invited to press a button that
   // cannot work.
   const isAdmin = useIsAdmin()
+  /**
+   * The page heading, as somewhere a dismissed panel can put focus when the control it
+   * came from no longer exists. See `PrioritizationHeader.headingRef`.
+   */
+  const pageHeading = useRef<HTMLHeadingElement>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
@@ -1026,6 +1051,10 @@ export default function Prioritization() {
     rowsByProject,
     rowCountSettled: countSettled,
     canDelete: isAdmin,
+    // Where a dismissal lands when its own control is gone — which is EVERY dismissal of
+    // the delete receipt, since a landed delete takes the button that issued it. See
+    // `useRowLifecycle.restoreFocus`.
+    fallbackFocus: pageHeading,
     onRowsChanged: () => {
       void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
     },
@@ -1085,6 +1114,7 @@ export default function Prioritization() {
         // pass as well, since `collectRows` has no documents to compose rows from until
         // the reads `isLoading` tracks have landed. See `rowCount` there.
         rowCount={sortedRows.length}
+        headingRef={pageHeading}
         onReset={handleReset}
         onSave={() => saveMutation.mutate()}
       />
