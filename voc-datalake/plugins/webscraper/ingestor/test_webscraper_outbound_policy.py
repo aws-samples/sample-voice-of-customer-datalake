@@ -26,6 +26,20 @@ REVERT MAP
   `a_stalling_url_does_not_stop_the_next_one`.
 - Tighten the budget until an ordinary page cannot load
   -> `a_healthy_page_is_unaffected_by_the_budget`.
+- Drop the RUN budget, so N URLs each get a fresh page budget and their sum
+  (measured 450 s for 10 paginated URLs) overruns the 300 s invocation
+  -> `keeps_a_whole_stalling_config_inside_the_run_budget`.
+- Take the run deadline per config instead of once, so it multiplies by config
+  count -> `keeps_several_stalling_configs_inside_one_run_budget`.
+- Break out of the URL loop without recording the truncation, so a partial run
+  reports `completed` -> `records_the_truncation_in_the_run_errors`.
+- Break BEFORE the terminal `_update_run_status`, recreating the abandoned
+  `running` row -> `keeps_a_whole_stalling_config_inside_the_run_budget`.
+- Make the run budget bite ordinary work
+  -> `healthy_configs_are_unaffected_by_the_run_budget`.
+- Count an unfetched page toward `pages_scraped`, making an all-timeout run
+  indistinguishable from an empty healthy one
+  -> `a_run_whose_every_page_timed_out_does_not_report_a_clean_completion`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -325,6 +339,181 @@ class TestScrapePageBoundsOneUrlsCostOfTheInvocation:
 
         assert len(items) == 1
         assert mock_request.call_args.kwargs['timeout'] == SCRAPE_PAGE_HOP_TIMEOUT_SECONDS
+
+
+class TestRunBoundsTheWholeInvocation:
+    """
+    The per-page budget bounds a page; this bounds the INVOCATION, which is what
+    the Lambda's 300 s timeout is compared against.
+
+    Nothing summed the pages, and the sum is what gets the invocation killed:
+    a config with `pagination.max_pages: 10` yields 10 URLs and measured 450 s,
+    MAX_SCRAPER_URLS (50) URLs ~2450 s. So the abandoned `status: 'running'` row
+    the per-page budget was added to prevent needed 6 stalling URLs instead of 1.
+
+    Invocation-wide rather than per-config because `fetch_new_items` iterates every
+    due config in one invocation — `keeps_several_stalling_configs_inside_one_run_
+    budget` is the case a per-config budget would fail.
+
+    The clock is faked: the transport double consumes its whole timeout, tenacity's
+    backoff and the inter-page pause advance the same clock, so these read the real
+    arithmetic without spending minutes of wall time. `shared.http_utils.time` and
+    the handler's `time` are the same module object, so one patch drives both.
+    """
+
+    @staticmethod
+    def _run_on_a_fake_clock(ingestor, configs, *, serve=None):
+        """
+        Run `fetch_new_items` over `configs` with a stalling transport.
+
+        Returns (seconds of simulated wall clock spent, items, status writes).
+
+        Args:
+            serve: optional `url -> response or None` hook. Returning None (the
+                default for every URL) stalls: the host holds the connection for
+                the full timeout and then times out, which is the shape that makes
+                a per-page budget insufficient.
+        """
+        import requests
+
+        now = [1000.0]
+
+        def transport(**kwargs):
+            served = serve(kwargs['url']) if serve else None
+            if served is not None:
+                return served
+            now[0] += kwargs['timeout']
+            raise requests.exceptions.Timeout('stalled')
+
+        ingestor.execution_id = 'exec-1'
+        ingestor.scraper_configs = configs
+
+        statuses = []
+        with (
+            patch('shared.http_utils.requests.request', side_effect=transport),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch('shared.http_utils.time.monotonic', lambda: now[0]),
+            patch('tenacity.nap.time.sleep', lambda s: now.__setitem__(0, now[0] + s)),
+            patch(
+                'webscraper.ingestor.handler.time.sleep',
+                lambda s: now.__setitem__(0, now[0] + s),
+            ),
+            patch.object(
+                ingestor, '_update_run_status', lambda _id, u: statuses.append(u)
+            ),
+            patch.object(ingestor, 'set_watermark'),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        return now[0] - 1000.0, items, statuses
+
+    def test_keeps_a_whole_stalling_config_inside_the_run_budget(self, ingestor):
+        """
+        The reviewer's measurement: 10 paginated stalling URLs — the `max_pages`
+        the shipped templates use — spent 450 s against a 300 s invocation, so the
+        terminal status write never happened. It must now both fit the budget AND
+        still write a terminal status, because the budget's whole purpose is to
+        leave time for that write.
+        """
+        from webscraper.ingestor.handler import SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS
+
+        spent, _items, statuses = self._run_on_a_fake_clock(ingestor, [{
+            **CSS_CONFIG,
+            'base_url': 'https://slow.example/reviews',
+            'pagination': {'enabled': True, 'max_pages': 10},
+        }])
+
+        assert spent <= SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS, (
+            f'one config spent {spent}s of the 300s invocation'
+        )
+        assert statuses, 'the run wrote no status at all'
+        assert statuses[-1]['status'] == 'completed_with_errors'
+        assert statuses[-1]['completed_at']
+
+    def test_keeps_several_stalling_configs_inside_one_run_budget(self, ingestor):
+        """
+        One invocation processes EVERY due config, so a per-config budget would
+        multiply by config count and bound nothing — measured 5 configs x 2
+        stalling URLs = 450 s. This is the case that distinguishes an
+        invocation-wide deadline from a per-config one.
+        """
+        from webscraper.ingestor.handler import SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS
+
+        spent, _items, statuses = self._run_on_a_fake_clock(ingestor, [
+            {
+                **CSS_CONFIG,
+                'id': f's{n}',
+                'urls': [f'https://slow{n}.example/a', f'https://slow{n}.example/b'],
+            }
+            for n in range(5)
+        ])
+
+        assert spent <= SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS, (
+            f'5 configs spent {spent}s of the 300s invocation'
+        )
+        assert statuses[-1]['completed_at'], 'no config wrote a terminal status'
+
+    def test_records_the_truncation_in_the_run_errors(self, ingestor):
+        """
+        A truncated run must not look like a finished one. Reporting `completed`
+        over a partial URL set would hide precisely the truncation this budget
+        introduces, and the URL count is what tells an operator how much was
+        skipped.
+        """
+        _spent, _items, statuses = self._run_on_a_fake_clock(ingestor, [{
+            **CSS_CONFIG,
+            'base_url': 'https://slow.example/reviews',
+            'pagination': {'enabled': True, 'max_pages': 10},
+        }])
+
+        final = statuses[-1]
+        assert final['status'] == 'completed_with_errors'
+        assert any('Run budget' in e and 'not attempted' in e for e in final['errors']), (
+            f'the truncation was not recorded: {final["errors"]}'
+        )
+
+    def test_a_run_whose_every_page_timed_out_does_not_report_a_clean_completion(
+        self, ingestor
+    ):
+        """
+        Pre-existing before this budget, and made more reachable by it: every
+        attempted URL counted as `pages_scraped`, so an all-timeout run reported
+        `completed`, `errors: []` and a non-zero page count — indistinguishable
+        from an empty but healthy run.
+
+        Two URLs only, so the run budget is NOT the thing being measured here.
+        """
+        _spent, items, statuses = self._run_on_a_fake_clock(ingestor, [{
+            **CSS_CONFIG,
+            'urls': ['https://slow.example/a', 'https://slow.example/b'],
+        }])
+
+        final = statuses[-1]
+        assert items == []
+        assert final['pages_scraped'] == 0, (
+            'a page that never loaded was counted as scraped'
+        )
+
+    def test_healthy_configs_are_unaffected_by_the_run_budget(self, ingestor):
+        """
+        Positive control. A run budget that truncated ordinary work would pass
+        every assertion above while silently halving what the platform ingests, so
+        several healthy configs must still scrape every URL and yield every item.
+        """
+        configs = [
+            {**CSS_CONFIG, 'id': f's{n}', 'urls': [f'https://ok{n}.example/a',
+                                                   f'https://ok{n}.example/b']}
+            for n in range(3)
+        ]
+
+        _spent, items, statuses = self._run_on_a_fake_clock(
+            ingestor, configs, serve=lambda _url: _response(200, text=REVIEW_HTML)
+        )
+
+        assert len(items) == 6, 'a healthy run was truncated'
+        assert statuses[-1]['status'] == 'completed'
+        assert statuses[-1]['pages_scraped'] == 2
+        assert statuses[-1]['errors'] == []
 
 
 class TestRunReportsABlockedUrl:

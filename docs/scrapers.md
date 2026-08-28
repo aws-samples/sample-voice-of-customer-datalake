@@ -204,6 +204,15 @@ What the policy accepts and refuses:
   otherwise consume nearly all of it — which loses the run's final status write, not
   just that page. A page that exceeds the budget is skipped with a warning and the
   configuration's remaining URLs still run.
+- The **invocation** carries its own budget (240 seconds), because the per-page one
+  does not bound their sum: one invocation runs every configuration that is due, each
+  with all of its URLs, so ten stalling pages spent 450 seconds against the 300 second
+  limit. When the run budget is spent the invocation stops, notes in the run's `errors`
+  how many URLs were not attempted, and reports `completed_with_errors` rather than a
+  `completed` that would hide the truncation. Configurations not reached keep their
+  schedule and run next time. A page that never loaded no longer counts toward the
+  run's page total, so a run in which everything timed out is distinguishable from an
+  empty but healthy one.
 - A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
   DNS lookup inside the saving request, and both write routes answer through API
   Gateway's 29 second limit; identical hosts within one write are resolved once. The

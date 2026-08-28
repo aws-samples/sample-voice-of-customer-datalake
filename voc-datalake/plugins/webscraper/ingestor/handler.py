@@ -46,6 +46,30 @@ WORD_STAR_RATINGS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
 SCRAPE_PAGE_HOP_TIMEOUT_SECONDS = 15
 SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS = 60
 
+# Budget for the whole INVOCATION, which is the thing the 300 s timeout is
+# actually compared against. The per-page value above bounds a page; nothing
+# summed those pages, and the sum is what gets the Lambda killed: a config with
+# `pagination.max_pages: 10` yields 10 URLs, measured at 450 s on a fake clock,
+# and MAX_SCRAPER_URLS (50) URLs is ~2450 s — 8x the invocation. So the failure
+# the per-page budget was added to prevent moved from 1 stalling URL to 6 rather
+# than being closed.
+#
+# Invocation-wide rather than per-config, because `fetch_new_items` iterates
+# EVERY due config in one invocation: a per-config budget multiplies by config
+# count and bounds nothing again (measured 5 configs x 2 stalling URLs = 450 s).
+#
+# Measured on the wall clock, not as a sum of page budgets, so the 2-5 s
+# randomized `time.sleep` between pages — which spends from the same invocation —
+# is counted too.
+#
+# 60 s of headroom under the manifest's 300 s is for the terminal
+# `_update_run_status`: exhausting the budget must leave enough time to RECORD
+# the truncation, since a run row abandoned at `status: 'running'` is the outcome
+# this whole arrangement exists to avoid. Truncation is appended to `errors`, so
+# the run reports `completed_with_errors` rather than a truthful-looking
+# `completed` over a partial URL set.
+SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS = 240
+
 
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
@@ -247,7 +271,13 @@ class WebScraperIngestor(BaseIngestor):
             logger.warning(f"Error extracting JSON-LD item: {e}")
             return None
 
-    def _scrape_page(self, config: dict, url: str) -> Generator[dict, None, None]:
+    def _scrape_page(
+        self,
+        config: dict,
+        url: str,
+        total_timeout: float | None = None,
+        outcome: dict | None = None,
+    ) -> Generator[dict, None, None]:
         """
         Scrape a single page based on configuration.
 
@@ -267,6 +297,22 @@ class WebScraperIngestor(BaseIngestor):
         (see SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS): the retried redirect walk could
         otherwise spend most of this Lambda's 300 s on one stalling URL, and being
         killed mid-run loses the run-status write, not just the page.
+
+        Args:
+            total_timeout: The wall-clock budget for THIS page, already reduced by
+                what the run has left (see SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS).
+                Defaults to the per-page value for the callers — tests, and any
+                future one-page path — that have no run budget to spend from.
+            outcome: Optional dict this generator marks `{'fetched': True}` on once
+                a page has actually been retrieved and parsed. A generator cannot
+                return a value to a `for` loop, and the caller needs the
+                distinction: it counted every attempted URL as `pages_scraped`, so
+                a run in which every page timed out reported
+                `status: 'completed'`, `errors: []` and a non-zero page count —
+                indistinguishable from an empty but healthy run. A 403 bot-block
+                is not marked either, for the same reason: nothing was retrieved
+                to parse, and a wholly bot-blocked run should not report every
+                page as scraped.
         """
         try:
             # Set Referer to the site's root so it looks like in-site navigation
@@ -275,7 +321,10 @@ class WebScraperIngestor(BaseIngestor):
                 url,
                 headers=page_headers,
                 timeout=SCRAPE_PAGE_HOP_TIMEOUT_SECONDS,
-                total_timeout=SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS,
+                total_timeout=(
+                    SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS if total_timeout is None
+                    else total_timeout
+                ),
             )
             if response.status_code == 403:
                 logger.warning(f"Access denied (403) for {url} - site may be blocking automated requests")
@@ -285,6 +334,9 @@ class WebScraperIngestor(BaseIngestor):
         except requests.RequestException as e:
             logger.warning(f"Failed to fetch {url}: {e}")
             return
+
+        if outcome is not None:
+            outcome['fetched'] = True
 
         extraction_method = config.get('extraction_method', 'css')
         if extraction_method == 'jsonld':
@@ -412,6 +464,13 @@ class WebScraperIngestor(BaseIngestor):
                 })
             return
 
+        # ONE deadline for the whole invocation, taken before the config loop
+        # rather than inside it: this loop processes EVERY due config, so a
+        # per-config budget would multiply by config count and bound nothing.
+        # See SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS for the arithmetic.
+        run_deadline = time.monotonic() + SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS
+        run_budget_exhausted = False
+
         for config in self.scraper_configs:
             scraper_id = config.get('id', 'unknown')
             scraper_name = config.get('name', scraper_id)
@@ -426,14 +485,45 @@ class WebScraperIngestor(BaseIngestor):
             pages_scraped = 0
             errors = []
             
-            for url in urls:
+            for index, url in enumerate(urls):
+                remaining = run_deadline - time.monotonic()
+                if remaining <= 0:
+                    # Stop while there is still time to RECORD stopping. Running
+                    # into the Lambda's own timeout instead loses the terminal
+                    # `_update_run_status` below, and the run row stays at
+                    # `status: 'running'` for ever with nothing to reconcile it.
+                    # The message goes into `errors` so the run reports
+                    # completed_with_errors: a truncated run reporting `completed`
+                    # would hide exactly the truncation this budget introduces.
+                    error_msg = (
+                        f"Run budget of {SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s exhausted; "
+                        f"{len(urls) - index} URL(s) not attempted for {scraper_name}"
+                    )
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    run_budget_exhausted = True
+                    break
+
                 try:
                     page_items = 0
-                    for item in self._scrape_page(config, url):
+                    outcome: dict = {}
+                    for item in self._scrape_page(
+                        config,
+                        url,
+                        # Whichever bound bites first: one page may not overrun the
+                        # invocation just because its own budget has room left.
+                        total_timeout=min(SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS, remaining),
+                        outcome=outcome,
+                    ):
                         items_found += 1
                         page_items += 1
                         yield item
-                    pages_scraped += 1
+                    # Only a page that was actually retrieved counts. Counting
+                    # every attempt made a run whose every page timed out report
+                    # `completed`, `errors: []` and a non-zero page count — which
+                    # reads exactly like an empty but healthy run.
+                    if outcome.get('fetched'):
+                        pages_scraped += 1
                     
                     if page_items == 0:
                         logger.info(f"No items found on {url}")
@@ -444,8 +534,15 @@ class WebScraperIngestor(BaseIngestor):
                         'current_url': url
                     })
                     
-                    # Rate limit: randomized delay between pages to avoid bot detection
-                    time.sleep(random.uniform(2.0, 5.0))
+                    # Rate limit: randomized delay between pages to avoid bot
+                    # detection. Clamped to what is left of the run budget, and
+                    # skipped once that is gone: the pause paces the NEXT request,
+                    # and when the loop is about to stop there is none — measured
+                    # 243 s against a 240 s budget before this, because a pause
+                    # taken after the last page still spends from the invocation.
+                    remaining_after = run_deadline - time.monotonic()
+                    if remaining_after > 0:
+                        time.sleep(min(random.uniform(2.0, 5.0), remaining_after))
                 except OutboundUrlBlocked as e:
                     # Logged at ERROR, unlike the generic warning below: a saved
                     # config pointing at an internal address — or redirecting to
@@ -480,6 +577,19 @@ class WebScraperIngestor(BaseIngestor):
             
             metrics.add_metric(name=f"Scraper_{scraper_id}_Items", unit="Count", value=items_found)
             logger.info(f"Scraper {scraper_name} found {items_found} items from {pages_scraped} pages")
+
+            if run_budget_exhausted:
+                # After this config's terminal status write, not instead of it: the
+                # budget exists to leave time for that write, so breaking earlier
+                # would recreate the abandoned-run row it is meant to prevent. The
+                # remaining configs are left untouched — their own `_should_run_
+                # scraper` watermark is unchanged, so the next scheduled invocation
+                # picks them up.
+                logger.error(
+                    f"Stopping the invocation after {scraper_name}: the "
+                    f"{SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s run budget is spent"
+                )
+                break
 
 
 @logger.inject_lambda_context

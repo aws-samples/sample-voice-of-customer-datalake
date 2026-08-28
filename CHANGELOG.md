@@ -81,6 +81,17 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   which killed the invocation mid-run, so the final run-status write never happened and the
   run row stayed at `running` indefinitely. A page exceeding the budget is now skipped with a
   warning and the configuration's remaining URLs still run.
+- The scheduled scraper invocation as a whole is bounded by a 240 second budget as well. A
+  per-page bound does not bound their sum, and the sum is what the 300 second Lambda timeout
+  is compared against: ten stalling paginated URLs spent 450 seconds, and because one
+  invocation runs every configuration that is due, the same overrun was reachable across
+  several configurations rather than within one. The invocation now stops while there is
+  still time to record stopping — how many URLs went unattempted is appended to the run's
+  `errors` and the run reports `completed_with_errors` instead of a `completed` that would
+  hide the truncation — and configurations it did not reach keep their schedule for the next
+  run. Relatedly, a page whose fetch never returned a document no longer counts toward the
+  run's page total: a run in which every page timed out previously reported `completed`, no
+  errors and a non-zero page count, which is indistinguishable from an empty healthy run.
 - A scraper configuration may name at most 50 URLs in its `urls` list. Each distinct host costs
   a DNS lookup inside the request that saves it, and both write routes answer through API
   Gateway's 29 second limit, so an unbounded list returned a timeout with nothing saved instead

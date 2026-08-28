@@ -578,9 +578,15 @@ The policy itself:
   downgrade drop them while a same-host `http`→`https` upgrade does not. A `Location`
   resolving back to the requesting URL ends the walk instead of consuming the hops.
 - Each scheduled page fetch carries a 60 s wall-clock budget as well as a 15 s
-  per-request timeout: the Lambda has 300 s for up to 50 URLs, and a retried redirect
-  walk on one stalling host could otherwise exhaust the invocation — which loses the
-  final run-status write and leaves the run row at `running`.
+  per-request timeout, and the **invocation** as a whole carries a 240 s budget on top
+  of it. The Lambda has 300 s, one configuration may name 50 URLs and one invocation
+  processes every due configuration, so a per-page bound alone still summed past the
+  limit — which loses the final run-status write and leaves the run row at `running`.
+  Exhausting the run budget stops the invocation, records how many URLs went
+  unattempted in the run's `errors`, and reports `completed_with_errors`; the remaining
+  configurations keep their watermarks and run on the next schedule. A page that never
+  loaded is not counted toward `pages_scraped`, so a wholly failed run cannot read as an
+  empty healthy one.
 - At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
   write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
   limit. Enforced only on a list the write changes, so a pre-existing longer list keeps
