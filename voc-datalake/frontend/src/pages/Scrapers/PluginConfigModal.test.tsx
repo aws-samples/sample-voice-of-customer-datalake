@@ -3,6 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PluginConfigModal from './PluginConfigModal'
+// Imported rather than restated: the subject of these assertions is the GATE, not
+// the wording, so a later decision to translate the tooltip must not fail a test
+// about admin access. See the constant's own docstring for why it is still English.
+import { ADMIN_ONLY_TITLE } from './constants'
 import type { PluginManifest } from '../../plugins/types'
 
 const mockGetAppConfigs = vi.fn()
@@ -159,7 +163,7 @@ describe('PluginConfigModal', () => {
 
       const run = screen.getByRole('button', { name: /run now/i })
       expect(run).toBeDisabled()
-      expect(run).toHaveAttribute('title', 'Admin access required')
+      expect(run).toHaveAttribute('title', ADMIN_ONLY_TITLE)
       await user.click(run)
       expect(mockRunSource).not.toHaveBeenCalled()
     })
@@ -198,7 +202,7 @@ describe('PluginConfigModal', () => {
       // (which carries the same title) and pass with the delete gate removed. There
       // is one delete button per app; the two apps are the loaded fixture.
       const perApp = screen.getAllByRole('button')
-        .filter((el) => el.getAttribute('title') === 'Admin access required'
+        .filter((el) => el.getAttribute('title') === ADMIN_ONLY_TITLE
           && el.querySelector('svg.lucide-trash2') !== null)
       expect(perApp).toHaveLength(2)
 

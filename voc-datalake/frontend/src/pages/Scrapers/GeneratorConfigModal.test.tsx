@@ -9,6 +9,8 @@ import {
   QueryClient, QueryClientProvider,
 } from '@tanstack/react-query'
 import GeneratorConfigModal from './GeneratorConfigModal'
+// Imported rather than restated — see PluginConfigModal.test.tsx for the reason.
+import { ADMIN_ONLY_TITLE } from './constants'
 import type { PluginManifest } from '../../plugins/types'
 
 const mockGetIntegrationCredentials = vi.fn()
@@ -115,7 +117,7 @@ describe('GeneratorConfigModal', () => {
     // The Generate button must be disabled for non-admins regardless of field state.
     const generateButton = screen.getByRole('button', { name: /generat/i })
     expect(generateButton).toBeDisabled()
-    expect(generateButton).toHaveAttribute('title', 'Admin access required')
+    expect(generateButton).toHaveAttribute('title', ADMIN_ONLY_TITLE)
 
     // Give queries time to fire if they were going to.
     await new Promise((resolve) => setTimeout(resolve, 50))
