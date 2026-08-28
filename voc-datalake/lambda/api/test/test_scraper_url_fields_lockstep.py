@@ -24,9 +24,17 @@ REVERT MAP
   check -> `no_unlisted_module_writes_the_secret_key`.
 - Import the check into a writer and never call it
   -> `each_writer_calls_the_shared_check`.
+- Narrow the writer search back to the literal `webscraper_configs`, so the array
+  writer qualifies only through its comments
+  -> `finds_the_array_writer_without_relying_on_its_comments`.
+- Widen it to every composed subscript key, so five unrelated handlers are flagged
+  -> `the_composed_key_rule_ignores_ordinary_dict_building`.
+- Add 'webscraper' to APP_CONFIG_PLUGINS, making `save_app_config` a third writer
+  -> `the_app_config_writer_cannot_reach_the_webscraper_key`.
 """
 import ast
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -158,14 +166,70 @@ NON_WRITER_MODULES = {
 }
 
 
+def _writes_a_composed_secret_key(source: str) -> bool:
+    """
+    Whether the module assigns into a SECRETS mapping under a composed key.
+
+    Catches `secrets[f"{prefix}{key}"] = value` — what `integrations_handler`
+    actually does, and the shape a writer of this secret takes when it never
+    spells `webscraper_configs` out anywhere.
+
+    Two narrowings, each load-bearing. The key is not required to contain the
+    literal `configs`: in the real writer it is assembled from two variables, so
+    requiring it missed precisely the invisible form. And the mapping name must
+    look like a secrets bag, because "any subscript assignment with an f-string
+    key" matches ordinary response- and payload-building in five unrelated
+    handlers, and a guard that cries wolf gets an entry added to silence it
+    rather than read.
+
+    Keyed on the assignment TARGET, so merely reading such a key does not qualify.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+
+    for node in ast.walk(tree):
+        targets = (
+            node.targets if isinstance(node, ast.Assign)
+            else [node.target] if isinstance(node, ast.AnnAssign | ast.AugAssign)
+            else []
+        )
+        for target in targets:
+            if (
+                isinstance(target, ast.Subscript)
+                and isinstance(target.value, ast.Name)
+                and 'secret' in target.value.id.lower()
+                and isinstance(target.slice, ast.JoinedStr | ast.BinOp)
+            ):
+                return True
+    return False
+
+
 class TestEveryWriterAppliesTheCheck:
     """
-    No module may persist `webscraper_configs` without applying the policy.
+    Every module this test can SEE persisting `webscraper_configs` applies the
+    policy.
 
     `POST /scrapers` was checked first and `PUT /integrations/webscraper/
     credentials` was not, which left the same internal destination reachable
     through a different route. Derived from source rather than asserted in prose,
     because prose cannot fail CI.
+
+    What is derived, stated precisely rather than as completeness — the guarantee
+    is only as strong as the derivation:
+
+      * modules containing the literal `webscraper_configs`, and
+      * modules assigning into a secrets mapping under a COMPOSED key ending in
+        `configs` (an f-string or concatenation), which is how a writer that never
+        spells the key out would look.
+
+    `integrations_handler.py` is found by the first rule only because its comments
+    spell the key out — its code builds `f"{source}_{key}"` — so the second rule is
+    what keeps it visible if those comments are ever tidied away, and what makes a
+    future dynamic-key writer visible at all. Neither rule can see a key assembled
+    at runtime from values this test cannot read; `test_the_app_config_writer_
+    cannot_reach_the_webscraper_key` covers the one such writer that exists today.
     """
 
     @staticmethod
@@ -175,9 +239,25 @@ class TestEveryWriterAppliesTheCheck:
         for path in sorted((root / 'lambda').rglob('*.py')):
             if '/test' in str(path) or path.name.startswith('test_'):
                 continue
-            if SECRET_KEY in path.read_text(encoding='utf-8'):
+            source = path.read_text(encoding='utf-8')
+            if SECRET_KEY in source or _writes_a_composed_secret_key(source):
                 found.add(str(path.relative_to(root)))
         return found
+
+    def test_the_app_config_writer_cannot_reach_the_webscraper_key(self):
+        """
+        `save_app_config` writes `f"{source}_configs"` — the same key SHAPE this
+        secret uses — and is kept away from the webscraper's only by the
+        `APP_CONFIG_PLUGINS` gate. Nothing else asserts that gate, so adding
+        'webscraper' to it would make that function a genuine third writer while
+        every other assertion in this class kept passing.
+
+        If this ever has to change, route that write through
+        `validate_scraper_configs_json` first.
+        """
+        import integrations_handler
+
+        assert 'webscraper' not in integrations_handler.APP_CONFIG_PLUGINS
 
     def test_derivation_is_not_vacuous(self):
         """A search that finds nothing would make the assertion below trivial."""
@@ -185,6 +265,48 @@ class TestEveryWriterAppliesTheCheck:
 
         assert found, f'no module mentions {SECRET_KEY} — the search is broken'
         assert 'lambda/api/scrapers_handler.py' in found
+
+    def test_finds_the_array_writer_without_relying_on_its_comments(self):
+        """
+        `integrations_handler` contains `webscraper_configs` only in COMMENTS — its
+        code composes `f"{prefix}{key}"` — so a literal search alone put the guard
+        at the mercy of prose that a tidy-up could remove. The composed-key rule
+        must find it on the strength of the code.
+        """
+        root = Path(__file__).resolve().parents[3]
+        source = (root / 'lambda/api/integrations_handler.py').read_text(
+            encoding='utf-8'
+        )
+        without_comments = '\n'.join(
+            line for line in source.splitlines() if not line.strip().startswith('#')
+        )
+
+        assert SECRET_KEY not in without_comments, (
+            'the literal is now in the code — this test is asserting the wrong '
+            'thing and can be simplified'
+        )
+        assert _writes_a_composed_secret_key(without_comments)
+
+        # And the search must actually USE that rule: asserting the helper alone
+        # would still pass if `_modules_naming_the_secret_key` went back to
+        # matching only the literal.
+        with patch.object(Path, 'read_text', autospec=True) as mock_read:
+            mock_read.side_effect = lambda self, **kw: (
+                without_comments if self.name == 'integrations_handler.py'
+                else self.read_bytes().decode('utf-8')
+            )
+            found = self._modules_naming_the_secret_key()
+
+        assert 'lambda/api/integrations_handler.py' in found
+
+    def test_the_composed_key_rule_ignores_ordinary_dict_building(self):
+        """
+        Positive control on the narrowing: matching every f-string subscript
+        assignment flagged five unrelated handlers building responses, and a guard
+        that cries wolf gets silenced rather than read.
+        """
+        assert not _writes_a_composed_secret_key('payload[f"{name}_count"] = 1')
+        assert _writes_a_composed_secret_key('secrets[f"{name}_configs"] = 1')
 
     def test_no_unlisted_module_writes_the_secret_key(self):
         found = self._modules_naming_the_secret_key()
