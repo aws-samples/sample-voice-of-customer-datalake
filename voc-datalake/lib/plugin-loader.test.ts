@@ -152,6 +152,76 @@ describe('Plugin Loader', () => {
     });
   });
 
+  /**
+   * A plugin id becomes a Secrets Manager key namespace (`<plugin_id>_<key>`), and
+   * both readers of that secret match the namespace by plain string prefix — the
+   * runtime one in `plugins/_shared/plugin_secrets.py`, which is the ENTIRE
+   * isolation boundary between plugins because all ingestion Lambdas share one IAM
+   * role, and the status one in `integrations_handler.get_credentials`.
+   *
+   * Neither can see the other ids, by design: since issue #251 a plugin Lambda
+   * holds no list of its siblings' prefixes (keeping one is what let a plugin's
+   * keys be reclassified as "shared" and leak into every other plugin). So synth
+   * is the only vantage point from which a colliding pair can be refused, and this
+   * is the guard that does it.
+   */
+  describe('plugin id namespace collisions', () => {
+    /** Mock two manifests, returning each by the path being read. */
+    function mockTwoPlugins(first: string, second: string) {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(mockDirents(first, second));
+      mockFs.readFileSync.mockImplementation((p) => JSON.stringify({
+        id: String(p).includes(`/${second}/`) ? second : first,
+        name: 'Plugin',
+        icon: '📦',
+        infrastructure: { ingestor: { enabled: true } },
+        secrets: { api_key: '' },
+      }));
+    }
+
+    it('rejects an id that is a namespace prefix of another id', async () => {
+      // The concrete hazard, not an abstract one: `app_reviews_ios` ships today,
+      // and `app_reviews` is a plausible future id for a combined plugin. It would
+      // silently receive every `app_reviews_ios_*` key under a mangled name
+      // (`app_reviews_ios_app_id` arriving as `ios_app_id`).
+      mockTwoPlugins('app_reviews', 'app_reviews_ios');
+
+      const { loadPlugins } = await import('./plugin-loader');
+
+      expect(() => loadPlugins('/test/plugins')).toThrow();
+    });
+
+    it('accepts ids that merely share a leading substring', async () => {
+      // Non-vacuity, and the property the guard must not overreach on: the
+      // boundary is the `_` separator, so `app_reviewsx` is NOT inside
+      // `app_reviews`'s namespace and must still load. A guard written as a bare
+      // `startsWith(id)` would reject this pair and block a legitimate plugin.
+      mockTwoPlugins('app_reviews', 'app_reviewsx');
+
+      const { loadPlugins } = await import('./plugin-loader');
+
+      expect(loadPlugins('/test/plugins').map((p) => p.id).sort())
+        .toEqual(['app_reviews', 'app_reviewsx']);
+    });
+
+    it('names both ids in the error, so the fix is not a guessing game', async () => {
+      mockTwoPlugins('app_reviews', 'app_reviews_ios');
+
+      const { loadPlugins } = await import('./plugin-loader');
+      const errors: string[] = [];
+      const spy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+        errors.push(args.map(String).join(' '));
+      });
+
+      expect(() => loadPlugins('/test/plugins')).toThrow();
+      spy.mockRestore();
+
+      const combined = errors.join('\n');
+      expect(combined).toContain('app_reviews');
+      expect(combined).toContain('app_reviews_ios');
+    });
+  });
+
   describe('Manifest Schema Validation', () => {
     it('rejects invalid plugin ID format', async () => {
       mockFs.existsSync.mockReturnValue(true);

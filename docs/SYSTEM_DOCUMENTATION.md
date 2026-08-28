@@ -322,7 +322,7 @@ All plugin Lambdas share a single tightly-scoped IAM role with permissions for: 
 
 ### Secrets Isolation
 
-Secrets are prefixed with plugin ID for isolation. At runtime, both `BaseIngestor._load_secrets()` and `BaseWebhook._load_secrets()` delegate to `plugins/_shared/secrets.py`, which strips the prefix so plugins access secrets by clean key name. A prefix matching zero keys raises a `ConfigurationError` naming the plugin and expected prefix rather than returning the whole shared secret (issue #251).
+Secrets are prefixed with plugin ID for isolation. At runtime, both `BaseIngestor._load_secrets()` and `BaseWebhook._load_secrets()` delegate to `plugins/_shared/plugin_secrets.py`, which strips the prefix so plugins access secrets by clean key name. A prefix matching zero keys raises a `ConfigurationError` naming the plugin and expected prefix rather than returning the whole shared secret (issue #251). Because that check runs in `__init__`, `BaseIngestor` reports a construction failure itself — the run record moves to `error`, the circuit breaker records it, and `plugin.failed` is emitted — and both `_load_secrets()` implementations evict the cached secret before refusing on an empty payload, so a transient Secrets Manager failure retries instead of wedging the warm container. Every plugin must therefore declare at least one key in its manifest's `secrets` block, which CI pins.
 
 ### Lambda Bundling
 

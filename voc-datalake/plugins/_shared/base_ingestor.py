@@ -17,6 +17,7 @@ import hashlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
+from shared.exceptions import ConfigurationError
 from shared.http_utils import fetch_with_retry
 from shared.aws import (
     clear_secret_cache,
@@ -27,7 +28,7 @@ from shared.aws import (
 )
 from .circuit_breaker import CircuitBreaker
 from .audit import emit_audit_event
-from .secrets import filter_plugin_secrets
+from .plugin_secrets import filter_plugin_secrets
 from .sqs_utils import send_messages_to_queue
 
 # Re-export for backwards compatibility with existing handlers
@@ -63,12 +64,70 @@ class BaseIngestor(ABC):
         self.source_platform = SOURCE_PLATFORM
         self.brand_name = BRAND_NAME
         self.brand_handles = BRAND_HANDLES
-        self.secrets = self._load_secrets()
+        # Everything the failure path needs is wired BEFORE the secret is read.
+        # Since issue #251 a namespace miss raises here rather than silently
+        # widening to the whole shared secret, so construction failing is a
+        # routine outcome — and a raise out of __init__ never reaches run()'s
+        # except block, which is what tells the operator anything (see
+        # _report_construction_failure). Ordering this after the read is what left
+        # a manual run's status record stranded at 'running' with a permanent
+        # spinner in the UI.
         self.watermarks_table = get_dynamodb_resource().Table(WATERMARKS_TABLE)
+        self.aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+        self.circuit_breaker = CircuitBreaker(self.source_platform)
         self._s3 = get_s3_client()
         self._sqs = get_sqs_client()
-        self.circuit_breaker = CircuitBreaker(self.source_platform)
-        self.aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+        try:
+            self.secrets = self._load_secrets()
+        except ConfigurationError as error:
+            self._report_construction_failure(error)
+            raise
+
+    def _report_construction_failure(self, error: Exception) -> None:
+        """Give a construction-time failure the same reporting run() gives its own.
+
+        ``_load_secrets`` runs in ``__init__``, and every ``lambda_handler``
+        constructs the ingestor before calling ``run()`` — so a raise from here
+        bypasses run()'s ``except`` entirely. Three things that block go on to do
+        are what the operator actually sees, and all three were missing:
+
+          * the ``SOURCE_RUN#`` record stays at 'running', which
+            ``integrations_handler.run_source`` wrote before invoking us and which
+            the Scrapers UI polls with no timeout — so a manual "Run now" spins
+            forever and the diagnosis exists only in CloudWatch;
+          * the circuit breaker never counts the failure, so a plugin broken this
+            way does not auto-disable its schedule;
+          * no ``plugin.failed`` audit event is emitted.
+
+        Reported HERE rather than in each plugin's ``lambda_handler`` for the same
+        reason the manual-run cache clear is centralized (#141/#215): a per-handler
+        wrapper is one a new plugin can forget, and forgetting it is silent.
+
+        Never raises. It runs while a ConfigurationError is propagating, and
+        replacing that error with a DynamoDB one would hide the thing worth
+        reporting; each step already swallows its own failures, and the belt-and-
+        braces catch covers a client that is missing altogether.
+        """
+        try:
+            self._update_source_run_status({
+                'status': 'error',
+                'items_found': 0,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'errors': [str(error)],
+            })
+            self.circuit_breaker.record_failure(str(error))
+            emit_audit_event("plugin.failed", self.source_platform, False, {
+                "error": str(error),
+                "error_type": type(error).__name__,
+                "phase": "construction",
+            })
+        # Deliberately blind: narrowing it means enumerating what three AWS clients
+        # can raise, and anything missed REPLACES the ConfigurationError being
+        # propagated with an unrelated one — hiding the only message that names the
+        # prefix the plugin expected. Pinned by
+        # test_the_report_does_not_replace_the_error_the_operator_needs.
+        except Exception as reporting_error:  # noqa: BLE001
+            logger.warning(f"Failed to report construction failure: {reporting_error}")
 
     def _load_secrets(self) -> dict:
         """
@@ -78,9 +137,9 @@ class BaseIngestor(ABC):
         returns only this plugin's namespace with the prefix stripped, and RAISES
         rather than widening when the namespace matches nothing (issue #251 — the
         old ``filtered if filtered else all_secrets`` turned a typo'd plugin id
-        into cross-plugin credential access). See ``_shared/secrets.py`` for why
-        the "keys with no known prefix are shared/legacy" branch, and the plugin-id
-        list it needed, are gone.
+        into cross-plugin credential access). See ``_shared/plugin_secrets.py`` for
+        why the "keys with no known prefix are shared/legacy" branch, and the
+        plugin-id list it needed, are gone.
 
         An absent SECRETS_ARN stays a warning rather than a raise: that is the
         env-var-not-wired case, not a namespace mismatch, and no secret is read at
@@ -91,7 +150,20 @@ class BaseIngestor(ABC):
             logger.warning("SECRETS_ARN not configured")
             return {}
 
-        return filter_plugin_secrets(self.source_platform, get_secret(SECRETS_ARN))
+        all_secrets = get_secret(SECRETS_ARN)
+        if not all_secrets:
+            # `get_secret` is lru_cached and swallows EVERY exception into `{}`,
+            # so a throttle or timeout memoizes an empty payload under the ARN.
+            # filter_plugin_secrets refuses to run on it (correctly), but without
+            # this eviction the refusal is permanent: every later invocation in
+            # the warm container re-reads the cached `{}` and raises again with no
+            # further API call. Only a manual "Run now" clears the cache, so a
+            # SCHEDULED plugin would stay wedged for the container's lifetime
+            # after a single transient blip. Evicting here costs one extra read on
+            # the next invocation and makes the failure retry-safe.
+            clear_secret_cache()
+
+        return filter_plugin_secrets(self.source_platform, all_secrets)
 
     def get_watermark(self, key: str, default: str = None) -> str:
         """Get watermark for a specific source/key from DynamoDB."""

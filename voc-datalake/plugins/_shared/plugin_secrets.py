@@ -1,5 +1,10 @@
 """Plugin-scoped reads of the shared API-credentials secret.
 
+Named `plugin_secrets`, not `secrets`: `plugins/_shared` is on `sys.path` in the
+deployed bundle (the ingestor handler sits at the bundle root beside `_shared/`),
+and a module called `secrets.py` there shadows the stdlib `secrets` for anything
+that imports it — six modules in this tree do.
+
 Every plugin Lambda reads ONE Secrets Manager secret whose keys are namespaced
 `<plugin_id>_<key>` (CDK seeds them that way in `aggregateSecrets()`, and the
 only writers — `integrations_handler` and `scrapers_handler` — always prefix).
@@ -25,28 +30,39 @@ so neither base class can drift from the other:
      — the one input most likely to be wrong — produced the maximally permissive
      outcome, handing that plugin every other plugin's credentials. A raise is
      loud, names what to fix, and cannot be mistaken for success.
+
+What this boundary does NOT guarantee:
+
+  ponytail: the scan is a plain prefix match, so if one plugin id were ever a
+  PREFIX of another (`app_reviews` alongside the existing `app_reviews_ios`) the
+  shorter one would also receive the longer one's keys, under mangled names
+  (`app_reviews_ios_app_id` arriving as `ios_app_id`). No current id pair does
+  this, and the write path carries the same caveat for the same reason
+  (`integrations_handler.get_credentials`) — the two mirrors are kept in step so
+  a reader comparing them finds the same limitation stated in both. The fix
+  belongs at synth time, where the whole id set is known: `plugin-loader.ts` can
+  reject a manifest whose id is a prefix of another's, and does so as of this
+  change (`test_plugin_secret_isolation.py` pins that the two agree). It cannot
+  be enforced here, which sees one id at a time and has no list of the others by
+  design — keeping such a list is precisely the hole rule 1 closed.
 """
 
 import os
-import re
 import sys
 from collections.abc import Mapping
 
-# Add lambda/shared to path (mirrors the other _shared modules, so this one can
-# be imported directly by a test without importing a base class first).
+# Add the `plugins/` directory (this file's grandparent) to sys.path. `shared.*`
+# below resolves through it: `lambda/shared/` is copied in beside `_shared/` when
+# the bundle is built, and `plugins/`'s parent carries it in a source checkout.
+# Mirrors the other `_shared` modules, so this one can be imported directly by a
+# test without importing a base class first.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.exceptions import ConfigurationError
 from shared.logging import logger
+from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
 __all__ = ["filter_plugin_secrets", "plugin_secret_prefix"]
-
-# Same character class the write path enforces on `source`
-# (`integrations_handler._validate_source`): a plugin id becomes a key prefix,
-# so anything outside `[a-z0-9_]` could escape or re-enter another namespace.
-# Duplicated rather than imported because `lambda/api` is not on a plugin
-# Lambda's path — only `lambda/shared` and `plugins/` are bundled.
-_PLUGIN_ID_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
 
 
 def plugin_secret_prefix(plugin_id: str) -> str:
@@ -66,24 +82,36 @@ def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
             *all_secrets* is empty, or if no key carries this plugin's prefix.
             Every one of those states used to yield the complete shared secret.
 
+    The empty-payload branch is RETRY-SAFE, but only because the caller makes it
+    so: `shared.aws.get_secret` is `lru_cache`d and swallows a failed read into
+    `{}`, so both `_load_secrets` callers evict that entry before delegating here
+    (see `BaseIngestor._load_secrets`). Without the eviction, one transient
+    Secrets Manager blip would wedge every later invocation in the warm container
+    against a cached `{}`, with no further API call.
+
     Log/message discipline: the identity and the expected prefix are the only
     things named. No secret VALUE and no OTHER plugin's key name is emitted —
     an error raised because a prefix was wrong must not become a directory of
     what the correct prefixes are.
     """
-    if not isinstance(plugin_id, str) or not _PLUGIN_ID_RE.fullmatch(plugin_id):
+    # The identity becomes a key prefix, so it is validated against the same
+    # character class the WRITE path enforces on `source`. Both import it from
+    # `shared/plugin_identity.py`: the read path refusing an identity the write
+    # path accepted (or the reverse) is the same drift, one level up, that having
+    # two copies of the prefix scan produced.
+    if not is_valid_plugin_identifier(plugin_id):
         # Truncated repr, not the raw value: the identity comes from
         # SOURCE_PLATFORM and is expected to be short, but an error message is
-        # not the place to echo an unbounded string back.
-        preview = repr(plugin_id[:40]) if isinstance(plugin_id, str) else repr(type(plugin_id).__name__)
+        # not the place to echo an unbounded string back. A non-string is named
+        # by its bare type name — `repr` of it would double the quoting.
+        preview = repr(plugin_id[:40]) if isinstance(plugin_id, str) else type(plugin_id).__name__
         logger.error(
             "Refusing to load plugin secrets: plugin identity is missing or malformed",
             extra={"plugin_id": preview},
         )
         raise ConfigurationError(
             f"Cannot load plugin secrets: plugin identity {preview} is missing or "
-            "malformed (expected lowercase letters, digits and underscores, "
-            "starting and ending with a letter or digit)."
+            f"malformed (it {PLUGIN_IDENTIFIER_RULES})."
         )
 
     prefix = plugin_secret_prefix(plugin_id)
@@ -92,7 +120,9 @@ def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
         # An empty secret is a configuration failure, not an empty namespace:
         # `get_secret` returns {} both for a genuinely empty secret and for a
         # read that FAILED (it logs and swallows), and neither is a state in
-        # which a plugin should quietly run with no credentials.
+        # which a plugin should quietly run with no credentials. The caller has
+        # already evicted the cache entry, so a transient failure retries on the
+        # next invocation rather than wedging the container.
         logger.error(
             "Refusing to load plugin secrets: secret payload is empty",
             extra={"plugin_id": plugin_id, "expected_prefix": prefix},

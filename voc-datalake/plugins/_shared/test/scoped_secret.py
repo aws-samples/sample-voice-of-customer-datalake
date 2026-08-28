@@ -12,12 +12,22 @@ production prefix construction changed under it, which is exactly the silence
 this module exists to avoid. Imported by tests of individual plugins too (they
 all run with the same SOURCE_PLATFORM from `plugins/conftest.py`), so the
 knowledge lives in one place rather than in six test files.
+
+The zero-argument filler key is deliberately one NO plugin manifest declares. It
+is the property the ~50 bare `scoped_secret()` call sites rely on: the filler has
+to be inert at every one of them, and a real key name (`api_key`, which
+`_template` declares) would mean a future test whose subject IS that key could
+pass or fail for a reason written down nowhere near its call site.
 """
 
 from _shared import base_ingestor
-from _shared.secrets import plugin_secret_prefix
+from _shared.plugin_secrets import plugin_secret_prefix
 
-__all__ = ["scoped_secret"]
+__all__ = ["FILLER_KEY", "scoped_secret"]
+
+# Not a key any manifest declares — see the module docstring. Named so a reader
+# who greps a failing payload for it lands on the reason it exists.
+FILLER_KEY = "unused_by_this_test"
 
 
 def scoped_secret(**values: str) -> dict:
@@ -28,5 +38,5 @@ def scoped_secret(**values: str) -> dict:
     """
     prefix = plugin_secret_prefix(base_ingestor.SOURCE_PLATFORM)
     if not values:
-        values = {"api_key": "unused-by-this-test"}
+        values = {FILLER_KEY: "filler"}
     return {f"{prefix}{key}": value for key, value in values.items()}

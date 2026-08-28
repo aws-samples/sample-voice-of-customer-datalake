@@ -77,10 +77,22 @@ Edit `manifest.json` with your source details:
   },
 
   "secrets": {
-    "your_source_id_api_key": ""
+    "api_key": ""
   }
 }
 ```
+
+Declare secret keys by their **bare** name here. CDK prefixes each one with your plugin
+id when it seeds the shared secret (`api_key` is stored as `your_source_id_api_key`), so a
+key written pre-prefixed in the manifest would be stored doubly prefixed and your ingestor
+would never find it.
+
+**Declare at least one key.** Since issue #251 a plugin whose namespace holds no key
+raises a `ConfigurationError` at construction rather than silently receiving every other
+plugin's credentials, so a plugin declaring no `secrets` cannot start. If yours genuinely
+needs no configuration, declare one key anyway (or do not read `self.secrets` in your
+constructor). `plugins/_shared/test/test_plugin_secret_isolation.py` fails on a manifest
+that declares none, so this is caught in CI rather than in a deployed Lambda.
 
 ### Step 3: Implement the Ingestor
 
@@ -221,7 +233,23 @@ self.api_key = self.secrets.get("api_key", "")
 self.api_secret = self.secrets.get("api_secret", "")
 ```
 
-Secret keys in the manifest are prefixed with your plugin ID automatically.
+Secret keys in the manifest are prefixed with your plugin ID automatically, and the prefix
+is stripped again on the way in — so you read the bare name, as above.
+
+All plugins share one Secrets Manager secret, and every ingestion Lambda shares one IAM
+role, so that prefix is the **entire** boundary between your plugin's credentials and
+another's. It fails closed: if nothing in the secret carries your `<plugin_id>_` prefix,
+`self.secrets` is not empty — construction raises a `ConfigurationError` naming your
+plugin and the prefix it expected. It used to hand you the whole shared secret instead
+(issue #251).
+
+Two things follow for you as a plugin author:
+
+- Declare at least one key in `secrets` (see Step 2), or your Lambda cannot start.
+- You never need to register your plugin id anywhere for filtering to work. An earlier
+  version of this required adding it to a `_get_known_prefixes()` list in
+  `_shared/base_ingestor.py`; that function is gone, and forgetting it was itself what
+  leaked one plugin's keys into every other.
 
 ## Categories
 

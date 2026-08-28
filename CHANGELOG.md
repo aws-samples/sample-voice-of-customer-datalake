@@ -57,6 +57,18 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Security
 
+- Plugin secret isolation now fails closed. Each plugin Lambda reads one shared Secrets Manager
+  secret whose keys are namespaced `<plugin_id>_<key>`, and — because every ingestion Lambda shares
+  one IAM role — that prefix is the only boundary between one plugin's credentials and another's. A
+  prefix matching zero keys previously returned the **complete** shared secret, on the theory that
+  such a plugin predated prefixing; the effect was that a typo in a plugin id, the input most likely
+  to be wrong, produced the maximally permissive outcome. It now raises, naming the plugin and the
+  prefix it expected and nothing else. The hand-maintained plugin-id list the filter needed is gone
+  with it: forgetting to add a plugin there reclassified its keys as "shared" and leaked them into
+  every other plugin.
+- A webhook Lambda is now deployed with the environment variable its code reads for the plugin
+  identity (`SOURCE_PLATFORM`, which only the ingestor Lambda carried). Combined with the above,
+  a deployed webhook would otherwise have failed on every delivery.
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a
@@ -64,6 +76,19 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Upgrade notes
 
+- **A plugin must declare at least one key in its manifest's `secrets` block.** Following the
+  fail-closed change above, a plugin whose namespace holds no key in the shared secret raises a
+  `ConfigurationError` when its Lambda is constructed, rather than silently receiving every other
+  plugin's keys. Every plugin shipped in this repo declares at least one key and CDK seeds them all
+  at deploy time, so no bundled plugin is affected; a custom plugin declaring none must add a key
+  (or stop reading `self.secrets` in its constructor). A test over the manifests now fails in CI
+  rather than letting this surface in a deployed Lambda. Any onboarding notes telling a plugin
+  author to register their prefix in `_get_known_prefixes()` are obsolete — that function no longer
+  exists, and registration was never needed for a correctly prefixed key.
+- **A plugin id may no longer be a prefix of another plugin id** (`app_reviews` alongside
+  `app_reviews_ios`). Secret keys are matched by string prefix, so the shorter id would receive the
+  longer one's credentials. `cdk synth` now refuses such a pair, which is the only point at which
+  the whole id set is known. No bundled pair collides.
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
   `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
   too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty

@@ -204,6 +204,10 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
     }
   }
 
+  // Cross-plugin checks, after the per-manifest ones: this is the only place that
+  // sees the whole id set at once.
+  errors.push(...namespaceCollisionErrors(plugins));
+
   if (errors.length > 0) {
     console.error('Plugin loading errors:');
     errors.forEach(e => console.error(`  - ${e}`));
@@ -212,6 +216,42 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
 
   console.log(`Loaded ${plugins.length} plugins: ${plugins.map(p => p.id).join(', ')}`);
   return plugins;
+}
+
+/**
+ * Reject an id that is a PREFIX of another id.
+ *
+ * The shared API-credentials secret namespaces every key `<plugin_id>_<key>`, and
+ * both readers of it match that namespace by plain string prefix — the runtime one
+ * in `plugins/_shared/plugin_secrets.py`, which is the entire isolation boundary
+ * between plugins (all ingestion Lambdas share one IAM role), and the status one in
+ * `integrations_handler.get_credentials`. So `app_reviews` alongside the existing
+ * `app_reviews_ios` would hand the shorter plugin every key of the longer one, under
+ * mangled names (`app_reviews_ios_app_id` arriving as `ios_app_id`).
+ *
+ * Enforced HERE and not at runtime because this is the only vantage point with the
+ * whole id set: a plugin Lambda knows its own id and, by design since issue #251,
+ * nothing about the others — a hand-maintained list of sibling prefixes is exactly
+ * the hole that change closed. Ids are a synth-time input, so synth is also the last
+ * moment at which refusing one is free.
+ */
+function namespaceCollisionErrors(plugins: PluginManifest[]): string[] {
+  const ids = plugins.map(p => p.id);
+  const errors: string[] = [];
+
+  for (const id of ids) {
+    for (const other of ids) {
+      if (other !== id && other.startsWith(`${id}_`)) {
+        errors.push(
+          `Plugin id '${id}' is a namespace prefix of '${other}': the shared secret ` +
+          `keys both plugins' credentials as <plugin_id>_<key>, so '${id}' would also ` +
+          `receive every '${other}' key. Rename one of them.`
+        );
+      }
+    }
+  }
+
+  return errors;
 }
 
 function validateManifestLimits(manifest: PluginManifest): void {

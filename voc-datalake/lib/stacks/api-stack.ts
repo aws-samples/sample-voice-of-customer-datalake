@@ -2079,6 +2079,16 @@ exports.handler = async (event) => {
         FEEDBACK_TABLE: feedbackTableName,
         SECRETS_ARN: secretsArn,
         BRAND_NAME: brandName,
+        // BOTH names, matching createIngestorLambda in ingestion-stack.ts.
+        // `base_webhook.py` reads SOURCE_PLATFORM for the plugin identity it
+        // scopes the shared secret by, and since issue #251 an empty identity is
+        // a hard ConfigurationError at construction — so with only PLUGIN_ID set
+        // every delivery to a deployed webhook would have failed, on a message
+        // blaming the identity rather than the missing variable. Latent until a
+        // manifest declares `infrastructure.webhook` (none does yet), which is
+        // exactly why it would have surfaced as a deploy-time mystery. Pinned by
+        // 'SOURCE_PLATFORM' in api-stack.test.ts.
+        SOURCE_PLATFORM: plugin.id,
         PLUGIN_ID: plugin.id,
         POWERTOOLS_SERVICE_NAME: `voc-webhook-${plugin.id}`,
         LOG_LEVEL: 'INFO',

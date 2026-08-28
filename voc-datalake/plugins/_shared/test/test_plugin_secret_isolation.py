@@ -1,9 +1,9 @@
 """Plugin secret prefix isolation fails CLOSED (issue #251).
 
-`plugins/_shared/secrets.py` is the only place a plugin Lambda turns the shared
-API-credentials secret into its own config. All ingestion Lambdas share one IAM
-role, so that prefix scan is the entire isolation boundary — there is no second
-layer to catch a mistake.
+`plugins/_shared/plugin_secrets.py` is the only place a plugin Lambda turns the
+shared API-credentials secret into its own config. All ingestion Lambdas share one
+IAM role, so that prefix scan is the entire isolation boundary — there is no
+second layer to catch a mistake.
 
 REVERT MAP — each assertion below names the mutation it catches:
 
@@ -42,24 +42,64 @@ REVERT MAP — each assertion below names the mutation it catches:
       two drifted in the first place: it never had even the (broken) known-prefix
       list that the ingestor copy carried.
 
+  test_a_transient_read_failure_is_retried_on_the_next_invocation
+    — drops the `clear_secret_cache()` in either `_load_secrets` empty-payload
+      branch. `get_secret` is lru_cached and swallows every exception into `{}`,
+      so without the eviction ONE transient Secrets Manager blip caches that `{}`
+      and every later invocation in the warm container raises off the cache with
+      no further API call. Only a manual "Run now" clears it, so a SCHEDULED
+      plugin — and a webhook, which has no manual run at all — stays wedged for
+      the container's lifetime.
+
+  test_a_namespace_miss_moves_the_run_record_to_error /
+  test_a_namespace_miss_records_a_circuit_breaker_failure /
+  test_a_namespace_miss_emits_a_plugin_failed_audit_event
+    — removes `_report_construction_failure` from `BaseIngestor.__init__`, or
+      moves the secret read back above the tables it needs. `_load_secrets` runs
+      in `__init__`, so the raise never reaches `run()`'s except block: the
+      `SOURCE_RUN#` record stays at the 'running' that `run_source` wrote before
+      invoking, and the UI polls it with no timeout — a permanent spinner with the
+      diagnosis only in CloudWatch.
+
+  test_the_identity_rule_is_the_one_the_write_path_enforces
+    — re-inlines the character class into either path. A read that refuses an
+      identity the write path accepted is the same drift, one level up, that two
+      copies of the prefix scan produced.
+
+  test_no_plugin_id_is_a_namespace_prefix_of_another
+    — the collision the scan cannot see: `app_reviews` alongside
+      `app_reviews_ios` would receive the latter's keys under mangled names. Not
+      preventable here (a plugin knows only its own id, by design), so this
+      asserts the synth-time guard in `plugin-loader.ts` and the tree agree.
+
+  test_every_plugin_declares_at_least_one_secret_key
+    — the deploy-time invariant this change introduces, otherwise unpinned: a
+      plugin whose manifest declares no `secrets` block gets no `<id>_*` key
+      seeded, so its Lambda dies at construction. That fails in CI here rather
+      than in a production Lambda.
+
 Known consequence, deliberate: a plugin that declares NO secret keys in its
 manifest now fails at construction rather than silently receiving every other
 plugin's keys. Every current plugin declares at least one key and CDK seeds them
-all at deploy time, so no shipped plugin is affected; a future one that needs no
-configuration should declare a key or not call the base constructor's secret
-read, and the error tells it which prefix was expected.
+all at deploy time (both pinned below), so no shipped plugin is affected; a future
+one that needs no configuration should declare a key or not call the base
+constructor's secret read, and the error tells it which prefix was expected.
 """
 
 import ast
 import inspect
+import json
 import textwrap
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import shared.aws as shared_aws
 from shared.exceptions import ConfigurationError
+from shared.plugin_identity import is_valid_plugin_identifier
 
 from _shared import base_ingestor, base_webhook
-from _shared.secrets import filter_plugin_secrets, plugin_secret_prefix
+from _shared.plugin_secrets import filter_plugin_secrets, plugin_secret_prefix
 
 # The identity these tests run as — read from the same module attribute the base
 # classes read, so a rename of the env plumbing cannot leave this file asserting
@@ -90,12 +130,12 @@ FOREIGN_ONLY_SECRET = {
 }
 
 
-def _make_ingestor():
+def _make_ingestor(execution_id=None):
     class _Ingestor(base_ingestor.BaseIngestor):
         def fetch_new_items(self):
             yield from []
 
-    return _Ingestor()
+    return _Ingestor(execution_id=execution_id)
 
 
 def _make_webhook():
@@ -216,7 +256,7 @@ class TestErrorsRevealTheMisconfigurationAndNothingElse:
         # The module logger is the Powertools `Logger`, which is service-named and
         # does not propagate, so `caplog` never sees it. Patching the logger
         # object is what the neighbouring plugin suites do (test_sqs_utils.py).
-        with patch('_shared.secrets.logger') as mock_logger, \
+        with patch('_shared.plugin_secrets.logger') as mock_logger, \
                 pytest.raises(ConfigurationError):
             filter_plugin_secrets(PLUGIN_ID, FOREIGN_ONLY_SECRET)
 
@@ -239,7 +279,7 @@ class TestErrorsRevealTheMisconfigurationAndNothingElse:
     def test_the_log_control_a_successful_load_logs_nothing(self):
         """Non-vacuity for the assertion above: without this, a refusal logged
         unconditionally on every load would satisfy it."""
-        with patch('_shared.secrets.logger') as mock_logger:
+        with patch('_shared.plugin_secrets.logger') as mock_logger:
             filter_plugin_secrets(PLUGIN_ID, MIXED_SECRET)
 
         assert mock_logger.error.call_args_list == []
@@ -348,7 +388,7 @@ class TestOneImplementationOfTheBoundary:
         }
         assert 'startswith' not in attribute_calls, (
             f'{module.__name__}._load_secrets appears to filter by prefix itself; '
-            'the scan belongs in _shared/secrets.py alone'
+            'the scan belongs in _shared/plugin_secrets.py alone'
         )
 
     def test_the_findability_control_the_parser_reads_a_real_body(self):
@@ -363,3 +403,297 @@ class TestOneImplementationOfTheBoundary:
             assert len(tree.body) > 1, 'expected a real body, not a stub'
         assert (base_ingestor.BaseIngestor._load_secrets
                 is not base_webhook.BaseWebhook._load_secrets)
+
+
+class TestATransientReadFailureIsRetryable:
+    """A blip must not wedge the warm container.
+
+    `shared.aws.get_secret` is `lru_cache`d and swallows EVERY exception into
+    `{}`. Under the old fail-open filter that cached `{}` produced a wrong but
+    non-fatal run; now it correctly raises — which makes the caching itself the
+    problem, because the raise would then repeat on every later invocation in the
+    container with NO further API call. Only a manual "Run now" clears the cache
+    (`clear_secret_cache()` via `execution_id`), so a scheduled plugin, and a
+    webhook which has no manual run at all, would stay broken until recycled.
+
+    Driven through the real `get_secret` and a stubbed Secrets Manager client
+    rather than a patched `get_secret`, deliberately: the cache is the subject, and
+    patching the function that holds it removes the thing under test.
+    """
+
+    @staticmethod
+    def _client_failing_once():
+        """A Secrets Manager client that fails the first read, then succeeds."""
+        client = MagicMock()
+        client.get_secret_value.side_effect = [
+            Exception('Throttled'),
+            {'SecretString': json.dumps(MIXED_SECRET)},
+        ]
+        return client
+
+    @pytest.mark.parametrize('kind', ['ingestor', 'webhook'], ids=['ingestor', 'webhook'])
+    def test_a_transient_read_failure_is_retried_on_the_next_invocation(self, kind):
+        client = self._client_failing_once()
+        shared_aws.clear_secret_cache()
+
+        with patch('shared.aws.get_secrets_client', return_value=client), \
+                patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
+                patch('_shared.base_ingestor.get_s3_client'), \
+                patch('_shared.base_ingestor.get_sqs_client'), \
+                patch('_shared.base_webhook.get_sqs_client'):
+            mock_dynamo.return_value.Table.return_value = MagicMock()
+            construct = _make_ingestor if kind == 'ingestor' else _make_webhook
+
+            # First invocation: the read fails, `get_secret` returns {} and caches
+            # it, and construction refuses to proceed on an empty secret.
+            with pytest.raises(ConfigurationError):
+                construct()
+
+            # Second invocation in the SAME process — a warm container. It must
+            # reach the client again and succeed.
+            loaded = construct()
+
+        assert loaded.secrets == {'api_key': 'mine-key', 'configs': '[]'}
+        assert client.get_secret_value.call_count == 2, (
+            'the failed read stayed memoized: the second construction never '
+            'consulted Secrets Manager again'
+        )
+
+    def test_the_control_a_successful_read_is_still_cached(self):
+        """Non-vacuity, and the property the eviction must not cost: the cache
+        still serves a SUCCESSFUL read, so the fix did not turn every invocation
+        into a Secrets Manager call. Without this, `clear_secret_cache()` on every
+        load would satisfy the assertion above."""
+        client = MagicMock()
+        client.get_secret_value.return_value = {'SecretString': json.dumps(MIXED_SECRET)}
+        shared_aws.clear_secret_cache()
+
+        with patch('shared.aws.get_secrets_client', return_value=client), \
+                patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
+                patch('_shared.base_ingestor.get_s3_client'), \
+                patch('_shared.base_ingestor.get_sqs_client'):
+            mock_dynamo.return_value.Table.return_value = MagicMock()
+            _make_ingestor()
+            _make_ingestor()
+
+        assert client.get_secret_value.call_count == 1
+
+
+class TestAConstructionFailureIsReported:
+    """The raise happens in `__init__`, so it must report for itself.
+
+    Every `lambda_handler` constructs the ingestor before calling `run()`, so a
+    `ConfigurationError` from `_load_secrets` never reaches run()'s `except` — the
+    block that writes the `SOURCE_RUN#` record, records the circuit-breaker
+    failure and emits `plugin.failed`. `integrations_handler.run_source` writes
+    `status: 'running'` BEFORE invoking, and the UI polls until a terminal status
+    with no timeout, so an unreported construction failure is a permanent
+    "Running..." spinner.
+    """
+
+    EXECUTION_ID = 'exec-abc123'
+
+    @staticmethod
+    def _construct(payload, execution_id):
+        """Construct with a manual-run execution_id, returning the mocked table.
+
+        `AGGREGATES_TABLE` is patched to a non-empty name because
+        `_update_source_run_status` is a no-op without one, and `plugins/conftest.py`
+        does not set it.
+        """
+        table = MagicMock()
+        with patch('_shared.base_ingestor.AGGREGATES_TABLE', 'test-aggregates'), \
+                patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
+                patch('_shared.base_ingestor.get_s3_client'), \
+                patch('_shared.base_ingestor.get_sqs_client'), \
+                patch('_shared.base_ingestor.get_secret', return_value=payload), \
+                patch('_shared.base_ingestor.clear_secret_cache'), \
+                patch.object(base_ingestor.CircuitBreaker, 'record_failure') as record_failure, \
+                patch('_shared.base_ingestor.emit_audit_event') as emit:
+            mock_dynamo.return_value.Table.return_value = table
+            error = None
+            try:
+                _make_ingestor(execution_id=execution_id)
+            except ConfigurationError as raised:
+                error = raised
+        return error, table, record_failure, emit
+
+    @staticmethod
+    def _status_written(table):
+        """The `status` value the run record was last updated to, or None."""
+        for call in table.update_item.call_args_list:
+            values = call.kwargs.get('ExpressionAttributeValues', {})
+            if ':status' in values:
+                return values[':status']
+        return None
+
+    def test_a_namespace_miss_moves_the_run_record_to_error(self):
+        error, table, _, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        assert error is not None, 'expected construction to refuse the payload'
+        assert self._status_written(table) == 'error', (
+            "the run record was left at the 'running' that run_source wrote, so "
+            'the UI would poll it forever'
+        )
+
+    def test_the_run_record_is_addressed_by_this_execution(self):
+        """The record the UI polls, not just any record: `run_source` keys it
+        `SOURCE_RUN#<source>` / `<execution_id>`, and a write to a different sort
+        key would leave the polled one at 'running' while this test passed."""
+        _, table, _, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        keys = [call.kwargs.get('Key') for call in table.update_item.call_args_list]
+        assert {'pk': f'SOURCE_RUN#{PLUGIN_ID}', 'sk': self.EXECUTION_ID} in keys
+
+    def test_a_namespace_miss_records_a_circuit_breaker_failure(self):
+        """Otherwise a plugin broken this way never auto-disables its schedule —
+        it just fails every fifteen minutes forever."""
+        _, _, record_failure, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        assert record_failure.call_args_list, 'the circuit breaker saw nothing'
+
+    def test_a_namespace_miss_emits_a_plugin_failed_audit_event(self):
+        _, _, _, emit = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        actions = [call.args[0] for call in emit.call_args_list if call.args]
+        assert 'plugin.failed' in actions
+
+    def test_the_report_does_not_replace_the_error_the_operator_needs(self):
+        """The reporting runs while a ConfigurationError is propagating. If a
+        DynamoDB failure there escaped, it would mask the only message that says
+        which prefix was expected — so the original must still arrive even when
+        every reporting step throws."""
+        table = MagicMock()
+        table.update_item.side_effect = Exception('DynamoDB unavailable')
+
+        with patch('_shared.base_ingestor.AGGREGATES_TABLE', 'test-aggregates'), \
+                patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
+                patch('_shared.base_ingestor.get_s3_client'), \
+                patch('_shared.base_ingestor.get_sqs_client'), \
+                patch('_shared.base_ingestor.get_secret', return_value=FOREIGN_ONLY_SECRET), \
+                patch.object(base_ingestor.CircuitBreaker, 'record_failure',
+                             side_effect=Exception('table gone')), \
+                patch('_shared.base_ingestor.emit_audit_event',
+                      side_effect=Exception('bus gone')):
+            mock_dynamo.return_value.Table.return_value = table
+            with pytest.raises(ConfigurationError) as excinfo:
+                _make_ingestor()
+
+        assert PREFIX in str(excinfo.value)
+
+    def test_the_control_a_successful_construction_reports_nothing(self):
+        """Non-vacuity: an unconditional error write would satisfy every
+        assertion above."""
+        error, table, record_failure, emit = self._construct(MIXED_SECRET, self.EXECUTION_ID)
+
+        assert error is None
+        assert self._status_written(table) is None
+        assert record_failure.call_args_list == []
+        assert [call.args[0] for call in emit.call_args_list if call.args] == []
+
+
+class TestTheIdentityRuleIsSharedWithTheWritePath:
+    """One character class, imported by both sides of the namespace.
+
+    The write path (`integrations_handler._validate_source`) decides what may be
+    STORED under a prefix; this module decides what may be READ from one. A value
+    one accepts and the other refuses is the same drift, one level up, that two
+    copies of the prefix scan produced — so both import
+    `shared.plugin_identity.is_valid_plugin_identifier`.
+    """
+
+    def test_the_identity_rule_is_the_one_the_write_path_enforces(self):
+        """Asserted by IDENTITY of the callable, not by comparing behaviour on a
+        sample: two independently-written regexes agreeing on the cases a test
+        thinks to try is exactly the drift that goes unnoticed."""
+        import importlib
+        import sys as _sys
+
+        lambda_api = str(Path(__file__).resolve().parents[3] / 'lambda' / 'api')
+        if lambda_api not in _sys.path:
+            _sys.path.insert(0, lambda_api)
+        handler = importlib.import_module('integrations_handler')
+
+        assert handler.is_valid_plugin_identifier is is_valid_plugin_identifier
+
+    @pytest.mark.parametrize('plugin_id', ['webscraper', 'app_reviews_ios', 's3_import'])
+    def test_every_real_plugin_id_satisfies_the_shared_rule(self, plugin_id):
+        """The rule has to admit the ids actually deployed. A tightening that
+        rejected one of these would fail every one of that plugin's invocations at
+        construction, which is not a failure a unit test of the regex alone would
+        report as an outage."""
+        assert is_valid_plugin_identifier(plugin_id)
+
+
+class TestTheDeployTimeInvariantsThisBoundaryNeeds:
+    """Two facts outside this file that the fail-closed rule depends on.
+
+    Neither is enforceable at runtime — a plugin Lambda sees its own id and its
+    own namespace by design — so they are asserted against the manifests on disk,
+    which is what CDK reads at synth time.
+    """
+
+    @staticmethod
+    def _manifests():
+        plugins_dir = Path(__file__).resolve().parents[2]
+        found = {}
+        for path in sorted(plugins_dir.glob('*/manifest.json')):
+            if path.parent.name.startswith('_'):
+                continue
+            found[path.parent.name] = json.loads(path.read_text(encoding='utf-8'))
+        return found
+
+    def test_the_manifest_scan_finds_the_real_plugins(self):
+        """Non-vacuity for both assertions below: an empty or mis-rooted glob
+        would make each of them pass over nothing."""
+        manifests = self._manifests()
+
+        assert len(manifests) >= 5, f'expected >=5 plugins, found {sorted(manifests)}'
+        assert 'webscraper' in manifests
+        # `_template` is scaffolding, not a deployable plugin — CDK's loadPlugins
+        # skips `_`-prefixed directories and so must this.
+        assert not any(name.startswith('_') for name in manifests)
+
+    def test_every_plugin_declares_at_least_one_secret_key(self):
+        """A plugin declaring NO secrets gets no `<id>_*` key seeded into the
+        shared secret, so `filter_plugin_secrets` finds an empty namespace and its
+        Lambda dies at construction — in production, on the first invocation.
+        `manual_import` and `s3_import` are the plausible zero-secret shapes, which
+        is why this is pinned rather than asserted in the PR description.
+
+        A future plugin that genuinely needs no configuration is not blocked: it
+        can declare one key, or not read secrets in its constructor. What it may
+        not do is discover the requirement from a CloudWatch log."""
+        empty = [
+            name for name, manifest in self._manifests().items()
+            if not manifest.get('secrets')
+        ]
+
+        assert empty == [], (
+            f'Plugins declare no secret keys: {empty}. Since issue #251 an empty '
+            'namespace is a ConfigurationError at construction, so such a plugin '
+            'cannot start. Declare at least one key in the manifest.'
+        )
+
+    def test_no_plugin_id_is_a_namespace_prefix_of_another(self):
+        """The one collision the prefix scan cannot see. `app_reviews` alongside
+        the existing `app_reviews_ios` would receive that plugin's keys under
+        mangled names (`app_reviews_ios_app_id` arriving as `ios_app_id`) — a
+        cross-plugin leak, not a display quirk, since this scan IS the boundary.
+
+        `plugin-loader.ts` refuses such a pair at synth time, which is the only
+        vantage point holding the whole id set; this asserts the tree agrees, so a
+        Python-side reader of the caveat sees it enforced rather than only
+        described."""
+        ids = sorted(self._manifests())
+        collisions = [
+            (shorter, longer)
+            for shorter in ids
+            for longer in ids
+            if shorter != longer and longer.startswith(plugin_secret_prefix(shorter))
+        ]
+
+        assert collisions == [], (
+            f'Plugin ids collide as secret namespaces: {collisions}. The shorter id '
+            "would also receive the longer one's keys. Rename one."
+        )

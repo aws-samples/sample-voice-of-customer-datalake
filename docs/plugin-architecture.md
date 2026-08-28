@@ -1920,10 +1920,10 @@ for (const plugin of webhookPlugins) {
 Plugins share a single Secrets Manager secret, but each plugin only accesses its own keys:
 
 `BaseIngestor._load_secrets()` and `BaseWebhook._load_secrets()` both delegate to one
-helper, `plugins/_shared/secrets.py`:
+helper, `plugins/_shared/plugin_secrets.py`:
 
 ```python
-# In plugins/_shared/secrets.py
+# In plugins/_shared/plugin_secrets.py
 def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
     """Return plugin_id's namespaced keys, prefix stripped — or raise."""
     prefix = f"{plugin_id}_"
@@ -1951,6 +1951,35 @@ nothing else was catching it.
 
 The error and its log name the identity and the expected prefix only — never a secret
 value, and never another plugin's key names.
+
+Three consequences of failing closed are worth knowing before you write a plugin:
+
+- **Every plugin must declare at least one key** in its manifest's `secrets` block. CDK
+  seeds the declared keys at deploy time; a plugin declaring none has no `<id>_*` key to
+  find, so its Lambda raises at construction on the first invocation. Pinned in CI by
+  `test_plugin_secret_isolation.py::TestTheDeployTimeInvariantsThisBoundaryNeeds`, so a
+  zero-secret manifest fails a test run rather than a production invocation.
+- **A construction failure still reports.** `_load_secrets()` runs in `__init__`, so the
+  raise never reaches `run()`'s `except`. `BaseIngestor` therefore reports it itself
+  (`_report_construction_failure`): the `SOURCE_RUN#` record moves to `status: 'error'`,
+  the circuit breaker records the failure, and a `plugin.failed` audit event is emitted.
+  Without that, a manual "Run now" would show a permanent "Running..." spinner — the UI
+  polls until a terminal status and the API writes `'running'` before invoking.
+- **A webhook Lambda returns 5xx for every delivery** while its secret is missing or
+  mis-prefixed, and most providers drop events after their retries expire. There is no
+  manual run to recover a webhook, so watch the plugin's log group for
+  `Refusing to load plugin secrets` and alarm on it; the shared-secret read is
+  load-bearing for a webhook in a way it is not for a scheduled ingestor.
+
+A transient Secrets Manager failure is *not* one of these cases. `get_secret` is cached
+and swallows a failed read into `{}`, so both `_load_secrets()` implementations evict the
+cache entry before refusing on an empty payload — the next invocation re-reads rather than
+the warm container staying wedged against a memoized failure.
+
+One limitation the prefix scan cannot see: if a plugin id were ever a **prefix** of
+another (`app_reviews` alongside `app_reviews_ios`), the shorter one would also receive the
+longer one's keys. `loadPlugins` refuses such a pair at synth time, which is the only place
+the whole id set is known — a plugin Lambda holds no list of its siblings by design.
 
 ### Cost Controls
 

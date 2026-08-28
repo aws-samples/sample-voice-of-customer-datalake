@@ -5,7 +5,6 @@ Manages API credentials and data source schedules.
 
 import json
 import os
-import re
 from functools import lru_cache
 from typing import Any
 
@@ -18,6 +17,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
+from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
@@ -71,34 +71,28 @@ app = create_api_resolver()
 # CDK synth time, not at runtime).  A manifest-derived allowlist is the
 # stronger fix and is tracked as a follow-up.
 #
-# Rules:
-#   • Only lowercase letters, digits, and underscores (no dots, slashes,
-#     hyphens, or other characters that could escape or re-enter a namespace).
-#   • Length: 1–64 characters.
-#   • May not start or end with an underscore (prevents confusion with
-#     namespace prefixes / internal keys).
-#   • At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys per write request.
+# The character class itself lives in `shared/plugin_identity.py`, NOT here: the
+# READ side (`plugins/_shared/plugin_secrets.py`) has to validate the same shape
+# on the plugin identity it turns into a namespace prefix, and since issue #251 a
+# namespace miss there is a hard failure rather than a silent widening. Two
+# copies of the rule is how a value this path accepts becomes one that path
+# refuses. `shared/` is the only directory both bundles carry.
 #
-# Single alternative: optional inner body of up to 62 chars means the total
-# length is 1 (just the initial char) or 2-64 (initial + inner + final).
-# re.fullmatch is used in _validate_credential_key so anchors are not needed.
-_CREDENTIAL_KEY_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
+# The one rule that stays here, because only a write has a request to bound:
+#   • At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys per write request.
 MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
 
 
 def _validate_credential_key(key: str) -> None:
     """Raise ValidationError if *key* does not conform to the allowed form.
 
-    Uses re.fullmatch so no explicit anchors are needed in the pattern.
     The key preview in the error message is truncated to avoid reflecting
     unbounded caller input back in the response.
     """
-    if not isinstance(key, str) or not _CREDENTIAL_KEY_RE.fullmatch(key):
+    if not is_valid_plugin_identifier(key):
         preview = repr(key[:40]) if isinstance(key, str) else repr(key)
         raise ValidationError(
-            f"Invalid credential key {preview}: keys must contain only lowercase "
-            "letters, digits, and underscores, must start and end with a "
-            "letter or digit, and must be 1–64 characters long."
+            f"Invalid credential key {preview}: keys {PLUGIN_IDENTIFIER_RULES}."
         )
 
 
@@ -110,12 +104,10 @@ def _validate_source(source: str) -> None:
     'source identifier' rather than 'credential key' so it is clear which
     input parameter is invalid when debugging a 400.
     """
-    if not isinstance(source, str) or not _CREDENTIAL_KEY_RE.fullmatch(source):
+    if not is_valid_plugin_identifier(source):
         preview = repr(source[:40]) if isinstance(source, str) else repr(source)
         raise ValidationError(
-            f"Invalid source identifier {preview}: source must contain only "
-            "lowercase letters, digits, and underscores, must start and end "
-            "with a letter or digit, and must be 1–64 characters long."
+            f"Invalid source identifier {preview}: source {PLUGIN_IDENTIFIER_RULES}."
         )
 
 
