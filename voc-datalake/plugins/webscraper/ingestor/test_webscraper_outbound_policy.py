@@ -70,6 +70,25 @@ REVERT MAP
 - Drop the ScraperRunBudgetExhausted counter, leaving a scheduled run's truncation
   invisible (`_update_run_status` returns early without an execution_id)
   -> `emits_a_metric_when_the_run_budget_is_exhausted`.
+- Attribute the truncation to the config being VISITED rather than the one that
+  spent the budget, so a config that made no request is demoted and the culprit
+  keeps first refusal for ever
+  -> `the_marker_names_the_config_that_spent_the_budget`,
+  `the_config_behind_a_boundary_stall_is_eventually_fetched`.
+- Write a `completed_with_errors` row for a config the budget never let start
+  -> `a_config_that_made_no_request_reports_nothing`.
+- Skip the budget metric where the exhaustion is found at a config boundary, or
+  emit it once per remaining config
+  -> `the_budget_metric_still_fires_once_at_the_boundary`.
+- Reorder so aggressively that the demoted culprit is never attempted again
+  -> `the_stalling_config_is_still_retried`.
+- Have `fetch_new_items`' empty-guard read the UNFILTERED `self.scraper_configs`
+  again, so an all-malformed array satisfies the guard, iterates nothing and leaves
+  a manual run's row at `status: 'running'`
+  -> `an_all_malformed_array_writes_a_terminal_error_row`.
+- Widen that guard so a malformed entry alongside a usable one aborts the run
+  -> `a_usable_config_alongside_a_malformed_one_still_runs`,
+  `an_ordinary_run_is_unaffected`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -409,7 +428,7 @@ class TestRunBoundsTheWholeInvocation:
     @staticmethod
     def _run_on_a_fake_clock(
         ingestor, configs, *, serve=None, watermarks=None, scheduled=False,
-        requested=None,
+        requested=None, rows=None,
     ):
         """
         Run `fetch_new_items` over `configs` with a stalling transport.
@@ -434,6 +453,11 @@ class TestRunBoundsTheWholeInvocation:
             requested: optional list every requested URL is appended to, in order,
                 for asserting which configs were reached rather than only which
                 watermarks moved.
+            rows: optional list every status write is appended to as
+                `(scraper_id, updates)`. The returned `statuses` drop the id, which
+                is enough while every write belongs to the config being visited —
+                but not for asserting WHICH config a run row was written against,
+                which is what a mis-attributed truncation looks like.
         """
         import requests
 
@@ -452,6 +476,12 @@ class TestRunBoundsTheWholeInvocation:
         ingestor.scraper_configs = configs
 
         statuses = []
+
+        def record_status(scraper_id, updates):
+            statuses.append(updates)
+            if rows is not None:
+                rows.append((scraper_id, updates))
+
         with (
             patch('shared.http_utils.requests.request', side_effect=transport),
             patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
@@ -461,9 +491,7 @@ class TestRunBoundsTheWholeInvocation:
                 'webscraper.ingestor.handler.time.sleep',
                 lambda s: now.__setitem__(0, now[0] + s),
             ),
-            patch.object(
-                ingestor, '_update_run_status', lambda _id, u: statuses.append(u)
-            ),
+            patch.object(ingestor, '_update_run_status', record_status),
             patch.object(
                 ingestor,
                 'set_watermark',
@@ -955,6 +983,262 @@ class TestATruncatingConfigCannotMonopoliseTheLoop:
         assert 'ScraperRunBudgetExhausted' not in [
             call.kwargs.get('name') for call in mock_metric.call_args_list
         ]
+
+
+class TestTheTruncationIsBlamedOnTheConfigThatSpentTheBudget:
+    """
+    The config that ran out of budget is the one demoted — not the one that merely
+    discovered the budget was gone.
+
+    `config_truncated` was set inside the URL loop of whichever config was being
+    visited when `remaining <= 0` first tested true. When a config spends the whole
+    budget but FINISHES its own URL list, that fires at index 0 of the NEXT config,
+    which has requested nothing. So the culprit recorded a clean run and kept its
+    place, while its victim was marked truncated, demoted by
+    `_configs_in_fairness_order`, and given a `completed_with_errors` row saying
+    "N URL(s) not attempted" about URLs it never attempted.
+
+    Measured with 5 stalling URLs ahead of one healthy config: the marker landed on
+    `scraper_B_last_truncated`, the loop order stayed ('A', 'B') on every one of 40
+    scheduled invocations, and the healthy config was fetched 0 times — the same
+    total starvation `TestATruncatingConfigCannotMonopoliseTheLoop` exists to
+    prevent, restored through the ordering it feeds.
+
+    The suite could not see it because STALLING_CONFIG has 20 URLs, which lands
+    in the range where the budget expires INSIDE a config and the attribution is
+    incidentally right. These tests use the boundary shape instead, and find it by
+    sweeping rather than hardcoding a count, so retuning the budget constants
+    cannot quietly make them vacuous.
+    """
+
+    # URL counts swept for a config whose stalls end with the budget exactly gone.
+    # A range, not the measured 5: the boundary moves with the budget constants and
+    # the retry curve, and a test pinned to one count would silently stop measuring
+    # the boundary rather than fail.
+    _BOUNDARY_SWEEP = range(3, 12)
+
+    @staticmethod
+    def _pair(stalling_urls):
+        return [
+            {**CSS_CONFIG, 'id': 'A', 'name': 'Alpha', 'frequency_minutes': 60,
+             'urls': [f'https://slow.example/{n}' for n in range(stalling_urls)]},
+            {**CSS_CONFIG, 'id': 'B', 'name': 'Bravo', 'frequency_minutes': 60,
+             'urls': ['https://okb.example/a']},
+        ]
+
+    @classmethod
+    def _boundary_runs(cls, ingestor):
+        """
+        Every swept URL count in which config B made NO request, with what the run
+        recorded for it.
+
+        Yields `(count, watermarks, rows)`. B making no request is precisely the
+        condition under which the old code blamed it, so these are the shapes the
+        assertions below are about.
+        """
+        for count in cls._BOUNDARY_SWEEP:
+            watermarks: dict = {}
+            requested: list = []
+            rows: list = []
+            TestRunBoundsTheWholeInvocation._run_on_a_fake_clock(
+                ingestor,
+                cls._pair(count),
+                serve=lambda url: (
+                    _response(200, text=REVIEW_HTML) if 'okb' in url else None
+                ),
+                watermarks=watermarks,
+                requested=requested,
+                rows=rows,
+            )
+            if not any('okb' in url for url in requested):
+                yield count, watermarks, rows
+
+    def test_the_boundary_shape_is_reachable(self, ingestor):
+        """
+        Positive control on the sweep. If no swept count leaves the second config
+        unattempted, every assertion below is about a situation that never occurs,
+        and this class would pass while measuring nothing.
+        """
+        counts = [count for count, _wm, _rows in self._boundary_runs(ingestor)]
+
+        assert counts, (
+            f'no URL count in {self._BOUNDARY_SWEEP} exhausted the budget at a '
+            f'config boundary — the sweep no longer reaches the case these tests '
+            f'are about'
+        )
+
+    def test_the_marker_names_the_config_that_spent_the_budget(self, ingestor):
+        """
+        The mechanism, asserted for every boundary shape rather than one measured
+        count: the demotion is only fair if it names the culprit.
+        """
+        for count, watermarks, _rows in self._boundary_runs(ingestor):
+            marked = [k for k in watermarks if k.endswith('_last_truncated')]
+
+            assert marked == ['scraper_A_last_truncated'], (
+                f'with {count} stalling URLs the truncation was attributed to '
+                f'{marked} — the config that made no request'
+            )
+
+    def test_a_config_that_made_no_request_reports_nothing(self, ingestor):
+        """
+        A config the budget never let start has neither run nor been truncated, so
+        it must claim neither. It reported `completed_with_errors` over "N URL(s)
+        not attempted" — naming itself for a budget another config spent, which is
+        what an operator reads when deciding which scraper is misbehaving.
+        """
+        for count, watermarks, rows in self._boundary_runs(ingestor):
+            terminal_b = [
+                updates for scraper_id, updates in rows
+                if scraper_id == 'B' and 'status' in updates
+            ]
+
+            assert not terminal_b, (
+                f'with {count} stalling URLs an unattempted config wrote a '
+                f'terminal row: {terminal_b}'
+            )
+            # And it stays due, which is the other half of "reports nothing".
+            assert 'scraper_B_last_run' not in watermarks
+
+    def test_the_config_behind_a_boundary_stall_is_eventually_fetched(
+        self, ingestor
+    ):
+        """
+        The outcome, across real scheduled invocations and asserted on URLs actually
+        REQUESTED. The marker being on the wrong config made the loop order
+        permanent: ('A', 'B') on all 40 invocations, B fetched 0 times.
+        """
+        count = next(count for count, _wm, _rows in self._boundary_runs(ingestor))
+        requested, _watermarks = TestATruncatingConfigCannotMonopoliseTheLoop()\
+            ._invoke_repeatedly(ingestor, self._pair(count), times=4)
+
+        assert any('okb' in url for url in requested), (
+            'the config behind a boundary-stalling one was never fetched, so the '
+            'truncation is still attributed to it rather than to the culprit'
+        )
+
+    def test_the_stalling_config_is_still_retried(self, ingestor):
+        """
+        The guarantee the attribution fix must not trade away: demoting the culprit
+        must not stop it being attempted.
+        """
+        count = next(count for count, _wm, _rows in self._boundary_runs(ingestor))
+        requested, _watermarks = TestATruncatingConfigCannotMonopoliseTheLoop()\
+            ._invoke_repeatedly(ingestor, self._pair(count), times=4)
+
+        assert any('slow.example' in url for url in requested)
+
+    def test_the_budget_metric_still_fires_once_at_the_boundary(self, ingestor):
+        """
+        The truncation is real even where no config's own URL loop reports it, so
+        the alertable counter must still be emitted — exactly once, since the
+        invocation stops.
+        """
+        count = next(count for count, _wm, _rows in self._boundary_runs(ingestor))
+
+        with patch('webscraper.ingestor.handler.metrics.add_metric') as mock_metric:
+            TestRunBoundsTheWholeInvocation._run_on_a_fake_clock(
+                ingestor,
+                self._pair(count),
+                serve=lambda url: (
+                    _response(200, text=REVIEW_HTML) if 'okb' in url else None
+                ),
+            )
+
+        exhausted = [
+            call for call in mock_metric.call_args_list
+            if call.kwargs.get('name') == 'ScraperRunBudgetExhausted'
+        ]
+        assert len(exhausted) == 1, (
+            f'expected one budget-exhausted metric, got {len(exhausted)}'
+        )
+
+
+class TestAnUnusableConfigArrayStillReportsATerminalStatus:
+    """
+    A stored array with no usable config must take the error branch, not neither.
+
+    `_configs_in_fairness_order` filters non-dict entries, but `fetch_new_items`'
+    empty-guard still tested the UNFILTERED `self.scraper_configs` — so an array of
+    entirely non-dict entries satisfied the guard (non-empty) and then iterated
+    nothing. A manual run had already written a `status: 'running'` row, and nothing
+    terminal was ever written for it: the same abandoned row the run budget exists
+    to prevent, reached by a different route, and nothing reconciles one.
+
+    Defence in depth rather than a reachable path today — `_load_scraper_configs`
+    calls `c.get('enabled', True)` and so raises AttributeError on such an entry
+    first. It is tested because the filter was added AS defence, and as written it
+    converted one unreachable failure into a different silent one.
+    """
+
+    def test_an_all_malformed_array_writes_a_terminal_error_row(self, ingestor):
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 's1'
+        ingestor.scraper_configs = ['not-a-dict', 42]
+
+        statuses = []
+        with (
+            patch.object(
+                ingestor, '_update_run_status', lambda _id, u: statuses.append(u)
+            ),
+            patch.object(ingestor, 'set_watermark'),
+            patch.object(ingestor, 'get_watermark', lambda key, default=None: default),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        assert items == []
+        assert statuses, 'no terminal status was written, so the run row stays running'
+        assert statuses[-1]['status'] == 'error'
+        assert statuses[-1]['errors'] == ['No scraper configuration found']
+
+    def test_a_usable_config_alongside_a_malformed_one_still_runs(self, ingestor):
+        """
+        The filter must drop the unusable entry, not the run. Reporting `error` for
+        an array that also holds a working config would turn defence into an
+        outage.
+        """
+        ingestor.scraper_configs = [
+            'not-a-dict', {**CSS_CONFIG, 'urls': ['https://ok.example/a']},
+        ]
+
+        with (
+            patch('shared.http_utils.requests.request',
+                  return_value=_response(200, text=REVIEW_HTML)),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch.object(ingestor, '_update_run_status'),
+            patch.object(ingestor, 'set_watermark'),
+            patch.object(ingestor, 'get_watermark', lambda key, default=None: default),
+            patch('webscraper.ingestor.handler.time.sleep'),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        assert len(items) == 1
+
+    def test_an_ordinary_run_is_unaffected(self, ingestor):
+        """
+        Positive control on moving the guard: it now reads a DERIVED list, so a bug
+        in the derivation would report "no configuration" for a healthy account.
+        """
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 's1'
+        ingestor.scraper_configs = [{**CSS_CONFIG, 'urls': ['https://ok.example/a']}]
+
+        statuses = []
+        with (
+            patch('shared.http_utils.requests.request',
+                  return_value=_response(200, text=REVIEW_HTML)),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch.object(
+                ingestor, '_update_run_status', lambda _id, u: statuses.append(u)
+            ),
+            patch.object(ingestor, 'set_watermark'),
+            patch.object(ingestor, 'get_watermark', lambda key, default=None: default),
+            patch('webscraper.ingestor.handler.time.sleep'),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        assert len(items) == 1
+        assert statuses[-1]['status'] == 'completed'
 
 
 class TestRunReportsABlockedUrl:

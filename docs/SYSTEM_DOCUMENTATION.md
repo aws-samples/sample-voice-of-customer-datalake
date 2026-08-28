@@ -600,9 +600,17 @@ The policy itself:
   healthy configurations reached across 20 scheduled invocations). Configurations that
   have never truncated keep their stored order, and the marker is cleared once a
   configuration gets through all of its URLs, so one slow day does not demote it
-  permanently. A `ScraperRunBudgetExhausted` metric
+  permanently. The marker names the configuration that **spent** the budget, not the one
+  that discovered it was gone: a configuration exhausting the budget while still finishing
+  its own URL list leaves the next one to find nothing left, and that one has requested
+  nothing — so it writes no run row and no watermark, staying due, instead of reporting
+  "N URL(s) not attempted" about itself and being demoted in the culprit's place.
+  A `ScraperRunBudgetExhausted` metric
   makes a persistently truncating account alertable — for a scheduled run the run row is
   not written at all, so the logs and this metric are the only signal.
+- A stored configuration array with no usable entry reports an `error` run instead of
+  iterating nothing, so a manual run's row is not abandoned at `running`; an unusable entry
+  beside working ones is dropped and logged at ERROR and the working ones still run.
 - At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
   write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
   limit. Enforced only on a list the write changes, so a pre-existing longer list keeps

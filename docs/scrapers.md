@@ -227,10 +227,19 @@ What the policy accepts and refuses:
   configuration is still retried immediately, and the ones behind it get the budget first.
   Configurations that have never truncated keep their stored order, and the record is
   cleared as soon as a configuration completes all of its URLs, so a site that was slow
-  once is not demoted for ever. A
+  once is not demoted for ever. The configuration moved back is the one that **spent** the
+  budget, which is not always the one the shortage is noticed on: a configuration that
+  consumes the whole budget while still finishing its own URL list leaves the next one to
+  discover it, and that one has requested nothing. It is therefore reported as neither run
+  nor truncated — no run row, no watermark — so it simply stays due, rather than being
+  blamed for a budget another configuration spent and demoted in its place. A
   `ScraperRunBudgetExhausted` metric is emitted so an account that truncates on every
   schedule can be alerted on — a scheduled run writes no run row, so otherwise only the
   logs would show it.
+- A stored configuration array holding nothing usable reports an `error` run rather than
+  finishing silently, so a manually triggered run cannot be left at `running` with nothing
+  to reconcile it. An unusable entry alongside working ones is dropped and logged, and the
+  working ones still run.
 - A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
   DNS lookup inside the saving request, and both write routes answer through API
   Gateway's 29 second limit; identical hosts within one write are resolved once. The
