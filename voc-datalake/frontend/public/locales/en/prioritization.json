@@ -103,7 +103,7 @@
     "absent": "No lineage",
     "absentReason": "None of these documents records what it was built from — the usual answer for a hand-authored document, or one created before lineage was recorded. The row is still scorable; there is simply nothing to check the combination against.",
     "coherent": "One generation",
-    "coherentReason": "Nothing in this row crosses generations: no two documents are versions of the same type, and nothing recorded here points at a different generation. One ballot covers one generation of the idea.",
+    "coherentReason": "Nothing in this row crosses generations: no two documents are versions of the same type, and nothing recorded here points at a different generation of another document in this row. One ballot covers one generation of the idea.",
     "crossGeneration": "Crosses generations",
     "repeatedTypeReason": "This row holds more than one version of the same document type, so one ballot covers two generations at once. It is still scorable — add a row if you want a single generation on its own.",
     "stale": "Superseded",

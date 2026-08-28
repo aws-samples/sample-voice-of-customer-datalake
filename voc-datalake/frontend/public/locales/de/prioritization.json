@@ -103,7 +103,7 @@
     "absent": "Keine Herkunft",
     "absentReason": "Keines dieser Dokumente hält fest, woraus es erstellt wurde — die übliche Antwort für ein handgeschriebenes Dokument oder ein Dokument, das vor der Erfassung der Herkunft entstanden ist. Die Zeile ist weiterhin bewertbar; es gibt lediglich nichts, womit sich die Kombination prüfen ließe.",
     "coherent": "Eine Generation",
-    "coherentReason": "In dieser Zeile überschreitet nichts Generationsgrenzen: keine zwei Dokumente sind Versionen desselben Typs, und keine erfasste Quelle verweist auf eine andere Generation. Ein Stimmzettel deckt eine Generation der Idee ab.",
+    "coherentReason": "In dieser Zeile überschreitet nichts Generationsgrenzen: keine zwei Dokumente sind Versionen desselben Typs, und keine erfasste Quelle verweist auf eine andere Generation eines anderen Dokuments in dieser Zeile. Ein Stimmzettel deckt eine Generation der Idee ab.",
     "crossGeneration": "Überschreitet Generationen",
     "repeatedTypeReason": "Diese Zeile enthält mehr als eine Version desselben Dokumenttyps, ein Stimmzettel deckt also zwei Generationen gleichzeitig ab. Sie ist weiterhin bewertbar — fügen Sie eine Zeile hinzu, wenn Sie eine einzelne Generation separat bewerten möchten.",
     "stale": "Überholt",
