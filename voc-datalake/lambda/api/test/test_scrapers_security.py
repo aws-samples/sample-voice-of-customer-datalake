@@ -1,4 +1,33 @@
-"""Every mutating /scrapers route is admin-gated.
+"""Every mutating route in `scrapers_handler` is admin-gated.
+
+SCOPE, first, because the module name and the URL prefix do not line up: this file
+covers `scrapers_handler` ONLY. `/scrapers/*` is served by TWO Lambdas — five more
+routes under the same prefix live in `manual_import_handler`
+(`/scrapers/manual/parse`, `.../parse/<job_id>`, `.../confirm`, `.../csv-upload`,
+`.../json-upload`), and none of them calls `require_admin`. Measured as a caller
+whose only `cognito:groups` claim is `users`:
+
+    POST /scrapers/manual/csv-upload → 200, one s3.put_object + one SQS batch
+    POST /scrapers/manual/confirm    → 200, one s3.put_object
+    POST /scrapers/manual/parse      → 200, one job row + one async invoke
+
+So the eight-route inventory below is NOT an all-clear for the URL prefix, and the
+`ast` pass cannot say so on its own: it parses one module, and no parse of one
+module can notice a sibling serving the same prefix. `TestTheInventoryIsOneHandlers`
+asserts the boundary explicitly so a reader inherits a known scope rather than a
+false one.
+
+Those five are left ungated deliberately, as a different question rather than the
+same gap: they write feedback CONTENT into the ingestion pipeline (S3 plus the
+enrichment queue that Bedrock drains) and reach neither the shared API-credentials
+secret nor any plugin resource — which is the whole basis on which the three routes
+here were gated. Every content-ingestion route in this tree is open to an
+authenticated user on that basis (`POST /feedback-forms`,
+`POST /s3-import/upload-url`, both verified 200 as `users`), so gating only the
+manual-import three would create exactly the arbitrary boundary this change closed
+for the secret — one that depends on which page a write arrived from. Whether
+content ingestion as a whole should be admin-only is a product decision across
+several handlers and their pages, not a rider on a secret-isolation fix.
 
 `scrapers_handler` writes the SAME shared API-credentials secret that
 `integrations_handler` does — `POST /scrapers` and `DELETE /scrapers/<id>` both
@@ -39,6 +68,13 @@ REVERT MAP — each assertion below names the mutation it catches:
   TestTheReadRoutesStayOpen
     — gates a read. Without it, `require_admin` on all eight routes would satisfy
       every assertion above while blanking the Scrapers page for non-admins.
+
+  TestTheInventoryIsOneHandlers
+    — lets a reader take the eight-route inventory for the whole `/scrapers/*`
+      prefix. It is not: `manual_import_handler` serves five more, ungated. Pins
+      that module's own inventory too, so if one of ITS routes later grows a
+      `require_admin` — making the recorded scope stale — this fails and the
+      docstring above has to be re-derived rather than left contradicting the code.
 """
 import ast
 import inspect
@@ -243,14 +279,20 @@ def _route_path_of(decorator: ast.expr) -> str | None:
     return path if isinstance(path, str) else None
 
 
-def _route_functions() -> dict[str, ast.FunctionDef]:
+def _route_functions(module=None) -> dict[str, ast.FunctionDef]:
     """Every module-level function carrying an `@app.<method>("<path>")` decorator.
 
     Parsed rather than read off the resolver, because the resolver records a
     route's path and handler but not the guards inside the handler's body, which
     is the thing under test.
+
+    Takes a module so `TestTheInventoryIsOneHandlers` can point it at
+    `manual_import_handler` — the sibling serving the other half of the
+    `/scrapers/*` prefix — with the same parser rather than a second one that could
+    disagree with this one about what a route is. Defaults to `scrapers_handler`,
+    which every other caller means.
     """
-    tree = ast.parse(inspect.getsource(_handler_module()))
+    tree = ast.parse(inspect.getsource(module or _handler_module()))
     return {
         node.name: node
         for node in tree.body
@@ -276,6 +318,21 @@ SCRAPER_WRITE_ROUTES = {
     'save_scraper',
     'delete_scraper',
     'run_scraper',
+}
+
+# `manual_import_handler`'s routes, all under `/scrapers/manual/`, and — as of this
+# change — the complete set of `/scrapers/*` routes NOT covered by anything else in
+# this file. Recorded as data rather than prose so that a change to either the
+# inventory or its gate state fails an assertion instead of quietly making the
+# scope paragraph in the module docstring wrong. Module level, beside
+# SCRAPER_WRITE_ROUTES, because the two are the same kind of thing: a judgement no
+# parse can make.
+MANUAL_IMPORT_ROUTES = {
+    'start_parse',
+    'get_parse_status',
+    'confirm_import',
+    'csv_upload',
+    'json_upload',
 }
 
 
@@ -339,3 +396,72 @@ class TestEveryScraperWriteIsAdminGated:
             f'{route} is a read; gating it would blank the Scrapers page for a '
             'non-admin. Move it to SCRAPER_WRITE_ROUTES if that is intended.'
         )
+
+
+class TestTheInventoryIsOneHandlers:
+    """The eight routes above are `scrapers_handler`'s, not `/scrapers/*`'s.
+
+    Every other assertion in this file is scoped to one module, and nothing in a
+    one-module parse can reveal that a SECOND Lambda serves the same URL prefix. A
+    reader arriving at `TestScraperRouteCoverageIsComplete` would reasonably read
+    its eight-route equality as covering `/scrapers/*`; it does not. These cases
+    make the real boundary an assertion rather than a paragraph.
+    """
+
+    @staticmethod
+    def _manual_import_module():
+        import manual_import_handler
+        return manual_import_handler
+
+    def test_a_second_handler_serves_the_same_url_prefix(self):
+        """The scope claim itself, as data.
+
+        If `manual_import_handler`'s inventory changes, the docstring at the top of
+        this file is describing routes that no longer exist and has to be
+        re-derived.
+        """
+        found = set(_route_functions(self._manual_import_module()))
+        assert found == MANUAL_IMPORT_ROUTES
+
+        paths = [
+            path
+            for node in _route_functions(self._manual_import_module()).values()
+            for path in (_route_path_of(d) for d in node.decorator_list)
+            if path is not None
+        ]
+        assert all(path.startswith('/scrapers/') for path in paths), (
+            'this class exists because those routes share the /scrapers/ prefix; '
+            f'they no longer all do: {paths}'
+        )
+
+    def test_none_of_them_is_admin_gated_and_that_is_recorded_not_assumed(self):
+        """The state the docstring above describes, pinned.
+
+        Deliberately asserts the ABSENCE. Gating those routes may well be right —
+        they write feedback content into the pipeline — but it is a decision about
+        content ingestion across several handlers and their pages, not a rider on a
+        secret-isolation fix. This is what stops that decision being made silently:
+        adding a gate to one of them fails here, and whoever adds it has to update
+        the scope paragraph rather than leave this file asserting a stale claim.
+        """
+        gated = {
+            name
+            for name, node in _route_functions(self._manual_import_module()).items()
+            if 'require_admin' in _calls_in(node)
+        }
+        assert gated == set(), (
+            f'{sorted(gated)} is now admin-gated. That may be correct — but the '
+            'scope paragraph in this module docstring says the manual-import '
+            'routes are ungated, and it is now wrong. Update it, and consider '
+            'whether the rest of that set should follow.'
+        )
+
+    def test_the_control_the_parser_reaches_that_module_at_all(self):
+        """Non-vacuity for the assertion above.
+
+        `gated == set()` passes just as well over an EMPTY parse — a renamed `app`,
+        a decorator style change, an import that silently fails. The inventory
+        equality in the first case is the real guard; this states the minimum
+        directly so the failure names the cause.
+        """
+        assert len(_route_functions(self._manual_import_module())) == len(MANUAL_IMPORT_ROUTES)

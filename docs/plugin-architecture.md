@@ -2050,11 +2050,15 @@ as a 403, but that is presentation only. Both properties are pinned by an `ast` 
 route decorators in `test_integrations_security.py`, so a route added later is asserted rather
 than forgotten — which is how the five unguarded ones came to look like deliberate scoping.
 
-#### The same split applies to `/scrapers/*`
+#### The same split applies to `scrapers_handler`
 
 `scrapers_handler` writes the **same** shared secret, so it carries the same rule and its own
 `ast` pass (`test_scrapers_security.py`). Gating one handler and not the other would make the
 boundary depend on which handler a write arrived through rather than on what it changed.
+
+Titled for the **handler**, not for `/scrapers/*`: that URL prefix is served by two Lambdas, and
+this table covers one of them. `manual_import_handler` owns `/scrapers/manual/*` and is listed
+separately below.
 
 | Route | `require_admin` | Why |
 |-------|-----------------|-----|
@@ -2068,6 +2072,26 @@ boundary depend on which handler a write arrived through rather than on what it 
 and reaches no secret key or function name — only a `SCRAPER_RUN#` partition and the invoke
 payload, where the webscraper matches it against its own configured list, so an unknown id is a
 run that finds nothing. The admin gate is what bounds who can write those partitions.
+
+#### `/scrapers/manual/*` is a second handler, and is **not** gated
+
+| Route | `require_admin` | Why |
+|-------|-----------------|-----|
+| `POST /scrapers/manual/parse`, `.../confirm`, `.../csv-upload`, `.../json-upload` | **no** | writes feedback **content** into the pipeline (S3 + the enrichment queue); reaches neither the shared secret nor any plugin resource |
+| `GET /scrapers/manual/parse/<job_id>` | **no** | reads the caller's own parse job |
+
+Recorded rather than fixed, and the distinction is the reason. The three gated routes above were
+gated because they reach a **credential namespace** or **invoke a plugin**; these reach neither.
+Content ingestion is open to any authenticated user everywhere in this tree — `POST /feedback-forms`
+and `POST /s3-import/upload-url` answer 200 to a `users`-group caller on the same basis — so gating
+only the manual-import routes would reintroduce a boundary that depends on which page a write came
+from, which is exactly what this change removed for the secret. Whether content ingestion as a whole
+should be admin-only is a product decision spanning several handlers and their pages.
+
+Asserted, not merely written down: `test_scrapers_security.py::TestTheInventoryIsOneHandlers` pins
+both this handler's route inventory and the fact that none of its routes is gated, so adding a gate
+to one of them fails and forces this section to be re-derived. The `ast` pass cannot see across
+module boundaries, which is why the scope needs stating at all.
 
 ### Cost Controls
 

@@ -19,6 +19,17 @@ own configuration and run history to an authenticated user, which the Scrapers
 page renders for everyone. Pinned by
 `test/test_scrapers_security.py::TestEveryScraperWriteIsAdminGated`, which parses
 the decorators so a route added later cannot quietly arrive ungated.
+
+SCOPE — the split above is THIS MODULE's, not the `/scrapers/*` URL prefix's. Five
+more routes under that prefix live in `manual_import_handler.py`
+(`/scrapers/manual/parse`, `.../parse/<job_id>`, `.../confirm`, `.../csv-upload`,
+`.../json-upload`) and none of them calls `require_admin`. That is a DIFFERENT
+question rather than the same gap: those routes write feedback CONTENT into the
+pipeline (S3 plus the enrichment queue) and touch neither the shared secret nor
+any plugin resource, which is why they were not folded into this change — see
+`test/test_scrapers_security.py`, whose inventory case asserts that boundary so a
+reader is not told the prefix is fully covered when only this handler is. The
+`ast` pass cannot see across module boundaries, so nothing else would say so.
 """
 
 import ipaddress

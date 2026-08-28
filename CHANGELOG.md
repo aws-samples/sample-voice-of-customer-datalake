@@ -119,9 +119,15 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `{source}` routes above would have left the boundary depending on which handler a write arrived
   through rather than on what it changed. The `GET` routes and `POST /scrapers/analyze-url` stay open
   to match the read/write split, and the Run and Delete controls on each scraper card are now disabled
-  for a non-admin. `scraper_id` is deliberately not allowlisted the way `{source}` is: it is not a
-  plugin id and reaches no secret key or function name, only a `SCRAPER_RUN#` partition and the invoke
-  payload, where the webscraper resolves it against its own configured list.
+  for a non-admin — as is **Save in the scraper editor**, which is the only UI entrance to
+  `POST /scrapers` and was the worst of the three: the editor closed as though the change had been
+  stored, because it closes unconditionally and its mutation surfaces no error, so a non-admin's edit
+  was discarded silently. `scraper_id` is deliberately not allowlisted the way `{source}` is: it is
+  not a plugin id and reaches no secret key or function name, only a `SCRAPER_RUN#` partition and the
+  invoke payload, where the webscraper resolves it against its own configured list. `/scrapers/manual/*`
+  is a **second** handler and is deliberately not covered: those routes write feedback content into
+  the ingestion pipeline and reach neither the shared secret nor any plugin resource, which is the
+  basis on which the three above were gated — see `docs/plugin-architecture.md`.
 - A plugin's `plugin.failed` audit event is no longer lost when the circuit breaker's own DynamoDB
   lookup fails. The three reporting steps for a construction failure shared one `try`, and
   `record_failure` is not exception-safe on its first line (it resolves its table in a property,
@@ -166,7 +172,9 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `POST /scrapers/{scraper_id}/run` answer 403 outside the `admins` group, while `GET /scrapers`, the
   status and run-history reads and `POST /scrapers/analyze-url` stay open. On the Settings page the
   Enabled toggle is now disabled for a non-admin, where it previously issued a request that failed
-  silently.
+  silently — and in the scraper editor so is Save, where the modal previously closed as though the
+  edit had been saved. The manual-import routes (`/scrapers/manual/*`, a different Lambda) are
+  unaffected and stay open to any authenticated caller.
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
   `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
   too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty
