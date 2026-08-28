@@ -119,13 +119,34 @@ const fromDocument = (id: string) => ({
   },
 })
 
+/**
+ * One project document, as the project read supplies it.
+ *
+ * `derivation` is declared OPTIONAL rather than inferred, because the two shapes a
+ * case needs are on opposite sides of that: `extra` carries the field for a document
+ * that records its lineage, and the legacy fixtures strip it off again for one that
+ * cannot. Inferred from the literal, the spread of `extra` leaves the field
+ * statically unknown, and destructuring it off is a `typecheck:tests` error (TS2339)
+ * even though it is exactly the right runtime operation. Optional and not
+ * `unknown`-valued, so a stripped fixture OMITS the key rather than setting it to
+ * `undefined` — which is what the lineage-absent cases assert about.
+ */
+interface FixtureDocument {
+  readonly document_id: string
+  readonly document_type: string
+  readonly title: string
+  readonly content: string
+  readonly created_at: string
+  readonly derivation?: unknown
+}
+
 const doc = (
   id: string,
   type: string,
   title: string,
   createdAt: string,
   extra: Record<string, unknown> = {},
-) => ({
+): FixtureDocument => ({
   document_id: id,
   document_type: type,
   title,
