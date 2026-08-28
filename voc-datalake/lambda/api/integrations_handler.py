@@ -351,7 +351,7 @@ def get_integration_status():
         status = {}
         for source, seeded in _plugin_secret_defaults().items():
             prefix = f"{source}_"
-            # ponytail: plain prefix match, so if one plugin id were ever a
+            # CAVEAT: plain prefix match, so if one plugin id were ever a
             # prefix of another ('app_reviews' alongside 'app_reviews_ios') the
             # shorter one would also list the longer one's keys. No current id
             # pair does this, and `loadPlugins` now refuses such a manifest pair at

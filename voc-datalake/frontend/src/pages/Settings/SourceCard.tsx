@@ -22,11 +22,21 @@ import type { PluginManifest, ConfigField, SetupInfo, WebhookInfo } from '../../
 interface SourceCardProps {
   readonly manifest: PluginManifest
   readonly apiEndpoint: string
-  /** Whether the current user is an admin. Two things depend on it: the
-   *  integration-status query is admin-gated server-side, so a non-admin does not
-   *  issue it (avoiding a 403), and `PUT /sources/{source}/enable|disable` behind
-   *  the Enabled toggle is admin-gated too, so the toggle is disabled rather than
-   *  firing a request that fails. */
+  /** Whether the current user is an admin. THREE things depend on it, all three
+   *  because the route behind them is admin-gated server-side:
+   *
+   *    1. the integration-status query (`GET /integrations/status`) is not issued
+   *       at all by a non-admin, avoiding a 403;
+   *    2. the Enabled toggle (`PUT /sources/{source}/enable|disable`) is disabled
+   *       rather than firing a request that fails;
+   *    3. `Save to Secrets Manager` in `CredentialsSection`
+   *       (`PUT /integrations/{source}/credentials`) likewise.
+   *
+   *  (3) is the worst of the three to leave ungated and was the last one found:
+   *  `updateCredentialsMutation` has an `onSuccess` but no `onError`, so its 403
+   *  rendered nothing — a non-admin typed a credential, clicked Save, and got no
+   *  indication it had been refused. A disabled control fails visibly; that one
+   *  failed silently. */
   readonly isAdmin: boolean
 }
 
@@ -50,6 +60,26 @@ function getSaveButtonIcon(isPending: boolean, saveSuccess: boolean): React.Reac
 function getSaveButtonText(saveSuccess: boolean): { full: string; short: string } {
   if (saveSuccess) return { full: 'Saved!', short: 'Saved!' }
   return { full: 'Save to Secrets Manager', short: 'Save' }
+}
+
+/**
+ * Whether `Save to Secrets Manager` is available, and if not, whether to say why.
+ *
+ * A helper rather than two expressions inline, so the admin reason and the two
+ * ordinary ones are decided in one place: a `title` that outlived its condition
+ * would tell a non-admin their access was refused while the button worked, or the
+ * reverse. (It also keeps `CredentialsSection` under the complexity limit.)
+ *
+ * `title` is set ONLY for the admin case. Pending and empty-form are transient and
+ * evident from the form itself; the 403 behind `PUT /integrations/{source}/credentials`
+ * is neither, and is the one a user cannot otherwise discover — that mutation has no
+ * `onError`, so before this gate the refusal rendered nothing at all.
+ */
+function getSaveButtonState(
+  isPending: boolean, hasCredentials: boolean, isAdmin: boolean
+): { disabled: boolean; title?: string } {
+  if (!isAdmin) return { disabled: true, title: ADMIN_ONLY_TITLE }
+  return { disabled: isPending || !hasCredentials }
 }
 
 // ============================================
@@ -147,6 +177,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
               showSecrets={showSecrets}
               sourceStatus={sourceStatus}
               saveSuccess={saveSuccess}
+              isAdmin={isAdmin}
               testMutation={testMutation}
               updateCredentialsMutation={updateCredentialsMutation}
               onCredentialsChange={setCredentials}
@@ -285,6 +316,11 @@ interface CredentialsSectionProps {
   readonly showSecrets: boolean
   readonly sourceStatus: { configured?: boolean } | undefined
   readonly saveSuccess: boolean
+  /** `PUT /integrations/{source}/credentials` behind Save is admin-gated
+   *  server-side, so Save is disabled for a non-admin rather than issuing a
+   *  request that 403s. Only Save: the fields stay editable (a non-admin can
+   *  already read them) and `POST /integrations/{source}/test` is not gated. */
+  readonly isAdmin: boolean
   readonly testMutation: { isPending: boolean; data?: { success: boolean; message?: string; error?: string }; mutate: () => void }
   readonly updateCredentialsMutation: { isPending: boolean; mutate: (creds: Record<string, string>) => void }
   readonly onCredentialsChange: (creds: Record<string, string>) => void
@@ -292,12 +328,15 @@ interface CredentialsSectionProps {
 }
 
 function CredentialsSection({
-  fields, credentials, showSecrets, sourceStatus, saveSuccess, testMutation, updateCredentialsMutation,
+  fields, credentials, showSecrets, sourceStatus, saveSuccess, isAdmin, testMutation, updateCredentialsMutation,
   onCredentialsChange, onToggleSecrets
 }: CredentialsSectionProps) {
   const saveIcon = getSaveButtonIcon(updateCredentialsMutation.isPending, saveSuccess)
   const saveText = getSaveButtonText(saveSuccess)
   const saveButtonClass = saveSuccess ? 'bg-green-600 text-white' : 'btn-primary'
+  const saveState = getSaveButtonState(
+    updateCredentialsMutation.isPending, Object.keys(credentials).length > 0, isAdmin
+  )
 
   return (
     <div>
@@ -324,7 +363,8 @@ function CredentialsSection({
           </button>
           <button
             onClick={() => updateCredentialsMutation.mutate(credentials)}
-            disabled={updateCredentialsMutation.isPending || Object.keys(credentials).length === 0}
+            disabled={saveState.disabled}
+            title={saveState.title}
             className={clsx('btn flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2', saveButtonClass)}
           >
             {saveIcon}

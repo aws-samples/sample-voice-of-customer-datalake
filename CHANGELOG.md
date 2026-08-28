@@ -111,6 +111,14 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   Run, Add, Save and Delete controls and the schedule toggle are now disabled for a non-admin, with
   the reason on hover, rather than issuing a request that 403s — and so is the Enabled toggle on the
   Settings page's source cards, which is the other UI caller of `enable|disable`.
+- `Save to Secrets Manager` on the Settings page's source cards is now disabled for a non-admin.
+  `PUT /integrations/{source}/credentials` behind it was already admin-gated, so unlike the toggle
+  above this was not a regression — the control had always behaved this way, and it was the last
+  ungated UI entrance to an admin-gated route. It was also the least visible failure of the set:
+  that mutation has an `onSuccess` but no `onError`, so the 403 rendered no message and the button
+  merely never became `Saved!` — a non-admin typed a credential, clicked Save, and got no indication
+  it had been refused. The credential fields stay editable and `Test` stays available, because
+  `POST /integrations/{source}/test` is not gated and a non-admin can already read those fields.
 - `POST /scrapers`, `DELETE /scrapers/{scraper_id}` and `POST /scrapers/{scraper_id}/run` now require
   the `admins` group. No route in that handler had a gate, while two of them `put_secret_json` the
   SAME shared API-credentials secret the credentials routes protect — rewriting `webscraper_configs`,
@@ -172,9 +180,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `POST /scrapers/{scraper_id}/run` answer 403 outside the `admins` group, while `GET /scrapers`, the
   status and run-history reads and `POST /scrapers/analyze-url` stay open. On the Settings page the
   Enabled toggle is now disabled for a non-admin, where it previously issued a request that failed
-  silently — and in the scraper editor so is Save, where the modal previously closed as though the
-  edit had been saved. The manual-import routes (`/scrapers/manual/*`, a different Lambda) are
-  unaffected and stay open to any authenticated caller.
+  silently — as is `Save to Secrets Manager` on the same card, whose route was already admin-gated
+  but whose refusal rendered no message at all — and in the scraper editor so is Save, where the
+  modal previously closed as though the edit had been saved. The manual-import routes
+  (`/scrapers/manual/*`, a different Lambda) are unaffected and stay open to any authenticated caller.
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
   `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
   too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty

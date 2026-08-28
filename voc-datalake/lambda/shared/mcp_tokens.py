@@ -71,7 +71,7 @@ _TOKEN_PART_COUNT: Final = 4
 # what keeps them out of `projects.list_projects` (it queries the
 # `TYPE#PROJECT` GSI, so an unindexed row is invisible to it).
 #
-# ponytail: single hot partition for all tokens. Ceiling is per-partition
+# SCALING: single hot partition for all tokens. Ceiling is per-partition
 # throughput (~3 000 RCU), which the endpoint's own 20 rps stage throttle sits
 # three orders of magnitude below. Upgrade path if tokens ever number in the
 # thousands: shard the pk by a prefix of the token id, which changes only the

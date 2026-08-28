@@ -33,7 +33,7 @@ so neither base class can drift from the other:
 
 What this boundary does NOT guarantee:
 
-  ponytail: the scan is a plain prefix match, so if one plugin id were ever a
+  CAVEAT: the scan is a plain prefix match, so if one plugin id were ever a
   PREFIX of another (`app_reviews` alongside the existing `app_reviews_ios`) the
   shorter one would also receive the longer one's keys, under mangled names
   (`app_reviews_ios_app_id` arriving as `ios_app_id`). No current id pair does
