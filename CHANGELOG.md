@@ -161,7 +161,12 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `PUT /sources/{source}/enable|disable` and `POST`/`DELETE /integrations/{source}/apps`. Listing app
   configs (`GET /integrations/{source}/apps`) is unchanged and still open to any authenticated
   caller. A non-admin who previously used the Scrapers page to run a source or edit an app config now
-  sees those controls disabled; a script doing the same needs admin credentials.
+  sees those controls disabled; a script doing the same needs admin credentials. The same applies to
+  the scraper routes: `POST /scrapers`, `DELETE /scrapers/{scraper_id}` and
+  `POST /scrapers/{scraper_id}/run` answer 403 outside the `admins` group, while `GET /scrapers`, the
+  status and run-history reads and `POST /scrapers/analyze-url` stay open. On the Settings page the
+  Enabled toggle is now disabled for a non-admin, where it previously issued a request that failed
+  silently.
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
   `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
   too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty

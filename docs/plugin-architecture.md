@@ -2044,11 +2044,30 @@ a Secrets Manager key (`<source>_configs`), an ingestor Lambda name
 | `PUT /sources/<source>/enable\|disable` | yes | disabling silently stops ingestion |
 | `GET /integrations/<source>/apps` | **no** | the Scrapers page lists configs for everyone; a config holds a public app-store id and a display name, not a credential |
 
-The gate is the server's. The Scrapers page also disables the corresponding controls for a
-non-admin so the reason is visible on hover rather than arriving as a 403, but that is
-presentation only. Both properties are pinned by an `ast` pass over the route decorators in
-`test_integrations_security.py`, so a route added later is asserted rather than forgotten —
-which is how the five unguarded ones came to look like deliberate scoping.
+The gate is the server's. The Scrapers page and the Settings page also disable the
+corresponding controls for a non-admin so the reason is visible on hover rather than arriving
+as a 403, but that is presentation only. Both properties are pinned by an `ast` pass over the
+route decorators in `test_integrations_security.py`, so a route added later is asserted rather
+than forgotten — which is how the five unguarded ones came to look like deliberate scoping.
+
+#### The same split applies to `/scrapers/*`
+
+`scrapers_handler` writes the **same** shared secret, so it carries the same rule and its own
+`ast` pass (`test_scrapers_security.py`). Gating one handler and not the other would make the
+boundary depend on which handler a write arrived through rather than on what it changed.
+
+| Route | `require_admin` | Why |
+|-------|-----------------|-----|
+| `POST /scrapers` | yes | writes `webscraper_configs` on the shared secret — the URLs the ingestor fetches |
+| `DELETE /scrapers/<scraper_id>` | yes | same write, and destructive |
+| `POST /scrapers/<scraper_id>/run` | yes | billed third-party fetch, invocable in a loop |
+| `GET /scrapers`, `.../status`, `.../runs`, `/scrapers/templates` | **no** | the Scrapers page renders these for everyone |
+| `POST /scrapers/analyze-url` | **no** | persists nothing; the fetch is bounded by `validate_url`'s SSRF checks |
+
+`scraper_id` is deliberately **not** allowlisted the way `<source>` is. It is not a plugin id
+and reaches no secret key or function name — only a `SCRAPER_RUN#` partition and the invoke
+payload, where the webscraper matches it against its own configured list, so an unknown id is a
+run that finds nothing. The admin gate is what bounds who can write those partitions.
 
 ### Cost Controls
 
