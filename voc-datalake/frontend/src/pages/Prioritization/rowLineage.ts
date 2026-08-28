@@ -717,6 +717,16 @@ export function fresherCoherentSelection(
   // so the coherence check below still sees a full set of records — a held id the
   // project does not carry would drop out of `records` and let a crossing candidate
   // pass on a shortened set.
+  //
+  // A CONSEQUENCE WORTH STATING, because it decides what any test of the verdict below
+  // can observe: where this substitutes, `chosen[index]` IS `selected[index]`, so the
+  // freshness comparison is asked about ONE document — and no two rules can disagree
+  // about a document compared with itself. The instant-only verdict is therefore
+  // observable only where the substitution is DECLINED, which is a held document the
+  // project read is missing. That single input is what the case "withholds staleness on
+  // a tie the project read does not carry the held document for" covers, and the reason
+  // the ordinary tie case cannot: measured, restoring `isNewer(rankOf(...))` on the two
+  // verdict lines leaves that case, and every other, green.
   const chosen = newest.map((entry, index) => {
     const held = selected[index]
     const tied = instantOf(entry.createdAt) === instantOf(held.createdAt)
@@ -745,13 +755,22 @@ export function fresherCoherentSelection(
   // sorted higher: `lineage.staleReason` then opened "A newer version of at least
   // one document type on this row exists" when none did, and `lineage.staleAction`
   // asked a reviewer to create a row and re-score against a combination that was
-  // not fresher, only differently named. Three inputs reach it — two documents from
-  // one `isoformat()` batch collapsing to `Date`'s millisecond, two spellings of one
-  // moment (which is exactly what the instant comparison exists to make equal), and
-  // any two date-only values from one day. A tie WITHHOLDS, which is as
+  // not fresher, only differently named. Three shapes produce the tie — two documents
+  // from one `isoformat()` batch collapsing to `Date`'s millisecond, two spellings of
+  // one moment (which is exactly what the instant comparison exists to make equal),
+  // and any two date-only values from one day. A tie WITHHOLDS, which is as
   // order-independent as breaking it and is the module's standing answer for an
   // input that cannot settle a question (see `hasUnreadableTimestamp` and the type
   // gates): an id is not evidence of recency.
+  //
+  // ONE OF THOSE TIES ACTUALLY REACHES THIS COMPARISON, and it is worth naming which,
+  // because otherwise the rule reads as covering three inputs it no longer sees. The
+  // tie-preference above substitutes the held document for a tied newest, so for every
+  // tie the project read carries the held document for, `chosen[index]` and
+  // `selected[index]` are the SAME document and both spellings of the comparison agree
+  // trivially. What is left is a tie whose held document the read is missing, where the
+  // substitution is declined — the sole input under which this line and
+  // `isNewer(rankOf(...))` differ, and the one the regression case uses.
   const fresher = chosen.some(
     (entry, index) => instantOf(entry.createdAt) > instantOf(selected[index].createdAt),
   )

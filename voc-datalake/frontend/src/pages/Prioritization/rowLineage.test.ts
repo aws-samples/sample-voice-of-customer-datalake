@@ -39,9 +39,17 @@
  *    "a project's first document of a new type does not make an existing row
  *    stale" (the missing-optional-document boundary);
  *  * `fresher`/`regressed` in `fresherCoherentSelection` changed back from `instantOf`
- *    to `isNewer(rankOf(...))` → "withholds staleness on a timestamp tie, in both
- *    array orders", whose positive control (a newer document with a LOWER id) stays
- *    green under that revert, so the case pins the tie and not the comparison;
+ *    to `isNewer(rankOf(...))` → "withholds staleness on a tie the project read does
+ *    not carry the held document for", and ONLY that case. The tie-preference below
+ *    substitutes the held document for a tied newest, so everywhere else
+ *    `chosen[index]` IS `selected[index]` and the two comparisons cannot disagree
+ *    about a document compared with itself — which is why "withholds staleness on a
+ *    timestamp tie, in both array orders" does NOT catch this revert (measured: it
+ *    stays green, along with all 438 cases in `src/pages/Prioritization`). The one
+ *    input that reaches the verdict's tie is a held document the project read is
+ *    missing, which `byId.has` declines to substitute. Its positive control — a
+ *    genuinely newer sibling on the same shape — is asserted FIRST and stays green
+ *    under the revert, so the case pins the tie and not the arithmetic;
  *  * the tie-preference over `newestOfType`'s answer deleted (`chosen` taken straight
  *    from `newest`) → "keeps the held document for a type whose newest only ties, in
  *    both array orders", whose two positive controls — a genuinely newer document of
@@ -540,6 +548,46 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const dayA = doc('prd_a', 'prd', '2025-01-01', builtFromFeedback)
     const dayZ = doc('prd_z', 'prd', '2025-01-01', builtFromFeedback)
     expect(fresherCoherentSelection([dayA], [dayA, dayZ])).toBeNull()
+  })
+
+  it('withholds staleness on a tie the project read does not carry the held document for', () => {
+    // THE ONE INPUT THAT REACHES THE FRESHNESS VERDICT'S TIE, and the reason the case
+    // above cannot pin it. `chosen` prefers the HELD document whenever a type's newest
+    // merely ties — but only when the project read carries it (`byId.has`), because a
+    // held id the project does not carry would drop out of `records` and let a crossing
+    // candidate pass on a shortened set. Where the substitution is declined,
+    // `chosen[index]` and `selected[index]` are two DIFFERENT documents of one instant,
+    // which is the only shape in which the verdict comparison can be observed at all:
+    // everywhere else the tie has already been substituted away and a document is being
+    // compared with itself, where `rankOf` and `instantOf` cannot disagree.
+    //
+    // Comparing on `rankOf`'s tuple here reports the row `Superseded` by a document of
+    // the same instant whose id merely sorts higher, which is exactly the false
+    // `lineage.staleReason` sentence the instant-only verdict removed.
+    const sameInstant = '2025-01-01T09:00:00Z'
+    const held = doc('prd_held', 'prd', sameInstant, builtFromFeedback)
+    const sibling = doc('prd_sib', 'prd', sameInstant, builtFromFeedback)
+    // A genuinely older PRD, only so the project read has two entries and the case can
+    // be asserted in both orders — `newestOfType` answers `prd_sib` either way round.
+    const older = doc('prd_old', 'prd', '2024-01-01', builtFromFeedback)
+
+    // THE POSITIVE CONTROL, and it is FIRST on purpose: a failing assertion ends a
+    // case, so a control placed after the negative ones cannot be shown to have stayed
+    // green under the revert this case exists to catch. On the same shape — a project
+    // read that does not carry the held document — a GENUINELY newer sibling is still
+    // reported, so the assertions below pin the tie and not the arithmetic refusing
+    // every held document the read is missing.
+    const newerSibling = doc('prd_sib', 'prd', '2025-06-01', builtFromFeedback)
+    expect(fresherCoherentSelection([held], [newerSibling, older])).toEqual(['prd_sib'])
+    expect(rowLineageOf(frozenRow([held]), [newerSibling, older]).stale).toBe(true)
+
+    // The project read carries the sibling and NOT the held document — reachable at
+    // this exported seam, which does not require the selection to be a subset of the
+    // project, and asserted in both orders because a read's order is nobody's choice.
+    for (const order of [[sibling, older], [older, sibling]]) {
+      expect(fresherCoherentSelection([held], order), JSON.stringify(order)).toBeNull()
+      expect(rowLineageOf(frozenRow([held]), order).stale, JSON.stringify(order)).toBe(false)
+    }
   })
 
   it('keeps the held document for a type whose newest only ties, in both array orders', () => {
