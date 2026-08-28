@@ -74,7 +74,9 @@ export function AppConfigCard({
   /** Whether the current user is an admin. `POST /sources/{source}/run` and
    *  `DELETE /integrations/{source}/apps/{id}` are admin-gated server-side, so Run
    *  and Delete are disabled rather than allowed to fire a 403. Edit stays enabled:
-   *  it opens a form whose own Save carries the gate. */
+   *  it opens `PluginConfigModal`, whose `AppEditorForm` Save button carries the
+   *  gate for `POST /integrations/{source}/apps` — verified there, not assumed,
+   *  because the equivalent claim about `ScraperEditor` turned out to be false. */
   isAdmin: boolean
   onEdit: () => void
   onDelete: () => void

@@ -132,10 +132,13 @@ describe('AppConfigCard', () => {
 
   describe('regardless of admin status', () => {
     /**
-     * The gate's boundary. Edit opens a form whose own Save carries the gate, so
-     * disabling it would stop a non-admin READING a config the API already serves
-     * them (`GET /integrations/{source}/apps` is deliberately open). Pinning it
-     * makes that a decision rather than an omission, and stops a future "disable
+     * The gate's boundary. Edit opens `PluginConfigModal`, whose `AppEditorForm`
+     * Save carries the gate for `POST /integrations/{source}/apps` — asserted in
+     * `PluginConfigModal.test.tsx`, not taken on trust, because the same claim
+     * about `ScraperEditor`'s Save turned out to be false. Disabling Edit would
+     * stop a non-admin READING a config the API already serves them
+     * (`GET /integrations/{source}/apps` is deliberately open). Pinning it makes
+     * that a decision rather than an omission, and stops a future "disable
      * everything for non-admins" from passing the cases above.
      */
     it.each([true, false])('opens the editor (isAdmin=%s)', async (isAdmin) => {

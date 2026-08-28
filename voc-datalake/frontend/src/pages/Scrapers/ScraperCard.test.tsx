@@ -223,11 +223,17 @@ describe('ScraperCard admin gate on Run and Delete', () => {
 
   describe('regardless of admin status', () => {
     /**
-     * The gate's boundary. Edit opens a form whose own Save carries the gate, and a
-     * non-admin can already read this configuration through `GET /scrapers`, which
-     * stays deliberately open — so disabling Edit would hide data the API serves
-     * them. Pinning it stops a future "disable everything for non-admins" from
-     * passing the cases above.
+     * The gate's boundary. A non-admin can already read this configuration through
+     * `GET /scrapers`, which stays deliberately open, so disabling Edit would hide
+     * data the API serves them. Pinning it stops a future "disable everything for
+     * non-admins" from passing the cases above.
+     *
+     * What makes enabling Edit safe is that the editor's own Save is gated for
+     * `POST /scrapers` — asserted in `ScraperEditor.test.tsx`, not assumed here. An
+     * earlier version of this comment claimed that gate existed when it did not:
+     * `ScraperEditor` took no `isAdmin`, so a non-admin's Save issued the request
+     * and the modal closed as though it had succeeded. If that gate is ever
+     * removed, this case becomes the wrong decision rather than a boundary.
      */
     it.each([true, false])('opens the editor (isAdmin=%s)', async (isAdmin) => {
       const user = userEvent.setup()

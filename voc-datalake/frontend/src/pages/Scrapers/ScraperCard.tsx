@@ -140,9 +140,13 @@ function ScraperCardHeader({
   readonly isRunning: boolean
   /** `POST /scrapers/{id}/run` and `DELETE /scrapers/{id}` are admin-gated
    *  server-side, so those two controls are disabled for a non-admin rather than
-   *  issuing a request that 403s. Edit stays enabled: it opens a form whose own
-   *  Save carries the gate, and a non-admin can already read this config through
-   *  `GET /scrapers`. */
+   *  issuing a request that 403s. Edit stays enabled because a non-admin can
+   *  already read this config through `GET /scrapers`, which is deliberately open —
+   *  the editor is a viewer for them, and its Save button carries the gate for
+   *  `POST /scrapers` (`ScraperEditor.tsx`, pinned by `ScraperEditor.test.tsx`). It
+   *  did NOT until this was checked: the editor had no `isAdmin` at all, so a
+   *  non-admin's Save issued the request and the modal closed as though it had
+   *  worked. Enabling Edit is only safe while that gate exists. */
   readonly isAdmin: boolean
   readonly onRun: () => void
   readonly onEdit: () => void

@@ -431,7 +431,7 @@ export default function Scrapers() {
         }}
       />}
 
-      {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} onSave={handleSaveScraper} onClose={handleCloseEditor} /> : null}
+      {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} isAdmin={isAdmin} onSave={handleSaveScraper} onClose={handleCloseEditor} /> : null}
 
       {deleteScraperId != null && deleteScraperId !== '' ? <ConfirmModal
         isOpen={deleteScraperId !== ''}
