@@ -217,6 +217,20 @@ What the policy accepts and refuses:
   URL again rather than resuming where it stopped. A page that never loaded no longer
   counts toward the run's page total, so a run in which everything timed out is
   distinguishable from an empty but healthy one.
+- A configuration that was truncated is also **moved to the back of the queue** for the
+  next invocation. Being due and being able to run are different things: a configuration
+  whose watermark is held is due every time, the run budget stops the loop, and in stored
+  order it was reached first every time — so one site that cannot finish inside the budget
+  silently stopped every other scraper in the account from running at all (measured: two
+  healthy configurations behind a slow one were never fetched across 20 scheduled
+  invocations). Ordering by the recorded truncation keeps both guarantees: the slow
+  configuration is still retried immediately, and the ones behind it get the budget first.
+  Configurations that have never truncated keep their stored order, and the record is
+  cleared as soon as a configuration completes all of its URLs, so a site that was slow
+  once is not demoted for ever. A
+  `ScraperRunBudgetExhausted` metric is emitted so an account that truncates on every
+  schedule can be alerted on — a scheduled run writes no run row, so otherwise only the
+  logs would show it.
 - A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
   DNS lookup inside the saving request, and both write routes answer through API
   Gateway's 29 second limit; identical hosts within one write are resolved once. The

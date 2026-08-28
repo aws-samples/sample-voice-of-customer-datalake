@@ -48,12 +48,35 @@ REVERT MAP
 - Skip the watermark for every config instead of only the truncated one, so every
   scraper runs on every invocation regardless of frequency
   -> `a_config_that_finished_its_urls_records_its_run`.
+- Iterate `self.scraper_configs` in stored order, so a config that truncates is
+  due-and-first for ever and every config behind it never runs again
+  -> `a_permanently_stalling_config_does_not_starve_the_ones_behind_it`.
+- Stop recording the truncation, leaving the ordering nothing to read
+  -> `records_the_truncation_so_a_later_invocation_can_order_by_it`,
+  `a_permanently_stalling_config_does_not_starve_the_ones_behind_it`.
+- Order by `scraper_{id}_last_run` instead of the truncation marker, reshuffling
+  every healthy account for no benefit
+  -> `a_config_that_truncated_sorts_behind_one_that_never_did`,
+  `a_permanently_stalling_config_does_not_starve_the_ones_behind_it`.
+- Reorder so aggressively that a truncated config is never attempted again
+  -> `the_stalling_config_is_still_retried_while_the_others_run`.
+- Reorder configs that never truncated
+  -> `configs_that_never_truncated_keep_their_stored_order`.
+- Never clear the truncation marker, so one slow day demotes a config for ever
+  -> `a_config_that_recovers_stops_being_demoted`.
+- Use the stored watermark as a sort key without checking it is a string, so one
+  unusable value raises TypeError before the config loop and stops ALL scraping
+  -> `an_unusable_truncation_watermark_does_not_stop_the_invocation`.
+- Drop the ScraperRunBudgetExhausted counter, leaving a scheduled run's truncation
+  invisible (`_update_run_status` returns early without an execution_id)
+  -> `emits_a_metric_when_the_run_budget_is_exhausted`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
 resolves them.
 """
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -75,6 +98,20 @@ REVIEW_HTML = (
     '<span class="review-text">A genuinely long enough review body.</span>'
     '</div></html>'
 )
+
+# One config that cannot finish inside the run budget, ahead of two that finish
+# immediately: the shape in which a truncating config starved everything behind it.
+# Module-level, like the constants above, rather than class attributes.
+STALLING_CONFIG = {
+    **CSS_CONFIG, 'id': 'A', 'name': 'A', 'frequency_minutes': 60,
+    'urls': [f'https://slow.example/{n}' for n in range(20)],
+}
+HEALTHY_CONFIGS = [
+    {**CSS_CONFIG, 'id': 'B', 'name': 'B', 'frequency_minutes': 60,
+     'urls': ['https://okb.example/a']},
+    {**CSS_CONFIG, 'id': 'C', 'name': 'C', 'frequency_minutes': 60,
+     'urls': ['https://okc.example/a']},
+]
 
 
 def _response(status: int, *, location: str | None = None, text: str = '') -> MagicMock:
@@ -370,7 +407,10 @@ class TestRunBoundsTheWholeInvocation:
     """
 
     @staticmethod
-    def _run_on_a_fake_clock(ingestor, configs, *, serve=None, watermarks=None):
+    def _run_on_a_fake_clock(
+        ingestor, configs, *, serve=None, watermarks=None, scheduled=False,
+        requested=None,
+    ):
         """
         Run `fetch_new_items` over `configs` with a stalling transport.
 
@@ -383,20 +423,32 @@ class TestRunBoundsTheWholeInvocation:
                 a per-page budget insufficient.
             watermarks: optional dict the run's `set_watermark` calls are recorded
                 into, for the tests that assert which configs were marked as
-                having run. Absent, the writes are simply swallowed.
+                having run. Reads are served from the same dict, so passing one
+                across several calls simulates SUCCESSIVE invocations sharing a
+                watermark table — which is the only way to observe the config
+                ORDER, since ordering depends on what a previous run recorded.
+                Absent, the writes are simply swallowed.
+            scheduled: run as the EventBridge schedule does (no execution_id), so
+                `_should_run_scraper` gates each config. The default is a manual
+                run, which bypasses that gate.
+            requested: optional list every requested URL is appended to, in order,
+                for asserting which configs were reached rather than only which
+                watermarks moved.
         """
         import requests
 
         now = [1000.0]
 
         def transport(**kwargs):
+            if requested is not None:
+                requested.append(kwargs['url'])
             served = serve(kwargs['url']) if serve else None
             if served is not None:
                 return served
             now[0] += kwargs['timeout']
             raise requests.exceptions.Timeout('stalled')
 
-        ingestor.execution_id = 'exec-1'
+        ingestor.execution_id = None if scheduled else 'exec-1'
         ingestor.scraper_configs = configs
 
         statuses = []
@@ -418,6 +470,14 @@ class TestRunBoundsTheWholeInvocation:
                 lambda key, value: (
                     watermarks.__setitem__(key, value)
                     if watermarks is not None else None
+                ),
+            ),
+            patch.object(
+                ingestor,
+                'get_watermark',
+                lambda key, default=None: (
+                    watermarks.get(key, default) if watermarks is not None
+                    else default
                 ),
             ),
         ):
@@ -558,7 +618,13 @@ class TestRunBoundsTheWholeInvocation:
 
         # It really was truncated — otherwise this asserts nothing.
         assert any('Run budget' in e for e in statuses[-1]['errors'])
-        assert watermarks == {}, (
+        # The `last_run` key specifically, not "no watermark at all":
+        # `_should_run_scraper` reads only that one, and the truncation IS recorded
+        # separately so `_configs_in_fairness_order` can move this config back.
+        # Asserting the whole dict was empty conflated dueness with ordering and
+        # would fail on the fairness marker while the starvation it prevents went
+        # unmeasured.
+        assert 'scraper_s1_last_run' not in watermarks, (
             f'the truncated config was marked as having run: {watermarks}'
         )
 
@@ -587,10 +653,9 @@ class TestRunBoundsTheWholeInvocation:
             return _response(200, text=REVIEW_HTML) if 'ok.example' in url else None
 
         # A SCHEDULED run, which is the only mode `_should_run_scraper` gates.
-        ingestor.execution_id = None
         ingestor.target_scraper_id = None
         self._run_on_a_fake_clock(
-            ingestor, [config], serve=serve, watermarks=watermarks
+            ingestor, [config], serve=serve, watermarks=watermarks, scheduled=True,
         )
 
         # Whether the next scheduled invocation would run it at all.
@@ -647,9 +712,249 @@ class TestRunBoundsTheWholeInvocation:
             watermarks=watermarks,
         )
 
-        assert watermarks == {}, (
+        assert not [k for k in watermarks if k.endswith('_last_run')], (
             f'a config was marked as having run without completing: {watermarks}'
         )
+        # And specifically the one never reached, which is the case this names.
+        assert 'scraper_unreached_last_run' not in watermarks
+
+
+class TestATruncatingConfigCannotMonopoliseTheLoop:
+    """
+    A config that cannot finish inside the run budget must not starve the others.
+
+    Three individually-defensible behaviours composed into a total halt. A
+    truncated config holds its `last_run` watermark, so it is due on EVERY
+    invocation; the run budget `break`s the config loop, so nothing after it runs;
+    and the configs were iterated in stored order, so it was reached first every
+    time. Measured over 20 scheduled invocations (5 hours at the manifest's
+    `rate(15 minutes)`) with one stalling config ahead of two healthy ones: zero
+    watermarks written and the healthy configs fetched 0 of 2 URLs — never, not
+    merely less often. A single slow site halted webscraper ingestion for every
+    other scraper in the account.
+
+    It was a REGRESSION from the watermark hold, not a pre-existing property:
+    advancing the watermark had been rotating the queue as a side effect, because a
+    config marked as having run was skipped as not-yet-due on the next invocation.
+    Verified by counterfactual — with the watermark advanced unconditionally, the
+    healthy configs are reached.
+
+    `_configs_in_fairness_order` is what separates the two guarantees, which is why
+    the fix is an ordering change and not a change to dueness: a truncated config
+    stays due immediately (`TestRunBoundsTheWholeInvocation` above pins that) and
+    sorts behind the configs it just blocked.
+
+    Uses the fake-clock helper above; `watermarks` shared across calls is what makes
+    several invocations observable, since the order depends on what the previous one
+    recorded.
+    """
+
+    @staticmethod
+    def _serve_only_healthy(url):
+        return _response(200, text=REVIEW_HTML) if 'ok' in url else None
+
+    def _invoke_repeatedly(self, ingestor, configs, times):
+        """
+        `times` successive SCHEDULED invocations over one watermark table.
+
+        Returns every URL requested across all of them. `_should_run_scraper` is
+        left unpatched so real dueness applies, with `datetime.now` advanced past
+        each config's `frequency_minutes` between invocations — otherwise a config
+        that legitimately recorded a run would look starved when it is merely
+        waiting, which is the distinction this class exists to make.
+        """
+        import webscraper.ingestor.handler as handler_module
+
+        watermarks: dict = {}
+        requested: list = []
+        clock = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+
+        class AdvancingDatetime:
+            """`datetime` with a `now` this test controls; everything else real."""
+
+            @staticmethod
+            def now(tz=None):
+                return clock[0]
+
+            @staticmethod
+            def fromisoformat(value):
+                return datetime.fromisoformat(value)
+
+        for _ in range(times):
+            with patch.object(handler_module, 'datetime', AdvancingDatetime):
+                TestRunBoundsTheWholeInvocation._run_on_a_fake_clock(
+                    ingestor,
+                    configs,
+                    serve=self._serve_only_healthy,
+                    watermarks=watermarks,
+                    scheduled=True,
+                    requested=requested,
+                )
+            # Past any config's frequency_minutes, so nothing is skipped merely
+            # for having run recently.
+            clock[0] = clock[0] + timedelta(minutes=90)
+
+        return requested, watermarks
+
+    def test_a_permanently_stalling_config_does_not_starve_the_ones_behind_it(
+        self, ingestor
+    ):
+        """
+        The reviewer's measurement, as an assertion on URLs actually REQUESTED
+        rather than on watermarks: watermarks can move without a config having been
+        reached, so only the request log proves the healthy configs got their turn.
+
+        Two invocations are enough — the stalling config sorts last on the second —
+        but this runs several to show it does not merely alternate into starvation.
+        """
+        requested, _watermarks = self._invoke_repeatedly(
+            ingestor, [STALLING_CONFIG, *HEALTHY_CONFIGS], times=4
+        )
+
+        reached = {url for url in requested if 'ok' in url}
+        assert reached == {'https://okb.example/a', 'https://okc.example/a'}, (
+            f'the healthy configs behind a stalling one were starved: {reached}'
+        )
+
+    def test_the_stalling_config_is_still_retried_while_the_others_run(
+        self, ingestor
+    ):
+        """
+        The guarantee the fix must not trade away. Moving a truncated config to the
+        back would be a regression of its own if it stopped being attempted at all,
+        so it must still be reached on a later invocation.
+        """
+        requested, _watermarks = self._invoke_repeatedly(
+            ingestor, [STALLING_CONFIG, *HEALTHY_CONFIGS], times=3
+        )
+
+        assert any('slow.example' in url for url in requested), (
+            'the truncated config was never retried'
+        )
+
+    def test_records_the_truncation_so_a_later_invocation_can_order_by_it(
+        self, ingestor
+    ):
+        """
+        The ordering is only possible because the truncation is persisted. This
+        pins the mechanism as well as the outcome, so a fix that reordered by
+        something transient (in-memory, lost between invocations) would fail here.
+        """
+        watermarks: dict = {}
+
+        TestRunBoundsTheWholeInvocation._run_on_a_fake_clock(
+            ingestor,
+            [STALLING_CONFIG],
+            serve=self._serve_only_healthy,
+            watermarks=watermarks,
+            scheduled=True,
+        )
+
+        assert 'scraper_A_last_truncated' in watermarks, (
+            f'nothing recorded the truncation, so ordering cannot use it: '
+            f'{watermarks}'
+        )
+        # And it did NOT record a run, which is what keeps it due.
+        assert 'scraper_A_last_run' not in watermarks
+
+    def test_a_config_that_recovers_stops_being_demoted(self, ingestor):
+        """
+        The demotion must be self-correcting. A site that was slow once would
+        otherwise sort behind every never-truncated config for ever, on the strength
+        of a truncation it has since recovered from — so finishing every URL has to
+        clear the marker.
+        """
+        watermarks = {'scraper_s1_last_truncated': '2026-01-01T00:00:00+00:00'}
+
+        TestRunBoundsTheWholeInvocation._run_on_a_fake_clock(
+            ingestor,
+            [{**CSS_CONFIG, 'urls': ['https://ok.example/a']}],
+            serve=lambda _url: _response(200, text=REVIEW_HTML),
+            watermarks=watermarks,
+        )
+
+        assert not watermarks['scraper_s1_last_truncated'], (
+            'a recovered config is still demoted by a stale truncation marker'
+        )
+        # It genuinely completed — otherwise this asserts nothing.
+        assert watermarks['scraper_s1_last_run']
+
+    def test_a_config_that_truncated_sorts_behind_one_that_never_did(
+        self, ingestor
+    ):
+        """
+        The ordering rule directly, so a failure here names the cause rather than
+        the symptom.
+        """
+        ingestor.scraper_configs = [STALLING_CONFIG, *HEALTHY_CONFIGS]
+        watermarks = {'scraper_A_last_truncated': '2026-01-01T00:00:00+00:00'}
+
+        with patch.object(
+            ingestor, 'get_watermark',
+            lambda key, default=None: watermarks.get(key, default),
+        ):
+            order = [c['id'] for c in ingestor._configs_in_fairness_order()]
+
+        assert order == ['B', 'C', 'A'], f'truncated config was not moved back: {order}'
+
+    def test_configs_that_never_truncated_keep_their_stored_order(self, ingestor):
+        """
+        Positive control on the ordering. A sort that shuffled ordinary accounts
+        would pass the starvation tests above while changing the behaviour of every
+        deployment that never truncates, so the common case must be untouched.
+        """
+        ingestor.scraper_configs = [STALLING_CONFIG, *HEALTHY_CONFIGS]
+
+        with patch.object(ingestor, 'get_watermark', lambda key, default=None: default):
+            order = [c['id'] for c in ingestor._configs_in_fairness_order()]
+
+        assert order == ['A', 'B', 'C'], f'stored order was not preserved: {order}'
+
+    @pytest.mark.parametrize(
+        'stored', [None, '', 123, {'not': 'a timestamp'}, ['list']],
+    )
+    def test_an_unusable_truncation_watermark_does_not_stop_the_invocation(
+        self, ingestor, stored
+    ):
+        """
+        The sort key comes from DynamoDB, and it runs BEFORE the config loop — so a
+        value that cannot be compared aborted the whole invocation rather than
+        costing one config its place. Every scraper would have stopped, which is
+        strictly worse than the starvation being fixed.
+        """
+        ingestor.scraper_configs = [STALLING_CONFIG, *HEALTHY_CONFIGS]
+
+        with patch.object(ingestor, 'get_watermark', lambda key, default=None: stored):
+            order = [c['id'] for c in ingestor._configs_in_fairness_order()]
+
+        assert order == ['A', 'B', 'C']
+
+    def test_emits_a_metric_when_the_run_budget_is_exhausted(self, ingestor):
+        """
+        For a SCHEDULED run `_update_run_status` returns early, so the run's
+        `errors` are not written anywhere an operator sees. An account truncating on
+        every schedule is ingesting less than it thinks, and this is the only signal
+        that says so.
+        """
+        with patch('webscraper.ingestor.handler.metrics.add_metric') as mock_metric:
+            TestRunBoundsTheWholeInvocation._run_on_a_fake_clock(ingestor, [STALLING_CONFIG])
+
+        assert 'ScraperRunBudgetExhausted' in [
+            call.kwargs.get('name') for call in mock_metric.call_args_list
+        ]
+
+    def test_emits_no_budget_metric_on_a_healthy_run(self, ingestor):
+        """Positive control: the metric must mean something when it fires."""
+        with patch('webscraper.ingestor.handler.metrics.add_metric') as mock_metric:
+            TestRunBoundsTheWholeInvocation._run_on_a_fake_clock(
+                ingestor,
+                [{**CSS_CONFIG, 'urls': ['https://ok.example/a']}],
+                serve=lambda _url: _response(200, text=REVIEW_HTML),
+            )
+
+        assert 'ScraperRunBudgetExhausted' not in [
+            call.kwargs.get('name') for call in mock_metric.call_args_list
+        ]
 
 
 class TestRunReportsABlockedUrl:

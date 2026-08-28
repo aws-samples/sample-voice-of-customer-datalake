@@ -92,10 +92,19 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   the budget truncated keeps its watermark rather than advancing it: marking it as having run
   left it waiting out its whole frequency, and because its URL list rebuilds in the same
   order, the next run restarted at the first URL — so a persistently slow prefix starved its
-  own tail on every invocation instead of the skipped URLs being retried. Relatedly, a page
-  whose fetch never returned a document no longer counts toward the
-  run's page total: a run in which every page timed out previously reported `completed`, no
-  errors and a non-zero page count, which is indistinguishable from an empty healthy run.
+  own tail on every invocation instead of the skipped URLs being retried. The truncation is
+  recorded as well, and the configuration loop is ordered by it so a configuration that ran out
+  of budget is visited last on the next invocation: holding the watermark alone made that
+  configuration due on every invocation while the budget stopped the loop and stored order
+  reached it first, so one slow site silently prevented every other scraper in the account from
+  running at all — two healthy configurations behind a stalling one were never fetched across 20
+  scheduled invocations. Configurations that have never truncated keep their stored order, and the
+  record is cleared once a configuration completes all of its URLs, so one slow day is not a
+  permanent demotion. A `ScraperRunBudgetExhausted` metric makes a persistently truncating
+  account alertable, since a scheduled run writes no run row. Relatedly, a page whose fetch
+  never returned a document no longer counts toward the run's page total: a run in which every
+  page timed out previously reported `completed`, no errors and a non-zero page count, which is
+  indistinguishable from an empty healthy run.
 - A wall-clock fetch budget now bounds the retry backoff as well as the attempts. The backoff
   sleep between attempts was taken in full and the budget only re-checked once it returned, so
   a budget could be overrun by up to one backoff interval — enough to push the scraper's run

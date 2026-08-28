@@ -70,6 +70,28 @@ SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS = 60
 # `completed` over a partial URL set.
 SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS = 240
 
+# Watermark recording that the run budget cut a config short. Read ONLY to order
+# the config loop (see `_configs_in_fairness_order`) — `_should_run_scraper` does
+# not consult it, so it changes when a config is visited, never whether it is due.
+#
+# It exists because "retried" and "able to run" are different guarantees, and
+# holding `scraper_{id}_last_run` for a truncated config buys the first at the
+# cost of the second. A config with no last_run watermark is due on EVERY
+# invocation, the budget then `break`s the loop, and `self.scraper_configs` is
+# iterated in stored order — so one site that cannot finish inside the budget
+# pinned position 1 for ever and no later config ran again. Measured over 20
+# scheduled invocations (5 hours at the manifest's rate(15 minutes)) with one
+# stalling config ahead of two healthy ones: zero watermarks written, and the
+# healthy configs fetched 0 of 2 URLs — not degraded, never. Advancing the
+# watermark instead (what this did before the hold) rotated the queue as a side
+# effect, which is why removing it turned a URL-scope starvation into a
+# config-scope one.
+#
+# Ordering by it puts a config that truncated LAST time at the back this time, so
+# both guarantees hold at once: the truncated config is still due immediately, and
+# the configs behind it get the budget first.
+SCRAPER_TRUNCATED_WATERMARK = 'scraper_{scraper_id}_last_truncated'
+
 
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
@@ -452,6 +474,50 @@ class WebScraperIngestor(BaseIngestor):
         
         return datetime.now(timezone.utc) >= next_run
 
+    def _configs_in_fairness_order(self) -> list:
+        """
+        `self.scraper_configs`, with configs that truncated most recently last.
+
+        The run budget `break`s the config loop, so the loop's ORDER decides which
+        configs get to run at all when the budget is short. Stored order made that
+        a fixed priority: a config whose URLs cannot finish inside the budget was
+        visited first on every invocation and every config behind it was starved
+        permanently — measured 0 of 2 healthy configs reached across 20 scheduled
+        invocations.
+
+        Sorting by the truncation watermark rotates it instead. A config that has
+        never truncated sorts first (the common case, so ordinary accounts keep
+        their stored order — the key is constant for all of them and the sort is
+        stable). One that truncated sorts after those, oldest truncation first, so
+        the config that ran out of budget last time yields to the ones it blocked.
+
+        Deliberately NOT `scraper_{id}_last_run`: least-recently-run ordering would
+        also rotate, but it reorders every healthy account on every invocation for
+        no benefit, and a config that has never run has no watermark to sort by.
+        Only truncation is a reason to move a config back.
+        """
+        def truncated_at(config: dict) -> str:
+            if not isinstance(config, dict):
+                return ''
+            key = SCRAPER_TRUNCATED_WATERMARK.format(
+                scraper_id=config.get('id', 'unknown')
+            )
+            value = self.get_watermark(key)
+            # Only a STRING is usable as a sort key, and this value comes from
+            # DynamoDB — anything else ('' , None, a number, a dict) is treated as
+            # "never truncated" rather than compared. Returning it unchecked let a
+            # non-string make `sorted` raise TypeError, and this sort runs before
+            # the config loop, so that aborted the ENTIRE invocation: one unusable
+            # watermark would have stopped all scraping rather than costing one
+            # config its place in the order. '' sorts before any ISO timestamp, so
+            # never-truncated configs keep their stored order.
+            return value if isinstance(value, str) else ''
+
+        return sorted(
+            (c for c in self.scraper_configs if isinstance(c, dict)),
+            key=truncated_at,
+        )
+
     def fetch_new_items(self) -> Generator[dict, None, None]:
         """Fetch new items from all configured scrapers."""
         if not self.scraper_configs:
@@ -471,7 +537,10 @@ class WebScraperIngestor(BaseIngestor):
         run_deadline = time.monotonic() + SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS
         run_budget_exhausted = False
 
-        for config in self.scraper_configs:
+        # Ordered, not stored order: the budget `break`s this loop, so a config
+        # that truncated last time must not get first refusal again. See
+        # `_configs_in_fairness_order` and SCRAPER_TRUNCATED_WATERMARK.
+        for config in self._configs_in_fairness_order():
             scraper_id = config.get('id', 'unknown')
             scraper_name = config.get('name', scraper_id)
             
@@ -507,6 +576,16 @@ class WebScraperIngestor(BaseIngestor):
                     errors.append(error_msg)
                     run_budget_exhausted = True
                     config_truncated = True
+                    # Alertable without reading a run's `errors`, and without the
+                    # scraper id in the name so a persistently truncating config
+                    # cannot fan out into unbounded metric names — the same
+                    # reasoning as ScraperOutboundUrlBlocked below. An account that
+                    # truncates on every schedule is ingesting less than it thinks,
+                    # which the run row alone does not surface for SCHEDULED runs:
+                    # `_update_run_status` returns early without an execution_id.
+                    metrics.add_metric(
+                        name="ScraperRunBudgetExhausted", unit="Count", value=1
+                    )
                     break
 
                 try:
@@ -585,16 +664,39 @@ class WebScraperIngestor(BaseIngestor):
             # start rather than resuming — making progress through a persistently
             # stalling prefix needs a stored resume index, which is a larger
             # change than keeping the retry claim true.
+            #
+            # Being due is not the same as getting to RUN, though, and holding this
+            # watermark alone bought the first at the cost of the second: a config
+            # that is due on every invocation and is visited first on every
+            # invocation starves every config behind it. So the truncation is
+            # recorded separately, and `_configs_in_fairness_order` reads it to put
+            # this config behind the ones it just blocked. Both guarantees together:
+            # retried immediately, and unable to monopolise the loop.
             if config_truncated:
                 logger.warning(
                     f"Holding the watermark for {scraper_name}: the run budget "
                     f"truncated it, so it stays due for the next invocation"
+                )
+                self.set_watermark(
+                    SCRAPER_TRUNCATED_WATERMARK.format(scraper_id=scraper_id),
+                    datetime.now(timezone.utc).isoformat(),
                 )
             else:
                 self.set_watermark(
                     f'scraper_{scraper_id}_last_run',
                     datetime.now(timezone.utc).isoformat(),
                 )
+                # Cleared once this config gets through all of its URLs, so the
+                # demotion is self-correcting: a site that was slow one day would
+                # otherwise sort behind every never-truncated config for ever, on
+                # the strength of a truncation it has since recovered from. Written
+                # only when there is something to clear, so an ordinary run costs
+                # the one watermark write it always did.
+                truncated_key = SCRAPER_TRUNCATED_WATERMARK.format(
+                    scraper_id=scraper_id
+                )
+                if self.get_watermark(truncated_key):
+                    self.set_watermark(truncated_key, '')
 
             self._update_run_status(scraper_id, {
                 'status': 'completed' if not errors else 'completed_with_errors',
@@ -617,6 +719,13 @@ class WebScraperIngestor(BaseIngestor):
                 # and the truncated one had its write SKIPPED above. Those are
                 # separate cases and only the first is automatic — see the
                 # watermark block.
+                #
+                # Being due is only half of it. Because this `break` stops the loop,
+                # the ORDER decides who runs at all, and the truncated config would
+                # otherwise be due-and-first for ever — starving everything behind
+                # it. `_configs_in_fairness_order` moves it to the back, so the two
+                # guarantees hold together: a truncated config is retried, and it
+                # cannot prevent other configs from running.
                 logger.error(
                     f"Stopping the invocation after {scraper_name}: the "
                     f"{SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s run budget is spent"

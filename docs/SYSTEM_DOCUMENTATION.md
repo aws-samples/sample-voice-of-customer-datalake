@@ -591,6 +591,18 @@ The policy itself:
   every invocation rather than retrying it. That retry re-walks the list from the start
   rather than resuming. A page that never loaded is not counted toward `pages_scraped`,
   so a wholly failed run cannot read as an empty healthy one.
+- Staying due is not the same as getting to run, so the truncation is also **recorded**
+  and the configuration loop is ordered by it: a configuration that ran out of budget
+  last time is visited **last** this time. Without that, the three behaviours above
+  compose into a total halt — a configuration held as due is due on every invocation, the
+  budget stops the loop, and stored order reached it first every time, so one slow site
+  silently halted ingestion for every other scraper in the account (measured: 0 of 2
+  healthy configurations reached across 20 scheduled invocations). Configurations that
+  have never truncated keep their stored order, and the marker is cleared once a
+  configuration gets through all of its URLs, so one slow day does not demote it
+  permanently. A `ScraperRunBudgetExhausted` metric
+  makes a persistently truncating account alertable — for a scheduled run the run row is
+  not written at all, so the logs and this metric are the only signal.
 - At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
   write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
   limit. Enforced only on a list the write changes, so a pre-existing longer list keeps
