@@ -61,6 +61,18 @@ REVERT MAP — each assertion below names the mutation it catches:
       invoking, and the UI polls it with no timeout — a permanent spinner with the
       diagnosis only in CloudWatch.
 
+  test_a_broken_circuit_breaker_does_not_swallow_the_audit_event /
+  test_a_broken_circuit_breaker_does_not_swallow_the_run_record
+    — re-merges the three reporting steps into ONE `try`, or moves the audit event
+      back after the breaker call. `CircuitBreaker.record_failure` is not
+      exception-safe on its first line: `self.table` resolves
+      `get_dynamodb_resource()` above its own `try`, so a failure building that
+      resource escapes into `_report_construction_failure`'s blind catch and every
+      later step is skipped. Under the old order that lost `plugin.failed` — the
+      ONLY signal a scheduled run leaves, since `_update_source_run_status` is a
+      no-op without an `execution_id` — in exactly the correlated case where the
+      same DynamoDB trouble breaks both.
+
   test_an_unreadable_secret_is_not_counted_against_the_circuit_breaker
     — raises plain `ConfigurationError` from the empty-payload branch instead of
       `SecretUnreadableError`, or drops the `if not unreadable` guard around
@@ -601,6 +613,91 @@ class TestAConstructionFailureIsReported:
 
         actions = [call.args[0] for call in emit.call_args_list if call.args]
         assert 'plugin.failed' in actions
+
+    @staticmethod
+    def _construct_with_a_broken_breaker(payload, execution_id):
+        """Construct with the breaker's OWN DynamoDB resource failing to build.
+
+        Deliberately does NOT patch `CircuitBreaker.record_failure`, unlike
+        `_construct`: the subject is that the real `record_failure` is not
+        exception-safe on its first line — `self.table` resolves
+        `get_dynamodb_resource()` OUTSIDE its `try` — so a failure there escapes it
+        into `_report_construction_failure`. Patching the method away would remove
+        the thing under test.
+
+        `_shared.circuit_breaker.get_dynamodb_resource` is the target, not
+        `_shared.base_ingestor`'s: the breaker resolves DynamoDB through its own
+        module-level import, which is precisely why patching only the ingestor's
+        left three tests issuing real queries.
+        """
+        table = MagicMock()
+        with patch('_shared.base_ingestor.AGGREGATES_TABLE', 'test-aggregates'), \
+                patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
+                patch('_shared.base_ingestor.get_s3_client'), \
+                patch('_shared.base_ingestor.get_sqs_client'), \
+                patch('_shared.base_ingestor.get_secret', return_value=payload), \
+                patch('_shared.base_ingestor.clear_secret_cache'), \
+                patch('_shared.circuit_breaker.get_dynamodb_resource',
+                      side_effect=Exception('resource construction failed')), \
+                patch('_shared.base_ingestor.emit_audit_event') as emit:
+            mock_dynamo.return_value.Table.return_value = table
+            error = None
+            try:
+                _make_ingestor(execution_id=execution_id)
+            except ConfigurationError as raised:
+                error = raised
+        return error, table, emit
+
+    def test_a_broken_circuit_breaker_does_not_swallow_the_audit_event(self):
+        """The audit event must not be gated on the most failure-prone step.
+
+        `CircuitBreaker.record_failure` resolves `get_dynamodb_resource()` in the
+        `self.table` property, ABOVE its own `try` — so a failure building that
+        resource escapes it. Under one shared `try` for all three reporting steps
+        that landed in the blind catch and `emit_audit_event` never ran. On a
+        SCHEDULED run the audit event is the only signal there is
+        (`_update_source_run_status` is a no-op without an `execution_id`), and this
+        is the correlated case: the same DynamoDB trouble breaks both.
+        """
+        error, _, emit = self._construct_with_a_broken_breaker(
+            FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        assert error is not None, 'expected construction to refuse the payload'
+        actions = [call.args[0] for call in emit.call_args_list if call.args]
+        assert 'plugin.failed' in actions, (
+            'the breaker failing took the audit event with it; on a scheduled run '
+            'that is the only signal the failure leaves anywhere'
+        )
+
+    def test_a_broken_circuit_breaker_does_not_swallow_the_run_record(self):
+        """The other step ordered after the breaker under the old shared `try`. The
+        run record is what clears the UI's spinner on a manual run, so it must
+        survive a breaker that cannot build its table."""
+        _, table, _ = self._construct_with_a_broken_breaker(
+            FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        assert self._status_written(table) == 'error'
+
+    def test_the_control_record_failure_really_does_escape_its_own_try(self):
+        """Non-vacuity for the two cases above: they would pass just as well if the
+        patch never took effect and the breaker were healthy, proving nothing.
+
+        Asserted against `record_failure` DIRECTLY rather than through the reporting
+        path, and deliberately so — this control must not fail under the mutation it
+        controls for. It names nothing about `_report_construction_failure`, so
+        re-merging the three steps into one `try` leaves it green while the two above
+        go red.
+
+        It also pins the upstream fact the whole fix rests on: `self.table` resolves
+        `get_dynamodb_resource()` in a property evaluated ABOVE `record_failure`'s
+        own `try`, so a failure building the resource is NOT swallowed by it. Should
+        `circuit_breaker.py` ever move that resolution inside the `try`, this fails
+        and says the hazard is gone.
+        """
+        with patch('_shared.circuit_breaker.get_dynamodb_resource',
+                   side_effect=Exception('resource construction failed')), \
+                pytest.raises(Exception, match='resource construction failed'):
+            base_ingestor.CircuitBreaker(PLUGIN_ID).record_failure('boom')
 
     def test_the_report_does_not_replace_the_error_the_operator_needs(self):
         """The reporting runs while a ConfigurationError is propagating. If a

@@ -1962,9 +1962,12 @@ Three consequences of failing closed are worth knowing before you write a plugin
 - **A construction failure still reports.** `_load_secrets()` runs in `__init__`, so the
   raise never reaches `run()`'s `except`. `BaseIngestor` therefore reports it itself
   (`_report_construction_failure`): the `SOURCE_RUN#` record moves to `status: 'error'`,
-  the circuit breaker records the failure, and a `plugin.failed` audit event is emitted.
-  Without that, a manual "Run now" would show a permanent "Running..." spinner — the UI
-  polls until a terminal status and the API writes `'running'` before invoking.
+  a `plugin.failed` audit event is emitted, and the circuit breaker records the failure —
+  **unless the secret was merely unreadable rather than misconfigured**, which is reported
+  but deliberately *not* counted (see "A transient Secrets Manager failure" below for why,
+  and for the alarm that exemption depends on). Without any of this, a manual "Run now"
+  would show a permanent "Running..." spinner — the UI polls until a terminal status and
+  the API writes `'running'` before invoking.
 - **A webhook Lambda returns 5xx for every delivery** while its secret is missing or
   mis-prefixed, and most providers drop events after their retries expire. There is no
   manual run to recover a webhook, so watch the plugin's log group for
@@ -1981,11 +1984,19 @@ indistinguishable from the plugin's side, that branch raises `SecretUnreadableEr
 against the circuit breaker**. Counting it would let five AWS-side blips inside the
 breaker's 15-minute window call `_trip_breaker`, which disables the plugin's EventBridge
 schedule — and nothing re-enables a disabled rule, so a healthy plugin's ingestion would
-stop until an operator noticed. Only the auto-disable is withheld: the run record and the
-`plugin.failed` audit event still fire. A malformed identity, a namespace that matches
+stop until an operator noticed. Only the auto-disable is withheld: the `plugin.failed` audit
+event still fires, and the run record does too on a manual run (on a scheduled one there is
+none to move — see the next paragraph). A malformed identity, a namespace that matches
 nothing, or a secret whose body is not a JSON object is someone's mistake, stays a plain
 `ConfigurationError`, and still counts — those never self-heal, and retrying them forever is
 what the breaker exists to stop.
+
+Each of those three reporting steps is guarded **independently**, which matters more than it
+looks: `CircuitBreaker.record_failure` resolves its DynamoDB resource in the `self.table`
+property, *above* its own `try`, so a failure building that resource escapes it. Under a
+single shared `try` that failure skipped every later step, losing the `plugin.failed` event
+in exactly the correlated case where the same DynamoDB trouble breaks both — and on a
+scheduled run that event is the only signal there is.
 
 **Alarm on the refusal log line.** That is not advice, it is the escalation path this
 exemption relies on. On a *manual* run the `SOURCE_RUN#` record clears the UI's spinner and
@@ -2001,8 +2012,19 @@ escalation from the breaker to your alarms, which means the alarm has to exist.
 
 One limitation the prefix scan cannot see: if a plugin id were ever a **prefix** of
 another (`app_reviews` alongside `app_reviews_ios`), the shorter one would also receive the
-longer one's keys. `loadPlugins` refuses such a pair at synth time, which is the only place
-the whole id set is known — a plugin Lambda holds no list of its siblings by design.
+longer one's keys. A plugin Lambda holds no list of its siblings by design, so this is
+refused at the two places that do see more than one id — and both are needed, because they
+close different entrances:
+
+- `loadPlugins` rejects a **manifest** id that is a prefix of another's, at synth time,
+  the only place the whole id set is known.
+- `PUT /integrations/<source>/credentials` restricts `source` to those same
+  manifest-derived ids (`_validate_source_is_a_known_plugin`). The loader's guard cannot
+  see a source invented in a request: `source='app_reviews'` with key `ios_app_id` stored
+  `app_reviews_ios_app_id`, which `app_reviews_ios`'s next run consumed as its own
+  `app_id`. A colliding *stored key* needs no colliding manifest to exist. That check
+  fails open if `PLUGIN_SECRET_DEFAULTS` is unavailable, so one bad environment variable
+  cannot break credential management outright — the form check still applies.
 
 ### Cost Controls
 

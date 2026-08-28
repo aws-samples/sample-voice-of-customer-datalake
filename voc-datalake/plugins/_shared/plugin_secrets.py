@@ -39,12 +39,22 @@ What this boundary does NOT guarantee:
   (`app_reviews_ios_app_id` arriving as `ios_app_id`). No current id pair does
   this, and the write path carries the same caveat for the same reason
   (`integrations_handler.get_credentials`) — the two mirrors are kept in step so
-  a reader comparing them finds the same limitation stated in both. The fix
-  belongs at synth time, where the whole id set is known: `plugin-loader.ts` can
-  reject a manifest whose id is a prefix of another's, and does so as of this
-  change (`test_plugin_secret_isolation.py` pins that the two agree). It cannot
-  be enforced here, which sees one id at a time and has no list of the others by
-  design — keeping such a list is precisely the hole rule 1 closed.
+  a reader comparing them finds the same limitation stated in both. It cannot be
+  enforced HERE, which sees one id at a time and holds no list of the others by
+  design — keeping such a list is precisely the hole rule 1 closed. It is instead
+  refused at the two places that DO see more than one id, and both are needed
+  because they close different entrances:
+
+    * `plugin-loader.ts` rejects a manifest whose id is a prefix of another's, at
+      synth time, where the whole id set is known
+      (`test_plugin_secret_isolation.py` pins that the tree agrees).
+    * `integrations_handler._validate_source_is_a_known_plugin` restricts the
+      namespace a WRITE may address to the manifest-derived plugin ids. The
+      loader's guard is over manifest ids and cannot see a `source` invented in a
+      request: `PUT /integrations/app_reviews/credentials` with key `ios_app_id`
+      stored `app_reviews_ios_app_id`, which this scan then handed to
+      `app_reviews_ios` as its own `app_id` — a stored key needs no colliding
+      manifest to exist.
 """
 
 import os

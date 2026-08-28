@@ -733,23 +733,52 @@ class TestSourceParameterValidation:
 
     Both GET and PUT must reject a malformed or colliding source with 400
     before reading or writing the secret.
+
+    TWO checks, because the form check alone is not enough: the colliding value is
+    itself well-formed.  Since issue #251 the prefix scan in
+    `plugins/_shared/plugin_secrets.py` is the entire isolation boundary between
+    plugins, so a write landing in another plugin's namespace is a cross-plugin
+    credential injection.  `source` is therefore also restricted to the
+    manifest-derived plugin ids CDK hands down as PLUGIN_SECRET_DEFAULTS.
     """
 
     @patch('integrations_handler.secretsmanager')
-    def test_valid_form_source_accepted(self, mock_secrets, api_gateway_event, lambda_context):
-        """Source 'webscraper_admin' satisfies the form check and is accepted.
+    def test_a_real_plugin_id_is_accepted(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """Positive control for the allowlist below: a real plugin id still works.
 
-        The form validation (lowercase, digits, underscores, no leading/trailing _)
-        correctly admits a well-formed source like 'webscraper_admin'.  Form
-        validation alone cannot close the namespace-collision gap for this value
-        (webscraper_admin + key='api_key' produces the same path as
-        webscraper + key='admin_api_key'), which is why the PR description
-        notes a manifest-derived allowlist as the stronger long-term fix.
+        Without this, rejecting EVERY source would satisfy the two rejection cases
+        that follow while breaking credential management entirely.
         """
         mock_secrets.get_secret_value.return_value = {
-            'SecretString': '{"webscraper_admin_api_key": "value"}'
+            'SecretString': '{"webscraper_api_key": "value"}'
         }
 
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'},
+            query_params={'keys': 'api_key'},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+
+    @patch('integrations_handler.secretsmanager')
+    def test_a_well_formed_but_unknown_source_is_rejected_on_read(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The form check cannot close the collision gap, because the colliding
+        value is WELL-FORMED.
+
+        'webscraper_admin' passes the character class, yet
+        webscraper_admin + key='api_key' addresses the same stored key as
+        webscraper + key='admin_api_key'. The source must therefore be a plugin
+        that actually exists, which `PLUGIN_SECRET_DEFAULTS` is the manifest-derived
+        list of.
+        """
         from integrations_handler import lambda_handler
 
         event = api_gateway_event(
@@ -759,7 +788,73 @@ class TestSourceParameterValidation:
             query_params={'keys': 'api_key'},
         )
         response = lambda_handler(event, lambda_context)
-        # A valid-form source is accepted; it is NOT rejected with 400.
+        assert response['statusCode'] == 400
+        mock_secrets.get_secret_value.assert_not_called()
+
+    @patch('integrations_handler.put_secret_json')
+    @patch('integrations_handler.secretsmanager')
+    def test_a_write_cannot_address_another_plugins_namespace(
+        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        """The concrete cross-plugin credential injection, end to end.
+
+        source='app_reviews' + key='ios_app_id' stores `app_reviews_ios_app_id`,
+        which `app_reviews_ios`'s Lambda then reads as its own `app_id` — since
+        issue #251 the prefix scan is the ENTIRE isolation boundary between
+        plugins, so this is credential injection rather than a display quirk.
+        `plugin-loader.ts` refuses a colliding pair of MANIFEST ids, but cannot see
+        a source invented in a request. 'app_reviews' is well-formed and is not a
+        plugin, so it must be refused before anything is written.
+        """
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': '{"app_reviews_ios_app_name": "RealApp"}'
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path='/integrations/app_reviews/credentials',
+            path_params={'source': 'app_reviews'},
+            body={'ios_app_id': '99999'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert mock_put.call_args_list == [], (
+            'a value was written into app_reviews_ios namespace via source=app_reviews'
+        )
+
+    @patch('integrations_handler.secretsmanager')
+    def test_an_unavailable_allowlist_falls_back_to_the_form_check(
+        self, mock_secrets, api_gateway_event, lambda_context, monkeypatch,
+    ):
+        """Fails OPEN when PLUGIN_SECRET_DEFAULTS is absent, deliberately.
+
+        `_plugin_secret_defaults` already degrades to `{}` rather than 500ing the
+        Settings page. Turning that degradation into "no source may be configured"
+        would let one bad environment variable break credential management
+        outright, so the form check alone applies — which is the state this route
+        shipped in. Pinned so the fallback is a decision rather than an accident.
+        """
+        import integrations_handler as h
+
+        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
+        h._plugin_secret_defaults.cache_clear()
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': '{"webscraper_admin_api_key": "value"}'
+        }
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/webscraper_admin/credentials',
+            path_params={'source': 'webscraper_admin'},
+            query_params={'keys': 'api_key'},
+        )
+        response = h.lambda_handler(event, lambda_context)
+        h._plugin_secret_defaults.cache_clear()
+
         assert response['statusCode'] == 200
 
     @patch('integrations_handler.secretsmanager')

@@ -234,6 +234,14 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
  * nothing about the others — a hand-maintained list of sibling prefixes is exactly
  * the hole that change closed. Ids are a synth-time input, so synth is also the last
  * moment at which refusing one is free.
+ *
+ * SCOPE: this constrains MANIFEST IDS, which is not the whole collision class. A
+ * colliding key can also be STORED without any colliding manifest existing:
+ * `PUT /integrations/app_reviews/credentials` with key `ios_app_id` writes
+ * `app_reviews_ios_app_id`, which `app_reviews_ios` then reads as its own `app_id`.
+ * That entrance is a request parameter this function never sees, and is closed in
+ * `integrations_handler._validate_source_is_a_known_plugin` by restricting the
+ * namespace a write may address to the ids below. Both guards are needed.
  */
 function namespaceCollisionErrors(plugins: PluginManifest[]): string[] {
   const ids = plugins.map(p => p.id);

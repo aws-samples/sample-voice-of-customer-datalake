@@ -106,9 +106,12 @@ class BaseIngestor(ABC):
         (5 failures in 15 minutes) counting it lets a handful of blips call
         ``_trip_breaker``, which disables the plugin's EventBridge schedule.
         Nothing in this tree re-enables a disabled rule, so ingestion would stop
-        until an operator noticed. The run record and the audit event still fire,
-        because those are how the failure becomes visible; only the auto-disable
-        is withheld. A misconfiguration — a malformed identity or a namespace that
+        until an operator noticed. Only the auto-disable is withheld; the audit
+        event still fires, and the run record does too on a MANUAL run — on a
+        scheduled one there is no ``SOURCE_RUN#`` record to move, which is why the
+        audit event is the only remaining signal and why losing it mattered. See
+        ``docs/plugin-architecture.md`` on the alarm this exemption relies on. A
+        misconfiguration — a malformed identity or a namespace that
         matches nothing — is a plain ``ConfigurationError`` and still counts, since
         retrying it forever is exactly what the breaker exists to stop.
 
@@ -116,21 +119,37 @@ class BaseIngestor(ABC):
         reason the manual-run cache clear is centralized (#141/#215): a per-handler
         wrapper is one a new plugin can forget, and forgetting it is silent.
 
+        Each step is INDEPENDENTLY guarded, and one step is not merely tidier than
+        one shared ``try`` — it is the difference between reporting and not.
+        ``CircuitBreaker.record_failure`` looks exception-safe but is not on its
+        first line: ``self.table`` is a property that calls
+        ``get_dynamodb_resource()`` OUTSIDE record_failure's own ``try``, so a
+        failure constructing that resource escapes it. Under one shared ``try``
+        that landed in the catch below and the audit event two lines later never
+        ran — losing the ONLY signal a scheduled run leaves behind, since
+        ``_update_source_run_status`` is a no-op without an ``execution_id``. That
+        is also the correlated case: the same DynamoDB trouble affects both.
+
+        Ordered audit-event first as well, but the per-step guards are what carry
+        the guarantee — the order alone is defence in depth and should not be
+        mistaken for the fix (with the guards in place, reordering these three
+        changes nothing, which is the point). ``emit_audit_event`` swallows its own
+        EventBridge errors and always logs, so it is the cheapest and most reliable
+        of the three; running it first means it survives even a future edit that
+        reintroduces a shared ``try``.
+
         Never raises. It runs while a ConfigurationError is propagating, and
         replacing that error with a DynamoDB one would hide the thing worth
-        reporting; each step already swallows its own failures, and the belt-and-
-        braces catch covers a client that is missing altogether.
+        reporting.
         """
         unreadable = isinstance(error, SecretUnreadableError)
+
+        # Deliberately blind catches: narrowing them means enumerating what three
+        # AWS clients can raise, and anything missed REPLACES the
+        # ConfigurationError being propagated with an unrelated one — hiding the
+        # only message that names the prefix the plugin expected. Pinned by
+        # test_the_report_does_not_replace_the_error_the_operator_needs.
         try:
-            self._update_source_run_status({
-                'status': 'error',
-                'items_found': 0,
-                'completed_at': datetime.now(timezone.utc).isoformat(),
-                'errors': [str(error)],
-            })
-            if not unreadable:
-                self.circuit_breaker.record_failure(str(error))
             emit_audit_event("plugin.failed", self.source_platform, False, {
                 "error": str(error),
                 "error_type": type(error).__name__,
@@ -140,13 +159,24 @@ class BaseIngestor(ABC):
                 # the breaker is broken.
                 "counted_against_circuit_breaker": not unreadable,
             })
-        # Deliberately blind: narrowing it means enumerating what three AWS clients
-        # can raise, and anything missed REPLACES the ConfigurationError being
-        # propagated with an unrelated one — hiding the only message that names the
-        # prefix the plugin expected. Pinned by
-        # test_the_report_does_not_replace_the_error_the_operator_needs.
         except Exception as reporting_error:  # noqa: BLE001
-            logger.warning(f"Failed to report construction failure: {reporting_error}")
+            logger.warning(f"Failed to emit construction failure audit event: {reporting_error}")
+
+        try:
+            self._update_source_run_status({
+                'status': 'error',
+                'items_found': 0,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'errors': [str(error)],
+            })
+        except Exception as reporting_error:  # noqa: BLE001
+            logger.warning(f"Failed to record construction failure run status: {reporting_error}")
+
+        if not unreadable:
+            try:
+                self.circuit_breaker.record_failure(str(error))
+            except Exception as reporting_error:  # noqa: BLE001
+                logger.warning(f"Failed to record construction failure with the circuit breaker: {reporting_error}")
 
     def _load_secrets(self) -> dict:
         """

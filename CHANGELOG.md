@@ -80,6 +80,21 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   can trip the breaker. Because a *scheduled* run writes no run record (there is no execution id to
   address one), an alarm on the `Refusing to load plugin secrets` log line is now the escalation
   path for this case; see `docs/plugin-architecture.md`.
+- `PUT`/`GET /integrations/{source}/credentials` now require `source` to be a plugin that exists.
+  Validating only its *form* left a cross-plugin credential write open, because the colliding value
+  is itself well-formed: `source=app_reviews` with key `ios_app_id` stored `app_reviews_ios_app_id`,
+  which `app_reviews_ios`'s next run then consumed as its own `app_id`. The synth-time guard on
+  colliding plugin ids does not reach this — a colliding *stored key* needs no colliding manifest —
+  so the namespace a write may address is now restricted to the manifest-derived ids CDK already
+  hands this Lambda. Admin-only before and after; this narrows an authenticated administrator's
+  blast radius. It fails open if that variable is unavailable, so one bad environment variable
+  cannot break credential management outright.
+- A plugin's `plugin.failed` audit event is no longer lost when the circuit breaker's own DynamoDB
+  lookup fails. The three reporting steps for a construction failure shared one `try`, and
+  `record_failure` is not exception-safe on its first line (it resolves its table in a property,
+  outside its own `try`), so a failure there skipped the audit event — in exactly the correlated
+  case where the same DynamoDB trouble affects both, and on a scheduled run that event is the only
+  signal the failure leaves anywhere. Each step is now guarded independently.
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a
@@ -100,6 +115,11 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `app_reviews_ios`). Secret keys are matched by string prefix, so the shorter id would receive the
   longer one's credentials. `cdk synth` now refuses such a pair, which is the only point at which
   the whole id set is known. No bundled pair collides.
+- **`source` on the credentials routes must now be a configured plugin id.** A request naming a
+  well-formed but non-existent source (`app_reviews`, `webscraper_admin`) is answered 400 instead of
+  reading or writing that namespace. Anything addressing a real plugin id is unaffected, which is
+  every call the web app makes; a script that relied on writing to an arbitrary namespace must use
+  the owning plugin's id.
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
   `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
   too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty

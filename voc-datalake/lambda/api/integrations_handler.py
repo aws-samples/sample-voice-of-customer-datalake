@@ -67,9 +67,11 @@ app = create_api_resolver()
 # Credential key validation
 #
 # We validate the *form* of each key rather than an enumerated per-source
-# list, because this Lambda cannot see plugin manifests (they are resolved at
-# CDK synth time, not at runtime).  A manifest-derived allowlist is the
-# stronger fix and is tracked as a follow-up.
+# list, because this Lambda cannot see plugin manifests directly (they are
+# resolved at CDK synth time, not at runtime).  The manifest-derived allowlist
+# that used to be described here as a follow-up now exists for the `source`
+# parameter — see `_validate_source_is_a_known_plugin` — because form validation
+# alone left a real cross-plugin credential write open.
 #
 # The character class itself lives in `shared/plugin_identity.py`, NOT here: the
 # READ side (`plugins/_shared/plugin_secrets.py`) has to validate the same shape
@@ -108,6 +110,49 @@ def _validate_source(source: str) -> None:
         preview = repr(source[:40]) if isinstance(source, str) else repr(source)
         raise ValidationError(
             f"Invalid source identifier {preview}: source {PLUGIN_IDENTIFIER_RULES}."
+        )
+
+
+def _validate_source_is_a_known_plugin(source: str) -> None:
+    """Raise ValidationError unless *source* is a plugin CDK told us about.
+
+    The form check above cannot close the namespace-collision gap, because the
+    colliding value is WELL-FORMED. `source` becomes a key prefix, so
+    `source='app_reviews'` + key `'ios_app_id'` writes `app_reviews_ios_app_id`
+    — which `app_reviews_ios`'s Lambda then reads as its own `app_id`. Since
+    issue #251 the prefix scan in `plugins/_shared/plugin_secrets.py` is the
+    ENTIRE isolation boundary between plugins (all ingestion Lambdas share one
+    IAM role), so a write that lands inside another plugin's namespace is a
+    cross-plugin credential injection, not a display quirk. `plugin-loader.ts`
+    refuses a manifest id that is a prefix of another's, but that guard is over
+    *manifest ids* and cannot see a `source` invented in a request.
+
+    So the namespace a write may address is restricted to the plugin ids
+    themselves. `PLUGIN_SECRET_DEFAULTS` is the manifest-derived list this
+    handler is already handed for exactly this reason — no new plumbing, and it
+    cannot drift from the manifests CDK read.
+
+    Fails OPEN when that variable is absent or malformed: `_plugin_secret_defaults`
+    already degrades to `{}` rather than 500ing the Settings page, and turning
+    that degradation into "no source may be configured at all" would let one bad
+    environment variable break credential management entirely. The form check
+    still applies in that case, which is the state this route shipped in.
+
+    Admin-only either way (`require_admin`), so this narrows an authenticated
+    administrator's blast radius rather than an anonymous one.
+    """
+    known = _plugin_secret_defaults()
+    if not known:
+        logger.warning(
+            "PLUGIN_SECRET_DEFAULTS unavailable; accepting any well-formed source"
+        )
+        return
+    if source not in known:
+        # Names the rejected source but NOT the known ones: an error caused by a
+        # wrong source must not become a directory of the right ones, which is the
+        # same discipline `filter_plugin_secrets` applies on the read side.
+        raise ValidationError(
+            f"Unknown source identifier {source[:40]!r}: it is not a configured plugin."
         )
 
 
@@ -244,8 +289,12 @@ def get_integration_status():
             # ponytail: plain prefix match, so if one plugin id were ever a
             # prefix of another ('app_reviews' alongside 'app_reviews_ios') the
             # shorter one would also list the longer one's keys. No current id
-            # pair does this. Upgrade path is to iterate `seeded` by declared
-            # key instead, which costs the write-through property above.
+            # pair does this, and `loadPlugins` now refuses such a manifest pair at
+            # synth time. Iterating `seeded` by declared key instead would remove
+            # the caveat here too, at the cost of the write-through property above.
+            # This loop is over ids CDK supplied, so it cannot be reached by a
+            # request-supplied source — that entrance is closed separately, in
+            # _validate_source_is_a_known_plugin.
             configured_keys = sorted(
                 key[len(prefix):]
                 for key, value in secrets.items()
@@ -296,6 +345,10 @@ def get_credentials(source: str):
     # a caller sending source='foo_bar' + key='baz' would reach the same
     # secret key as source='foo' + key='bar_baz' (namespace collision).
     _validate_source(source)
+    # And the form check is not sufficient: the colliding value is well-formed.
+    # source='app_reviews' + key='ios_app_id' addresses app_reviews_ios's
+    # namespace, so the source must be a plugin that actually exists.
+    _validate_source_is_a_known_plugin(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
@@ -358,6 +411,11 @@ def update_credentials(source: str):
     # a caller sending source='foo_bar' + key='baz' would reach the same
     # secret key as source='foo' + key='bar_baz' (namespace collision).
     _validate_source(source)
+    # The write is the dangerous direction: without this, an admin could inject a
+    # value into another plugin's namespace (source='app_reviews' + key
+    # 'ios_app_id' → app_reviews_ios_app_id) and that plugin's next run would use
+    # it as its own credential.
+    _validate_source_is_a_known_plugin(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
