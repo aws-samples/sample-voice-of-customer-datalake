@@ -54,7 +54,10 @@ all of it, and an earlier version of this docstring claimed it did:
     its own — an `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ...
     | 'onepager' }` annotation uses the name and still widens, and was measured to
     exit `tsc` 0 with every test here green. `noUnusedLocals` does NOT cover that
-    either, since the name is used.
+    either, since the name is used. Nor does the name APPEARING in the file: the pin
+    block at its foot names the type nine times, so a structurally identical inline
+    literal passed that check with `tsc` at exit 0 — which is why the text guard pins
+    the annotation `data: GenerateDocumentBody` rather than the bare name.
     So a widening has to edit `DocType` itself — the declaration this file parses —
     and `GENERATED_DOC_TYPES` with it. Editing `GenerateDocumentBody.doc_type` is
     not a way around that: the pin above makes it a compiler error.
@@ -80,9 +83,24 @@ has nowhere to migrate to, so the guard, its two method-name markers and their
 ordering assumption all went.
 
 The text assertions that remain pin the PRESENCE of things whose absence is silent
-(the two type-level pins, and that each is still spelled as a comparison rather than
-stubbed to a constant) and the ONE link no compiler can see: `DocType` against a
-Python tuple.
+(the two type-level pins, spelled out in full so neither a stub nor a self-comparing
+alias satisfies them, plus each control's `@ts-expect-error`) and the ONE link no
+compiler can see: `DocType` against a Python tuple.
+
+A DECLARATION RATHER THAN A FRAGMENT is the rule those pins converged on. Requiring
+part of a declaration was defeated three rounds running — by the helper's own
+declaration containing the fragment, and by the fragment saying nothing about the
+operands — so what is pinned is the exact text of each declaration, operands included.
+That is not an enumeration of legal TypeScript, which is the thing this file refuses:
+there is one string per declaration, and any edit to it is either the same declaration
+or a different one. The cost is that these declarations must stay on ONE line.
+
+WHAT IS SELF-CHECKING, and therefore needs no text pin at all: the verdict helpers'
+`extends true`. Each control applies the same helper as its pin and expects to be
+rejected, via `@ts-expect-error`, so dropping the constraint — one edit that would
+otherwise disable a pin and every control at once — makes those directives unused and
+`tsc` reports TS2578. Preferring that to a fifth spelling is the same rule as above:
+a link TypeScript can check gets a compiler check.
 
 A `.test-d.ts`-style type test was considered for that job and REJECTED, so it does
 not get proposed again: `typecheck:tests` is not in the root `check` chain
@@ -126,21 +144,33 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
   * `test_both_client_signatures_use_the_shared_request_body` — a signature
     respelling the body inline again, which is a compiler error in `client.ts` and
     NOTHING in `projectsApi.ts` (see above). Text, not a parse: it asks whether the
-    shared name appears, so it needs no model of TypeScript and cannot mis-read a
-    restyling. A rename of `GenerateDocumentBody` fails it too, which is correct —
-    the constant here is what the two files must agree on.
+    parameter is ANNOTATED with the shared type (`data: GenerateDocumentBody`), so it
+    needs no model of TypeScript and cannot mis-read a restyling. ⚠️ It asked only
+    whether the NAME appeared anywhere in the file until the annotation was pinned,
+    and that was vacuous: the pin block at the foot of `projectsApi.ts` names the type
+    nine times, so a structurally identical inline literal — the exact edit #381
+    removed — passed with `tsc` at exit 0 and every test here green. A rename of
+    `GenerateDocumentBody` fails it too, which is correct — the constant here is what
+    the two files must agree on.
   * `test_the_type_level_pins_are_present` — either type-level pin deleted, STUBBED
-    to a bare constant, or left with only one of its two controls. All are silent
-    otherwise: deleting a pin compiles cleanly, and stubbing both a pin and its
-    control to `= true` / `= false` was measured to exit `tsc` 0 and pass every test
-    here while the guarded field was widened. So the assertion SPELLING is required,
-    and it names the pin's USE of the verdict helper (`MustBeTrue<BothWays<`) — an
-    earlier version required only `MustBeTrue<`, which the helper's OWN declaration
-    contains, so exporting the helpers and stubbing the pins passed every gate.
-    Covers both links: the field-vs-union pin, and the parameter-vs-body pin that
-    replaced the `satisfies` clause and the location guard it needed — see WHY EACH
-    GUARD IS THE KIND IT IS for why a comparison was the answer and a tighter text
-    slice was not.
+    to a bare constant, fed through an alias that compares a type to itself, left with
+    only one of its two controls, or stripped of a control's `@ts-expect-error`. All
+    are silent otherwise, and each was measured to exit `tsc` 0 and pass every test
+    here while the guarded field or parameter was widened. So what is required is each
+    WHOLE DECLARATION, operands included — three successive fragments (the names,
+    `MustBeTrue<`, then `MustBeTrue<BothWays<`) each turned out to be satisfiable
+    without the pin doing anything: the second is in the helper's own declaration, and
+    the third says nothing about what is being compared. Covers both links: the
+    field-vs-union pin, and the parameter-vs-body pin that replaced the `satisfies`
+    clause and the location guard it needed — see WHY EACH GUARD IS THE KIND IT IS for
+    why a comparison was the answer and a tighter text slice was not.
+  * Each control's `@ts-expect-error` — `extends true` dropped from a verdict helper,
+    ONE edit that disables a pin and all its controls at once and was measured to
+    leave `tsc` at exit 0 with every test here green. Because a control asserts its
+    verdict by applying the SAME helper and expecting rejection, losing that
+    constraint turns every directive into a TS2578, so the constraint is
+    self-checking rather than a further thing this file has to spell. `@ts-ignore`
+    cannot be swapped in — `@typescript-eslint/ban-ts-comment` refuses it.
   * The `...WouldSeeNarrowing` controls — `BothWays` collapsed to a one-way
     `extends`, which admits a NARROWED field or parameter: the "capability nobody
     can reach" half of this contract's drift. The widened-side controls cannot see
@@ -172,6 +202,17 @@ DOC_TYPE_UNION_SOURCE = 'frontend/src/api/types.ts'
 # see the docstring: the compiler catches that in one file and not the other.
 REQUEST_BODY_TYPE = 'GenerateDocumentBody'
 
+# 🔑 The ANNOTATION, not just the name. Asserting `REQUEST_BODY_TYPE in source` was
+# measured to be vacuous in `projectsApi.ts`: the type-level pin block at the foot of
+# that file names `GenerateDocumentBody` nine times, so the name is present whatever
+# the signature says. Replacing the parameter with a structurally identical inline
+# object literal (every field spelled out, `doc_type: DocType`) left `tsc` at exit 0
+# — `BothWays` compares structurally, so an identical shape is equal — and every test
+# here green. That is the exact edit issue #381 set out to eliminate, so the guard
+# names the parameter's reference to the type rather than the type's appearance
+# anywhere in the file.
+REQUEST_BODY_ANNOTATION = f'data: {REQUEST_BODY_TYPE}'
+
 # The TERMINAL client — the one whose `data` is only spread into `JSON.stringify`, so
 # its annotation is checked against nothing and naming the body type is not enough on
 # its own (an `Omit<..> & { doc_type: .. | 'x' }` respelling names it and still
@@ -179,13 +220,14 @@ REQUEST_BODY_TYPE = 'GenerateDocumentBody'
 TERMINAL_CLIENT = 'frontend/src/api/projectsApi.ts'
 
 # The two type-level pins that carry every link TypeScript can check, each with the
-# file it is declared in and its non-vacuity control. A pin's own absence is SILENT —
-# delete either block and the frontend still compiles — which is the only reason this
-# file mentions them at all: `test_the_type_level_pins_are_present` keeps them there.
+# file it is declared in. A pin's own absence is SILENT — delete either block and the
+# frontend still compiles — which is the only reason this file mentions them at all:
+# `test_the_type_level_pins_are_present` keeps them there.
 #
-# 🔑 A pin is spelled `<Name> = <Verdict><Comparison<...>>`, and the SPELLINGS BELOW
-# INCLUDE THE COMPARISON, not just the verdict helper. Both halves of that were
-# measured, one review round apart:
+# 🔑 WHOLE DECLARATIONS, not fragments. Three rounds each found the fragment being
+# required was satisfiable without the pin doing anything, so the rule this converged
+# on is: pin the entire right-hand side, because any fragment of it is a substring some
+# other construct can contain.
 #
 #   * Requiring only the NAMES was vacuous. Stub a pin and its control to bare
 #     constants (`export type DocTypeFieldIsExactlyTheUnion = true`), delete the helper
@@ -194,25 +236,54 @@ TERMINAL_CLIENT = 'frontend/src/api/projectsApi.ts'
 #   * Requiring `MustBeTrue<` was ALSO vacuous, for a subtler reason: that substring
 #     occurs in the helper's OWN declaration (`type MustBeTrue<Verdict ...>`), so it is
 #     satisfied by the helper merely existing. The stub only has to keep the helpers
-#     and `export` them — measured, `tsc` exit 0 and every test here green with the
-#     field widened. So the spelling must name the pin's USE of the helper, which
-#     `MustBeTrue<BothWays<` does and a declaration cannot accidentally contain.
+#     and `export` them — measured, `tsc` exit 0 and every test here green.
+#   * Requiring `MustBeTrue<BothWays<` was vacuous a THIRD way, and this is why the
+#     rule is now the whole declaration rather than a longer fragment: the fragment
+#     says nothing about what the comparison's OPERANDS are. Repointing the
+#     intermediate alias the left side was read through (`Parameters<...>[1]` ->
+#     `GenerateDocumentBody`) made the pin compare the interface to itself — still
+#     spelled `SignatureMustMatch<BothWays<`, still with both controls present and
+#     green because they read the same alias, `tsc` exit 0, every test here green, and
+#     a caller able to send a value the route 400s. The alias is now inlined and the
+#     operands are part of what is pinned.
 #
-# This is why the pins in both files are written on ONE line: the substring spans the
-# helper and the comparison, so a wrapped declaration puts a newline between them.
+# This is why every pinned declaration in both files is written on ONE line: what is
+# required is the exact text, so a wrapped declaration puts newlines inside it.
+#
+# The `@ts-expect-error` above each CONTROL is load-bearing, and pinned separately
+# below. A control asserts its comparison must NOT hold by applying the SAME verdict
+# helper as the pin and expecting the error — so if `extends true` is dropped from that
+# helper (which would silently disable the pin and every control at once) the expected
+# errors stop arriving and each directive becomes a TS2578 "unused
+# '@ts-expect-error'". That is what makes the helper's constraint self-checking rather
+# than a fourth thing this file has to spell. `@ts-ignore` cannot be swapped in: it is
+# a lint error under `@typescript-eslint/ban-ts-comment`.
 #
 # Keyed by relative path, since the pins live in two files. Each value is
-# (pin, controls, assertion-spellings) — the controls and spellings are tuples because
-# each pin needs TWO controls (widened and narrowed; see below).
+# (pin-declaration, control-declarations) — the controls are a tuple because each pin
+# needs TWO of them (widened and narrowed; see below). Every entry is the EXACT text of
+# a declaration, matched against the comment-stripped source so a commented-out copy
+# cannot satisfy it.
 TYPE_LEVEL_PINS = {
     # `GenerateDocumentBody.doc_type` admits exactly the members of `DocType`. Nothing
     # else in either language sees this field: this file parses only the
     # `export type DocType =` declaration, and the signature pin below compares
     # against the interface, so a widened interface satisfies it by construction.
     DOC_TYPE_UNION_SOURCE: (
-        'DocTypeFieldIsExactlyTheUnion',
-        ('DocTypeFieldPinWouldSeeDrift', 'DocTypeFieldPinWouldSeeNarrowing'),
-        ('MustBeTrue<BothWays<', 'MustBeFalse<BothWays<'),
+        (
+            "export type DocTypeFieldIsExactlyTheUnion = "
+            "MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType>>"
+        ),
+        (
+            (
+                "export type DocTypeFieldPinWouldSeeDrift = MustBeTrue<BothWays<"
+                "GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>>"
+            ),
+            (
+                'export type DocTypeFieldPinWouldSeeNarrowing = '
+                'MustBeTrue<BothWays<never, DocType>>'
+            ),
+        ),
     ),
     # `generateDocument`'s parameter admits exactly `GenerateDocumentBody`. This is the
     # one that replaced a `satisfies` clause in the method body plus the text guard
@@ -221,14 +292,29 @@ TYPE_LEVEL_PINS = {
     # searched, and both slices tried were measured to be evadable. A comparison
     # against the method's own type has nowhere to migrate to.
     TERMINAL_CLIENT: (
-        'GenerateDocumentTakesTheSharedBody',
         (
-            'GenerateDocumentSignaturePinWouldSeeDrift',
-            'GenerateDocumentSignaturePinWouldSeeNarrowing',
+            'export type GenerateDocumentTakesTheSharedBody = '
+            'SignatureMustMatch<BothWays<Parameters<typeof '
+            'projectsApi.generateDocument>[1], GenerateDocumentBody>>'
         ),
-        ('SignatureMustMatch<BothWays<', 'SignatureMustDiffer<BothWays<'),
+        (
+            (
+                'export type GenerateDocumentSignaturePinWouldSeeDrift = '
+                'SignatureMustMatch<BothWays<Parameters<typeof '
+                'projectsApi.generateDocument>[1], GenerateDocumentBody & '
+                '{ not_in_the_body: true }>>'
+            ),
+            (
+                'export type GenerateDocumentSignaturePinWouldSeeNarrowing = '
+                'SignatureMustMatch<BothWays<never, GenerateDocumentBody>>'
+            ),
+        ),
     ),
 }
+
+# The directive each control must carry, on the line immediately above it. Checked
+# against the RAW source, since `_without_comments` blanks exactly this.
+EXPECT_ERROR_DIRECTIVE = '@ts-expect-error'
 
 # Both clients, the terminal one included rather than respelled — a second copy of
 # that path here is the same duplication this whole issue was about.
@@ -726,16 +812,26 @@ class TestDocTypeLockstep:
         shared type at all — no method location, no parameter-list extent, no model
         of TypeScript, so none of the ways the scanner mis-read legal code apply.
 
-        LIMIT, stated precisely because an earlier version of this docstring
-        overstated it: this test cannot tell WHERE the name is used, so a signature
-        that names `GenerateDocumentBody` and widens `doc_type` anyway passes HERE.
-        That residue is not closed by `noUnusedLocals` — an earlier claim that it was
-        is false, and was measured to be: an
-        `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ... | 'onepager' }`
-        annotation USES the imported name, so no unused-local fires and `tsc` exits
-        0. What closes it is `GenerateDocumentTakesTheSharedBody`, a type-level
+        THE ANNOTATION, not merely the name — because the name alone was measured to
+        be vacuous here. An earlier version asserted `GenerateDocumentBody in source`,
+        which in `projectsApi.ts` is satisfied by the type-level pin block at the foot
+        of that file (it names the type nine times) whatever the signature says.
+        Replacing the parameter with a structurally identical inline object literal
+        left `tsc` at exit 0 — `BothWays` compares structurally, so an identical shape
+        is equal — and every test here green, i.e. the precise edit this file's own
+        issue set out to eliminate passed the guard named as forbidding it. Pinning
+        `data: GenerateDocumentBody` is the signature's REFERENCE to the shared type,
+        and there is one spelling of it, so this does not start an enumeration.
+
+        LIMIT: this cannot tell whether the referenced type is the right shape, only
+        that the parameter takes it by name. A signature that names the type and
+        widens `doc_type` in the SAME annotation
+        (`Omit<GenerateDocumentBody, 'doc_type'> & { ... }`) does not match this
+        string, but a widening that keeps the exact `data: GenerateDocumentBody`
+        prefix would; `noUnusedLocals` does not cover that either, since the name is
+        used. What closes it is `GenerateDocumentTakesTheSharedBody`, a type-level
         comparison of that method's parameter against the interface, which makes any
-        widening of it a TS2344 — whatever the spelling.
+        widening a TS2344 whatever the spelling.
         `test_the_type_level_pins_are_present` is what keeps it there, since deleting
         it is silent otherwise.
         """
@@ -748,13 +844,17 @@ class TestDocTypeLockstep:
                 f'moved, point GENERATE_DOCUMENT_CLIENTS at its new home; if this '
                 f'client dropped it, drop the entry.'
             )
-            assert REQUEST_BODY_TYPE in source, (
-                f'{relative} does not name {REQUEST_BODY_TYPE}, so its '
-                f'generateDocument body is spelled inline. In projectsApi.ts nothing '
-                f'checks such an annotation — the request goes out with whatever it '
-                f'admits and the route 400s it. Take {REQUEST_BODY_TYPE} (declared '
-                f'in {DOC_TYPE_UNION_SOURCE}) instead, and widen the contract there '
-                f'if that is what is wanted.'
+            assert REQUEST_BODY_ANNOTATION in source, (
+                f'{relative} does not spell `{REQUEST_BODY_ANNOTATION}`, so its '
+                f'generateDocument body is not taken from the shared type — most '
+                f'likely restated as an inline object literal. In projectsApi.ts '
+                f'nothing else catches that: the name appearing SOMEWHERE in the file '
+                f'is satisfied by the pin block at its foot, and a structurally '
+                f'identical literal compares equal, so the request goes out with '
+                f'whatever the literal admits and the route 400s it. Take '
+                f'{REQUEST_BODY_TYPE} (declared in {DOC_TYPE_UNION_SOURCE}) as the '
+                f'parameter type, and widen the contract there if that is what is '
+                f'wanted.'
             )
 
     @pytest.mark.skipif(
@@ -780,16 +880,25 @@ class TestDocTypeLockstep:
             respelling USES the shared name, so neither `noUnusedLocals` nor the name
             assertion above sees it.
 
-        Text, not a parse — but text with two lessons in it, one per review round.
-        Asserting the pin NAMES alone was measured to be vacuous: stub both a pin and
-        its control to bare constants (`= true` / `= false`), delete the helper types
-        so no unused-local fires, and `tsc` exits 0 with every test here green while
-        the guarded field is widened. Requiring `MustBeTrue<` did not fix it, because
-        that substring is in the HELPER'S OWN DECLARATION — so the stub just keeps the
-        helpers and exports them, and every gate is green again. The spelling required
-        is therefore the pin's USE of the helper (`MustBeTrue<BothWays<`). That the
-        comparisons BITE is the compiler's job; this test says only that a real
-        comparison is spelled.
+        Text, not a parse — but text with three lessons in it, one per review round,
+        which is why what it requires is now each WHOLE DECLARATION rather than a
+        fragment of one. Each fragment tried was satisfiable while the pin did nothing:
+
+          * The pin NAMES alone. Stub both a pin and its control to bare constants
+            (`= true` / `= false`), delete the helper types so no unused-local fires,
+            and `tsc` exits 0 with every test here green while the guarded field is
+            widened.
+          * `MustBeTrue<`. That substring is in the HELPER'S OWN DECLARATION, so the
+            stub just keeps the helpers and exports them — every gate green again.
+          * `MustBeTrue<BothWays<`. Says nothing about the comparison's OPERANDS:
+            repointing the alias the left side was read through at the interface made
+            the pin compare that interface to itself, trivially equal forever, with the
+            fragment still present and both controls still green because they read the
+            same alias. `tsc` exit 0, every test here green, and a caller able to send
+            a value the route 400s.
+
+        So the operands are part of what is pinned, and the alias is gone. That the
+        comparisons BITE is still the compiler's job; this says a real one is spelled.
 
         TWO controls per pin, both required. `MustBeTrue<BothWays<...>>` is satisfied
         by a `BothWays` that degenerates to `true`, and by one collapsed to its
@@ -799,36 +908,57 @@ class TestDocTypeLockstep:
         `BothWays` to `[Left] extends [Right]` left `tsc` at exit 0 with every test
         here green. The narrowed-side controls (`...WouldSeeNarrowing`) are what
         refuse that, using `never` as the left side.
+
+        AND each control's `@ts-expect-error`, which is what makes the verdict helper's
+        `extends true` self-checking. A control applies the same helper as the pin and
+        expects to be rejected, so dropping that constraint — one edit that disables
+        the pin and all four controls at once, measured to leave `tsc` at exit 0 with
+        every test here green — turns each directive into a TS2578. Without the
+        directive pinned, that edit could be paired with deleting the directives and
+        nothing would notice.
         """
-        pin, controls, assertions = TYPE_LEVEL_PINS[relative]
+        pin, controls = TYPE_LEVEL_PINS[relative]
         path = _repo_root() / relative
         assert path.is_file(), f'{relative} moved — update TYPE_LEVEL_PINS'
-        source = _without_comments(path.read_text(encoding='utf-8'))
+        raw = path.read_text(encoding='utf-8')
+        # Comment-stripped for the declarations, so a commented-out copy cannot satisfy
+        # them; raw for the directives, which are themselves comments.
+        source = _without_comments(raw)
         assert pin in source, (
-            f'{relative} no longer declares `{pin}`. That is the only check on its '
-            f'half of this contract — nothing else in either language covers it (see '
-            f'this test\'s docstring), so without it the doc_type it guards can be '
-            f'widened past the route\'s allowlist with tsc, eslint and this whole '
-            f'file green. Restore it, or widen DocType and GENERATED_DOC_TYPES '
+            f'{relative} no longer declares, exactly:\n'
+            f'    {pin}\n'
+            f'That is the only check on its half of this contract — nothing else in '
+            f'either language covers it (see this test\'s docstring), so without it '
+            f'the doc_type it guards can be widened past the route\'s allowlist with '
+            f'tsc, eslint and this whole file green. The OPERANDS are part of what is '
+            f'pinned: reading the left side through an alias was measured to let the '
+            f'pin compare a type to itself while every gate stayed green. Keep it on '
+            f'ONE line. Restore it, or widen DocType and GENERATED_DOC_TYPES '
             f'together, which is the supported way to change the contract.'
         )
         for control in controls:
             assert control in source, (
-                f'{relative} declares `{pin}` but not its control `{control}`. The '
-                f'pin is satisfied both by a comparison that degenerates to `true` '
+                f'{relative} declares its pin but not this control, exactly:\n'
+                f'    {control}\n'
+                f'The pin is satisfied both by a comparison that degenerates to `true` '
                 f'and by one collapsed to a one-way `extends`, each of which passes '
                 f'while measuring less than it claims; the controls are what refuse '
                 f'those, the same way TestContractDriftIsCaught does for the parser '
                 f'here. A widened-side control cannot detect the one-way collapse, '
                 f'so the narrowed-side one is not redundant.'
             )
-        for assertion in assertions:
-            assert assertion in source, (
-                f'{relative} does not spell `{assertion}`, so a pin or a control is '
-                f'no longer applied to a comparison. A bare `= true` satisfies a '
-                f'name check while comparing nothing, and naming the helper alone is '
-                f'satisfied by the helper\'s own declaration — both were measured to '
-                f'pass every gate with the guarded field widened. Note these pins are '
-                f'written on ONE line deliberately: wrapping the declaration puts a '
-                f'newline inside this substring.'
+            # The line immediately above the control, in the RAW source — the
+            # declarations are pinned against the stripped source, but a directive IS a
+            # comment, so it only exists here.
+            preceding = raw[:raw.find(control)].rstrip().rsplit('\n', 1)[-1]
+            assert EXPECT_ERROR_DIRECTIVE in preceding, (
+                f'{relative} declares the control\n'
+                f'    {control}\n'
+                f'but the line above it is not a `{EXPECT_ERROR_DIRECTIVE}`. That '
+                f'directive is what asserts the control\'s comparison FAILS, and it is '
+                f'also what makes the verdict helper\'s `extends true` self-checking: '
+                f'drop that constraint — one edit that disables the pin and every '
+                f'control at once, measured to leave tsc at exit 0 with every test '
+                f'here green — and each directive becomes an unused-directive error '
+                f'instead. Found instead: {preceding.strip()!r}'
             )

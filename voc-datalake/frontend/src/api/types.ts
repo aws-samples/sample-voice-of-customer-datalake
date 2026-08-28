@@ -502,32 +502,48 @@ export interface GenerateDocumentBody {
 export type BothWays<Left, Right> = [Left] extends [Right]
   ? ([Right] extends [Left] ? true : false)
   : false
+// The ONE verdict helper. `Verdict extends true` is the whole assertion: applied to a
+// comparison that came back `false`, the constraint is unsatisfied and the line is a
+// TS2344.
+//
+// 🔑 There is deliberately no `MustBeFalse` companion. The controls below assert their
+// verdict by applying THIS helper and expecting the error, via `@ts-expect-error`, so
+// that dropping `extends true` cannot go unnoticed: with the constraint gone the
+// controls stop erroring and each directive becomes an "unused '@ts-expect-error'"
+// TS2578. A separate `MustBeFalse<Verdict extends false>` could not do that — it was
+// measured that deleting BOTH constraints left `tsc` at exit 0 with every lockstep
+// test green while the field below was widened, because a text check on the helpers'
+// names is satisfied by their own declarations.
 type MustBeTrue<Verdict extends true> = Verdict
-type MustBeFalse<Verdict extends false> = Verdict
-// Each pin below is written on ONE line, with its comparison applied inline. That is
-// load-bearing rather than a formatting choice: the lockstep test requires the source
-// to spell `MustBeTrue<BothWays<`, and a wrapped declaration puts a newline between
-// the two so the substring is absent. See TYPE_LEVEL_PINS in
-// lambda/api/test/test_doc_type_lockstep.py for why the check includes the
-// comparison and not just the helper's name.
+// Each declaration below is written on ONE line. That is load-bearing rather than a
+// formatting choice: the lockstep test pins each one as an EXACT string, so a wrapped
+// declaration puts a newline inside what it is looking for. See TYPE_LEVEL_PINS in
+// lambda/api/test/test_doc_type_lockstep.py for why it pins the whole declaration
+// rather than a fragment of it.
 //
 // Exported only so `noUnusedLocals` cannot be what deletes them; nothing imports
 // any of them, and nothing should.
 export type DocTypeFieldIsExactlyTheUnion = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType>>
-// The non-vacuity controls for the line above, in the same convention the lockstep
-// tests use: `MustBeTrue<BothWays<...>>` is also satisfied by a `BothWays` that
-// degenerates to `true`, which would be a pin reporting success while comparing
-// nothing. Both are derived from the field rather than listing members, so widening
-// the contract legitimately does not make either one the failure.
+// The non-vacuity controls for the line above. `MustBeTrue<BothWays<...>>` is also
+// satisfied by a `BothWays` that degenerates to `true` or collapses to a one-way
+// `extends`, either of which is a pin reporting success while comparing less than it
+// claims. Both controls are derived from the field rather than listing members, so
+// widening the contract legitimately does not make either one the failure.
 //
-// WIDENED side — refuses a `BothWays` that is always `true`. Adding a member the
-// route cannot accept must not compare equal.
-export type DocTypeFieldPinWouldSeeDrift = MustBeFalse<BothWays<GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>>
+// Each is an INVERTED assertion: the comparison must NOT hold, so `MustBeTrue` must
+// reject it and `@ts-expect-error` consumes that error. This is self-checking in both
+// directions — if the comparison starts holding the directive goes unused (TS2578),
+// and if the directive is deleted the genuine TS2344 surfaces.
+//
+// WIDENED side — adding a member the route cannot accept must not compare equal.
+// @ts-expect-error the field plus a member DocType lacks must NOT compare equal
+export type DocTypeFieldPinWouldSeeDrift = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>>
 // NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
 // control above cannot see (see the ⚠️ note on `BothWays`). `never` is assignable to
-// `DocType`, so a one-way comparison calls this `true` and this line becomes a
-// TS2344; two-way, it is `false` as required.
-export type DocTypeFieldPinWouldSeeNarrowing = MustBeFalse<BothWays<never, DocType>>
+// `DocType`, so a one-way comparison calls this `true`, the directive goes unused and
+// the line becomes a TS2578; two-way, it is `false` as required.
+// @ts-expect-error `never` is narrower than DocType, so it must NOT compare equal
+export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<never, DocType>>
 
 export interface ProjectDocument {
   document_id: string

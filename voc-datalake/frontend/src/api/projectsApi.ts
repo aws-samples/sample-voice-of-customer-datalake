@@ -383,29 +383,42 @@ export const projectsApi = {
 // the method's own type has no location to migrate to, so the text guard, its two
 // method-name markers and their ordering assumption all went with it.
 //
-// `Parameters<...>[1]` reads the parameter off the declaration rather than restating
-// it, so this cannot drift from the signature it pins. Equality in both directions
-// for the same reason as `DocTypeFieldIsExactlyTheUnion`: a one-way `extends` passes
-// on a NARROWED parameter, which is the "capability nobody can reach" half of this
-// contract's drift.
+// `Parameters<...>[1]` reads the parameter off the METHOD rather than restating it, so
+// the left side of this comparison is whatever the signature actually declares.
+// Applied INLINE below rather than through an intermediate alias: an alias is a second
+// place the left side can be respelled, and repointing one at `GenerateDocumentBody`
+// made the pin compare the interface to itself — trivially equal forever, with both
+// controls still green because they read through the same alias. Measured: `tsc` exit
+// 0, every lockstep test green, and a caller sending a value the route 400s.
+//
+// Equality in both directions for the same reason as `DocTypeFieldIsExactlyTheUnion`:
+// a one-way `extends` passes on a NARROWED parameter, which is the "capability nobody
+// can reach" half of this contract's drift.
 //
 // Each declaration below is on ONE line, with its comparison applied inline: the
-// lockstep test requires the source to spell `SignatureMustMatch<BothWays<`, and
-// wrapping puts a newline between the two so the substring goes absent.
+// lockstep test pins each as an EXACT string, so wrapping puts a newline inside what
+// it looks for. See TYPE_LEVEL_PINS in lambda/api/test/test_doc_type_lockstep.py.
+//
+// One verdict helper, no `SignatureMustDiffer` companion — see the 🔑 note on
+// `MustBeTrue` in ./types: the controls assert their verdict by expecting THIS helper's
+// error, so dropping `extends true` makes each `@ts-expect-error` unused (TS2578)
+// instead of silently disabling every control at once.
 type SignatureMustMatch<Verdict extends true> = Verdict
-// The parameter as DECLARED, read off the method so this cannot restate it.
-type DeclaredGenerateDocumentBody = Parameters<typeof projectsApi.generateDocument>[1]
-export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<DeclaredGenerateDocumentBody, GenerateDocumentBody>>
-// The non-vacuity controls, in the convention the lockstep tests use for their own:
-// `SignatureMustMatch<BothWays<...>>` is also satisfied by a `BothWays` that
-// degenerates to `true`, which would report success while comparing nothing.
+export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody>>
+// The non-vacuity controls. `SignatureMustMatch<BothWays<...>>` is also satisfied by a
+// `BothWays` that degenerates to `true` or collapses to one-way, each of which reports
+// success while comparing less than it claims. Both are INVERTED assertions: the
+// comparison must NOT hold, so the helper must reject it and `@ts-expect-error`
+// consumes that error — self-checking, since a comparison that starts holding leaves
+// the directive unused.
 //
 // WIDENED side — a body with one extra member must NOT compare equal.
-type SignatureMustDiffer<Verdict extends false> = Verdict
-export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustDiffer<BothWays<DeclaredGenerateDocumentBody, GenerateDocumentBody & { not_in_the_body: true }>>
+// @ts-expect-error the declared parameter must NOT equal a body with an extra member
+export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody & { not_in_the_body: true }>>
 // NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
 // control above cannot detect: a widened left side fails `[Left] extends [Right]`
 // under either form, so the two are indistinguishable to it (see the ⚠️ note on
 // `BothWays` in ./types). `never` is assignable to the body, so a one-way comparison
-// calls this `true` and the line becomes a TS2344.
-export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustDiffer<BothWays<never, GenerateDocumentBody>>
+// calls this `true`, the directive goes unused and the line becomes a TS2578.
+// @ts-expect-error `never` is narrower than the body, so it must NOT compare equal
+export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustMatch<BothWays<never, GenerateDocumentBody>>
