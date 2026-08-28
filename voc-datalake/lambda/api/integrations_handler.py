@@ -184,6 +184,43 @@ def _validate_source_parameter(source: str) -> None:
     _validate_source_is_a_known_plugin(source)
 
 
+def _is_addressable_source(source: str) -> bool:
+    """The same rule as `_validate_source_parameter`, as a predicate.
+
+    Calls it rather than restating the rule, because a second copy of "is this a
+    real plugin?" is how the read side comes to accept a value the write side
+    refuses — the drift that put the character class in `shared/plugin_identity.py`
+    in the first place.
+
+    Needed because ONE route cannot raise. `GET /sources/status?sources=a,b,c`
+    answers about several sources at once, so raising on the first unknown name
+    would fail the whole response rather than that one entry — and its own default
+    list is `['webscraper', 'manual_import', 's3_import']`, where `manual_import`
+    is a deliberate non-plugin: it is a legitimate `source_platform` (it appears in
+    `KNOWN_SOURCES` in `plugins/_shared/schemas.py`) with no manifest, so it is
+    absent from `PLUGIN_SECRET_DEFAULTS` and a raising guard would answer 400 to
+    the argument-less request `SourceCard.tsx` issues on every Settings render —
+    for admins too.
+
+    Skipping the EventBridge call for a source this rejects is OUTPUT-IDENTICAL
+    for every input the UI sends. A schedule rule is only ever created per plugin
+    (`scheduleRuleName` in `lib/stacks/ingestion-stack.ts` is built from
+    `plugin.id`), so for every value rejected here `describe_rule` could only have
+    raised `ResourceNotFoundException`, which the route already answers with
+    `{'enabled': False, 'exists': False}` — exactly what the default request
+    returns today for all three of its sources. What changes is that an arbitrary
+    value stops reaching EventBridge and stops having a rule name reflected back.
+
+    Inherits the fail-open on an unavailable `PLUGIN_SECRET_DEFAULTS`, because
+    `_validate_source_is_a_known_plugin` returns early in that state.
+    """
+    try:
+        _validate_source_parameter(source)
+    except ValidationError:
+        return False
+    return True
+
+
 # Stored strings that carry no configuration, whatever key they sit under.
 # '[]' and '{}' matter because save_app_config() below writes `<source>_configs`
 # at RUNTIME for the multi-instance app plugins, so no manifest declares those
@@ -723,24 +760,50 @@ def _get_source_run_status(source: str):
 @app.get("/sources/status")
 @tracer.capture_method
 def get_sources_status():
-    """Get status of all data source schedules, or run status for a specific source."""
+    """Get status of all data source schedules, or run status for a specific source.
+
+    The only route taking a source from the QUERY STRING rather than a `<source>`
+    path parameter, which is why it is outside the path-parameter guard the other
+    seven share and validates its sources here instead. Both branches derive a
+    resource from the value — `_build_rule_name` for an EventBridge rule this
+    `describe_rule`s, and a `SOURCE_RUN#` partition key for `_get_source_run_status`
+    — so "is this a real plugin?" is as much the question here as on
+    `enable`/`disable`, of which this is the read-side mirror.
+
+    The two branches answer it differently because only one of them can raise; see
+    `_is_addressable_source`. Open to any authenticated user, deliberately and as
+    before: `SourceCard.tsx` and `PluginConfigModal.tsx` both read it for ordinary
+    users, and gating it needs the same read/write reasoning applied to
+    `list_app_configs`. Validating it closes the arbitrary-rule-enumeration half.
+    """
     params = app.current_event.query_string_parameters or {}
-    
+
     # If source param provided, return run status for that source
     run_status_source = params.get('run_status')
     if run_status_source:
+        # RAISES here, unlike the batch branch below: this answers about a single
+        # source, so a 400 names the actual problem instead of reporting an empty
+        # status that reads as "never run". Every caller passes a real `plugin.id`
+        # (GeneratorConfigModal, SyntheticSourceCard, Scrapers).
+        _validate_source_parameter(run_status_source)
         return _get_source_run_status(run_status_source)
-    
+
     sources_param = params.get('sources', '')
-    
+
     # Use requested sources or fall back to defaults
     if sources_param:
         sources = [s.strip() for s in sources_param.split(',') if s.strip()]
     else:
         sources = ['webscraper', 'manual_import', 's3_import']
-    
+
     status = {}
     for source in sources:
+        if not _is_addressable_source(source):
+            # No rule can exist for a source that is not a plugin, so this is the
+            # answer `describe_rule` would have given — see `_is_addressable_source`
+            # for why that makes it output-identical, and why it must not raise.
+            status[source] = {'enabled': False, 'exists': False}
+            continue
         rule_name = _build_rule_name(source)
         try:
             response = events_client.describe_rule(Name=rule_name)

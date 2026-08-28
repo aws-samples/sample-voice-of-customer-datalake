@@ -89,6 +89,17 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   hands this Lambda. It fails open if that variable is unavailable, so one bad environment variable
   cannot break credential management outright. `source` also reached an ingestor Lambda name and an
   EventBridge rule name unvalidated on the `/sources/{source}/*` routes.
+- `GET /sources/status` validates the sources it takes from the query string. It is the only route
+  whose source is not a path parameter, so the guard above did not reach it, and both of its
+  branches derived a resource from an arbitrary value: `?sources=` named EventBridge rules it
+  called `describe_rule` on — reflecting each rule name back, so an arbitrary value could enumerate
+  rules and learn the naming convention — and `?run_status=` queried an arbitrary `SOURCE_RUN#`
+  partition. The `?run_status=` branch now answers 400 for a source that is not a plugin. The
+  `?sources=` branch reports such a source as `{'enabled': false, 'exists': false}` rather than
+  raising, because it answers about several sources at once and one unknown name must not fail the
+  whole response — and because its own default list contains `manual_import`, a legitimate source
+  platform that deliberately has no plugin manifest. That is the same answer as before for every
+  request the UI sends, since a schedule rule only ever exists per plugin.
 - `POST`/`DELETE /integrations/{source}/apps`, `POST /sources/{source}/run` and
   `PUT /sources/{source}/enable|disable` now require the caller to be in the `admins` group. Only
   the two credentials routes were gated, so the boundary depended on which key a write happened to

@@ -39,6 +39,16 @@ Behaviours tested:
    `users`-group caller able to write the shared secret and invoke an ingestor.
    Regressions: TestEverySourceRouteIsValidated, TestEverySourceWriteIsAdminGated,
                 TestSourceRouteCoverageIsComplete
+
+9. The query-string source route validates too
+   `GET /sources/status` is the ONE route taking a source from the query string
+   rather than a `<source>` path parameter, so the inventory above cannot see it —
+   and it was the last unvalidated one, reaching `_build_rule_name`/`describe_rule`
+   and a `SOURCE_RUN#` partition key with any value a caller sent. Its batch branch
+   cannot raise (one unknown name must not fail the whole response, and its own
+   default list contains the deliberate non-plugin `manual_import`), so the two
+   branches are guarded differently.
+   Regression: TestTheQueryStringSourceRouteIsValidated
 """
 import ast
 import inspect
@@ -1252,9 +1262,17 @@ def _source_routes() -> dict[str, ast.FunctionDef]:
     """Route functions that take a `<source>` path parameter.
 
     Selected by the DECORATOR's path containing `<source>`, not by the presence of
-    a `source` argument: `get_sources_status` takes its source from a query string
-    (`?run_status=`) and addresses no namespace with it, so including it by
-    parameter name would demand a guard the route does not need.
+    a `source` argument. That is the whole of the criterion, and the exclusion it
+    produces rests on nothing else: `get_sources_status` takes its sources from the
+    QUERY STRING (`?sources=a,b,c` and `?run_status=`), so it is out of scope for a
+    path-parameter inventory.
+
+    It is NOT out of scope for validation, and an earlier version of this docstring
+    wrongly said it addressed no namespace — it derives an EventBridge rule name
+    (`_build_rule_name`, then `describe_rule`) and a `SOURCE_RUN#` partition key.
+    That route validates its sources INLINE, in the handler, because one branch
+    answers about several sources at once and so cannot raise; see
+    `_is_addressable_source` and TestTheQueryStringSourceRouteIsValidated below.
     """
     return {
         name: node for name, node in _route_functions().items()
@@ -1689,3 +1707,308 @@ class TestNoNonAdminReachesASourceWrite:
 
         assert response['statusCode'] == 200
         assert json.loads(response['body'])['apps'][0]['app_name'] == 'Real'
+
+
+class TestTheQueryStringSourceRouteIsValidated:
+    """`GET /sources/status` validates the sources it takes from the query string.
+
+    The one route outside `_source_routes()`' inventory, because its sources arrive
+    as `?sources=a,b,c` and `?run_status=` rather than as a `<source>` path
+    parameter — so the guard the other seven share by construction had to be wired
+    in by hand here, and was not. Measured before the fix, as a caller whose only
+    Cognito group is `users`:
+
+      ?sources=not_a_plugin,../../etc  → 200, with describe_rule called for
+                                        voc-ingest-not_a_plugin-schedule and
+                                        voc-ingest-../../etc-schedule, and each
+                                        rule's State, ScheduleExpression and
+                                        rule_name returned
+      ?run_status=not_a_plugin         → 200, an unbounded SOURCE_RUN# query with
+                                        the run's `errors` array verbatim
+
+    Admin events are NOT used here, unlike the classes above: this route is open to
+    any authenticated user by design (`SourceCard.tsx` reads it on every Settings
+    render), so a non-admin event is the real caller and proves the validation is
+    not coming from an admin gate that does not exist.
+
+    The two branches are asserted differently because they behave differently, and
+    the asymmetry is the point — see `_is_addressable_source` for why the batch
+    branch must NOT raise.
+    """
+
+    @staticmethod
+    def _status_event(api_gateway_event, query):
+        return _non_admin_event(
+            api_gateway_event,
+            method='GET',
+            path='/sources/status',
+            query_params=query,
+        )
+
+    @patch('integrations_handler.events_client')
+    def test_an_unknown_source_reaches_no_eventbridge_rule(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The batch branch reports the source as absent instead of describing it.
+
+        Asserts the ABSENCE of the call, not just the response shape: a route that
+        answered `exists: False` while still calling `describe_rule` would satisfy a
+        response-only assertion and still enumerate rules.
+        """
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+        mock_events.describe_rule.return_value = {
+            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {'sources': 'not_a_plugin'})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert mock_events.describe_rule.call_args_list == [], (
+            'an arbitrary query-string value reached EventBridge'
+        )
+        assert body['sources']['not_a_plugin'] == {'enabled': False, 'exists': False}
+        # No rule name reflected back: the pre-fix response carried
+        # 'voc-ingest-not_a_plugin-schedule', which tells a caller the naming
+        # convention for rules it may not address.
+        assert 'rule_name' not in body['sources']['not_a_plugin']
+
+    @patch('integrations_handler.events_client')
+    def test_a_malformed_source_reaches_no_eventbridge_rule(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The traversal-shaped value from the report, which the form check catches.
+
+        Separate from the case above because it fails a DIFFERENT check — the
+        character class rather than the allowlist — and `_is_addressable_source`
+        converts both to the same answer. A guard wired to only one of the two would
+        pass one of these cases.
+        """
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {'sources': '../../etc'})
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert mock_events.describe_rule.call_args_list == []
+        assert json.loads(response['body'])['sources']['../../etc'] == {
+            'enabled': False, 'exists': False,
+        }
+
+    @patch('integrations_handler.events_client')
+    def test_the_control_a_real_plugin_id_is_still_described(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """Non-vacuity: rejecting every source would satisfy both cases above while
+        making every schedule on the Settings page read as disabled."""
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+        mock_events.describe_rule.return_value = {
+            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {'sources': 'webscraper'})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert mock_events.describe_rule.call_args_list, (
+            'a configured plugin was not described'
+        )
+        assert body['sources']['webscraper']['enabled'] is True
+
+    @patch('integrations_handler.events_client')
+    def test_a_mixed_request_reports_the_unknown_and_still_describes_the_known(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The reason the batch branch skips rather than raises.
+
+        One unknown name among several must not fail the whole response. A raising
+        guard here would answer 400 and the caller would learn nothing about the
+        sources it asked about that DO exist.
+        """
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+        mock_events.describe_rule.return_value = {
+            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(
+            api_gateway_event, {'sources': 'not_a_plugin,webscraper'}
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['sources']['not_a_plugin'] == {'enabled': False, 'exists': False}
+        assert body['sources']['webscraper']['enabled'] is True
+
+    @patch('integrations_handler.events_client')
+    def test_the_default_request_still_reports_all_three_of_its_sources(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The regression this route's guard must not cause, and why it cannot raise.
+
+        `SourceCard.tsx` calls `getSourcesStatus()` with NO argument on every
+        Settings render, taking the fallback list below. `manual_import` is in that
+        list, is a legitimate `source_platform` (it is in `KNOWN_SOURCES` in
+        `plugins/_shared/schemas.py`) and has no manifest — so it is absent from
+        `PLUGIN_SECRET_DEFAULTS` and a raising guard would answer 400 to that
+        request for every user, admin included.
+
+        Asserted as an equality over the keys, not a membership: dropping
+        `manual_import` from the response entirely is the other way this regresses,
+        and `'manual_import' in body` would not notice a route that reported it as
+        an error instead of a status.
+        """
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+        mock_events.describe_rule.side_effect = (
+            mock_events.exceptions.ResourceNotFoundException
+        )
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert set(body['sources']) == {'webscraper', 'manual_import', 's3_import'}
+        assert body['sources']['manual_import'] == {'enabled': False, 'exists': False}
+
+    @patch('shared.tables.get_aggregates_table')
+    def test_an_unknown_run_status_source_queries_nothing(
+        self, mock_table, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """This branch DOES raise: it answers about one source, so a 400 is honest.
+
+        The `errors` array this returns is the one field in the response that can
+        carry a `ConfigurationError` message naming a namespace, which is why an
+        unbounded query on an attacker-chosen partition mattered here.
+        """
+        table = mock_table.return_value
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {'run_status': 'not_a_plugin'})
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert table.query.call_args_list == [], (
+            'a SOURCE_RUN# partition was queried for a source that is not a plugin'
+        )
+
+    @patch('shared.tables.get_aggregates_table')
+    def test_the_control_a_real_plugin_id_still_returns_its_run_status(
+        self, mock_table, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """Non-vacuity for the case above: the Scrapers page polls this every two
+        seconds while a run is in flight, so refusing every source would leave a
+        completed run showing as running forever."""
+        table = mock_table.return_value
+        table.query.return_value = {'Items': [{
+            'sk': 'run_webscraper_1', 'status': 'completed', 'items_found': 7,
+        }]}
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {'run_status': 'webscraper'})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert table.query.call_args_list, 'a configured plugin was not queried'
+        assert body['status'] == 'completed'
+        assert body['items_found'] == 7
+
+    @patch('integrations_handler.events_client')
+    def test_an_unavailable_allowlist_still_reports_every_source(
+        self, mock_events, api_gateway_event, lambda_context, monkeypatch,
+    ):
+        """Fails OPEN when PLUGIN_SECRET_DEFAULTS is absent, here as elsewhere.
+
+        `_is_addressable_source` delegates to `_validate_source_is_a_known_plugin`,
+        which returns early in that state, so this route inherits the degradation
+        rather than restating it. On a READ-only route the trade is easier than on
+        the write routes: the worst case is the pre-allowlist behaviour, and this
+        route never had an admin gate to fall back on.
+        """
+        import integrations_handler as h
+
+        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
+        h._plugin_secret_defaults.cache_clear()
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+        mock_events.describe_rule.return_value = {
+            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
+        }
+
+        event = self._status_event(api_gateway_event, {'sources': 'custom_source'})
+        response = h.lambda_handler(event, lambda_context)
+        h._plugin_secret_defaults.cache_clear()
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['sources']['custom_source']['enabled'] is True
+
+    def test_the_predicate_shares_the_rule_it_enforces(self):
+        """`_is_addressable_source` must DELEGATE, not restate.
+
+        A second copy of "is this a real plugin?" is how the batch branch comes to
+        accept a value the path routes refuse. Parsed rather than behavioural
+        because the equivalence is the property: a behavioural test would pass just
+        as well against a duplicated rule that happens to agree today.
+        """
+        predicate = next(
+            node for node in ast.parse(inspect.getsource(_handler_module())).body
+            if isinstance(node, ast.FunctionDef) and node.name == '_is_addressable_source'
+        )
+        assert _calls_in(predicate) == {'_validate_source_parameter'}
+
+    def test_the_route_uses_the_predicate_and_the_validator(self):
+        """Both branches are guarded, and by the intended one of the two.
+
+        The findability half matters as much as the assertion: if the route were
+        renamed or its guards moved into a helper, `next` raises StopIteration here
+        rather than this passing over a route that no longer exists.
+        """
+        route = next(
+            node for node in ast.parse(inspect.getsource(_handler_module())).body
+            if isinstance(node, ast.FunctionDef) and node.name == 'get_sources_status'
+        )
+        calls = _calls_in(route)
+        assert '_is_addressable_source' in calls, 'the ?sources= branch is unguarded'
+        assert '_validate_source_parameter' in calls, (
+            'the ?run_status= branch is unguarded'
+        )
+
+    def test_the_route_is_deliberately_not_admin_gated(self):
+        """Pins the one judgement here that is not "add the guard".
+
+        `SourceCard.tsx` and `PluginConfigModal.tsx` both read this route for
+        ordinary users, so gating it would blank the schedule state on the Settings
+        page for non-admins. Recorded as a decision so a future reader does not
+        read the absence as the same oversight the validation was.
+        """
+        route = next(
+            node for node in ast.parse(inspect.getsource(_handler_module())).body
+            if isinstance(node, ast.FunctionDef) and node.name == 'get_sources_status'
+        )
+        assert 'require_admin' not in _calls_in(route)
