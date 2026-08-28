@@ -2412,6 +2412,56 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
         )
 
     @patch('feedback_form_handler.aggregates_table')
+    def test_a_read_that_fails_refuses_the_page_rather_than_rendering_it(
+        self, mock_table, capsys, api_gateway_event, lambda_context,
+        feedback_form_handler
+    ):
+        """The availability trade `get_form_iframe`'s docstring argues, pinned.
+
+        Having an existence gate means this route can now FAIL: before it, a page
+        was served having read nothing, so a table blip could not affect it. That
+        paragraph calls the 500 acceptable rather than a regression on two grounds,
+        and both of them are assertions here rather than prose:
+
+        - The page must NOT render for a form whose existence could not be
+          confirmed. A future `except` that swallowed the read failure and rendered
+          anyway — the obvious "keep the embed working" fix — restores exactly
+          #379's hole, a page on this origin for a form that may not exist, and
+          nothing else in the suite would notice.
+        - It must be OBSERVABLE. `FeedbackFormReadFailed` is the whole basis for
+          calling this a trade: a 500 the customer sees and operations does not is
+          the silent half of the defect `_load_form_for_query` was introduced for
+          (#312). Asserted all the way out through the EMF flush, like the /stats
+          case, so a metric that is buffered and never published still fails.
+        """
+        mock_table.get_item.side_effect = Exception(
+            'ProvisionedThroughputExceededException'
+        )
+
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, 'deadbeef'), lambda_context
+        )
+
+        assert response['statusCode'] == 500
+        assert json.loads(response['body'])['success'] is False
+        # No document, which is the security half: the 500 has to be INSTEAD of
+        # the page, not alongside a rendered one.
+        assert response['multiValueHeaders']['Content-Type'] != ['text/html']
+        assert 'VoCFeedbackForm' not in response['body']
+
+        emitted = _emitted_metrics(capsys, 'FeedbackFormReadFailed')
+        assert emitted, (
+            'the iframe read failed and emitted no CloudWatch metric — the '
+            'customer sees a broken frame and operations sees nothing, which is '
+            'what would make this existence check a regression rather than the '
+            'trade the docstring argues'
+        )
+        assert _namespaces_of(emitted) == {feedback_form_handler.metrics.namespace}, (
+            f'metric emitted under {_namespaces_of(emitted)}, not the namespace '
+            'shared/logging sets on the Metrics singleton'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
     def test_a_server_minted_id_still_serves_the_embeddable_page(
         self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
@@ -3084,9 +3134,10 @@ class TestTheAuthenticatedCrudRoutesAreBoundedToo:
       keyed on whatever the caller put in the path.
     """
 
-    # The three shapes, and what each must not do. Kept as data so a route added
-    # to the trio is a one-line addition rather than a fourth near-copy.
-    MALFORMED_BODY = {'name': 'pwn'}
+    # A VALID `PUT` body, and it has to be: `update_form` 400s on an empty update
+    # (`No fields to update`), so a body with nothing in it would produce a refusal
+    # that says nothing about the id. What is malformed in these cases is the ID.
+    A_VALID_UPDATE_BODY = {'name': 'pwn'}
 
     @patch('feedback_form_handler.aggregates_table')
     def test_no_crud_route_turns_a_malformed_id_into_a_key(
@@ -3101,7 +3152,7 @@ class TestTheAuthenticatedCrudRoutesAreBoundedToo:
         """
         for method, body in (
             ('GET', None),
-            ('PUT', self.MALFORMED_BODY),
+            ('PUT', self.A_VALID_UPDATE_BODY),
             ('DELETE', None),
         ):
             for malformed in (
@@ -3150,7 +3201,7 @@ class TestTheAuthenticatedCrudRoutesAreBoundedToo:
             method='PUT',
             path=f'/feedback-forms/{_INJECTION_PAYLOAD}',
             path_params={'form_id': _INJECTION_PAYLOAD},
-            body=self.MALFORMED_BODY,
+            body=self.A_VALID_UPDATE_BODY,
             resource='/feedback-forms/{form_id}',
         )
 
@@ -3257,7 +3308,7 @@ class TestTheAuthenticatedCrudRoutesAreBoundedToo:
 
 
 def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
-    """Every `@app.<method>` route whose path captures `<form_id>`, from source.
+    """Every `@app.<method>` route under `/feedback-forms/` that captures anything.
 
     Returns route path -> handler function name, read off the module with `ast`
     rather than listed here. The two classes above name their routes explicitly,
@@ -3265,8 +3316,20 @@ def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
     lists is what the module is measured against. A route added later appears here
     for free, and if it does not validate its id the test below fails naming it.
 
-    Only `<form_id>` counts: `/feedback-forms` and `POST /feedback-forms` take no
-    id out of the URL and have nothing to check.
+    Selected on the PATH PREFIX plus the presence of a `<...>` capture, and
+    deliberately NOT on the literal `<form_id>`: the capture's NAME is the route
+    author's choice, so `<id>`, `<formId>` or `<form>` are all plausible spellings
+    for a route added later — and every one of them would have escaped a
+    `'<form_id>' in path` filter while keying on the same partition. A universal
+    claim whose universe is chosen by a name nobody has to use is not a universal
+    claim; `test_a_route_that_captures_the_id_under_another_name_is_still_judged`
+    is the control.
+
+    Still excludes `/feedback-forms` and `POST /feedback-forms`: those carry no
+    capture, so they take no id out of the URL and have nothing to check. A route
+    under this prefix that captures something OTHER than a form id (a submission
+    id, say) would be included and would have to establish the bound or say why —
+    which is the right side to err on, since the alternative is silence.
     """
     tree = ast.parse(source)
     routes = {}
@@ -3289,25 +3352,79 @@ def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
             path = decorator.args[0]
             if not (isinstance(path, ast.Constant) and isinstance(path.value, str)):
                 continue
-            if '<form_id>' in path.value:
+            if path.value.startswith('/feedback-forms/') and '<' in path.value:
                 routes[f'{target.attr.upper()} {path.value}'] = node.name
     assert routes, (
-        'no @app route capturing <form_id> was found in the handler source — the '
-        'derivation found nothing to judge, so a green result below would be '
-        'meaningless. If the routes moved or the decorator spelling changed, fix '
-        'this helper; do not delete the assertion.'
+        'no @app route under /feedback-forms/ with a <...> capture was found in '
+        'the handler source — the derivation found nothing to judge, so a green '
+        'result below would be meaningless. If the routes moved or the decorator '
+        'spelling changed, fix this helper; do not delete the assertion.'
     )
     return routes
 
 
-def _validates_its_form_id(source: str, function_name: str) -> bool:
-    """Does `function_name` reach `_validated_form_id` before it keys on anything?
+# The objects a route reaches a form id INTO: the two DynamoDB tables, and the
+# queue because `/submit` writes there and an enqueued record for an id that
+# cannot be one of ours costs a Comprehend, Translate and Bedrock invocation
+# downstream. A call on any of these is what "keys on it" means below, and the
+# first one is the deadline the validation has to beat.
+_FORM_ID_SINKS = frozenset({'aggregates_table', 'feedback_table', 'sqs'})
 
-    True if the function calls it directly, or calls `_load_form_for_query` — the
-    one read `/stats` and `/submissions` make, which validates on their behalf.
-    Following the delegation rather than requiring the direct call is the point:
-    the alternative is a test that demands a particular spelling and fails on a
-    legitimate refactor.
+
+def _refused_names(function: ast.FunctionDef) -> set[str]:
+    """Names this function tests in an `if` that then raises or returns.
+
+    `_validated_form_id` returns None rather than raising — deliberately, since
+    every caller answers the same 404 — so the CALL is not the bound; the refusal
+    after it is. A function that calls the validator and ignores what comes back
+    has no bound at all, which is the natural mistake for someone copying the call
+    and dropping the two lines that follow it at every current site.
+    """
+    refused = set()
+    for node in ast.walk(function):
+        if not isinstance(node, ast.If):
+            continue
+        if not any(
+            isinstance(child, (ast.Raise, ast.Return))
+            for statement in node.body
+            for child in ast.walk(statement)
+        ):
+            continue
+        refused |= {
+            name.id for name in ast.walk(node.test) if isinstance(name, ast.Name)
+        }
+    return refused
+
+
+def _validates_its_form_id(source: str, function_name: str) -> bool:
+    """Does `function_name` reach the validator, and REFUSE, before keying on
+    anything?
+
+    Positional and result-aware, because the order and the refusal are the whole
+    claim. An earlier version of this helper was an order-insensitive set-membership
+    test over every call name in the body, which three unsafe shapes satisfied: a
+    `get_item` before the validator, a validator whose return value was discarded,
+    and a validator mentioned only inside `if False:`. Each is reported False now,
+    and each has a control below — the second one mattering most, since a route
+    with no bound at all looked identical to a correct one.
+
+    A validating statement is one of two spellings, both required to sit at the
+    function's TOP LEVEL:
+
+    - `<name> = _validated_form_id(...)` where `<name>` is later tested in an `if`
+      whose body raises or returns. The assignment alone is not enough (see
+      `_refused_names`).
+    - a call to `_load_form_for_query(...)`, which needs no result check because it
+      RAISES for itself. Following the delegation rather than demanding the direct
+      call is deliberate: `/stats` and `/submissions` validate through it, and a
+      derivation that named only `_validated_form_id` would push someone into
+      adding a redundant second call to each.
+
+    Top level rather than anywhere is what excludes dead code and conditional
+    validation together — a check that only runs on some paths is not a bound, and
+    `if False:` is just the extreme of that. If a legitimate spelling ever needs to
+    nest (validation inside a `with`, say), widen this deliberately and add the
+    control alongside the three below; do not relax it to get green.
     """
     tree = ast.parse(source)
     functions = [
@@ -3317,12 +3434,52 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     assert len(functions) == 1, (
         f'expected exactly one def {function_name}, found {len(functions)}'
     )
-    called = {
-        node.func.id
-        for node in ast.walk(functions[0])
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
-    return bool(called & {'_validated_form_id', '_load_form_for_query'})
+    function = functions[0]
+    refused = _refused_names(function)
+
+    def _calls(statement) -> list[ast.Call]:
+        return [n for n in ast.walk(statement) if isinstance(n, ast.Call)]
+
+    def _named(call: ast.Call, name: str) -> bool:
+        return isinstance(call.func, ast.Name) and call.func.id == name
+
+    validated_at = None
+    for statement in function.body:
+        for call in _calls(statement):
+            if _named(call, '_load_form_for_query'):
+                position = (statement.lineno, statement.col_offset)
+                validated_at = min(validated_at or position, position)
+            if not _named(call, '_validated_form_id'):
+                continue
+            # The result has to be BOUND and then refused. An `Expr` statement, or
+            # an assignment to a name nothing tests, is the shape that has no bound.
+            targets = (
+                statement.targets if isinstance(statement, ast.Assign)
+                else [statement.target] if isinstance(statement, ast.AnnAssign)
+                else []
+            )
+            if any(
+                isinstance(target, ast.Name) and target.id in refused
+                for target in targets
+            ):
+                position = (statement.lineno, statement.col_offset)
+                validated_at = min(validated_at or position, position)
+
+    if validated_at is None:
+        return False
+
+    sink_positions = [
+        (call.lineno, call.col_offset)
+        for call in ast.walk(function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id in _FORM_ID_SINKS
+    ]
+    # No sink is not a pass by default: #379 was a route that touched no AWS
+    # service at all and still put the id in its response, so a route that keys on
+    # nothing yet takes an id out of the URL still has to establish the bound.
+    return all(validated_at < sink for sink in sink_positions)
 
 
 class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
@@ -3340,13 +3497,13 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
     def test_no_route_keys_on_a_form_id_without_validating_it_first(
         self, feedback_form_handler
     ):
-        """Every `<form_id>` route validates, or the failure names the ones that do
-        not.
+        """Every route under `/feedback-forms/<...>` validates and refuses first, or
+        the failure names the ones that do not.
 
         This is the test that makes the docstring's "EVERY" audit itself. A route
-        added later is included automatically, so the next person to write
-        `@app.get("/feedback-forms/<form_id>/something")` finds out here rather
-        than in a review.
+        added later is included automatically — whatever it calls its capture — so
+        the next person to write `@app.get("/feedback-forms/<id>/something")` finds
+        out here rather than in a review.
         """
         source = Path(inspect.getsourcefile(feedback_form_handler)).read_text(
             encoding='utf-8'
@@ -3360,11 +3517,13 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
         )
 
         assert unbounded == [], (
-            f'{unbounded} take a form id out of the URL without reaching '
-            '_validated_form_id (directly or through _load_form_for_query), so '
-            "that function's docstring no longer describes the module. Add the "
-            'check rather than narrowing the claim: the value of a universal '
-            'bound is that a reader does not have to hold the exceptions.'
+            f'{unbounded} take a form id out of the URL without establishing the '
+            'bound before their first read or send. Three shapes report here, and '
+            'the message cannot tell them apart: no validator call at all; a call '
+            'whose None result is never refused (which is no bound — see '
+            '_refused_names); or a call that comes AFTER the table or the queue is '
+            "touched. Add the check rather than narrowing the claim: the value of a "
+            'universal bound is that a reader does not have to hold the exceptions.'
         )
 
     def test_the_derivation_sees_the_routes_this_module_actually_has(
@@ -3412,6 +3571,8 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             @app.get("/feedback-forms/<form_id>/checked")
             def get_checked(form_id: str):
                 validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
                 return validated
             '''
         )
@@ -3422,9 +3583,148 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'GET /feedback-forms/<form_id>/checked': 'get_checked',
         }
         assert not _validates_its_form_id(source, 'get_new_thing')
-        # And the delegating spelling is accepted, so the check is about reaching
-        # the validator rather than about naming it.
+        # And the accepting side, so the check is not simply always False: the
+        # module's own spelling — validate, refuse on None, then proceed.
         assert _validates_its_form_id(source, 'get_checked')
+
+    def test_the_derivation_refuses_a_read_that_happens_before_the_check(self):
+        """ORDER is part of the claim, and the old derivation ignored it.
+
+        A route that reads first and validates afterwards satisfies "calls the
+        validator" while paying for the DynamoDB call the check exists to avoid —
+        which is the entire cost argument `_validated_form_id`'s docstring makes and
+        the basis for the throttle pair in `lib/stacks/api-stack.ts`. So the
+        validation has to beat the first sink, not merely appear somewhere in the
+        body.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/backwards")
+            def get_backwards(form_id: str):
+                item = aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return item
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_backwards'), (
+            'a get_item before the validator was reported as validated — the '
+            'derivation is order-insensitive again, and the cost argument it '
+            'checks is about order'
+        )
+
+    def test_the_derivation_refuses_a_validator_whose_result_is_discarded(self):
+        """The shape that has NO bound while looking exactly like one.
+
+        `_validated_form_id` returns None rather than raising — deliberately, since
+        every caller answers the same 404 — so the call is not the bound; the
+        refusal after it is. A route that calls it and drops the result reads a
+        malformed id straight into the table, and under the old set-membership
+        derivation it was indistinguishable from a correct route.
+
+        It is also the likeliest mistake in practice: the two-line
+        `if not validated: raise` is separable from the call, and every one of the
+        module's current sites spells it out by hand.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/discarded")
+            def get_discarded(form_id: str):
+                _validated_form_id(form_id)
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_discarded'), (
+            'a discarded validator result was reported as a bound — the value the '
+            'derivation is checking for is the REFUSAL, not the call'
+        )
+
+        # And the same thing one step subtler: the result is bound to a name, but
+        # nothing ever tests it. An assignment is not a refusal either.
+        assigned_but_unchecked = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/assigned")
+            def get_assigned(form_id: str):
+                validated = _validated_form_id(form_id)
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(assigned_but_unchecked, 'get_assigned'), (
+            'a validated value used as a key without being refused first was '
+            "reported as bounded — `f'FORM#None'` is still a read"
+        )
+
+    def test_the_derivation_refuses_validation_that_only_runs_sometimes(self):
+        """Dead or conditional validation is not validation.
+
+        `if False:` is the extreme of a check that does not run on every path, and
+        it passed the old derivation because the call was lexically present. The
+        general property is what matters: validation nested under a condition
+        bounds some requests and not others, so the derivation requires it at the
+        function's top level.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/dead")
+            def get_dead(form_id: str):
+                if False:
+                    validated = _validated_form_id(form_id)
+                    if not validated:
+                        raise NotFoundError('Form not found')
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_dead'), (
+            'validation inside dead code was reported as a bound — the check has '
+            'to be on every path, not merely in the source'
+        )
+
+    def test_a_route_that_captures_the_id_under_another_name_is_still_judged(self):
+        """The universe is chosen by the PATH, not by the capture's name.
+
+        This is the hole a `'<form_id>' in path` filter left: a route capturing the
+        same id as `<id>` keyed on the same partition while being invisible to the
+        claim, so `test_no_route_keys_on_a_form_id_without_validating_it_first`
+        passed with it unvalidated — silence, which is the failure mode this
+        derivation replaced a prose list to avoid. `<id>` is not a hypothetical
+        spelling; it is the shorter and more natural one for someone adding a
+        route.
+
+        Both directions, because only the pair makes the selector meaningful: the
+        renamed route must be REPORTED as part of the universe, and then reported
+        as UNVALIDATED. A selector that included it but a check that waved it
+        through would be the same hole one step along.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<id>/export")
+            def export_form(id: str):
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{id}'}
+                )
+            '''
+        )
+
+        routes = _routes_keying_on_a_form_id(source)
+
+        assert routes == {'GET /feedback-forms/<id>/export': 'export_form'}, (
+            f'the derivation reported {routes} — a route capturing the form id '
+            'under a name other than form_id escapes the universal claim entirely'
+        )
+        assert not _validates_its_form_id(source, 'export_form')
 
     def test_the_derivation_accepts_the_delegating_spelling(self):
         """`/stats` and `/submissions` validate through `_load_form_for_query`.
