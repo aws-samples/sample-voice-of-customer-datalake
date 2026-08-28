@@ -103,7 +103,7 @@
     "absent": "Sin linaje",
     "absentReason": "Ninguno de estos documentos registra a partir de qué se creó — la respuesta habitual para un documento escrito a mano o creado antes de que se registrara el linaje. La fila se puede puntuar igualmente; simplemente no hay nada con lo que comprobar la combinación.",
     "coherent": "Una generación",
-    "coherentReason": "Nada en esta fila cruza generaciones: no hay dos documentos que sean versiones del mismo tipo, y cada fuente registrada pertenece a este conjunto. Una papeleta cubre una generación de la idea.",
+    "coherentReason": "Nada en esta fila cruza generaciones: no hay dos documentos que sean versiones del mismo tipo, y nada de lo registrado aquí apunta a otra generación. Una papeleta cubre una generación de la idea.",
     "crossGeneration": "Cruza generaciones",
     "repeatedTypeReason": "Esta fila contiene más de una versión del mismo tipo de documento, así que una papeleta cubre dos generaciones a la vez. Se puede puntuar igualmente: añada una fila si quiere una sola generación por separado.",
     "stale": "Superada",

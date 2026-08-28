@@ -103,7 +103,7 @@
     "absent": "Sem linhagem",
     "absentReason": "Nenhum destes documentos registra a partir de que foi criado — a resposta habitual para um documento escrito à mão ou criado antes de a linhagem ser registrada. A linha continua pontuável; apenas não há nada com que verificar a combinação.",
     "coherent": "Uma geração",
-    "coherentReason": "Nada nesta linha cruza gerações: não há dois documentos que sejam versões do mesmo tipo, e cada origem registrada pertence a este conjunto. Uma cédula cobre uma geração da ideia.",
+    "coherentReason": "Nada nesta linha cruza gerações: não há dois documentos que sejam versões do mesmo tipo, e nada do que está registrado aqui aponta para outra geração. Uma cédula cobre uma geração da ideia.",
     "crossGeneration": "Cruza gerações",
     "repeatedTypeReason": "Esta linha contém mais de uma versão do mesmo tipo de documento, então uma cédula cobre duas gerações ao mesmo tempo. Ela continua pontuável — adicione uma linha se quiser pontuar uma única geração.",
     "stale": "Superada",
