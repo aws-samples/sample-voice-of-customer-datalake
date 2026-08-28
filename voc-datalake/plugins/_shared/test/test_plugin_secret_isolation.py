@@ -131,12 +131,21 @@ REVERT MAP — each assertion below names the mutation it catches:
       seeded, so its Lambda dies at construction. That fails in CI here rather
       than in a production Lambda.
 
+  test_both_base_classes_read_secrets_unconditionally_in_init
+    — the mechanism four docs describe, and previously described WRONGLY: three of
+      them offered "do not read `self.secrets` in your constructor" as a way out.
+      There is no such way out — `__init__` calls `self._load_secrets()` itself,
+      before any subclass body runs — so a plugin following that advice passed the
+      manifest test and then died on its first invocation. Pinned so the escape
+      hatch the docs now name is the one that actually exists.
+
 Known consequence, deliberate: a plugin that declares NO secret keys in its
 manifest now fails at construction rather than silently receiving every other
 plugin's keys. Every current plugin declares at least one key and CDK seeds them
-all at deploy time (both pinned below), so no shipped plugin is affected; a future
-one that needs no configuration should declare a key or not call the base
-constructor's secret read, and the error tells it which prefix was expected.
+all at deploy time (both pinned below), so no shipped plugin is affected. A future
+one that needs no configuration should declare a key, or override `_load_secrets`
+to return `{}` — the only actual opt-out, since the base constructor's read is
+unconditional — and the error tells it which prefix was expected.
 """
 
 import ast
@@ -462,6 +471,96 @@ class TestOneImplementationOfTheBoundary:
             assert len(tree.body) > 1, 'expected a real body, not a stub'
         assert (base_ingestor.BaseIngestor._load_secrets
                 is not base_webhook.BaseWebhook._load_secrets)
+
+
+class TestTheOnlyOptOutIsOverridingLoadSecrets:
+    """The requirement is escapable exactly one way, and the docs must say which.
+
+    Three sites (`docs/getting-started-plugins.md`, `CHANGELOG.md`'s upgrade note
+    and `test_every_plugin_declares_at_least_one_secret_key`'s docstring) offered
+    "do not read `self.secrets` in your constructor" as the way for a plugin
+    needing no configuration to avoid the raise. That is not a thing: the read is
+    in `__init__`, not in the attribute access, so a plugin following it declared
+    no `secrets`, passed the manifest test — which only fails once such a manifest
+    exists — and then died on its first invocation in a deployed Lambda. Exactly
+    the outcome the surrounding paragraph claimed CI now prevents.
+
+    Prose could not have caught that, which is the argument for these two cases:
+    the docs are now checkable rather than merely written.
+    """
+
+    @pytest.mark.parametrize(
+        'cls',
+        [base_ingestor.BaseIngestor, base_webhook.BaseWebhook],
+        ids=['ingestor', 'webhook'],
+    )
+    def test_both_base_classes_read_secrets_unconditionally_in_init(self, cls):
+        """`__init__` calls `self._load_secrets()`, so not reading the attribute
+        cannot help. Parsed rather than behavioural: the claim is about WHERE the
+        call sits, and a subclass that never touches `self.secrets` still raising
+        (asserted below) is the consequence, not the mechanism."""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(cls.__init__)))
+        loads = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == '_load_secrets'
+        ]
+        assert loads, (
+            f'{cls.__name__}.__init__ no longer reads secrets itself. If the read '
+            'moved to first use, the documented requirement is now escapable by '
+            'not reading `self.secrets` — update the three docs that say it is not.'
+        )
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch.object(base_ingestor.CircuitBreaker, 'record_failure')
+    def test_a_plugin_that_never_reads_the_attribute_still_fails_closed(
+        self, mock_record_failure, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """The consequence, end to end: a subclass declaring nothing and never
+        referencing `self.secrets` is refused against a secret populated for OTHER
+        plugins. This is the case the wrong advice produced."""
+        mock_get_secret.return_value = FOREIGN_ONLY_SECRET
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+
+        class _NeverReadsSecrets(base_ingestor.BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        with pytest.raises(ConfigurationError) as raised:
+            _NeverReadsSecrets()
+
+        assert PREFIX in str(raised.value)
+        # And it did not quietly receive the other plugin's credentials instead.
+        assert OTHER_PLUGIN_VALUE not in str(raised.value)
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    def test_the_control_overriding_load_secrets_does_opt_out(
+        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """Non-vacuity for the case above, and the escape hatch the docs now name.
+
+        Without this, "construction always raises against a foreign secret" would
+        satisfy the case above — and the docs would be pointing at an opt-out that
+        does not work, which is the defect being fixed rather than a fix for it.
+        """
+        mock_get_secret.return_value = FOREIGN_ONLY_SECRET
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+
+        class _OptsOut(base_ingestor.BaseIngestor):
+            def _load_secrets(self):
+                return {}
+
+            def fetch_new_items(self):
+                yield from []
+
+        assert _OptsOut().secrets == {}
 
 
 class TestATransientReadFailureIsRetryable:
@@ -1033,8 +1132,13 @@ class TestTheDeployTimeInvariantsThisBoundaryNeeds:
         is why this is pinned rather than asserted in the PR description.
 
         A future plugin that genuinely needs no configuration is not blocked: it
-        can declare one key, or not read secrets in its constructor. What it may
-        not do is discover the requirement from a CloudWatch log."""
+        can declare one key, or override `_load_secrets` to return `{}`. NOT
+        reading `self.secrets` is not an escape hatch — both base classes call
+        `self._load_secrets()` from `__init__` before any subclass body runs, so
+        the raise does not depend on the attribute being read. Stated precisely
+        because this docstring is what an author reads when this test fails, which
+        is the moment they are looking for a way around it. What they may not do is
+        discover the requirement from a CloudWatch log."""
         empty = [
             name for name, manifest in self._manifests().items()
             if not manifest.get('secrets')

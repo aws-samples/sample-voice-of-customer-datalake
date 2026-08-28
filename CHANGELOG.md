@@ -153,8 +153,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   fail-closed change above, a plugin whose namespace holds no key in the shared secret raises a
   `ConfigurationError` when its Lambda is constructed, rather than silently receiving every other
   plugin's keys. Every plugin shipped in this repo declares at least one key and CDK seeds them all
-  at deploy time, so no bundled plugin is affected; a custom plugin declaring none must add a key
-  (or stop reading `self.secrets` in its constructor). A test over the manifests now fails in CI
+  at deploy time, so no bundled plugin is affected; a custom plugin declaring none must add a key,
+  or override `_load_secrets` to return `{}` — a deliberate opt-out of the boundary. Declining to
+  *read* `self.secrets` does not avoid the raise: both base classes call `self._load_secrets()` in
+  `__init__`, before any subclass body runs. A test over the manifests now fails in CI
   rather than letting this surface in a deployed Lambda. Any onboarding notes telling a plugin
   author to register their prefix in `_get_known_prefixes()` are obsolete — that function no longer
   exists, and registration was never needed for a correctly prefixed key.

@@ -90,9 +90,13 @@ would never find it.
 **Declare at least one key.** Since issue #251 a plugin whose namespace holds no key
 raises a `ConfigurationError` at construction rather than silently receiving every other
 plugin's credentials, so a plugin declaring no `secrets` cannot start. If yours genuinely
-needs no configuration, declare one key anyway (or do not read `self.secrets` in your
-constructor). `plugins/_shared/test/test_plugin_secret_isolation.py` fails on a manifest
-that declares none, so this is caught in CI rather than in a deployed Lambda.
+needs no configuration, declare one key anyway, or override `_load_secrets` to return
+`{}` — which opts out of the boundary deliberately and visibly. Not *reading*
+`self.secrets` is not a way out: `BaseIngestor.__init__` and `BaseWebhook.__init__` both
+call `self._load_secrets()` themselves, before any subclass body runs, so the raise does
+not depend on your code touching the attribute.
+`plugins/_shared/test/test_plugin_secret_isolation.py` fails on a manifest that declares
+none, so this is caught in CI rather than in a deployed Lambda.
 
 ### Step 3: Implement the Ingestor
 
