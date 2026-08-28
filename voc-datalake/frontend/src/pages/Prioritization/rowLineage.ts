@@ -89,13 +89,25 @@ export interface RowLineage extends SelectionLineage {
    */
   readonly stale: boolean
   /**
-   * The fresher combination, in the order the row's own document types appear, or
-   * empty when there is none.
+   * The COMBINATION to score instead — the project's newest document of each type
+   * the row holds, in the order the row's own documents appear — or empty when
+   * there is none.
    *
-   * Carried rather than only the boolean so a caller can NAME what to score
-   * without recomputing it — and deliberately NOT applied to the row: the frozen
-   * row keeps the concrete ids its ballots were cast on, which is the whole point
-   * of freezing it, and the suggested action is adding a row.
+   * "THE NEWEST OF EACH TYPE", NOT "the documents that changed", and a consumer has
+   * to know which: staleness fires when at least ONE type has a newer version
+   * (`fresher` is `some`), so a type with nothing newer resolves to the id the row
+   * ALREADY holds. A row whose PRD gained a v2 while its PR/FAQ did not reports
+   * `['prd_2', 'prfaq_1']`. That is right for the eventual consumer — pre-selecting
+   * the combination in the Add-row picker, where the new row genuinely needs both
+   * ids — and wrong for a renderer listing "what is newer", which would name a
+   * document the reviewer is already looking at.
+   *
+   * Carried rather than only the boolean so such a caller can name the combination
+   * without recomputing it, and deliberately NOT applied to the row: the frozen row
+   * keeps the concrete ids its ballots were cast on, which is the whole point of
+   * freezing it, and the suggested action is adding a row. No renderer reads it
+   * today — `RowStaleBadge` and `RowLineageNote` take only `stale` and `reason` —
+   * which is a gap in the UI rather than in this field.
    */
   readonly fresherDocumentIds: readonly string[]
 }
@@ -116,11 +128,12 @@ const NO_IDS: readonly string[] = []
  *    source's type in `hasSupersededSource`, and withholds staleness altogether
  *    in `fresherCoherentSelection` — a type nobody can read states no expectation
  *    about what belongs beside it;
- *  * an unreadable `createdAt` LOSES every comparison (it is the smallest string,
- *    and parses as no instant), so ranking one would report a row superseded by an
- *    arbitrarily older document. `fresherCoherentSelection` therefore withholds
- *    staleness rather than ranking it — see its own docstring, which records the
- *    one place a date-less document is still ignored rather than decisive.
+ *  * a `createdAt` that names NO INSTANT loses every comparison — '' and any other
+ *    value `Date.parse` refuses rank as `NO_INSTANT`, below every dated document —
+ *    so ranking one would report a row superseded by an arbitrarily older document.
+ *    `fresherCoherentSelection` therefore withholds staleness rather than ranking
+ *    it. Note the field is compared as an INSTANT and not as a string, which is
+ *    what keeps two spellings of one moment equal: see `rankOf`.
  */
 interface SelectedDocument {
   readonly id: string
@@ -319,47 +332,89 @@ export function classifySelectionLineage(
   }
 }
 
+/** The rank of a document whose `created_at` names no instant at all. */
+const NO_INSTANT = Number.NEGATIVE_INFINITY
+
 /**
- * Newest-first rank of a document, the same rule `ordinalByType` orders a type by:
- * `created_at`, then `document_id` to break a tie.
+ * The INSTANT a `created_at` names, or `NO_INSTANT` when it names none.
+ *
+ * `Date.parse`, not a string comparison, and that is the whole of the difference
+ * between this and the raw-string ordering next door in api/documentLineage.ts.
+ * Lexicographic order equals instant order only while every `created_at` shares
+ * ONE shape, and nothing enforces that: `create_document` takes the caller's body,
+ * `manual_import_handler` writes `item.get('timestamp')` straight from imported
+ * data, and the frontend field is `z.string().catch('')` with no shape check. One
+ * hand-created or imported document is enough to mix an offset form
+ * ('2025-03-10T23:00:00-05:00' — 04:00Z on the 11th) with a Z form
+ * ('2025-03-11T02:00:00+00:00' — 02:00Z, EARLIER), where the string compare answers
+ * backwards and this module would advise re-scoring against older evidence.
+ *
+ * Anything `Date.parse` accepts becomes an instant, which is wider than the ISO
+ * forms the generators write (`datetime.now(timezone.utc).isoformat()`) and
+ * deliberately so — a value a reader would recognise as a date should not silence a
+ * row. Anything it REFUSES, '' included, names no instant, and every decision that
+ * would rest on one is withheld instead; see `hasUnreadableTimestamp`.
+ */
+function instantOf(createdAt: string): number {
+  const parsed = Date.parse(createdAt)
+  return Number.isNaN(parsed) ? NO_INSTANT : parsed
+}
+
+/**
+ * Newest-first rank of a document: the instant its `created_at` names, then
+ * `document_id` to break a tie.
+ *
+ * THE SAME TWO FIELDS `ordinalByType` ranks a type by, and the same tie-break, but
+ * NOT the same comparison — that module compares the raw strings, and the claim
+ * that these are one rule was wrong. The divergence is deliberate and is about what
+ * each answer drives: being wrong there misnumbers a "PRD 2 of 3" badge, while
+ * being wrong here prints `Superseded` on a current row and asks a reviewer to
+ * create a row and re-score a proposal against evidence that may be OLDER. That is
+ * the same asymmetry `hasUnreadableTimestamp` argues from, one step further on: a
+ * precedent about ordering does not carry to advising. Fixing `compareRank` too
+ * would be right, and is a change to a rendered ordinal in another module rather
+ * than part of this one.
  *
  * The tie-break is not decoration. A PRD and a PR/FAQ generated from one request
  * share a timestamp (the defect `byNewestFirst`'s equal arm exists for), and two
  * documents of ONE type can share one too — a comparison with no tie-break would
  * then answer "fresher" for whichever way round the array happened to be, and a
  * frozen row would read as stale or current depending on the order a read
- * returned its documents in.
+ * returned its documents in. It now breaks ties on the INSTANT, so two spellings of
+ * one moment ('09:00:00Z' and '11:00:00+03:00') tie here as they should, instead of
+ * the later-looking string winning.
  *
- * NO DECISION RESTS ON AN UNREADABLE TIMESTAMP. '' is the smallest string, so a
- * date-less document ranks below every dated one — INCLUDING far older ones — and
- * a "fresher" answer resting on that would read "superseded by a document from
- * 2020". `fresherCoherentSelection` therefore refuses the comparison before making
- * it, on the row's documents and on the candidate both (`hasUnreadableTimestamp`).
- * `newestOfType` still ranks a date-less project document, which is the one safe
- * use: last within its type, so it can only be chosen when the project holds
- * nothing else of that type — and that candidate is then refused too.
+ * NO DECISION RESTS ON A TIMESTAMP NAMING NO INSTANT. `NO_INSTANT` ranks below
+ * every dated document — INCLUDING far older ones — so a "fresher" answer resting
+ * on one would read "superseded by a document from 2020".
+ * `fresherCoherentSelection` refuses the comparison before making it
+ * (`hasUnreadableTimestamp`). `newestOfType` still ranks such a document, which is
+ * the one safe use: last within its type, so it can only be chosen when the project
+ * holds nothing else of that type — and that candidate is then refused by
+ * `regressed`.
  */
-function rankOf(document: SelectedDocument): readonly [string, string] {
-  return [document.createdAt, document.id]
+function rankOf(document: SelectedDocument): readonly [number, string] {
+  return [instantOf(document.createdAt), document.id]
 }
 
 /** Is `a` strictly newer than `b` under `rankOf`? */
-function isNewer(a: readonly [string, string], b: readonly [string, string]): boolean {
+function isNewer(a: readonly [number, string], b: readonly [number, string]): boolean {
   if (a[0] !== b[0]) return a[0] > b[0]
   return a[1] > b[1]
 }
 
 /**
- * Does any of these documents carry a timestamp nobody can read?
+ * Does any of these documents carry a timestamp that names no instant?
  *
- * The staleness gate for `createdAt`, exactly parallel to the type gate beside it,
- * and for a sharper reason: '' does not merely fail to state an expectation, it
- * states the WRONG one. `displayString` collapses absent, null and non-string into
- * '', which loses every lexicographic comparison in `isNewer`, so a held document
- * with an unreadable timestamp is ranked below every dated document of its type —
- * and the row is then told its evidence was superseded by whichever document the
- * project happens to hold, however old. A 2020 document "superseding" a row is not
- * a near-miss; it is advice to go and score older evidence.
+ * The staleness gate for `created_at`, exactly parallel to the type gate beside it,
+ * and for a sharper reason: an unreadable timestamp does not merely fail to state an
+ * expectation, it states the WRONG one. `displayString` collapses absent, null and
+ * non-string into '', and `Date.parse` refuses that along with any other value no
+ * reader could call a date — all of which rank as `NO_INSTANT`, below every dated
+ * document of the type. Ranked rather than refused, the row is told its evidence was
+ * superseded by whichever document the project happens to hold, however old. A 2020
+ * document "superseding" a row is not a near-miss; it is advice to go and score older
+ * evidence.
  *
  * There IS a precedent for "no timestamp sorts oldest" — `_default_row_composition`
  * in projects_handler.py records that reasoning — but it picks a default composition
@@ -367,16 +422,17 @@ function isNewer(a: readonly [string, string], b: readonly [string, string]): bo
  * a sentence asking somebody to create a row and re-score a proposal, so the
  * asymmetry argues the other way and this withholds instead.
  *
- * Asked of the row's OWN documents and of the candidate that would be advised —
- * both sides of the comparison, because either being unreadable makes the answer a
- * guess. NOT asked of every project document: a date-less document that is not
- * chosen as the newest of its type simply loses to a dated sibling, which withholds
- * an advisory rather than inventing one, and letting one unreadable record anywhere
- * in a project silence every row's staleness would trade this defect for a quieter
- * one.
+ * ASKED OF THE ROW'S OWN DOCUMENTS ONLY, and the candidate needs no gate of its own:
+ * with the row's instants readable, a candidate naming none loses `isNewer` against
+ * the document the row holds of that type, so `regressed` withholds one line later.
+ * That is stated here rather than enforced twice — see the comment at the comparison
+ * — because a second gate would be a branch no input can reach. NOT asked of every
+ * project document either: a date-less document that is not the newest of its type
+ * simply loses to a dated sibling, and letting one unreadable record anywhere in a
+ * project silence every row's staleness would trade this defect for a quieter one.
  */
 function hasUnreadableTimestamp(documents: readonly SelectedDocument[]): boolean {
-  return documents.some((entry) => entry.createdAt === '')
+  return documents.some((entry) => instantOf(entry.createdAt) === NO_INSTANT)
 }
 
 /** The project's newest document of one type, or null when it holds none. */
@@ -416,12 +472,13 @@ function newestOfType(
  *    document whose type cannot be read has no expectation to state at all:
  *    grouping such documents under '' would make one project document answer
  *    for two of the row's, which is the same trap `repeatsAType` skips;
- *  * every document being COMPARED must carry a readable `created_at`, on the
- *    row's side and on the candidate's — an unreadable one loses every
- *    comparison and would have the row superseded by an arbitrarily older
- *    document. See `hasUnreadableTimestamp`, which is where the asymmetry
- *    between "guess wrong about a default" and "guess wrong in an advisory" is
- *    argued;
+ *  * the row's OWN documents must each carry a `created_at` naming an instant — one
+ *    that names none loses every comparison and would have the row superseded by
+ *    an arbitrarily older document. Gated on the row's side alone, because that is
+ *    all it takes: a candidate naming no instant then loses to the document the row
+ *    holds of its type and `regressed` withholds anyway. See
+ *    `hasUnreadableTimestamp`, which is where the asymmetry between "guess wrong
+ *    about a default" and "guess wrong in an advisory" is argued;
  *  * every type must still resolve to a document of the project, so a candidate
  *    is a set of documents that exist rather than of ids;
  *  * the candidate must be STRICTLY NEWER — at least one type answering a newer
@@ -446,7 +503,7 @@ export function fresherCoherentSelection(
   // newest type-less record for it, which is a comparison between two documents
   // neither of which was shown to be of the same kind.
   if (selected.some((held) => held.type === '')) return null
-  // A timestamp nobody can read states the WRONG expectation rather than none: ''
+  // A timestamp naming no instant states the WRONG expectation rather than none: it
   // loses every comparison, so ranking it would report this row superseded by
   // whatever the project holds, however old. Asked of the row's own documents
   // before any candidate is formed — see `hasUnreadableTimestamp`.
@@ -463,10 +520,12 @@ export function fresherCoherentSelection(
   if (candidate.some((entry) => entry === null)) return null
   const chosen = candidate.flatMap((entry) => (entry === null ? [] : [entry]))
   // NO SECOND GATE FOR THE CANDIDATE'S timestamps, and that is a proof rather than an
-  // omission: the row's own are readable by the check above, so a candidate whose
-  // `createdAt` is '' loses `isNewer` against the document the row holds of that type
-  // and `regressed` below returns null. A gate here would be a branch no input can
-  // reach, which is worse than the sentence explaining why.
+  // omission: the row's own name instants by the check above, so a candidate naming
+  // none ranks `NO_INSTANT` and loses `isNewer` against the document the row holds of
+  // that type — `regressed` below then returns null. A gate here would be a branch no
+  // input can reach, which is worse than the sentence explaining why. This is the
+  // accurate statement of the rule; `hasUnreadableTimestamp` and the condition list
+  // above both point here rather than claiming a second call site.
   // STRICTLY NEWER, which is also what answers the commonest case — a frozen row
   // already holding the newest of each type. That row's candidate IS its own
   // selection, so nothing is newer and `fresher` is false; an `every(id === id)`
@@ -532,8 +591,20 @@ export function rowLineageOf(
  * label and a reason, so a reader who cannot tell amber from grey still reads
  * which state a row is in. Contrast measured against the same Tailwind v4 palette
  * `BAND_STYLE` records, on each tint at `text-xs` where AA wants 4.5:1 —
- * emerald-800 #016630 on emerald-100 #dbfce7 is 7.06:1, amber-800 #973c00 on
- * amber-100 #fef3c6 is 5.68:1, gray-600 #4a5565 on gray-100 #f3f4f6 is 6.87:1.
+ * emerald-800 #006045 on emerald-100 #d0fae5 is 6.70:1, amber-800 #973c00 on
+ * amber-100 #fef3c6 is 6.36:1, gray-600 #4a5565 on gray-100 #f3f4f6 is 6.87:1.
+ * (`RowStaleBadge`'s orange pair carries its own figure, beside the classes it
+ * uses.)
+ *
+ * EACH HEX RECOMPUTED FROM `node_modules/tailwindcss/theme.css` rather than
+ * carried over, because two of these were wrong when written and one of them
+ * was wrong in the way that matters: `#016630`/`#dbfce7` are **green**-800/-100,
+ * a different palette entry from the `emerald` the `color` below actually names,
+ * so the figure documented a colour this file does not use. v4 states these as
+ * OKLCH, so a hex quoted here is a conversion and not a value to be found in the
+ * stylesheet — the same trap `BAND_STYLE`'s "that was the v3 hex, and wrong"
+ * note records one module over. Every pair still clears AA comfortably; only the
+ * evidence needed correcting.
  */
 export const LINEAGE_STYLE: Record<LineageState, {
   readonly labelKey: `prioritization:${string}`

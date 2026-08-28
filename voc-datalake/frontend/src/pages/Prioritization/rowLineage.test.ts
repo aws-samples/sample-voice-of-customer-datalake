@@ -35,9 +35,13 @@
  *    stale" (the missing-optional-document boundary);
  *  * the `rankOf` id tie-break deleted → "documents sharing a timestamp compare by
  *    id, in both array orders";
- *  * the `hasUnreadableTimestamp` gate deleted → "a held document with no readable
- *    created_at withholds staleness" (which is what stops '' — the smallest string
- *    — reading as older than every dated document in the project);
+ *  * `rankOf`'s `instantOf` reverted to the raw `created_at` string → "compares the
+ *    INSTANT a timestamp names, not the string that spells it" (all three halves),
+ *    plus the offset half of the tie-break case and the unparseable half of the
+ *    no-instant case;
+ *  * the `hasUnreadableTimestamp` gate deleted → "a held created_at that names no
+ *    instant withholds staleness" (which is what stops `NO_INSTANT` reading as older
+ *    than every dated document in the project);
  *  * `fresher` narrowed from `some` to `every` → "only ONE of its types has a newer
  *    version" (the case `lineage.staleReason`'s wording answers to);
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
@@ -435,6 +439,16 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
         .toEqual(['prd_b'])
       expect(fresherCoherentSelection([prdB], order), JSON.stringify(order)).toBeNull()
     }
+
+    // AND THE TIE IS ON THE INSTANT, not on the string. `prd_a`'s moment is respelled
+    // as an offset here — the SAME instant as `prd_b`'s Z form, so the id rule decides
+    // and `prd_b` still wins. The two spellings do not tie as strings, and the one that
+    // sorts higher as text is `prd_a`'s, which the id rule puts SECOND: a string
+    // comparison therefore reverses this pair, and the row holding the winner reads as
+    // superseded by the loser.
+    const offsetA = doc('prd_a', 'prd', '2025-01-01T11:00:00+02:00', builtFromFeedback)
+    expect(fresherCoherentSelection([offsetA], [offsetA, prdB])).toEqual(['prd_b'])
+    expect(fresherCoherentSelection([prdB], [offsetA, prdB])).toBeNull()
   })
 
   it('withholds staleness for a row already holding two versions of one type', () => {
@@ -445,6 +459,41 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
 
     expect(lineage.state).toBe('crossGeneration')
     expect(lineage.stale).toBe(false)
+  })
+
+  it('compares the INSTANT a timestamp names, not the string that spells it', () => {
+    // Lexicographic order equals instant order only while every `created_at` shares
+    // one shape, and nothing enforces that: `create_document` takes the caller's
+    // body, `manual_import_handler` writes an imported `timestamp` straight through,
+    // and the frontend field is `z.string().catch('')`. One hand-created or imported
+    // document mixes the shapes, and each half below is then answered BACKWARDS by a
+    // string compare.
+    //
+    // Two spellings of ONE moment: '11:00:00+03:00' is 08:00Z, and the row holds the
+    // 08:00Z document. Nothing newer exists, so nothing is advised — while as strings
+    // '2025-03-10T11:00:00+03:00' > '2025-03-10T08:00:00Z' and the row would be told
+    // it had been superseded by a copy of what it already holds.
+    const zForm = doc('prd_z', 'prd', '2025-03-10T08:00:00Z', builtFromFeedback)
+    const sameInstantOffset = doc('prd_a', 'prd', '2025-03-10T11:00:00+03:00', builtFromFeedback)
+
+    expect(fresherCoherentSelection([zForm], [zForm, sameInstantOffset])).toBeNull()
+    expect(rowLineageOf(frozenRow([zForm]), [zForm, sameInstantOffset]).stale).toBe(false)
+
+    // An offset form whose instant is EARLIER than the row's: '23:00:00-05:00' on the
+    // 10th is 04:00Z on the 11th, so the row holding it is current against a
+    // 02:00Z-on-the-11th sibling. As strings the sibling sorts higher, so the module
+    // would advise re-scoring against evidence two hours OLDER.
+    const heldLater = doc('prd_held', 'prd', '2025-03-10T23:00:00-05:00', builtFromFeedback)
+    const actuallyEarlier = doc('prd_other', 'prd', '2025-03-11T02:00:00+00:00', builtFromFeedback)
+
+    expect(fresherCoherentSelection([heldLater], [heldLater, actuallyEarlier])).toBeNull()
+
+    // The positive control, and the half that fails if the comparison is refused
+    // rather than fixed: a genuinely newer instant in a DIFFERENT shape is still
+    // fresher. '2025-03-11T09:00:00+00:00' is five hours after the held 04:00Z.
+    const genuinelyNewer = doc('prd_new', 'prd', '2025-03-11T09:00:00+00:00', builtFromFeedback)
+    expect(fresherCoherentSelection([heldLater], [heldLater, genuinelyNewer]))
+      .toEqual(['prd_new'])
   })
 
   it('withholds staleness when a held document has no readable type', () => {
@@ -460,17 +509,25 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     expect(fresherCoherentSelection([typeless], [typeless, otherTypeless, prd2])).toBeNull()
   })
 
-  it('withholds staleness when a held document has no readable created_at', () => {
-    // '' loses every lexicographic comparison, so a date-less held document ranks
-    // below every DATED document of its type — including much older ones. Ranked
-    // rather than refused, this row is told its evidence was superseded by a document
-    // from 2020 and its reviewer is sent to re-score against it. An unreadable field
-    // decides nothing here, exactly as it decides nothing about type.
+  it('withholds staleness when a held created_at names no instant', () => {
+    // A timestamp naming no instant ranks below every DATED document of its type —
+    // including much older ones. Ranked rather than refused, this row is told its
+    // evidence was superseded by a document from 2020 and its reviewer is sent to
+    // re-score against it. An unreadable field decides nothing here, exactly as it
+    // decides nothing about type.
+    //
+    // BOTH SPELLINGS of "no instant", because the gate is `Date.parse` and not an
+    // emptiness check: '' is what `displayString` collapses absent/null/non-string
+    // into, and a non-empty value no reader could call a date is the other half — a
+    // string compare would have ranked 'unknown' ABOVE every ISO timestamp, since 'u'
+    // sorts after a digit, and reported the row current while advising nothing.
     const dateless = doc('nd', 'prd', '', builtFromFeedback)
     const ancient = doc('old_prd', 'prd', '2020-01-01', builtFromFeedback)
 
     expect(fresherCoherentSelection([dateless], [dateless, ancient])).toBeNull()
     expect(rowLineageOf(frozenRow([dateless]), [dateless, ancient]).stale).toBe(false)
+    const unparseable = doc('nd', 'prd', 'unknown', builtFromFeedback)
+    expect(fresherCoherentSelection([unparseable], [unparseable, ancient])).toBeNull()
     // The positive control, in two halves. Once the row's own timestamp is readable
     // and genuinely older, the same shape IS stale — so the case above is the gate and
     // not staleness failing to fire.

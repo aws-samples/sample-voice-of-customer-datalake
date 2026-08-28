@@ -100,6 +100,15 @@ export function RowLineageBadge({ lineage }: { readonly lineage: RowLineage }): 
  * Silently re-pointing the row at the fresher documents would rewrite what
  * existing ballots described, which is the defect the row model was introduced
  * to prevent.
+ *
+ * ITS OWN TINT, ITS OWN CONTRAST FIGURE, recorded here because this is the one
+ * colour pair the badge introduces and `LINEAGE_STYLE`'s note next door covers only
+ * the three lineage states: orange-800 #9f2d00 on orange-100 #ffedd4 is 6.43:1, at
+ * `text-xs` where AA wants 4.5:1. Converted from the Tailwind v4 OKLCH values in
+ * `node_modules/tailwindcss/theme.css`, so a palette bump has a number to be checked
+ * against rather than a tint nobody measured. Orange rather than amber so the two
+ * badges a stale row shows at once are not the same colour — but as everywhere here
+ * the tint is reinforcement: the badge says "Superseded" in words.
  */
 export function RowStaleBadge({ lineage }: { readonly lineage: RowLineage }): ReactElement | null {
   const { t } = useTranslation('prioritization')
