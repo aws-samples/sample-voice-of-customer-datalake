@@ -33,6 +33,8 @@ REVERT MAP
   -> `the_app_config_writer_cannot_reach_the_webscraper_key`.
 """
 import ast
+import io
+import tokenize
 from pathlib import Path
 from unittest.mock import patch
 
@@ -148,8 +150,10 @@ class TestScraperUrlFieldsCoverTheIngestor:
 # back, and the reviewer of #391 was right that the fix is only as complete as
 # the set of routes that apply it.
 WRITER_MODULES = {
-    # POST /scrapers — one config object at a time.
-    'lambda/api/scrapers_handler.py': 'validate_scraper_destinations',
+    # POST /scrapers — one config object at a time. Calls the single-config write
+    # entry point, not the primitive, because the URL-count exemption for a list
+    # this write carries forward has to apply on this route too.
+    'lambda/api/scrapers_handler.py': 'validate_scraper_config_write',
     # PUT /integrations/webscraper/credentials — the whole array as one string,
     # which is how the Settings webscraper card saves.
     'lambda/api/integrations_handler.py': 'validate_scraper_configs_json',
@@ -164,6 +168,31 @@ NON_WRITER_MODULES = {
     # The check itself — names the key in its docstring to say what it guards.
     'lambda/shared/scraper_urls.py',
 }
+
+
+def _strip_comments(source: str) -> str:
+    """
+    `source` with every comment removed, TRAILING ones included.
+
+    A `startswith('#')` line filter — what this used first — leaves
+    `secrets[key] = value  # the webscraper_configs write` intact, so a comment
+    merely MOVED to the end of a line tripped the assertion below with a message
+    telling the next author the test was asserting the wrong thing. Tokenizing
+    also means a `#` inside a string literal is not mistaken for a comment.
+    """
+    try:
+        tokens = [
+            token for token in tokenize.generate_tokens(io.StringIO(source).readline)
+            if token.type != tokenize.COMMENT
+        ]
+        return tokenize.untokenize(tokens)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        # A fragment the tokenizer cannot finish (this helper is also used on
+        # hand-written snippets). The line filter is weaker but never wrong about
+        # a whole-line comment.
+        return '\n'.join(
+            line for line in source.splitlines() if not line.strip().startswith('#')
+        )
 
 
 def _writes_a_composed_secret_key(source: str) -> bool:
@@ -266,6 +295,19 @@ class TestEveryWriterAppliesTheCheck:
         assert found, f'no module mentions {SECRET_KEY} — the search is broken'
         assert 'lambda/api/scrapers_handler.py' in found
 
+    def test_the_comment_stripper_removes_a_trailing_comment(self):
+        """
+        Self-check on the helper the test below depends on. A line filter left a
+        trailing comment in place, so the literal survived and that test failed
+        with a message sending the next author to delete it — the cause being a
+        comment moved to the right-hand side of a line, not a code change.
+        """
+        assert SECRET_KEY not in _strip_comments(
+            f'secrets[k] = v  # {SECRET_KEY}\n'
+        )
+        # And a `#` inside a string is not a comment.
+        assert '#anchor' in _strip_comments("url = 'https://h/p#anchor'\n")
+
     def test_finds_the_array_writer_without_relying_on_its_comments(self):
         """
         `integrations_handler` contains `webscraper_configs` only in COMMENTS — its
@@ -277,9 +319,7 @@ class TestEveryWriterAppliesTheCheck:
         source = (root / 'lambda/api/integrations_handler.py').read_text(
             encoding='utf-8'
         )
-        without_comments = '\n'.join(
-            line for line in source.splitlines() if not line.strip().startswith('#')
-        )
+        without_comments = _strip_comments(source)
 
         assert SECRET_KEY not in without_comments, (
             'the literal is now in the code — this test is asserting the wrong '

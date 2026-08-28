@@ -116,15 +116,22 @@ def validate_scraper_destinations(
     Args:
         seen: HOSTNAMES already resolved and cleared during THIS write, so an
             array of configs over a handful of hosts costs a handful of resolver
-            calls however many paths it names. Keyed on the hostname, not the URL:
+            calls however many paths it names. Defaults to a FRESH set per call,
+            so the bound is what a caller gets without knowing to ask: passing
+            nothing used to mean no memo at all, and `POST /scrapers` — which
+            passed nothing — spent one lookup per URL for a config naming 50 on
+            one host, while both docs said hosts were resolved once per write.
+            Pass an explicit set only to share the memo across several configs in
+            ONE write. Keyed on the hostname, not the URL:
             resolution is the only expensive step and it is per-host, so keying it
             per-URL memoized nothing for the realistic large array (one site, one
             path per scraper). The cheap per-URL checks — scheme, credentials,
             type, blocked names — still run for every URL, so a bad scheme on the
-            second URL of a cleared host is still refused. A set is only shared
-            within one request; nothing is cached across invocations, because
+            second URL of a cleared host is still refused. A set must never
+            outlive one request; nothing is cached across invocations, because
             "this host was public a minute ago" is precisely the claim this check
-            must not make.
+            must not make — which is why the default is built per call rather
+            than being a module-level set.
         enforce_max_urls: Whether MAX_SCRAPER_URLS applies. False for a `urls`
             list this write leaves byte-identical to what is already stored — the
             destinations are still checked, but an over-cap list that predates the
@@ -140,6 +147,9 @@ def validate_scraper_destinations(
     if not isinstance(scraper, dict):
         # A list would sail past `.get()`-based validation as "no URLs to check".
         raise ValidationError('Scraper config must be an object')
+
+    if seen is None:
+        seen = set()
 
     for field in SCRAPER_URL_FIELDS:
         value = scraper.get(field)
@@ -174,9 +184,9 @@ def validate_scraper_destinations(
                     f"{field}[{index}] must be a URL string, got "
                     f"{type(url).__name__}"
                 )
+            host = _dedup_key(url)
             try:
-                host = _dedup_key(url)
-                if seen is not None and host is not None and host in seen:
+                if host is not None and host in seen:
                     # This host was resolved and cleared earlier in this write, so
                     # only the local checks need repeating for this URL.
                     assert_outbound_url_allowed(url, skip_resolution=True)
@@ -184,7 +194,7 @@ def validate_scraper_destinations(
                 assert_outbound_url_allowed(url)
             except OutboundUrlBlocked as e:
                 raise ValidationError(f"{field} '{url}': {e}") from e
-            if seen is not None and host is not None:
+            if host is not None:
                 seen.add(host)
 
 
@@ -196,6 +206,12 @@ def _stored_urls_by_id(stored: object) -> dict:
     violation, so anything unparseable or unrecognizable simply yields no
     exemptions and the cap applies. A malformed stored value must not be able to
     turn into a bypass, and must not fail the write either.
+
+    An `id` appearing more than once yields NO exemption, rather than whichever
+    occurrence happens to be last. Keying a dict on it meant the same stored
+    content accepted or refused the same write depending on array order, and a
+    duplicated id is a stored value nobody should be reasoning about — declining
+    to exempt it is the same fail-closed choice the unparseable cases make.
     """
     if not isinstance(stored, str) or not stored:
         return {}
@@ -205,11 +221,62 @@ def _stored_urls_by_id(stored: object) -> dict:
         return {}
     if not isinstance(configs, list):
         return {}
-    return {
-        config['id']: config.get('urls')
-        for config in configs
-        if isinstance(config, dict) and isinstance(config.get('id'), str)
-    }
+
+    urls_by_id: dict = {}
+    duplicated: set = set()
+    for config in configs:
+        if not isinstance(config, dict) or not isinstance(config.get('id'), str):
+            continue
+        if config['id'] in urls_by_id:
+            duplicated.add(config['id'])
+            continue
+        urls_by_id[config['id']] = config.get('urls')
+    for config_id in duplicated:
+        urls_by_id.pop(config_id, None)
+    return urls_by_id
+
+
+def _carries_the_stored_list_forward(config: object, stored_urls: dict) -> bool:
+    """
+    Whether this config's `urls` is byte-identical to the stored list for its id.
+
+    Only the URL COUNT is exempted on the strength of this — the destinations of
+    such a list are still checked, or an over-cap legacy config would be a place
+    to park an internal URL that no later write would look at. Growing an
+    already-over-cap list is a change, so it is not carried forward.
+    """
+    return (
+        isinstance(config, dict)
+        and isinstance(config.get('id'), str)
+        and config['id'] in stored_urls
+        and config.get('urls') == stored_urls[config['id']]
+    )
+
+
+def validate_scraper_config_write(scraper: dict, stored: object = None) -> None:
+    """
+    Check ONE config as a write, exempting a `urls` list it carries forward.
+
+    What `POST /scrapers` calls. `validate_scraper_destinations` is the primitive
+    and takes the exemption as a flag; this decides the flag from the stored
+    array, so the single-config route and the whole-array route agree. They did
+    not: the exemption was wired into the array route alone, so a pre-existing
+    over-cap config was refused on EVERY save through `POST /scrapers` — including
+    a change to an unrelated field — and trimming it required a save, leaving
+    deletion as the only escape from a config that could no longer be edited.
+
+    Args:
+        stored: The currently-stored `webscraper_configs` string, if the caller
+            has it. Absent, nothing is exempt and the cap applies as before.
+
+    Raises:
+        ValidationError: as `validate_scraper_destinations`.
+    """
+    stored_urls = _stored_urls_by_id(stored)
+    validate_scraper_destinations(
+        scraper,
+        enforce_max_urls=not _carries_the_stored_list_forward(scraper, stored_urls),
+    )
 
 
 def validate_scraper_configs_json(raw: object, stored: object = None) -> None:
@@ -258,14 +325,10 @@ def validate_scraper_configs_json(raw: object, stored: object = None) -> None:
     stored_urls = _stored_urls_by_id(stored)
     seen: set = set()
     for config in configs:
-        # Unchanged means byte-identical to what is stored under the same id.
-        # Growing an already-over-cap list is a change, so it is still refused.
-        unchanged = (
-            isinstance(config, dict)
-            and isinstance(config.get('id'), str)
-            and config['id'] in stored_urls
-            and config.get('urls') == stored_urls[config['id']]
-        )
         validate_scraper_destinations(
-            config, seen=seen, enforce_max_urls=not unchanged
+            config,
+            seen=seen,
+            enforce_max_urls=not _carries_the_stored_list_forward(
+                config, stored_urls
+            ),
         )

@@ -206,7 +206,7 @@ def resolve_host_addresses(hostname: str) -> list[ipaddress.IPv4Address | ipaddr
     return addresses
 
 
-def assert_outbound_url_allowed(url: str, skip_resolution: bool = False) -> None:
+def assert_outbound_url_allowed(url: str, *, skip_resolution: bool = False) -> None:
     """
     The one outbound-URL policy for scraper traffic (issue #244).
 
@@ -225,6 +225,11 @@ def assert_outbound_url_allowed(url: str, skip_resolution: bool = False) -> None
             not skippable with it: a second URL on a cleared host can still carry
             a refused scheme or embedded credentials. Never pass True before a
             request goes out; the resolution IS the policy.
+
+            Keyword-only deliberately — do not remove the `*`. Positionally,
+            `assert_outbound_url_allowed(url, True)` reads as nothing in
+            particular at a call site while silently disabling the step that IS
+            the SSRF check, and no review of this function could catch it.
 
     Raises:
         OutboundUrlBlocked: with a message safe to hand back to an API caller.
@@ -418,6 +423,13 @@ def _fetch_within_deadline(url: str, deadline: float, timeout: int, **rest):
 
     `fetch_with_retry.__wrapped__` is its undecorated body: the retry policy for
     this call carries a deadline, so the default one must not also apply.
+
+    The policy itself comes from `create_retry_decorator`, which is why that
+    factory takes `max_total_delay` at all. Restating `wait`, `retry` and
+    `before_sleep` here left two copies of the retry shape, of which only `stop`
+    was shared — so changing the wait strategy or the retryable exception set
+    would have updated the unbudgeted path and left this one, the copy guarding a
+    synchronous API request, behind.
     """
     def attempt():
         remaining = deadline - time.monotonic()
@@ -428,16 +440,7 @@ def _fetch_within_deadline(url: str, deadline: float, timeout: int, **rest):
         )
 
     remaining_now = max(deadline - time.monotonic(), 0)
-    retrying = retry(
-        stop=_stop_condition(RETRY_MAX_ATTEMPTS, remaining_now),
-        wait=wait_exponential(
-            multiplier=1, min=RETRY_MIN_WAIT_SECONDS, max=RETRY_MAX_WAIT_SECONDS
-        ),
-        retry=retry_if_exception_type((*RETRYABLE_EXCEPTIONS, RetryableHTTPError)),
-        before_sleep=before_sleep_log(logger, log_level=20),
-        reraise=True,
-    )
-    return retrying(attempt)()
+    return create_retry_decorator(max_total_delay=remaining_now)(attempt)()
 
 
 def _request_origin(url: str) -> tuple:

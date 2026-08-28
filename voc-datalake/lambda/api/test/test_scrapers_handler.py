@@ -42,7 +42,7 @@ class TestSaveScraperRejectsInternalDestinations:
 
     That was the hole: the check ran only on the analyze/preview route, nothing
     forced a preview, and the scheduled ingestor then fetched whatever was
-    saved. Removing the `validate_scraper_destinations(scraper)` call from
+    saved. Removing the `validate_scraper_config_write(scraper, ...)` call from
     `save_scraper` turns every assertion in this class from 400 into 200.
 
     `TestSaveScraper` below is the positive control — a public config still
@@ -280,6 +280,165 @@ class TestSaveScraperRejectsInternalDestinations:
 
         assert response['statusCode'] == 200, response['body']
         mock_resolve.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_resolves_once_per_host_for_a_config_naming_many_urls(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """
+        MAX_SCRAPER_URLS allows 50, so 50 lookups was the sanctioned worst case
+        for one save — the exact cost the per-host memo removed, on the route that
+        was not getting it, while both docs said hosts are resolved once per write.
+        """
+        from shared.scraper_urls import MAX_SCRAPER_URLS
+
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_configs': '[]'})
+        }
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {
+                'id': 's1', 'name': 'One host',
+                'urls': [
+                    f'https://reviews.example.com/page-{i}'
+                    for i in range(MAX_SCRAPER_URLS)
+                ],
+            },
+        )
+
+        assert response['statusCode'] == 200, response['body']
+        assert mock_resolve.call_count == 1
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_saves_an_unchanged_over_cap_config_when_another_field_changes(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """
+        The URL-count exemption applies on THIS route too.
+
+        It was wired into the array route alone, so a pre-existing over-cap config
+        was refused on every save here — including a rename — and trimming it
+        required a save. Deleting the config was the only escape from one that
+        could no longer be edited.
+        """
+        from shared.scraper_urls import MAX_SCRAPER_URLS
+
+        legacy_urls = [
+            f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 10)
+        ]
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'webscraper_configs': json.dumps([
+                    {'id': 'legacy', 'name': 'Legacy', 'urls': legacy_urls},
+                ]),
+            }),
+        }
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 'legacy', 'name': 'renamed', 'urls': legacy_urls},
+        )
+
+        assert response['statusCode'] == 200, response['body']
+        mock_secrets.put_secret_value.assert_called_once()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_refuses_growing_an_already_over_cap_config(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """Carrying an over-cap list forward is exempt; adding to it is not."""
+        from shared.scraper_urls import MAX_SCRAPER_URLS
+
+        legacy_urls = [
+            f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 10)
+        ]
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'webscraper_configs': json.dumps([
+                    {'id': 'legacy', 'urls': legacy_urls},
+                ]),
+            }),
+        }
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 'legacy', 'urls': [*legacy_urls, 'https://example.com/new']},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'Too many URLs' in json.loads(response['body'])['error']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_still_refuses_an_internal_url_inside_an_exempt_list(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """
+        The count is exempt for a carried-forward list; the DESTINATIONS never
+        are, or an over-cap legacy config would be a place to park an internal URL
+        that no later write would look at.
+        """
+        from shared.scraper_urls import MAX_SCRAPER_URLS
+
+        urls = [
+            f'https://internal.example.com/{i}'
+            for i in range(MAX_SCRAPER_URLS + 5)
+        ]
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'webscraper_configs': json.dumps([{'id': 'legacy', 'urls': urls}]),
+            }),
+        }
+        mock_resolve.return_value = PRIVATE_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context, {'id': 'legacy', 'urls': urls},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'internal/private' in json.loads(response['body'])['error']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('scrapers_handler.secretsmanager')
+    def test_an_unreadable_secret_does_not_fail_the_write(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """
+        The pre-check read is best-effort: it only decides whether a list is
+        carried forward. A secret this route cannot read must yield no exemption,
+        never a failed save — the read-modify-write below is where a real read
+        failure belongs.
+
+        A real `ClientError`, not a bare Exception: the clause names its
+        exceptions so a genuine bug still surfaces, and a bare-Exception double
+        would pass against a handler that caught nothing relevant.
+        """
+        from botocore.exceptions import ClientError
+
+        mock_secrets.get_secret_value.side_effect = [
+            ClientError(
+                {'Error': {'Code': 'ThrottlingException', 'Message': 'slow down'}},
+                'GetSecretValue',
+            ),
+            {'SecretString': json.dumps({'webscraper_configs': '[]'})},
+        ]
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        response = self._post(
+            api_gateway_event, lambda_context,
+            {'id': 's1', 'name': 'Public', 'base_url': 'https://reviews.example.com/'},
+        )
+
+        assert response['statusCode'] == 200, response['body']
 
     @patch('shared.http_utils.socket.getaddrinfo')
     @patch('scrapers_handler.secretsmanager')
@@ -917,6 +1076,15 @@ class TestAnalyzeUrl:
             scrapers_handler.PREVIEW_FETCH_HOP_TIMEOUT_SECONDS
             <= scrapers_handler.PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS
         )
+        # The fetch is not the last thing this route does: `converse` runs
+        # afterwards on the same clock, with read_timeout=300 and its own throttle
+        # retries, and is not budgeted. A fetch budget that consumed most of the
+        # 29 s still produced the message-less 504 the budget exists to prevent,
+        # one step later — so the budget must leave the model call room. Asserted
+        # as "at most half", a share rather than the literal, so tuning stays free.
+        assert scrapers_handler.PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS <= (
+            api_gateway_limit // 2
+        ), 'the fetch budget leaves no headroom for the Bedrock call that follows'
         # And the budget really reached the fetch: the first hop's timeout is
         # bounded by it, so a chain cannot outlive the invocation.
         assert 0 < mock_request.call_args.kwargs['timeout'] <= (

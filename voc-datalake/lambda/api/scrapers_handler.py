@@ -24,11 +24,12 @@ from shared.http_utils import (
 # The write-time check lives in shared/ because `PUT /integrations/webscraper/
 # credentials` writes the SAME `webscraper_configs` key from a different Lambda,
 # and the two handlers cannot import each other (issue #244).
-from shared.scraper_urls import validate_scraper_destinations
+from shared.scraper_urls import validate_scraper_config_write
 from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 import boto3
 
 secretsmanager = get_secrets_client()
@@ -53,8 +54,17 @@ app = create_api_resolver()
 # integration limit and surfaced as a 504 with no error message instead of the
 # 400/500 this route means to return. The per-hop value stays lower than the
 # total so a single stalled hop cannot consume the whole budget.
-PREVIEW_FETCH_HOP_TIMEOUT_SECONDS = 10
-PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS = 20
+#
+# This is the FETCH share of the ~29 s, not the whole route: `converse` runs
+# afterwards on the same clock and is not budgeted here. `get_bedrock_client` in
+# shared/aws.py uses read_timeout=300, and shared/converse.py retries throttling
+# with `time.sleep` backoff, so the remainder is not free — a 20 s fetch plus a
+# throttled model call still produced the message-less 504 this budget exists to
+# prevent. Whoever changes either number is changing a split, not a ceiling: the
+# two must leave room for the model call, and the per-hop value must stay at or
+# below the total.
+PREVIEW_FETCH_HOP_TIMEOUT_SECONDS = 8
+PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS = 12
 
 
 @app.get("/scrapers")
@@ -87,16 +97,37 @@ def save_scraper():
     if not isinstance(scraper, dict):
         raise ValidationError('Scraper config must be an object')
 
+    # Read BEFORE checking, so the URL-count cap can tell a `urls` list this
+    # write created from one it is carrying forward untouched. Without the stored
+    # value, a pre-existing over-cap config was refused on every save through
+    # this route — including a change to an unrelated field — and trimming it
+    # needed a save, so deleting the config was the only way out.
+    #
+    # Best-effort: a secret this route cannot read yields no exemption, never a
+    # failed write. The read is repeated inside the try below because that is the
+    # read-modify-write, and this one must not be able to 500 the route. The
+    # exceptions are named rather than caught broadly so a genuine bug here still
+    # surfaces: a missing/denied secret (ClientError), a secret that is not JSON,
+    # and a JSON secret that is not an object are the three shapes this can take.
+    stored_configs = None
+    try:
+        stored_configs = json.loads(
+            secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+            .get('SecretString', '{}')
+        ).get('webscraper_configs')
+    except (ClientError, ValueError, AttributeError, TypeError, KeyError) as e:
+        logger.warning(f"Could not read stored scraper configs: {e}")
+
     # BEFORE the try below, so its `except Exception -> ServiceError` cannot
     # flatten this actionable 400 into an opaque 500. This route serves both
     # create and update (there is no separate PUT), so one call covers both.
-    validate_scraper_destinations(scraper)
+    validate_scraper_config_write(scraper, stored=stored_configs)
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
         configs = json.loads(secrets.get('webscraper_configs', '[]'))
-        
+
         existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == scraper.get('id')), -1)
         if existing_idx >= 0:
             configs[existing_idx] = scraper

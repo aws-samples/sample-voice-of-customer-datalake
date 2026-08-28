@@ -40,6 +40,10 @@ REVERT MAP — which mutation each test catches
 - Resolve a host that `skip_resolution` cleared earlier in the same write, or skip
   the local checks along with it
   -> `test_scraper_urls.py::still_applies_the_local_checks_to_a_cleared_hosts_other_urls`.
+- Make `skip_resolution` positional again, so a call site can disable the lookup
+  with a bare `True` -> `cannot_be_enabled_positionally`.
+- Restate the retry policy inline in the budgeted path instead of building it from
+  `create_retry_decorator` -> `the_budgeted_path_uses_the_shared_retry_factory`.
 
 Every "refuses" concern has a positive control (`TestPermittedDestinations`,
 `allows_a_public_redirect_chain_and_returns_the_final_page`) so an
@@ -355,6 +359,20 @@ class TestSkipResolution:
         assert_outbound_url_allowed('https://example.com/x')
 
         mock_resolve.assert_called_once()
+
+    def test_cannot_be_enabled_positionally(self):
+        """
+        Keyword-only, so the flag cannot appear at a call site as a bare `True`.
+
+        `assert_outbound_url_allowed(url, True)` reads as nothing in particular
+        while disabling the lookup that IS the SSRF check, and no review of this
+        function could catch it — the docstring's "never pass True before a
+        request goes out" is only a request until the interpreter enforces it.
+        """
+        from shared.http_utils import assert_outbound_url_allowed
+
+        with pytest.raises(TypeError):
+            assert_outbound_url_allowed('https://example.com/x', True)
 
 
 # ---------------------------------------------------------------------------
@@ -748,6 +766,41 @@ class TestCheckedFetchMatchesRequestsRedirectSemantics:
         assert sum(timeouts) <= 20
         assert timeouts[0] == 10
         assert timeouts[-1] < 10, 'a later attempt must shrink to fit the budget'
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_the_budgeted_path_uses_the_shared_retry_factory(
+        self, mock_request, mock_resolve
+    ):
+        """
+        One retry policy, not two.
+
+        `create_retry_decorator` grew `max_total_delay` so the budgeted fetch
+        could rebuild the default shape with a deadline attached — but the
+        budgeted fetch then restated `wait`, `retry` and `before_sleep` inline,
+        leaving that parameter with no caller and only the `stop` leg shared. So
+        changing the wait strategy or the retryable exception set would have
+        updated the UNBUDGETED path and left this one, the copy guarding a
+        synchronous API request, behind.
+
+        Asserted by observation rather than by reading the source: the factory
+        must be what produces the decorator, and the budget must reach it.
+        """
+        from shared import http_utils
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [_response(200, text='ok')]
+
+        real_factory = http_utils.create_retry_decorator
+        with patch.object(
+            http_utils, 'create_retry_decorator', side_effect=real_factory
+        ) as mock_factory:
+            http_utils.fetch_checked_with_retry(
+                'https://example.com/', timeout=10, total_timeout=20
+            )
+
+        mock_factory.assert_called_once()
+        assert mock_factory.call_args.kwargs['max_total_delay'] > 0
 
     @pytest.mark.parametrize(('method', 'status', 'expected'), [
         ('POST', 303, 'GET'),   # 303 always means "go read this instead"

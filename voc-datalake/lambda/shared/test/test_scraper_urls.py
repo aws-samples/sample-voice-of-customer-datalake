@@ -33,6 +33,13 @@ REVERT MAP
   -> `still_checks_the_destinations_of_an_exempt_list`.
 - Treat any over-cap list as pre-existing -> `refuses_growing_a_list_that_is_already_over_the_cap`,
   `refuses_a_newly_added_over_cap_list_and_names_the_config`.
+- Take the LAST entry for a duplicated stored id, so array order decides whether
+  the exemption applies -> `grants_no_exemption_for_a_duplicated_stored_id`.
+- Make `seen` opt-in again, so a caller passing nothing resolves once per URL
+  -> `resolves_once_per_host_without_being_asked_to`.
+- Wire the exemption into the array route only, leaving `POST /scrapers` unable to
+  re-save a pre-existing over-cap config
+  -> `TestSingleConfigWrite::accepts_an_unchanged_over_cap_list`.
 
 Every "refuses" case has a positive control, so an implementation that refused
 everything could not pass this file.
@@ -157,6 +164,46 @@ class TestSingleConfig:
             )
 
         assert mock_resolve.call_count == 1
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_resolves_once_per_host_without_being_asked_to(self, mock_resolve):
+        """
+        The memo is the DEFAULT, not something a caller has to know to request.
+
+        It was opt-in, and `POST /scrapers` passed nothing — so a config naming
+        MAX_SCRAPER_URLS URLs on one host cost that many synchronous lookups
+        inside one API Gateway request, while both docs said hosts were resolved
+        once per write. The route that did not ask is the route that most needed
+        it.
+        """
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        validate_scraper_destinations({
+            'urls': [
+                f'https://reviews.example.com/page-{i}'
+                for i in range(MAX_SCRAPER_URLS)
+            ],
+        })
+
+        assert mock_resolve.call_count == 1
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_a_default_memo_does_not_outlive_one_call(self, mock_resolve):
+        """
+        The other direction, and the reason the default is built per call rather
+        than shared: "this host was public a minute ago" is precisely the claim
+        this check must not make, so two separate calls must both resolve.
+        """
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        for _ in range(2):
+            validate_scraper_destinations({'base_url': 'https://reviews.example.com/'})
+
+        assert mock_resolve.call_count == 2
 
 
 class TestSerializedConfigsArray:
@@ -371,6 +418,189 @@ class TestSerializedConfigsArray:
             validate_scraper_configs_json(same, stored=same)
 
 
+class TestStoredExemptionBaseline:
+    """
+    `_stored_urls_by_id` decides whether the URL-count cap is a NEW violation, so
+    an unreadable stored value must grant no exemption AND not fail the write.
+    """
+
+    @pytest.mark.parametrize('order', ['over_cap_last', 'over_cap_first'])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_grants_no_exemption_for_a_duplicated_stored_id(
+        self, mock_resolve, order
+    ):
+        """
+        Keying a dict on `id` kept whichever duplicate came LAST, so the same
+        stored content accepted or refused the same write depending on array
+        order. Parametrized over both orderings precisely so the assertion cannot
+        pass by order — a duplicated id is a stored value nobody should be
+        reasoning about, and declining to exempt it is the same fail-closed
+        choice the unparseable cases make.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        over_cap = [
+            f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 10)
+        ]
+        entries = [{'id': 'dup', 'urls': []}, {'id': 'dup', 'urls': over_cap}]
+        if order == 'over_cap_first':
+            entries.reverse()
+
+        with pytest.raises(ValidationError, match='Too many URLs'):
+            validate_scraper_configs_json(
+                json.dumps([{'id': 'dup', 'urls': over_cap}]),
+                stored=json.dumps(entries),
+            )
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_a_unique_id_still_exempts(self, mock_resolve):
+        """Positive control: refusing duplicates must not refuse everything."""
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        over_cap = [
+            f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 10)
+        ]
+        same = json.dumps([{'id': 'solo', 'urls': over_cap}])
+
+        validate_scraper_configs_json(same, stored=same)
+
+    @pytest.mark.parametrize('stored', [
+        'not json at all',
+        '',
+        None,
+        json.dumps({'id': 'legacy'}),   # an object, not an array
+        json.dumps([{'urls': []}]),     # no id to match on
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_an_unreadable_stored_value_grants_no_exemption(
+        self, mock_resolve, stored
+    ):
+        """
+        Best-effort in one direction only: it may not weaken the cap, and it may
+        not fail the write either.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        incoming = json.dumps([{
+            'id': 'legacy',
+            'urls': [
+                f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 1)
+            ],
+        }])
+
+        with pytest.raises(ValidationError, match='Too many URLs'):
+            validate_scraper_configs_json(incoming, stored=stored)
+
+
+class TestSingleConfigWrite:
+    """
+    `validate_scraper_config_write` is what `POST /scrapers` calls, and it must
+    reach the same verdict as the array route on the same config.
+
+    The exemption for a `urls` list a write carries forward was wired into the
+    array route alone, so a pre-existing over-cap config was refused on EVERY
+    save through `POST /scrapers` — including a change to an unrelated field —
+    and trimming it needed a save. Deleting the config was the only escape.
+    """
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_accepts_an_unchanged_over_cap_list(self, mock_resolve):
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_config_write
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        legacy_urls = [
+            f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 10)
+        ]
+        stored = json.dumps([{'id': 'legacy', 'urls': legacy_urls}])
+
+        validate_scraper_config_write(
+            {'id': 'legacy', 'name': 'renamed', 'urls': legacy_urls}, stored=stored
+        )
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_growing_an_over_cap_list(self, mock_resolve):
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_config_write
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        legacy_urls = [
+            f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 10)
+        ]
+        stored = json.dumps([{'id': 'legacy', 'urls': legacy_urls}])
+
+        with pytest.raises(ValidationError, match='Too many URLs'):
+            validate_scraper_config_write(
+                {'id': 'legacy', 'urls': [*legacy_urls, 'https://example.com/new']},
+                stored=stored,
+            )
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_newly_added_over_cap_list(self, mock_resolve):
+        """The cap still does its job for a list this write creates."""
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_config_write
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='Too many URLs'):
+            validate_scraper_config_write(
+                {
+                    'id': 'fresh',
+                    'urls': [
+                        f'https://example.com/{i}'
+                        for i in range(MAX_SCRAPER_URLS + 1)
+                    ],
+                },
+                stored='[]',
+            )
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_still_checks_the_destinations_of_an_exempt_list(self, mock_resolve):
+        """
+        The count is exempt; the DESTINATIONS never are. Otherwise an over-cap
+        legacy config would be a place to park an internal URL that no later
+        write would look at.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_config_write
+
+        mock_resolve.return_value = PRIVATE_ADDRINFO
+        urls = [
+            f'https://internal.example.com/{i}'
+            for i in range(MAX_SCRAPER_URLS + 5)
+        ]
+
+        with pytest.raises(ValidationError, match='internal/private'):
+            validate_scraper_config_write(
+                {'id': 'legacy', 'urls': urls},
+                stored=json.dumps([{'id': 'legacy', 'urls': urls}]),
+            )
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_enforces_the_cap_when_no_stored_value_is_available(self, mock_resolve):
+        """
+        A route that cannot read the secret gets no exemption — the write is still
+        checked, it just cannot tell a carried-forward list from a new one.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import MAX_SCRAPER_URLS, validate_scraper_config_write
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='Too many URLs'):
+            validate_scraper_config_write({
+                'id': 'legacy',
+                'urls': [
+                    f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 1)
+                ],
+            })
+
+
 class TestOnePolicyForEveryWritePath:
     """Both write routes must call THIS function, not their own copy."""
 
@@ -380,6 +610,32 @@ class TestOnePolicyForEveryWritePath:
         assert scraper_urls.assert_outbound_url_allowed is (
             http_utils.assert_outbound_url_allowed
         )
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_both_routes_reach_the_same_verdict_on_the_same_config(self, mock_resolve):
+        """
+        The two entry points must not disagree about one config.
+
+        They did: the array route exempted an unchanged over-cap list and the
+        single-config route refused it, so the same stored config was saveable
+        through the Settings card and unsaveable through the scrapers editor.
+        """
+        from shared.scraper_urls import (
+            MAX_SCRAPER_URLS,
+            validate_scraper_config_write,
+            validate_scraper_configs_json,
+        )
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        legacy_urls = [
+            f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 10)
+        ]
+        config = {'id': 'legacy', 'urls': legacy_urls}
+        stored = json.dumps([config])
+
+        # Neither raises.
+        validate_scraper_configs_json(stored, stored=stored)
+        validate_scraper_config_write(config, stored=stored)
 
     def test_the_serialized_form_delegates_to_the_single_config_check(self):
         """
