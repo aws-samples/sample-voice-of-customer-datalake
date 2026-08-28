@@ -20,6 +20,10 @@
  *    itself" (which compares the three rendered labels rather than one spelling);
  *  * `<RowStaleBadge>` removed, or its `is_frozen` gate lost → "a frozen row whose
  *    documents were superseded says so" and "a current frozen row does not";
+ *  * `fresherCoherentSelection`'s candidate condition tightened to require a
+ *    `coherent` candidate → "says so on a project where NO document records its
+ *    lineage" (which is every pre-`derivation` deployment, so the badge was
+ *    unreachable there);
  *  * `<RowLineageNote>`'s stale sentence removed → "a stale row names Add row as
  *    the action";
  *  * the `{ action: t('composition.addRow') }` interpolation dropped from that
@@ -408,6 +412,30 @@ describe('a frozen row whose project has moved on', () => {
     await screen.findByTestId('row-lineage')
 
     expect(screen.queryByTestId('row-stale')).toBeNull()
+  })
+
+  it('says so on a project where NO document records its lineage', async () => {
+    // The population that actually HAS superseded frozen rows: a deployment old
+    // enough to hold one is old enough that its early documents predate the
+    // `derivation` field. Every document here omits it, so the row AND the
+    // newest-of-each candidate both classify as `absent` — and while the candidate
+    // had to be `coherent`, the stale badge never reached this project at all.
+    //
+    // Driven through the page rather than only at the classifier's seam because that
+    // is what the user-visible claim is: the badge is on screen, and it is on screen
+    // beside a row the page still describes as lineage-absent.
+    const legacy = [PRD_1, PRFAQ_1, PRD_2, PRFAQ_2].map(
+      ({ derivation: _derivation, ...rest }) => rest,
+    )
+    givenProject(legacy, storedRow({ is_frozen: true }))
+
+    renderPage()
+
+    expect(await screen.findByTestId('row-stale')).toHaveTextContent(t('lineage.stale'))
+    // Absent, not coherent: the fix loosened WHICH candidate may be advised, and did
+    // not reclassify anything. A case asserting only the badge could pass if the
+    // documents had quietly kept their derivation.
+    expect(await screen.findByTestId('row-lineage')).toHaveAttribute('data-lineage', 'absent')
   })
 
   it('does not call a row stale for a document type it never held', async () => {

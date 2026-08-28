@@ -79,8 +79,15 @@ export interface SelectionLineage {
 /** A row's lineage, plus the staleness only a FROZEN row can be in. */
 export interface RowLineage extends SelectionLineage {
   /**
-   * Is this a frozen row for which a genuinely fresher COHERENT combination of
-   * the same document types exists?
+   * Is this a frozen row for which a genuinely fresher combination of the same
+   * document types exists, one that does not itself cross generations?
+   *
+   * "DOES NOT CROSS GENERATIONS" rather than "is coherent", which is one state
+   * looser and deliberately so: a candidate in which nothing records what it was
+   * built from (`absent`) is still advisable, because the staleness arithmetic
+   * reads only type and timestamp and absent lineage is the ordinary state of a
+   * pre-`derivation` project. Only a positively contradictory candidate withholds.
+   * Argued at the condition itself in `fresherCoherentSelection`.
    *
    * Never true for an un-frozen row, and that is a rule rather than an
    * optimisation: a row whose composition can still change has a better answer
@@ -569,8 +576,10 @@ function newestOfType(
 }
 
 /**
- * The ids of a genuinely fresher COHERENT combination for this selection, or null
- * when there is none.
+ * The ids of a genuinely fresher combination for this selection — one that does not
+ * itself cross generations — or null when there is none. The name says COHERENT and
+ * the fifth condition below says which of the three states that excludes: the
+ * contradictory one, and not the one that merely records nothing.
  *
  * WHAT "UNDER THE SAME ROLE EXPECTATIONS" MEANS HERE: the candidate holds the
  * project's newest document of each TYPE the selection holds, and nothing else. A
@@ -605,12 +614,36 @@ function newestOfType(
  *    document, and none answering an older one. A candidate that merely differs
  *    is not fresher, and the identical candidate is the ordinary state of a frozen
  *    row that is perfectly current;
- *  * the candidate must itself be COHERENT. "The newest of each type" is not
- *    automatically one generation: a project whose newest PR/FAQ was built from
- *    the previous PRD produces a newest-of-each candidate that crosses
+ *  * the candidate must not itself CROSS GENERATIONS. "The newest of each type" is
+ *    not automatically one generation: a project whose newest PR/FAQ was built
+ *    from the previous PRD produces a newest-of-each candidate that crosses
  *    generations, and pointing a reviewer at it would trade a stale row for an
  *    incoherent one. This is the condition that makes the criterion "a REAL
  *    fresher coherent combination exists" rather than "something newer exists".
+ *
+ *    ONE OF THE THREE STATES WITHHOLDS, NOT TWO, and which ones is the whole of
+ *    this condition's correctness. `crossGeneration` withholds, for the reason
+ *    above: the candidate is positively contradictory, so advising it is advising
+ *    a mistake. `absent` does NOT withhold — it is `recordsNoLineage`'s answer for
+ *    a combination in which nothing records what it was built from, which is the
+ *    ordinary state of every document created before the `derivation` field
+ *    existed and of every hand-authored one. Requiring `coherent` here silenced
+ *    staleness for the whole of exactly the population that has it: a project
+ *    several generations into a PRD is precisely the project with superseded
+ *    frozen rows, and a deployment old enough to hold one is a deployment whose
+ *    early documents predate lineage. It also made the answer turn on the wrong
+ *    record — a row that recorded nothing WAS reported stale as soon as the
+ *    candidate happened to record something, so the same row's verdict moved with
+ *    a property of the newer document rather than with whether anything had been
+ *    superseded.
+ *
+ *    Nothing about an `absent` candidate makes the advice less true: the
+ *    arithmetic above reads only `document_type` and `created_at`, both of which a
+ *    document with no derivation still carries, and the module's standing reading
+ *    of `absent` is weaker EVIDENCE rather than a withheld outcome (see the file
+ *    docstring, and `LineageState`, which calls it "the ordinary answer for a
+ *    hand-authored document … rather than a fault"). Withholding on it would be
+ *    the one place in this module where absent lineage decides something.
  */
 export function fresherCoherentSelection(
   selection: readonly unknown[],
@@ -660,7 +693,11 @@ export function fresherCoherentSelection(
     const record = byId.get(entry.id)
     return record === undefined ? [] : [record]
   })
-  if (classifySelectionLineage(records, projectDocuments).state !== 'coherent') return null
+  // A candidate that CROSSES GENERATIONS is refused; one that merely records no
+  // lineage is not. `!== 'coherent'` here refused `absent` too, which silenced
+  // staleness for every frozen row on a pre-`derivation` project — see the fifth
+  // condition in the docstring for why only the contradictory state may withhold.
+  if (classifySelectionLineage(records, projectDocuments).state === 'crossGeneration') return null
   return chosen.map((entry) => entry.id)
 }
 

@@ -66,8 +66,8 @@ export interface PrioritizationRowView {
   /**
    * What the row's documents say about EACH OTHER: one derivation chain, a
    * combination crossing generations, or no lineage recorded — and, for a frozen
-   * row, whether a fresher coherent combination of the same document types
-   * exists. See `rowLineage`.
+   * row, whether a fresher combination of the same document types exists that does
+   * not itself cross generations. See `rowLineage`.
    *
    * ON THE VIEW rather than derived in the component, for the reason the team
    * view is resolved once before the sort: `resolveDerivation` runs per document

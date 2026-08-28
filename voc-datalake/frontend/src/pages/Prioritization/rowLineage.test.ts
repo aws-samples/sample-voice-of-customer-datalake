@@ -24,8 +24,13 @@
  *    not coherent";
  *  * the `is_frozen` gate in `rowLineageOf` deleted → "an un-frozen row is never
  *    stale";
- *  * the coherence condition in `fresherCoherentSelection` deleted → "a fresher
+ *  * the candidate condition in `fresherCoherentSelection` deleted → "a fresher
  *    combination that itself crosses generations does not make a row stale";
+ *  * that condition tightened from `=== 'crossGeneration'` back to
+ *    `!== 'coherent'` → "marks a row stale on a project where NO document records
+ *    its lineage" (the pre-`derivation` population, for which requiring a
+ *    `coherent` candidate withheld staleness unconditionally). The two directions
+ *    are pinned by separate cases, and each stays green under the other's revert;
  *  * the `regressed` condition deleted → "a candidate that is older in one type is
  *    not fresher";
  *  * the same-combination early return deleted → "a frozen row holding the newest
@@ -410,6 +415,51 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const coherentPrfaq2 = doc('prfaq_2', 'prfaq', '2025-03-01', builtFrom('prd_2'))
     expect(fresherCoherentSelection([prd1, prfaq1], [prd1, prfaq1, prd2, coherentPrfaq2]))
       .toEqual(['prd_2', 'prfaq_2'])
+  })
+
+  it('marks a row stale on a project where NO document records its lineage', () => {
+    // The population that HAS stale frozen rows: a project several generations into a
+    // PRD is a deployment old enough that its early documents predate the
+    // `derivation` field, and a hand-authored document never had one. None of these
+    // four carries `derivation` or any legacy lineage field, so both the row and the
+    // newest-of-each candidate classify as `absent` — and requiring the candidate to
+    // be `coherent` silenced staleness for the whole of that population.
+    //
+    // Deliberately NOT using `builtFromFeedback`: that fixture is what makes every
+    // other candidate in this file `coherent`, so a case built on it cannot reach
+    // this branch. The crossing case above keeps its own fixtures for the same
+    // reason — the two rules are pinned separately, one per state that can appear
+    // here.
+    const legacyPrd1 = doc('legacy_prd_1', 'prd', '2024-01-01')
+    const legacyPrfaq1 = doc('legacy_prfaq_1', 'prfaq', '2024-01-01')
+    const legacyPrd2 = doc('legacy_prd_2', 'prd', '2025-06-01')
+    const legacyPrfaq2 = doc('legacy_prfaq_2', 'prfaq', '2025-06-01')
+    const legacy = [legacyPrd1, legacyPrfaq1, legacyPrd2, legacyPrfaq2]
+
+    const lineage = rowLineageOf(frozenRow([legacyPrd1, legacyPrfaq1]), legacy)
+
+    expect(lineage.stale).toBe(true)
+    expect(lineage.fresherDocumentIds).toEqual(['legacy_prd_2', 'legacy_prfaq_2'])
+    // The row's own state is unchanged by the fix and is asserted so the case cannot
+    // be read as claiming absent lineage now reads as coherent: it does not. The
+    // staleness axis simply stops being gated on it.
+    expect(lineage.state).toBe('absent')
+    expect(lineage.reason).toBe('noneRecorded')
+    // A row holding the newest of each type on the SAME lineage-less project is still
+    // current, so the assertions above are the arithmetic answering and not staleness
+    // firing for anything `absent`.
+    expect(rowLineageOf(frozenRow([legacyPrd2, legacyPrfaq2]), legacy).stale).toBe(false)
+    // And a lineage-less candidate that CROSSES generations still withholds, which is
+    // what keeps this one state looser rather than the condition removed: the row's
+    // own PRD has a successor, but the newest PR/FAQ here declares it was built from
+    // the OLD PRD — the only derivation record in the project.
+    const crossingLegacyPrfaq2 = doc(
+      'legacy_prfaq_2', 'prfaq', '2025-06-01', builtFrom('legacy_prd_1'),
+    )
+    expect(fresherCoherentSelection(
+      [legacyPrd1, legacyPrfaq1],
+      [legacyPrd1, legacyPrfaq1, legacyPrd2, crossingLegacyPrfaq2],
+    )).toBeNull()
   })
 
   it('does not call a combination fresher when one of its documents is older', () => {

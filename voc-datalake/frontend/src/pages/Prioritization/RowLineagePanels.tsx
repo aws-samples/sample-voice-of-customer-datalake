@@ -84,8 +84,9 @@ export function RowLineageBadge({ lineage }: { readonly lineage: RowLineage }): 
 }
 
 /**
- * That a FROZEN row's documents have been superseded by a fresher coherent
- * combination.
+ * That a FROZEN row's documents have been superseded by a fresher combination that
+ * does not itself cross generations (`fresherCoherentSelection` decides which
+ * candidates qualify; a candidate that merely records no lineage does).
  *
  * A SECOND badge rather than a fourth lineage state, because the two answer
  * different questions and a frozen row can be both: "these documents belong
