@@ -30,14 +30,15 @@ WHAT THIS FILE COSTS, stated plainly because a previous version of this heading 
 
     944 lines   on `development`, the scanner version
     455 lines   after the scanner was deleted
-  ~1030 lines   now
+  ~1080 lines   now
 
 So it is LONGER than the scanner it replaced, and the claim that it was short was
-false for two review rounds. What the growth is, in the current file: ~60% is prose
-(this docstring, ~190 lines; test docstrings, ~235; comments, ~190) and the rest is
-two type-level pins with two non-vacuity controls each, the text assertions that keep
-those present, and `_without_comments` plus `_doc_type_union` with their shape
-fixtures.
+false for two review rounds. What the growth is: ~60% of the file is PROSE (this
+docstring ~230 lines, test docstrings ~245, comments ~190). The ~415 lines of code are
+`_without_comments` and `_doc_type_union` with their shape fixtures, plus the text
+assertions keeping two type-level pins and their four controls present. If these
+counts and the file disagree, the file is right and this block is stale — recompute
+rather than trusting it.
 
 Whether that is proportionate is a fair question and was asked in review. The honest
 answer: the PINS are cheap and they are what bite — every widening mutation tried is
