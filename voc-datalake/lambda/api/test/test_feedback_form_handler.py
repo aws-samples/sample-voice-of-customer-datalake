@@ -2515,6 +2515,44 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
         assert response['statusCode'] == 200
 
     @patch('feedback_form_handler.aggregates_table')
+    def test_a_disabled_form_still_serves_its_page_so_the_widget_can_say_so(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The gate checks EXISTENCE, not `enabled` — and that is a decision.
+
+        It reads like an oversight, especially since the returned record is
+        discarded: someone arriving via "the iframe route now checks the form
+        exists" has a standing invitation to add `if not form.get('enabled')` here,
+        and it would look like tightening.
+
+        It would be a regression. The widget has to RUN in order to render its own
+        disabled state, so refusing the page replaces that with a raw API Gateway
+        404 frame on the customer's site — a broken embed for a customer who merely
+        turned the form off. The division of labour is `GET /config` publishing
+        `enabled` in its projection and `submit_form_feedback` enforcing it, and
+        this route matches /config rather than /submit.
+
+        Asserted on the PAGE, not just the status, because a 200 alone would not
+        show that the widget is present to do the saying.
+        """
+        mock_table.get_item.return_value = {
+            'Item': {'form_id': 'deadbeef', 'enabled': False}
+        }
+
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, 'deadbeef'), lambda_context
+        )
+
+        assert response['statusCode'] == 200, (
+            'a disabled form was refused its page — the visitor now sees a raw '
+            'API Gateway error frame instead of the widget saying the form is '
+            'unavailable. `enabled` belongs to /config and /submit, not to this '
+            'existence gate.'
+        )
+        assert response['multiValueHeaders']['Content-Type'] == ['text/html']
+        assert 'window.VoCFeedbackForm' in response['body']
+
+    @patch('feedback_form_handler.aggregates_table')
     def test_the_page_carries_a_policy_that_still_lets_a_customer_frame_it(
         self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
     ):
@@ -3371,17 +3409,35 @@ def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
 _FORM_ID_SINKS = frozenset({'aggregates_table', 'feedback_table', 'sqs'})
 
 
-def _refused_names(function: ast.FunctionDef) -> set[str]:
-    """Names this function tests in an `if` that then raises or returns.
+def _refused_names(function: ast.FunctionDef) -> dict[str, tuple[int, int]]:
+    """Name -> position of the earliest top-level `if` refusing it.
 
     `_validated_form_id` returns None rather than raising — deliberately, since
     every caller answers the same 404 — so the CALL is not the bound; the refusal
     after it is. A function that calls the validator and ignores what comes back
     has no bound at all, which is the natural mistake for someone copying the call
     and dropping the two lines that follow it at every current site.
+
+    A POSITION rather than a bare name, because WHERE the refusal sits is half the
+    claim and an earlier version of this helper answered only WHETHER one existed.
+    That let the refusal sit AFTER the read: the assignment binds None for a
+    malformed id, `get_item` runs with `Key={'sk': 'FORM#None'}` — the call the
+    whole cost argument exists to avoid — and the raise happens once it has been
+    paid for. Reported as a bound, because only the assignment's position was ever
+    compared against the sinks.
+    `test_the_derivation_refuses_a_refusal_that_happens_after_the_read` is the
+    control.
+
+    `function.body` rather than `ast.walk`, for the same reason
+    `_validates_its_form_id` requires the assignment at the top level: a refusal
+    nested under a condition refuses on some paths only, and `if False:` is the
+    extreme of that. Walking the whole function counted a dead refusal as a real
+    one, so hoisting just the assignment out of the dead block escaped the
+    top-level requirement while nothing was ever refused
+    (`test_the_derivation_refuses_a_refusal_that_only_runs_sometimes`).
     """
-    refused = set()
-    for node in ast.walk(function):
+    refused: dict[str, tuple[int, int]] = {}
+    for node in function.body:
         if not isinstance(node, ast.If):
             continue
         if not any(
@@ -3390,9 +3446,12 @@ def _refused_names(function: ast.FunctionDef) -> set[str]:
             for child in ast.walk(statement)
         ):
             continue
-        refused |= {
-            name.id for name in ast.walk(node.test) if isinstance(name, ast.Name)
-        }
+        position = (node.lineno, node.col_offset)
+        for name in ast.walk(node.test):
+            if not isinstance(name, ast.Name):
+                continue
+            known = refused.get(name.id)
+            refused[name.id] = position if known is None else min(known, position)
     return refused
 
 
@@ -3413,12 +3472,16 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
 
     - `<name> = _validated_form_id(...)` where `<name>` is later tested in an `if`
       whose body raises or returns. The assignment alone is not enough (see
-      `_refused_names`).
+      `_refused_names`), and the position that has to beat the sinks is the
+      REFUSAL's, not the assignment's: an assignment that binds None costs nothing,
+      so a read between it and the raise is a read of `FORM#None` that the check
+      was supposed to prevent.
     - a call to `_load_form_for_query(...)`, which needs no result check because it
-      RAISES for itself. Following the delegation rather than demanding the direct
-      call is deliberate: `/stats` and `/submissions` validate through it, and a
-      derivation that named only `_validated_form_id` would push someone into
-      adding a redundant second call to each.
+      RAISES for itself — so for that spelling the call's own position IS the
+      refusal's. Following the delegation rather than demanding the direct call is
+      deliberate: `/stats` and `/submissions` validate through it, and a derivation
+      that named only `_validated_form_id` would push someone into adding a
+      redundant second call to each.
 
     Top level rather than anywhere is what excludes dead code and conditional
     validation together — a check that only runs on some paths is not a bound, and
@@ -3447,6 +3510,7 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     for statement in function.body:
         for call in _calls(statement):
             if _named(call, '_load_form_for_query'):
+                # This one raises for itself, so the call is the refusal.
                 position = (statement.lineno, statement.col_offset)
                 validated_at = min(validated_at or position, position)
             if not _named(call, '_validated_form_id'):
@@ -3458,11 +3522,16 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
                 else [statement.target] if isinstance(statement, ast.AnnAssign)
                 else []
             )
-            if any(
-                isinstance(target, ast.Name) and target.id in refused
-                for target in targets
-            ):
-                position = (statement.lineno, statement.col_offset)
+            # The REFUSAL's position, not the assignment's: binding None is free,
+            # and anything between the two runs with it. Taking the earliest over
+            # the targets keeps `min` below meaningful when a function validates
+            # more than one id.
+            refusals = [
+                refused[target.id] for target in targets
+                if isinstance(target, ast.Name) and target.id in refused
+            ]
+            if refusals:
+                position = min(refusals)
                 validated_at = min(validated_at or position, position)
 
     if validated_at is None:
@@ -3615,6 +3684,80 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'a get_item before the validator was reported as validated — the '
             'derivation is order-insensitive again, and the cost argument it '
             'checks is about order'
+        )
+
+    def test_the_derivation_refuses_a_refusal_that_happens_after_the_read(self):
+        """The order defect one step along: the CALL beats the read, the RAISE
+        does not.
+
+        `test_the_derivation_refuses_a_read_that_happens_before_the_check` moves
+        the whole validating statement after the sink. This moves only the two
+        lines that do the refusing — which is both subtler to read and the shape a
+        reorder produces naturally, since the assignment looks like the check.
+
+        It is unsafe for exactly the reason that test's shape is: `validated` binds
+        None for an id the pattern refuses, so `get_item` runs with
+        `Key={'sk': 'FORM#None'}` before the raise. The DynamoDB call the bound
+        exists to prevent is paid for, and the 404 the caller sees is
+        indistinguishable from the correct one — which is why nothing but this
+        derivation would report it.
+
+        So the position compared against the sinks has to be the refusal's, not the
+        assignment's (`_refused_names` returns it for that reason). This is what
+        fails if it goes back to reporting a bare set of names.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/late-refusal")
+            def get_late_refusal(form_id: str):
+                validated = _validated_form_id(form_id)
+                item = aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
+                )
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return item
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_late_refusal'), (
+            'a refusal placed after the read was reported as a bound — the '
+            'assignment binds None for free, so it is the RAISE that has to beat '
+            "the first sink. `Key={'sk': 'FORM#None'}` is still a get_item."
+        )
+
+    def test_the_derivation_refuses_a_refusal_that_only_runs_sometimes(self):
+        """The dead-code defect one step along: the ASSIGNMENT is hoisted, the
+        refusal is not.
+
+        `test_the_derivation_refuses_validation_that_only_runs_sometimes` nests the
+        whole block, so the top-level requirement on the assignment catches it.
+        Hoisting just the assignment out satisfies that requirement while the
+        refusal stays unreachable — no request is ever refused, and the read runs
+        with None bound exactly as in the case above.
+
+        This is why `_refused_names` iterates `function.body` rather than walking:
+        a refusal found anywhere in the tree includes ones that never execute, and
+        "the check is somewhere in the source" was never the claim.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/dead-refusal")
+            def get_dead_refusal(form_id: str):
+                validated = _validated_form_id(form_id)
+                if False:
+                    if not validated:
+                        raise NotFoundError('Form not found')
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_dead_refusal'), (
+            'a refusal inside dead code was reported as a bound — the assignment '
+            'being at the top level is not the property that matters, the refusal '
+            'running on every path is'
         )
 
     def test_the_derivation_refuses_a_validator_whose_result_is_discarded(self):

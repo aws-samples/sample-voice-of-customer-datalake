@@ -1198,6 +1198,21 @@ export class VocApiStack extends VocStack {
      *  the TTL, which is a decision for that follow-up: a deleted form would keep
      *  serving its page until the entry expires.
      *
+     *  That staleness is a FRESHNESS question and not a security one, which is the
+     *  part worth stating rather than re-deriving: A 404 IS NEVER THE CACHED
+     *  RESPONSE. The only cacheable response this route produces is the 200 for a
+     *  form that existed at render time, so the ids a cache can hold an entry for
+     *  are exactly the ids the gate already admitted. An id that was never minted
+     *  never produces a 200, so a caller cannot prime the cache with one — the
+     *  gate's guarantee weakening from "exists" to "existed within the TTL"
+     *  therefore costs a deleted form's page outliving it, and nothing more. So
+     *  the follow-up needs NO cache-invalidation-on-delete step for correctness;
+     *  it needs a TTL short enough that the stale window is acceptable, and if a
+     *  deleted form's page must disappear promptly then that is a product
+     *  requirement to decide, not a hole to close. The one constraint this does
+     *  impose: whatever form the caching takes must not become negative caching,
+     *  because a cached 404 WOULD be keyed on an id an anonymous caller chose.
+     *
      *  NOTHING OBSERVES THIS CEILING EITHER — see the note on `methodOptions`
      *  below, where both pairs are applied. */
     const publicWidgetReadThrottle: apigateway.MethodDeploymentOptions = {

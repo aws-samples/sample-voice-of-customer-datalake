@@ -938,6 +938,16 @@ def get_form_iframe(form_id: str):
         raise NotFoundError('Form not found')
     # Return value unused: this is the existence gate, not a projection. The
     # page's content is a function of the id and the host, nothing stored.
+    #
+    # EXISTENCE ONLY — `enabled` is deliberately NOT consulted, which the unused
+    # return value makes look like an oversight rather than a decision. A disabled
+    # form still gets its page, matching `GET /config`, which publishes `enabled`
+    # in its projection and leaves the decision to the widget; `submit_form_feedback`
+    # is where it is enforced. The reason to keep the asymmetry is that the widget
+    # has to RUN in order to show its own disabled state — gate the page on
+    # `enabled` and the visitor gets a raw API Gateway 404 frame instead, which is
+    # a worse answer for the customer who turned the form off on purpose.
+    # `test_a_disabled_form_still_serves_its_page_so_the_widget_can_say_so` pins it.
     _load_form_for_query(validated, 'Failed to load form')
 
     host = app.current_event.request_context.get('domainName', '')
