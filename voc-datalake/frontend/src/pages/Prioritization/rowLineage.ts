@@ -109,6 +109,13 @@ export interface RowLineage extends SelectionLineage {
    * ids — and wrong for a renderer listing "what is newer", which would name a
    * document the reviewer is already looking at.
    *
+   * A TYPE WHOSE NEWEST ONLY TIES resolves to the held id too, for the reason the
+   * freshness verdict compares instants alone: an id is not evidence of recency.
+   * `newestOfType` must break a same-instant tie on `document_id` — choosing a type's
+   * newest document needs a total order — but once some OTHER type is genuinely newer,
+   * that tie-break would otherwise decide the CONTENT of this list and substitute a
+   * same-instant sibling the row does not hold. See `fresherCoherentSelection`.
+   *
    * Carried rather than only the boolean so such a caller can name the combination
    * without recomputing it, and deliberately NOT applied to the row: the frozen row
    * keeps the concrete ids its ballots were cast on, which is the whole point of
@@ -631,7 +638,10 @@ function newestOfType(
  *    row that is perfectly current. Compared by instant ALONE, never by `rankOf`'s
  *    tuple: a same-instant document with a higher `document_id` is not a newer
  *    version of anything, and reporting one as such made the badge's own sentence
- *    false. See the comment at the comparison, and `rankOf`;
+ *    false. See the comment at the comparison, and `rankOf`. The SAME rule decides
+ *    the candidate's CONTENT: a type whose newest only ties keeps the document the
+ *    row already holds, so `newestOfType`'s id tie-break cannot substitute a
+ *    same-instant sibling into the combination a reviewer is asked to score;
  *  * the candidate must not itself CROSS GENERATIONS. "The newest of each type" is
  *    not automatically one generation: a project whose newest PR/FAQ was built
  *    from the previous PRD produces a newest-of-each candidate that crosses
@@ -689,7 +699,29 @@ export function fresherCoherentSelection(
   const available = selectionEntries(projectDocuments)
   const candidate = selected.map((held) => newestOfType(available, held.type))
   if (candidate.some((entry) => entry === null)) return null
-  const chosen = candidate.flatMap((entry) => (entry === null ? [] : [entry]))
+  const newest = candidate.flatMap((entry) => (entry === null ? [] : [entry]))
+  // A TIE KEEPS THE DOCUMENT THE ROW ALREADY HOLDS, which is the other half of "an id
+  // is not evidence of recency" — the half about WHAT is advised rather than WHETHER
+  // anything is. `newestOfType` breaks a same-instant tie on `document_id` and must:
+  // choosing a type's newest document needs a total order, or the answer depends on
+  // the order a read returned the list in. But once ANY type is genuinely newer,
+  // `fresher` is satisfied and every OTHER type is resolved by that same tie-break —
+  // so a type with nothing newer could be swapped for a same-instant sibling the row
+  // does not hold, purely because its id sorts higher. That is the combination a
+  // reviewer would be asked to score, so it must contain no document nobody showed to
+  // be newer: `fresherDocumentIds`' own contract is that a type with nothing newer
+  // resolves to the id the row ALREADY holds.
+  //
+  // A no-op whenever a type is genuinely newer (the instants differ, so nothing is
+  // substituted), and restricted to a held document the project read actually carries,
+  // so the coherence check below still sees a full set of records — a held id the
+  // project does not carry would drop out of `records` and let a crossing candidate
+  // pass on a shortened set.
+  const chosen = newest.map((entry, index) => {
+    const held = selected[index]
+    const tied = instantOf(entry.createdAt) === instantOf(held.createdAt)
+    return tied && byId.has(held.id) ? held : entry
+  })
   // NO SECOND GATE FOR THE CANDIDATE'S timestamps, and that is a proof rather than an
   // omission: the row's own name instants by the check above, so a candidate naming
   // none is `NO_INSTANT` against a real instant on the document the row holds of that

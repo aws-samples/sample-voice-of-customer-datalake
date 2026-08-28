@@ -42,6 +42,11 @@
  *    to `isNewer(rankOf(...))` → "withholds staleness on a timestamp tie, in both
  *    array orders", whose positive control (a newer document with a LOWER id) stays
  *    green under that revert, so the case pins the tie and not the comparison;
+ *  * the tie-preference over `newestOfType`'s answer deleted (`chosen` taken straight
+ *    from `newest`) → "keeps the held document for a type whose newest only ties, in
+ *    both array orders", whose two positive controls — a genuinely newer document of
+ *    the same type, and the no-tie shape — both stay green under that revert, so the
+ *    case pins the substitution and not the newest-of-each arithmetic;
  *  * `rankOf`'s `instantOf` reverted to the raw `created_at` string → "compares the
  *    INSTANT a timestamp names, not the string that spells it" (all three halves),
  *    plus the offset half of the tie-break case and the unparseable half of the
@@ -535,6 +540,48 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const dayA = doc('prd_a', 'prd', '2025-01-01', builtFromFeedback)
     const dayZ = doc('prd_z', 'prd', '2025-01-01', builtFromFeedback)
     expect(fresherCoherentSelection([dayA], [dayA, dayZ])).toBeNull()
+  })
+
+  it('keeps the held document for a type whose newest only ties, in both array orders', () => {
+    // The other side of the same tie: the VERDICT is settled (the PR/FAQ is genuinely
+    // newer), so `fresher` is satisfied and every OTHER type is resolved by
+    // `newestOfType`'s id tie-break — which would substitute a same-instant `prd_b`
+    // for the `prd_a` the row holds, on nothing but a lexicographic comparison. The
+    // advised combination is what a reviewer would be asked to score, so it must name
+    // no document nobody showed to be newer.
+    const sameInstant = '2025-01-01T09:00:00Z'
+    const heldPrd = doc('prd_a', 'prd', sameInstant, builtFromFeedback)
+    const tiedPrd = doc('prd_b', 'prd', sameInstant, builtFromFeedback)
+    const heldPrfaq = doc('faq_1', 'prfaq', sameInstant, builtFromFeedback)
+    const newerPrfaq = doc('faq_2', 'prfaq', '2025-06-01', builtFromFeedback)
+
+    for (const order of [
+      [heldPrd, heldPrfaq, tiedPrd, newerPrfaq],
+      [newerPrfaq, tiedPrd, heldPrfaq, heldPrd],
+    ]) {
+      expect(fresherCoherentSelection([heldPrd, heldPrfaq], order), JSON.stringify(order))
+        .toEqual(['prd_a', 'faq_2'])
+      // Through the entry point the page uses, so the field a future Add-row picker
+      // reads is the one asserted.
+      expect(
+        rowLineageOf(frozenRow([heldPrd, heldPrfaq]), order).fresherDocumentIds,
+        JSON.stringify(order),
+      ).toEqual(['prd_a', 'faq_2'])
+    }
+
+    // THE POSITIVE CONTROL, in the same case: a type whose newest is GENUINELY newer
+    // is still substituted, so the assertions above pin the tie and not the
+    // newest-of-each arithmetic going missing. `prd_c`'s id sorts above `prd_a`'s and
+    // `prd_b`'s alike, so the answer cannot be the tie-break agreeing by luck.
+    const newerPrd = doc('prd_c', 'prd', '2025-07-01', builtFromFeedback)
+    expect(fresherCoherentSelection(
+      [heldPrd, heldPrfaq],
+      [heldPrd, heldPrfaq, tiedPrd, newerPrd, newerPrfaq],
+    )).toEqual(['prd_c', 'faq_2'])
+    // And with no tie at all the answer is unchanged — the documented shape
+    // `fresherDocumentIds` promises, which the tie was the one input contradicting.
+    expect(fresherCoherentSelection([heldPrd, heldPrfaq], [heldPrd, heldPrfaq, newerPrfaq]))
+      .toEqual(['prd_a', 'faq_2'])
   })
 
   it('withholds staleness for a row already holding two versions of one type', () => {
