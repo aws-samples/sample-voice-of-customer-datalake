@@ -63,15 +63,23 @@ REVERT MAP — each assertion below names the mutation it catches:
 
   test_a_broken_circuit_breaker_does_not_swallow_the_audit_event /
   test_a_broken_circuit_breaker_does_not_swallow_the_run_record
-    — re-merges the three reporting steps into ONE `try`, or moves the audit event
-      back after the breaker call. `CircuitBreaker.record_failure` is not
-      exception-safe on its first line: `self.table` resolves
-      `get_dynamodb_resource()` above its own `try`, so a failure building that
-      resource escapes into `_report_construction_failure`'s blind catch and every
-      later step is skipped. Under the old order that lost `plugin.failed` — the
-      ONLY signal a scheduled run leaves, since `_update_source_run_status` is a
-      no-op without an `execution_id` — in exactly the correlated case where the
-      same DynamoDB trouble breaks both.
+    — re-merges the three reporting steps in `_report_construction_failure` into
+      ONE `try`. Either order fails: with the audit event last (the pre-fix shape)
+      the audit case fails; with the breaker first, both do.
+      `CircuitBreaker.record_failure` is not exception-safe on its first line:
+      `self.table` resolves `get_dynamodb_resource()` above its own `try`, so a
+      failure building that resource escapes into `_report_construction_failure`'s
+      catch and every LATER step in the same `try` is skipped. Under the old shape
+      that lost `plugin.failed` — the ONLY signal a scheduled run leaves, since
+      `_update_source_run_status` is a no-op without an `execution_id` — in exactly
+      the correlated case where the same DynamoDB trouble breaks both.
+
+      Reordering ALONE is not caught, and must not be: with the per-step guards in
+      place, moving `emit_audit_event` back after the breaker call changes nothing
+      and all cases here pass (measured). The guards carry the guarantee; the order
+      is defence in depth against a future edit that reintroduces a shared `try`.
+      `_report_construction_failure`'s own docstring says the same, so a reader
+      asking "is the ordering load-bearing?" gets one answer from both.
 
   test_an_unreadable_secret_is_not_counted_against_the_circuit_breaker
     — raises plain `ConfigurationError` from the empty-payload branch instead of

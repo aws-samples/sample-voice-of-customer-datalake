@@ -5,6 +5,24 @@
 
 import type { ScraperConfig } from '../../api/types'
 
+/**
+ * The `title` on every control this page disables because the route behind it is
+ * admin-gated server-side.
+ *
+ * Declared once, and here rather than in either component, because THREE files
+ * render such a control — `AppConfigComponents` (Run, Delete),
+ * `PluginConfigModal` (Add, Save, Delete, Run, the schedule toggle) and
+ * `GeneratorConfigModal` (Generate, which is where this wording came from). A
+ * per-file literal is how one of them ends up saying something different from the
+ * others about the same 403.
+ *
+ * The routes: `POST`/`DELETE /integrations/{source}/apps`,
+ * `POST /sources/{source}/run` and `PUT /sources/{source}/enable|disable`. These
+ * were NOT gated — a `users`-group caller could write the shared secret and invoke
+ * an ingestor — so the gate is the server's and this is only the explanation.
+ */
+export const ADMIN_ONLY_TITLE = 'Admin access required'
+
 export const FREQUENCY_OPTIONS = [
   {
     value: 0,

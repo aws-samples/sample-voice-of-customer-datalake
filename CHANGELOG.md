@@ -74,21 +74,31 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   counted as a plugin failure — but a read that failed is indistinguishable from an empty secret
   (the client error is logged and discarded), so a handful of throttles inside the breaker's window
   would disable a healthy plugin's ingestion schedule, which nothing re-enables automatically. An
-  unreadable secret is now reported without being counted: the run record still moves to `error` and
-  the audit event still fires, so the failure is visible, but only a genuine misconfiguration — a
-  malformed plugin id, a namespace holding no keys, or a secret whose body is not a JSON object —
-  can trip the breaker. Because a *scheduled* run writes no run record (there is no execution id to
-  address one), an alarm on the `Refusing to load plugin secrets` log line is now the escalation
-  path for this case; see `docs/plugin-architecture.md`.
-- `PUT`/`GET /integrations/{source}/credentials` now require `source` to be a plugin that exists.
+  unreadable secret is now reported without being counted: the `plugin.failed` audit event still
+  fires, and the run record moves to `error` on a *manual* run — a scheduled run has no run record
+  to move, so an alarm on the `Refusing to load plugin secrets` log line is the escalation path for
+  that case, and the exemption depends on it existing (see `docs/plugin-architecture.md`). Only a
+  genuine misconfiguration — a malformed plugin id, a namespace holding no keys, or a secret whose
+  body is not a JSON object — can trip the breaker.
+- Every route taking a `{source}` path parameter now requires `source` to be a plugin that exists.
   Validating only its *form* left a cross-plugin credential write open, because the colliding value
   is itself well-formed: `source=app_reviews` with key `ios_app_id` stored `app_reviews_ios_app_id`,
   which `app_reviews_ios`'s next run then consumed as its own `app_id`. The synth-time guard on
   colliding plugin ids does not reach this — a colliding *stored key* needs no colliding manifest —
-  so the namespace a write may address is now restricted to the manifest-derived ids CDK already
-  hands this Lambda. Admin-only before and after; this narrows an authenticated administrator's
-  blast radius. It fails open if that variable is unavailable, so one bad environment variable
-  cannot break credential management outright.
+  so the namespace a request may address is now restricted to the manifest-derived ids CDK already
+  hands this Lambda. It fails open if that variable is unavailable, so one bad environment variable
+  cannot break credential management outright. `source` also reached an ingestor Lambda name and an
+  EventBridge rule name unvalidated on the `/sources/{source}/*` routes.
+- `POST`/`DELETE /integrations/{source}/apps`, `POST /sources/{source}/run` and
+  `PUT /sources/{source}/enable|disable` now require the caller to be in the `admins` group. Only
+  the two credentials routes were gated, so the boundary depended on which key a write happened to
+  land under: a caller whose only group was `users` could write `{source}_configs` on the same shared
+  Secrets Manager secret, invoke an ingestor (a billed third-party fetch, in a loop), and disable a
+  plugin's ingestion schedule — which nothing re-enables automatically. `GET /integrations/{source}/apps`
+  stays open deliberately: the Scrapers page lists app configs for every authenticated user, and a
+  config holds a public app-store id and a display name rather than a credential. On that page the
+  Run, Add, Save and Delete controls and the schedule toggle are now disabled for a non-admin, with
+  the reason on hover, rather than issuing a request that 403s.
 - A plugin's `plugin.failed` audit event is no longer lost when the circuit breaker's own DynamoDB
   lookup fails. The three reporting steps for a construction failure shared one `try`, and
   `record_failure` is not exception-safe on its first line (it resolves its table in a property,
@@ -115,11 +125,20 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `app_reviews_ios`). Secret keys are matched by string prefix, so the shorter id would receive the
   longer one's credentials. `cdk synth` now refuses such a pair, which is the only point at which
   the whole id set is known. No bundled pair collides.
-- **`source` on the credentials routes must now be a configured plugin id.** A request naming a
+- **`source` on every `{source}` route must now be a configured plugin id.** A request naming a
   well-formed but non-existent source (`app_reviews`, `webscraper_admin`) is answered 400 instead of
-  reading or writing that namespace. Anything addressing a real plugin id is unaffected, which is
-  every call the web app makes; a script that relied on writing to an arbitrary namespace must use
-  the owning plugin's id.
+  reading or writing that namespace, invoking `voc-ingestor-<source>` or toggling
+  `voc-ingest-<source>-schedule`. Anything addressing a real plugin id is unaffected, which is every
+  call the web app makes; a script that relied on an arbitrary namespace must use the owning plugin's
+  id. Neither this nor the synth-time id guard is retroactive: a key stored by a pre-upgrade write
+  survives in the shared secret and is still read by whichever plugin's namespace it landed in.
+  A deployment where an arbitrary `source` was used should delete the stale keys by hand.
+- **Triggering a run, toggling a schedule, and writing or deleting an app config now require the
+  `admins` group.** A caller in `users` alone receives 403 on `POST /sources/{source}/run`,
+  `PUT /sources/{source}/enable|disable` and `POST`/`DELETE /integrations/{source}/apps`. Listing app
+  configs (`GET /integrations/{source}/apps`) is unchanged and still open to any authenticated
+  caller. A non-admin who previously used the Scrapers page to run a source or edit an app config now
+  sees those controls disabled; a script doing the same needs admin credentials.
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
   `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
   too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty

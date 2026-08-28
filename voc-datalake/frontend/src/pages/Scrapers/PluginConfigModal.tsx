@@ -20,6 +20,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal'
+import { ADMIN_ONLY_TITLE } from './constants'
 import {
   SetupInstructions, PluginField,
 } from './PluginConfigParts'
@@ -31,6 +32,15 @@ type AppConfig = Record<string, string>
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
   readonly onClose: () => void
+  /** Whether the current user is an admin.
+   *
+   *  Every mutating route this modal calls — POST/DELETE `/integrations/{source}/apps`,
+   *  `POST /sources/{source}/run`, `PUT /sources/{source}/enable|disable` — is
+   *  admin-gated server-side. They were not, which is why this prop is new: a
+   *  `users`-group caller could write the shared secret and invoke an ingestor.
+   *  Disabling the controls is presentation only; the gate that matters is the
+   *  server's, and this exists so a non-admin sees why rather than a silent 403. */
+  readonly isAdmin: boolean
 }
 
 function ResultMessage({
@@ -48,10 +58,11 @@ function ResultMessage({
 }
 
 function ScheduleToggle({
-  scheduleLoading, scheduleEnabled, onToggle,
+  scheduleLoading, scheduleEnabled, isAdmin, onToggle,
 }: {
   readonly scheduleLoading: boolean
   readonly scheduleEnabled: boolean
+  readonly isAdmin: boolean
   readonly onToggle: (enabled: boolean) => void
 }) {
   const { t } = useTranslation('scrapers')
@@ -62,8 +73,8 @@ function ScheduleToggle({
         <p className="text-xs text-gray-500">{t('pluginConfig.scheduleDescription')}</p>
       </div>
       {scheduleLoading ? <Loader2 size={16} className="animate-spin text-blue-600" /> : (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={scheduleEnabled} onChange={(e) => onToggle(e.target.checked)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+        <label className={clsx('flex items-center gap-2', isAdmin ? 'cursor-pointer' : 'cursor-not-allowed')} title={isAdmin ? undefined : ADMIN_ONLY_TITLE}>
+          <input type="checkbox" checked={scheduleEnabled} disabled={!isAdmin} onChange={(e) => onToggle(e.target.checked)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50" />
           <span className="text-sm text-gray-600">{scheduleEnabled ? t('pluginConfig.enabled') : t('pluginConfig.disabled')}</span>
         </label>
       )}
@@ -72,10 +83,11 @@ function ScheduleToggle({
 }
 
 function AppCard({
-  app, pluginId, onEdit, onDelete,
+  app, pluginId, isAdmin, onEdit, onDelete,
 }: {
   readonly app: AppConfig;
   readonly pluginId: string;
+  readonly isAdmin: boolean;
   readonly onEdit: () => void;
   readonly onDelete: () => void
 }) {
@@ -89,18 +101,22 @@ function AppCard({
         </div>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
+        {/* Edit stays enabled for everyone: it only opens the form. The SAVE inside
+            it is what writes, and that is disabled below — so a non-admin can read
+            an app's settings without being handed a button that 403s. */}
         <button onClick={onEdit} className="p-1.5 hover:bg-gray-200 rounded" title="Edit"><Pencil size={14} className="text-gray-500" /></button>
-        <button onClick={onDelete} className="p-1.5 hover:bg-gray-200 rounded" title="Delete"><Trash2 size={14} className="text-red-500" /></button>
+        <button onClick={onDelete} disabled={!isAdmin} title={isAdmin ? 'Delete' : ADMIN_ONLY_TITLE} className="p-1.5 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={14} className="text-red-500" /></button>
       </div>
     </div>
   )
 }
 
 function AppEditorForm({
-  plugin, initialValues, onSave, onCancel, isPending,
+  plugin, initialValues, isAdmin, onSave, onCancel, isPending,
 }: {
   readonly plugin: PluginManifest;
   readonly initialValues: AppConfig;
+  readonly isAdmin: boolean;
   readonly onSave: (v: AppConfig) => void;
   readonly onCancel: () => void;
   readonly isPending: boolean
@@ -121,7 +137,7 @@ function AppEditorForm({
         ))}
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={() => onSave({ ...values })} disabled={isPending || !hasRequired} className="btn btn-primary flex items-center gap-2 text-sm">
+        <button onClick={() => onSave({ ...values })} disabled={isPending || !hasRequired || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           {isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
           {isEditing ? 'Save' : 'Add App'}
         </button>
@@ -132,7 +148,7 @@ function AppEditorForm({
 }
 
 function AppListSection({
-  plugin, apps, appsLoading, showEditor, editorInitialValues, savePending, onStartAdd, onStartEdit, onDelete, onSaveApp, onCancelEditor,
+  plugin, apps, appsLoading, showEditor, editorInitialValues, savePending, isAdmin, onStartAdd, onStartEdit, onDelete, onSaveApp, onCancelEditor,
 }: {
   readonly plugin: PluginManifest;
   readonly apps: AppConfig[];
@@ -140,6 +156,7 @@ function AppListSection({
   readonly showEditor: boolean
   readonly editorInitialValues: AppConfig;
   readonly savePending: boolean
+  readonly isAdmin: boolean
   readonly onStartAdd: () => void;
   readonly onStartEdit: (app: AppConfig) => void;
   readonly onDelete: (id: string) => void
@@ -150,29 +167,32 @@ function AppListSection({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold text-gray-700">Configured Apps</h4>
-        {!showEditor && <button onClick={onStartAdd} className="btn btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5"><Plus size={14} /> Add App</button>}
+        {!showEditor && <button onClick={onStartAdd} disabled={!isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={14} /> Add App</button>}
       </div>
       {appsLoading ? <div className="flex items-center justify-center py-6"><Loader2 className="animate-spin h-6 w-6 text-blue-500" /></div> : null}
       {!appsLoading && apps.length === 0 && !showEditor && (
         <div className="text-center py-6 text-gray-400 text-sm">
           <Smartphone className="mx-auto h-8 w-8 mb-2 opacity-50" />
           <p>No apps configured yet</p>
-          <button onClick={onStartAdd} className="text-blue-600 hover:underline text-sm mt-1">Add your first app</button>
+          {/* Not rendered at all for a non-admin, rather than rendered disabled: it
+              is a prompt to do something they cannot do, and the empty state has no
+              other content to anchor a disabled control to. */}
+          {isAdmin ? <button onClick={onStartAdd} className="text-blue-600 hover:underline text-sm mt-1">Add your first app</button> : null}
         </div>
       )}
       {!appsLoading && apps.length > 0 && (
         <div className="space-y-2">
-          {apps.map((app) => <AppCard key={app.id} app={app} pluginId={plugin.id} onEdit={() => onStartEdit(app)} onDelete={() => onDelete(app.id)} />)}
+          {apps.map((app) => <AppCard key={app.id} app={app} pluginId={plugin.id} isAdmin={isAdmin} onEdit={() => onStartEdit(app)} onDelete={() => onDelete(app.id)} />)}
         </div>
       )}
-      {showEditor ? <AppEditorForm plugin={plugin} initialValues={editorInitialValues} onSave={onSaveApp} onCancel={onCancelEditor} isPending={savePending} /> : null}
+      {showEditor ? <AppEditorForm plugin={plugin} initialValues={editorInitialValues} isAdmin={isAdmin} onSave={onSaveApp} onCancel={onCancelEditor} isPending={savePending} /> : null}
     </div>
   )
 }
 
 // eslint-disable-next-line complexity
 export default function PluginConfigModal({
-  plugin, onClose,
+  plugin, onClose, isAdmin,
 }: PluginConfigModalProps) {
   const { t } = useTranslation('scrapers')
   const queryClient = useQueryClient()
@@ -251,8 +271,8 @@ export default function PluginConfigModal({
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
         </div>
         <div className="p-4 overflow-y-auto flex-1 space-y-5">
-          <ScheduleToggle scheduleLoading={scheduleLoading} scheduleEnabled={scheduleEnabled} onToggle={(e) => void handleToggleSchedule(e)} />
-          <AppListSection plugin={plugin} apps={apps} appsLoading={appsLoading} showEditor={showEditor} editorInitialValues={editingApp ?? {}} savePending={saveMutation.isPending}
+          <ScheduleToggle scheduleLoading={scheduleLoading} scheduleEnabled={scheduleEnabled} isAdmin={isAdmin} onToggle={(e) => void handleToggleSchedule(e)} />
+          <AppListSection plugin={plugin} apps={apps} appsLoading={appsLoading} showEditor={showEditor} editorInitialValues={editingApp ?? {}} savePending={saveMutation.isPending} isAdmin={isAdmin}
             onStartAdd={() => {
               setEditingApp(null); setIsAdding(true)
             }} onStartEdit={(app) => {
@@ -263,7 +283,7 @@ export default function PluginConfigModal({
             }} />
           {apps.length > 0 && (
             <div className="flex items-center gap-2">
-              <button onClick={() => runMutation.mutate()} disabled={runMutation.isPending} className="btn btn-secondary flex items-center gap-2 text-sm">
+              <button onClick={() => runMutation.mutate()} disabled={runMutation.isPending || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
                 {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                 {t('pluginConfig.runNow')}
               </button>

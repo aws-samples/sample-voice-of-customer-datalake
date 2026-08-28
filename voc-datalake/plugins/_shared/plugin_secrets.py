@@ -48,13 +48,16 @@ What this boundary does NOT guarantee:
     * `plugin-loader.ts` rejects a manifest whose id is a prefix of another's, at
       synth time, where the whole id set is known
       (`test_plugin_secret_isolation.py` pins that the tree agrees).
-    * `integrations_handler._validate_source_is_a_known_plugin` restricts the
-      namespace a WRITE may address to the manifest-derived plugin ids. The
-      loader's guard is over manifest ids and cannot see a `source` invented in a
-      request: `PUT /integrations/app_reviews/credentials` with key `ios_app_id`
-      stored `app_reviews_ios_app_id`, which this scan then handed to
-      `app_reviews_ios` as its own `app_id` — a stored key needs no colliding
-      manifest to exist.
+    * `integrations_handler._validate_source_parameter` restricts the namespace a
+      REQUEST may address to the manifest-derived plugin ids, on every route taking
+      a `<source>` path parameter. The loader's guard is over manifest ids and
+      cannot see a `source` invented in a request: `PUT
+      /integrations/app_reviews/credentials` with key `ios_app_id` stored
+      `app_reviews_ios_app_id`, which this scan then handed to `app_reviews_ios` as
+      its own `app_id` — a stored key needs no colliding manifest to exist.
+
+  Neither guard is retroactive: a key stored before they existed survives, and
+  this scan still hands it over. Only deleting it from the secret removes it.
 """
 
 import os

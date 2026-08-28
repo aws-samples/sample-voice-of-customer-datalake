@@ -73,6 +73,13 @@ app = create_api_resolver()
 # parameter — see `_validate_source_is_a_known_plugin` — because form validation
 # alone left a real cross-plugin credential write open.
 #
+# That allowlist applies to EVERY route taking a `<source>` path parameter, via
+# `_validate_source_parameter`. It was first wired into the two credentials routes
+# only, which left five routes turning the same request-supplied value into a
+# Secrets Manager key, an ingestor function name or an EventBridge rule name with
+# no check at all — an asymmetry that read as deliberate scoping but was just
+# where the trail of one reported bug ended.
+#
 # The character class itself lives in `shared/plugin_identity.py`, NOT here: the
 # READ side (`plugins/_shared/plugin_secrets.py`) has to validate the same shape
 # on the plugin identity it turns into a namespace prefix, and since issue #251 a
@@ -138,8 +145,9 @@ def _validate_source_is_a_known_plugin(source: str) -> None:
     environment variable break credential management entirely. The form check
     still applies in that case, which is the state this route shipped in.
 
-    Admin-only either way (`require_admin`), so this narrows an authenticated
-    administrator's blast radius rather than an anonymous one.
+    Applied through `_validate_source_parameter` on every route that turns
+    `<source>` into a secret key, a Lambda function name or an EventBridge rule
+    name — not just the two credentials routes it was first written for.
     """
     known = _plugin_secret_defaults()
     if not known:
@@ -154,6 +162,26 @@ def _validate_source_is_a_known_plugin(source: str) -> None:
         raise ValidationError(
             f"Unknown source identifier {source[:40]!r}: it is not a configured plugin."
         )
+
+
+def _validate_source_parameter(source: str) -> None:
+    """Both source checks, for every route that takes a `<source>` path parameter.
+
+    ONE helper rather than two calls per route, because the asymmetry this closed
+    was exactly that: the two checks were wired into the credentials routes and
+    into nothing else, while five other routes turned the same request-supplied
+    `<source>` into a resource name. Every one of them addresses something derived
+    from it — a Secrets Manager key (`_get_app_configs_key`), an ingestor function
+    name (`_build_ingestor_function_name`) or an EventBridge rule name
+    (`_build_rule_name`) — so there is no route on which "is this a real plugin?"
+    is the wrong question, and a single call site per route is one thing to
+    remember rather than two.
+
+    Order matters: the form check first, so a value that is not even a plausible
+    identifier is reported as malformed rather than as unknown.
+    """
+    _validate_source(source)
+    _validate_source_is_a_known_plugin(source)
 
 
 # Stored strings that carry no configuration, whatever key they sit under.
@@ -343,12 +371,11 @@ def get_credentials(source: str):
 
     # Validate source before building the namespace prefix.  Without this
     # a caller sending source='foo_bar' + key='baz' would reach the same
-    # secret key as source='foo' + key='bar_baz' (namespace collision).
-    _validate_source(source)
-    # And the form check is not sufficient: the colliding value is well-formed.
-    # source='app_reviews' + key='ios_app_id' addresses app_reviews_ios's
-    # namespace, so the source must be a plugin that actually exists.
-    _validate_source_is_a_known_plugin(source)
+    # secret key as source='foo' + key='bar_baz' (namespace collision) — and the
+    # form check alone is not sufficient, because the colliding value is
+    # well-formed: source='app_reviews' + key='ios_app_id' addresses
+    # app_reviews_ios's namespace.
+    _validate_source_parameter(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
@@ -407,15 +434,11 @@ def update_credentials(source: str):
     """
     require_admin(app.current_event.raw_event)
 
-    # Validate source before building the namespace prefix.  Without this
-    # a caller sending source='foo_bar' + key='baz' would reach the same
-    # secret key as source='foo' + key='bar_baz' (namespace collision).
-    _validate_source(source)
-    # The write is the dangerous direction: without this, an admin could inject a
-    # value into another plugin's namespace (source='app_reviews' + key
-    # 'ios_app_id' → app_reviews_ios_app_id) and that plugin's next run would use
-    # it as its own credential.
-    _validate_source_is_a_known_plugin(source)
+    # The write is the dangerous direction: without the allowlist half of this,
+    # a caller could inject a value into another plugin's namespace
+    # (source='app_reviews' + key 'ios_app_id' → app_reviews_ios_app_id) and that
+    # plugin's next run would use it as its own credential.
+    _validate_source_parameter(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
@@ -480,7 +503,19 @@ def _get_app_configs_key(source: str) -> str:
 @app.get("/integrations/<source>/apps")
 @tracer.capture_method
 def list_app_configs(source: str):
-    """List all app configurations for a multi-instance plugin."""
+    """List all app configurations for a multi-instance plugin.
+
+    NOT admin-gated, unlike the two write routes below. The Scrapers page renders
+    this list for every authenticated user, and an app config holds a public app
+    store id and a display name — not a credential. The write routes are the ones
+    that reach the shared secret with caller-supplied content.
+    """
+    # Both source checks even though APP_CONFIG_PLUGINS is narrower and runs
+    # below: `source` reaches `_get_app_configs_key` and becomes a Secrets Manager
+    # key, so it goes through the same validation as every other route that does
+    # that. The two are not redundant in the direction that matters — a value can
+    # be a real plugin id and still not support app configs.
+    _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -502,7 +537,16 @@ def list_app_configs(source: str):
 @app.post("/integrations/<source>/apps")
 @tracer.capture_method
 def save_app_config(source: str):
-    """Save (create or update) an app configuration for a multi-instance plugin."""
+    """Save (create or update) an app configuration for a multi-instance plugin.
+
+    Admin-gated, matching PUT /integrations/<source>/credentials: this route calls
+    `put_secret_json` on the SAME shared API-credentials secret, with content the
+    caller supplied. Gating the credentials route while leaving this one open made
+    the boundary depend on which key a write happened to land under, and a
+    `users`-group caller could write `<source>_configs` on it — measured, 200.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -545,7 +589,15 @@ def save_app_config(source: str):
 @app.delete("/integrations/<source>/apps/<app_id>")
 @tracer.capture_method
 def delete_app_config(source: str, app_id: str):
-    """Delete an app configuration from a multi-instance plugin."""
+    """Delete an app configuration from a multi-instance plugin.
+
+    Admin-gated for the same reason as the POST above — it writes the shared
+    secret — and additionally because it is destructive: it rewrites
+    `<source>_configs` with one entry removed, which stops that app being
+    ingested.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -571,13 +623,28 @@ def delete_app_config(source: str, app_id: str):
 @tracer.capture_method
 def run_source(source: str):
     """Manually trigger a data source ingestor Lambda.
-    
+
     Optionally accepts a JSON body with `app_id` to run a single app
     config instead of all configs for the source.
+
+    Admin-gated: this invokes a Lambda that fetches from a third-party API and
+    writes to the data lake, so every call costs money and consumes whatever rate
+    limit that API grants. Ungated, a `users`-group caller could invoke it in a
+    loop — measured, 200 with a real `lambda:Invoke` and a `SOURCE_RUN#` row
+    written. `enable_source`/`disable_source` are gated for the mirror reason:
+    disabling a schedule silently stops ingestion.
+
+    `source` is also validated, which it was not: it is interpolated straight into
+    `_build_ingestor_function_name`, so an arbitrary value both named a function
+    to invoke and wrote a `SOURCE_RUN#<source>` partition that nothing ever reads
+    or expires.
     """
     from datetime import datetime, timezone
 
     from shared.tables import get_aggregates_table
+
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
 
     function_name = _build_ingestor_function_name(source)
 
@@ -695,7 +762,15 @@ def get_sources_status():
 @app.put("/sources/<source>/enable")
 @tracer.capture_method
 def enable_source(source: str):
-    """Enable a data source schedule."""
+    """Enable a data source schedule.
+
+    Admin-gated and validated — see `run_source`. `source` reaches
+    `_build_rule_name`, so an arbitrary value named an EventBridge rule to
+    enable.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
+
     rule_name = _build_rule_name(source)
     try:
         events_client.enable_rule(Name=rule_name)
@@ -708,7 +783,15 @@ def enable_source(source: str):
 @app.put("/sources/<source>/disable")
 @tracer.capture_method
 def disable_source(source: str):
-    """Disable a data source schedule."""
+    """Disable a data source schedule.
+
+    Admin-gated and validated — see `run_source`. This is the direction that
+    silently stops ingestion, so leaving it open was a denial-of-data any
+    authenticated user could cause.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
+
     rule_name = _build_rule_name(source)
     try:
         events_client.disable_rule(Name=rule_name)

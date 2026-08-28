@@ -31,7 +31,17 @@ Behaviours tested:
 
 7. Manifest key acceptance
    Every config key declared in plugin manifests passes _validate_credential_key.
+
+8. Every `<source>` route validates and gates
+   `_validate_source_parameter` reaches all seven routes taking a `<source>` path
+   parameter, and the five that write reach `require_admin`. The allowlist and the
+   admin gate were first wired into the two credentials routes only, which left a
+   `users`-group caller able to write the shared secret and invoke an ingestor.
+   Regressions: TestEverySourceRouteIsValidated, TestEverySourceWriteIsAdminGated,
+                TestSourceRouteCoverageIsComplete
 """
+import ast
+import inspect
 import json
 from unittest.mock import patch
 
@@ -1156,3 +1166,526 @@ class TestManifestKeysAccepted:
         from integrations_handler import _validate_source
         # Must not raise.
         _validate_source(plugin_id)
+
+
+# ---------------------------------------------------------------------------
+# Every `<source>` route validates its source and gates its writes.
+#
+# The allowlist and the admin gate were both wired into the two credentials
+# routes and into nothing else, while five other routes turned the same
+# request-supplied `<source>` into a Secrets Manager key, an ingestor Lambda
+# name or an EventBridge rule name. Measured before the fix, as a caller whose
+# only Cognito group is `users`:
+#
+#   POST /integrations/app_reviews_ios/apps  → 200, one put_secret_json
+#   POST /sources/not_a_plugin/run           → 200, real lambda:Invoke of
+#                                              voc-ingestor-not_a_plugin, plus a
+#                                              SOURCE_RUN#not_a_plugin row
+#   PUT  /sources/not_a_plugin/enable        → 200, events:EnableRule
+#
+# The route-by-route cases below are the behavioural half. The `ast` pass after
+# them is the half that covers a route added LATER: a behavioural test can only
+# assert about a route somebody remembered to write it for, and forgetting is the
+# failure this whole section exists to catch.
+# ---------------------------------------------------------------------------
+
+def _handler_module():
+    import integrations_handler
+    return integrations_handler
+
+
+def _route_functions() -> dict[str, ast.FunctionDef]:
+    """Every module-level function carrying an `@app.<method>("<path>")` decorator.
+
+    Parsed rather than read off the resolver, because the resolver records the
+    route's PATH and handler but not the guards inside the handler's body, which
+    is the thing under test. Keyed by function name; the paths are recovered
+    separately in `_route_paths` below.
+    """
+    tree = ast.parse(inspect.getsource(_handler_module()))
+    routes = {}
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if any(_route_path_of(decorator) for decorator in node.decorator_list):
+            routes[node.name] = node
+    return routes
+
+
+def _route_path_of(decorator: ast.expr) -> str | None:
+    """The literal path of an `@app.get("/x")`-style decorator, else None.
+
+    Matches on the `app` receiver and a string first argument, so
+    `@tracer.capture_method` (no arguments) and any future non-routing decorator
+    are ignored without needing a list of method names to exclude.
+    """
+    if not isinstance(decorator, ast.Call):
+        return None
+    func = decorator.func
+    if not isinstance(func, ast.Attribute):
+        return None
+    if not isinstance(func.value, ast.Name) or func.value.id != 'app':
+        return None
+    if not decorator.args or not isinstance(decorator.args[0], ast.Constant):
+        return None
+    path = decorator.args[0].value
+    return path if isinstance(path, str) else None
+
+
+def _route_paths(node: ast.FunctionDef) -> list[str]:
+    return [
+        path for path in (_route_path_of(d) for d in node.decorator_list)
+        if path is not None
+    ]
+
+
+def _calls_in(node: ast.FunctionDef) -> set[str]:
+    """Names of the plain-function calls anywhere in *node*'s body."""
+    return {
+        call.func.id
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    }
+
+
+def _source_routes() -> dict[str, ast.FunctionDef]:
+    """Route functions that take a `<source>` path parameter.
+
+    Selected by the DECORATOR's path containing `<source>`, not by the presence of
+    a `source` argument: `get_sources_status` takes its source from a query string
+    (`?run_status=`) and addresses no namespace with it, so including it by
+    parameter name would demand a guard the route does not need.
+    """
+    return {
+        name: node for name, node in _route_functions().items()
+        if any('<source>' in path for path in _route_paths(node))
+    }
+
+
+# The routes that WRITE — a Secrets Manager value, an ingestor invocation, or an
+# EventBridge rule state. Listed explicitly because "does this route write?" is a
+# judgement no parse can make, and because the read/write split is the whole
+# argument for gating five of the seven: `list_app_configs` returns a public app
+# store id and a display name to any authenticated user, which the Scrapers page
+# renders for everyone.
+SOURCE_WRITE_ROUTES = {
+    'update_credentials',
+    'save_app_config',
+    'delete_app_config',
+    'run_source',
+    'enable_source',
+    'disable_source',
+}
+
+# `get_credentials` is admin-gated too, but as a READ: it returns stored
+# configuration values. Kept out of the set above so that set means "mutates
+# something", which is what its assertions claim.
+SOURCE_ADMIN_ROUTES = SOURCE_WRITE_ROUTES | {'get_credentials'}
+
+
+class TestSourceRouteCoverageIsComplete:
+    """Non-vacuity for the two `ast` classes below.
+
+    Every assertion there is "for each route found", so a parse that finds NOTHING
+    — a rename of `app`, a move to a router object, a decorator style change —
+    passes all of them over an empty set. These cases make that loud, and pin the
+    route inventory the two lists above are asserted against.
+    """
+
+    def test_the_parser_finds_every_source_route(self):
+        found = set(_source_routes())
+        assert found == {
+            'get_credentials',
+            'update_credentials',
+            'list_app_configs',
+            'save_app_config',
+            'delete_app_config',
+            'run_source',
+            'enable_source',
+            'disable_source',
+        }, (
+            'the route inventory changed; a NEW <source> route must be added to '
+            'SOURCE_WRITE_ROUTES (if it mutates) and will otherwise be asserted '
+            'as a read'
+        )
+
+    def test_every_named_write_route_is_a_route_the_parser_found(self):
+        """The lists above cannot name a function that no longer exists.
+
+        Otherwise deleting or renaming a route would silently drop its guard
+        assertions rather than failing.
+        """
+        assert SOURCE_ADMIN_ROUTES <= set(_source_routes())
+
+    def test_the_only_ungated_source_route_is_the_app_config_read(self):
+        """States the read/write split as an assertion, so widening it is a choice.
+
+        If a future route is added and left out of SOURCE_WRITE_ROUTES, this fails
+        rather than quietly accepting it as a read that needs no admin.
+        """
+        assert set(_source_routes()) - SOURCE_ADMIN_ROUTES == {'list_app_configs'}
+
+
+class TestEverySourceRouteIsValidated:
+    """Each `<source>` route validates the parameter before using it.
+
+    `<source>` becomes a Secrets Manager key prefix (`_get_app_configs_key`), an
+    ingestor function name (`_build_ingestor_function_name`) or an EventBridge rule
+    name (`_build_rule_name`) on every one of these routes, so there is no route on
+    which "is this a real plugin?" is the wrong question.
+    """
+
+    @pytest.mark.parametrize('route', sorted(_source_routes()))
+    def test_the_route_validates_its_source(self, route):
+        calls = _calls_in(_source_routes()[route])
+        assert '_validate_source_parameter' in calls, (
+            f'{route} uses <source> without validating it; a well-formed but '
+            'unknown value reaches a secret key, a Lambda name or a rule name'
+        )
+
+    def test_the_validator_applies_both_checks(self):
+        """The form check alone is what left the collision open, so both must run.
+
+        Asserted on the helper rather than at each of the seven call sites: a route
+        calling `_validate_source_parameter` gets both, and this is what makes that
+        true.
+        """
+        validator = next(
+            node for node in ast.parse(inspect.getsource(_handler_module())).body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == '_validate_source_parameter'
+        )
+        assert _calls_in(validator) == {
+            '_validate_source',
+            '_validate_source_is_a_known_plugin',
+        }
+
+
+class TestEverySourceWriteIsAdminGated:
+    """Each mutating `<source>` route calls require_admin.
+
+    The three `apps` routes and the three `sources` routes carried no gate while
+    the credentials routes beside them did, so the boundary depended on which key
+    a write happened to land under.
+    """
+
+    @pytest.mark.parametrize('route', sorted(SOURCE_ADMIN_ROUTES))
+    def test_the_route_requires_admin(self, route):
+        assert 'require_admin' in _calls_in(_source_routes()[route]), (
+            f'{route} mutates or reads configuration with no admin gate'
+        )
+
+    def test_the_control_the_app_config_read_is_deliberately_open(self):
+        """Non-vacuity: without this, gating EVERY route would satisfy the above.
+
+        `list_app_configs` is rendered for every authenticated user on the Scrapers
+        page and returns a public app store id and a display name. Gating it would
+        empty that list for non-admins, so its openness is a decision and is pinned
+        as one.
+        """
+        assert 'require_admin' not in _calls_in(_source_routes()['list_app_configs'])
+
+
+class TestAnUnknownSourceReachesNoResource:
+    """The allowlist, driven through lambda_handler on the newly-guarded routes.
+
+    Admin events throughout: the subject is the allowlist, so a 403 from the admin
+    gate would mask whether the source was checked at all.
+    """
+
+    @patch('integrations_handler.put_secret_json')
+    @patch('integrations_handler.secretsmanager')
+    def test_an_unknown_source_cannot_write_an_app_config(
+        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        """POST /integrations/<source>/apps writes `<source>_configs` on the SAME
+        shared secret the credentials route writes, so it needs the same check.
+
+        The 400 here is OVERDETERMINED, and the assertion says so deliberately:
+        `APP_CONFIG_PLUGINS` is a two-element set, so an unknown source is refused
+        by that narrower check even with the allowlist removed. What this case pins
+        is which of the two answers, i.e. that the allowlist runs FIRST — because
+        "does not support multiple app configs" is a misleading thing to tell
+        someone who named a source that does not exist at all, and reading it sends
+        them looking for a manifest capability rather than a typo.
+
+        The load-bearing guard for these three routes is the `ast` pass in
+        TestEverySourceRouteIsValidated: a behavioural assertion cannot distinguish
+        a defence-in-depth check from an absent one when a narrower check already
+        refuses the same input.
+        """
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/integrations/not_a_plugin/apps',
+            path_params={'source': 'not_a_plugin'},
+            body={'app': {'app_name': 'Injected'}},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert mock_put.call_args_list == [], 'a value was written under not_a_plugin_configs'
+        error = json.loads(response['body']).get('error', '')
+        assert 'not a configured plugin' in error, (
+            f'expected the allowlist to answer first, got: {error!r}'
+        )
+
+    @patch('shared.tables.get_aggregates_table')
+    @patch('boto3.client')
+    def test_an_unknown_source_invokes_no_lambda_and_writes_no_run_record(
+        self, mock_boto_client, mock_table, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        """POST /sources/<source>/run interpolated <source> straight into a Lambda
+        function name and a `SOURCE_RUN#<source>` partition key."""
+        lambda_client = mock_boto_client.return_value
+        lambda_client.invoke.return_value = {'StatusCode': 202}
+        table = mock_table.return_value
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/sources/not_a_plugin/run',
+            path_params={'source': 'not_a_plugin'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert lambda_client.invoke.call_args_list == []
+        assert table.put_item.call_args_list == [], (
+            'a SOURCE_RUN# partition was written for a source that is not a plugin'
+        )
+
+    @pytest.mark.parametrize('action', ['enable', 'disable'])
+    @patch('integrations_handler.events_client')
+    def test_an_unknown_source_touches_no_eventbridge_rule(
+        self, mock_events, action, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path=f'/sources/not_a_plugin/{action}',
+            path_params={'source': 'not_a_plugin'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert mock_events.enable_rule.call_args_list == []
+        assert mock_events.disable_rule.call_args_list == []
+
+    @patch('integrations_handler.secretsmanager')
+    def test_the_control_a_real_plugin_id_still_reads_its_app_configs(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """Non-vacuity for the four cases above: rejecting every source would
+        satisfy them all while breaking the Scrapers page outright."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Real'}]),
+            })
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='GET',
+            path='/integrations/app_reviews_ios/apps',
+            path_params={'source': 'app_reviews_ios'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['apps'][0]['app_name'] == 'Real'
+
+    @patch('shared.tables.get_aggregates_table')
+    @patch('boto3.client')
+    def test_the_control_a_real_plugin_id_still_runs(
+        self, mock_boto_client, mock_table, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        lambda_client = mock_boto_client.return_value
+        lambda_client.invoke.return_value = {'StatusCode': 202}
+        mock_table.return_value = None
+
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/sources/webscraper/run',
+            path_params={'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert lambda_client.invoke.call_args_list, 'the real ingestor was not invoked'
+
+    @patch('shared.tables.get_aggregates_table')
+    @patch('boto3.client')
+    def test_an_unavailable_allowlist_still_admits_a_run(
+        self, mock_boto_client, mock_table, api_gateway_event, lambda_context, monkeypatch,
+    ):
+        """Fails OPEN when PLUGIN_SECRET_DEFAULTS is absent, on these routes too.
+
+        Same reasoning as on the credentials routes: `_plugin_secret_defaults`
+        degrades to `{}` rather than 500ing, and turning that into "no source may
+        be run or toggled" would let one bad environment variable take ingestion
+        management out entirely. The ADMIN gate is unconditional and covers this
+        state — see TestNoNonAdminReachesASourceWrite.
+        """
+        import integrations_handler as h
+
+        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
+        h._plugin_secret_defaults.cache_clear()
+        lambda_client = mock_boto_client.return_value
+        lambda_client.invoke.return_value = {'StatusCode': 202}
+        mock_table.return_value = None
+
+        event = api_gateway_event(
+            method='POST',
+            path='/sources/webscraper/run',
+            path_params={'source': 'webscraper'},
+        )
+        response = h.lambda_handler(event, lambda_context)
+        h._plugin_secret_defaults.cache_clear()
+
+        assert response['statusCode'] == 200
+
+
+class TestNoNonAdminReachesASourceWrite:
+    """A `users`-group caller is refused on every mutating `<source>` route.
+
+    Real plugin ids throughout, so the refusal cannot be coming from the allowlist
+    — the admin gate is the subject. Each case also asserts the ABSENCE of the side
+    effect, not just the status: a route that answered 403 while still writing
+    would satisfy a status-only assertion.
+    """
+
+    @patch('integrations_handler.put_secret_json')
+    @patch('integrations_handler.secretsmanager')
+    def test_a_non_admin_cannot_save_an_app_config(
+        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        mock_secrets.get_secret_value.return_value = {'SecretString': '{}'}
+
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='POST',
+            path='/integrations/app_reviews_ios/apps',
+            path_params={'source': 'app_reviews_ios'},
+            body={'app': {'app_name': 'Injected'}},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        assert mock_put.call_args_list == [], (
+            'a users-group caller wrote app_reviews_ios_configs on the shared secret'
+        )
+
+    @patch('integrations_handler.put_secret_json')
+    @patch('integrations_handler.secretsmanager')
+    def test_a_non_admin_cannot_delete_an_app_config(
+        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Real'}]),
+            })
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='DELETE',
+            path='/integrations/app_reviews_ios/apps/a1',
+            path_params={'source': 'app_reviews_ios', 'app_id': 'a1'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        assert mock_put.call_args_list == [], 'a users-group caller deleted an app config'
+
+    @patch('shared.tables.get_aggregates_table')
+    @patch('boto3.client')
+    def test_a_non_admin_cannot_trigger_a_run(
+        self, mock_boto_client, mock_table, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        """Every run fetches from a third-party API and writes the data lake, so
+        this is a billed operation and a rate limit any authenticated user could
+        exhaust."""
+        lambda_client = mock_boto_client.return_value
+        lambda_client.invoke.return_value = {'StatusCode': 202}
+        table = mock_table.return_value
+
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='POST',
+            path='/sources/webscraper/run',
+            path_params={'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        assert lambda_client.invoke.call_args_list == [], (
+            'a users-group caller invoked the webscraper ingestor'
+        )
+        assert table.put_item.call_args_list == []
+
+    @pytest.mark.parametrize('action', ['enable', 'disable'])
+    @patch('integrations_handler.events_client')
+    def test_a_non_admin_cannot_toggle_a_schedule(
+        self, mock_events, action, api_gateway_event, lambda_context,
+        plugin_secret_defaults,
+    ):
+        """`disable` is the direction that matters most: it silently stops
+        ingestion, and nothing in this repo re-enables a rule automatically."""
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='PUT',
+            path=f'/sources/webscraper/{action}',
+            path_params={'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 403
+        assert mock_events.enable_rule.call_args_list == []
+        assert mock_events.disable_rule.call_args_list == []
+
+    @patch('integrations_handler.secretsmanager')
+    def test_the_control_a_non_admin_can_still_list_app_configs(
+        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """Non-vacuity, and the property the gates must not cost: the Scrapers page
+        renders this list for every authenticated user."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Real'}]),
+            })
+        }
+
+        from integrations_handler import lambda_handler
+
+        event = _non_admin_event(
+            api_gateway_event,
+            method='GET',
+            path='/integrations/app_reviews_ios/apps',
+            path_params={'source': 'app_reviews_ios'},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['apps'][0]['app_name'] == 'Real'

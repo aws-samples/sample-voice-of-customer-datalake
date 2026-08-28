@@ -2018,13 +2018,37 @@ close different entrances:
 
 - `loadPlugins` rejects a **manifest** id that is a prefix of another's, at synth time,
   the only place the whole id set is known.
-- `PUT /integrations/<source>/credentials` restricts `source` to those same
-  manifest-derived ids (`_validate_source_is_a_known_plugin`). The loader's guard cannot
-  see a source invented in a request: `source='app_reviews'` with key `ios_app_id` stored
-  `app_reviews_ios_app_id`, which `app_reviews_ios`'s next run consumed as its own
-  `app_id`. A colliding *stored key* needs no colliding manifest to exist. That check
-  fails open if `PLUGIN_SECRET_DEFAULTS` is unavailable, so one bad environment variable
-  cannot break credential management outright — the form check still applies.
+- Every route taking a `<source>` path parameter restricts it to those same
+  manifest-derived ids (`_validate_source_parameter`, which applies both the form check and
+  `_validate_source_is_a_known_plugin`). The loader's guard cannot see a source invented in
+  a request: `source='app_reviews'` with key `ios_app_id` stored `app_reviews_ios_app_id`,
+  which `app_reviews_ios`'s next run consumed as its own `app_id`. A colliding *stored key*
+  needs no colliding manifest to exist. That check fails open if `PLUGIN_SECRET_DEFAULTS` is
+  unavailable, so one bad environment variable cannot break credential management
+  outright — the form check still applies.
+
+Neither guard is retroactive. A key already stored by a pre-upgrade write survives, and the
+plugin whose namespace it landed in still reads it; delete such keys by hand.
+
+#### Which `<source>` routes need admin
+
+`source` reaches three kinds of resource name, and the routes that WRITE one are admin-gated:
+a Secrets Manager key (`<source>_configs`), an ingestor Lambda name
+(`voc-ingestor-<source>`), and an EventBridge rule name (`voc-ingest-<source>-schedule`).
+
+| Route | `require_admin` | Why |
+|-------|-----------------|-----|
+| `GET`/`PUT /integrations/<source>/credentials` | yes | reads and writes credentials |
+| `POST`/`DELETE /integrations/<source>/apps` | yes | writes the shared secret |
+| `POST /sources/<source>/run` | yes | billed third-party fetch, invocable in a loop |
+| `PUT /sources/<source>/enable\|disable` | yes | disabling silently stops ingestion |
+| `GET /integrations/<source>/apps` | **no** | the Scrapers page lists configs for everyone; a config holds a public app-store id and a display name, not a credential |
+
+The gate is the server's. The Scrapers page also disables the corresponding controls for a
+non-admin so the reason is visible on hover rather than arriving as a 403, but that is
+presentation only. Both properties are pinned by an `ast` pass over the route decorators in
+`test_integrations_security.py`, so a route added later is asserted rather than forgotten —
+which is how the five unguarded ones came to look like deliberate scoping.
 
 ### Cost Controls
 

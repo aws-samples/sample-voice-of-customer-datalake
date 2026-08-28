@@ -240,8 +240,12 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
  * `PUT /integrations/app_reviews/credentials` with key `ios_app_id` writes
  * `app_reviews_ios_app_id`, which `app_reviews_ios` then reads as its own `app_id`.
  * That entrance is a request parameter this function never sees, and is closed in
- * `integrations_handler._validate_source_is_a_known_plugin` by restricting the
- * namespace a write may address to the ids below. Both guards are needed.
+ * `integrations_handler._validate_source_parameter` — applied on EVERY route taking a
+ * `<source>`, not only the credentials ones — by restricting the namespace a request
+ * may address to the ids below. Both guards are needed.
+ *
+ * Neither is retroactive: a key stored before either existed survives, and the plugin
+ * whose namespace it landed in still reads it.
  */
 function namespaceCollisionErrors(plugins: PluginManifest[]): string[] {
   const ids = plugins.map(p => p.id);
