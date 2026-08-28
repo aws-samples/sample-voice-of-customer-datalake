@@ -739,6 +739,17 @@ export function fresherCoherentSelection(
   // input can reach, which is worse than the sentence explaining why. This is the
   // accurate statement of the rule; `hasUnreadableTimestamp` and the condition list
   // above both point here rather than claiming a second call site.
+  //
+  // AND THE TIE-PREFERENCE ABOVE CANNOT WEAKEN THAT PROOF, which needs saying because
+  // the proof reads `chosen[index]` as `newestOfType`'s answer and the substitution is
+  // exactly what can make it something else. It cannot on THIS path: the substitution
+  // asks `instantOf(entry.createdAt) === instantOf(held.createdAt)`, and a candidate
+  // naming no instant answers `NO_INSTANT` against the real instant
+  // `hasUnreadableTimestamp` has already guaranteed on the held document — so `tied` is
+  // false, nothing is substituted, `chosen[index]` IS `newestOfType`'s answer, and
+  // `regressed` fires as described. The proof therefore stands on the substitution's
+  // own condition rather than on the substitution not existing.
+  //
   // STRICTLY NEWER, which is also what answers the commonest case — a frozen row
   // already holding the newest of each type. That row's candidate IS its own
   // selection, so nothing is newer and `fresher` is false; an `every(id === id)`
