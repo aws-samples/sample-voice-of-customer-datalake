@@ -50,7 +50,7 @@ class BaseWebhook(ABC):
         sets alongside ``PLUGIN_ID`` — it previously set only the latter, so this
         read saw ``''`` and every delivery would have died on a message about a
         malformed identity rather than the missing variable. Pinned by
-        'SOURCE_PLATFORM' in ``lib/stacks/api-stack.test.ts``.
+        'SOURCE_PLATFORM' in ``lib/stacks/api-stack-webhook-env.test.ts``.
         """
         if not SECRETS_ARN:
             logger.warning("SECRETS_ARN not configured")

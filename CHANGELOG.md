@@ -69,6 +69,14 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 - A webhook Lambda is now deployed with the environment variable its code reads for the plugin
   identity (`SOURCE_PLATFORM`, which only the ingestor Lambda carried). Combined with the above,
   a deployed webhook would otherwise have failed on every delivery.
+- A Secrets Manager read that fails no longer counts against a plugin's circuit breaker. The
+  fail-closed change above turned an unreadable secret into a refusal to start, and a refusal was
+  counted as a plugin failure — but a read that failed is indistinguishable from an empty secret
+  (the client error is logged and discarded), so a handful of throttles inside the breaker's window
+  would disable a healthy plugin's ingestion schedule, which nothing re-enables automatically. An
+  unreadable secret is now reported without being counted: the run record still moves to `error` and
+  the audit event still fires, so the failure is visible, but only a genuine misconfiguration — a
+  malformed plugin id, or a namespace holding no keys — can trip the breaker.
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a

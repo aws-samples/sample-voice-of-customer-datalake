@@ -1971,10 +1971,20 @@ Three consequences of failing closed are worth knowing before you write a plugin
   `Refusing to load plugin secrets` and alarm on it; the shared-secret read is
   load-bearing for a webhook in a way it is not for a scheduled ingestor.
 
-A transient Secrets Manager failure is *not* one of these cases. `get_secret` is cached
-and swallows a failed read into `{}`, so both `_load_secrets()` implementations evict the
-cache entry before refusing on an empty payload — the next invocation re-reads rather than
-the warm container staying wedged against a memoized failure.
+A transient Secrets Manager failure is *not* one of these cases, and two things keep it
+from becoming one. `get_secret` is cached and swallows a failed read into `{}`, so both
+`_load_secrets()` implementations evict the cache entry before refusing on an empty
+payload — the next invocation re-reads rather than the warm container staying wedged
+against a memoized failure. And because a failed read and a genuinely empty secret are
+indistinguishable from the plugin's side, that branch raises `SecretUnreadableError` (a
+`ConfigurationError` subclass) and `_report_construction_failure` **does not count it
+against the circuit breaker**. Counting it would let five AWS-side blips inside the
+breaker's 15-minute window call `_trip_breaker`, which disables the plugin's EventBridge
+schedule — and nothing re-enables a disabled rule, so a healthy plugin's ingestion would
+stop until an operator noticed. The run record and the audit event still fire, so the
+failure is visible; only the auto-disable is withheld. A malformed identity or a namespace
+that matches nothing is someone's mistake, stays a plain `ConfigurationError`, and still
+counts.
 
 One limitation the prefix scan cannot see: if a plugin id were ever a **prefix** of
 another (`app_reviews` alongside `app_reviews_ios`), the shorter one would also receive the

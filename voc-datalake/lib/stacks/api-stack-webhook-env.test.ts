@@ -37,6 +37,14 @@ import { z } from 'zod';
 
 const WEBHOOK_PLUGIN_ID = 'webhook_fixture';
 
+const ACCOUNT = '111111111111';
+const REGION = 'us-east-1';
+/** The SHARED API-credentials secret — the one `base_webhook.py` reads. Named here
+ *  because the IAM case below has to tell it apart from the CDN signing secret,
+ *  which the same stack also grants reads of. */
+const SHARED_SECRET_ARN = `arn:aws:secretsmanager:${REGION}:${ACCOUNT}:secret:voc`;
+const CDN_SIGNING_SECRET_ARN = `arn:aws:secretsmanager:${REGION}:${ACCOUNT}:secret:cdn-signing`;
+
 /** A manifest declaring a webhook, which nothing on disk does. Otherwise shaped
  *  exactly like a real one, so it travels the same `createWebhookLambda` path. */
 const webhookPlugin = {
@@ -66,7 +74,7 @@ function synthWithWebhookPlugin(): Template {
   const app = new cdk.App({
     context: { 'aws:cdk:bundling-stacks': [], skipFrontendBuildCheck: true },
   });
-  const env = { account: '111111111111', region: 'us-east-1' };
+  const env = { account: ACCOUNT, region: REGION };
   const deps = new cdk.Stack(app, 'TestDeps', { env });
 
   const table = (id: string) => new dynamodb.Table(deps, id, {
@@ -87,7 +95,7 @@ function synthWithWebhookPlugin(): Template {
     rawDataBucket: new s3.Bucket(deps, 'RawData'),
     avatarsCdnUrl: 'https://cdn.example.invalid/avatars',
     prototypesCdnUrl: 'https://cdn.example.invalid/prototypes',
-    cdnSigningSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:cdn-signing`,
+    cdnSigningSecretArn: CDN_SIGNING_SECRET_ARN,
     cdnSigningKeyPairId: 'KEXAMPLE0000',
     websiteBucket,
     frontendDistribution: new cloudfront.Distribution(deps, 'Dist', {
@@ -100,7 +108,7 @@ function synthWithWebhookPlugin(): Template {
     authenticatedRole: new iam.Role(deps, 'AuthRole', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') }),
     processingQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/processing`,
     processingQueueArn: `arn:aws:sqs:${env.region}:${env.account}:processing`,
-    secretsArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:voc`,
+    secretsArn: SHARED_SECRET_ARN,
     s3ImportBucket: new s3.Bucket(deps, 'S3Import'),
     researchStateMachine: new sfn.StateMachine(deps, 'Research', {
       definitionBody: sfn.DefinitionBody.fromChainable(new sfn.Pass(deps, 'Noop')),
@@ -123,7 +131,7 @@ const EnvSchema = z.object({
 
 /** The fixture plugin's webhook function, found by its Powertools service name
  *  (the same way api-stack.test.ts locates the integrations function). */
-function webhookEnv(): Record<string, unknown> {
+function webhookFunction(): unknown {
   const functions = Object.values(template().findResources('AWS::Lambda::Function'));
   const fn = functions.find(
     (f) => EnvSchema.safeParse(f).success
@@ -131,8 +139,53 @@ function webhookEnv(): Record<string, unknown> {
         === `voc-webhook-${WEBHOOK_PLUGIN_ID}`,
   );
   expect(fn, `no webhook Lambda synthesized for ${WEBHOOK_PLUGIN_ID}`).toBeDefined();
-  return EnvSchema.parse(fn).Properties.Environment.Variables;
+  return fn;
 }
+
+function webhookEnv(): Record<string, unknown> {
+  return EnvSchema.parse(webhookFunction()).Properties.Environment.Variables;
+}
+
+/** A function's `Role` is a `Fn::GetAtt` on the role's logical id — element 0. */
+const RoleRefSchema = z.object({
+  Properties: z.object({
+    Role: z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) }),
+  }),
+});
+
+/** Statements of the inline policies attached to *roleLogicalId*, and nothing
+ *  else's. Scoping to the role is the whole point: five other roles in this stack
+ *  grant `secretsmanager:GetSecretValue`, so a template-wide scan for that action
+ *  passes with the webhook's own grant deleted. */
+const PolicySchema = z.object({
+  Properties: z.object({
+    Roles: z.array(z.object({ Ref: z.string() }).or(z.unknown())),
+    PolicyDocument: z.object({
+      Statement: z.array(z.object({
+        Action: z.union([z.string(), z.array(z.string())]).optional(),
+        Resource: z.unknown().optional(),
+      }).passthrough()),
+    }),
+  }),
+});
+
+function statementsFor(roleLogicalId: string): { Action?: string | string[]; Resource?: unknown }[] {
+  return Object.values(template().findResources('AWS::IAM::Policy'))
+    .filter((p) => {
+      const parsed = PolicySchema.safeParse(p);
+      if (!parsed.success) return false;
+      return parsed.data.Properties.Roles.some(
+        (r) => typeof r === 'object' && r !== null && (r as { Ref?: string }).Ref === roleLogicalId,
+      );
+    })
+    .flatMap((p) => PolicySchema.parse(p).Properties.PolicyDocument.Statement);
+}
+
+const actionsOf = (statement: { Action?: string | string[] }): string[] => {
+  const action = statement.Action;
+  if (typeof action === 'string') return [action];
+  return action ?? [];
+};
 
 describe('webhook Lambda environment', () => {
   it('synthesizes a webhook Lambda at all, so the assertions below are not vacuous', () => {
@@ -172,13 +225,50 @@ describe('webhook Lambda environment', () => {
     expect(Object.keys(webhookEnv())).toContain(name);
   });
 
-  it('grants the webhook role read access to the shared secret it now depends on', () => {
+  it("grants the webhook's OWN role read access to the shared secret", () => {
     // Failing closed makes the secret read load-bearing: without the grant, every
     // delivery raises at construction rather than degrading. Asserted here because
     // this is the only fixture in the suite that synthesizes the role at all.
-    const policies = Object.values(template().findResources('AWS::IAM::Policy'));
-    const grantsSecretRead = policies.some((p) => JSON.stringify(p).includes('secretsmanager:GetSecretValue'));
+    //
+    // Scoped to the webhook function's own role, and to the shared secret's ARN
+    // specifically. A template-wide `some(... includes('GetSecretValue'))` was
+    // vacuous: the integrations, scrapers, projects and chat-stream roles in this
+    // same stack all grant that action, so deleting the webhook role's grant left
+    // the assertion green. The CDN signing secret is excluded for the same reason —
+    // a grant on THAT ARN does not let base_webhook.py read its credentials.
+    const roleLogicalId = RoleRefSchema.parse(webhookFunction())
+      .Properties.Role['Fn::GetAtt'][0];
 
-    expect(grantsSecretRead).toBe(true);
+    const grants = statementsFor(roleLogicalId).filter(
+      (s) => actionsOf(s).includes('secretsmanager:GetSecretValue')
+        && JSON.stringify(s.Resource) === JSON.stringify(SHARED_SECRET_ARN),
+    );
+
+    expect(
+      grants.length,
+      `the webhook role ${roleLogicalId} may not read ${SHARED_SECRET_ARN}, so every `
+      + 'delivery would raise ConfigurationError at construction',
+    ).toBeGreaterThan(0);
+  });
+
+  it('the control: the webhook role is found and does carry other statements', () => {
+    // Non-vacuity for the case above, in the direction that actually threatens it:
+    // if `statementsFor` matched nothing — a logical-id shape change, a move from
+    // AWS::IAM::Policy to an inline role policy — the filter would return empty and
+    // the case above would fail with a message blaming the grant. This says which
+    // of the two broke.
+    //
+    // Written to NOT fail under the mutation it controls for: it asserts the role
+    // has statements and does not mention GetSecretValue, so deleting the secret
+    // grant leaves this green.
+    const roleLogicalId = RoleRefSchema.parse(webhookFunction())
+      .Properties.Role['Fn::GetAtt'][0];
+    const statements = statementsFor(roleLogicalId);
+
+    expect(statements.length, `no IAM policy resolves to role ${roleLogicalId}`)
+      .toBeGreaterThan(0);
+    // sqs:SendMessage is granted to the same role on the line above the secret one,
+    // so its presence proves the lookup reaches the right policy document.
+    expect(statements.flatMap(actionsOf)).toContain('sqs:SendMessage');
   });
 });

@@ -61,6 +61,28 @@ REVERT MAP — each assertion below names the mutation it catches:
       invoking, and the UI polls it with no timeout — a permanent spinner with the
       diagnosis only in CloudWatch.
 
+  test_an_unreadable_secret_is_not_counted_against_the_circuit_breaker
+    — raises plain `ConfigurationError` from the empty-payload branch instead of
+      `SecretUnreadableError`, or drops the `if not unreadable` guard around
+      `record_failure`. `get_secret` swallows every client error into `{}`, so an
+      empty payload can be an AWS-side throttle. At the default threshold (5 in 15
+      minutes) counting those calls `_trip_breaker`, which disables the plugin's
+      EventBridge schedule — and nothing in this tree re-enables one, so a healthy
+      plugin's ingestion stops until an operator notices. The sibling assertion
+      that a NAMESPACE MISS still counts is what stops this becoming "the breaker
+      no longer fires".
+
+  test_a_real_aws_call_is_refused /
+  test_the_attempt_is_recorded_even_when_the_code_swallows_it
+    — removes `no_real_aws_calls` from `plugins/conftest.py`, or reduces it to
+      refusing without recording. Because `_report_construction_failure` now runs
+      the circuit breaker on the construction path, and `_shared.circuit_breaker`
+      resolves DynamoDB through its OWN import, three tests here issued a genuine
+      `dynamodb.Query` against whatever account the runner held credentials for —
+      invisibly, since `record_failure` swallowed the result. Refusing alone would
+      be swallowed the same way, so the attempt is recorded and asserted at
+      teardown.
+
   test_the_identity_rule_is_the_one_the_write_path_enforces
     — re-inlines the character class into either path. A read that refuses an
       identity the write path accepted is the same drift, one level up, that two
@@ -95,7 +117,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import shared.aws as shared_aws
-from shared.exceptions import ConfigurationError
+from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.plugin_identity import is_valid_plugin_identifier
 
 from _shared import base_ingestor, base_webhook
@@ -294,7 +316,13 @@ class TestBothBaseClassesFailClosed:
     @patch('_shared.base_ingestor.get_s3_client')
     @patch('_shared.base_ingestor.get_sqs_client')
     @patch('_shared.base_ingestor.get_secret')
-    def _ingestor_with(payload, mock_get_secret, mock_sqs, mock_s3, mock_dynamo):
+    # `_report_construction_failure` runs on the refusal cases below, and
+    # `CircuitBreaker` resolves DynamoDB through `_shared.circuit_breaker`'s OWN
+    # `get_dynamodb_resource` import — patching `base_ingestor`'s does not reach it,
+    # so an unpatched breaker issues a genuine `dynamodb.Query` and `record_failure`
+    # swallows the result. Pinned by plugins/conftest.py::no_real_aws_calls.
+    @patch.object(base_ingestor.CircuitBreaker, 'record_failure')
+    def _ingestor_with(payload, mock_record_failure, mock_get_secret, mock_sqs, mock_s3, mock_dynamo):
         mock_get_secret.return_value = payload
         mock_dynamo.return_value.Table.return_value = MagicMock()
         return _make_ingestor()
@@ -440,7 +468,12 @@ class TestATransientReadFailureIsRetryable:
                 patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
                 patch('_shared.base_ingestor.get_s3_client'), \
                 patch('_shared.base_ingestor.get_sqs_client'), \
-                patch('_shared.base_webhook.get_sqs_client'):
+                patch('_shared.base_webhook.get_sqs_client'), \
+                patch.object(base_ingestor.CircuitBreaker, 'record_failure'):
+            # The breaker is patched even though a SecretUnreadableError does not
+            # reach it today: a test about the secret CACHE should not depend on how
+            # the breaker classifies the error, and an unpatched breaker reaches real
+            # DynamoDB (see plugins/conftest.py::no_real_aws_calls).
             mock_dynamo.return_value.Table.return_value = MagicMock()
             construct = _make_ingestor if kind == 'ingestor' else _make_webhook
 
@@ -590,6 +623,158 @@ class TestAConstructionFailureIsReported:
         assert self._status_written(table) is None
         assert record_failure.call_args_list == []
         assert [call.args[0] for call in emit.call_args_list if call.args] == []
+
+
+class TestAnUnreadableSecretIsNotAPluginFailure:
+    """A throttle must not auto-disable a healthy plugin's schedule.
+
+    `shared.aws.get_secret` logs and swallows EVERY client error into `{}`, so an
+    empty payload means either "genuinely empty" or "the read failed" — the same
+    ambiguity the cache eviction acknowledges. Reporting it is right; COUNTING it is
+    not: `CircuitBreaker.record_failure` trips at 5 failures in 15 minutes by
+    default, and `_trip_breaker` calls `events.disable_rule` on the plugin's
+    EventBridge schedule. Nothing in this tree re-enables a disabled rule and
+    `record_success` only resets on a run that completes, so five Secrets Manager
+    blips inside one window stop a healthy plugin's ingestion until an operator
+    notices and re-enables it by hand.
+
+    The fail-OPEN code could not do this — a transient `{}` never raised — so this
+    is availability coupling the fail-closed direction introduced, not something
+    pre-existing.
+
+    The empty-payload branch therefore raises `SecretUnreadableError`, a
+    `ConfigurationError` subclass so nothing that catches the parent stops working,
+    and `_report_construction_failure` skips only the breaker for it.
+    """
+
+    # Reuses the construction harness above rather than restating it: the subject is
+    # which of the three reporting effects fire, and those are exactly what it
+    # returns.
+    _construct = staticmethod(TestAConstructionFailureIsReported._construct)
+    _status_written = staticmethod(TestAConstructionFailureIsReported._status_written)
+    EXECUTION_ID = TestAConstructionFailureIsReported.EXECUTION_ID
+
+    def test_an_empty_secret_raises_the_narrower_unreadable_type(self):
+        """The classification itself, at the raise site. Asserted separately from
+        the breaker behaviour below so a failure says WHICH of the two halves broke
+        — the type or the branch that reads it."""
+        with pytest.raises(SecretUnreadableError):
+            filter_plugin_secrets(PLUGIN_ID, {})
+
+    def test_a_namespace_miss_is_not_the_unreadable_type(self):
+        """The other side of the classification: a populated secret that simply has
+        no key for this plugin IS someone's mistake, and must stay a plain
+        `ConfigurationError`. Without this, raising `SecretUnreadableError` from
+        every branch would satisfy the assertion above and silently stop the breaker
+        from ever firing."""
+        with pytest.raises(ConfigurationError) as excinfo:
+            filter_plugin_secrets(PLUGIN_ID, FOREIGN_ONLY_SECRET)
+
+        assert not isinstance(excinfo.value, SecretUnreadableError)
+
+    def test_the_unreadable_type_is_still_caught_as_a_configuration_error(self):
+        """Subclassing is the compatibility promise: `BaseIngestor.__init__` and
+        every plugin handler catch `ConfigurationError`, and a sibling type would
+        escape all of them — turning a handled misconfiguration into an unhandled
+        crash. Cheap to assert, and the reason this is not a new top-level
+        exception."""
+        assert issubclass(SecretUnreadableError, ConfigurationError)
+
+    def test_an_unreadable_secret_is_not_counted_against_the_circuit_breaker(self):
+        error, _, record_failure, _ = self._construct({}, self.EXECUTION_ID)
+
+        assert isinstance(error, SecretUnreadableError), (
+            'expected construction to refuse an empty payload'
+        )
+        assert record_failure.call_args_list == [], (
+            'a transient Secrets Manager failure was counted as a plugin failure; '
+            'five in one window disable the schedule of a plugin that is fine'
+        )
+
+    def test_the_control_a_namespace_miss_still_is_counted(self):
+        """Non-vacuity, and the property the exemption must not cost: the breaker
+        still fires for a genuine misconfiguration. Without this, dropping
+        `record_failure` altogether — or widening the exemption to every
+        `ConfigurationError` — passes the assertion above while removing the
+        auto-disable entirely, which is a defect in the opposite direction."""
+        _, _, record_failure, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        assert record_failure.call_args_list, (
+            'a namespace miss is a misconfiguration and retrying it forever is what '
+            'the breaker exists to stop'
+        )
+
+    def test_an_unreadable_secret_still_moves_the_run_record_to_error(self):
+        """The exemption is scoped to the breaker alone. The run record is what
+        clears the UI's spinner, so withholding it would trade one availability
+        problem for a worse observability one."""
+        _, table, _, _ = self._construct({}, self.EXECUTION_ID)
+
+        assert self._status_written(table) == 'error'
+
+    def test_an_unreadable_secret_still_emits_the_audit_event(self):
+        """Likewise. The event also records that the breaker did NOT count this
+        one, so an operator reading a burst of them does not conclude the breaker
+        is broken."""
+        _, _, _, emit = self._construct({}, self.EXECUTION_ID)
+
+        failed = [call for call in emit.call_args_list
+                  if call.args and call.args[0] == 'plugin.failed']
+        assert failed, 'the failure was silent in the audit trail'
+        assert failed[-1].args[3]['counted_against_circuit_breaker'] is False
+
+
+class TestNoPluginTestReachesRealAws:
+    """The guard in `plugins/conftest.py`, controlled for.
+
+    Three tests in this file once issued a genuine `dynamodb.Query` against whatever
+    account the runner held credentials for, and it was INVISIBLE: `record_failure`
+    swallows its own exceptions, so the call went out, failed, and the assertion
+    still passed. `AccessDeniedException` is the benign outcome — a laptop or a CI
+    deploy role that does grant DynamoDB gets a real query and `put_item` against a
+    live `test-watermarks`, and at threshold a real `events:DisableRule`.
+
+    `no_real_aws_calls` is autouse, so every test in `plugins/` is already covered.
+    What is asserted here is that the guard is ARMED — an autouse fixture that
+    silently stopped applying (a conftest move, a rename, a `patch.object` target
+    change in botocore) would leave the whole suite unprotected with nothing failing.
+    """
+
+    def test_a_real_aws_call_is_refused(self, no_real_aws_calls):
+        """The guard's own subject, exercised directly rather than trusted: a client
+        built the ordinary way must not reach the network. `no_real_aws_calls` is
+        requested by name so the deliberate attempt can be cleared from its record —
+        otherwise this test would fail at its own teardown for doing its job."""
+        import boto3
+
+        client = boto3.client('dynamodb', region_name='us-east-1')
+
+        with pytest.raises(AssertionError, match='refused real AWS call'):
+            client.describe_table(TableName='test-watermarks')
+
+        assert no_real_aws_calls == ['dynamodb.DescribeTable']
+        no_real_aws_calls.clear()
+
+    def test_the_attempt_is_recorded_even_when_the_code_swallows_it(self, no_real_aws_calls):
+        """Why refusing alone is not enough, and the actual defect being guarded
+        against: `record_failure`'s `except Exception` hides this AssertionError
+        exactly as it hid the original `AccessDeniedException`. The record survives
+        the swallow, which is what lets the fixture report at teardown — somewhere no
+        `except` in the code under test can reach."""
+        import boto3
+
+        client = boto3.client('dynamodb', region_name='us-east-1')
+        swallowed = None
+        try:
+            client.describe_table(TableName='test-watermarks')
+        except Exception as error:  # noqa: BLE001 — mimicking record_failure's own catch
+            swallowed = error
+
+        assert swallowed is not None, 'the refusal did not even reach the caller'
+        assert no_real_aws_calls == ['dynamodb.DescribeTable'], (
+            'the guard cannot report an attempt the code under test swallowed'
+        )
+        no_real_aws_calls.clear()
 
 
 class TestTheIdentityRuleIsSharedWithTheWritePath:

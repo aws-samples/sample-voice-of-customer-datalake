@@ -17,7 +17,7 @@ import hashlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.exceptions import ConfigurationError
+from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.http_utils import fetch_with_retry
 from shared.aws import (
     clear_secret_cache,
@@ -99,6 +99,19 @@ class BaseIngestor(ABC):
             way does not auto-disable its schedule;
           * no ``plugin.failed`` audit event is emitted.
 
+        The breaker is the exception, and deliberately so: a
+        ``SecretUnreadableError`` is NOT counted. ``get_secret`` swallows every
+        client error into ``{}``, so an unreadable secret may be an AWS-side
+        throttle the plugin did nothing to cause — and at the default threshold
+        (5 failures in 15 minutes) counting it lets a handful of blips call
+        ``_trip_breaker``, which disables the plugin's EventBridge schedule.
+        Nothing in this tree re-enables a disabled rule, so ingestion would stop
+        until an operator noticed. The run record and the audit event still fire,
+        because those are how the failure becomes visible; only the auto-disable
+        is withheld. A misconfiguration — a malformed identity or a namespace that
+        matches nothing — is a plain ``ConfigurationError`` and still counts, since
+        retrying it forever is exactly what the breaker exists to stop.
+
         Reported HERE rather than in each plugin's ``lambda_handler`` for the same
         reason the manual-run cache clear is centralized (#141/#215): a per-handler
         wrapper is one a new plugin can forget, and forgetting it is silent.
@@ -108,6 +121,7 @@ class BaseIngestor(ABC):
         reporting; each step already swallows its own failures, and the belt-and-
         braces catch covers a client that is missing altogether.
         """
+        unreadable = isinstance(error, SecretUnreadableError)
         try:
             self._update_source_run_status({
                 'status': 'error',
@@ -115,11 +129,16 @@ class BaseIngestor(ABC):
                 'completed_at': datetime.now(timezone.utc).isoformat(),
                 'errors': [str(error)],
             })
-            self.circuit_breaker.record_failure(str(error))
+            if not unreadable:
+                self.circuit_breaker.record_failure(str(error))
             emit_audit_event("plugin.failed", self.source_platform, False, {
                 "error": str(error),
                 "error_type": type(error).__name__,
                 "phase": "construction",
+                # Names WHY the breaker did not count this one, so an operator
+                # reading the audit trail after a burst of these does not conclude
+                # the breaker is broken.
+                "counted_against_circuit_breaker": not unreadable,
             })
         # Deliberately blind: narrowing it means enumerating what three AWS clients
         # can raise, and anything missed REPLACES the ConfigurationError being

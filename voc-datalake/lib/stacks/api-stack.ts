@@ -2087,7 +2087,9 @@ exports.handler = async (event) => {
         // blaming the identity rather than the missing variable. Latent until a
         // manifest declares `infrastructure.webhook` (none does yet), which is
         // exactly why it would have surfaced as a deploy-time mystery. Pinned by
-        // 'SOURCE_PLATFORM' in api-stack.test.ts.
+        // 'SOURCE_PLATFORM' in api-stack-webhook-env.test.ts — that latency is
+        // also why it needs its own file: api-stack.test.ts's fixtures read the
+        // real manifests and so synthesize no webhook Lambda to assert against.
         SOURCE_PLATFORM: plugin.id,
         PLUGIN_ID: plugin.id,
         POWERTOOLS_SERVICE_NAME: `voc-webhook-${plugin.id}`,

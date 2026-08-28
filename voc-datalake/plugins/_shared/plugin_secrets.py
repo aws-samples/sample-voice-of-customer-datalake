@@ -58,7 +58,7 @@ from collections.abc import Mapping
 # test without importing a base class first.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.exceptions import ConfigurationError
+from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.logging import logger
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
@@ -78,9 +78,15 @@ def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
     callers are unchanged.
 
     Raises:
-        ConfigurationError: If *plugin_id* is missing or malformed, if
-            *all_secrets* is empty, or if no key carries this plugin's prefix.
-            Every one of those states used to yield the complete shared secret.
+        ConfigurationError: If *plugin_id* is missing or malformed, or if no key
+            carries this plugin's prefix. Either state used to yield the complete
+            shared secret. Both mean a human wrote something wrong.
+        SecretUnreadableError: If *all_secrets* is empty. A ConfigurationError
+            SUBCLASS, so `except ConfigurationError` still catches it, but
+            distinguishable — this is the one branch that may be an AWS-side blip
+            rather than a misconfiguration, because `get_secret` swallows a failed
+            read into `{}`. `BaseIngestor` uses the distinction to keep a throttle
+            from counting against the circuit breaker.
 
     The empty-payload branch is RETRY-SAFE, but only because the caller makes it
     so: `shared.aws.get_secret` is `lru_cache`d and swallows a failed read into
@@ -117,17 +123,22 @@ def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
     prefix = plugin_secret_prefix(plugin_id)
 
     if not isinstance(all_secrets, Mapping) or not all_secrets:
-        # An empty secret is a configuration failure, not an empty namespace:
-        # `get_secret` returns {} both for a genuinely empty secret and for a
-        # read that FAILED (it logs and swallows), and neither is a state in
-        # which a plugin should quietly run with no credentials. The caller has
-        # already evicted the cache entry, so a transient failure retries on the
-        # next invocation rather than wedging the container.
+        # An empty secret is still a refusal — neither a genuinely empty secret
+        # nor a failed read is a state in which a plugin should quietly run with
+        # no credentials — but it is the ONLY branch here that may not be anyone's
+        # mistake: `get_secret` logs and swallows every client error into `{}`, so
+        # a throttle and an empty secret are indistinguishable from here.
+        #
+        # Hence the narrower type. The caller has already evicted the cache entry
+        # so the next invocation retries, and `BaseIngestor` reports this without
+        # recording a circuit-breaker failure: counting it would let five transient
+        # Secrets Manager errors in one window disable a healthy plugin's
+        # EventBridge schedule, which nothing in this tree re-enables.
         logger.error(
             "Refusing to load plugin secrets: secret payload is empty",
             extra={"plugin_id": plugin_id, "expected_prefix": prefix},
         )
-        raise ConfigurationError(
+        raise SecretUnreadableError(
             f"Cannot load plugin secrets for '{plugin_id}': the shared secret is "
             f"empty or unreadable, so no '{prefix}*' keys could be read."
         )
