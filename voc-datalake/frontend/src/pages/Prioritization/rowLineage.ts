@@ -336,6 +336,18 @@ export function classifySelectionLineage(
 const NO_INSTANT = Number.NEGATIVE_INFINITY
 
 /**
+ * A date and time carrying NO zone designator — no `Z`, no `±hh:mm`.
+ *
+ * Deliberately narrow: it matches only the two shapes a stored `created_at`
+ * plausibly takes without one (`'2025-01-01T09:00:00'` and the space-separated
+ * `'2025-01-01 09:00:00'`, seconds and fractional seconds optional), so anything
+ * else — an already-zoned value, a date-only value, a word — falls through to
+ * `Date.parse` exactly as before. A looser pattern would start reinterpreting
+ * values whose meaning is not in question.
+ */
+const ZONELESS_DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/
+
+/**
  * The INSTANT a `created_at` names, or `NO_INSTANT` when it names none.
  *
  * `Date.parse`, not a string comparison, and that is the whole of the difference
@@ -349,14 +361,38 @@ const NO_INSTANT = Number.NEGATIVE_INFINITY
  * ('2025-03-11T02:00:00+00:00' — 02:00Z, EARLIER), where the string compare answers
  * backwards and this module would advise re-scoring against older evidence.
  *
+ * A ZONE-LESS DATETIME IS READ AS UTC, and that normalisation is not tidying:
+ * `Date.parse` splits its own rules by SHAPE. Per ECMA-262 a date-only value
+ * ('2025-01-01') is UTC, but a date-TIME with no designator ('2025-01-01T09:00:00')
+ * is the *runtime's local* time — so without this, two documents order by up to
+ * ±14h of whichever timezone the reviewer's browser happens to be in. The same
+ * project then prints `Superseded` for one reviewer and not for another off
+ * byte-identical records, and can advise re-scoring against evidence that is
+ * strictly OLDER (a row holding '2025-01-01T01:00:00' being pointed at
+ * '2025-01-01', an hour earlier, under TZ=Asia/Tokyo). Every other rule in this
+ * module answers a property of the DATA; an answer that depends on who is looking
+ * is the one thing none of them may be.
+ *
+ * UTC is the right assumption rather than merely a neutral one: every generator
+ * writes `datetime.now(timezone.utc).isoformat()` (projects.py for a prd/prfaq,
+ * document_merger for a merge), so a value that reached storage without a
+ * designator was almost certainly meant as UTC — and where the guess is wrong it is
+ * wrong IDENTICALLY for every reader, which is what makes it a guess about the
+ * record instead of about the browser.
+ *
  * Anything `Date.parse` accepts becomes an instant, which is wider than the ISO
- * forms the generators write (`datetime.now(timezone.utc).isoformat()`) and
- * deliberately so — a value a reader would recognise as a date should not silence a
- * row. Anything it REFUSES, '' included, names no instant, and every decision that
- * would rest on one is withheld instead; see `hasUnreadableTimestamp`.
+ * forms the generators write and deliberately so — a value a reader would recognise
+ * as a date should not silence a row — though the SHAPE now matters for exactly the
+ * one case above. Anything it REFUSES, '' included, names no instant, and every
+ * decision that would rest on one is withheld instead; see
+ * `hasUnreadableTimestamp`.
  */
 function instantOf(createdAt: string): number {
-  const parsed = Date.parse(createdAt)
+  // Zone-less values only; an already-zoned or date-only value is passed through
+  // untouched, so this widens nothing that `Date.parse` already answers the same
+  // way for every reader.
+  const zoned = ZONELESS_DATETIME.test(createdAt) ? `${createdAt}Z` : createdAt
+  const parsed = Date.parse(zoned)
   return Number.isNaN(parsed) ? NO_INSTANT : parsed
 }
 

@@ -39,6 +39,9 @@
  *    INSTANT a timestamp names, not the string that spells it" (all three halves),
  *    plus the offset half of the tie-break case and the unparseable half of the
  *    no-instant case;
+ *  * `instantOf`'s `ZONELESS_DATETIME` normalisation deleted → "answers the same in
+ *    every timezone, because a zone-less datetime is UTC" (which is the only case
+ *    here whose failure depends on WHO is looking rather than on the record);
  *  * the `hasUnreadableTimestamp` gate deleted → "a held created_at that names no
  *    instant withholds staleness" (which is what stops `NO_INSTANT` reading as older
  *    than every dated document in the project);
@@ -494,6 +497,83 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const genuinelyNewer = doc('prd_new', 'prd', '2025-03-11T09:00:00+00:00', builtFromFeedback)
     expect(fresherCoherentSelection([heldLater], [heldLater, genuinelyNewer]))
       .toEqual(['prd_new'])
+  })
+
+  it('answers the same in every timezone, because a zone-less datetime is UTC', () => {
+    // `Date.parse` splits its rules by SHAPE: per ECMA-262 a date-ONLY value is UTC,
+    // but a date-TIME with no designator is the RUNTIME'S LOCAL time. Unnormalised,
+    // the two order by up to ±14h of whichever timezone the reviewer's browser is in
+    // — so the same project prints `Superseded` for one reviewer and not for another
+    // off byte-identical records, and every answer in this module stops being a
+    // property of the data. That is the one defect class the rest of the file
+    // withholds precisely to avoid.
+    //
+    // Three zones, spanning the sign of the offset and its extreme: UTC itself, one
+    // behind and the two furthest ahead. Each assertion is made in EVERY zone and
+    // must agree, so the case pins zone-INDEPENDENCE rather than one zone's answer.
+    const zones = ['UTC', 'America/Los_Angeles', 'Asia/Tokyo', 'Pacific/Kiritimati']
+    const inEveryZone = <T>(answer: () => T): readonly [string, T][] => {
+      const before = process.env.TZ
+      try {
+        return zones.map((zone) => {
+          process.env.TZ = zone
+          return [zone, answer()] as const
+        })
+      } finally {
+        process.env.TZ = before
+      }
+    }
+    /** Asserts one answer is `expected` in all four zones, naming the zone that broke. */
+    const agreesEverywhere = <T>(answer: () => T, expected: T): void => {
+      for (const [zone, actual] of inEveryZone(answer)) {
+        expect(actual, zone).toEqual(expected)
+      }
+    }
+
+    // A zone-less datetime against a date-only value ON THE SAME DAY. '2025-01-01' is
+    // 00:00Z, and '2025-01-01T09:00:00' means 09:00Z — so the datetime is newer, in
+    // every zone. Unnormalised it is newer under TZ=UTC and Los Angeles but OLDER
+    // under Kiritimati (+14), where local 09:00 is 19:00Z the previous day.
+    const dateOnly = doc('prd_date_only', 'prd', '2025-01-01', builtFromFeedback)
+    const zoneless = doc('prd_zoneless', 'prd', '2025-01-01T09:00:00', builtFromFeedback)
+
+    agreesEverywhere(
+      () => fresherCoherentSelection([dateOnly], [dateOnly, zoneless]),
+      ['prd_zoneless'],
+    )
+    // And the other direction: holding the LATER of the two is never stale — the half
+    // that catches the module advising strictly OLDER evidence, which is what
+    // '2025-01-01T01:00:00' vs '2025-01-01' does under TZ=Asia/Tokyo unnormalised.
+    const zonelessEarly = doc('prd_early', 'prd', '2025-01-01T01:00:00', builtFromFeedback)
+
+    agreesEverywhere(() => fresherCoherentSelection([zonelessEarly], [zonelessEarly, dateOnly]), null)
+    agreesEverywhere(() => rowLineageOf(frozenRow([zonelessEarly]), [zonelessEarly, dateOnly]).stale, false)
+
+    // A realistic mix — a generated Z/offset form beside an imported zone-less one —
+    // and the POSITIVE control this case needs: a zone-less datetime that is genuinely
+    // newer IS advised, in every zone, so normalising to UTC has not simply silenced
+    // the comparison. 18:00Z is six hours after the held 12:00Z.
+    const generated = doc('prd_gen', 'prd', '2025-01-01T12:00:00+00:00', builtFromFeedback)
+    const importedNewer = doc('prd_imported', 'prd', '2025-01-01T18:00:00', builtFromFeedback)
+
+    agreesEverywhere(
+      () => fresherCoherentSelection([generated], [generated, importedNewer]),
+      ['prd_imported'],
+    )
+    // The space-separated spelling of the same value, because an imported timestamp
+    // is as likely to arrive as '2025-01-01 18:00:00' as with a 'T'.
+    const importedSpaced = doc('prd_imported', 'prd', '2025-01-01 18:00:00', builtFromFeedback)
+
+    agreesEverywhere(
+      () => fresherCoherentSelection([generated], [generated, importedSpaced]),
+      ['prd_imported'],
+    )
+    // Guard against the whole case being vacuous: if `process.env.TZ` were NOT honoured
+    // at runtime, every zone above would trivially agree and the case would pass with
+    // the normalisation removed. This asserts the mechanism the case rests on — that a
+    // zone-less datetime really is read differently per zone by `Date.parse` itself.
+    const parsedPerZone = inEveryZone(() => Date.parse('2025-01-01T09:00:00'))
+    expect(new Set(parsedPerZone.map(([, instant]) => instant)).size).toBeGreaterThan(1)
   })
 
   it('withholds staleness when a held document has no readable type', () => {
