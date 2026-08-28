@@ -209,10 +209,14 @@ What the policy accepts and refuses:
   with all of its URLs, so ten stalling pages spent 450 seconds against the 300 second
   limit. When the run budget is spent the invocation stops, notes in the run's `errors`
   how many URLs were not attempted, and reports `completed_with_errors` rather than a
-  `completed` that would hide the truncation. Configurations not reached keep their
-  schedule and run next time. A page that never loaded no longer counts toward the
-  run's page total, so a run in which everything timed out is distinguishable from an
-  empty but healthy one.
+  `completed` that would hide the truncation. Every configuration stays due for the next
+  run — those not reached were never marked, and the truncated one keeps its watermark
+  deliberately, because marking it as having run would leave its unattempted URLs
+  starved rather than retried (the URL list rebuilds in the same order, so a
+  persistently slow prefix would be re-walked forever). The retry starts from the first
+  URL again rather than resuming where it stopped. A page that never loaded no longer
+  counts toward the run's page total, so a run in which everything timed out is
+  distinguishable from an empty but healthy one.
 - A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
   DNS lookup inside the saving request, and both write routes answer through API
   Gateway's 29 second limit; identical hosts within one write are resolved once. The

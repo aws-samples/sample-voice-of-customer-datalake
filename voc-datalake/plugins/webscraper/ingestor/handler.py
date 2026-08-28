@@ -484,7 +484,11 @@ class WebScraperIngestor(BaseIngestor):
             items_found = 0
             pages_scraped = 0
             errors = []
-            
+            # Whether THIS config's URL loop was cut short, as distinct from the
+            # invocation-wide flag: it decides the watermark below, and a config
+            # that ran to the end must still record its run.
+            config_truncated = False
+
             for index, url in enumerate(urls):
                 remaining = run_deadline - time.monotonic()
                 if remaining <= 0:
@@ -502,6 +506,7 @@ class WebScraperIngestor(BaseIngestor):
                     logger.error(error_msg)
                     errors.append(error_msg)
                     run_budget_exhausted = True
+                    config_truncated = True
                     break
 
                 try:
@@ -565,8 +570,32 @@ class WebScraperIngestor(BaseIngestor):
                     logger.warning(error_msg)
                     errors.append(error_msg)
             
-            self.set_watermark(f'scraper_{scraper_id}_last_run', datetime.now(timezone.utc).isoformat())
-            
+            # NOT advanced for a config the run budget truncated. `_should_run_
+            # scraper` reads this watermark, so writing it for a config whose URLs
+            # went unattempted marks it as having just run and it waits out its
+            # whole `frequency_minutes` before trying again. And because
+            # `_get_urls_to_scrape` rebuilds the list in the same order every
+            # time, the next invocation restarts at URL 0 — so the skipped tail
+            # was not deferred, it was STARVED: measured with 20 stalling URLs
+            # followed by 10 healthy ones, the healthy tail was reached 0 of 10
+            # times, on every invocation, indefinitely.
+            #
+            # Holding the watermark leaves the config due, so the next scheduled
+            # invocation retries it. That retry re-walks the URL list from the
+            # start rather than resuming — making progress through a persistently
+            # stalling prefix needs a stored resume index, which is a larger
+            # change than keeping the retry claim true.
+            if config_truncated:
+                logger.warning(
+                    f"Holding the watermark for {scraper_name}: the run budget "
+                    f"truncated it, so it stays due for the next invocation"
+                )
+            else:
+                self.set_watermark(
+                    f'scraper_{scraper_id}_last_run',
+                    datetime.now(timezone.utc).isoformat(),
+                )
+
             self._update_run_status(scraper_id, {
                 'status': 'completed' if not errors else 'completed_with_errors',
                 'completed_at': datetime.now(timezone.utc).isoformat(),
@@ -581,10 +610,13 @@ class WebScraperIngestor(BaseIngestor):
             if run_budget_exhausted:
                 # After this config's terminal status write, not instead of it: the
                 # budget exists to leave time for that write, so breaking earlier
-                # would recreate the abandoned-run row it is meant to prevent. The
-                # remaining configs are left untouched — their own `_should_run_
-                # scraper` watermark is unchanged, so the next scheduled invocation
-                # picks them up.
+                # would recreate the abandoned-run row it is meant to prevent.
+                #
+                # Every config remains due for the next scheduled invocation, by
+                # two different routes: the ones never reached were never written,
+                # and the truncated one had its write SKIPPED above. Those are
+                # separate cases and only the first is automatic — see the
+                # watermark block.
                 logger.error(
                     f"Stopping the invocation after {scraper_name}: the "
                     f"{SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s run budget is spent"

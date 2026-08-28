@@ -61,6 +61,10 @@ REVERT MAP — which mutation each test catches
   with a bare `True` -> `cannot_be_enabled_positionally`.
 - Restate the retry policy inline in the budgeted path instead of building it from
   `create_retry_decorator` -> `the_budgeted_path_uses_the_shared_retry_factory`.
+- Bound the budget's attempts but not its backoff SLEEP, which tenacity takes in
+  full before consulting `stop` -> `keeps_the_retry_backoff_inside_the_budget`.
+- Clamp that sleep to zero regardless of the budget, retiring the backoff
+  -> `still_backs_off_fully_when_the_budget_has_room`.
 
 Every "refuses" concern has a positive control (`TestPermittedDestinations`,
 `allows_a_public_redirect_chain_and_returns_the_final_page`) so an
@@ -1208,6 +1212,98 @@ class TestCheckedFetchTimeBudget:
 
         # The budget stopped it well before the hop bound did.
         assert mock_request.call_count == 1
+
+    @patch('tenacity.nap.time.sleep')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_keeps_the_retry_backoff_inside_the_budget(
+        self, mock_request, mock_resolve, mock_sleep
+    ):
+        """
+        The backoff SLEEP spends budget too, and clamping the stop condition alone
+        did not bound it.
+
+        tenacity takes the sleep at its full `wait_exponential` value and only
+        consults `stop` once the sleep has returned, so a 16 s budget at the
+        ingestor's own 15 s hop timeout spent one 15 s attempt and then slept the
+        whole 2 s, finishing at 17.0 s. The overshoot window is
+        `(timeout, timeout + backoff)`, reachable at both call sites — 40/400
+        ingestor-shaped budgets and 40/200 preview-shaped ones, worst 1.95 s — and
+        it is what made the ingestor's run-budget assertions fail intermittently.
+
+        This budget lands squarely in that window, so it fails at 17.0 s against
+        the unclamped wait.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        now = [1000.0]
+
+        def stall(**kwargs):
+            now[0] += kwargs['timeout']
+            raise requests.exceptions.Timeout('stalled')
+
+        mock_request.side_effect = stall
+        mock_sleep.side_effect = lambda seconds: now.__setitem__(0, now[0] + seconds)
+
+        with patch('shared.http_utils.time.monotonic', lambda: now[0]), \
+                pytest.raises(requests.exceptions.Timeout):
+            fetch_checked_with_retry(
+                'https://slow.example.com/', timeout=15, total_timeout=16.0
+            )
+
+        spent = now[0] - 1000.0
+        assert spent <= 16.0, f'the chain spent {spent}s of a 16.0s budget'
+
+    @patch('tenacity.nap.time.sleep')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_still_backs_off_fully_when_the_budget_has_room(
+        self, mock_request, mock_resolve, mock_sleep
+    ):
+        """
+        Positive control. Clamping every sleep to zero would satisfy the budget
+        assertion above while retiring the backoff that makes these retries polite
+        to the site — so a budget with room for all three attempts must back off
+        exactly as much as an unbudgeted call does.
+
+        Asserted against the UNBUDGETED path's own sleeps rather than against
+        `[2, 2]`, so retuning `RETRY_MIN_WAIT_SECONDS` does not fail a non-defect;
+        the property is "a budget with room changes nothing", not one spelling of
+        the wait curve.
+        """
+        from shared.http_utils import RETRY_MAX_ATTEMPTS, fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+
+        def sleeps_for(total_timeout):
+            now = [1000.0]
+
+            def stall(**kwargs):
+                now[0] += 1.0        # a fast failure, so the budget is not the bound
+                raise requests.exceptions.Timeout('stalled')
+
+            mock_request.reset_mock()
+            mock_sleep.reset_mock()
+            mock_request.side_effect = stall
+            mock_sleep.side_effect = lambda s: now.__setitem__(0, now[0] + s)
+
+            with patch('shared.http_utils.time.monotonic', lambda: now[0]), \
+                    pytest.raises(requests.exceptions.Timeout):
+                fetch_checked_with_retry(
+                    'https://slow.example.com/', timeout=15, total_timeout=total_timeout
+                )
+
+            return mock_request.call_count, [c.args[0] for c in mock_sleep.call_args_list]
+
+        attempts, budgeted = sleeps_for(300.0)
+        _unbudgeted_attempts, unbudgeted = sleeps_for(None)
+
+        assert attempts == RETRY_MAX_ATTEMPTS
+        assert budgeted, 'a budgeted call backed off not at all'
+        assert budgeted == unbudgeted, (
+            'the backoff was clamped even though the budget had room'
+        )
 
     @patch('shared.http_utils.socket.getaddrinfo')
     @patch('shared.http_utils.requests.request')

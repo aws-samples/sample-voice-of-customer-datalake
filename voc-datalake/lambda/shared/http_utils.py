@@ -332,6 +332,44 @@ def _stop_condition(max_attempts: int, max_total_delay: float | None):
     return stop
 
 
+def _wait_condition(min_wait: int, max_wait: int, max_total_delay: float | None):
+    """
+    Exponential backoff, with the SLEEP clamped to what is left of the budget.
+
+    Clamping the stop condition alone was not enough, and the gap was not
+    theoretical: tenacity takes the backoff sleep at its full `wait_exponential`
+    value and only consults `stop` once the sleep has RETURNED, so a budget of
+    16 s with a 15 s hop timeout spent one 15 s attempt and then slept the whole
+    2 s, finishing at 17 s. The overshoot window is `(timeout, timeout + backoff)`
+    for every hop, so it was reachable at both call sites — measured 40/400
+    ingestor-shaped budgets and 40/200 preview-shaped ones, worst case 1.95 s —
+    and it is what made `TestRunBoundsTheWholeInvocation`'s exact `spent <=
+    budget` assertions fail intermittently. Loosening those assertions with a
+    tolerance would have hidden the very property they exist to pin.
+
+    The deadline is fixed when the decorator is BUILT, from this module's
+    `time.monotonic`, not read from `retry_state.start_time`: tenacity stamps that
+    with its own `time` import, so a caller (or a test) substituting a clock here
+    would have the two legs of one budget measuring different clocks. The
+    consequence is that a decorator carrying `max_total_delay` must be built at
+    the point of use — which is what `_fetch_within_deadline` does, and why the
+    module-level `retry_on_transient_error` passes no budget at all.
+
+    A clamp to 0 does not spin: the next attempt finds no budget left and raises
+    `Timeout`, which the stop condition then ends.
+    """
+    backoff = wait_exponential(multiplier=1, min=min_wait, max=max_wait)
+    if max_total_delay is None:
+        return backoff
+
+    deadline = time.monotonic() + max_total_delay
+
+    def clamped_backoff(retry_state) -> float:
+        return max(0.0, min(backoff(retry_state), deadline - time.monotonic()))
+
+    return clamped_backoff
+
+
 def create_retry_decorator(
     max_attempts: int = RETRY_MAX_ATTEMPTS,
     min_wait: int = RETRY_MIN_WAIT_SECONDS,
@@ -347,14 +385,19 @@ def create_retry_decorator(
         max_wait: Maximum wait time in seconds between retries (default: 30)
         max_total_delay: Optional wall-clock ceiling, in seconds, across ALL
             attempts. Without it a caller with a deadline can only bound one
-            attempt's timeout, not the retried total.
+            attempt's timeout, not the retried total. It bounds BOTH legs that
+            spend wall clock — the retries stop once it has elapsed, and each
+            backoff sleep is clamped to what remains, because tenacity checks
+            `stop` only after a sleep has finished (see `_wait_condition`).
+            Measured from when the decorator is BUILT, so one carrying a budget
+            must be created at the point of use rather than reused.
 
     Returns:
         A tenacity retry decorator
     """
     return retry(
         stop=_stop_condition(max_attempts, max_total_delay),
-        wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
+        wait=_wait_condition(min_wait, max_wait, max_total_delay),
         retry=retry_if_exception_type((*RETRYABLE_EXCEPTIONS, RetryableHTTPError)),
         before_sleep=before_sleep_log(logger, log_level=20),  # INFO level
         reraise=True,
@@ -432,12 +475,16 @@ def _fetch_within_deadline(url: str, deadline: float, timeout: int, **rest):
     """
     One hop, retried, with every attempt kept inside `deadline`.
 
-    Two bounds are needed and neither alone is enough. `stop_after_delay` is only
-    consulted BETWEEN attempts, so it cannot stop an attempt that has already
-    started from running past the budget; shortening the timeout once per hop
-    cannot either, because the later attempts still get the hop's full value. So
-    the timeout is recomputed from the remaining budget on EVERY attempt, and the
-    stop condition ends the retries as soon as the budget is gone.
+    THREE things spend wall clock here, and bounding any two of them leaves the
+    budget overrunnable. `stop_after_delay` is only consulted BETWEEN attempts, so
+    it cannot stop an attempt that has already started from running past the
+    budget; shortening the timeout once per hop cannot either, because the later
+    attempts still get the hop's full value; and the backoff SLEEP between
+    attempts is taken before `stop` is next consulted, so an unclamped one
+    overshot by up to its full interval (a 16 s budget at a 15 s hop timeout
+    finished at 17 s). So the timeout is recomputed from the remaining budget on
+    EVERY attempt, the stop condition ends the retries as soon as the budget is
+    gone, and `_wait_condition` clamps each sleep to what is left.
 
     `fetch_with_retry.__wrapped__` is its undecorated body: the retry policy for
     this call carries a deadline, so the default one must not also apply.

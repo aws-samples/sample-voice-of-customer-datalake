@@ -583,10 +583,14 @@ The policy itself:
   processes every due configuration, so a per-page bound alone still summed past the
   limit — which loses the final run-status write and leaves the run row at `running`.
   Exhausting the run budget stops the invocation, records how many URLs went
-  unattempted in the run's `errors`, and reports `completed_with_errors`; the remaining
-  configurations keep their watermarks and run on the next schedule. A page that never
-  loaded is not counted toward `pages_scraped`, so a wholly failed run cannot read as an
-  empty healthy one.
+  unattempted in the run's `errors`, and reports `completed_with_errors`. Every
+  configuration then stays due for the next schedule: the ones never reached were never
+  written, and the truncated one has its watermark **held** — advancing it would mark a
+  configuration whose URLs went unattempted as having just run, and since the URL list
+  rebuilds in the same order, a persistently slow prefix would starve its own tail on
+  every invocation rather than retrying it. That retry re-walks the list from the start
+  rather than resuming. A page that never loaded is not counted toward `pages_scraped`,
+  so a wholly failed run cannot read as an empty healthy one.
 - At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
   write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
   limit. Enforced only on a list the write changes, so a pre-existing longer list keeps

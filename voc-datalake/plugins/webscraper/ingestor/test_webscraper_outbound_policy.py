@@ -40,6 +40,14 @@ REVERT MAP
 - Count an unfetched page toward `pages_scraped`, making an all-timeout run
   indistinguishable from an empty healthy one
   -> `a_run_whose_every_page_timed_out_does_not_report_a_clean_completion`.
+- Advance the watermark for a config the run budget truncated, so its unattempted
+  URLs are starved rather than retried
+  -> `a_truncated_config_keeps_its_watermark_so_it_stays_due`,
+  `the_run_budget_does_not_starve_a_stalling_configs_tail`,
+  `a_config_the_invocation_never_reached_records_nothing`.
+- Skip the watermark for every config instead of only the truncated one, so every
+  scraper runs on every invocation regardless of frequency
+  -> `a_config_that_finished_its_urls_records_its_run`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -362,7 +370,7 @@ class TestRunBoundsTheWholeInvocation:
     """
 
     @staticmethod
-    def _run_on_a_fake_clock(ingestor, configs, *, serve=None):
+    def _run_on_a_fake_clock(ingestor, configs, *, serve=None, watermarks=None):
         """
         Run `fetch_new_items` over `configs` with a stalling transport.
 
@@ -373,6 +381,9 @@ class TestRunBoundsTheWholeInvocation:
                 default for every URL) stalls: the host holds the connection for
                 the full timeout and then times out, which is the shape that makes
                 a per-page budget insufficient.
+            watermarks: optional dict the run's `set_watermark` calls are recorded
+                into, for the tests that assert which configs were marked as
+                having run. Absent, the writes are simply swallowed.
         """
         import requests
 
@@ -401,7 +412,14 @@ class TestRunBoundsTheWholeInvocation:
             patch.object(
                 ingestor, '_update_run_status', lambda _id, u: statuses.append(u)
             ),
-            patch.object(ingestor, 'set_watermark'),
+            patch.object(
+                ingestor,
+                'set_watermark',
+                lambda key, value: (
+                    watermarks.__setitem__(key, value)
+                    if watermarks is not None else None
+                ),
+            ),
         ):
             items = list(ingestor.fetch_new_items())
 
@@ -514,6 +532,124 @@ class TestRunBoundsTheWholeInvocation:
         assert statuses[-1]['status'] == 'completed'
         assert statuses[-1]['pages_scraped'] == 2
         assert statuses[-1]['errors'] == []
+
+    def test_a_truncated_config_keeps_its_watermark_so_it_stays_due(self, ingestor):
+        """
+        A config the run budget cut short must remain due for the next invocation.
+
+        `set_watermark` ran unconditionally after the URL loop, so a truncated
+        config was marked as having just run and then waited out its whole
+        `frequency_minutes`. Because `_get_urls_to_scrape` rebuilds the list in the
+        same order every time, the next invocation restarts at URL 0 too — so the
+        unattempted tail was not deferred, it was starved, on every invocation,
+        indefinitely. `starves` below measures that end to end.
+        """
+        watermarks: dict = {}
+
+        _spent, _items, statuses = self._run_on_a_fake_clock(
+            ingestor,
+            [{
+                **CSS_CONFIG,
+                'base_url': 'https://slow.example/reviews',
+                'pagination': {'enabled': True, 'max_pages': 10},
+            }],
+            watermarks=watermarks,
+        )
+
+        # It really was truncated — otherwise this asserts nothing.
+        assert any('Run budget' in e for e in statuses[-1]['errors'])
+        assert watermarks == {}, (
+            f'the truncated config was marked as having run: {watermarks}'
+        )
+
+    def test_the_run_budget_does_not_starve_a_stalling_configs_tail(self, ingestor):
+        """
+        The outcome the watermark guard buys, measured across TWO invocations.
+
+        20 stalling URLs followed by 10 healthy ones: the first invocation spends
+        its whole budget on the stalls and reaches none of the healthy pages. With
+        the watermark advanced, the config is not due again for
+        `frequency_minutes`, so the healthy tail is never reached at all. Holding
+        it leaves the config due, so the second invocation runs — and this asserts
+        it runs, which is the retry the comment at the `break` promises.
+        """
+        config = {
+            **CSS_CONFIG,
+            'frequency_minutes': 60,
+            'urls': (
+                [f'https://slow.example/{n}' for n in range(20)]
+                + [f'https://ok.example/{n}' for n in range(10)]
+            ),
+        }
+        watermarks: dict = {}
+
+        def serve(url):
+            return _response(200, text=REVIEW_HTML) if 'ok.example' in url else None
+
+        # A SCHEDULED run, which is the only mode `_should_run_scraper` gates.
+        ingestor.execution_id = None
+        ingestor.target_scraper_id = None
+        self._run_on_a_fake_clock(
+            ingestor, [config], serve=serve, watermarks=watermarks
+        )
+
+        # Whether the next scheduled invocation would run it at all.
+        with patch.object(
+            ingestor, 'get_watermark',
+            lambda key, default=None: watermarks.get(key, default),
+        ):
+            assert ingestor._should_run_scraper(config), (
+                'the truncated config is not due again, so its unattempted URLs '
+                'are starved rather than retried'
+            )
+
+    def test_a_config_that_finished_its_urls_records_its_run(self, ingestor):
+        """
+        Positive control. Skipping the watermark whenever anything went wrong would
+        satisfy the assertions above while making every scraper run on every
+        invocation regardless of its frequency — so a config that completed its
+        URLs must still record that it ran.
+        """
+        watermarks: dict = {}
+
+        _spent, items, statuses = self._run_on_a_fake_clock(
+            ingestor,
+            [{**CSS_CONFIG, 'urls': ['https://ok.example/a', 'https://ok.example/b']}],
+            serve=lambda _url: _response(200, text=REVIEW_HTML),
+            watermarks=watermarks,
+        )
+
+        assert len(items) == 2
+        assert statuses[-1]['status'] == 'completed'
+        assert list(watermarks) == ['scraper_s1_last_run'], (
+            f'a completed config did not record its run: {watermarks}'
+        )
+
+    def test_a_config_the_invocation_never_reached_records_nothing(self, ingestor):
+        """
+        The other route by which a config stays due, distinguished from the
+        truncated one because only this route is automatic: a config the run never
+        got to was never written at all.
+        """
+        watermarks: dict = {}
+
+        self._run_on_a_fake_clock(
+            ingestor,
+            [
+                {
+                    **CSS_CONFIG,
+                    'id': 'truncated',
+                    'base_url': 'https://slow.example/reviews',
+                    'pagination': {'enabled': True, 'max_pages': 10},
+                },
+                {**CSS_CONFIG, 'id': 'unreached', 'urls': ['https://ok.example/a']},
+            ],
+            watermarks=watermarks,
+        )
+
+        assert watermarks == {}, (
+            f'a config was marked as having run without completing: {watermarks}'
+        )
 
 
 class TestRunReportsABlockedUrl:

@@ -88,10 +88,18 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   several configurations rather than within one. The invocation now stops while there is
   still time to record stopping — how many URLs went unattempted is appended to the run's
   `errors` and the run reports `completed_with_errors` instead of a `completed` that would
-  hide the truncation — and configurations it did not reach keep their schedule for the next
-  run. Relatedly, a page whose fetch never returned a document no longer counts toward the
+  hide the truncation — and every configuration stays due for the next run. A configuration
+  the budget truncated keeps its watermark rather than advancing it: marking it as having run
+  left it waiting out its whole frequency, and because its URL list rebuilds in the same
+  order, the next run restarted at the first URL — so a persistently slow prefix starved its
+  own tail on every invocation instead of the skipped URLs being retried. Relatedly, a page
+  whose fetch never returned a document no longer counts toward the
   run's page total: a run in which every page timed out previously reported `completed`, no
   errors and a non-zero page count, which is indistinguishable from an empty healthy run.
+- A wall-clock fetch budget now bounds the retry backoff as well as the attempts. The backoff
+  sleep between attempts was taken in full and the budget only re-checked once it returned, so
+  a budget could be overrun by up to one backoff interval — enough to push the scraper's run
+  budget past its own limit intermittently.
 - A scraper configuration may name at most 50 URLs in its `urls` list. Each distinct host costs
   a DNS lookup inside the request that saves it, and both write routes answer through API
   Gateway's 29 second limit, so an unbounded list returned a timeout with nothing saved instead
