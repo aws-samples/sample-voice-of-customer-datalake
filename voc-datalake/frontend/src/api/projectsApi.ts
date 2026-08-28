@@ -118,6 +118,13 @@ export const projectsApi = {
       body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
     }),
 
+  // Keep this signature on ONE line, and keep `data` taking the shared type by name:
+  // test_doc_type_lockstep.py matches it as exact text, and requires EVERY declaration
+  // of generateDocument to take `GenerateDocumentBody`. That is a ratio rather than a
+  // substring search because a substring was satisfied by an unrelated occurrence —
+  // and by a decoy copy of this signature — while the real parameter was respelled as
+  // a structurally identical inline literal. The pin at the foot of this file cannot
+  // see that one either: an identical shape compares EQUAL (issue #381).
   generateDocument: (projectId: string, data: GenerateDocumentBody) =>
     fetchApi<{
       success: boolean;

@@ -509,6 +509,11 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
+  // Keep this signature on ONE line, and keep `data` taking the shared type by name:
+  // test_doc_type_lockstep.py matches it as exact text, and requires EVERY declaration
+  // of generateDocument to take `GenerateDocumentBody` (a ratio, because a mere
+  // substring search was satisfied by an unrelated occurrence while the real
+  // parameter was respelled inline — issue #381).
   generateDocument: (projectId: string, data: GenerateDocumentBody) =>
     import('./projectsApi').then(m => m.projectsApi.generateDocument(projectId, data)),
   // `output_type` is a DIFFERENT contract from `DocType`, not a copy that was
