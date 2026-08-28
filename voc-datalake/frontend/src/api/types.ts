@@ -448,17 +448,28 @@ export interface GenerateDocumentBody {
   response_language?: string
 }
 
-// 🔑 The pin that makes `GenerateDocumentBody.doc_type` REFERENCE `DocType` rather
-// than merely happen to list the same members today. Deleting this block compiles
-// cleanly, so `test_the_request_body_field_is_pinned_to_the_union` in
+// 🔑 The pin on `GenerateDocumentBody.doc_type`. What it guarantees, stated as the
+// property it actually checks: that field admits EXACTLY the members of `DocType`,
+// in both directions. Deleting this block compiles cleanly, so
+// `test_the_request_body_field_is_pinned_to_the_union` in
 // lambda/api/test/test_doc_type_lockstep.py keeps both declarations present.
 //
-// Why it is needed at all — measured, not assumed. Every other guard around this
-// contract stops one level further out:
+// ⚠️ It does NOT check that the field REFERENCES `DocType` — an earlier version of
+// this comment said it did, and that was measured to be the opposite of the truth.
+// `BothWays` is a structural comparison, so respelling the field `'prd' | 'prfaq'`
+// — the same members, no reference to the union at all — passes it (verified: `tsc`
+// exit 0, every lockstep test green). Set equality is the weaker property and it is
+// the SUFFICIENT one: a same-member respelling is harmless today, and if `DocType`
+// is later widened the stale field stops being equal to it and this line becomes a
+// TS2344. So the drift this contract cares about is still caught at the moment it
+// would be introduced; only the coincidence is tolerated, and never silently.
+//
+// Why the pin is needed at all — measured, not assumed. Every other guard around
+// this contract stops one level further out:
 //   * the lockstep test parses only the `export type DocType =` declaration above,
 //     so it cannot see this interface;
-//   * `satisfies GenerateDocumentBody` in `projectsApi.generateDocument` checks the
-//     built object against THIS interface, so a widened interface satisfies it by
+//   * `GenerateDocumentTakesTheSharedBody` in `projectsApi.ts` compares that
+//     method's PARAMETER to this interface, so a widened interface satisfies it by
 //     construction;
 //   * `noUnusedLocals` stays quiet, since `DocType` is still used by
 //     `ProjectDocument` below.
@@ -472,8 +483,8 @@ export interface GenerateDocumentBody {
 // drift this contract is about) would pass. Hence equality in both directions.
 // `[T] extends [U]` rather than `T extends U`: the bare form distributes over a
 // union, which would compare member-by-member and accept a subset.
-type BothWays<Field, Union> = [Field] extends [Union]
-  ? ([Union] extends [Field] ? true : false)
+export type BothWays<Left, Right> = [Left] extends [Right]
+  ? ([Right] extends [Left] ? true : false)
   : false
 type MustBeTrue<Verdict extends true> = Verdict
 type MustBeFalse<Verdict extends false> = Verdict

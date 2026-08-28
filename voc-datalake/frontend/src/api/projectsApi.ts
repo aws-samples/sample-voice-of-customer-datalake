@@ -6,8 +6,9 @@ import type {
   Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
   ProductContext, ProductDoc, ProductInterviewTurnResponse,
   // The document-generation request body; see its declaration for why it is a
-  // named type rather than an object literal spelled out here.
-  GenerateDocumentBody,
+  // named type rather than an object literal spelled out here. `BothWays` comes with
+  // it for the signature pin at the foot of this file.
+  GenerateDocumentBody, BothWays,
 } from './types'
 
 export const projectsApi = {
@@ -125,28 +126,11 @@ export const projectsApi = {
       message: string
     }>(`/projects/${projectId}/document`, {
       method: 'POST',
-      // 🔑 `satisfies` is load-bearing, not decoration. This method is the
-      // TERMINAL consumer of `data` — it is only spread into `JSON.stringify`, so
-      // the annotation above is compared against NOTHING and any widening of it
-      // type-checks. Naming the shared type is not enough either: an
-      // `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ... | 'onepager' }`
-      // respelling still USES the name while widening the field. This clause is
-      // what makes either a TS1360 here.
-      //
-      // It has to be ON THIS METHOD, not merely somewhere in this file:
-      // `test_the_terminal_client_pins_the_body_structurally` searches only the
-      // `generateDocument` slice, because a whole-file check was measured to pass
-      // with the clause moved to an unrelated helper and this method widened.
-      //
-      // So widening means editing `DocType` and `GENERATED_DOC_TYPES` together.
-      // Editing `GenerateDocumentBody.doc_type` instead is NOT a way round that —
-      // `DocTypeFieldIsExactlyTheUnion` in `./types` makes it a TS2344 — and this
-      // clause alone would not have stopped it, since it checks the built object
-      // against that interface (issue #381).
-      body: JSON.stringify({
-        ...getDateBasisBodyParams(),
-        ...(data satisfies GenerateDocumentBody),
-      }),
+      // `data` is only spread into the body — nothing here constrains its type. What
+      // stops the annotation above being widened is
+      // `GenerateDocumentTakesTheSharedBody` at the foot of this file; see there for
+      // why it is a type-level comparison and not a clause on this object (#381).
+      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
     }),
 
   mergeDocuments: (projectId: string, data: {
@@ -375,3 +359,47 @@ export const projectsApi = {
     return fetchApi<{ project: Record<string, unknown>; files: Array<{ path: string; content: string }> }>(path)
   },
 }
+
+// 🔑 The pin on `generateDocument`'s request-body parameter: it must admit EXACTLY
+// `GenerateDocumentBody`, in both directions. `test_doc_type_lockstep.py` keeps this
+// block present, since deleting it compiles cleanly.
+//
+// Needed because this method is the TERMINAL consumer of `data` — it is only spread
+// into `JSON.stringify`, so the annotation is compared against nothing and any
+// widening of it type-checks on its own. Measured, both spellings:
+//   * `data: { doc_type: 'prd' | 'prfaq' | 'onepager', ... }` — the plain respelling;
+//   * `data: Omit<GenerateDocumentBody, 'doc_type'>
+//        & { doc_type: GenerateDocumentBody['doc_type'] | 'onepager' }` — which USES
+//     the shared name, so neither `noUnusedLocals` nor a text check for the name sees
+//     it.
+// Both exited `tsc` 0 and sent a value the route 400s.
+//
+// ⚠️ This replaced a `satisfies GenerateDocumentBody` clause inside the method body,
+// which was equivalent for the compiler but had to be pinned BY LOCATION from
+// Python: a whole-file text check passed with the clause moved to an unrelated
+// helper, and narrowing the search to the slice before the next method still passed
+// with the clause in a NEW method inserted into that slice — measured, `tsc` exit 0
+// and every lockstep test green while the axis was reopened. A comparison against
+// the method's own type has no location to migrate to, so the text guard, its two
+// method-name markers and their ordering assumption all went with it.
+//
+// `Parameters<...>[1]` reads the parameter off the declaration rather than restating
+// it, so this cannot drift from the signature it pins. Equality in both directions
+// for the same reason as `DocTypeFieldIsExactlyTheUnion`: a one-way `extends` passes
+// on a NARROWED parameter, which is the "capability nobody can reach" half of this
+// contract's drift.
+type SignatureMustMatch<Verdict extends true> = Verdict
+export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<
+  BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody>
+>
+// The non-vacuity control, in the convention the lockstep tests use for their own:
+// `SignatureMustMatch<BothWays<...>>` is also satisfied by a `BothWays` that
+// degenerates to `true`, which would report success while comparing nothing. A body
+// with one extra member must therefore NOT compare equal.
+type SignatureMustDiffer<Verdict extends false> = Verdict
+export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustDiffer<
+  BothWays<
+    Parameters<typeof projectsApi.generateDocument>[1],
+    GenerateDocumentBody & { not_in_the_body: true }
+  >
+>
