@@ -130,6 +130,15 @@ export function RowStaleBadge({ lineage }: { readonly lineage: RowLineage }): Re
  * ORDINARY TEXT, not a live region: it describes the row it renders in and
  * changes only when the row does, which is the same treatment
  * `composition.locked` gets one panel over.
+ *
+ * THE BUTTON IS NAMED BY INTERPOLATION, never restated in prose. The sentence's
+ * whole value is that it points at a control the reader can see, so the label has
+ * to be the one that control renders — `composition.addRow`, the same key
+ * `RowCompositionPanel` reads — rather than eight independent copies of it that a
+ * relabel or a translation pass silently desynchronises. Not hypothetical: spelled
+ * out per locale, zh already said 新增行 while the button said 添加行. Each catalogue
+ * keeps its own quotation marks AROUND the placeholder (`„…“`, `« … »`, `「…」`,
+ * `“…”`), which is why this interpolates rather than concatenating.
  */
 export function RowLineageNote({ lineage }: { readonly lineage: RowLineage }): ReactElement {
   const { t } = useTranslation('prioritization')
@@ -146,7 +155,7 @@ export function RowLineageNote({ lineage }: { readonly lineage: RowLineage }): R
       {lineage.stale ? (
         <p className="flex items-start gap-1.5 text-xs text-orange-800">
           <History size={14} className="mt-0.5 flex-shrink-0 text-orange-600" aria-hidden="true" />
-          {t('lineage.staleAction')}
+          {t('lineage.staleAction', { action: t('composition.addRow') })}
         </p>
       ) : null}
     </div>

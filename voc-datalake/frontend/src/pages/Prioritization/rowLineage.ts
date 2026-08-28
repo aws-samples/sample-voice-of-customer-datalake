@@ -107,9 +107,20 @@ const NO_IDS: readonly string[] = []
  * One document reduced to what a generation check reads off it.
  *
  * `type` and `createdAt` may be '' — `displayString` collapses absent, null and
- * wrong-typed into one value — and both rules below require a non-empty value
- * before they act, so an unreadable field withholds a judgement instead of
- * inventing one.
+ * wrong-typed into one value — and EVERY RULE THAT WOULD ACT ON THE FIELD
+ * requires a non-empty value first, so an unreadable field withholds a judgement
+ * instead of inventing one. Both halves of that are load-bearing and both are
+ * spelled out where they are enforced, because '' is not a neutral value here:
+ *
+ *  * an unreadable `type` is skipped by `repeatsAType`, is not compared against a
+ *    source's type in `hasSupersededSource`, and withholds staleness altogether
+ *    in `fresherCoherentSelection` — a type nobody can read states no expectation
+ *    about what belongs beside it;
+ *  * an unreadable `createdAt` LOSES every comparison (it is the smallest string,
+ *    and parses as no instant), so ranking one would report a row superseded by an
+ *    arbitrarily older document. `fresherCoherentSelection` therefore withholds
+ *    staleness rather than ranking it — see its own docstring, which records the
+ *    one place a date-less document is still ignored rather than decisive.
  */
 interface SelectedDocument {
   readonly id: string
@@ -196,6 +207,17 @@ function repeatsAType(selected: readonly SelectedDocument[]): boolean {
  * — `Set<string>.has` refuses `string | null`, so dropping it does not compile —
  * which is why `rowLineage.test.ts` covers the deleted-source OUTCOME instead of
  * claiming to catch the check going missing.
+ *
+ * AN UNREADABLE TYPE IS NOT A TYPE, on both sides of the comparison, and `null` is
+ * not the only spelling of one. A source that DID resolve to a document whose
+ * `document_type` could not be read comes back as '' rather than null
+ * (`sourceFieldIndex` runs it through `displayString`), and a held document whose
+ * type could not be read carries '' too — so an unfiltered `otherTypes` matches ''
+ * against '' and declares a crossing between two documents neither of which was
+ * shown to be of the same kind. Type-less held documents are therefore dropped
+ * from `otherTypes`, which is the same reading `repeatsAType` takes when it skips
+ * them and `fresherCoherentSelection` takes when it withholds staleness for one:
+ * an unreadable field decides nothing anywhere in this module.
  */
 function hasSupersededSource(
   selection: readonly unknown[],
@@ -206,9 +228,13 @@ function hasSupersededSource(
   return selection.some((raw) => {
     const entry = selectionEntry(raw)
     if (entry === null) return false
-    // The types held by the OTHER documents of this row — see the docstring.
+    // The READABLE types held by the OTHER documents of this row — see the
+    // docstring for both halves: why it is the other documents, and why '' is
+    // excluded rather than treated as a type that two documents can share.
     const otherTypes = new Set(
-      selected.filter((held) => held.id !== entry.id).map((held) => held.type),
+      selected
+        .filter((held) => held.id !== entry.id && held.type !== '')
+        .map((held) => held.type),
     )
     return resolveDerivation(raw, projectDocuments).sources.some((source) => (
       !selectedIds.has(source.document_id)
@@ -303,6 +329,15 @@ export function classifySelectionLineage(
  * then answer "fresher" for whichever way round the array happened to be, and a
  * frozen row would read as stale or current depending on the order a read
  * returned its documents in.
+ *
+ * NO DECISION RESTS ON AN UNREADABLE TIMESTAMP. '' is the smallest string, so a
+ * date-less document ranks below every dated one — INCLUDING far older ones — and
+ * a "fresher" answer resting on that would read "superseded by a document from
+ * 2020". `fresherCoherentSelection` therefore refuses the comparison before making
+ * it, on the row's documents and on the candidate both (`hasUnreadableTimestamp`).
+ * `newestOfType` still ranks a date-less project document, which is the one safe
+ * use: last within its type, so it can only be chosen when the project holds
+ * nothing else of that type — and that candidate is then refused too.
  */
 function rankOf(document: SelectedDocument): readonly [string, string] {
   return [document.createdAt, document.id]
@@ -312,6 +347,36 @@ function rankOf(document: SelectedDocument): readonly [string, string] {
 function isNewer(a: readonly [string, string], b: readonly [string, string]): boolean {
   if (a[0] !== b[0]) return a[0] > b[0]
   return a[1] > b[1]
+}
+
+/**
+ * Does any of these documents carry a timestamp nobody can read?
+ *
+ * The staleness gate for `createdAt`, exactly parallel to the type gate beside it,
+ * and for a sharper reason: '' does not merely fail to state an expectation, it
+ * states the WRONG one. `displayString` collapses absent, null and non-string into
+ * '', which loses every lexicographic comparison in `isNewer`, so a held document
+ * with an unreadable timestamp is ranked below every dated document of its type —
+ * and the row is then told its evidence was superseded by whichever document the
+ * project happens to hold, however old. A 2020 document "superseding" a row is not
+ * a near-miss; it is advice to go and score older evidence.
+ *
+ * There IS a precedent for "no timestamp sorts oldest" — `_default_row_composition`
+ * in projects_handler.py records that reasoning — but it picks a default composition
+ * there, where being wrong costs a reviewer one un-tick. Here the same guess drives
+ * a sentence asking somebody to create a row and re-score a proposal, so the
+ * asymmetry argues the other way and this withholds instead.
+ *
+ * Asked of the row's OWN documents and of the candidate that would be advised —
+ * both sides of the comparison, because either being unreadable makes the answer a
+ * guess. NOT asked of every project document: a date-less document that is not
+ * chosen as the newest of its type simply loses to a dated sibling, which withholds
+ * an advisory rather than inventing one, and letting one unreadable record anywhere
+ * in a project silence every row's staleness would trade this defect for a quieter
+ * one.
+ */
+function hasUnreadableTimestamp(documents: readonly SelectedDocument[]): boolean {
+  return documents.some((entry) => entry.createdAt === '')
 }
 
 /** The project's newest document of one type, or null when it holds none. */
@@ -341,7 +406,7 @@ function newestOfType(
  * That is the missing-optional-document boundary, decided here rather than left
  * to the caller.
  *
- * FOUR CONDITIONS, every one of which can withhold staleness, because the
+ * FIVE CONDITIONS, every one of which can withhold staleness, because the
  * sentence this drives asks a reviewer to create a row:
  *
  *  * the selection must name one READABLE type per document — a row already
@@ -351,6 +416,12 @@ function newestOfType(
  *    document whose type cannot be read has no expectation to state at all:
  *    grouping such documents under '' would make one project document answer
  *    for two of the row's, which is the same trap `repeatsAType` skips;
+ *  * every document being COMPARED must carry a readable `created_at`, on the
+ *    row's side and on the candidate's — an unreadable one loses every
+ *    comparison and would have the row superseded by an arbitrarily older
+ *    document. See `hasUnreadableTimestamp`, which is where the asymmetry
+ *    between "guess wrong about a default" and "guess wrong in an advisory" is
+ *    argued;
  *  * every type must still resolve to a document of the project, so a candidate
  *    is a set of documents that exist rather than of ids;
  *  * the candidate must be STRICTLY NEWER — at least one type answering a newer
@@ -375,6 +446,11 @@ export function fresherCoherentSelection(
   // newest type-less record for it, which is a comparison between two documents
   // neither of which was shown to be of the same kind.
   if (selected.some((held) => held.type === '')) return null
+  // A timestamp nobody can read states the WRONG expectation rather than none: ''
+  // loses every comparison, so ranking it would report this row superseded by
+  // whatever the project holds, however old. Asked of the row's own documents
+  // before any candidate is formed — see `hasUnreadableTimestamp`.
+  if (hasUnreadableTimestamp(selected)) return null
   // Records, not entries, because the coherence check below reads each candidate's
   // own derivation — which only the wire record carries.
   const byId = new Map<string, unknown>()
@@ -386,6 +462,11 @@ export function fresherCoherentSelection(
   const candidate = selected.map((held) => newestOfType(available, held.type))
   if (candidate.some((entry) => entry === null)) return null
   const chosen = candidate.flatMap((entry) => (entry === null ? [] : [entry]))
+  // NO SECOND GATE FOR THE CANDIDATE'S timestamps, and that is a proof rather than an
+  // omission: the row's own are readable by the check above, so a candidate whose
+  // `createdAt` is '' loses `isNewer` against the document the row holds of that type
+  // and `regressed` below returns null. A gate here would be a branch no input can
+  // reach, which is worse than the sentence explaining why.
   // STRICTLY NEWER, which is also what answers the commonest case — a frozen row
   // already holding the newest of each type. That row's candidate IS its own
   // selection, so nothing is newer and `fresher` is false; an `every(id === id)`

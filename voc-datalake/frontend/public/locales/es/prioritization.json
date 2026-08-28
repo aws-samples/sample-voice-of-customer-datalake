@@ -107,8 +107,8 @@
     "crossGeneration": "Cruza generaciones",
     "repeatedTypeReason": "Esta fila contiene más de una versión del mismo tipo de documento, así que una papeleta cubre dos generaciones a la vez. Se puede puntuar igualmente: añada una fila si quiere una sola generación por separado.",
     "stale": "Superada",
-    "staleAction": "Esta fila está bloqueada, por lo que sus documentos y sus papeletas quedan tal como están. Use «Añadir fila» para puntuar la combinación más reciente.",
-    "staleReason": "Existe una versión más reciente de cada tipo de documento de esta fila, y esos documentos más recientes forman una combinación coherente.",
+    "staleAction": "Esta fila está bloqueada, por lo que sus documentos y sus papeletas quedan tal como están. Use «{{action}}» para puntuar la combinación más reciente.",
+    "staleReason": "Existe una versión más reciente de al menos un tipo de documento de esta fila. Los documentos más recientes de cada tipo que la fila contiene forman una combinación coherente, y ningún documento de la fila es más reciente que esa combinación.",
     "supersededSourceReason": "Uno de estos documentos se creó a partir de una versión anterior de otro documento de esta fila, así que la combinación cruza generaciones. Se puede puntuar igualmente."
   },
   "loading": "Cargando documentos...",

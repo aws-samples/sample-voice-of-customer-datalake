@@ -16,6 +16,8 @@
  *    decides nothing";
  *  * its "OTHER documents" narrowing widened to every selected document → "a
  *    single document built from an earlier one of its own type is coherent";
+ *  * its `held.type !== ''` exclusion from `otherTypes` dropped → "an unreadable
+ *    source type does not cross with an unreadable held type";
  *  * `recordsNoLineage` changed from `every` to `some` → "one document recording
  *    its inputs is lineage the row can be judged on";
  *  * `recordsNoLineage` deleted → "documents that record nothing read as absent,
@@ -33,6 +35,11 @@
  *    stale" (the missing-optional-document boundary);
  *  * the `rankOf` id tie-break deleted → "documents sharing a timestamp compare by
  *    id, in both array orders";
+ *  * the `hasUnreadableTimestamp` gate deleted → "a held document with no readable
+ *    created_at withholds staleness" (which is what stops '' — the smallest string
+ *    — reading as older than every dated document in the project);
+ *  * `fresher` narrowed from `some` to `every` → "only ONE of its types has a newer
+ *    version" (the case `lineage.staleReason`'s wording answers to);
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
  *    nothing".
  *
@@ -281,6 +288,28 @@ describe('a selection of documents reads as coherent, crossing generations, or u
 
     expect(classifySelectionLineage([a, b], [a, b]).state).toBe('coherent')
   })
+
+  it('does not cross an unreadable source type with an unreadable held type', () => {
+    // '' is not a type, on EITHER side of the comparison, and `null` is not its only
+    // spelling: a source that resolved to a document whose `document_type` could not
+    // be read comes back as '' (`sourceFieldIndex` runs it through `displayString`),
+    // so an unfiltered `otherTypes` matches '' against '' and declares a crossing
+    // between two documents neither of which was shown to be of the same kind — the
+    // trap `repeatsAType` skips and the staleness gate withholds for.
+    const typelessHeld = doc('x', '', '2025-01-01', builtFromFeedback)
+    const typelessSource = doc('s', '', '2024-01-01', builtFromFeedback)
+    const prd = doc('y', 'prd', '2025-02-01', builtFrom('s'))
+    const project = [typelessHeld, typelessSource, prd]
+
+    expect(classifySelectionLineage([typelessHeld, prd], project).state).toBe('coherent')
+    // The positive control: the same shape with the SOURCE's type readable, and a held
+    // document of that type, does report the crossing — so the case above is the ''
+    // exclusion and not `hasSupersededSource` having stopped working.
+    const readableSource = doc('s', 'prfaq', '2024-01-01', builtFromFeedback)
+    const heldPrfaq = doc('x', 'prfaq', '2025-01-01', builtFromFeedback)
+    expect(classifySelectionLineage([heldPrfaq, prd], [heldPrfaq, readableSource, prd]))
+      .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+  })
 })
 
 describe('a frozen row is stale only when a real fresher coherent combination exists', () => {
@@ -304,6 +333,20 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // superseded row that is internally consistent says so rather than being
     // relabelled as incoherent.
     expect(lineage.state).toBe('coherent')
+  })
+
+  it('marks a row stale when only ONE of its types has a newer version', () => {
+    // What the rule actually decides, and what `lineage.staleReason` therefore has to
+    // say: `fresher` is `some`, not `every`, so a row whose PRD gained a v2 while its
+    // PR/FAQ did not IS stale — and the combination advised carries the row's own
+    // unchanged PR/FAQ id, because "the newest of each type" answers that type with
+    // the document the row already holds. A reviewer who opens this row sees the same
+    // PR/FAQ they scored, so copy claiming every type is newer reads as a bug in the
+    // badge.
+    const lineage = rowLineageOf(frozenRow([prd1, prfaq1]), [prd1, prfaq1, prd2])
+
+    expect(lineage.stale).toBe(true)
+    expect(lineage.fresherDocumentIds).toEqual(['prd_2', 'prfaq_1'])
   })
 
   it('leaves a frozen row holding the newest of each type current', () => {
@@ -415,6 +458,33 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const otherTypeless = doc('other_mystery', '', '2025-06-01', builtFromFeedback)
 
     expect(fresherCoherentSelection([typeless], [typeless, otherTypeless, prd2])).toBeNull()
+  })
+
+  it('withholds staleness when a held document has no readable created_at', () => {
+    // '' loses every lexicographic comparison, so a date-less held document ranks
+    // below every DATED document of its type — including much older ones. Ranked
+    // rather than refused, this row is told its evidence was superseded by a document
+    // from 2020 and its reviewer is sent to re-score against it. An unreadable field
+    // decides nothing here, exactly as it decides nothing about type.
+    const dateless = doc('nd', 'prd', '', builtFromFeedback)
+    const ancient = doc('old_prd', 'prd', '2020-01-01', builtFromFeedback)
+
+    expect(fresherCoherentSelection([dateless], [dateless, ancient])).toBeNull()
+    expect(rowLineageOf(frozenRow([dateless]), [dateless, ancient]).stale).toBe(false)
+    // The positive control, in two halves. Once the row's own timestamp is readable
+    // and genuinely older, the same shape IS stale — so the case above is the gate and
+    // not staleness failing to fire.
+    const dated = doc('nd', 'prd', '2019-01-01', builtFromFeedback)
+    expect(fresherCoherentSelection([dated], [dated, ancient])).toEqual(['old_prd'])
+    // The candidate's side needs no gate of its own, and this is the case that shows
+    // why: a date-less project document can still be the newest of its type
+    // (`newestOfType` ranks it last, so it wins only a type nothing else answers), and
+    // it then LOSES `isNewer` against the row's readable timestamp — so `regressed`
+    // already withholds. A second gate there would be unreachable, which is why
+    // `fresherCoherentSelection` argues the point in a comment instead of adding one.
+    const datelessPrfaq = doc('nd_prfaq', 'prfaq', '', builtFromFeedback)
+    expect(fresherCoherentSelection([prd1, prfaq1], [prd1, prd2, datelessPrfaq]))
+      .toBeNull()
   })
 
   it('withholds staleness when the project read has not landed', () => {

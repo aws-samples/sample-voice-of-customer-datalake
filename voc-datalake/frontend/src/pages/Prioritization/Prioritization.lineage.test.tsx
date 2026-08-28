@@ -22,6 +22,9 @@
  *    documents were superseded says so" and "a current frozen row does not";
  *  * `<RowLineageNote>`'s stale sentence removed → "a stale row names Add row as
  *    the action";
+ *  * the `{ action: t('composition.addRow') }` interpolation dropped from that
+ *    sentence → the same case, which reads the label off the rendered BUTTON rather
+ *    than off a second copy of it in the catalogue;
  *  * anything that gated a control on lineage → "every lineage state stays
  *    scorable and keeps its composition controls", and the stale case's assertion
  *    that the frozen row's document badges are unchanged;
@@ -195,6 +198,19 @@ function escapeForName(title: string): string {
 
 const t = (key: string) => i18n.t(key, { ns: 'prioritization' })
 
+/**
+ * The stale sentence as the note renders it — the Add-row label interpolated.
+ *
+ * A helper rather than a literal in each case, because the two absence cases below
+ * must look for the SAME string the presence case finds: an `{{action}}` left
+ * uninterpolated would make "the sentence is not here" trivially true and both
+ * negative cases vacuous.
+ */
+const staleAction = (): string => i18n.t('lineage.staleAction', {
+  ns: 'prioritization',
+  action: t('composition.addRow'),
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockGetProjects.mockResolvedValue({ projects: [project] })
@@ -320,10 +336,21 @@ describe('a frozen row whose project has moved on', () => {
 
     await openTheRow()
 
-    // The advice, next to the control it names.
-    expect(within(screen.getByTestId('row-lineage-note')).getByText(t('lineage.staleAction')))
-      .toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Add row/ })).toBeEnabled()
+    // The advice, next to the control it names — and naming it with the label that
+    // control actually renders. `composition.addRow` is interpolated rather than
+    // restated per locale, so the sentence and the button cannot drift apart the way
+    // zh's copy already had.
+    const addRow = screen.getByRole('button', { name: /Add row/ })
+    const action = staleAction()
+    const note = within(screen.getByTestId('row-lineage-note'))
+    expect(note.getByText(action)).toBeInTheDocument()
+    // Not merely "the string i18next produced": the label the sentence names is read
+    // off the rendered BUTTON, so a sentence pointing at a control by some other name
+    // fails here. Non-vacuous — the button's name is non-empty and the raw key would
+    // not contain it.
+    expect(addRow.textContent?.trim()).toBeTruthy()
+    expect(note.getByText(action)).toHaveTextContent(addRow.textContent?.trim() ?? '')
+    expect(addRow).toBeEnabled()
     // The frozen row is UNCHANGED: it still shows the documents its ballots were cast
     // on, not the fresher ones, and it says why its composition is locked. Silently
     // re-pointing it is the defect the row model exists to prevent.
@@ -350,7 +377,7 @@ describe('a frozen row whose project has moved on', () => {
     await screen.findByTestId('row-lineage')
 
     expect(screen.queryByTestId('row-stale')).toBeNull()
-    expect(screen.queryByText(t('lineage.staleAction'))).toBeNull()
+    expect(screen.queryByText(staleAction())).toBeNull()
   })
 
   it('says nothing of the sort for an UN-frozen row, which can simply be edited', async () => {
@@ -362,7 +389,7 @@ describe('a frozen row whose project has moved on', () => {
     await openTheRow()
 
     expect(screen.queryByTestId('row-stale')).toBeNull()
-    expect(screen.queryByText(t('lineage.staleAction'))).toBeNull()
+    expect(screen.queryByText(staleAction())).toBeNull()
     // The control that makes "add a row" the wrong advice here.
     expect(screen.getByRole('button', { name: /Edit documents/ })).toBeInTheDocument()
   })
