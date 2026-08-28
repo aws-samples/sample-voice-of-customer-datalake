@@ -157,8 +157,18 @@ FORM_ID_LENGTH = 8
 #
 # No whitespace either, and that is a choice rather than an oversight: see
 # `_validated_form_id`.
+#
+# `\Z` rather than `$`, and that ONE character is load-bearing: Python's `$` also
+# matches immediately before a trailing newline, so `$` with `.match` accepted
+# `'deadbeef\n'` — the single whitespace character this pattern is supposed to
+# exclude, arriving by the one route the character class does not police. It also
+# made the length cap bound the MATCHED PREFIX rather than the id, so
+# `'a' * FORM_ID_MAX_LENGTH + '\n'` was admitted at 65 characters. `\Z` matches
+# only at the very end of the string, so the cap and the character class both mean
+# what they say. `test_a_trailing_newline_is_not_a_valid_form_id` is what fails if
+# it goes back.
 FORM_ID_MAX_LENGTH = 64
-_FORM_ID_PATTERN = re.compile(rf'^[0-9A-Za-z_-]{{1,{FORM_ID_MAX_LENGTH}}}$')
+_FORM_ID_PATTERN = re.compile(rf'^[0-9A-Za-z_-]{{1,{FORM_ID_MAX_LENGTH}}}\Z')
 
 
 def _minted_form_id() -> str:
@@ -881,6 +891,28 @@ def _js_value(value: Any) -> str:
 # and the directive has no fallback to `default-src`, so leaving it out is how
 # "any site may embed this" is spelled. Adding it, or an X-Frame-Options header,
 # would break every embed.
+#
+# The other two headers are conventional, but each is here for a reason specific to
+# THIS response rather than as boilerplate:
+#
+# `nosniff` matters more here than it would anywhere else in this API, because this
+# is the only `text/html` it serves. Everything else is JSON, so this is the one
+# response whose whole purpose is to be parsed as a document on the API's own
+# origin — exactly the case where letting a browser decide the type for itself has
+# something to get wrong.
+#
+# `no-referrer` is the one with a PRODUCT consequence, and it is the one worth
+# recording so a future reader does not read it as data the product wanted and lost.
+# The page is framed on a customer's site, so without it the `Referer` on the
+# widget's own two fetches would carry the customer's page URL into this API's
+# access logs. Note the widget already sends `page_url: window.location.href` in
+# the submit body ON PURPOSE — so this is not withholding the URL from the product,
+# which receives it as a field it chose. It keeps it out of a log nobody asked to
+# collect it in.
+#
+# Both are pinned by `test_the_response_carries_the_two_headers_the_csp_does_not`:
+# `test_the_policy_names_every_directive_the_page_needs_and_no_wildcard` reads the
+# policy BY KEY and so would not notice either being removed or renamed.
 _IFRAME_SECURITY_HEADERS = {
     'Content-Security-Policy': (
         "default-src 'none'; "

@@ -2592,6 +2592,55 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
             os.environ['ALLOWED_ORIGIN']
         ]
 
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_response_carries_the_two_headers_the_csp_does_not(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """`nosniff` and `no-referrer`, which nothing else in this suite reads.
+
+        The CSP is pinned in both directions by the case below, but that case reads
+        `_IFRAME_SECURITY_HEADERS['Content-Security-Policy']` BY KEY — so it sees no
+        other entry in the dict, and deleting either of the other two headers left
+        the whole suite green.
+
+        Asserted as the WHOLE key set rather than as two `in` checks, so a header
+        added later has to be argued for here and in the comment above the dict
+        together — which is the convention the CSP already follows.
+
+        Read off the rendered response rather than off the constant, because the
+        constant being right is only half of it: `get_form_iframe` passes
+        `headers=dict(_IFRAME_SECURITY_HEADERS)`, and a `Response` that dropped them
+        or a resolver that overwrote them would leave the dict itself untouched.
+        """
+        mock_table.get_item.return_value = {'Item': {'form_id': 'deadbeef'}}
+
+        headers = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, 'deadbeef'), lambda_context
+        )['multiValueHeaders']
+
+        assert set(feedback_form_handler._IFRAME_SECURITY_HEADERS) == {
+            'Content-Security-Policy',
+            'X-Content-Type-Options',
+            'Referrer-Policy',
+        }, (
+            'a header was added to or removed from _IFRAME_SECURITY_HEADERS. A '
+            'REMOVAL of X-Content-Type-Options or Referrer-Policy is otherwise '
+            'silent — the CSP case reads the policy by key and sees no other '
+            'entry — and an ADDITION needs its reason recorded in the comment '
+            'above the dict, as the CSP and these two both are.'
+        )
+
+        # nosniff, because this is the only text/html in an otherwise all-JSON API:
+        # the one response a browser would otherwise be free to type for itself,
+        # and the one whose point is to be parsed as a document on this origin.
+        assert headers['X-Content-Type-Options'] == ['nosniff']
+        # no-referrer, because the page is framed on a customer's site, so the
+        # Referer on the widget's own fetches would put the customer's page URL in
+        # this API's access logs. The submit body carries `page_url` deliberately,
+        # so the product is not losing the URL — a log is just not where it was
+        # asked for.
+        assert headers['Referrer-Policy'] == ['no-referrer']
+
     def test_the_policy_names_every_directive_the_page_needs_and_no_wildcard(
         self, feedback_form_handler
     ):
@@ -3406,7 +3455,69 @@ def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
 # cannot be one of ours costs a Comprehend, Translate and Bedrock invocation
 # downstream. A call on any of these is what "keys on it" means below, and the
 # first one is the deadline the validation has to beat.
-_FORM_ID_SINKS = frozenset({'aggregates_table', 'feedback_table', 'sqs'})
+#
+# `dynamodb` is here for a different reason than the other three: no route calls
+# it today, but `dynamodb.Table(AGGREGATES_TABLE).get_item(...)` is the spelling
+# the module DEMONSTRATES at module scope (line ~40), so it is the one a route
+# needing a different table would copy — and a resource handle obtained inline is
+# a read just as much as one bound at import. Only module-level uses exist now,
+# which is why adding it costs nothing and closes the shape before it appears.
+_FORM_ID_SINKS = frozenset({
+    'aggregates_table', 'feedback_table', 'sqs', 'dynamodb',
+})
+
+
+def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
+    """Positions of every call in `function` that reaches a form id into a sink.
+
+    Matched on the CALLEE CHAIN rather than on `<sink>.<method>` alone, which is
+    what an earlier version of this derivation did — and it recognised a read only
+    when spelled `aggregates_table.get_item(...)` literally. Two shapes therefore
+    reported as bounded while reading before validating, and the failure mode was
+    SILENCE rather than a wrong answer: no sink found makes `sink_positions` empty,
+    and `all(...)` over an empty list is vacuously True.
+
+    - `table = aggregates_table` then `table.get_item(...)`. Locally bound sinks
+      are tracked below for this one.
+    - `dynamodb.Table(AGGREGATES_TABLE).get_item(...)`, where the sink name sits
+      further down the chain than `call.func.value`. Walking the whole callee
+      subtree is what catches it, and it is the more plausible of the two because
+      the module itself demonstrates that spelling.
+
+    Both are controls in `TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes`.
+
+    Aliases are collected from the function's TOP LEVEL, in source order, and only
+    from a plain `name = <expression mentioning a sink>`. A conditionally bound
+    alias is not tracked, deliberately: this derivation errs toward calling
+    something a sink, and the cost of a false positive is a route author being made
+    to say why — whereas a false negative is a read nobody reports.
+    """
+    aliases: set[str] = set()
+
+    def _mentions_a_sink(node: ast.AST) -> bool:
+        return any(
+            isinstance(child, ast.Name)
+            and (child.id in _FORM_ID_SINKS or child.id in aliases)
+            for child in ast.walk(node)
+        )
+
+    for statement in function.body:
+        if not isinstance(statement, ast.Assign):
+            continue
+        if not _mentions_a_sink(statement.value):
+            continue
+        aliases |= {
+            target.id for target in statement.targets
+            if isinstance(target, ast.Name)
+        }
+
+    return [
+        (call.lineno, call.col_offset)
+        for call in ast.walk(function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and _mentions_a_sink(call.func)
+    ]
 
 
 def _refused_names(function: ast.FunctionDef) -> dict[str, tuple[int, int]]:
@@ -3537,14 +3648,7 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     if validated_at is None:
         return False
 
-    sink_positions = [
-        (call.lineno, call.col_offset)
-        for call in ast.walk(function)
-        if isinstance(call, ast.Call)
-        and isinstance(call.func, ast.Attribute)
-        and isinstance(call.func.value, ast.Name)
-        and call.func.value.id in _FORM_ID_SINKS
-    ]
+    sink_positions = _sink_call_positions(function)
     # No sink is not a pass by default: #379 was a route that touched no AWS
     # service at all and still put the id in its response, so a route that keys on
     # nothing yet takes an id out of the URL still has to establish the bound.
@@ -3760,6 +3864,77 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'running on every path is'
         )
 
+    def test_the_derivation_refuses_a_read_through_a_local_alias(self):
+        """The SINK side of the derivation, where the previous rounds' fixes did
+        not reach.
+
+        Every control above moves the validation relative to a sink spelled
+        `aggregates_table.get_item(...)`. This leaves the validation alone and
+        changes how the READ is spelled: bind the table to a local name first, and a
+        selector matching only `<sink>.<method>` stops recognising it.
+
+        The failure mode is what makes this worth a case rather than a note — it is
+        SILENCE, not a wrong answer. `sink_positions` comes back empty, and
+        `all(validated_at < sink for sink in [])` is vacuously True, so a route
+        reading before validating is reported as bounded. A derivation that reports
+        "fine" when it understood nothing is worse than no derivation, because the
+        docstring above it is then trusted.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/aliased-read")
+            def get_aliased_read(form_id: str):
+                table = aggregates_table
+                item = table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return item
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_aliased_read'), (
+            'a read through a local alias of a sink was not recognised as a read, '
+            'so the route was reported as bounded on an EMPTY sink list — '
+            'vacuously, which is the silent failure this control exists for'
+        )
+
+    def test_the_derivation_refuses_a_read_through_a_freshly_built_table(self):
+        """The same sink-side gap, in the spelling the module itself demonstrates.
+
+        `dynamodb.Table(AGGREGATES_TABLE).get_item(...)` puts the sink name deeper
+        in the callee chain than `call.func.value`, so a selector looking only at
+        the attribute's immediate owner sees no sink and `sink_positions` is empty —
+        vacuously True again.
+
+        This is the more plausible of the two shapes, and that is the whole argument
+        for the case: the module binds its tables exactly this way at module scope,
+        so a route that needs a different table has a working example of the
+        spelling in front of it. Nothing in the module does it inside a function
+        today, which is precisely when to close the shape — before the first one.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/fresh-table")
+            def get_fresh_table(form_id: str):
+                item = dynamodb.Table(AGGREGATES_TABLE).get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return item
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_fresh_table'), (
+            'a read through dynamodb.Table(...) built inline was not recognised '
+            'as a read — the sink name sits further down the callee chain, and '
+            'this is the spelling the module demonstrates at module scope'
+        )
+
     def test_the_derivation_refuses_a_validator_whose_result_is_discarded(self):
         """The shape that has NO bound while looking exactly like one.
 
@@ -3927,6 +4102,48 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'normalized return splits the key a route reads from the '
                 'source_channel it filters on'
             )
+
+    def test_a_trailing_newline_is_not_a_valid_form_id(
+        self, feedback_form_handler
+    ):
+        """`$` matches before a final newline; `\\Z` is why this now refuses.
+
+        The one whitespace character the character class did not actually exclude.
+        `re`'s `$` also matches immediately BEFORE a trailing newline, so
+        `_FORM_ID_PATTERN.match('deadbeef\\n')` succeeded and the validator returned
+        the newline-bearing string — while the pattern's own comment says "No
+        whitespace either, and that is a choice rather than an oversight" and
+        `test_an_id_padded_with_whitespace_is_not_an_alias_for_the_id` pins only the
+        LEADING-space case. So the single character that got through was precisely
+        the one nothing checked.
+
+        Two consequences, both asserted:
+
+        - It reached `f'FORM#{validated}'`, `source_channel = f'form_{form_id}'` and
+          the log line in `_load_form_for_query`, where an embedded newline in a
+          structured log record is its own small problem.
+        - The length cap bounded the matched PREFIX rather than the id, so
+          `'a' * FORM_ID_MAX_LENGTH + '\\n'` was admitted at 65 characters while
+          `'a' * (FORM_ID_MAX_LENGTH + 1)` was refused. Derived from the constant
+          rather than spelled as a literal, for the same reason every other
+          over-length case here is.
+
+        Unreachable through the deployed route today — powertools' capture group
+        excludes `\\n`, and `%0A` arrives as the three literal characters `%0A`,
+        which `%` already refuses — and that is exactly the argument for fixing it
+        HERE: the pattern is documented as the bound that does not depend on the
+        route regex, so it has to hold on its own terms.
+        """
+        assert feedback_form_handler._validated_form_id('deadbeef\n') is None, (
+            "a trailing newline was accepted — check that _FORM_ID_PATTERN ends "
+            'in \\Z rather than $, which also matches before a final newline'
+        )
+        over_long = 'a' * feedback_form_handler.FORM_ID_MAX_LENGTH + '\n'
+        assert feedback_form_handler._validated_form_id(over_long) is None, (
+            f'{len(over_long)} characters were accepted against a cap of '
+            f'{feedback_form_handler.FORM_ID_MAX_LENGTH} — with `$` the cap bounds '
+            'the matched prefix, not the id'
+        )
 
     @patch('feedback_form_handler.feedback_table')
     @patch('feedback_form_handler.aggregates_table')
