@@ -68,6 +68,13 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   rather than the HTTP client, bounded at 5 hops, with the destination re-resolved at each
   one. A resolver failure, an empty answer, or a host resolving to a mix of public and
   private addresses is refused rather than allowed.
+- A scraper configuration may name at most 50 URLs in its `urls` list. Each distinct host costs
+  a DNS lookup inside the request that saves it, and both write routes answer through API
+  Gateway's 29 second limit, so an unbounded list returned a timeout with nothing saved instead
+  of a message naming the problem. The limit applies only to a list a write **changes**: a
+  longer list that predates it keeps saving untouched, so one such configuration cannot block
+  edits to the others it is stored alongside. Its destinations are still checked, and adding to
+  it is refused.
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a

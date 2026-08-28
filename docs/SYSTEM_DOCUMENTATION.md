@@ -573,6 +573,11 @@ The policy itself:
   set is a refusal — the HTTP client picks the address from the set, not the platform.
 - Redirects are followed by the platform, never by the HTTP client, bounded at 5 hops;
   `Authorization`/`Cookie` are dropped on a cross-origin hop.
+- At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
+  write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
+  limit. Enforced only on a list the write changes, so a pre-existing longer list keeps
+  saving and cannot block edits to configurations stored alongside it; its destinations
+  are still checked and growing it is refused.
 
 **Residual risk**: the hostname is resolved by the check and again by the HTTP client,
 so DNS rebinding across the two lookups is narrowed, not closed. Closing it requires

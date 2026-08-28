@@ -193,6 +193,12 @@ What the policy accepts and refuses:
 - Redirects are followed by the platform itself, one hop at a time, never by the
   HTTP client, and are bounded at 5 hops. `Authorization` and `Cookie` are dropped
   when a hop leaves the origin they were addressed to.
+- A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
+  DNS lookup inside the saving request, and both write routes answer through API
+  Gateway's 29 second limit; identical hosts within one write are resolved once. The
+  limit applies only to a list a write **changes** — a longer list saved before the
+  limit existed continues to save untouched, so one such configuration cannot block
+  edits to the others stored alongside it, though adding to it is refused.
 
 **Residual risk.** The check resolves the hostname and the HTTP client then resolves
 it again when it connects, so a record engineered to answer differently between the
