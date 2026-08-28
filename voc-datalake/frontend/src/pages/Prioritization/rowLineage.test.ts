@@ -39,9 +39,18 @@
  *    INSTANT a timestamp names, not the string that spells it" (all three halves),
  *    plus the offset half of the tie-break case and the unparseable half of the
  *    no-instant case;
- *  * `instantOf`'s `ZONELESS_DATETIME` normalisation deleted → "answers the same in
- *    every timezone, because a zone-less datetime is UTC" (which is the only case
- *    here whose failure depends on WHO is looking rather than on the record);
+ *  * `instantOf` reading the timestamp's own fields replaced by `Date.parse` on
+ *    the raw value → "answers the same in every timezone, because a zone-less
+ *    datetime is UTC" (the only case here whose failure depends on WHO is looking
+ *    rather than on the record). Both halves are separately revert-sensitive: the
+ *    ISO zone-less assertions fail if the offset is taken from the runtime, and the
+ *    non-ISO ones fail if an unreadable spelling is allowed to decide;
+ *  * `instantOf`'s grammar narrowed or widened → "reads every timestamp
+ *    shape the system stores, and withholds on the rest", which is the boundary an
+ *    allow-list has to pin from BOTH sides: narrowed, a real stored shape stops
+ *    being read and staleness goes quietly silent;
+ *  * `offsetMinutes`'s range check deleted → the same case's '+99:99' row (a typo
+ *    read as 99 hours moves a document four days);
  *  * the `hasUnreadableTimestamp` gate deleted → "a held created_at that names no
  *    instant withholds staleness" (which is what stops `NO_INSTANT` reading as older
  *    than every dated document in the project);
@@ -574,6 +583,87 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // zone-less datetime really is read differently per zone by `Date.parse` itself.
     const parsedPerZone = inEveryZone(() => Date.parse('2025-01-01T09:00:00'))
     expect(new Set(parsedPerZone.map(([, instant]) => instant)).size).toBeGreaterThan(1)
+
+    // AND THE SPELLINGS OUTSIDE ISO-8601, which are the half a shape allow-list
+    // cannot finish. `Date.parse` accepts both of these and reads both as the
+    // runtime's local time, so a rule that repaired only the ISO zone-less form left
+    // them reader-dependent: the same frozen row was stale under UTC and Los Angeles
+    // and current under Tokyo and Kiritimati. Read from the grammar instead, they name
+    // no instant, so `hasUnreadableTimestamp` withholds — one row's staleness silenced
+    // rather than answered differently per reader. Asserted as `false` in EVERY zone,
+    // which is the property; that the answer is the withhold is asserted below.
+    for (const spelling of ['2025/01/01 09:00:00', 'January 1, 2025 09:00:00']) {
+      const nonIso = doc('prd_non_iso', 'prd', spelling, builtFromFeedback)
+
+      agreesEverywhere(() => fresherCoherentSelection([generated], [generated, nonIso]), null)
+      // Held rather than offered, the same way round: an unreadable held timestamp
+      // withholds, so the row is not advised toward the dated sibling either.
+      agreesEverywhere(() => fresherCoherentSelection([nonIso], [nonIso, generated]), null)
+    }
+    // Non-vacuity for the pair above, and the reason they are `null` rather than
+    // agreeing by luck: `Date.parse` really does read each of them, and really does
+    // read them differently per zone — so without the grammar they are decisive AND
+    // reader-dependent, not merely ignored.
+    for (const spelling of ['2025/01/01 09:00:00', 'January 1, 2025 09:00:00']) {
+      const perZone = inEveryZone(() => Date.parse(spelling))
+      expect(perZone.every(([, instant]) => !Number.isNaN(instant)), spelling).toBe(true)
+      expect(new Set(perZone.map(([, instant]) => instant)).size, spelling).toBeGreaterThan(1)
+    }
+  })
+
+  it('reads every timestamp shape the system stores, and withholds on the rest', () => {
+    // The grammar's BOUNDARY, in one table, because it is an allow-list and the cost of
+    // narrowing it too far is silence rather than a wrong answer — silence nothing else
+    // in this file would notice. Every shape a `created_at` actually reaches storage as
+    // must be READ, or a real project's rows quietly stop reporting staleness at all.
+    //
+    // Each shape is offered as the newer document beside a 2000 baseline, so `['newer']`
+    // means "read as an instant and compared" and `null` means "named no instant, so
+    // staleness was withheld" — the two outcomes the grammar chooses between.
+    const baseline = doc('base', 'prd', '2000-01-01T00:00:00Z', builtFromFeedback)
+    const readsAs = (createdAt: string): readonly string[] | null => {
+      const newer = doc('newer', 'prd', createdAt, builtFromFeedback)
+      return fresherCoherentSelection([baseline], [baseline, newer])
+    }
+
+    // READ: what the generators write (`isoformat()` with microseconds and a +00:00
+    // offset), its 'Z' spelling, the date-only form, the space-separated form an import
+    // carries, a minute-precision clock, and the three offset spellings ISO allows.
+    for (const stored of [
+      '2025-01-01',
+      '2025-01-01T09:00:00.123456+00:00',
+      '2025-01-01T09:00:00.123Z',
+      '2025-01-01T09:00:00Z',
+      '2025-01-01T09:00:00',
+      '2025-01-01 09:00:00',
+      '2025-01-01T09:00',
+      '2025-01-01T09:00:00+03:00',
+      '2025-01-01T09:00:00+0300',
+      '2025-01-01T09:00:00-05',
+    ]) {
+      expect(readsAs(stored), stored).toEqual(['newer'])
+    }
+
+    // WITHHELD: the two zone-less non-ISO spellings `Date.parse` would read as local
+    // time (the reader-dependence this grammar exists to end), a word, '', fields the
+    // shape admits but the calendar does not, an offset out of range — which no shape
+    // check can reject and which as 99 hours would move a document four days — and
+    // spellings this system never writes.
+    for (const stored of [
+      '2025/01/01 09:00:00',
+      'January 1, 2025 09:00:00',
+      'unknown',
+      '',
+      '2025-13-01T00:00:00Z',
+      '2025-01-01T25:00:00Z',
+      '2025-01-01T09:00:00+99:99',
+      '2025-01-01T09:00:00XYZ',
+      '2025-01-01T09:00:00 extra',
+      '2025-1-1',
+      '20250101T090000Z',
+    ]) {
+      expect(readsAs(stored), stored).toBeNull()
+    }
   })
 
   it('withholds staleness when a held document has no readable type', () => {

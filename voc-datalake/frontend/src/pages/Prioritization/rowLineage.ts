@@ -129,7 +129,8 @@ const NO_IDS: readonly string[] = []
  *    in `fresherCoherentSelection` — a type nobody can read states no expectation
  *    about what belongs beside it;
  *  * a `createdAt` that names NO INSTANT loses every comparison — '' and any other
- *    value `Date.parse` refuses rank as `NO_INSTANT`, below every dated document —
+ *    value outside the grammar `instantOf` reads rank as `NO_INSTANT`, below every
+ *    dated document —
  *    so ranking one would report a row superseded by an arbitrarily older document.
  *    `fresherCoherentSelection` therefore withholds staleness rather than ranking
  *    it. Note the field is compared as an INSTANT and not as a string, which is
@@ -336,64 +337,147 @@ export function classifySelectionLineage(
 const NO_INSTANT = Number.NEGATIVE_INFINITY
 
 /**
- * A date and time carrying NO zone designator — no `Z`, no `±hh:mm`.
+ * THE GRAMMAR this module will read a `created_at` by: an ISO-8601 calendar date,
+ * optionally a time after a `T` or a space, optionally a zone designator (`Z` or
+ * `±hh[:mm]`). Three patterns and a separator rather than one expression, because
+ * one was past `sonarjs/regex-complexity` — and because the date, the clock and the
+ * zone are three questions with three different answers below.
  *
- * Deliberately narrow: it matches only the two shapes a stored `created_at`
- * plausibly takes without one (`'2025-01-01T09:00:00'` and the space-separated
- * `'2025-01-01 09:00:00'`, seconds and fractional seconds optional), so anything
- * else — an already-zoned value, a date-only value, a word — falls through to
- * `Date.parse` exactly as before. A looser pattern would start reinterpreting
- * values whose meaning is not in question.
+ * AN ALLOW-LIST, and that direction is the whole point — the alternative, asking
+ * `Date.parse` what a value means and repairing the shapes known to be ambiguous,
+ * cannot be finished. `Date.parse` accepts implementation-defined spellings beyond
+ * the one grammar ECMA-262 specifies, and reads EVERY zone-less one as the
+ * runtime's local time: '2025/01/01 09:00:00' and 'January 1, 2025 09:00:00' both
+ * parse, and both order differently for a reviewer in Tokyo than for one in London.
+ * A pattern naming the shapes to REPAIR leaves every shape nobody thought of
+ * reader-dependent; a pattern naming the shapes to READ leaves them `NO_INSTANT`,
+ * which withholds. So an unrecognised spelling silences one row's staleness instead
+ * of answering it differently per reader.
+ *
+ * The forms accepted are exactly the ones a stored `created_at` plausibly takes:
+ * what the generators write (`datetime.now(timezone.utc).isoformat()`, so
+ * '2025-01-01T09:00:00.123456+00:00'), the `Z` spelling of it, the date-only form,
+ * and the space-separated form an import is as likely to carry as a 'T'. Seconds,
+ * fractional seconds and the designator are each optional; the fraction may be any
+ * length, since Python writes microseconds where ECMA-262's own grammar stops at
+ * milliseconds.
  */
-const ZONELESS_DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/
+const READABLE_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * The clock part, matched from the START only — whatever follows is the designator,
+ * taken by length rather than by a trailing `(.*)`, which `sonarjs/slow-regex`
+ * rightly reads as backtrackable.
+ */
+const READABLE_TIME = /^\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?/
+
+/** A zone designator, matched against the whole of what followed the clock. */
+const ZONE_DESIGNATOR = /^(?:Z|[+-]\d{2}:?\d{2}|[+-]\d{2})$/
+
+/** What may stand between the date and the time — ISO's 'T', or an import's space. */
+const DATE_TIME_SEPARATOR = /[T ]/
+
+/**
+ * Minutes east of UTC named by a designator, or null when it names none — which is
+ * NOT the same as naming zero. '' (no designator at all) is zero, because a zone-less
+ * time is read as UTC; anything else unrecognised is null, so the value it came from
+ * names no instant rather than quietly becoming a UTC one.
+ */
+function offsetMinutes(designator: string): number | null {
+  if (designator === '' || designator === 'Z') return 0
+  if (!ZONE_DESIGNATOR.test(designator)) return null
+  const digits = designator.slice(1).replace(':', '')
+  const hours = Number(digits.slice(0, 2))
+  const minutes = digits.length > 2 ? Number(digits.slice(2)) : 0
+  // Out of range is unreadable, not a large offset: the shape check cannot reject
+  // '+99:99', and treating it as 99 hours would move a document four days and let a
+  // typo decide a staleness advisory. 14 is the largest real offset (Kiritimati),
+  // which is also the extreme the timezone test spans.
+  if (hours > 14 || minutes > 59) return null
+  return (designator.startsWith('-') ? -1 : 1) * (hours * 60 + minutes)
+}
+
+/**
+ * The date and clock of a `created_at`, re-spelled as the ONE form ECMA-262 pins to
+ * UTC whatever the runtime's zone, plus the designator that was on it — or null when
+ * the value is outside the grammar.
+ *
+ * Split from `instantOf` so each half stays one question: this one is "what did the
+ * record say", and that one is "what instant is that".
+ */
+function timestampFields(createdAt: string): { readonly utc: string; readonly zone: string } | null {
+  const [date, ...rest] = createdAt.split(DATE_TIME_SEPARATOR)
+  if (rest.length > 1 || !READABLE_DATE.test(date ?? '')) return null
+  // Date-only: midnight UTC, which is what `Date.parse` already answers for it.
+  if (rest.length === 0) return { utc: `${date ?? ''}T00:00:00Z`, zone: '' }
+  const afterDate = rest[0] ?? ''
+  const clock = READABLE_TIME.exec(afterDate)
+  if (clock === null) return null
+  // Everything past the clock is the zone — including '' for a value that named
+  // none, which `offsetMinutes` reads as UTC rather than as unrecognised.
+  return { utc: `${date ?? ''}T${clock[0]}Z`, zone: afterDate.slice(clock[0].length) }
+}
 
 /**
  * The INSTANT a `created_at` names, or `NO_INSTANT` when it names none.
  *
- * `Date.parse`, not a string comparison, and that is the whole of the difference
- * between this and the raw-string ordering next door in api/documentLineage.ts.
- * Lexicographic order equals instant order only while every `created_at` shares
- * ONE shape, and nothing enforces that: `create_document` takes the caller's body,
- * `manual_import_handler` writes `item.get('timestamp')` straight from imported
- * data, and the frontend field is `z.string().catch('')` with no shape check. One
- * hand-created or imported document is enough to mix an offset form
- * ('2025-03-10T23:00:00-05:00' — 04:00Z on the 11th) with a Z form
- * ('2025-03-11T02:00:00+00:00' — 02:00Z, EARLIER), where the string compare answers
- * backwards and this module would advise re-scoring against older evidence.
+ * AN INSTANT, not a string, and that is the whole of the difference between this and
+ * the raw-string ordering next door in api/documentLineage.ts. Lexicographic order
+ * equals instant order only while every `created_at` shares ONE shape, and nothing
+ * enforces that: `create_document` takes the caller's body, `manual_import_handler`
+ * writes `item.get('timestamp')` straight from imported data, and the frontend field
+ * is `z.string().catch('')` with no shape check. One hand-created or imported
+ * document is enough to mix an offset form ('2025-03-10T23:00:00-05:00' — 04:00Z on
+ * the 11th) with a Z form ('2025-03-11T02:00:00+00:00' — 02:00Z, EARLIER), where the
+ * string compare answers backwards and this module would advise re-scoring against
+ * older evidence.
  *
- * A ZONE-LESS DATETIME IS READ AS UTC, and that normalisation is not tidying:
- * `Date.parse` splits its own rules by SHAPE. Per ECMA-262 a date-only value
- * ('2025-01-01') is UTC, but a date-TIME with no designator ('2025-01-01T09:00:00')
- * is the *runtime's local* time — so without this, two documents order by up to
- * ±14h of whichever timezone the reviewer's browser happens to be in. The same
- * project then prints `Superseded` for one reviewer and not for another off
- * byte-identical records, and can advise re-scoring against evidence that is
- * strictly OLDER (a row holding '2025-01-01T01:00:00' being pointed at
- * '2025-01-01', an hour earlier, under TZ=Asia/Tokyo). Every other rule in this
- * module answers a property of the DATA; an answer that depends on who is looking
- * is the one thing none of them may be.
+ * READ FROM THE FIELDS RATHER THAN HANDED TO `Date.parse`, because `Date.parse`
+ * cannot answer this question reader-independently. Per ECMA-262 it reads a
+ * date-ONLY value ('2025-01-01') as UTC but a date-TIME with no designator
+ * ('2025-01-01T09:00:00') as the *runtime's local* time — and its tolerance for
+ * spellings outside that grammar ('2025/01/01 09:00:00') is implementation-defined
+ * and local-time too. Either way two documents would order by up to ±14h of
+ * whichever timezone the reviewer's browser happens to be in: the same project
+ * prints `Superseded` for one reviewer and not for another off byte-identical
+ * records, and can advise re-scoring against evidence that is strictly OLDER (a row
+ * holding '2025-01-01T01:00:00' pointed at '2025-01-01', an hour earlier, under
+ * TZ=Asia/Tokyo). Every other rule in this module answers a property of the DATA; an
+ * answer that depends on who is looking is the one thing none of them may be. Doing
+ * the arithmetic here also removes the last reliance on engine tolerance — the
+ * space-separated form's parse was never spec-guaranteed even with a designator
+ * appended.
  *
- * UTC is the right assumption rather than merely a neutral one: every generator
- * writes `datetime.now(timezone.utc).isoformat()` (projects.py for a prd/prfaq,
- * document_merger for a merge), so a value that reached storage without a
- * designator was almost certainly meant as UTC — and where the guess is wrong it is
- * wrong IDENTICALLY for every reader, which is what makes it a guess about the
- * record instead of about the browser.
+ * A ZONE-LESS TIME IS READ AS UTC, which is the right assumption rather than merely
+ * a neutral one: every generator writes `datetime.now(timezone.utc).isoformat()`
+ * (projects.py for a prd/prfaq, document_merger for a merge), so a value that
+ * reached storage without a designator was almost certainly meant as UTC — and where
+ * the guess is wrong it is wrong IDENTICALLY for every reader, which is what makes
+ * it a guess about the record instead of about the browser.
  *
- * Anything `Date.parse` accepts becomes an instant, which is wider than the ISO
- * forms the generators write and deliberately so — a value a reader would recognise
- * as a date should not silence a row — though the SHAPE now matters for exactly the
- * one case above. Anything it REFUSES, '' included, names no instant, and every
- * decision that would rest on one is withheld instead; see
- * `hasUnreadableTimestamp`.
+ * Anything the grammar does not cover names no instant, '' included, and so does an
+ * out-of-range field the grammar admits but the calendar does not (month 13, hour
+ * 25) — `Date.parse` refuses those, and the `NaN` arm carries them. An impossible
+ * DAY ('2025-02-30') is the exception: it rolls forward to March 2 rather than
+ * failing, which is what the engine does with the same value today and is not worth
+ * a check of its own — the value is a fiction either way, and it rolls identically
+ * for every reader, which is the property this function exists to hold. Every
+ * decision that WOULD rest on no instant is withheld rather than guessed; see
+ * `hasUnreadableTimestamp`. Resolution is the millisecond `Date` carries, so two
+ * documents from one microsecond-precise `isoformat()` can tie — which is what
+ * `rankOf`'s id tie-break is for.
  */
 function instantOf(createdAt: string): number {
-  // Zone-less values only; an already-zoned or date-only value is passed through
-  // untouched, so this widens nothing that `Date.parse` already answers the same
-  // way for every reader.
-  const zoned = ZONELESS_DATETIME.test(createdAt) ? `${createdAt}Z` : createdAt
-  const parsed = Date.parse(zoned)
-  return Number.isNaN(parsed) ? NO_INSTANT : parsed
+  const fields = timestampFields(createdAt)
+  if (fields === null) return NO_INSTANT
+  const offset = offsetMinutes(fields.zone)
+  // `Date.parse` still does the CALENDAR arithmetic — month lengths, leap years — on
+  // a value forced to `Z`, so the only thing taken out of its hands is the zone, and
+  // the reader's clock cannot enter the answer. Its `NaN` carries the fields the
+  // grammar admits but the calendar does not (month 13, hour 25).
+  const utc = Date.parse(fields.utc)
+  if (offset === null || Number.isNaN(utc)) return NO_INSTANT
+  return utc - offset * 60_000
 }
 
 /**
@@ -445,8 +529,8 @@ function isNewer(a: readonly [number, string], b: readonly [number, string]): bo
  * The staleness gate for `created_at`, exactly parallel to the type gate beside it,
  * and for a sharper reason: an unreadable timestamp does not merely fail to state an
  * expectation, it states the WRONG one. `displayString` collapses absent, null and
- * non-string into '', and `Date.parse` refuses that along with any other value no
- * reader could call a date — all of which rank as `NO_INSTANT`, below every dated
+ * non-string into '', and `instantOf`'s grammar refuses that along with any spelling
+ * this module will not read — all of which rank as `NO_INSTANT`, below every dated
  * document of the type. Ranked rather than refused, the row is told its evidence was
  * superseded by whichever document the project happens to hold, however old. A 2020
  * document "superseding" a row is not a near-miss; it is advice to go and score older
