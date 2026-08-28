@@ -451,8 +451,8 @@ export interface GenerateDocumentBody {
 // 🔑 The pin on `GenerateDocumentBody.doc_type`. What it guarantees, stated as the
 // property it actually checks: that field admits EXACTLY the members of `DocType`,
 // in both directions. Deleting this block compiles cleanly, so
-// `test_the_request_body_field_is_pinned_to_the_union` in
-// lambda/api/test/test_doc_type_lockstep.py keeps both declarations present.
+// `test_the_type_level_pins_are_present` in
+// lambda/api/test/test_doc_type_lockstep.py keeps these declarations present.
 //
 // ⚠️ It does NOT check that the field REFERENCES `DocType` — an earlier version of
 // this comment said it did, and that was measured to be the opposite of the truth.
@@ -483,25 +483,51 @@ export interface GenerateDocumentBody {
 // drift this contract is about) would pass. Hence equality in both directions.
 // `[T] extends [U]` rather than `T extends U`: the bare form distributes over a
 // union, which would compare member-by-member and accept a subset.
+//
+// ⚠️ WHAT PINS THE SECOND DIRECTION. A WIDENED-side control does not: a superset
+// fails `[Left] extends [Right]` under the one-way form too, so the two forms are
+// INDISTINGUISHABLE to it, and collapsing this type to `[Left] extends [Right]`
+// was measured to leave `tsc` at exit 0 with every lockstep test green. Only a
+// NARROWED-side control separates them, which is why each pin below has one as well
+// (`...WouldSeeNarrowing`). Their left side is `never` — the maximally narrowed
+// type, assignable to everything — so it is `true` under a one-way comparison and
+// `false` under this one, with no member spelled out to go stale.
+//
+// `never` rather than the narrowed spellings that look more natural: measured,
+// `Omit<GenerateDocumentBody, 'doc_type'>` is NOT assignable to the interface (it
+// lacks a required property), so it is `false` under BOTH forms and detects
+// nothing. A narrowed-FIELD shape such as
+// `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: 'prd' }` does discriminate,
+// but it names a member and so goes stale the moment the contract is widened.
 export type BothWays<Left, Right> = [Left] extends [Right]
   ? ([Right] extends [Left] ? true : false)
   : false
 type MustBeTrue<Verdict extends true> = Verdict
 type MustBeFalse<Verdict extends false> = Verdict
+// Each pin below is written on ONE line, with its comparison applied inline. That is
+// load-bearing rather than a formatting choice: the lockstep test requires the source
+// to spell `MustBeTrue<BothWays<`, and a wrapped declaration puts a newline between
+// the two so the substring is absent. See TYPE_LEVEL_PINS in
+// lambda/api/test/test_doc_type_lockstep.py for why the check includes the
+// comparison and not just the helper's name.
+//
 // Exported only so `noUnusedLocals` cannot be what deletes them; nothing imports
-// either, and nothing should.
-export type DocTypeFieldIsExactlyTheUnion = MustBeTrue<
-  BothWays<GenerateDocumentBody['doc_type'], DocType>
->
-// The non-vacuity control for the line above, in the same convention the lockstep
+// any of them, and nothing should.
+export type DocTypeFieldIsExactlyTheUnion = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType>>
+// The non-vacuity controls for the line above, in the same convention the lockstep
 // tests use: `MustBeTrue<BothWays<...>>` is also satisfied by a `BothWays` that
 // degenerates to `true`, which would be a pin reporting success while comparing
-// nothing. Adding a member the route cannot accept must therefore be `false`.
-// Derived from the field rather than listing members, so widening the contract
-// legitimately does not make this line the failure.
-export type DocTypeFieldPinWouldSeeDrift = MustBeFalse<
-  BothWays<GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>
->
+// nothing. Both are derived from the field rather than listing members, so widening
+// the contract legitimately does not make either one the failure.
+//
+// WIDENED side — refuses a `BothWays` that is always `true`. Adding a member the
+// route cannot accept must not compare equal.
+export type DocTypeFieldPinWouldSeeDrift = MustBeFalse<BothWays<GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>>
+// NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
+// control above cannot see (see the ⚠️ note on `BothWays`). `never` is assignable to
+// `DocType`, so a one-way comparison calls this `true` and this line becomes a
+// TS2344; two-way, it is `false` as required.
+export type DocTypeFieldPinWouldSeeNarrowing = MustBeFalse<BothWays<never, DocType>>
 
 export interface ProjectDocument {
   document_id: string

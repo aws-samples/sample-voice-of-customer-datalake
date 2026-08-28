@@ -388,18 +388,24 @@ export const projectsApi = {
 // for the same reason as `DocTypeFieldIsExactlyTheUnion`: a one-way `extends` passes
 // on a NARROWED parameter, which is the "capability nobody can reach" half of this
 // contract's drift.
+//
+// Each declaration below is on ONE line, with its comparison applied inline: the
+// lockstep test requires the source to spell `SignatureMustMatch<BothWays<`, and
+// wrapping puts a newline between the two so the substring goes absent.
 type SignatureMustMatch<Verdict extends true> = Verdict
-export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<
-  BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody>
->
-// The non-vacuity control, in the convention the lockstep tests use for their own:
+// The parameter as DECLARED, read off the method so this cannot restate it.
+type DeclaredGenerateDocumentBody = Parameters<typeof projectsApi.generateDocument>[1]
+export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<DeclaredGenerateDocumentBody, GenerateDocumentBody>>
+// The non-vacuity controls, in the convention the lockstep tests use for their own:
 // `SignatureMustMatch<BothWays<...>>` is also satisfied by a `BothWays` that
-// degenerates to `true`, which would report success while comparing nothing. A body
-// with one extra member must therefore NOT compare equal.
+// degenerates to `true`, which would report success while comparing nothing.
+//
+// WIDENED side — a body with one extra member must NOT compare equal.
 type SignatureMustDiffer<Verdict extends false> = Verdict
-export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustDiffer<
-  BothWays<
-    Parameters<typeof projectsApi.generateDocument>[1],
-    GenerateDocumentBody & { not_in_the_body: true }
-  >
->
+export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustDiffer<BothWays<DeclaredGenerateDocumentBody, GenerateDocumentBody & { not_in_the_body: true }>>
+// NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
+// control above cannot detect: a widened left side fails `[Left] extends [Right]`
+// under either form, so the two are indistinguishable to it (see the ⚠️ note on
+// `BothWays` in ./types). `never` is assignable to the body, so a one-way comparison
+// calls this `true` and the line becomes a TS2344.
+export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustDiffer<BothWays<never, GenerateDocumentBody>>

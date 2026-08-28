@@ -38,9 +38,11 @@ all of it, and an earlier version of this docstring claimed it did:
     against this interface, so a widened one satisfies it by construction.
     ⚠️ What that pin checks is SET EQUALITY, not reference: the field must admit
     exactly `DocType`'s members, and a same-member respelling (`'prd' | 'prfaq'`,
-    no reference at all) PASSES it. Measured — an earlier version of this file
-    claimed the opposite in four places. Equality is the sufficient property: the
-    coincidence is harmless today and becomes a TS2344 the moment `DocType` is
+    no reference at all) PASSES it. Measured — earlier versions of this file claimed
+    the opposite in five places, the last of them surviving a round that was
+    supposed to have corrected all of them, so treat "reference" phrasing about
+    either pin as a bug wherever it turns up. Equality is the sufficient property:
+    the coincidence is harmless today and becomes a TS2344 the moment `DocType` is
     widened, so the drift is still caught where it would be introduced.
   * The two `generateDocument` signatures -> `GenerateDocumentBody`: the compiler
     for `client.ts`, which forwards its `data` into `projectsApi.generateDocument`
@@ -127,15 +129,23 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     shared name appears, so it needs no model of TypeScript and cannot mis-read a
     restyling. A rename of `GenerateDocumentBody` fails it too, which is correct —
     the constant here is what the two files must agree on.
-  * `test_the_type_level_pins_are_present` — either type-level pin deleted, or
-    STUBBED to a bare constant. Both are silent otherwise: deleting one compiles
-    cleanly, and stubbing both a pin and its control to `= true` / `= false` (with
-    the helper types removed so no unused-local fires) was measured to exit `tsc` 0
-    and pass every test here while the guarded field was widened. So the assertion
-    SPELLING is required, not just the name. Covers both links: the field-vs-union
-    pin, and the parameter-vs-body pin that replaced the `satisfies` clause and the
-    location guard it needed — see WHY EACH GUARD IS THE KIND IT IS for why a
-    comparison was the answer and a tighter text slice was not.
+  * `test_the_type_level_pins_are_present` — either type-level pin deleted, STUBBED
+    to a bare constant, or left with only one of its two controls. All are silent
+    otherwise: deleting a pin compiles cleanly, and stubbing both a pin and its
+    control to `= true` / `= false` was measured to exit `tsc` 0 and pass every test
+    here while the guarded field was widened. So the assertion SPELLING is required,
+    and it names the pin's USE of the verdict helper (`MustBeTrue<BothWays<`) — an
+    earlier version required only `MustBeTrue<`, which the helper's OWN declaration
+    contains, so exporting the helpers and stubbing the pins passed every gate.
+    Covers both links: the field-vs-union pin, and the parameter-vs-body pin that
+    replaced the `satisfies` clause and the location guard it needed — see WHY EACH
+    GUARD IS THE KIND IT IS for why a comparison was the answer and a tighter text
+    slice was not.
+  * The `...WouldSeeNarrowing` controls — `BothWays` collapsed to a one-way
+    `extends`, which admits a NARROWED field or parameter: the "capability nobody
+    can reach" half of this contract's drift. The widened-side controls cannot see
+    that collapse (a superset fails the one-way test too), and it was measured to
+    leave `tsc` at exit 0 with every test here green.
   * `TestContractDriftIsCaught` — a parser that returns the allowlist however the
     union is edited, and its opposite, one that reports drift for a comment.
   * `TestTheUnionParser` — a legal restyling the parser reads wrongly or silently
@@ -173,17 +183,27 @@ TERMINAL_CLIENT = 'frontend/src/api/projectsApi.ts'
 # delete either block and the frontend still compiles — which is the only reason this
 # file mentions them at all: `test_the_type_level_pins_are_present` keeps them there.
 #
-# 🔑 A pin is spelled `<Guard><Name> = <Guard><Verdict><Comparison<...>>`, and the
-# CONSTANT INCLUDES THE COMPARISON'S OPENING BRACKET. That is deliberate and was
-# measured: with the names alone, both a pin and its control could be stubbed to bare
-# constants (`export type DocTypeFieldIsExactlyTheUnion = true`) and, with the helper
-# types deleted so no unused-local fired, `tsc` exited 0 and every test here passed
-# while the field it guards was widened past the route's allowlist. A name check is
-# satisfied by prose about the name; requiring `MustBeTrue<` means a stub has to keep
-# a real comparison to satisfy it.
+# 🔑 A pin is spelled `<Name> = <Verdict><Comparison<...>>`, and the SPELLINGS BELOW
+# INCLUDE THE COMPARISON, not just the verdict helper. Both halves of that were
+# measured, one review round apart:
 #
-# Keyed by relative path, since the two pins live in different files. Each value is
-# (pin, control, assertion-spelling, control-spelling).
+#   * Requiring only the NAMES was vacuous. Stub a pin and its control to bare
+#     constants (`export type DocTypeFieldIsExactlyTheUnion = true`), delete the helper
+#     types so no unused-local fires, and `tsc` exits 0 with every test here green
+#     while the field they guard is widened past the route's allowlist.
+#   * Requiring `MustBeTrue<` was ALSO vacuous, for a subtler reason: that substring
+#     occurs in the helper's OWN declaration (`type MustBeTrue<Verdict ...>`), so it is
+#     satisfied by the helper merely existing. The stub only has to keep the helpers
+#     and `export` them — measured, `tsc` exit 0 and every test here green with the
+#     field widened. So the spelling must name the pin's USE of the helper, which
+#     `MustBeTrue<BothWays<` does and a declaration cannot accidentally contain.
+#
+# This is why the pins in both files are written on ONE line: the substring spans the
+# helper and the comparison, so a wrapped declaration puts a newline between them.
+#
+# Keyed by relative path, since the pins live in two files. Each value is
+# (pin, controls, assertion-spellings) — the controls and spellings are tuples because
+# each pin needs TWO controls (widened and narrowed; see below).
 TYPE_LEVEL_PINS = {
     # `GenerateDocumentBody.doc_type` admits exactly the members of `DocType`. Nothing
     # else in either language sees this field: this file parses only the
@@ -191,9 +211,8 @@ TYPE_LEVEL_PINS = {
     # against the interface, so a widened interface satisfies it by construction.
     DOC_TYPE_UNION_SOURCE: (
         'DocTypeFieldIsExactlyTheUnion',
-        'DocTypeFieldPinWouldSeeDrift',
-        'MustBeTrue<',
-        'MustBeFalse<',
+        ('DocTypeFieldPinWouldSeeDrift', 'DocTypeFieldPinWouldSeeNarrowing'),
+        ('MustBeTrue<BothWays<', 'MustBeFalse<BothWays<'),
     ),
     # `generateDocument`'s parameter admits exactly `GenerateDocumentBody`. This is the
     # one that replaced a `satisfies` clause in the method body plus the text guard
@@ -203,9 +222,11 @@ TYPE_LEVEL_PINS = {
     # against the method's own type has nowhere to migrate to.
     TERMINAL_CLIENT: (
         'GenerateDocumentTakesTheSharedBody',
-        'GenerateDocumentSignaturePinWouldSeeDrift',
-        'SignatureMustMatch<',
-        'SignatureMustDiffer<',
+        (
+            'GenerateDocumentSignaturePinWouldSeeDrift',
+            'GenerateDocumentSignaturePinWouldSeeNarrowing',
+        ),
+        ('SignatureMustMatch<BothWays<', 'SignatureMustDiffer<BothWays<'),
     ),
 }
 
@@ -665,11 +686,16 @@ class TestDocTypeLockstep:
         frontend never offers is a backend capability no user can reach. Both are
         drift, so neither direction is allowed.
 
-        This half of the contract is only checkable HERE: TypeScript has no idea
-        what Python accepts. The compiler's half is that
-        `GenerateDocumentBody.doc_type` references this union by name, which
-        `test_both_client_signatures_use_the_shared_request_body` keeps true of both
-        signatures.
+        This half of the contract is only checkable HERE: TypeScript has no idea what
+        Python accepts. The compiler's half is that `GenerateDocumentBody.doc_type`
+        admits EXACTLY this union's members, in both directions — set equality, NOT
+        reference: a same-member respelling of the field passes, and is harmless for
+        the reason given on `BothWays`. That is enforced by
+        `DocTypeFieldIsExactlyTheUnion` in `frontend/src/api/types.ts` and kept present
+        by `test_the_type_level_pins_are_present`. Not by
+        `test_both_client_signatures_use_the_shared_request_body`, which an earlier
+        version of this docstring credited: that one asserts the two client FILES name
+        the shared body type, and says nothing about the interface field.
         """
         from projects_handler import GENERATED_DOC_TYPES
 
@@ -754,20 +780,27 @@ class TestDocTypeLockstep:
             respelling USES the shared name, so neither `noUnusedLocals` nor the name
             assertion above sees it.
 
-        Text, not a parse — but text with a lesson in it. Asserting the pin NAMES
-        alone was measured to be vacuous: stub both a pin and its control to bare
-        constants (`= true` / `= false`), delete the helper types so no unused-local
-        fires, and `tsc` exits 0 with every test here green while the guarded field is
-        widened. So the ASSERTION SPELLING is required too (`MustBeTrue<`), which a
-        bare constant cannot satisfy. That the comparisons BITE is the compiler's job;
-        this test says only that a real comparison is spelled.
+        Text, not a parse — but text with two lessons in it, one per review round.
+        Asserting the pin NAMES alone was measured to be vacuous: stub both a pin and
+        its control to bare constants (`= true` / `= false`), delete the helper types
+        so no unused-local fires, and `tsc` exits 0 with every test here green while
+        the guarded field is widened. Requiring `MustBeTrue<` did not fix it, because
+        that substring is in the HELPER'S OWN DECLARATION — so the stub just keeps the
+        helpers and exports them, and every gate is green again. The spelling required
+        is therefore the pin's USE of the helper (`MustBeTrue<BothWays<`). That the
+        comparisons BITE is the compiler's job; this test says only that a real
+        comparison is spelled.
 
-        Each pin's non-vacuity control is required alongside it, in the convention
-        this file uses for its own: `MustBeTrue<BothWays<...>>` is satisfied by a
-        `BothWays` that degenerates to `true`, and the control is what refuses that.
-        Verified by making it `[L, R] extends [L, R]` — both controls go red.
+        TWO controls per pin, both required. `MustBeTrue<BothWays<...>>` is satisfied
+        by a `BothWays` that degenerates to `true`, and by one collapsed to its
+        ONE-WAY form — and those need different controls, because a widened-side
+        control cannot see the second: a superset fails `[Left] extends [Right]` under
+        either form, so both forms look identical to it. Measured — collapsing
+        `BothWays` to `[Left] extends [Right]` left `tsc` at exit 0 with every test
+        here green. The narrowed-side controls (`...WouldSeeNarrowing`) are what
+        refuse that, using `never` as the left side.
         """
-        pin, control, assertion, control_assertion = TYPE_LEVEL_PINS[relative]
+        pin, controls, assertions = TYPE_LEVEL_PINS[relative]
         path = _repo_root() / relative
         assert path.is_file(), f'{relative} moved — update TYPE_LEVEL_PINS'
         source = _without_comments(path.read_text(encoding='utf-8'))
@@ -779,20 +812,23 @@ class TestDocTypeLockstep:
             f'file green. Restore it, or widen DocType and GENERATED_DOC_TYPES '
             f'together, which is the supported way to change the contract.'
         )
-        assert assertion in source, (
-            f'{relative} names `{pin}` but does not spell `{assertion}`, so the pin '
-            f'is no longer a comparison — a bare `= true` satisfies a name check '
-            f'while comparing nothing, which was measured to pass every gate with '
-            f'the guarded field widened. Restore the comparison.'
-        )
-        assert control in source, (
-            f'{relative} declares `{pin}` but not its control `{control}`. The pin is '
-            f'satisfied by a comparison that degenerates to `true`, which passes '
-            f'while measuring nothing; the control is what refuses that, the same way '
-            f'TestContractDriftIsCaught does for the parser here.'
-        )
-        assert control_assertion in source, (
-            f'{relative} names `{control}` but does not spell `{control_assertion}`, '
-            f'so the control is no longer a comparison either — see the message '
-            f'above; a stubbed control is a non-vacuity guard that is itself vacuous.'
-        )
+        for control in controls:
+            assert control in source, (
+                f'{relative} declares `{pin}` but not its control `{control}`. The '
+                f'pin is satisfied both by a comparison that degenerates to `true` '
+                f'and by one collapsed to a one-way `extends`, each of which passes '
+                f'while measuring less than it claims; the controls are what refuse '
+                f'those, the same way TestContractDriftIsCaught does for the parser '
+                f'here. A widened-side control cannot detect the one-way collapse, '
+                f'so the narrowed-side one is not redundant.'
+            )
+        for assertion in assertions:
+            assert assertion in source, (
+                f'{relative} does not spell `{assertion}`, so a pin or a control is '
+                f'no longer applied to a comparison. A bare `= true` satisfies a '
+                f'name check while comparing nothing, and naming the helper alone is '
+                f'satisfied by the helper\'s own declaration — both were measured to '
+                f'pass every gate with the guarded field widened. Note these pins are '
+                f'written on ONE line deliberately: wrapping the declaration puts a '
+                f'newline inside this substring.'
+            )
