@@ -25,6 +25,11 @@ REVERT MAP — which mutation each test catches
   `UnicodeEncodeError` escapes -> `refuses_hostnames_the_idna_codec_rejects`.
 - Stop dropping `Authorization`/`Cookie` on a cross-origin hop
   -> `drops_credential_headers_when_a_redirect_leaves_the_origin`.
+- Drop the credential HEADERS on a cross-origin hop but forward the `auth=` /
+  `cookies=` kwargs carrying the same secrets
+  -> `drops_credential_kwargs_when_a_redirect_leaves_the_origin`.
+- Strip credentials on EVERY hop rather than only a cross-origin one
+  -> `keeps_credential_kwargs_on_a_same_origin_redirect`.
 - Stop downgrading the method to GET where requests would
   -> `downgrades_the_method_to_get_exactly_where_requests_would`.
 - Ignore `total_timeout` -> `stops_following_a_chain_that_outruns_its_budget`.
@@ -679,6 +684,72 @@ class TestCheckedFetchMatchesRequestsRedirectSemantics:
         # resolve on the hop after a strip.
         assert isinstance(second, CaseInsensitiveDict)
         assert second['user-agent'] == 'voc-scraper'
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_drops_credential_kwargs_when_a_redirect_leaves_the_origin(
+        self, mock_request, mock_resolve
+    ):
+        """
+        `auth=` and `cookies=` carry the same secrets as the headers above and
+        must go on the same hop.
+
+        The header strip alone was not the policy it read as: `auth=('u','pw')`
+        becomes exactly `Authorization: Basic dXNlcjpwdw==` at prepare time, and
+        `Session.should_strip_auth` returns True across hosts — so a caller using
+        the IDIOMATIC spelling handed the credential to whatever third party the
+        Location named, while the `Authorization` header case passed its own test.
+        A dict `cookies=` jar has an empty cookie domain, so requests sends it to
+        any host too.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location='https://attacker.example/final'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            'https://mysite.example/',
+            headers={'User-Agent': 'voc-scraper'},
+            auth=('user', 'KWARG-SECRET'),
+            cookies={'session': 'COOKIE-SECRET'},
+        )
+
+        second = mock_request.call_args_list[1].kwargs
+        assert 'auth' not in second
+        assert 'cookies' not in second
+        # Positive control: only the credentials go. Dropping every kwarg would
+        # otherwise pass, and would break `verify`, `proxies` and the rest.
+        assert second['headers']['User-Agent'] == 'voc-scraper'
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_keeps_credential_kwargs_on_a_same_origin_redirect(
+        self, mock_request, mock_resolve
+    ):
+        """
+        Positive control: the site's own `/page/2` redirect is not a leak, so a
+        strip on every hop would break an authenticated paginated scrape.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location='/reviews/page/2'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            'https://example.com/reviews',
+            auth=('user', 'KWARG-SECRET'),
+            cookies={'session': 'COOKIE-SECRET'},
+        )
+
+        second = mock_request.call_args_list[1].kwargs
+        assert second['auth'] == ('user', 'KWARG-SECRET')
+        assert second['cookies'] == {'session': 'COOKIE-SECRET'}
 
     @pytest.mark.parametrize('budget', [0, -1])
     @patch('shared.http_utils.socket.getaddrinfo')

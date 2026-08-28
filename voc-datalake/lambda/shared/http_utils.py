@@ -86,6 +86,21 @@ CROSS_ORIGIN_SENSITIVE_HEADERS = frozenset({
     'authorization', 'cookie', 'proxy-authorization',
 })
 
+# The same secrets in their kwarg spelling, dropped on the same hop and for the
+# same reason. Not a lesser form of the headers above: `Session.prepare_request`
+# renders `auth=('u','pw')` into exactly `Authorization: Basic dXNlcjpwdw==`, and
+# `should_strip_auth` returns True across hosts — so stripping the header while
+# forwarding the kwarg handed the identical credential to the third party the
+# header strip existed to withhold it from, and did so silently, because the
+# header case had a passing test. `auth=` is the IDIOMATIC spelling, so it was the
+# more likely one to leak.
+#
+# `cookies=` is stricter here than requests is: a dict jar gets an empty cookie
+# domain, so requests sends it to any host. Matching the `Cookie` HEADER's
+# treatment is the coherent choice — one policy cannot depend on which spelling a
+# caller reached for.
+CROSS_ORIGIN_SENSITIVE_KWARGS = ('auth', 'cookies')
+
 # Headers describing a request body, dropped with the body when a hop downgrades
 # to GET (below). Leaving a Content-Type on a body-less GET describes something
 # that is no longer being sent.
@@ -533,11 +548,13 @@ def fetch_checked_with_retry(
     and the two that matter are implemented here rather than left to a reader's
     assumption: the method is downgraded to GET where `rebuild_method` would
     downgrade it (with the request body and its headers dropped with it), and
-    `Authorization`/`Cookie` are dropped when a hop leaves the origin they were
-    addressed to, as `rebuild_auth` does. Neither is exercised by today's two
-    GET-only, unauthenticated callers — they are here because this is the
-    recommended fetch for any config-supplied URL, so the next caller inherits
-    them.
+    credentials are dropped when a hop leaves the origin they were addressed to,
+    as `rebuild_auth` does — in BOTH spellings, the `Authorization`/`Cookie`
+    headers and the `auth=`/`cookies=` kwargs, because `auth=` becomes that same
+    header at prepare time and dropping one without the other is not a policy.
+    Neither is exercised by today's two GET-only, unauthenticated callers — they
+    are here because this is the recommended fetch for any config-supplied URL, so
+    the next caller inherits them.
 
     The retry/error contract is unchanged: each hop is one `fetch_with_retry`
     call, so 429/5xx still retry with backoff and a 4xx still comes back as a
@@ -617,6 +634,11 @@ def fetch_checked_with_retry(
         next_origin = _request_origin(next_url)
         if next_origin != origin:
             headers = _without_headers(headers, CROSS_ORIGIN_SENSITIVE_HEADERS)
+            # Both spellings of the same credential, or neither: `auth=` becomes
+            # the Authorization header at prepare time, so dropping only the
+            # header left the secret reaching the new origin anyway.
+            for key in CROSS_ORIGIN_SENSITIVE_KWARGS:
+                kwargs.pop(key, None)
             origin = next_origin
 
         next_method = _method_after_redirect(method, response.status_code)
