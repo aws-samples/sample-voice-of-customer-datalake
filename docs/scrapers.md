@@ -191,8 +191,19 @@ What the policy accepts and refuses:
   public/private answer set are all refusals, because the HTTP client — not the
   platform — picks which address in an answer set to connect to.
 - Redirects are followed by the platform itself, one hop at a time, never by the
-  HTTP client, and are bounded at 5 hops. `Authorization` and `Cookie` are dropped
-  when a hop leaves the origin they were addressed to.
+  HTTP client, and are bounded at 5 hops. Credentials — the `Authorization` and
+  `Cookie` headers and the `auth=`/`cookies=` request options alike — are dropped on
+  exactly the hops the `requests` library drops them on, which the platform asks it
+  rather than deciding for itself: a host change, a port change and an
+  `https`→`http` downgrade all drop them; a site's own `http`→`https` upgrade does
+  not. A `Location` header that resolves back to the URL that sent it ends the walk
+  rather than spending the hop budget on one page.
+- Each page fetch also carries a wall-clock budget (60 seconds), not only a
+  per-request timeout. The scheduled scraper has 300 seconds for a configuration
+  that may name 50 URLs, and a retried redirect walk on one stalling host could
+  otherwise consume nearly all of it — which loses the run's final status write, not
+  just that page. A page that exceeds the budget is skipped with a warning and the
+  configuration's remaining URLs still run.
 - A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
   DNS lookup inside the saving request, and both write routes answer through API
   Gateway's 29 second limit; identical hosts within one write are resolved once. The

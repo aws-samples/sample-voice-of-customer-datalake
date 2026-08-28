@@ -75,10 +75,11 @@ REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 # resolve-and-check, and an unbounded chain is a free request amplifier.
 MAX_REDIRECT_HOPS = 5
 
-# Headers dropped when a redirect leaves the origin (scheme+host+port) they were
-# addressed to, matching what `requests.SessionRedirectMixin.rebuild_auth` does
-# for `Authorization`. The policy guarantees the next hop is a PUBLIC address,
-# which is what makes this necessary rather than academic: without it, a
+# Headers dropped when a redirect leaves the site they were addressed to, on
+# exactly the hops `requests.SessionRedirectMixin.rebuild_auth` drops them — that
+# decision is DELEGATED to `should_strip_auth` (see `_should_strip_credentials`)
+# rather than restated here. The policy guarantees the next hop is a PUBLIC
+# address, which is what makes this necessary rather than academic: without it, a
 # credential meant for one site is handed to whatever third party that site's
 # `Location` names. Matched case-insensitively — a caller's plain dict is not a
 # `CaseInsensitiveDict`.
@@ -109,10 +110,12 @@ BODY_HEADERS = frozenset({'content-length', 'content-type', 'transfer-encoding'}
 # Body kwargs dropped alongside those headers, for the same reason.
 BODY_KWARGS = ('data', 'json', 'files')
 
-# Default port per scheme, so an implicit port and its explicit spelling compare
-# as one origin (see `_request_origin`). Only http/https reach here — anything
-# else is refused by the policy before a request is built.
-DEFAULT_SCHEME_PORTS = {'http': 80, 'https': 443}
+# The redirect policy `requests` itself applies, borrowed rather than
+# reimplemented: `_should_strip_credentials` below asks it whether a hop leaves
+# the site the credentials were addressed to. A `SessionRedirectMixin` is not a
+# `Session` — it opens no connection, holds no adapters and no state — so one
+# module-level instance is just somewhere for that method to live.
+_REDIRECT_POLICY = requests.sessions.SessionRedirectMixin()
 
 
 class OutboundUrlBlocked(ValueError):
@@ -458,24 +461,27 @@ def _fetch_within_deadline(url: str, deadline: float, timeout: int, **rest):
     return create_retry_decorator(max_total_delay=remaining_now)(attempt)()
 
 
-def _request_origin(url: str) -> tuple:
+def _should_strip_credentials(old_url: str, new_url: str) -> bool:
     """
-    Scheme, host and port a URL addresses — what "same origin" means here.
+    Whether a hop from `old_url` to `new_url` must drop the caller's credentials.
 
-    The port is normalized to the scheme's default before comparing, so
-    `https://h/` and `https://h:443/` are the SAME origin. Without that, the two
-    spellings compared unequal and a redirect between them dropped the caller's
-    `Authorization` — `requests.SessionRedirectMixin.rebuild_auth` compares the
-    hostname only, so this is what makes the comparison agree with it.
+    Delegated to `requests`' own `should_strip_auth` rather than compared as a
+    local origin tuple, so there is ONE definition of "left the site" and it is
+    the one every other consumer of this library already sees. Maintaining a
+    parallel tuple diverged twice: first on the port spelling (`https://h/` vs
+    `https://h:443/`), and then — still — on the `http` -> `https` UPGRADE, which
+    `should_strip_auth` deliberately exempts and a scheme-bearing tuple cannot.
+    That is the most common redirect on the web, so the divergence would have
+    surfaced as an unexplained 401 on a hop that never left the host. The
+    downgrade `https` -> `http` is still a strip, and so is any host change.
+
+    Fails CLOSED: an unparseable port (`:99999`) makes `should_strip_auth` raise,
+    and a URL we cannot compare is one we do not hand credentials to.
     """
-    parsed = urlparse(url)
     try:
-        port = parsed.port
+        return _REDIRECT_POLICY.should_strip_auth(old_url, new_url)
     except ValueError:
-        port = None
-    if port is None:
-        port = DEFAULT_SCHEME_PORTS.get(parsed.scheme)
-    return (parsed.scheme, (parsed.hostname or '').lower(), port)
+        return True
 
 
 def _without_headers(headers: dict | None, drop: frozenset) -> dict | None:
@@ -545,16 +551,22 @@ def fetch_checked_with_retry(
     then letting a client chase redirects is not a check.
 
     Owning the walk means owning the rest of `requests`' redirect semantics too,
-    and the two that matter are implemented here rather than left to a reader's
+    and the two that matter are handled here rather than left to a reader's
     assumption: the method is downgraded to GET where `rebuild_method` would
     downgrade it (with the request body and its headers dropped with it), and
-    credentials are dropped when a hop leaves the origin they were addressed to,
-    as `rebuild_auth` does — in BOTH spellings, the `Authorization`/`Cookie`
-    headers and the `auth=`/`cookies=` kwargs, because `auth=` becomes that same
-    header at prepare time and dropping one without the other is not a policy.
-    Neither is exercised by today's two GET-only, unauthenticated callers — they
-    are here because this is the recommended fetch for any config-supplied URL, so
-    the next caller inherits them.
+    credentials are dropped on exactly the hops `rebuild_auth` drops them —
+    `should_strip_auth` is CALLED for that decision, not reimplemented, so the
+    `http`->`https` upgrade on one host keeps them and the downgrade does not. In
+    BOTH spellings, the `Authorization`/`Cookie` headers and the `auth=`/`cookies=`
+    kwargs, because `auth=` becomes that same header at prepare time and dropping
+    one without the other is not a policy. Neither is exercised by today's two
+    GET-only, unauthenticated callers — they are here because this is the
+    recommended fetch for any config-supplied URL, so the next caller inherits
+    them.
+
+    A `Location` resolving back to the URL that produced it ends the walk and
+    returns that response: it is not progress, and spending the hop budget on it
+    misreported one malformed header as a redirect loop.
 
     The retry/error contract is unchanged: each hop is one `fetch_with_retry`
     call, so 429/5xx still retry with backoff and a 4xx still comes back as a
@@ -594,7 +606,6 @@ def fetch_checked_with_retry(
     # that had run out of time. A negative value was already handled, which is
     # what made the 0 case an inconsistency rather than a policy.
     deadline = time.monotonic() + total_timeout if total_timeout is not None else None
-    origin = _request_origin(url)
     current_url = url
     for _ in range(max_redirects + 1):
         assert_outbound_url_allowed(current_url)
@@ -623,6 +634,10 @@ def fetch_checked_with_retry(
             )
 
         location = response.headers.get('Location') if response.headers else None
+        # Stripped before joining: `urljoin(base, ' /x ')` keeps the trailing
+        # space in the path, and a whitespace-only value is not a destination at
+        # all — `requests` strips it too (`urljoin(resp.url, location.strip())`).
+        location = location.strip() if location else location
         if response.status_code not in REDIRECT_STATUS_CODES or not location:
             return response
 
@@ -631,15 +646,29 @@ def fetch_checked_with_retry(
         params = None
         next_url = urljoin(current_url, location)
 
-        next_origin = _request_origin(next_url)
-        if next_origin != origin:
+        if next_url == current_url:
+            # A `Location` that resolves back to the URL that sent it is not a
+            # redirect this walk can make progress on. Following it spent the
+            # whole hop budget re-requesting one page — six identical requests
+            # and six resolver calls — and then reported `Too many redirects`,
+            # which sends the reader looking for a chain that does not exist.
+            # Worse, that error is an `OutboundUrlBlocked`, so the ingestor logged
+            # a site with a broken `Location` header at ERROR and filed it in the
+            # run's `errors` as a blocked destination — the one classification
+            # this module is otherwise careful about. The response is returned
+            # instead of raised so the caller can inspect the 302 it really got.
+            logger.warning(
+                f"Ignoring a Location that resolves to the requesting URL: {current_url}"
+            )
+            return response
+
+        if _should_strip_credentials(current_url, next_url):
             headers = _without_headers(headers, CROSS_ORIGIN_SENSITIVE_HEADERS)
             # Both spellings of the same credential, or neither: `auth=` becomes
             # the Authorization header at prepare time, so dropping only the
             # header left the secret reaching the new origin anyway.
             for key in CROSS_ORIGIN_SENSITIVE_KWARGS:
                 kwargs.pop(key, None)
-            origin = next_origin
 
         next_method = _method_after_redirect(method, response.status_code)
         if next_method != method:

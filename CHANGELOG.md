@@ -67,7 +67,20 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   redirecting to an internal one was followed. Redirects are now followed by the platform
   rather than the HTTP client, bounded at 5 hops, with the destination re-resolved at each
   one. A resolver failure, an empty answer, or a host resolving to a mix of public and
-  private addresses is refused rather than allowed.
+  private addresses is refused rather than allowed. Because the platform now owns the
+  redirect walk, it also owns the credential handling `requests` would have done, so it
+  asks `requests` for that decision instead of restating it: the `Authorization`/`Cookie`
+  headers and the `auth=`/`cookies=` options are dropped together on a host change, a port
+  change and an `https`→`http` downgrade, and kept across a site's own `http`→`https`
+  upgrade. A `Location` header resolving back to the URL that sent it ends the walk and
+  returns that response, rather than re-requesting one page until the hop limit and
+  reporting it as a redirect chain.
+- Each scheduled scraper page fetch is bounded by a 60 second wall-clock budget, not only a
+  per-request timeout. One configuration may name 50 URLs inside a 300 second invocation,
+  and the retried redirect walk on a single stalling host could consume almost all of it —
+  which killed the invocation mid-run, so the final run-status write never happened and the
+  run row stayed at `running` indefinitely. A page exceeding the budget is now skipped with a
+  warning and the configuration's remaining URLs still run.
 - A scraper configuration may name at most 50 URLs in its `urls` list. Each distinct host costs
   a DNS lookup inside the request that saves it, and both write routes answer through API
   Gateway's 29 second limit, so an unbounded list returned a timeout with nothing saved instead

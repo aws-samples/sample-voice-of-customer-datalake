@@ -40,6 +40,18 @@ REVERT MAP — which mutation each test catches
 - Compare origins on the raw parsed port, so `https://h/` and `https://h:443/`
   differ and credentials are dropped within one origin
   -> `keeps_credential_headers_when_only_the_port_spelling_changes`.
+- Compare origins on a tuple carrying the SCHEME, so the `http`->`https` upgrade
+  looks cross-origin and drops credentials `should_strip_auth` keeps
+  -> `keeps_credentials_across_the_http_to_https_upgrade`.
+- Widen that exemption to the `https`->`http` downgrade, a port change or a host
+  change -> `still_drops_credentials_where_requests_would`.
+- Let an unparseable hop (a port outside 0-65535) be treated as same-site
+  -> `drops_credentials_when_the_hop_cannot_be_compared`.
+- Follow a `Location` that resolves back to the requesting URL, spending the hop
+  budget and reporting it as a redirect chain
+  -> `stops_on_a_location_that_resolves_to_the_requesting_url`.
+- Join a `Location` without stripping it, putting whitespace in the next path
+  -> `strips_whitespace_around_a_location_before_following_it`.
 - Rebuild the caller's headers as a plain dict, losing case-insensitivity for the
   rest of the chain -> `preserves_a_case_insensitive_header_mapping_across_hops`.
 - Resolve a host that `skip_resolution` cleared earlier in the same write, or skip
@@ -470,6 +482,13 @@ class TestCheckedFetchRedirects:
     @patch('shared.http_utils.socket.getaddrinfo')
     @patch('shared.http_utils.requests.request')
     def test_refuses_a_redirect_chain_longer_than_the_bound(self, mock_request, mock_resolve):
+        """
+        Each hop names a DISTINCT URL. Pointing every hop at one URL used to be
+        the cheap way to write this, but that is now the self-referential case
+        below and returns after one request — so this test would have gone on
+        passing for the wrong reason, measuring the loop guard rather than the
+        bound. A counter in the path is what keeps the two apart.
+        """
         from shared.http_utils import (
             MAX_REDIRECT_HOPS,
             OutboundUrlBlocked,
@@ -477,7 +496,10 @@ class TestCheckedFetchRedirects:
         )
 
         mock_resolve.return_value = _addrinfo('93.184.216.34')
-        mock_request.return_value = _response(302, location='https://example.com/loop')
+        hop = iter(range(1, MAX_REDIRECT_HOPS + 3))
+        mock_request.side_effect = lambda **_kwargs: _response(
+            302, location=f'https://example.com/hop/{next(hop)}'
+        )
 
         with pytest.raises(OutboundUrlBlocked, match='[Tt]oo many redirects'):
             fetch_checked_with_retry('https://example.com/start')
@@ -547,6 +569,67 @@ class TestCheckedFetchRedirects:
 
         assert response.text == 'final'
         assert mock_request.call_args_list[1].kwargs['url'] == 'https://example.com/final'
+
+    @pytest.mark.parametrize('location', [
+        '   ',                          # urljoin returns the base unchanged
+        '\t\n',
+        'https://example.com/start',    # a server naming the requesting URL
+        '/start',                       # the same thing, relatively
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_stops_on_a_location_that_resolves_to_the_requesting_url(
+        self, mock_request, mock_resolve, location
+    ):
+        """
+        A `Location` that goes nowhere ends the walk after ONE request.
+
+        `urljoin` returns the base unchanged for an empty or whitespace-only
+        value, and the loop had no check that it had moved — so the whole hop
+        budget went on re-requesting one page: 6 identical requests, 6 resolver
+        calls, and then `Too many redirects`, which sends the reader looking for a
+        chain that never existed. That error is an `OutboundUrlBlocked`, so the
+        ingestor also filed a site with a broken header at ERROR in the run's
+        `errors` as though a destination had been blocked — the one classification
+        this module is otherwise careful about.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.return_value = _response(302, location=location)
+
+        response = fetch_checked_with_retry('https://example.com/start')
+
+        # One request, and the 302 handed back for the caller to inspect rather
+        # than a refusal that misnames the cause.
+        assert mock_request.call_count == 1
+        assert response.status_code == 302
+        assert mock_resolve.call_count == 1
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_strips_whitespace_around_a_location_before_following_it(
+        self, mock_request, mock_resolve
+    ):
+        """
+        `urljoin('https://h/p', ' /x ')` keeps the trailing space in the PATH, so
+        the next request went to a URL the server never named. `requests` strips
+        the header value too.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location='  /reviews/page/2  '),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry('https://example.com/reviews')
+
+        assert (
+            mock_request.call_args_list[1].kwargs['url']
+            == 'https://example.com/reviews/page/2'
+        )
 
 
 class TestCheckedFetchMatchesRequestsRedirectSemantics:
@@ -650,6 +733,126 @@ class TestCheckedFetchMatchesRequestsRedirectSemantics:
             mock_request.call_args_list[1].kwargs['headers']['Authorization']
             == 'Bearer secret'
         )
+
+    @pytest.mark.parametrize(('start', 'location'), [
+        ('http://example.com/', 'https://example.com/final'),
+        ('http://example.com/', 'https://example.com:443/final'),
+        ('http://example.com:80/', 'https://example.com/final'),
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_keeps_credentials_across_the_http_to_https_upgrade(
+        self, mock_request, mock_resolve, start, location
+    ):
+        """
+        `should_strip_auth` deliberately EXEMPTS an `http`->`https` upgrade on the
+        same host at default ports, and this walk must agree with it.
+
+        A local origin tuple carrying the scheme could not: it made the single
+        most common redirect on the web look cross-origin, so a credential-bearing
+        caller lost its `Authorization` on a hop that never left the host, and the
+        symptom was an unexplained 401. Delegating to `should_strip_auth` is what
+        removes the possibility of a third such divergence — the port spelling was
+        the first.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location=location),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            start,
+            headers={'Authorization': 'Bearer secret'},
+            auth=('user', 'KWARG-SECRET'),
+            cookies={'session': 'COOKIE-SECRET'},
+        )
+
+        second = mock_request.call_args_list[1].kwargs
+        assert second['headers']['Authorization'] == 'Bearer secret'
+        # Both spellings, since both are the same policy.
+        assert second['auth'] == ('user', 'KWARG-SECRET')
+        assert second['cookies'] == {'session': 'COOKIE-SECRET'}
+
+    @pytest.mark.parametrize(('start', 'location'), [
+        # The DOWNGRADE is a strip: `should_strip_auth` exempts only the upgrade,
+        # and sending a credential in clear text after having sent it over TLS is
+        # the case that exemption exists to avoid enabling.
+        ('https://example.com/', 'http://example.com/final'),
+        # A non-default port is a different root URI even on one host.
+        ('https://example.com/', 'https://example.com:8443/final'),
+        # And a genuine host change, so the upgrade exemption cannot widen into
+        # "same hostname prefix is fine".
+        ('http://example.com/', 'https://other.example/final'),
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_still_drops_credentials_where_requests_would(
+        self, mock_request, mock_resolve, start, location
+    ):
+        """
+        The other direction of the case above: exempting the upgrade must not
+        exempt the downgrade, a port change, or a host change.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location=location),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            start,
+            headers={'Authorization': 'Bearer secret', 'User-Agent': 'voc-scraper'},
+            auth=('user', 'KWARG-SECRET'),
+            cookies={'session': 'COOKIE-SECRET'},
+        )
+
+        second = mock_request.call_args_list[1].kwargs
+        assert 'Authorization' not in second['headers']
+        assert 'auth' not in second
+        assert 'cookies' not in second
+        # Positive control: only the credentials went.
+        assert second['headers']['User-Agent'] == 'voc-scraper'
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_drops_credentials_when_the_hop_cannot_be_compared(
+        self, mock_request, mock_resolve
+    ):
+        """
+        Fails closed. `should_strip_auth` raises `ValueError` on a port outside
+        0-65535, and a hop we cannot classify is not one we hand a credential to.
+
+        This is reachable rather than theoretical: `assert_outbound_url_allowed`
+        reads `parsed.hostname`, which parses such a URL fine, so the policy
+        clears it and the walk really does take this hop. Letting the `ValueError`
+        escape instead would also have turned one malformed `Location` into an
+        unhandled invocation error.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location='https://example.com:99999/final'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            'https://example.com/',
+            headers={'Authorization': 'Bearer secret', 'User-Agent': 'voc-scraper'},
+            auth=('user', 'KWARG-SECRET'),
+        )
+
+        second = mock_request.call_args_list[1].kwargs
+        assert 'Authorization' not in second['headers']
+        assert 'auth' not in second
+        # Positive control: the hop still went out, so this is a strip and not an
+        # accidental refusal that would make the assertion above vacuous.
+        assert second['headers']['User-Agent'] == 'voc-scraper'
 
     @patch('shared.http_utils.socket.getaddrinfo')
     @patch('shared.http_utils.requests.request')

@@ -20,6 +20,12 @@ REVERT MAP
 - Duplicate the policy into this plugin instead of importing it
   -> `TestOnePolicyForBothCallSites`.
 - Drop the ScraperOutboundUrlBlocked counter -> `emits_a_metric_when_a_destination_is_blocked`.
+- Drop `total_timeout` from the fetch, so one stalling URL can spend ~294 s of the
+  300 s invocation and the run's final status write is lost
+  -> `keeps_one_stalling_url_inside_its_budget`,
+  `a_stalling_url_does_not_stop_the_next_one`.
+- Tighten the budget until an ordinary page cannot load
+  -> `a_healthy_page_is_unaffected_by_the_budget`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -203,6 +209,122 @@ class TestScrapePageChecksEveryDestination:
         mock_request.side_effect = requests.exceptions.ConnectionError('refused')
 
         assert list(ingestor._scrape_page(CSS_CONFIG, 'https://example.com/reviews')) == []
+
+
+class TestScrapePageBoundsOneUrlsCostOfTheInvocation:
+    """
+    One stalling URL must not be able to consume the scheduled run.
+
+    `manifest.json` gives this Lambda 300 s and one config may name
+    MAX_SCRAPER_URLS (50) URLs inside it. A per-request timeout bounds nothing
+    across that: the checked walk is MAX_REDIRECT_HOPS + 1 hops and each is
+    retried RETRY_MAX_ATTEMPTS times, which measured ~294 s for a single URL at
+    the old bare `timeout=15`.
+
+    The consequence is worse than losing a page, which is why a wall-clock budget
+    is the fix and not a shorter per-request timeout: the invocation is killed
+    inside `fetch_new_items`, so the final `_update_run_status` never runs and the
+    run row stays at `status: 'running'` for ever.
+    """
+
+    @patch('tenacity.nap.time.sleep')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_keeps_one_stalling_url_inside_its_budget(
+        self, mock_resolve, mock_request, mock_sleep, ingestor
+    ):
+        """
+        Measured on a fake clock: the double consumes its whole timeout and the
+        retry backoff advances the same clock, so this reads the real arithmetic
+        without spending a minute of wall time on it.
+        """
+        import requests
+        from webscraper.ingestor.handler import SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        now = [1000.0]
+
+        def stall(**kwargs):
+            now[0] += kwargs['timeout']      # the host holds the connection open
+            raise requests.exceptions.Timeout('stalled')
+
+        mock_request.side_effect = stall
+        mock_sleep.side_effect = lambda seconds: now.__setitem__(0, now[0] + seconds)
+
+        with patch('shared.http_utils.time.monotonic', lambda: now[0]):
+            items = list(ingestor._scrape_page(CSS_CONFIG, 'https://slow.example/reviews'))
+
+        spent = now[0] - 1000.0
+        assert spent <= SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS, (
+            f'one URL spent {spent}s of the 300s invocation'
+        )
+        # Still a warn-and-continue: the Timeout is a RequestException, so
+        # `_scrape_page` swallows it and the run's other URLs get their turn.
+        assert items == []
+
+    @patch('tenacity.nap.time.sleep')
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_a_stalling_url_does_not_stop_the_next_one(
+        self, mock_resolve, mock_request, mock_sleep, ingestor
+    ):
+        """
+        The budget must end the URL, not the run — and the run must still write
+        its final status, which is what a killed invocation loses.
+        """
+        import requests
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        now = [1000.0]
+
+        def stall_then_serve(**kwargs):
+            if 'slow.example' in kwargs['url']:
+                now[0] += kwargs['timeout']
+                raise requests.exceptions.Timeout('stalled')
+            return _response(200, text=REVIEW_HTML)
+
+        mock_request.side_effect = stall_then_serve
+        mock_sleep.side_effect = lambda seconds: now.__setitem__(0, now[0] + seconds)
+
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 's1'
+        ingestor.scraper_configs = [{
+            **CSS_CONFIG,
+            'urls': ['https://slow.example/reviews', 'https://good.example/reviews'],
+        }]
+
+        statuses = []
+        with (
+            patch('shared.http_utils.time.monotonic', lambda: now[0]),
+            patch.object(ingestor, '_update_run_status', lambda _id, u: statuses.append(u)),
+            patch.object(ingestor, 'set_watermark'),
+            patch('webscraper.ingestor.handler.time.sleep'),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        assert len(items) == 1, 'the second URL was never reached'
+        assert statuses[-1]['status'] in ('completed', 'completed_with_errors')
+        assert statuses[-1]['completed_at']
+
+    @patch('shared.http_utils.requests.request')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_a_healthy_page_is_unaffected_by_the_budget(
+        self, mock_resolve, mock_request, ingestor
+    ):
+        """
+        Positive control. A budget short enough to bite a healthy page would look
+        like this test passing while ordinary scraping silently degraded, so the
+        per-request timeout must still be what a fast page sees.
+        """
+        from webscraper.ingestor.handler import SCRAPE_PAGE_HOP_TIMEOUT_SECONDS
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        mock_request.return_value = _response(200, text=REVIEW_HTML)
+
+        items = list(ingestor._scrape_page(CSS_CONFIG, 'https://example.com/reviews'))
+
+        assert len(items) == 1
+        assert mock_request.call_args.kwargs['timeout'] == SCRAPE_PAGE_HOP_TIMEOUT_SECONDS
 
 
 class TestRunReportsABlockedUrl:

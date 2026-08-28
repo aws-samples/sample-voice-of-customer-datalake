@@ -24,6 +24,28 @@ import requests
 # Keys MUST be lowercase — lookups normalize the class token via .lower().
 WORD_STAR_RATINGS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
 
+# Per-page fetch budget. The two values are a split of one invocation, not
+# independent knobs.
+#
+# `manifest.json` gives this Lambda `"timeout": 300`, and ONE config may name
+# MAX_SCRAPER_URLS (50) URLs that all share that invocation. A per-request timeout
+# bounds nothing useful across it: `fetch_checked_with_retry` walks up to
+# MAX_REDIRECT_HOPS + 1 = 6 hops and each hop is separately retried
+# RETRY_MAX_ATTEMPTS = 3 times, so 15 s per request is 18 requests — measured at
+# ~294 s on a fake clock, i.e. one stalling URL could consume the whole 300 s.
+#
+# What that costs is worse than a lost page. The invocation is killed inside
+# `fetch_new_items`, so the final `_update_run_status` never runs and the run row
+# `POST /scrapers/<id>/run` created stays at `status: 'running'` for ever —
+# nothing reconciles a stuck run — and the `OutboundUrlBlocked` -> `errors` ->
+# `completed_with_errors` path never gets to report anything either.
+#
+# The resulting `requests.exceptions.Timeout` is a `RequestException`, so a
+# stalling page stays a warn-and-continue in `_scrape_page` and the run's other
+# URLs still get their turn.
+SCRAPE_PAGE_HOP_TIMEOUT_SECONDS = 15
+SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS = 60
+
 
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
@@ -240,11 +262,21 @@ class WebScraperIngestor(BaseIngestor):
         would log "failed to fetch" at warning and move on — and reaches
         `fetch_new_items`, which records it in the run's `errors`. A blocked
         destination must be visible in the run status, not a silent skip.
+
+        The fetch carries a wall-clock budget as well as a per-request timeout
+        (see SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS): the retried redirect walk could
+        otherwise spend most of this Lambda's 300 s on one stalling URL, and being
+        killed mid-run loses the run-status write, not just the page.
         """
         try:
             # Set Referer to the site's root so it looks like in-site navigation
             page_headers = {**self.headers, 'Referer': f"https://{urlparse(url).netloc}/"}
-            response = fetch_checked_with_retry(url, headers=page_headers, timeout=15)
+            response = fetch_checked_with_retry(
+                url,
+                headers=page_headers,
+                timeout=SCRAPE_PAGE_HOP_TIMEOUT_SECONDS,
+                total_timeout=SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS,
+            )
             if response.status_code == 403:
                 logger.warning(f"Access denied (403) for {url} - site may be blocking automated requests")
                 return

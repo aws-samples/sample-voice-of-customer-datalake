@@ -571,8 +571,16 @@ The policy itself:
   IPv6 (v4-mapped, 6to4, Teredo).
 - Fails closed: a resolver failure, an empty answer, or a mixed public/private answer
   set is a refusal — the HTTP client picks the address from the set, not the platform.
-- Redirects are followed by the platform, never by the HTTP client, bounded at 5 hops;
-  `Authorization`/`Cookie` are dropped on a cross-origin hop.
+- Redirects are followed by the platform, never by the HTTP client, bounded at 5 hops.
+  Credentials (`Authorization`/`Cookie` headers and the `auth=`/`cookies=` options) are
+  dropped on exactly the hops `requests.should_strip_auth` drops them on — that call is
+  delegated, not reimplemented, so a host or port change and an `https`→`http`
+  downgrade drop them while a same-host `http`→`https` upgrade does not. A `Location`
+  resolving back to the requesting URL ends the walk instead of consuming the hops.
+- Each scheduled page fetch carries a 60 s wall-clock budget as well as a 15 s
+  per-request timeout: the Lambda has 300 s for up to 50 URLs, and a retried redirect
+  walk on one stalling host could otherwise exhaust the invocation — which loses the
+  final run-status write and leaves the run row at `running`.
 - At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
   write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
   limit. Enforced only on a list the write changes, so a pre-existing longer list keeps
