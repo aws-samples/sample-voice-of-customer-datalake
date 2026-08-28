@@ -13,17 +13,55 @@ picker, and a client omitting one silently drops a feature the backend supports.
 Same pattern, and the same motivation, as `test_kiro_exportable_types_lockstep.py`
 and `lambda/shared/test/test_search_minimum_lockstep.py`.
 
-WHY THIS FILE IS SHORT NOW, and why it must not grow back (issue #381). It carried
-~300 lines of TypeScript scanner — `_parameter_list_end`,
-`GENERATE_DOCUMENT_ANCHOR`, `DOC_TYPE_ANNOTATION_ANCHOR`, `FINDABLE_SHAPES`,
-`WIDENED_SHAPES`, `NARROWED_SHAPES` — for one reason: `client.ts` and
-`projectsApi.ts` spelled `'prd' | 'prfaq'` INLINE inside their `generateDocument`
-signatures, so the contract existed in three places and checking the two inline
-copies meant locating a method by name inside an object literal and delimiting its
-parameter list by bracket balance. Every review round on that scanner found another
-shape of legal TypeScript it mis-read; none found a defect in the contract. Both
-signatures now take `GenerateDocumentBody`, which removes the drift axis rather
-than testing it.
+THE SCANNER IS GONE AND MUST NOT COME BACK (issue #381). This file used to carry
+~300 lines of TypeScript scanner — `_parameter_list_end`, `GENERATE_DOCUMENT_ANCHOR`,
+`DOC_TYPE_ANNOTATION_ANCHOR`, `FINDABLE_SHAPES`, `WIDENED_SHAPES`, `NARROWED_SHAPES`
+— for one reason: `client.ts` and `projectsApi.ts` spelled `'prd' | 'prfaq'` INLINE
+inside their `generateDocument` signatures, so the contract existed in three places
+and checking the two inline copies meant locating a method by name inside an object
+literal and delimiting its parameter list by bracket balance. Every review round on
+that scanner found another shape of legal TypeScript it mis-read; none found a defect
+in the contract. Both signatures now take `GenerateDocumentBody`, which removes that
+drift axis rather than testing it. Nothing here should ever again try to decide what
+an arbitrary TypeScript type expression MEANS.
+
+WHAT THIS FILE COSTS, stated plainly because a previous version of this heading read
+"WHY THIS FILE IS SHORT NOW" long after it had stopped being true. Measured:
+
+    944 lines   on `development`, the scanner version
+    455 lines   after the scanner was deleted
+  ~1030 lines   now
+
+So it is LONGER than the scanner it replaced, and the claim that it was short was
+false for two review rounds. What the growth is, in the current file: ~60% is prose
+(this docstring, ~190 lines; test docstrings, ~235; comments, ~190) and the rest is
+two type-level pins with two non-vacuity controls each, the text assertions that keep
+those present, and `_without_comments` plus `_doc_type_union` with their shape
+fixtures.
+
+Whether that is proportionate is a fair question and was asked in review. The honest
+answer: the PINS are cheap and they are what bite — every widening mutation tried is
+refused by the compiler, not by this file. The length is the SCAFFOLDING proving the
+pins are not vacuous, and it grew because six successive rounds each found a guard
+whose documented mechanism differed from its actual one.
+
+The scaffolding is not redundant, and that was measured rather than assumed. Each
+control was DELETED in turn and the degeneration it exists for reapplied; in both
+cases nothing else noticed:
+
+  * remove `...WouldSeeDrift` (widened side), then collapse `BothWays` to the reverse
+    one-way `[Right] extends [Left]` -> `tsc` reports NOTHING in that file.
+  * remove `...WouldSeeNarrowing` (narrowed side), then collapse it to the forward
+    one-way `[Left] extends [Right]` -> `tsc` reports NOTHING in that file.
+
+With both present, those two collapses are 2 errors each, and a `BothWays` degenerated
+to constant `true` is 4. So neither control covers the other's axis and there is no
+third one to add.
+
+THE RULE THAT REPLACES ADDING MORE: when a guard turns out to be evadable, move the
+check to the compiler or pin the whole construct. Do NOT add a longer text fragment —
+that was tried four times and defeated four times, because a fragment of the thing
+being pinned is always a substring something else can supply.
 
 WHAT ENFORCES WHICH HALF, measured rather than assumed — the compiler does NOT do
 all of it, and an earlier version of this docstring claimed it did:
@@ -54,10 +92,13 @@ all of it, and an earlier version of this docstring claimed it did:
     its own — an `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ...
     | 'onepager' }` annotation uses the name and still widens, and was measured to
     exit `tsc` 0 with every test here green. `noUnusedLocals` does NOT cover that
-    either, since the name is used. Nor does the name APPEARING in the file: the pin
-    block at its foot names the type nine times, so a structurally identical inline
-    literal passed that check with `tsc` at exit 0 — which is why the text guard pins
-    the annotation `data: GenerateDocumentBody` rather than the bare name.
+    either, since the name is used. Nor does any EXISTENCE check over the file: the
+    name APPEARING is satisfied by the pin block at its foot, the annotation
+    `data: GenerateDocumentBody` by any unrelated line spelling it, and the whole
+    signature by a decoy that copies it — all three measured, `tsc` exit 0 and every
+    test here green with the real parameter respelled as an inline literal. Which is
+    why the text guard asserts a RATIO: every declaration of the method takes the
+    shared body.
     So a widening has to edit `DocType` itself — the declaration this file parses —
     and `GENERATED_DOC_TYPES` with it. Editing `GenerateDocumentBody.doc_type` is
     not a way around that: the pin above makes it a compiler error.
@@ -143,15 +184,17 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     itself, in both directions.
   * `test_both_client_signatures_use_the_shared_request_body` — a signature
     respelling the body inline again, which is a compiler error in `client.ts` and
-    NOTHING in `projectsApi.ts` (see above). Text, not a parse: it asks whether the
-    parameter is ANNOTATED with the shared type (`data: GenerateDocumentBody`), so it
-    needs no model of TypeScript and cannot mis-read a restyling. ⚠️ It asked only
-    whether the NAME appeared anywhere in the file until the annotation was pinned,
-    and that was vacuous: the pin block at the foot of `projectsApi.ts` names the type
-    nine times, so a structurally identical inline literal — the exact edit #381
-    removed — passed with `tsc` at exit 0 and every test here green. A rename of
-    `GenerateDocumentBody` fails it too, which is correct — the constant here is what
-    the two files must agree on.
+    NOTHING in `projectsApi.ts` (see above). Text, not a parse: it requires EVERY
+    declaration of the method to take the shared body, so it needs no model of
+    TypeScript and cannot mis-read a restyling. ⚠️ THREE weaker spellings were each
+    measured to permit that respelling while claiming to forbid it — the bare NAME
+    (satisfied by the pin block at the foot of `projectsApi.ts`), the ANNOTATION
+    searched whole-file (satisfied by any unrelated `data: GenerateDocumentBody` line),
+    and the whole signature merely PRESENT or present once (satisfied by a decoy that
+    copies it). Each was `tsc` exit 0 with every test here green. Hence the RATIO,
+    which a decoy adds to both sides of. A rename of `GenerateDocumentBody` or of the
+    method fails it too, which is correct — the constants here are what the two files
+    must agree on.
   * `test_the_type_level_pins_are_present` — either type-level pin deleted, STUBBED
     to a bare constant, fed through an alias that compares a type to itself, left with
     only one of its two controls, or stripped of a control's `@ts-expect-error`. All
@@ -202,16 +245,55 @@ DOC_TYPE_UNION_SOURCE = 'frontend/src/api/types.ts'
 # see the docstring: the compiler catches that in one file and not the other.
 REQUEST_BODY_TYPE = 'GenerateDocumentBody'
 
-# 🔑 The ANNOTATION, not just the name. Asserting `REQUEST_BODY_TYPE in source` was
-# measured to be vacuous in `projectsApi.ts`: the type-level pin block at the foot of
-# that file names `GenerateDocumentBody` nine times, so the name is present whatever
-# the signature says. Replacing the parameter with a structurally identical inline
-# object literal (every field spelled out, `doc_type: DocType`) left `tsc` at exit 0
-# — `BothWays` compares structurally, so an identical shape is equal — and every test
-# here green. That is the exact edit issue #381 set out to eliminate, so the guard
-# names the parameter's reference to the type rather than the type's appearance
-# anywhere in the file.
-REQUEST_BODY_ANNOTATION = f'data: {REQUEST_BODY_TYPE}'
+# 🔑 EVERY DECLARATION of `generateDocument` must be the whole pinned signature —
+# asserted as "the number of declaration openers equals the number of full
+# signatures", not as "the full signature appears somewhere". Both files spell the
+# signature identically, so one pair of constants covers them.
+#
+# Three successively weaker versions of this guard were each measured to permit the
+# very edit it names — a structurally identical inline object literal in place of the
+# shared type, which is precisely what issue #381 removed. None is hypothetical:
+#
+#   * `REQUEST_BODY_TYPE in source` — the bare NAME. Satisfied by the type-level pin
+#     block at the foot of `projectsApi.ts`, which names `GenerateDocumentBody` three
+#     times whatever the signature says. `tsc` exit 0, every test here green.
+#   * `f'data: {REQUEST_BODY_TYPE}'` — the ANNOTATION, but searched over the whole
+#     file, so ANY occurrence satisfies it. One unrelated line
+#     (`const _probe = (data: GenerateDocumentBody) => data`) plus the inline literal
+#     was again `tsc` exit 0 and all 29 tests green.
+#   * The whole signature, required merely to be PRESENT — or present exactly once.
+#     Still satisfied by a decoy, because a decoy may be a full COPY: a
+#     `const _decoy = { generateDocument: (projectId: string, data:
+#     GenerateDocumentBody) => ... }` above the real method makes the signature
+#     present (and, for the once-only form, makes the real one inline while the count
+#     still reaches its target). Measured: `tsc` exit 0, 29 passed.
+#
+# All three failed the same way, and it is the failure this file keeps rediscovering:
+# an EXISTENCE check over a whole file asks whether some construct supplies the
+# string, never whether the construct that matters does. A count of one is the same
+# check with one more way to satisfy it.
+#
+# So the property asserted is a RATIO, which no added text can satisfy: every place
+# the method is declared is a place the shared type is used. A decoy declaration adds
+# an opener and, unless it too takes `GenerateDocumentBody`, no signature — so it
+# fails. A decoy that DOES take the shared type adds one to both sides and is
+# harmless, which is correct: it is not a respelling of the contract. And the real
+# signature going inline removes a signature while leaving its opener, which fails.
+#
+# Not an enumeration of legal TypeScript — the thing this file refuses. There is one
+# string per side, and `generateDocument` is either declared here or it is not.
+#
+# The cost, as for the pins below: this signature must stay on ONE line in both files.
+GENERATE_DOCUMENT_SIGNATURE = (
+    f'generateDocument: (projectId: string, data: {REQUEST_BODY_TYPE}) =>'
+)
+
+# What a DECLARATION of the method looks like, independent of its parameter type. The
+# left side of the ratio above. `client.ts` also CALLS
+# `m.projectsApi.generateDocument(...)`, which this deliberately does not match: a
+# call site takes whatever the declaration admits and is not a place the contract can
+# be respelled.
+GENERATE_DOCUMENT_DECLARATION = 'generateDocument: ('
 
 # The TERMINAL client — the one whose `data` is only spread into `JSON.stringify`, so
 # its annotation is checked against nothing and naming the body type is not enough on
@@ -808,32 +890,50 @@ class TestDocTypeLockstep:
         and so is compared against nothing. `client.ts` is compiler-protected by
         forwarding into it; this test is what covers the other one.
 
-        Deliberately TEXT and not a parse. It asks whether each file mentions the
-        shared type at all — no method location, no parameter-list extent, no model
-        of TypeScript, so none of the ways the scanner mis-read legal code apply.
+        Deliberately TEXT and not a parse: it compares one fixed string against the
+        source. No method location, no parameter-list extent, no model of TypeScript,
+        so none of the ways the deleted scanner mis-read legal code apply here.
 
-        THE ANNOTATION, not merely the name — because the name alone was measured to
-        be vacuous here. An earlier version asserted `GenerateDocumentBody in source`,
-        which in `projectsApi.ts` is satisfied by the type-level pin block at the foot
-        of that file (it names the type nine times) whatever the signature says.
-        Replacing the parameter with a structurally identical inline object literal
-        left `tsc` at exit 0 — `BothWays` compares structurally, so an identical shape
-        is equal — and every test here green, i.e. the precise edit this file's own
-        issue set out to eliminate passed the guard named as forbidding it. Pinning
-        `data: GenerateDocumentBody` is the signature's REFERENCE to the shared type,
-        and there is one spelling of it, so this does not start an enumeration.
+        EVERY DECLARATION, not "the shared type appears somewhere" — because three
+        successively weaker spellings were each measured to permit the inline
+        respelling they were named as forbidding:
 
-        LIMIT: this cannot tell whether the referenced type is the right shape, only
-        that the parameter takes it by name. A signature that names the type and
-        widens `doc_type` in the SAME annotation
-        (`Omit<GenerateDocumentBody, 'doc_type'> & { ... }`) does not match this
-        string, but a widening that keeps the exact `data: GenerateDocumentBody`
-        prefix would; `noUnusedLocals` does not cover that either, since the name is
-        used. What closes it is `GenerateDocumentTakesTheSharedBody`, a type-level
-        comparison of that method's parameter against the interface, which makes any
-        widening a TS2344 whatever the spelling.
-        `test_the_type_level_pins_are_present` is what keeps it there, since deleting
-        it is silent otherwise.
+          * `GenerateDocumentBody in source`, the bare NAME. In `projectsApi.ts` the
+            type-level pin block at the foot of the file names the type three times, so
+            the assertion holds whatever the signature says. An inline literal left
+            `tsc` at exit 0 and every test here green.
+          * `data: GenerateDocumentBody`, the ANNOTATION — but searched over the whole
+            file, so ANY occurrence satisfies it. One unrelated line
+            (`const _probe = (data: GenerateDocumentBody) => data`) plus the inline
+            literal was again `tsc` exit 0 and 29 passed.
+          * The whole signature, required to be PRESENT, or present exactly ONCE. Still
+            evadable, because a decoy can be a full COPY: a `const _decoy = {
+            generateDocument: (projectId: string, data: GenerateDocumentBody) => ... }`
+            above the real method satisfies both forms while the real parameter is an
+            inline literal. Measured: `tsc` exit 0, 29 passed.
+
+        All three are one defect — an EXISTENCE check over a file asks whether SOME
+        construct supplies the string, never whether the one that matters does; a count
+        of one is the same check with one more way to be satisfied. So the property
+        asserted is a RATIO: the number of declarations of this method equals the number
+        that take the shared body. No added text can satisfy that, because a decoy
+        declaration adds to the left side too. A decoy that itself takes the shared type
+        adds to both and passes, which is correct — it is not a respelling of the
+        contract.
+
+        Not an enumeration of legal TypeScript, the thing this file refuses: there is
+        one string per side, and the method is either declared here or it is not.
+
+        LIMIT, and it is narrow: this pins the parameter's REFERENCE to the shared
+        type, not the type's shape. Widening `GenerateDocumentBody` itself does not
+        match a different string, and neither does a widening spelled INSIDE the
+        annotation (`Omit<GenerateDocumentBody, 'doc_type'> & { ... }`) — the latter
+        fails this test, but only incidentally, by no longer being this exact
+        signature. What positively refuses a widened parameter in ANY spelling is
+        `GenerateDocumentTakesTheSharedBody`, a type-level comparison of the method's
+        parameter against the interface, kept present by
+        `test_the_type_level_pins_are_present`. This test's job is the reference; the
+        pin's job is the shape.
         """
         for relative in GENERATE_DOCUMENT_CLIENTS:
             path = _repo_root() / relative
@@ -844,17 +944,33 @@ class TestDocTypeLockstep:
                 f'moved, point GENERATE_DOCUMENT_CLIENTS at its new home; if this '
                 f'client dropped it, drop the entry.'
             )
-            assert REQUEST_BODY_ANNOTATION in source, (
-                f'{relative} does not spell `{REQUEST_BODY_ANNOTATION}`, so its '
-                f'generateDocument body is not taken from the shared type — most '
-                f'likely restated as an inline object literal. In projectsApi.ts '
-                f'nothing else catches that: the name appearing SOMEWHERE in the file '
-                f'is satisfied by the pin block at its foot, and a structurally '
-                f'identical literal compares equal, so the request goes out with '
-                f'whatever the literal admits and the route 400s it. Take '
+            declared = source.count(GENERATE_DOCUMENT_DECLARATION)
+            shared = source.count(GENERATE_DOCUMENT_SIGNATURE)
+            assert declared >= 1, (
+                f'{relative} declares no `{GENERATE_DOCUMENT_DECLARATION}...`, so '
+                f'there is nothing here to pin. If the method changed shape, update '
+                f'GENERATE_DOCUMENT_DECLARATION; if this client dropped it, drop the '
+                f'entry from GENERATE_DOCUMENT_CLIENTS.'
+            )
+            assert shared == declared, (
+                f'{relative} declares generateDocument {declared} time(s) but only '
+                f'{shared} of those take the shared request body. Every declaration '
+                f'must be, exactly:\n'
+                f'    {GENERATE_DOCUMENT_SIGNATURE}\n'
+                f'A declaration that is not means its body is restated inline — the '
+                f'exact edit issue #381 removed — and in projectsApi.ts nothing else '
+                f'in either language catches it: a structurally identical literal '
+                f'compares EQUAL to the interface, so the parameter pin stays green '
+                f'too, and the request goes out with whatever the literal admits. Take '
                 f'{REQUEST_BODY_TYPE} (declared in {DOC_TYPE_UNION_SOURCE}) as the '
                 f'parameter type, and widen the contract there if that is what is '
-                f'wanted.'
+                f'wanted. Keep the signature on ONE line — it is matched as exact '
+                f'text.\n'
+                f'This is a RATIO rather than a presence check because presence was '
+                f'measured to be satisfiable by a decoy: an unrelated '
+                f'`data: GenerateDocumentBody` line, or a second copy of the whole '
+                f'signature, left this guard green while the real parameter was an '
+                f'inline literal.'
             )
 
     @pytest.mark.skipif(
