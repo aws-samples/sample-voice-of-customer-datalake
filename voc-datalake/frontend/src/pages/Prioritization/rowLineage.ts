@@ -471,8 +471,10 @@ function timestampFields(createdAt: string): { readonly utc: string; readonly zo
  * for every reader, which is the property this function exists to hold. Every
  * decision that WOULD rest on no instant is withheld rather than guessed; see
  * `hasUnreadableTimestamp`. Resolution is the millisecond `Date` carries, so two
- * documents from one microsecond-precise `isoformat()` can tie — which is what
- * `rankOf`'s id tie-break is for.
+ * documents from one microsecond-precise `isoformat()` can tie — which `rankOf`'s id
+ * component breaks for the purpose of CHOOSING a type's newest document, and which
+ * `fresherCoherentSelection` answers by withholding staleness rather than by letting
+ * an id decide that one document superseded another.
  */
 function instantOf(createdAt: string): number {
   const fields = timestampFields(createdAt)
@@ -502,14 +504,27 @@ function instantOf(createdAt: string): number {
  * would be right, and is a change to a rendered ordinal in another module rather
  * than part of this one.
  *
- * The tie-break is not decoration. A PRD and a PR/FAQ generated from one request
- * share a timestamp (the defect `byNewestFirst`'s equal arm exists for), and two
- * documents of ONE type can share one too — a comparison with no tie-break would
- * then answer "fresher" for whichever way round the array happened to be, and a
- * frozen row would read as stale or current depending on the order a read
- * returned its documents in. It now breaks ties on the INSTANT, so two spellings of
- * one moment ('09:00:00Z' and '11:00:00+03:00') tie here as they should, instead of
- * the later-looking string winning.
+ * TWO QUESTIONS, AND THE TIE-BREAK ANSWERS ONLY ONE OF THEM. Both are asked of the
+ * same two fields and they are not the same question:
+ *
+ *  * CHOOSING the newest document of a type (`newestOfType`) needs a TOTAL order, or
+ *    the answer depends on the order a read happened to return the list in. A PRD and
+ *    a PR/FAQ generated from one request share a timestamp (the defect
+ *    `byNewestFirst`'s equal arm exists for), and two documents of ONE type can share
+ *    one too — with nothing to break that tie, `reduce` keeps whichever came first
+ *    and the same project answers differently per read. That is what the
+ *    `document_id` component is for, and it is not decoration;
+ *  * deciding whether that choice is an IMPROVEMENT (`fresherCoherentSelection`'s
+ *    `fresher`/`regressed`) compares INSTANTS ALONE and does not use this function.
+ *    An id is not evidence of recency: settling the freshness question on one
+ *    reported a frozen row `Superseded` by a same-instant sibling whose id merely
+ *    sorted higher, making `lineage.staleReason`'s "a newer version … exists" false.
+ *    A tie there WITHHOLDS staleness, which is as order-independent as breaking it
+ *    and is this module's standing answer for an input that cannot settle a question.
+ *
+ * Either way the tie is on the INSTANT and not on the string, so two spellings of one
+ * moment ('09:00:00Z' and '11:00:00+03:00') tie as they should instead of the
+ * later-looking text winning.
  *
  * NO DECISION RESTS ON A TIMESTAMP NAMING NO INSTANT. `NO_INSTANT` ranks below
  * every dated document — INCLUDING far older ones — so a "fresher" answer resting
@@ -550,8 +565,8 @@ function isNewer(a: readonly [number, string], b: readonly [number, string]): bo
  * asymmetry argues the other way and this withholds instead.
  *
  * ASKED OF THE ROW'S OWN DOCUMENTS ONLY, and the candidate needs no gate of its own:
- * with the row's instants readable, a candidate naming none loses `isNewer` against
- * the document the row holds of that type, so `regressed` withholds one line later.
+ * with the row's instants readable, a candidate naming none ranks below the document
+ * the row holds of that type, so `regressed` withholds one line later.
  * That is stated here rather than enforced twice — see the comment at the comparison
  * — because a second gate would be a branch no input can reach. NOT asked of every
  * project document either: a date-less document that is not the newest of its type
@@ -610,10 +625,13 @@ function newestOfType(
  *    about a default" and "guess wrong in an advisory" is argued;
  *  * every type must still resolve to a document of the project, so a candidate
  *    is a set of documents that exist rather than of ids;
- *  * the candidate must be STRICTLY NEWER — at least one type answering a newer
- *    document, and none answering an older one. A candidate that merely differs
+ *  * the candidate must be STRICTLY NEWER BY INSTANT — at least one type answering a
+ *    later instant, and none answering an earlier one. A candidate that merely differs
  *    is not fresher, and the identical candidate is the ordinary state of a frozen
- *    row that is perfectly current;
+ *    row that is perfectly current. Compared by instant ALONE, never by `rankOf`'s
+ *    tuple: a same-instant document with a higher `document_id` is not a newer
+ *    version of anything, and reporting one as such made the badge's own sentence
+ *    false. See the comment at the comparison, and `rankOf`;
  *  * the candidate must not itself CROSS GENERATIONS. "The newest of each type" is
  *    not automatically one generation: a project whose newest PR/FAQ was built
  *    from the previous PRD produces a newest-of-each candidate that crosses
@@ -674,8 +692,8 @@ export function fresherCoherentSelection(
   const chosen = candidate.flatMap((entry) => (entry === null ? [] : [entry]))
   // NO SECOND GATE FOR THE CANDIDATE'S timestamps, and that is a proof rather than an
   // omission: the row's own name instants by the check above, so a candidate naming
-  // none ranks `NO_INSTANT` and loses `isNewer` against the document the row holds of
-  // that type — `regressed` below then returns null. A gate here would be a branch no
+  // none is `NO_INSTANT` against a real instant on the document the row holds of that
+  // type — `regressed` below then returns null. A gate here would be a branch no
   // input can reach, which is worse than the sentence explaining why. This is the
   // accurate statement of the rule; `hasUnreadableTimestamp` and the condition list
   // above both point here rather than claiming a second call site.
@@ -686,8 +704,28 @@ export function fresherCoherentSelection(
   // of one rule is where the two come to disagree. `regressed` is the other half: no
   // type may answer something OLDER than the row holds, or a sideways move would read
   // as an improvement.
-  const fresher = chosen.some((entry, index) => isNewer(rankOf(entry), rankOf(selected[index])))
-  const regressed = chosen.some((entry, index) => isNewer(rankOf(selected[index]), rankOf(entry)))
+  //
+  // THE INSTANT ALONE, never `rankOf`'s tuple, and that is the whole of what an id
+  // may and may not decide here. `rankOf`+`isNewer` fall through to `document_id`,
+  // which `newestOfType` needs — a total order, or "the newest PRD" depends on the
+  // order a read returned the list in. Used for THIS question the same fall-through
+  // reported a frozen row `Superseded` by a same-instant sibling whose id merely
+  // sorted higher: `lineage.staleReason` then opened "A newer version of at least
+  // one document type on this row exists" when none did, and `lineage.staleAction`
+  // asked a reviewer to create a row and re-score against a combination that was
+  // not fresher, only differently named. Three inputs reach it — two documents from
+  // one `isoformat()` batch collapsing to `Date`'s millisecond, two spellings of one
+  // moment (which is exactly what the instant comparison exists to make equal), and
+  // any two date-only values from one day. A tie WITHHOLDS, which is as
+  // order-independent as breaking it and is the module's standing answer for an
+  // input that cannot settle a question (see `hasUnreadableTimestamp` and the type
+  // gates): an id is not evidence of recency.
+  const fresher = chosen.some(
+    (entry, index) => instantOf(entry.createdAt) > instantOf(selected[index].createdAt),
+  )
+  const regressed = chosen.some(
+    (entry, index) => instantOf(selected[index].createdAt) > instantOf(entry.createdAt),
+  )
   if (!fresher || regressed) return null
   const records = chosen.flatMap((entry) => {
     const record = byId.get(entry.id)

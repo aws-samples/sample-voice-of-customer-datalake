@@ -38,8 +38,10 @@
  *  * the per-type expectation widened to "every scorable type the project holds" →
  *    "a project's first document of a new type does not make an existing row
  *    stale" (the missing-optional-document boundary);
- *  * the `rankOf` id tie-break deleted → "documents sharing a timestamp compare by
- *    id, in both array orders";
+ *  * `fresher`/`regressed` in `fresherCoherentSelection` changed back from `instantOf`
+ *    to `isNewer(rankOf(...))` → "withholds staleness on a timestamp tie, in both
+ *    array orders", whose positive control (a newer document with a LOWER id) stays
+ *    green under that revert, so the case pins the tie and not the comparison;
  *  * `rankOf`'s `instantOf` reverted to the raw `created_at` string → "compares the
  *    INSTANT a timestamp names, not the string that spells it" (all three halves),
  *    plus the offset half of the tie-break case and the unparseable half of the
@@ -484,33 +486,55 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
       .toEqual(['prd_2', 'prfaq_1'])
   })
 
-  it('breaks a timestamp tie on document id, in both array orders', () => {
+  it('withholds staleness on a timestamp tie, in both array orders', () => {
     // Two documents of one type CAN share a `created_at` (the defect
-    // `byNewestFirst`'s equal arm exists for, one type over). With no tie-break, the
-    // comparison answers "fresher" for whichever way round the read happened to
-    // return them — so the very same frozen row would read as stale or as current
-    // depending on the order of a list nobody controls.
+    // `byNewestFirst`'s equal arm exists for, one type over), and the comparison must
+    // answer the same whichever way round a read returned them — or the very same
+    // frozen row would read as stale or as current depending on the order of a list
+    // nobody controls.
+    //
+    // IT ANSWERS BY WITHHOLDING, which is order-independent in the direction that
+    // does not print a false sentence. `rankOf`'s id tie-break settles the ORDERING
+    // question `newestOfType` asks and deliberately does not settle this one: an id
+    // deciding freshness reported the row holding `prd_a` `Superseded` by a document
+    // of the same instant, so `lineage.staleReason` claimed "a newer version … exists"
+    // when none did. Neither row is stale here, in either order.
     const sameInstant = '2025-01-01T09:00:00Z'
     const prdA = doc('prd_a', 'prd', sameInstant, builtFromFeedback)
     const prdB = doc('prd_b', 'prd', sameInstant, builtFromFeedback)
 
     for (const order of [[prdA, prdB], [prdB, prdA]]) {
-      // `prd_b` sorts above `prd_a`, so the row holding `prd_a` is stale and the row
-      // holding `prd_b` is current — in either order.
-      expect(fresherCoherentSelection([prdA], order), JSON.stringify(order))
-        .toEqual(['prd_b'])
+      expect(fresherCoherentSelection([prdA], order), JSON.stringify(order)).toBeNull()
       expect(fresherCoherentSelection([prdB], order), JSON.stringify(order)).toBeNull()
+      // Through the entry point the page uses, which is what a reviewer sees.
+      expect(rowLineageOf(frozenRow([prdA]), order).stale, JSON.stringify(order)).toBe(false)
     }
 
     // AND THE TIE IS ON THE INSTANT, not on the string. `prd_a`'s moment is respelled
-    // as an offset here — the SAME instant as `prd_b`'s Z form, so the id rule decides
-    // and `prd_b` still wins. The two spellings do not tie as strings, and the one that
-    // sorts higher as text is `prd_a`'s, which the id rule puts SECOND: a string
-    // comparison therefore reverses this pair, and the row holding the winner reads as
-    // superseded by the loser.
+    // as an offset here — the SAME instant as `prd_b`'s Z form, so nothing is fresher
+    // either way round. The two spellings do not tie as TEXT, and `prd_a`'s sorts
+    // higher: a string comparison would therefore report `prd_b`'s row superseded by a
+    // copy of the moment it already holds.
     const offsetA = doc('prd_a', 'prd', '2025-01-01T11:00:00+02:00', builtFromFeedback)
-    expect(fresherCoherentSelection([offsetA], [offsetA, prdB])).toEqual(['prd_b'])
+    expect(fresherCoherentSelection([offsetA], [offsetA, prdB])).toBeNull()
     expect(fresherCoherentSelection([prdB], [offsetA, prdB])).toBeNull()
+
+    // THE POSITIVE CONTROL, and it is the one shape that tells withholding apart from
+    // a comparison that stopped working: a genuinely newer document is still reported
+    // in either order even when its id sorts LOWER than the older document's — which
+    // the tuple comparison got right only because the instant dominated it.
+    const heldOlder = doc('prd_z', 'prd', '2025-01-01', builtFromFeedback)
+    const newerLowerId = doc('prd_a', 'prd', '2025-06-01', builtFromFeedback)
+    for (const order of [[heldOlder, newerLowerId], [newerLowerId, heldOlder]]) {
+      expect(fresherCoherentSelection([heldOlder], order), JSON.stringify(order))
+        .toEqual(['prd_a'])
+    }
+
+    // Two date-only values from ONE day tie for the whole day, which is the widest
+    // window an id could have decided over.
+    const dayA = doc('prd_a', 'prd', '2025-01-01', builtFromFeedback)
+    const dayZ = doc('prd_z', 'prd', '2025-01-01', builtFromFeedback)
+    expect(fresherCoherentSelection([dayA], [dayA, dayZ])).toBeNull()
   })
 
   it('withholds staleness for a row already holding two versions of one type', () => {
