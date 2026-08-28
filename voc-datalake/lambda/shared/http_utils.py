@@ -38,6 +38,7 @@ from tenacity import (
     retry,
     retry_if_exception_type,
     stop_after_attempt,
+    stop_after_delay,
     wait_exponential,
 )
 
@@ -92,6 +93,11 @@ BODY_HEADERS = frozenset({'content-length', 'content-type', 'transfer-encoding'}
 
 # Body kwargs dropped alongside those headers, for the same reason.
 BODY_KWARGS = ('data', 'json', 'files')
+
+# Default port per scheme, so an implicit port and its explicit spelling compare
+# as one origin (see `_request_origin`). Only http/https reach here — anything
+# else is refused by the policy before a request is built.
+DEFAULT_SCHEME_PORTS = {'http': 80, 'https': 443}
 
 
 class OutboundUrlBlocked(ValueError):
@@ -200,7 +206,7 @@ def resolve_host_addresses(hostname: str) -> list[ipaddress.IPv4Address | ipaddr
     return addresses
 
 
-def assert_outbound_url_allowed(url: str) -> None:
+def assert_outbound_url_allowed(url: str, skip_resolution: bool = False) -> None:
     """
     The one outbound-URL policy for scraper traffic (issue #244).
 
@@ -210,6 +216,15 @@ def assert_outbound_url_allowed(url: str) -> None:
     the instance metadata endpoint), multicast, unspecified or reserved, in
     either IPv4 or IPv6 form. A mixed public/private answer set fails: the
     client picks the address, not us.
+
+    Args:
+        skip_resolution: Run only the local checks, for a host whose addresses
+            the CALLER has already cleared in this same unit of work — currently
+            `validate_scraper_destinations` memoizing one write's hostnames so an
+            array of configs over one site costs one lookup. The local checks are
+            not skippable with it: a second URL on a cleared host can still carry
+            a refused scheme or embedded credentials. Never pass True before a
+            request goes out; the resolution IS the policy.
 
     Raises:
         OutboundUrlBlocked: with a message safe to hand back to an API caller.
@@ -244,6 +259,21 @@ def assert_outbound_url_allowed(url: str) -> None:
     if hostname.lower().rstrip('.') in BLOCKED_OUTBOUND_HOSTNAMES:
         raise OutboundUrlBlocked('Access to localhost is not allowed')
 
+    if skip_resolution:
+        # An IP literal is classified locally, with no lookup, so it is still
+        # decided here: `skip_resolution` must not be a way to turn
+        # `http://127.0.0.1/` into a permitted target. Only a NAME's lookup is
+        # what the caller has already done.
+        try:
+            literal = ipaddress.ip_address(hostname)
+        except ValueError:
+            return
+        if not is_global_outbound_address(literal):
+            raise OutboundUrlBlocked(
+                'Access to internal/private IP addresses is not allowed'
+            )
+        return
+
     for ip in resolve_host_addresses(hostname):
         if not is_global_outbound_address(ip):
             raise OutboundUrlBlocked(
@@ -256,8 +286,34 @@ class RetryableHTTPError(requests.exceptions.HTTPError):
     pass
 
 
+# The default retry shape, named so `fetch_checked_with_retry` can rebuild the
+# same policy with a deadline attached instead of restating the numbers. Changing
+# a default here changes it for both.
+RETRY_MAX_ATTEMPTS = 3
+RETRY_MIN_WAIT_SECONDS = 2
+RETRY_MAX_WAIT_SECONDS = 30
+
+
+def _stop_condition(max_attempts: int, max_total_delay: float | None):
+    """
+    Stop after `max_attempts` tries, or once `max_total_delay` has elapsed.
+
+    The delay leg is what makes a wall-clock budget bound the ATTEMPTS rather
+    than only the calls: `stop_after_attempt` alone let 3 attempts at a 10 s
+    timeout plus backoff run to ~34 s inside a request whose budget was 20 s,
+    which is the API Gateway 504 the budget exists to prevent.
+    """
+    stop = stop_after_attempt(max_attempts)
+    if max_total_delay is not None:
+        stop = stop | stop_after_delay(max_total_delay)
+    return stop
+
+
 def create_retry_decorator(
-    max_attempts: int = 3, min_wait: int = 2, max_wait: int = 30
+    max_attempts: int = RETRY_MAX_ATTEMPTS,
+    min_wait: int = RETRY_MIN_WAIT_SECONDS,
+    max_wait: int = RETRY_MAX_WAIT_SECONDS,
+    max_total_delay: float | None = None,
 ):
     """
     Create a retry decorator with exponential backoff for external API calls.
@@ -266,12 +322,15 @@ def create_retry_decorator(
         max_attempts: Maximum number of retry attempts (default: 3)
         min_wait: Minimum wait time in seconds between retries (default: 2)
         max_wait: Maximum wait time in seconds between retries (default: 30)
+        max_total_delay: Optional wall-clock ceiling, in seconds, across ALL
+            attempts. Without it a caller with a deadline can only bound one
+            attempt's timeout, not the retried total.
 
     Returns:
         A tenacity retry decorator
     """
     return retry(
-        stop=stop_after_attempt(max_attempts),
+        stop=_stop_condition(max_attempts, max_total_delay),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
         retry=retry_if_exception_type((*RETRYABLE_EXCEPTIONS, RetryableHTTPError)),
         before_sleep=before_sleep_log(logger, log_level=20),  # INFO level
@@ -346,21 +405,83 @@ def fetch_with_retry(
     return response
 
 
+def _fetch_within_deadline(url: str, deadline: float, timeout: int, **rest):
+    """
+    One hop, retried, with every attempt kept inside `deadline`.
+
+    Two bounds are needed and neither alone is enough. `stop_after_delay` is only
+    consulted BETWEEN attempts, so it cannot stop an attempt that has already
+    started from running past the budget; shortening the timeout once per hop
+    cannot either, because the later attempts still get the hop's full value. So
+    the timeout is recomputed from the remaining budget on EVERY attempt, and the
+    stop condition ends the retries as soon as the budget is gone.
+
+    `fetch_with_retry.__wrapped__` is its undecorated body: the retry policy for
+    this call carries a deadline, so the default one must not also apply.
+    """
+    def attempt():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise requests.exceptions.Timeout(f'Exceeded the budget for {url}')
+        return fetch_with_retry.__wrapped__(
+            url, timeout=min(timeout, remaining), **rest
+        )
+
+    remaining_now = max(deadline - time.monotonic(), 0)
+    retrying = retry(
+        stop=_stop_condition(RETRY_MAX_ATTEMPTS, remaining_now),
+        wait=wait_exponential(
+            multiplier=1, min=RETRY_MIN_WAIT_SECONDS, max=RETRY_MAX_WAIT_SECONDS
+        ),
+        retry=retry_if_exception_type((*RETRYABLE_EXCEPTIONS, RetryableHTTPError)),
+        before_sleep=before_sleep_log(logger, log_level=20),
+        reraise=True,
+    )
+    return retrying(attempt)()
+
+
 def _request_origin(url: str) -> tuple:
-    """Scheme, host and port a URL addresses — what "same origin" means here."""
+    """
+    Scheme, host and port a URL addresses — what "same origin" means here.
+
+    The port is normalized to the scheme's default before comparing, so
+    `https://h/` and `https://h:443/` are the SAME origin. Without that, the two
+    spellings compared unequal and a redirect between them dropped the caller's
+    `Authorization` — `requests.SessionRedirectMixin.rebuild_auth` compares the
+    hostname only, so this is what makes the comparison agree with it.
+    """
     parsed = urlparse(url)
     try:
         port = parsed.port
     except ValueError:
         port = None
+    if port is None:
+        port = DEFAULT_SCHEME_PORTS.get(parsed.scheme)
     return (parsed.scheme, (parsed.hostname or '').lower(), port)
 
 
 def _without_headers(headers: dict | None, drop: frozenset) -> dict | None:
-    """`headers` minus `drop`, matched case-insensitively. None stays None."""
+    """
+    `headers` minus `drop`, matched case-insensitively. None stays None.
+
+    The input mapping TYPE is preserved: a caller passing a
+    `requests.structures.CaseInsensitiveDict` gets one back, so their own
+    lookups keep working for the rest of the chain. Rebuilding it as a plain
+    dict silently made `headers['authorization']` start missing after the first
+    strip, and let a later `headers['Content-Type'] = ...` sit alongside an
+    existing `content-type`.
+    """
     if not headers:
         return headers
-    return {k: v for k, v in headers.items() if k.lower() not in drop}
+    kept = {k: v for k, v in headers.items() if k.lower() not in drop}
+    if type(headers) is dict:
+        return kept
+    try:
+        return type(headers)(kept)
+    except (TypeError, ValueError):
+        # A mapping whose constructor will not take a plain dict. Preserving the
+        # drop matters more than preserving the type.
+        return kept
 
 
 def _method_after_redirect(method: str, status_code: int) -> str:
@@ -428,9 +549,13 @@ def fetch_checked_with_retry(
             `(max_redirects + 1) * timeout` plus retries, which overruns API
             Gateway's 29 s integration limit and surfaces as a 504 instead of the
             intended 4xx/5xx — so any caller inside a synchronous request should
-            set it. Checked between hops and used to shorten each hop's own
-            timeout, so a single hop's tenacity retries can still overshoot it;
-            it bounds the chain, not one request.
+            set it. It bounds RETRIED ATTEMPTS, not just hops: the remaining
+            budget shortens each hop's own timeout AND becomes a
+            `stop_after_delay` on that hop's retries, so 3 attempts at the hop
+            timeout can no longer outrun it. A non-positive value means "already
+            expired" — which is what a caller passing `deadline -
+            time.monotonic()` produces once its own budget is gone — and raises
+            before any request is attempted.
 
     Raises:
         OutboundUrlBlocked: the initial URL, or any redirect target, is not a
@@ -444,30 +569,38 @@ def fetch_checked_with_retry(
     # function exists to remove.
     kwargs.pop('allow_redirects', None)
 
-    deadline = time.monotonic() + total_timeout if total_timeout else None
+    # `is not None`, not truthiness: total_timeout=0 means "already expired", and
+    # treating it as "no budget" gave an UNBOUNDED chain to precisely the caller
+    # that had run out of time. A negative value was already handled, which is
+    # what made the 0 case an inconsistency rather than a policy.
+    deadline = time.monotonic() + total_timeout if total_timeout is not None else None
     origin = _request_origin(url)
     current_url = url
     for _ in range(max_redirects + 1):
         assert_outbound_url_allowed(current_url)
 
-        hop_timeout = timeout
-        if deadline is not None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise requests.exceptions.Timeout(
-                    f'Exceeded the {total_timeout}s budget for {url}'
-                )
-            hop_timeout = min(timeout, remaining)
-
-        response = fetch_with_retry(
-            current_url,
+        hop_args = dict(
             headers=headers,
             params=params,
-            timeout=hop_timeout,
             method=method,
             allow_redirects=False,
             **kwargs,
         )
+        if deadline is None:
+            response = fetch_with_retry(current_url, timeout=timeout, **hop_args)
+        else:
+            if deadline - time.monotonic() <= 0:
+                raise requests.exceptions.Timeout(
+                    f'Exceeded the {total_timeout}s budget for {url}'
+                )
+            # The budget bounds this hop's ATTEMPTS, not just the hop. Passing a
+            # shortened timeout to the default retry policy was not enough:
+            # tenacity re-read the budget only between hops, so 3 attempts plus
+            # backoff overshot it and the invocation was cut off before the
+            # Timeout above could ever be raised.
+            response = _fetch_within_deadline(
+                current_url, deadline, timeout, **hop_args
+            )
 
         location = response.headers.get('Location') if response.headers else None
         if response.status_code not in REDIRECT_STATUS_CODES or not location:

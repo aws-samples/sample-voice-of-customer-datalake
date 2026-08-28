@@ -403,20 +403,31 @@ def update_credentials(source: str):
                 f"Value for key {key[:40]!r} must be a string."
             )
 
-    # This route is the SECOND write path into `webscraper_configs` — the
-    # Settings webscraper card saves the whole array through it as one `configs`
-    # string, so checking only `POST /scrapers` left the same internal
-    # destination reachable through a different route (issue #244). The check is
-    # the one in shared/scraper_urls.py, not a second implementation, and it runs
-    # before the secret is read so nothing is persisted on refusal.
-    if source == WEBSCRAPER_SOURCE and WEBSCRAPER_CONFIGS_KEY in body:
-        validate_scraper_configs_json(body[WEBSCRAPER_CONFIGS_KEY])
-
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
 
         prefix = f"{source}_"
+
+        # This route is the SECOND write path into `webscraper_configs` — the
+        # Settings webscraper card saves the whole array through it as one
+        # `configs` string, so checking only `POST /scrapers` left the same
+        # internal destination reachable through a different route (issue #244).
+        # The check is the one in shared/scraper_urls.py, not a second
+        # implementation, and it runs before anything is WRITTEN, so a refusal
+        # persists nothing.
+        #
+        # The stored value is handed over so the URL-count cap can tell a list
+        # this write created from one it is carrying forward untouched. Without
+        # it, one pre-existing over-cap config blocked saving every other config
+        # in the array. Reading the secret first is what makes that comparison
+        # possible; the ValidationError is re-raised unflattened below.
+        if source == WEBSCRAPER_SOURCE and WEBSCRAPER_CONFIGS_KEY in body:
+            validate_scraper_configs_json(
+                body[WEBSCRAPER_CONFIGS_KEY],
+                stored=secrets.get(f"{prefix}{WEBSCRAPER_CONFIGS_KEY}"),
+            )
+
         for key, value in body.items():
             # Falsy values (null/empty string) are skipped — sending null or ""
             # does NOT delete the key.  Credential deletion is not currently

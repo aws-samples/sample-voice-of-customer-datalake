@@ -1093,6 +1093,7 @@ class TestWebscraperConfigsWritePath:
     def test_refuses_a_configs_array_naming_an_internal_destination(
         self, mock_secrets, api_gateway_event, lambda_context
     ):
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
         configs = json.dumps([
             {'id': 's1', 'base_url': 'http://169.254.169.254/latest/meta-data/'},
         ])
@@ -1101,8 +1102,10 @@ class TestWebscraperConfigsWritePath:
 
         assert response['statusCode'] == 400, response['body']
         assert 'internal/private' in json.loads(response['body'])['error']
-        # Refused before the secret was read, so nothing is persisted.
-        mock_secrets.get_secret_value.assert_not_called()
+        # The secret is READ before the check — that is how the URL-count cap
+        # tells a list this write created from one it carries forward — but the
+        # refusal still happens before any write, which is the property that
+        # matters.
         mock_secrets.put_secret_value.assert_not_called()
 
     @patch('shared.http_utils.socket.getaddrinfo')
@@ -1112,6 +1115,7 @@ class TestWebscraperConfigsWritePath:
     ):
         """The gap a string denylist cannot close, on this route too."""
         mock_resolve.return_value = [(2, 1, 6, '', ('10.1.2.3', 80))]
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
         configs = json.dumps([{'id': 's1', 'base_url': 'https://sneaky.example/'}])
 
         response = self._put(api_gateway_event, lambda_context, {'configs': configs})
@@ -1164,6 +1168,8 @@ class TestWebscraperConfigsWritePath:
         The ingestor logs a JSONDecodeError and scrapes nothing for a broken
         array, so storing one is a silently dead integration.
         """
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+
         response = self._put(
             api_gateway_event, lambda_context, {'configs': '[{"id": '},
         )

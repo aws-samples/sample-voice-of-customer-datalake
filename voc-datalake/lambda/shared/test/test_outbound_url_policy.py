@@ -28,6 +28,18 @@ REVERT MAP — which mutation each test catches
 - Stop downgrading the method to GET where requests would
   -> `downgrades_the_method_to_get_exactly_where_requests_would`.
 - Ignore `total_timeout` -> `stops_following_a_chain_that_outruns_its_budget`.
+- Bound the budget per HOP only, letting one hop's 3 retries outrun it
+  -> `keeps_one_hops_retries_inside_the_budget`.
+- Test `total_timeout` for truthiness, so 0 means "no budget"
+  -> `refuses_a_budget_that_has_already_expired`.
+- Compare origins on the raw parsed port, so `https://h/` and `https://h:443/`
+  differ and credentials are dropped within one origin
+  -> `keeps_credential_headers_when_only_the_port_spelling_changes`.
+- Rebuild the caller's headers as a plain dict, losing case-insensitivity for the
+  rest of the chain -> `preserves_a_case_insensitive_header_mapping_across_hops`.
+- Resolve a host that `skip_resolution` cleared earlier in the same write, or skip
+  the local checks along with it
+  -> `test_scraper_urls.py::still_applies_the_local_checks_to_a_cleared_hosts_other_urls`.
 
 Every "refuses" concern has a positive control (`TestPermittedDestinations`,
 `allows_a_public_redirect_chain_and_returns_the_final_page`) so an
@@ -41,6 +53,7 @@ import ipaddress
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 from requests.structures import CaseInsensitiveDict
 
 # ---------------------------------------------------------------------------
@@ -287,6 +300,63 @@ class TestPermittedDestinations:
         assert_outbound_url_allowed('https://[2606:2800:220:1:248:1893:25c8:1946]/x')
 
 
+class TestSkipResolution:
+    """
+    `skip_resolution=True` drops ONLY the lookup, for a host the caller resolved
+    earlier in the same unit of work (`validate_scraper_destinations` memoizing
+    one write's hostnames). It is not an allow-list: the local checks are what
+    still catch a refused scheme or embedded credentials on that host's other
+    URLs, and nothing may pass it before a request actually goes out.
+    """
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_does_not_call_the_resolver(self, mock_resolve):
+        from shared.http_utils import assert_outbound_url_allowed
+
+        assert_outbound_url_allowed(
+            'https://example.com/second-page', skip_resolution=True
+        )
+
+        mock_resolve.assert_not_called()
+
+    @pytest.mark.parametrize('url', [
+        'gopher://example.com/x',                    # scheme
+        'https://user:pw@example.com/x',             # embedded credentials
+        'http://localhost/x',                        # blocked name
+        'https:///x',                                # no hostname
+        'http://127.0.0.1/x',                        # a literal needs no resolver
+        'http://[::1]/x',
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_still_applies_every_local_check(self, mock_resolve, url):
+        """
+        Each of these is decided WITHOUT the resolver, so skipping the lookup must
+        not skip them. An IP literal is included because it is parsed locally —
+        `skip_resolution` must not turn `http://127.0.0.1/` into a permitted
+        target.
+        """
+        from shared.http_utils import OutboundUrlBlocked, assert_outbound_url_allowed
+
+        with pytest.raises(OutboundUrlBlocked):
+            assert_outbound_url_allowed(url, skip_resolution=True)
+
+        mock_resolve.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_defaults_to_resolving(self, mock_resolve):
+        """
+        Positive control on the default: the resolution IS the policy, so it must
+        happen unless a caller explicitly opts out.
+        """
+        from shared.http_utils import assert_outbound_url_allowed
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+
+        assert_outbound_url_allowed('https://example.com/x')
+
+        mock_resolve.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # Redirect handling
 # ---------------------------------------------------------------------------
@@ -525,6 +595,159 @@ class TestCheckedFetchMatchesRequestsRedirectSemantics:
             mock_request.call_args_list[1].kwargs['headers']['Authorization']
             == 'Bearer secret'
         )
+
+    @pytest.mark.parametrize(('start', 'location'), [
+        ('https://example.com/', 'https://example.com:443/final'),
+        ('https://example.com:443/', 'https://example.com/final'),
+        ('http://example.com/', 'http://example.com:80/final'),
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_keeps_credential_headers_when_only_the_port_spelling_changes(
+        self, mock_request, mock_resolve, start, location
+    ):
+        """
+        An implicit port and its explicit default are the SAME origin.
+        `parsed.port` is None in the first spelling and 443 in the second, so
+        comparing them raw made a redirect between two spellings of one origin
+        drop the caller's Authorization — an unexplained 401 to debug, where
+        `rebuild_auth` (hostname only) would have kept it.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location=location),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(start, headers={'Authorization': 'Bearer secret'})
+
+        assert (
+            mock_request.call_args_list[1].kwargs['headers']['Authorization']
+            == 'Bearer secret'
+        )
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_preserves_a_case_insensitive_header_mapping_across_hops(
+        self, mock_request, mock_resolve
+    ):
+        """
+        Rebuilding the caller's `CaseInsensitiveDict` as a plain dict kept the
+        DROP correct but silently made their own lowercase lookups miss for the
+        rest of the chain, and let a later `Content-Type` sit beside an existing
+        `content-type`. `requests` passes this type around internally.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [
+            _response(302, location='https://other.example/page'),
+            _response(200, text='ok'),
+        ]
+
+        fetch_checked_with_retry(
+            'https://example.com/',
+            headers=CaseInsensitiveDict({
+                'Authorization': 'Bearer secret',
+                'User-Agent': 'voc-scraper',
+            }),
+        )
+
+        second = mock_request.call_args_list[1].kwargs['headers']
+        assert 'Authorization' not in second
+        # The type survived, so the caller's own case-insensitive lookups still
+        # resolve on the hop after a strip.
+        assert isinstance(second, CaseInsensitiveDict)
+        assert second['user-agent'] == 'voc-scraper'
+
+    @pytest.mark.parametrize('budget', [0, -1])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_refuses_a_budget_that_has_already_expired(
+        self, mock_request, mock_resolve, budget
+    ):
+        """
+        `total_timeout=0` means "already expired", not "no budget". Under a
+        truthiness test it meant the latter, so the caller most likely to pass it
+        — one computing `deadline - time.monotonic()` after its own budget ran
+        out — got an UNBOUNDED chain. A negative value already behaved, which is
+        what made 0 an inconsistency rather than a policy.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [_response(200, text='ok')]
+
+        with pytest.raises(requests.exceptions.Timeout):
+            fetch_checked_with_retry('https://example.com/', total_timeout=budget)
+
+        # Nothing went out: an expired budget is decided before the request.
+        mock_request.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_fetches_without_a_budget_when_none_is_given(
+        self, mock_request, mock_resolve
+    ):
+        """
+        Positive control for the two cases above: `total_timeout=None` is the
+        default and the ingestor's path, so "expired" must not be the reading of
+        an ABSENT budget.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        mock_request.side_effect = [_response(200, text='ok')]
+
+        assert fetch_checked_with_retry('https://example.com/').status_code == 200
+
+    @patch('tenacity.nap.time.sleep')
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('shared.http_utils.requests.request')
+    def test_keeps_one_hops_retries_inside_the_budget(
+        self, mock_request, mock_resolve, mock_sleep
+    ):
+        """
+        The budget bounds retried ATTEMPTS, not just hops.
+
+        `fetch_with_retry` is retry-decorated, and the budget used to be re-read
+        only between hops — so with the preview route's real constants (hop 10 s,
+        total 20 s) a stalling host cost 3 attempts x 10 s plus backoff ~= 34 s on
+        the FIRST hop. That is past API Gateway's 29 s limit, so the invocation was
+        cut off and the caller got the 504 this budget exists to prevent, instead
+        of the Timeout below.
+
+        A stalling host is simulated on a FAKE clock — the double consumes its
+        whole timeout, and the retry backoff advances the same clock — so the test
+        measures the real budget arithmetic without spending 20 s to do it.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        mock_resolve.return_value = _addrinfo('93.184.216.34')
+        now = [1000.0]
+        timeouts = []
+
+        def stall(**kwargs):
+            timeouts.append(kwargs['timeout'])
+            now[0] += kwargs['timeout']   # the host holds the connection open
+            raise requests.exceptions.Timeout('stalled')
+
+        mock_request.side_effect = stall
+        mock_sleep.side_effect = lambda seconds: now.__setitem__(0, now[0] + seconds)
+
+        with patch('shared.http_utils.time.monotonic', lambda: now[0]), \
+                pytest.raises(requests.exceptions.Timeout):
+            fetch_checked_with_retry(
+                'https://slow.example.com/', timeout=10, total_timeout=20
+            )
+
+        # Every attempt is bounded by what is LEFT of the budget, so the time
+        # actually spent stalling cannot exceed it. `[10, 10, 10]` was the bug.
+        assert sum(timeouts) <= 20
+        assert timeouts[0] == 10
+        assert timeouts[-1] < 10, 'a later attempt must shrink to fit the budget'
 
     @pytest.mark.parametrize(('method', 'status', 'expected'), [
         ('POST', 303, 'GET'),   # 303 always means "go read this instead"
