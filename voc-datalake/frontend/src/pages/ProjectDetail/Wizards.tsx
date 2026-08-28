@@ -244,9 +244,18 @@ export function DocWizard({
 
   // `DocType`, not a respelt `'prd' | 'prfaq'` — a convention here, not something a
   // test enforces: the lockstep test reads only the `DocType` declaration and the two
-  // api/ clients, never this file. A widening IS caught, but by the compiler at the
-  // `includes`/spread sites below, since `docConfig.docTypes` is `DocType[]` (issue
-  // #381).
+  // api/ clients, never this file. Widening THIS annotation past `DocType` is caught,
+  // by the compiler at the `includes`/spread sites below, since `docConfig.docTypes`
+  // is `DocType[]`.
+  //
+  // ⚠️ The REVERSE is not caught, and it is the direction that actually happens: if
+  // `DocType` and `GENERATED_DOC_TYPES` are widened together, nothing here fails.
+  // `tsc` is fine with a narrower argument to `includes`/`filter`, so the picker
+  // silently keeps offering the old set — measured: adding a third member to both
+  // leaves `tsc -b` clean and every lockstep test green with this file untouched.
+  // Adding a doc type therefore means editing this file too: `hasPrfaq`/`hasPrd`
+  // above and the two `toggleDocType('…')` buttons in `renderFinalStep` name their
+  // members as literals (issue #381).
   const toggleDocType = (type: DocType) => {
     const next = docTypes.includes(type)
       ? docTypes.filter((d) => d !== type)

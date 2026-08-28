@@ -131,9 +131,18 @@ export const projectsApi = {
       // type-checks. Naming the shared type is not enough either: an
       // `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ... | 'onepager' }`
       // respelling still USES the name while widening the field. This clause is
-      // what makes either a TS1360 here, so widening has to happen in
-      // `GenerateDocumentBody` where the field is `DocType` and
-      // test_doc_type_lockstep.py compares it against the route (issue #381).
+      // what makes either a TS1360 here.
+      //
+      // It has to be ON THIS METHOD, not merely somewhere in this file:
+      // `test_the_terminal_client_pins_the_body_structurally` searches only the
+      // `generateDocument` slice, because a whole-file check was measured to pass
+      // with the clause moved to an unrelated helper and this method widened.
+      //
+      // So widening means editing `DocType` and `GENERATED_DOC_TYPES` together.
+      // Editing `GenerateDocumentBody.doc_type` instead is NOT a way round that —
+      // `DocTypeFieldIsExactlyTheUnion` in `./types` makes it a TS2344 — and this
+      // clause alone would not have stopped it, since it checks the built object
+      // against that interface (issue #381).
       body: JSON.stringify({
         ...getDateBasisBodyParams(),
         ...(data satisfies GenerateDocumentBody),

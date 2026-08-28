@@ -423,6 +423,12 @@ export type DocType = 'prd' | 'prfaq'
 // NOWHERE — `tsc` accepts it and the request goes out with a value the route 400s.
 // Only the shared name closes that, and `test_doc_type_lockstep.py` asserts both
 // signatures still spell it.
+//
+// `doc_type` below is pinned to `DocType` by `DocTypeFieldIsExactlyTheUnion`, a few
+// lines down. Referencing the union HERE is not self-enforcing: nothing had stopped
+// this one field being respelled back to `'prd' | 'prfaq' | 'onepager'`, which was
+// measured to leave `tsc`, `eslint` and the whole lockstep suite green while the
+// route 400s the third value.
 export interface GenerateDocumentBody {
   doc_type: DocType
   title: string
@@ -441,6 +447,50 @@ export interface GenerateDocumentBody {
   customer_questions?: string[]
   response_language?: string
 }
+
+// 🔑 The pin that makes `GenerateDocumentBody.doc_type` REFERENCE `DocType` rather
+// than merely happen to list the same members today. Deleting this block compiles
+// cleanly, so `test_the_request_body_field_is_pinned_to_the_union` in
+// lambda/api/test/test_doc_type_lockstep.py keeps both declarations present.
+//
+// Why it is needed at all — measured, not assumed. Every other guard around this
+// contract stops one level further out:
+//   * the lockstep test parses only the `export type DocType =` declaration above,
+//     so it cannot see this interface;
+//   * `satisfies GenerateDocumentBody` in `projectsApi.generateDocument` checks the
+//     built object against THIS interface, so a widened interface satisfies it by
+//     construction;
+//   * `noUnusedLocals` stays quiet, since `DocType` is still used by
+//     `ProjectDocument` below.
+// So respelling the field `'prd' | 'prfaq' | 'onepager'` was measured to exit `tsc`
+// 0, pass all lockstep tests and lint clean, while a caller could then send a value
+// the route 400s. That is the one edit the comments above direct a widener TO, which
+// is why it gets a compiler check and not a third text assertion.
+//
+// A one-way `extends` would not do: `'prd'` extends `DocType`, so a NARROWED field
+// (offering less than the route accepts — the "unreachable capability" half of the
+// drift this contract is about) would pass. Hence equality in both directions.
+// `[T] extends [U]` rather than `T extends U`: the bare form distributes over a
+// union, which would compare member-by-member and accept a subset.
+type BothWays<Field, Union> = [Field] extends [Union]
+  ? ([Union] extends [Field] ? true : false)
+  : false
+type MustBeTrue<Verdict extends true> = Verdict
+type MustBeFalse<Verdict extends false> = Verdict
+// Exported only so `noUnusedLocals` cannot be what deletes them; nothing imports
+// either, and nothing should.
+export type DocTypeFieldIsExactlyTheUnion = MustBeTrue<
+  BothWays<GenerateDocumentBody['doc_type'], DocType>
+>
+// The non-vacuity control for the line above, in the same convention the lockstep
+// tests use: `MustBeTrue<BothWays<...>>` is also satisfied by a `BothWays` that
+// degenerates to `true`, which would be a pin reporting success while comparing
+// nothing. Adding a member the route cannot accept must therefore be `false`.
+// Derived from the field rather than listing members, so widening the contract
+// legitimately does not make this line the failure.
+export type DocTypeFieldPinWouldSeeDrift = MustBeFalse<
+  BothWays<GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>
+>
 
 export interface ProjectDocument {
   document_id: string

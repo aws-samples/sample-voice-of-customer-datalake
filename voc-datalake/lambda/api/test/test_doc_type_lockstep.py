@@ -29,8 +29,15 @@ WHAT ENFORCES WHICH HALF, measured rather than assumed — the compiler does NOT
 all of it, and an earlier version of this docstring claimed it did:
   * `DocType` -> the route's allowlist: THIS file, by parsing the declaration.
     Nothing in TypeScript knows what Python accepts.
-  * `GenerateDocumentBody.doc_type` -> `DocType`: the compiler, because the field
-    references the union by name.
+  * `GenerateDocumentBody.doc_type` -> `DocType`: the compiler, but ONLY because
+    `DocTypeFieldIsExactlyTheUnion` in that file compares the two in both
+    directions. Referencing the union is not self-enforcing and this file cannot
+    see the field: it parses the `export type DocType =` declaration and nothing
+    else, so respelling the field `'prd' | 'prfaq' | 'onepager'` was measured to
+    exit `tsc` 0 and pass every test here. `satisfies` cannot help either — it
+    checks the built object AGAINST this interface, so a widened one satisfies it by
+    construction. `test_the_request_body_field_is_pinned_to_the_union` keeps that
+    type-level pin present, since deleting it compiles cleanly.
   * The two `generateDocument` signatures -> `GenerateDocumentBody`: the compiler
     for `client.ts`, which forwards its `data` into `projectsApi.generateDocument`
     and so gets a TS2345 if it widens. `projectsApi.generateDocument` is the
@@ -47,8 +54,29 @@ all of it, and an earlier version of this docstring claimed it did:
         annotation uses the name and still widens, and was measured to exit `tsc` 0
         with every test here green. `noUnusedLocals` does NOT cover that — the name
         is used — and an earlier version of this docstring wrongly said it did.
-    So a widening has to edit `GenerateDocumentBody` itself, where the field is
-    `DocType` and this file's comparison sees it.
+    So a widening has to edit `DocType` itself — the declaration this file parses —
+    and `GENERATED_DOC_TYPES` with it. Editing `GenerateDocumentBody.doc_type` is
+    not a way around that: the pin above makes it a compiler error.
+
+WHY EACH GUARD IS THE KIND IT IS. The rule this file has converged on over several
+rounds, each of which found the same hole one level further in: a link TypeScript can
+check gets a COMPILER check, and text assertions are reserved for the ones it cannot.
+`DocTypeFieldIsExactlyTheUnion` is a type-level comparison rather than a fourth
+`'... in source'` assertion for exactly that reason — a text check for one field
+would have to enumerate the spellings that widen it (enumerated members, an
+intersection, `Omit`, a widened alias), and enumerating legal TypeScript is what the
+deleted scanner did and why it was deleted. The text assertions that remain here pin
+the PRESENCE of things whose absence is silent (`satisfies`, the type-level pin
+itself) and the ONE link no compiler can see: `DocType` against a Python tuple.
+
+A `.test-d.ts`-style type test was considered for that job and REJECTED, so it does
+not get proposed again: `typecheck:tests` is not in the root `check` chain
+(`typecheck:all` is `typecheck && typecheck:cdk && typecheck:stream`), so a type
+assertion living under a test tsconfig would be checked by no gate. The pin lives in
+`api/types.ts` — production source that `npm run typecheck` already compiles — which
+is why it needs no new wiring. If `typecheck:tests` is ever added to that chain, a
+type test becomes a reasonable home for it; until then it would be a control nothing
+runs.
 
 A LITERAL UNION IS THE REQUIRED SHAPE for `DocType`. A derivation
 (`typeof GENERATED_DOC_TYPES[number]`, as `KIRO_EXPORTABLE_DOC_TYPES` uses one
@@ -87,10 +115,20 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     restyling. A rename of `GenerateDocumentBody` fails it too, which is correct —
     the constant here is what the two files must agree on.
   * `test_the_terminal_client_pins_the_body_structurally` — the `satisfies` clause
-    deleted from `projectsApi.generateDocument`. That deletion compiles cleanly and
-    is caught by nothing else, and without the clause an intersection/`Omit`
-    annotation widens `doc_type` while still naming the shared type, so the test
-    above stays green too.
+    deleted from `projectsApi.generateDocument`, or MOVED off it. That deletion
+    compiles cleanly and is caught by nothing else, and without the clause an
+    intersection/`Omit` annotation widens `doc_type` while still naming the shared
+    type, so the test above stays green too. The slice is what catches the move: a
+    whole-file substring check was measured to pass with the clause relocated to an
+    unrelated helper and `generateDocument` widened.
+  * `test_the_request_body_field_is_pinned_to_the_union` —
+    `DocTypeFieldIsExactlyTheUnion` deleted from the frontend, which would let
+    `GenerateDocumentBody.doc_type` restate the members instead of referencing
+    `DocType`. Measured: that respelling exits `tsc` 0 and passes everything here,
+    because this file reads only the union declaration and `satisfies` compares
+    against the widened interface. Its non-vacuity control
+    (`DocTypeFieldPinWouldSeeDrift`) is pinned by the same test, since a comparison
+    that degenerates to `true` would satisfy the pin while measuring nothing.
   * `TestContractDriftIsCaught` — a parser that returns the allowlist however the
     union is edited, and its opposite, one that reports drift for a comment.
   * `TestTheUnionParser` — a legal restyling the parser reads wrongly or silently
@@ -117,6 +155,17 @@ DOC_TYPE_UNION_SOURCE = 'frontend/src/api/types.ts'
 # see the docstring: the compiler catches that in one file and not the other.
 REQUEST_BODY_TYPE = 'GenerateDocumentBody'
 
+# The type-level pin in `DOC_TYPE_UNION_SOURCE` that makes that body's `doc_type`
+# field REFERENCE the union above it rather than restate its members. Its own absence
+# is silent — delete it and the frontend still compiles — so
+# `test_the_request_body_field_is_pinned_to_the_union` keeps it present. See that
+# test for why nothing else in either language covers this one field.
+REQUEST_BODY_FIELD_PIN = 'DocTypeFieldIsExactlyTheUnion'
+# Its non-vacuity control, in the convention this file uses for its own: the pin is
+# also satisfiable by a comparison that degenerates to `true`, and this line is what
+# refuses that. Pinned alongside so deleting the control is a decision.
+REQUEST_BODY_FIELD_PIN_CONTROL = 'DocTypeFieldPinWouldSeeDrift'
+
 # The TERMINAL client — the one whose `data` is only spread into `JSON.stringify`,
 # so its annotation is checked against nothing and naming the body type is not
 # enough on its own (an `Omit<..> & { doc_type: .. | 'x' }` respelling names it and
@@ -126,6 +175,16 @@ REQUEST_BODY_TYPE = 'GenerateDocumentBody'
 # file's other assertions stay green.
 TERMINAL_CLIENT = 'frontend/src/api/projectsApi.ts'
 STRUCTURAL_PIN = f'satisfies {REQUEST_BODY_TYPE}'
+
+# The clause has to be in the method it protects, not merely somewhere in a 400-line
+# file: a whole-file substring check was measured to stay GREEN when the clause was
+# moved to an unrelated helper and `generateDocument` was then widened, which is the
+# guard reporting success while the axis it exists for is reopened. These two literal
+# method names bound the slice searched. Deliberately NOT a parameter-list extent —
+# bracket balancing is what the deleted scanner did — so the slice is index arithmetic
+# on two names, and a rename of either fails loudly rather than silently widening it.
+GENERATE_DOCUMENT_MARKER = 'generateDocument:'
+NEXT_METHOD_MARKER = 'mergeDocuments:'
 
 # Both clients, the terminal one included rather than respelled — a second copy of
 # that path here is the same duplication this whole issue was about.
@@ -665,19 +724,94 @@ class TestDocTypeLockstep:
 
         Pinned by text here because its ABSENCE is silent — remove the clause and the
         frontend still compiles, so no other gate in either language notices. This
-        asserts only that the clause is spelled; that it BITES is the compiler's job,
-        and `tsconfig.app.json` needs no flag for it (`satisfies` is not optional
-        behaviour).
+        asserts only that the clause is SPELLED, and where; that it BITES is the
+        compiler's job, and `tsconfig.app.json` needs no flag for it (`satisfies` is
+        not optional behaviour).
+
+        Scoped to the method rather than the file, because a whole-file substring
+        check was measured to permit exactly what it was added to stop: move the
+        clause to an unrelated helper, widen `generateDocument`, and `tsc` exits 0
+        with every test here green. The slice is bounded by two literal method names
+        (see GENERATE_DOCUMENT_MARKER) and both must be found, so a rename fails
+        loudly instead of widening the search back to the whole file.
         """
         path = _repo_root() / TERMINAL_CLIENT
         assert path.is_file(), f'{TERMINAL_CLIENT} moved — update TERMINAL_CLIENT'
         source = _without_comments(path.read_text(encoding='utf-8'))
-        assert STRUCTURAL_PIN in source, (
-            f'{TERMINAL_CLIENT} no longer spells `{STRUCTURAL_PIN}`. That clause is '
-            f'the only thing making a widened doc_type a compiler error in this '
-            f'file: its `data` is just spread into JSON.stringify, so the parameter '
-            f'annotation is compared against nothing and even one that NAMES '
-            f'{REQUEST_BODY_TYPE} can widen the field past what the route accepts. '
-            f'Restore it, or widen the contract in {DOC_TYPE_UNION_SOURCE} where '
-            f'this file can see it.'
+        start = source.find(GENERATE_DOCUMENT_MARKER)
+        assert start != -1, (
+            f'{TERMINAL_CLIENT} no longer spells `{GENERATE_DOCUMENT_MARKER}`, so the '
+            f'slice this test searches cannot be located. If the method was renamed, '
+            f'update GENERATE_DOCUMENT_MARKER.'
+        )
+        end = source.find(NEXT_METHOD_MARKER, start)
+        assert end != -1, (
+            f'{TERMINAL_CLIENT} no longer spells `{NEXT_METHOD_MARKER}` after '
+            f'`{GENERATE_DOCUMENT_MARKER}`, which is what bounds the slice. Without '
+            f'it this test would search to end-of-file and pass on a clause sitting '
+            f'in any other method — update NEXT_METHOD_MARKER to whatever now '
+            f'follows generateDocument.'
+        )
+        assert STRUCTURAL_PIN in source[start:end], (
+            f'`{STRUCTURAL_PIN}` is not in {TERMINAL_CLIENT}\'s generateDocument. '
+            f'That clause is the only thing making a widened doc_type a compiler '
+            f'error in this file: its `data` is just spread into JSON.stringify, so '
+            f'the parameter annotation is compared against nothing and even one that '
+            f'NAMES {REQUEST_BODY_TYPE} can widen the field past what the route '
+            f'accepts. Restore it ON THAT METHOD — elsewhere in the file it protects '
+            f'nothing — or widen the contract in {DOC_TYPE_UNION_SOURCE}, where '
+            f'{REQUEST_BODY_FIELD_PIN} and this file\'s comparison both see it.'
+        )
+
+    @pytest.mark.skipif(
+        not _frontend_tree_present(), reason='frontend tree absent from this checkout'
+    )
+    def test_the_request_body_field_is_pinned_to_the_union(self):
+        """`GenerateDocumentBody.doc_type` must REFERENCE `DocType`, not restate it.
+
+        The innermost link in the chain, and it was the last one left open. Every
+        other guard around this contract stops one level further out, measured:
+
+          * this file parses only the `export type DocType =` declaration, so the
+            interface field is invisible to it;
+          * `satisfies GenerateDocumentBody` checks the built object against that
+            interface, so a WIDENED interface satisfies it by construction;
+          * `noUnusedLocals` stays quiet, since `DocType` is still used by
+            `ProjectDocument` in the same file.
+
+        So respelling the field `'prd' | 'prfaq' | 'onepager'` exited `tsc` 0, passed
+        every test here and linted clean, while a caller could then send a value the
+        route 400s. Worse than a generic residual axis: that line is where the
+        comments on both the union and the body DIRECT a widener, and it is what the
+        field looked like before this contract was collapsed — so reverting to it is a
+        plausible slip rather than a deliberate act.
+
+        What closes it is a compiler check in the frontend, not a fourth text
+        assertion here: `DocTypeFieldIsExactlyTheUnion` compares the field to the
+        union in BOTH directions, so any respelling — enumerated members, an
+        intersection, a widened alias, a narrowing — is a TS2344. A text check would
+        have to enumerate spellings, which is the road the deleted scanner went down.
+
+        This test pins that check's PRESENCE, since deleting it compiles cleanly, and
+        the presence of its non-vacuity control with it. Text, not a parse: two names
+        either appear in the file or they do not.
+        """
+        path = _repo_root() / DOC_TYPE_UNION_SOURCE
+        assert path.is_file(), f'{DOC_TYPE_UNION_SOURCE} moved'
+        source = _without_comments(path.read_text(encoding='utf-8'))
+        assert REQUEST_BODY_FIELD_PIN in source, (
+            f'{DOC_TYPE_UNION_SOURCE} no longer declares `{REQUEST_BODY_FIELD_PIN}`. '
+            f'That is the only check that {REQUEST_BODY_TYPE}.doc_type still '
+            f'references the DocType union rather than restating its members — '
+            f'nothing else in either language does (see this test\'s docstring), so '
+            f'without it the field can be widened past the route\'s allowlist with '
+            f'tsc, eslint and this whole file green. Restore it, or widen DocType '
+            f'itself and GENERATED_DOC_TYPES together.'
+        )
+        assert REQUEST_BODY_FIELD_PIN_CONTROL in source, (
+            f'{DOC_TYPE_UNION_SOURCE} declares `{REQUEST_BODY_FIELD_PIN}` but not its '
+            f'control `{REQUEST_BODY_FIELD_PIN_CONTROL}`. The pin is satisfied by a '
+            f'comparison that degenerates to `true`, which passes while comparing '
+            f'nothing; the control is what refuses that, the same way '
+            f'TestContractDriftIsCaught does for the parser here.'
         )
