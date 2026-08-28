@@ -155,8 +155,9 @@ Customize the form appearance:
 Every route above that takes an id out of the URL checks its **format** before it
 reads or writes anything: an id that this service could not have issued answers
 `404 Form not found` without a lookup. Ids are up to 64 characters of letters,
-digits, `_` and `-`, with no surrounding whitespace — so ` abc123` is not a way of
-addressing `abc123`, it is a 404.
+digits, `_` and `-`. Anything else is refused on its format, so ` abc123` is a 404
+— and it never addressed `abc123` in the first place: the space was always part of
+the key, so nothing that used to resolve has stopped resolving.
 
 Two consequences are worth knowing if you integrate against these routes, both new
 in the change that closed #379:

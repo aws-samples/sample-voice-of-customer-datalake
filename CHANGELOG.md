@@ -92,9 +92,11 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
 - **A feedback form id that this service could not have issued now answers 404 on every route that
   takes one out of the URL**, before any read. Ids are at most 64 characters of letters, digits, `_`
-  and `-`; surrounding whitespace is no longer trimmed, so ` abc123` is a 404 rather than another way
-  of writing `abc123`. Forms created through this platform are unaffected — the ids it mints are
-  8 hex characters — and a hand-seeded id like `website-form` still works.
+  and `-`, so an id containing anything else — a space, for instance — answers 404: ` abc123` is
+  refused on its format. Note that no route ever resolved ` abc123` to `abc123`; the space was always
+  part of the key, so there is no stored data to migrate. Forms created through this platform are
+  unaffected — the ids it mints are 8 hex characters — and a hand-seeded id like `website-form` still
+  works.
 - **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
   request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
   answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route
