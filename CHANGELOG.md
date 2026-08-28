@@ -76,7 +76,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   would disable a healthy plugin's ingestion schedule, which nothing re-enables automatically. An
   unreadable secret is now reported without being counted: the run record still moves to `error` and
   the audit event still fires, so the failure is visible, but only a genuine misconfiguration — a
-  malformed plugin id, or a namespace holding no keys — can trip the breaker.
+  malformed plugin id, a namespace holding no keys, or a secret whose body is not a JSON object —
+  can trip the breaker. Because a *scheduled* run writes no run record (there is no execution id to
+  address one), an alarm on the `Refusing to load plugin secrets` log line is now the escalation
+  path for this case; see `docs/plugin-architecture.md`.
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a

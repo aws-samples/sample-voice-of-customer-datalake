@@ -78,9 +78,10 @@ def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
     callers are unchanged.
 
     Raises:
-        ConfigurationError: If *plugin_id* is missing or malformed, or if no key
-            carries this plugin's prefix. Either state used to yield the complete
-            shared secret. Both mean a human wrote something wrong.
+        ConfigurationError: If *plugin_id* is missing or malformed, if
+            *all_secrets* is not a JSON object, or if no key carries this plugin's
+            prefix. The first and last used to yield the complete shared secret.
+            All three mean a human wrote something wrong.
         SecretUnreadableError: If *all_secrets* is empty. A ConfigurationError
             SUBCLASS, so `except ConfigurationError` still catches it, but
             distinguishable — this is the one branch that may be an AWS-side blip
@@ -122,7 +123,26 @@ def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
 
     prefix = plugin_secret_prefix(plugin_id)
 
-    if not isinstance(all_secrets, Mapping) or not all_secrets:
+    # Tested BEFORE the empty check, because `not all_secrets` is also true of `[]`
+    # and `''`. `get_secret` does `json.loads` on the SecretString, which succeeds
+    # for any valid JSON — so a secret whose body is an array, a string or a number
+    # arrives here as a non-Mapping. That is nobody's throttle: it is a human having
+    # written the wrong thing, it will never self-heal, and it therefore belongs to
+    # the COUNTED class alongside a malformed identity and a namespace miss. Folding
+    # it into the branch below would both exempt it from the circuit breaker and log
+    # "payload is empty" about a populated JSON array.
+    if not isinstance(all_secrets, Mapping):
+        logger.error(
+            "Refusing to load plugin secrets: secret payload is not a JSON object",
+            extra={"plugin_id": plugin_id, "expected_prefix": prefix,
+                   "payload_type": type(all_secrets).__name__},
+        )
+        raise ConfigurationError(
+            f"Cannot load plugin secrets for '{plugin_id}': the shared secret is not "
+            f"a JSON object, so it cannot carry '{prefix}*' keys."
+        )
+
+    if not all_secrets:
         # An empty secret is still a refusal — neither a genuinely empty secret
         # nor a failed read is a state in which a plugin should quietly run with
         # no credentials — but it is the ONLY branch here that may not be anyone's

@@ -47,6 +47,14 @@ os.environ.setdefault('AWS_SECURITY_TOKEN', 'testing')
 # endpoint, either of which can supply real credentials the four above do not
 # cover.
 os.environ.setdefault('AWS_EC2_METADATA_DISABLED', 'true')
+# `pop`, not `setdefault`: the point is to DISCARD a value inherited from the
+# developer's shell. Emptying the config file while leaving AWS_PROFILE pointing
+# into it makes the profile unresolvable, so botocore raises ProfileNotFound the
+# first time anything builds a client — and `_shared/audit.py` builds one at
+# IMPORT time via Powertools' Tracer, which turns that into collection errors and
+# zero tests run. CI never sets a profile, so this lands only on developers.
+os.environ.pop('AWS_PROFILE', None)
+os.environ.pop('AWS_DEFAULT_PROFILE', None)
 os.environ.setdefault('AWS_CONFIG_FILE', os.devnull)
 os.environ.setdefault('AWS_SHARED_CREDENTIALS_FILE', os.devnull)
 
@@ -78,6 +86,16 @@ def no_real_aws_calls():
     after the test body has finished puts the report somewhere no `except` can
     reach.
 
+    NOT compatible with `moto`'s `mock_aws` or `botocore.stub.Stubber`: both
+    intercept this same `_make_api_call` seam, so a call they would have faked is
+    refused here with a message that says "real", which is the wrong diagnosis to
+    hand someone holding a `mock_aws` context. `moto` is already in
+    `requirements-dev.txt` and used under `lambda/`, so this is a likely next step
+    rather than a hypothetical. The compatible styles — and what every test in
+    `plugins/` uses today — are patching the `get_*_client` / `get_dynamodb_resource`
+    accessors, or `patch.object` on a specific method such as
+    `CircuitBreaker.record_failure`.
+
     Yields the record of attempts, so a test whose SUBJECT is this guard can make a
     deliberate call, assert on it, and `.clear()` the list to say the attempt was
     intentional. That is the whole escape hatch — deliberately not a marker that
@@ -92,7 +110,13 @@ def no_real_aws_calls():
     def _refuse(self, operation_name, api_params):
         call = f"{self.meta.service_model.service_name}.{operation_name}"
         attempted.append(call)
-        raise AssertionError(f"refused real AWS call: {call}")
+        raise AssertionError(
+            f"refused real AWS call: {call}. Patch the client accessor the code "
+            "under test resolves through (`get_*_client` / `get_dynamodb_resource`) "
+            "or the specific method. Note that `moto`'s mock_aws and "
+            "botocore.stub.Stubber also route through this same seam, so neither "
+            "can be used to fake a call here."
+        )
 
     with patch.object(botocore.client.BaseClient, '_make_api_call', _refuse):
         yield attempted

@@ -1981,10 +1981,23 @@ indistinguishable from the plugin's side, that branch raises `SecretUnreadableEr
 against the circuit breaker**. Counting it would let five AWS-side blips inside the
 breaker's 15-minute window call `_trip_breaker`, which disables the plugin's EventBridge
 schedule — and nothing re-enables a disabled rule, so a healthy plugin's ingestion would
-stop until an operator noticed. The run record and the audit event still fire, so the
-failure is visible; only the auto-disable is withheld. A malformed identity or a namespace
-that matches nothing is someone's mistake, stays a plain `ConfigurationError`, and still
-counts.
+stop until an operator noticed. Only the auto-disable is withheld: the run record and the
+`plugin.failed` audit event still fire. A malformed identity, a namespace that matches
+nothing, or a secret whose body is not a JSON object is someone's mistake, stays a plain
+`ConfigurationError`, and still counts — those never self-heal, and retrying them forever is
+what the breaker exists to stop.
+
+**Alarm on the refusal log line.** That is not advice, it is the escalation path this
+exemption relies on. On a *manual* run the `SOURCE_RUN#` record clears the UI's spinner and
+carries the message. On a **scheduled** run there is no such record — `_update_source_run_status`
+is a no-op without an `execution_id` — so the only signals are the
+`Refusing to load plugin secrets` log line and the `plugin.failed` audit event, and that
+event reaches EventBridge only when `AUDIT_EVENT_BUS` is set (no stack in this repo sets it;
+otherwise it is a `logger.info("AUDIT", …)`). No stack creates a metric filter or alarm
+either. So a scheduled plugin with an unreadable secret is silently not ingesting, and the
+one mechanism that used to make that state visible in the console — the breaker disabling
+the rule — is now deliberately withheld. The trade is still the right one, but it moves the
+escalation from the breaker to your alarms, which means the alarm has to exist.
 
 One limitation the prefix scan cannot see: if a plugin id were ever a **prefix** of
 another (`app_reviews` alongside `app_reviews_ios`), the shorter one would also receive the

@@ -187,6 +187,14 @@ const actionsOf = (statement: { Action?: string | string[] }): string[] => {
   return action ?? [];
 };
 
+/** A statement's resources, normalized to an array. CloudFormation renders a
+ *  single-resource grant as a bare string and a multi-resource one as an array, and
+ *  the case below asks about the PERMISSION rather than the rendering — see the
+ *  comment there for why containment, not equality. */
+const resourcesOf = (statement: { Resource?: unknown }): unknown[] => (
+  Array.isArray(statement.Resource) ? statement.Resource : [statement.Resource]
+);
+
 describe('webhook Lambda environment', () => {
   it('synthesizes a webhook Lambda at all, so the assertions below are not vacuous', () => {
     // The mock is the only reason a webhook function exists in this template. If
@@ -236,12 +244,20 @@ describe('webhook Lambda environment', () => {
     // same stack all grant that action, so deleting the webhook role's grant left
     // the assertion green. The CDN signing secret is excluded for the same reason —
     // a grant on THAT ARN does not let base_webhook.py read its credentials.
+    //
+    // CONTAINMENT, not equality, and deliberately so: equality on the rendered
+    // `Resource` pins the CloudFormation output rather than the permission, so a
+    // grant that is equally correct but rendered as a one-element array — an added
+    // resource, or a move to `secret.grantRead()` — would report a MISSING grant
+    // that is in fact present, which is the costliest failure direction here.
+    // Containment keeps the CDN discrimination: a statement scoped only to
+    // CDN_SIGNING_SECRET_ARN still does not match. Do not tighten this back.
     const roleLogicalId = RoleRefSchema.parse(webhookFunction())
       .Properties.Role['Fn::GetAtt'][0];
 
     const grants = statementsFor(roleLogicalId).filter(
       (s) => actionsOf(s).includes('secretsmanager:GetSecretValue')
-        && JSON.stringify(s.Resource) === JSON.stringify(SHARED_SECRET_ARN),
+        && resourcesOf(s).includes(SHARED_SECRET_ARN),
     );
 
     expect(

@@ -72,6 +72,15 @@ REVERT MAP — each assertion below names the mutation it catches:
       that a NAMESPACE MISS still counts is what stops this becoming "the breaker
       no longer fires".
 
+  test_a_non_object_payload_is_not_the_unreadable_type /
+  test_a_non_object_payload_is_counted_against_the_circuit_breaker
+    — folds `not isinstance(all_secrets, Mapping)` back into the empty-payload
+      branch. `get_secret` does `json.loads`, so a secret whose body is a JSON
+      array, string or number arrives as a non-Mapping — a permanent mistake, not a
+      throttle. Classified as "unreadable" it would escape the breaker and retry on
+      every schedule tick forever, and be logged as "payload is empty" while
+      populated.
+
   test_a_real_aws_call_is_refused /
   test_the_attempt_is_recorded_even_when_the_code_swallows_it
     — removes `no_real_aws_calls` from `plugins/conftest.py`, or reduces it to
@@ -86,7 +95,9 @@ REVERT MAP — each assertion below names the mutation it catches:
   test_the_identity_rule_is_the_one_the_write_path_enforces
     — re-inlines the character class into either path. A read that refuses an
       identity the write path accepted is the same drift, one level up, that two
-      copies of the prefix scan produced.
+      copies of the prefix scan produced. Its control catches the load being done
+      by `sys.path.insert` + `import_module` again, which left `lambda/api` on the
+      path and the handler in `sys.modules` for the whole session.
 
   test_no_plugin_id_is_a_namespace_prefix_of_another
     — the collision the scan cannot see: `app_reviews` alongside
@@ -704,6 +715,30 @@ class TestAnUnreadableSecretIsNotAPluginFailure:
             'the breaker exists to stop'
         )
 
+    def test_a_non_object_payload_is_not_the_unreadable_type(self):
+        """`get_secret` does `json.loads`, which succeeds for any valid JSON — so a
+        secret whose body is `["a", "b"]`, `"oops"` or `123` arrives as a
+        non-Mapping. That is not a throttle: it is a human having written the wrong
+        thing, it will never self-heal, and so it belongs to the COUNTED class. The
+        log line matters too — "payload is empty" is simply false about a populated
+        JSON array."""
+        with pytest.raises(ConfigurationError) as excinfo:
+            filter_plugin_secrets(PLUGIN_ID, ['a', 'b'])
+
+        assert not isinstance(excinfo.value, SecretUnreadableError)
+
+    def test_a_non_object_payload_is_counted_against_the_circuit_breaker(self):
+        """The classification reaching the effect that depends on it. Asserted
+        through real construction rather than on the type alone, because the type is
+        only interesting if `_report_construction_failure` acts on it."""
+        error, _, record_failure, _ = self._construct(['a', 'b'], self.EXECUTION_ID)
+
+        assert error is not None, 'expected construction to refuse a non-object payload'
+        assert record_failure.call_args_list, (
+            'a secret body that is not a JSON object is a permanent misconfiguration; '
+            'exempting it from the breaker means retrying it every tick forever'
+        )
+
     def test_an_unreadable_secret_still_moves_the_run_record_to_error(self):
         """The exemption is scoped to the breaker alone. The run record is what
         clears the UI's spinner, so withholding it would trade one availability
@@ -787,19 +822,65 @@ class TestTheIdentityRuleIsSharedWithTheWritePath:
     `shared.plugin_identity.is_valid_plugin_identifier`.
     """
 
+    @staticmethod
+    def _load_write_path_module():
+        """`integrations_handler`, loaded WITHOUT lasting effects on this process.
+
+        Not `importlib.import_module` after an `sys.path.insert`: that leaves
+        `lambda/api` on the path and the module in `sys.modules` for every later
+        test in the session, which both makes the plugin suite order-dependent and
+        risks a `lambda/api` module shadowing a plugin-side name of the same stem.
+        `spec_from_file_location` addresses the file directly and registers nothing.
+
+        The module's own imports are all `shared.*` and stdlib, and `plugins/
+        conftest.py` already has `lambda/` on the path, so no path entry is needed
+        at all — which is the point.
+        """
+        import importlib.util
+
+        path = Path(__file__).resolve().parents[3] / 'lambda' / 'api' / 'integrations_handler.py'
+        spec = importlib.util.spec_from_file_location('_write_path_under_test', path)
+        assert spec and spec.loader, f'could not load {path}'
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     def test_the_identity_rule_is_the_one_the_write_path_enforces(self):
         """Asserted by IDENTITY of the callable, not by comparing behaviour on a
         sample: two independently-written regexes agreeing on the cases a test
         thinks to try is exactly the drift that goes unnoticed."""
-        import importlib
-        import sys as _sys
-
-        lambda_api = str(Path(__file__).resolve().parents[3] / 'lambda' / 'api')
-        if lambda_api not in _sys.path:
-            _sys.path.insert(0, lambda_api)
-        handler = importlib.import_module('integrations_handler')
+        handler = self._load_write_path_module()
 
         assert handler.is_valid_plugin_identifier is is_valid_plugin_identifier
+
+    def test_the_control_the_write_path_module_loaded_without_polluting_the_session(self):
+        """Non-vacuity in the direction that bit this test before: the assertion
+        above passes whether or not the load leaked, so this pins the isolation
+        itself.
+
+        Asserted on the LOAD's own contract, not on process-global state, and that
+        is the load-bearing choice. A before/after diff of `sys.path` looks like the
+        obvious control and is worthless here: under the leaky implementation the
+        insert is guarded by `if not in sys.path`, so whichever of these two tests
+        runs second sees no delta and passes — the control would then hold only in
+        one ordering, which is the very flakiness it exists to prevent. Two
+        ordering-independent facts stand in for it instead.
+        """
+        import sys as _sys
+
+        first = self._load_write_path_module()
+        second = self._load_write_path_module()
+
+        assert first.is_valid_plugin_identifier is is_valid_plugin_identifier
+        # Registered nowhere: `sys.modules` does not map this module's own name to
+        # it, so nothing later in the session can import it — or be shadowed by it.
+        assert _sys.modules.get(first.__name__) is not first, (
+            f'the load registered {first.__name__!r} in sys.modules for the rest of '
+            'the session'
+        )
+        # And each load is genuinely fresh rather than served from that registry,
+        # which is what `import_module` would do.
+        assert second is not first
 
     @pytest.mark.parametrize('plugin_id', ['webscraper', 'app_reviews_ios', 's3_import'])
     def test_every_real_plugin_id_satisfies_the_shared_rule(self, plugin_id):
