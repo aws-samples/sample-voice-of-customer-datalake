@@ -240,6 +240,14 @@ export const projectsApi = {
       },
     ),
 
+  // NOT `DocType`, and its agreement with that union today is coincidence rather
+  // than a floor: this is a DIFFERENT route (.../documents/suggest-brief) whose
+  // `doc_type` only picks a prompt label, with anything unrecognised falling back to
+  // 'PRD' (`projects.suggest_document_brief`). So it may legitimately fall behind a
+  // widening of the document route — the cost is one prompt labelled PRD instead of
+  // a new type's name, not a refused request. Binding it to `GENERATED_DOC_TYPES`
+  // would instead make widening THIS route fail a test named after the other one.
+  // If it is ever pinned it wants its own constant and its own rationale (#381).
   suggestDocumentBrief: (projectId: string, body: { doc_type?: 'prd' | 'prfaq'; response_language?: string } = {}) =>
     fetchApi<{ title: string; feature_idea: string }>(
       `/projects/${projectId}/documents/suggest-brief`,

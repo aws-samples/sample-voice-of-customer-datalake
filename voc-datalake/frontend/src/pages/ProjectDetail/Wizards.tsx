@@ -242,9 +242,11 @@ export function DocWizard({
   const hasPrfaq = docTypes.includes('prfaq')
   const hasPrd = docTypes.includes('prd')
 
-  // `DocType`, not a respelt `'prd' | 'prfaq'`: this toggles membership of
-  // `docConfig.docTypes`, which IS `DocType[]`, so an inline copy here could admit a
-  // value the picker cannot hold or refuse one it can (issue #381).
+  // `DocType`, not a respelt `'prd' | 'prfaq'` — a convention here, not something a
+  // test enforces: the lockstep test reads only the `DocType` declaration and the two
+  // api/ clients, never this file. A widening IS caught, but by the compiler at the
+  // `includes`/spread sites below, since `docConfig.docTypes` is `DocType[]` (issue
+  // #381).
   const toggleDocType = (type: DocType) => {
     const next = docTypes.includes(type)
       ? docTypes.filter((d) => d !== type)
