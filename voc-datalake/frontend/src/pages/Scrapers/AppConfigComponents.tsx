@@ -7,7 +7,7 @@ import clsx from 'clsx'
 import {
   Play, Settings, Trash2, Smartphone, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
-import { ADMIN_ONLY_TITLE } from './constants'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'

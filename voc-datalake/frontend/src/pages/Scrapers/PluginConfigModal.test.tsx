@@ -6,7 +6,7 @@ import PluginConfigModal from './PluginConfigModal'
 // Imported rather than restated: the subject of these assertions is the GATE, not
 // the wording, so a later decision to translate the tooltip must not fail a test
 // about admin access. See the constant's own docstring for why it is still English.
-import { ADMIN_ONLY_TITLE } from './constants'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
 
 const mockGetAppConfigs = vi.fn()

@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { FREQUENCY_OPTIONS } from './constants'
 import type { ScraperConfig } from '../../api/types'
 import { normalizedBaseUrl, scraperDomainLabel } from './scraperUrl'
@@ -133,10 +134,16 @@ function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
 }
 
 function ScraperCardHeader({
-  scraper, isRunning, onRun, onEdit, onDelete,
+  scraper, isRunning, isAdmin, onRun, onEdit, onDelete,
 }: {
   readonly scraper: ScraperConfig
   readonly isRunning: boolean
+  /** `POST /scrapers/{id}/run` and `DELETE /scrapers/{id}` are admin-gated
+   *  server-side, so those two controls are disabled for a non-admin rather than
+   *  issuing a request that 403s. Edit stays enabled: it opens a form whose own
+   *  Save carries the gate, and a non-admin can already read this config through
+   *  `GET /scrapers`. */
+  readonly isAdmin: boolean
   readonly onRun: () => void
   readonly onEdit: () => void
   readonly onDelete: () => void
@@ -156,11 +163,11 @@ function ScraperCardHeader({
         </div>
       </div>
       <div className="flex items-center gap-1">
-        <button onClick={onRun} disabled={isRunning || !hasUrl} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title={t('card.runNow')}>
+        <button onClick={onRun} disabled={isRunning || !hasUrl || !isAdmin} className={clsx('p-2 rounded transition-colors disabled:cursor-not-allowed', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600', isAdmin ? '' : 'opacity-50')} title={isAdmin ? t('card.runNow') : ADMIN_ONLY_TITLE}>
           {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
         </button>
         <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title={t('card.edit')}><Settings size={16} /></button>
-        <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title={t('card.delete')}><Trash2 size={16} /></button>
+        <button onClick={onDelete} disabled={!isAdmin} className={clsx('p-2 hover:bg-gray-100 rounded text-red-500 disabled:cursor-not-allowed', isAdmin ? '' : 'opacity-50')} title={isAdmin ? t('card.delete') : ADMIN_ONLY_TITLE}><Trash2 size={16} /></button>
       </div>
     </div>
   )
@@ -243,9 +250,11 @@ function useScraperStatus(scraperId: string) {
 }
 
 export default function ScraperCard({
-  scraper, onEdit, onDelete, onRun,
+  scraper, isAdmin, onEdit, onDelete, onRun,
 }: {
   readonly scraper: ScraperConfig
+  /** See `ScraperCardHeader` — gates Run and Delete, whose routes require admin. */
+  readonly isAdmin: boolean
   readonly onEdit: () => void
   readonly onDelete: () => void
   readonly onRun: () => void
@@ -257,7 +266,7 @@ export default function ScraperCard({
 
   return (
     <div className={clsx('card border-2 transition-all', scraper.enabled ? 'border-green-200 bg-green-50/30' : 'border-gray-200 opacity-60')}>
-      <ScraperCardHeader scraper={scraper} isRunning={isRunning} onRun={() => handleRun(onRun)} onEdit={onEdit} onDelete={onDelete} />
+      <ScraperCardHeader scraper={scraper} isRunning={isRunning} isAdmin={isAdmin} onRun={() => handleRun(onRun)} onEdit={onEdit} onDelete={onDelete} />
       <ScraperCardStats scraper={scraper} lastRunInfo={lastRunInfo} />
       {showLastRunSummary ? <LastRunSummary lastRunInfo={lastRunInfo} /> : null}
       {showStatus ? <ScraperRunStatus scraperId={scraper.id} onComplete={handleComplete} /> : null}

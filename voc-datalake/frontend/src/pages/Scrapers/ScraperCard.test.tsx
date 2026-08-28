@@ -1,17 +1,25 @@
 /**
- * @fileoverview Tests for ScraperCard — invalid base_url resilience (issue #167).
+ * @fileoverview Tests for ScraperCard.
  *
- * A render-time `new URL(...)` TypeError on a missing or malformed base_url
- * crashed the entire /scrapers route. The card must render for every value
- * runtime data has been observed to carry: undefined (mock server, older
- * configs), empty/whitespace, scheme-less, and garbage.
+ * Invalid base_url resilience (issue #167): a render-time `new URL(...)` TypeError
+ * on a missing or malformed base_url crashed the entire /scrapers route. The card
+ * must render for every value runtime data has been observed to carry: undefined
+ * (mock server, older configs), empty/whitespace, scheme-less, and garbage.
+ *
+ * The admin gate on Run and Delete: `POST /scrapers/{id}/run` and
+ * `DELETE /scrapers/{id}` are admin-gated server-side, so those controls must not
+ * issue a request a non-admin's 403 would swallow. See that describe block for the
+ * measurements.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import ScraperCard from './ScraperCard'
 import { scraperDomainLabel } from './scraperUrl'
 import { DEFAULT_SCRAPER } from './constants'
+// Imported, not restated — see PluginConfigModal.test.tsx.
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { ScraperConfig } from '../../api/types'
 
 vi.mock('../../api/scrapersApi', async (importOriginal) => {
@@ -35,10 +43,30 @@ function makeScraper(overrides: Partial<ScraperConfig>): ScraperConfig {
   }
 }
 
-function renderCard(scraper: ScraperConfig) {
+/** Callbacks the admin-gate cases below assert on; `vi.clearAllMocks()` resets them. */
+const onEdit = vi.fn()
+const onDelete = vi.fn()
+const onRun = vi.fn()
+
+function renderCard(scraper: ScraperConfig, isAdmin = true) {
   return render(
-    <ScraperCard scraper={scraper} onEdit={vi.fn()} onDelete={vi.fn()} onRun={vi.fn()} />
+    <ScraperCard
+      scraper={scraper}
+      isAdmin={isAdmin}
+      onEdit={onEdit}
+      onDelete={onDelete}
+      onRun={onRun}
+    />
   )
+}
+
+/** The button carrying *iconClass*, e.g. `lucide-play`. */
+function buttonWithIcon(iconClass: string): HTMLElement {
+  const found = screen.getAllByRole('button').find(
+    (el) => el.querySelector(`svg.${iconClass}`) !== null
+  )
+  if (found == null) throw new Error(`no button carrying svg.${iconClass}`)
+  return found
 }
 
 describe('scraperDomainLabel', () => {
@@ -120,5 +148,102 @@ describe('ScraperCard frequency resilience (issue #169)', () => {
     renderCard(makeScraper({ frequency_minutes: 0 }))
 
     expect(screen.getByText('Manual only')).toBeInTheDocument()
+  })
+})
+
+/**
+ * `POST /scrapers/{id}/run` and `DELETE /scrapers/{id}` became admin-gated
+ * server-side in this change: `run_scraper` invokes the webscraper (a billed
+ * third-party fetch, previously callable in a loop by anyone with an account) and
+ * `delete_scraper` rewrites `webscraper_configs` on the shared API-credentials
+ * secret. Measured before the gate as a `users`-group caller: 200 with one
+ * `lambda:Invoke` and one `SCRAPER_RUN#` row, and 200 with one `put_secret_json`.
+ *
+ * These cards are the UI entrance to both, rendered on the Scrapers page for every
+ * authenticated user, so the controls are disabled rather than left to fire a 403.
+ * The server is the boundary; this only stops the page offering an action it knows
+ * will fail.
+ *
+ * Each non-admin case asserts the CALLBACK was not invoked, not merely that the
+ * button carries `disabled` — matching `AppConfigComponents.test.tsx`. The
+ * `isAdmin` cases are its positive controls, so disabling everything cannot pass.
+ */
+describe('ScraperCard admin gate on Run and Delete', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const withUrl = () => makeScraper({ base_url: 'https://shop.example.com/reviews' })
+
+  describe('when the user is not an admin', () => {
+    it('does not trigger a run', async () => {
+      const user = userEvent.setup()
+      renderCard(withUrl(), false)
+
+      const run = buttonWithIcon('lucide-play')
+      expect(run).toBeDisabled()
+      expect(run).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      await user.click(run)
+      expect(onRun).not.toHaveBeenCalled()
+    })
+
+    it('does not delete the scraper', async () => {
+      const user = userEvent.setup()
+      renderCard(withUrl(), false)
+
+      const del = buttonWithIcon('lucide-trash2')
+      expect(del).toBeDisabled()
+      expect(del).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      await user.click(del)
+      expect(onDelete).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('when the user is an admin', () => {
+    it('triggers a run', async () => {
+      const user = userEvent.setup()
+      renderCard(withUrl(), true)
+
+      const run = buttonWithIcon('lucide-play')
+      expect(run).toBeEnabled()
+      await user.click(run)
+      expect(onRun).toHaveBeenCalledTimes(1)
+    })
+
+    it('deletes the scraper', async () => {
+      const user = userEvent.setup()
+      renderCard(withUrl(), true)
+
+      const del = buttonWithIcon('lucide-trash2')
+      expect(del).toBeEnabled()
+      await user.click(del)
+      expect(onDelete).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('regardless of admin status', () => {
+    /**
+     * The gate's boundary. Edit opens a form whose own Save carries the gate, and a
+     * non-admin can already read this configuration through `GET /scrapers`, which
+     * stays deliberately open — so disabling Edit would hide data the API serves
+     * them. Pinning it stops a future "disable everything for non-admins" from
+     * passing the cases above.
+     */
+    it.each([true, false])('opens the editor (isAdmin=%s)', async (isAdmin) => {
+      const user = userEvent.setup()
+      renderCard(withUrl(), isAdmin)
+
+      const edit = buttonWithIcon('lucide-settings')
+      expect(edit).toBeEnabled()
+      await user.click(edit)
+      expect(onEdit).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([true, false])('renders the scraper details (isAdmin=%s)', (isAdmin) => {
+      renderCard(withUrl(), isAdmin)
+
+      expect(screen.getByText('shop.example.com')).toBeInTheDocument()
+      expect(screen.getByText('Test scraper')).toBeInTheDocument()
+    })
   })
 })

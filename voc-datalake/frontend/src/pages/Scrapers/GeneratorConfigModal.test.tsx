@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-query'
 import GeneratorConfigModal from './GeneratorConfigModal'
 // Imported rather than restated — see PluginConfigModal.test.tsx for the reason.
-import { ADMIN_ONLY_TITLE } from './constants'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
 
 const mockGetIntegrationCredentials = vi.fn()

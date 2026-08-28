@@ -20,7 +20,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal'
-import { ADMIN_ONLY_TITLE } from './constants'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   SetupInstructions, PluginField,
 } from './PluginConfigParts'

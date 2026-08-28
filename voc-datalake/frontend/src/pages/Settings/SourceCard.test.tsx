@@ -7,6 +7,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SourceCard from './SourceCard'
+// Imported rather than restated: the subject of these assertions is the admin GATE,
+// not the wording, so a later decision to translate the tooltip must not fail them.
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
 
 // Mock API
@@ -213,6 +216,61 @@ describe('SourceCard', () => {
       )
 
       expect(screen.getByRole('checkbox')).toBeDisabled()
+    })
+
+    /**
+     * The Enabled toggle calls `PUT /sources/{source}/enable|disable`, which is
+     * admin-gated server-side. It shipped enabled for a non-admin: rendered with
+     * `isAdmin={false}` the checkbox was not disabled and one click issued one
+     * `enableSource` call, whose 403 `toggleEnabled`'s empty `catch` swallows — so
+     * the checkbox silently reverted with no message.
+     *
+     * This is the only UI entrance to those two routes outside the Scrapers modal.
+     * The two cases assert the REQUEST is not issued, not merely that `disabled` is
+     * present, matching `Scrapers/AppConfigComponents.test.tsx`; the surrounding
+     * `isAdmin={true}` cases above are the positive control, so disabling the toggle
+     * for everyone cannot pass.
+     */
+    describe('when the user is not an admin', () => {
+      it('disables the toggle and issues no request when it is clicked', async () => {
+        const user = userEvent.setup()
+
+        render(
+          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
+          { wrapper: createWrapper() }
+        )
+
+        const toggle = screen.getByRole('checkbox')
+        expect(toggle).toBeDisabled()
+
+        await user.click(toggle)
+
+        // The observable that matters: no 403 was provoked.
+        expect(mockEnableSource).not.toHaveBeenCalled()
+        expect(mockDisableSource).not.toHaveBeenCalled()
+      })
+
+      it('explains why the toggle is disabled', () => {
+        render(
+          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
+          { wrapper: createWrapper() }
+        )
+
+        // On the label, not the input: a disabled input does not reliably surface
+        // its own title on hover.
+        expect(screen.getByTitle(ADMIN_ONLY_TITLE)).toBeInTheDocument()
+      })
+
+      it('leaves the toggle untitled for an admin', () => {
+        /** Non-vacuity for the case above: a title rendered unconditionally would
+         *  satisfy it while telling an admin their access is refused. */
+        render(
+          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
+          { wrapper: createWrapper() }
+        )
+
+        expect(screen.queryByTitle(ADMIN_ONLY_TITLE)).not.toBeInTheDocument()
+      })
     })
   })
 

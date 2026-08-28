@@ -265,7 +265,7 @@ function ScrapersContent({
         <div className="grid gap-4">
           <AppConfigList plugins={appConfigPlugins} isAdmin={isAdmin} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
           {scrapers.map((scraper) => (
-            <ScraperCard key={scraper.id} scraper={scraper} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
+            <ScraperCard key={scraper.id} scraper={scraper} isAdmin={isAdmin} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
           ))}
           {syntheticPlugins.length > 0 ? (
             <section aria-label={t('syntheticCard.sectionTitle')}>

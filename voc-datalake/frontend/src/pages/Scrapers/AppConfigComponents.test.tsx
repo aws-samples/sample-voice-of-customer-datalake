@@ -28,7 +28,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AppConfigCard } from './AppConfigComponents'
 // Imported, not restated — see PluginConfigModal.test.tsx.
-import { ADMIN_ONLY_TITLE } from './constants'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
 
 const plugin = {

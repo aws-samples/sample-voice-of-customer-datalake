@@ -19,7 +19,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
-import { ADMIN_ONLY_TITLE } from './constants'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   PluginField, SetupInstructions, ResultMessage,
 } from './PluginConfigParts'

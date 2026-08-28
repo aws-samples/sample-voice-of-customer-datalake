@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, Check, AlertCircle, Loader2, Copy, ExternalLink, Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube } from 'lucide-react'
 import { api } from '../../api/client'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import S3ImportExplorer from '../../components/S3ImportExplorer'
 import clsx from 'clsx'
 import type { PluginManifest, ConfigField, SetupInfo, WebhookInfo } from '../../plugins/types'
@@ -21,8 +22,11 @@ import type { PluginManifest, ConfigField, SetupInfo, WebhookInfo } from '../../
 interface SourceCardProps {
   readonly manifest: PluginManifest
   readonly apiEndpoint: string
-  /** Whether the current user is an admin. The integration-status query is
-   *  admin-gated server-side; this flag prevents a 403 for non-admin users. */
+  /** Whether the current user is an admin. Two things depend on it: the
+   *  integration-status query is admin-gated server-side, so a non-admin does not
+   *  issue it (avoiding a 403), and `PUT /sources/{source}/enable|disable` behind
+   *  the Enabled toggle is admin-gated too, so the toggle is disabled rather than
+   *  firing a request that fails. */
   readonly isAdmin: boolean
 }
 
@@ -118,6 +122,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
         sourceStatus={sourceStatus}
         serverStatus={serverStatus}
         apiEndpoint={apiEndpoint}
+        isAdmin={isAdmin}
         isExpanded={isExpanded}
         onToggleExpand={() => setIsExpanded(!isExpanded)}
         onToggleEnabled={toggleEnabled}
@@ -176,12 +181,17 @@ interface SourceCardHeaderProps {
   readonly sourceStatus: { configured?: boolean } | undefined
   readonly serverStatus: { enabled: boolean; loading?: boolean }
   readonly apiEndpoint: string
+  /** `PUT /sources/{source}/enable|disable` is admin-gated server-side, so the
+   *  toggle below is disabled for a non-admin rather than issuing a request whose
+   *  403 `toggleEnabled`'s empty `catch` would swallow — leaving the checkbox to
+   *  revert with no explanation. The server is the boundary; this is the reason. */
+  readonly isAdmin: boolean
   readonly isExpanded: boolean
   readonly onToggleExpand: () => void
   readonly onToggleEnabled: (enabled: boolean) => void
 }
 
-function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, isExpanded, onToggleExpand, onToggleEnabled }: SourceCardHeaderProps) {
+function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, isAdmin, isExpanded, onToggleExpand, onToggleEnabled }: SourceCardHeaderProps) {
   return (
     <button
       onClick={onToggleExpand}
@@ -200,7 +210,11 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
             <CheckCircle2 size={14} /> <span className="hidden xs:inline">Connected</span>
           </span>
         )}
-        <label className="flex items-center gap-1.5 sm:gap-2" onClick={(e) => e.stopPropagation()}>
+        <label
+          className="flex items-center gap-1.5 sm:gap-2"
+          title={isAdmin ? undefined : ADMIN_ONLY_TITLE}
+          onClick={(e) => e.stopPropagation()}
+        >
           {serverStatus.loading ? (
             <Loader2 size={16} className="animate-spin text-blue-600" />
           ) : (
@@ -208,8 +222,8 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
               type="checkbox"
               checked={serverStatus.enabled}
               onChange={(e) => onToggleEnabled(e.target.checked)}
-              disabled={!apiEndpoint}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+              disabled={!apiEndpoint || !isAdmin}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           )}
           <span className="text-xs sm:text-sm text-gray-600">{serverStatus.enabled ? 'Enabled' : 'Disabled'}</span>

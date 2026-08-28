@@ -109,7 +109,19 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   stays open deliberately: the Scrapers page lists app configs for every authenticated user, and a
   config holds a public app-store id and a display name rather than a credential. On that page the
   Run, Add, Save and Delete controls and the schedule toggle are now disabled for a non-admin, with
-  the reason on hover, rather than issuing a request that 403s.
+  the reason on hover, rather than issuing a request that 403s — and so is the Enabled toggle on the
+  Settings page's source cards, which is the other UI caller of `enable|disable`.
+- `POST /scrapers`, `DELETE /scrapers/{scraper_id}` and `POST /scrapers/{scraper_id}/run` now require
+  the `admins` group. No route in that handler had a gate, while two of them `put_secret_json` the
+  SAME shared API-credentials secret the credentials routes protect — rewriting `webscraper_configs`,
+  a key the webscraper ingestor consumes, so an unprivileged write steered which URLs got fetched —
+  and the third invoked that ingestor, a billed third-party fetch callable in a loop. Gating only the
+  `{source}` routes above would have left the boundary depending on which handler a write arrived
+  through rather than on what it changed. The `GET` routes and `POST /scrapers/analyze-url` stay open
+  to match the read/write split, and the Run and Delete controls on each scraper card are now disabled
+  for a non-admin. `scraper_id` is deliberately not allowlisted the way `{source}` is: it is not a
+  plugin id and reaches no secret key or function name, only a `SCRAPER_RUN#` partition and the invoke
+  payload, where the webscraper resolves it against its own configured list.
 - A plugin's `plugin.failed` audit event is no longer lost when the circuit breaker's own DynamoDB
   lookup fails. The three reporting steps for a construction failure shared one `try`, and
   `record_failure` is not exception-safe on its first line (it resolves its table in a property,
