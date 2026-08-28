@@ -2,9 +2,6 @@ import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'
 import type {
-  // The document-generation request body, shared with the `projectsApi` method
-  // this file's wrapper forwards to; see its declaration in `./types`.
-  GenerateDocumentBody,
   DateBasis,
   FeedbackItem,
   FeedbackListParams,
@@ -34,6 +31,9 @@ import type {
   LogsSummary,
   ApiToken,
   CreateApiTokenResponse,
+  // The document-generation request body, shared with the `projectsApi` method
+  // this file's wrapper forwards to; see its declaration in `./types`.
+  GenerateDocumentBody,
 } from './types'
 
 // Re-export all types for backward compatibility

@@ -33,14 +33,22 @@ all of it, and an earlier version of this docstring claimed it did:
     references the union by name.
   * The two `generateDocument` signatures -> `GenerateDocumentBody`: the compiler
     for `client.ts`, which forwards its `data` into `projectsApi.generateDocument`
-    and so gets a TS2345 if it widens; NOTHING for `projectsApi.generateDocument`,
-    which is the terminal consumer — its `data` is only spread into
-    `JSON.stringify`, so an inline object literal in that one signature type-checks
-    however wide it is. That is why the body is a NAMED type and why
-    `test_both_client_signatures_use_the_shared_request_body` asserts by text that
-    both signatures still name it. A widening now has to edit
-    `GenerateDocumentBody` itself, where the field is `DocType` and this file's
-    comparison sees it.
+    and so gets a TS2345 if it widens. `projectsApi.generateDocument` is the
+    TERMINAL consumer — its `data` is only spread into `JSON.stringify`, so its
+    annotation is compared against nothing and by itself type-checks however wide it
+    is. Two things cover that one, and it took both:
+      - The body is a NAMED type, asserted by text in
+        `test_both_client_signatures_use_the_shared_request_body`. This stops the
+        plain inline respelling.
+      - `satisfies GenerateDocumentBody` on the object that method builds, pinned by
+        `test_the_terminal_client_pins_the_body_structurally`. NAMING the type is
+        not sufficient on its own: an
+        `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ... | 'onepager' }`
+        annotation uses the name and still widens, and was measured to exit `tsc` 0
+        with every test here green. `noUnusedLocals` does NOT cover that — the name
+        is used — and an earlier version of this docstring wrongly said it did.
+    So a widening has to edit `GenerateDocumentBody` itself, where the field is
+    `DocType` and this file's comparison sees it.
 
 A LITERAL UNION IS THE REQUIRED SHAPE for `DocType`. A derivation
 (`typeof GENERATED_DOC_TYPES[number]`, as `KIRO_EXPORTABLE_DOC_TYPES` uses one
@@ -78,6 +86,11 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     shared name appears, so it needs no model of TypeScript and cannot mis-read a
     restyling. A rename of `GenerateDocumentBody` fails it too, which is correct —
     the constant here is what the two files must agree on.
+  * `test_the_terminal_client_pins_the_body_structurally` — the `satisfies` clause
+    deleted from `projectsApi.generateDocument`. That deletion compiles cleanly and
+    is caught by nothing else, and without the clause an intersection/`Omit`
+    annotation widens `doc_type` while still naming the shared type, so the test
+    above stays green too.
   * `TestContractDriftIsCaught` — a parser that returns the allowlist however the
     union is edited, and its opposite, one that reports drift for a comment.
   * `TestTheUnionParser` — a legal restyling the parser reads wrongly or silently
@@ -103,8 +116,21 @@ DOC_TYPE_UNION_SOURCE = 'frontend/src/api/types.ts'
 # in one and an inline object literal in the other is the shape this pins against —
 # see the docstring: the compiler catches that in one file and not the other.
 REQUEST_BODY_TYPE = 'GenerateDocumentBody'
+
+# The TERMINAL client — the one whose `data` is only spread into `JSON.stringify`,
+# so its annotation is checked against nothing and naming the body type is not
+# enough on its own (an `Omit<..> & { doc_type: .. | 'x' }` respelling names it and
+# still widens). The `satisfies` clause in it is what turns that into a compiler
+# error, and `test_the_terminal_client_pins_the_body_structurally` pins the clause:
+# removing it is invisible otherwise, since everything still type-checks and this
+# file's other assertions stay green.
+TERMINAL_CLIENT = 'frontend/src/api/projectsApi.ts'
+STRUCTURAL_PIN = f'satisfies {REQUEST_BODY_TYPE}'
+
+# Both clients, the terminal one included rather than respelled — a second copy of
+# that path here is the same duplication this whole issue was about.
 GENERATE_DOCUMENT_CLIENTS = (
-    'frontend/src/api/projectsApi.ts',
+    TERMINAL_CLIENT,
     'frontend/src/api/client.ts',
 )
 
@@ -423,7 +449,7 @@ class TestTheUnionParser:
         )
 
 
-def _rendered_union(members, comment: str = '') -> str:
+def _rendered_union(members: tuple[str, ...], comment: str = '') -> str:
     """`export type DocType = ...` over `members`.
 
     With a `comment`, one member per line and the comment after the FIRST — the
@@ -478,11 +504,20 @@ class TestContractDriftIsCaught:
 
         accepted = tuple(GENERATED_DOC_TYPES)
         extra = _member_the_route_refuses(frozenset(accepted))
-        if kind != 'member_added' and len(accepted) < 2:
-            # Removing from a one-member allowlist leaves no union at all, which the
-            # parser REFUSES rather than returning a set to compare — a different
-            # test than this one. Skipped rather than silently reinterpreted.
-            pytest.skip('the route accepts one value; there is nothing to drop')
+        if kind == 'member_removed' and len(accepted) < 2:
+            # REMOVAL only. Dropping the last member leaves `export type DocType =`
+            # with no union at all, which the parser REFUSES rather than returning a
+            # set to compare — a different test than this one. Skipped rather than
+            # silently reinterpreted.
+            #
+            # `member_replaced` is deliberately NOT skipped here: on a one-member
+            # allowlist `(*accepted[:-1], extra)` is `(extra,)`, a valid
+            # single-member union the parser reads cleanly and which compares
+            # unequal, so the control still works. Widening the skip to cover it
+            # would drop a working control the moment the contract narrowed to one
+            # value — a green result meaning "did not check", which is the failure
+            # this class exists to prevent.
+            pytest.skip('the route accepts one value; removal leaves no union to parse')
         mutations = {
             'member_added': (*accepted, extra),
             'member_removed': accepted[:-1],
@@ -581,10 +616,20 @@ class TestDocTypeLockstep:
 
         Deliberately TEXT and not a parse. It asks whether each file mentions the
         shared type at all — no method location, no parameter-list extent, no model
-        of TypeScript, so none of the ways the scanner mis-read legal code apply. It
-        cannot tell WHERE the name is used, which is the trade: `GenerateDocumentBody`
-        imported but the signature widened anyway would pass here. `noUnusedLocals`
-        makes that combination a compiler error, so the two together close it.
+        of TypeScript, so none of the ways the scanner mis-read legal code apply.
+
+        LIMIT, stated precisely because an earlier version of this docstring
+        overstated it: this test cannot tell WHERE the name is used, so a signature
+        that names `GenerateDocumentBody` and widens `doc_type` anyway passes HERE.
+        That residue is not closed by `noUnusedLocals` — an earlier claim that it was
+        is false, and was measured to be: an
+        `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ... | 'onepager' }`
+        annotation USES the imported name, so no unused-local fires and `tsc` exits
+        0. What closes it is the `satisfies GenerateDocumentBody` clause on the body
+        construction in `projectsApi.generateDocument`, which makes any widening of
+        that parameter a TS1360 at the point the object is built.
+        `test_the_terminal_client_pins_the_body_structurally` is what keeps that
+        clause present, since deleting it is silent otherwise.
         """
         for relative in GENERATE_DOCUMENT_CLIENTS:
             path = _repo_root() / relative
@@ -603,3 +648,36 @@ class TestDocTypeLockstep:
                 f'in {DOC_TYPE_UNION_SOURCE}) instead, and widen the contract there '
                 f'if that is what is wanted.'
             )
+
+    @pytest.mark.skipif(
+        not _frontend_tree_present(), reason='frontend tree absent from this checkout'
+    )
+    def test_the_terminal_client_pins_the_body_structurally(self):
+        """The `satisfies` clause is what actually closes the widening axis.
+
+        Naming `GenerateDocumentBody` (asserted above) is necessary but not
+        sufficient: measured, an
+        `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ... | 'onepager' }`
+        annotation on this one method keeps the name in use, so `noUnusedLocals`
+        stays quiet, `tsc -p tsconfig.app.json --noEmit` exits 0 and the request goes
+        out with a value the route 400s. `satisfies GenerateDocumentBody` on the
+        object this method builds makes exactly that a TS1360.
+
+        Pinned by text here because its ABSENCE is silent — remove the clause and the
+        frontend still compiles, so no other gate in either language notices. This
+        asserts only that the clause is spelled; that it BITES is the compiler's job,
+        and `tsconfig.app.json` needs no flag for it (`satisfies` is not optional
+        behaviour).
+        """
+        path = _repo_root() / TERMINAL_CLIENT
+        assert path.is_file(), f'{TERMINAL_CLIENT} moved — update TERMINAL_CLIENT'
+        source = _without_comments(path.read_text(encoding='utf-8'))
+        assert STRUCTURAL_PIN in source, (
+            f'{TERMINAL_CLIENT} no longer spells `{STRUCTURAL_PIN}`. That clause is '
+            f'the only thing making a widened doc_type a compiler error in this '
+            f'file: its `data` is just spread into JSON.stringify, so the parameter '
+            f'annotation is compared against nothing and even one that NAMES '
+            f'{REQUEST_BODY_TYPE} can widen the field past what the route accepts. '
+            f'Restore it, or widen the contract in {DOC_TYPE_UNION_SOURCE} where '
+            f'this file can see it.'
+        )

@@ -125,7 +125,19 @@ export const projectsApi = {
       message: string
     }>(`/projects/${projectId}/document`, {
       method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
+      // 🔑 `satisfies` is load-bearing, not decoration. This method is the
+      // TERMINAL consumer of `data` — it is only spread into `JSON.stringify`, so
+      // the annotation above is compared against NOTHING and any widening of it
+      // type-checks. Naming the shared type is not enough either: an
+      // `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: ... | 'onepager' }`
+      // respelling still USES the name while widening the field. This clause is
+      // what makes either a TS1360 here, so widening has to happen in
+      // `GenerateDocumentBody` where the field is `DocType` and
+      // test_doc_type_lockstep.py compares it against the route (issue #381).
+      body: JSON.stringify({
+        ...getDateBasisBodyParams(),
+        ...(data satisfies GenerateDocumentBody),
+      }),
     }),
 
   mergeDocuments: (projectId: string, data: {
