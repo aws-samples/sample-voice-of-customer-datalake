@@ -3884,12 +3884,18 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
 
         assert unbounded == [], (
             f'{unbounded} take a form id out of the URL without establishing the '
-            'bound before their first read or send. Three shapes report here, and '
-            'the message cannot tell them apart: no validator call at all; a call '
-            'whose None result is never refused (which is no bound — see '
-            '_refused_names); or a call that comes AFTER the table or the queue is '
-            "touched. Add the check rather than narrowing the claim: the value of a "
-            'universal bound is that a reader does not have to hold the exceptions.'
+            'bound before their first read or send. Several shapes report here and '
+            'the message cannot tell them apart, so check each in turn: no '
+            'validator call at all; a result that is never refused, or refused by '
+            'something that is not a NEGATIVE test of it — a success-path or '
+            'cache-hit `return` is not a refusal (see `_refused_names`); a refusal '
+            'that is nested, so it runs on some paths only; or a REFUSAL that comes '
+            'after the table or the queue is touched. Add the check rather than '
+            'narrowing the claim: the value of a universal bound is that a reader '
+            'does not have to hold the exceptions. And if the route is genuinely '
+            'bounded in a spelling this derivation does not know, widen the '
+            'derivation and add a control for it — '
+            '`test_the_derivation_accepts_the_walrus_spelling` is the precedent.'
         )
 
     def test_the_derivation_sees_the_routes_this_module_actually_has(
@@ -4519,8 +4525,8 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
             assert feedback_form_handler._validated_form_id(valid) == valid, (
                 f'{valid!r} came back as '
                 f'{feedback_form_handler._validated_form_id(valid)!r} — a '
-                'normalized return splits the key a route reads from the '
-                'source_channel it filters on'
+                'normalized return makes the record a route reads and the id it '
+                'echoes back describe two different forms'
             )
 
     def test_a_trailing_newline_is_not_a_valid_form_id(
@@ -4539,9 +4545,9 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
 
         Two consequences, both asserted:
 
-        - It reached `f'FORM#{validated}'`, `source_channel = f'form_{form_id}'` and
-          the log line in `_load_form_for_query`, where an embedded newline in a
-          structured log record is its own small problem.
+        - It reached `f'FORM#{validated}'`, the `source_channel` the query routes
+          filter on, and the log line in `_load_form_for_query`, where an embedded
+          newline in a structured log record is its own small problem.
         - The length cap bounded the matched PREFIX rather than the id, so
           `'a' * FORM_ID_MAX_LENGTH + '\\n'` was admitted at 65 characters while
           `'a' * (FORM_ID_MAX_LENGTH + 1)` was refused. Derived from the constant
