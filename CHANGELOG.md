@@ -76,6 +76,12 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `UpdateItem`, which is an upsert, so a request naming an id the table did not hold created a row
   with no `form_id` of its own — one that read back with an empty id and could not afterwards be
   addressed or deleted by id. It is now conditional on the form existing.
+- `POST /feedback-forms` can no longer overwrite an existing form. The write was an unconditional
+  `PutItem`, which replaces whatever is stored at the same key, so a minted id that collided with a
+  form already there would have replaced it — that form's `enabled` flag, theme and document link
+  gone, reported as a successful create. Unreachable by a caller, since the id is minted rather than
+  taken from the request, so it required a collision between two draws; the write is now conditional
+  on the id being free and a collision answers 500 instead of losing the form.
 
 ### Upgrade notes
 
