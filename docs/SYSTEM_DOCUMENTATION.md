@@ -596,6 +596,22 @@ is no separate script to load:
 <iframe src="https://your-api/v1/feedback-forms/{form_id}/iframe" width="100%" height="500" frameborder="0"></iframe>
 ```
 
+Two things about that page to know before debugging a blank or error frame:
+
+- It answers **404 for a form id the table does not hold**, and for one this
+  service could not have issued — the route confirms the form exists before
+  rendering, where it previously served a page having read nothing. A deleted form
+  or a typo in `{form_id}` is therefore an error frame rather than an empty
+  widget. See
+  [how a form id is checked](feedback-forms.md#how-a-form-id-is-checked-on-every-one-of-those-routes).
+- It sets a **Content-Security-Policy**, and that one fails silently: the frame
+  goes blank with nothing to see but a violation in the browser console. It
+  deliberately sets no `frame-ancestors` and no `X-Frame-Options`, so a proxy or
+  CDN in front of the API that adds either will break every embed. See
+  [Embedding Forms](feedback-forms.md#embedding-forms), which is where both are
+  described — this page links rather than repeating them so there is one copy to
+  keep correct.
+
 The only public per-form routes are `config`, `submit` and `iframe`; there is no
 `widget.js` route, and requesting one returns `403 Missing Authentication Token`.
 See [Feedback Forms](feedback-forms.md#embedding-forms).
