@@ -3393,6 +3393,75 @@ class TestTheAuthenticatedCrudRoutesAreBoundedToo:
         )
         assert 'ConditionExpression' not in mock_table.delete_item.call_args.kwargs
 
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_create_that_would_overwrite_a_stored_form_is_refused(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The mirror image of `PUT`'s condition, on the write that OVERWRITES.
+
+        `update_form` needed `attribute_exists(sk)` because UpdateItem creates
+        silently. PutItem replaces just as silently, so `create_form` is the other
+        half: with no condition, a minted id that collides with a stored form
+        REPLACES it — that customer's `enabled` flag, theme and prioritization link
+        gone, answered 200, the response echoing the NEW record so nothing anywhere
+        says a form was lost.
+
+        Not reachable by a caller, since the id is minted and never taken from the
+        body, so it takes a collision: two `_minted_form_id()` draws agreeing, a
+        birthday problem over 32 bits at `FORM_ID_LENGTH = 8`. Small, not zero —
+        and the constant's comment says it is safe to RAISE, which this condition
+        is what keeps a free choice rather than one eventually forced by the loss.
+
+        500 rather than a 4xx is the deliberate part: a collision is the server's
+        problem, the caller did nothing wrong, and a retry mints a different id.
+        """
+        mock_table.put_item.side_effect = ClientError(
+            {'Error': {'Code': 'ConditionalCheckFailedException',
+                       'Message': 'The conditional request failed'}},
+            'PutItem',
+        )
+
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'a form whose minted id is already taken'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 500
+        assert json.loads(response['body'])['success'] is False
+        # The condition is on the REQUEST rather than only in the docstring —
+        # without it this write succeeds and the stored form is gone.
+        assert (
+            mock_table.put_item.call_args.kwargs['ConditionExpression']
+            == 'attribute_not_exists(sk)'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_create_of_a_new_form_still_succeeds(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The contract the condition must not have broken.
+
+        Every create in practice is of an id nothing holds, so the condition has to
+        be invisible on the path that matters. Without this, the case above would
+        pass just as well with `create_form` broken outright.
+        """
+        event = api_gateway_event(
+            method='POST',
+            path='/feedback-forms',
+            body={'name': 'A brand new form'},
+        )
+
+        response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        form = json.loads(response['body'])['form']
+        assert form['name'] == 'A brand new form'
+        # And a real minted id came back, so the caller can address what it made.
+        assert feedback_form_handler._validated_form_id(form['form_id'])
+
 
 def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
     """Every `@app.<method>` route under `/feedback-forms/` that captures anything.

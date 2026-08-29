@@ -515,16 +515,53 @@ def list_forms():
 @app.post("/feedback-forms")
 @tracer.capture_method
 def create_form():
-    """Create a new feedback form."""
+    """Create a new feedback form.
+
+    The other half of `update_form`'s condition, and here for the mirror-image
+    reason: PutItem OVERWRITES an item at the same key as silently as UpdateItem
+    creates one. `attribute_not_exists(sk)` makes this write a create only, so a
+    minted id that collides with a form already stored is refused instead of
+    replacing it — a customer's live form, its `enabled` flag, its theme and its
+    link to a prioritization document, gone with a 200 and a response echoing the
+    NEW record. The idiom is `projects_handler`'s, at its own two creates.
+
+    Reachable only through a collision, which is why this is a guard rather than a
+    fix for something observed: the id is never taken from the caller
+    (`build_form_item` mints it), so two `_minted_form_id()` draws would have to
+    agree — a birthday problem over `FORM_ID_LENGTH` hex characters, 32 bits at
+    the current 8. Small at a few thousand forms, and not zero. The constant's
+    comment says it is safe to RAISE, and this condition is what keeps that a free
+    choice rather than something eventually forced: it makes the collision a
+    refused request instead of a silent loss, whatever the width.
+
+    A collision is the SERVER's fault, not the caller's, so it answers 500 with
+    the generic message rather than a 4xx — the client did nothing wrong and
+    retrying is the right move, since the retry mints a different id.
+    `test_a_create_that_would_overwrite_a_stored_form_is_refused` pins it.
+    """
     body = app.current_event.json_body or {}
     # Link fields are validated inside build_form_item, structurally.
     item = build_form_item(body)
-    
+
     try:
-        aggregates_table.put_item(Item=item)
+        aggregates_table.put_item(
+            Item=item,
+            # See the docstring: this is what makes the route a create rather than
+            # a blind overwrite of whatever the minted id happens to name.
+            ConditionExpression='attribute_not_exists(sk)',
+        )
         logger.info(f"Created feedback form: {item['form_id']}")
         return {'success': True, 'form': item_to_form(item)}
     except Exception as e:
+        if _is_conditional_check_failure(e):
+            # A minted id that is already taken. Logged distinctly because it is
+            # the one failure here that says something about FORM_ID_LENGTH rather
+            # than about DynamoDB, and it would otherwise be invisible.
+            logger.error(
+                f"Refused to overwrite existing form {item['form_id']}: "
+                'the minted id collided with a stored one'
+            )
+            raise ServiceError('Failed to create form') from e
         logger.error(f"Error creating form: {e}")
         raise ServiceError('Failed to create form')
 
