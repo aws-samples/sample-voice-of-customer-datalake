@@ -721,12 +721,43 @@ function newestOfType(
  *    rule checks, and never that the fresher combination is coherent. Both the
  *    classifier shape and this advisory shape are pinned by cases, so the limit is
  *    asserted rather than described.
+ *
+ * ONLY ONE OF THE TWO `crossGeneration` REASONS WITHHOLDS, and the asymmetry is
+ * deliberate rather than a gap in the guards above. `repeatedType` withholds, via
+ * the FIRST condition's `repeatsAType` call: a row already holding two generations
+ * of a type has no single "same expectations" candidate to compare with, because
+ * "the newest of each type the row holds" collapses its two PRDs onto one and would
+ * silently answer a one-document combination for a two-document row.
+ * `supersededSource` does NOT withhold, and must not: the arithmetic stays
+ * well-defined — one readable type per document, one candidate per type — and the
+ * candidate it produces is checked for crossing generations on its own account
+ * below. A row holding `prd_2` and a PR/FAQ built from `prd_1` is therefore
+ * reported stale, pointed at the newest PRD and the newest PR/FAQ, and that advice
+ * is true: measured, that candidate classifies `coherent`/`oneChain` and is
+ * genuinely newer, and the same Add-row repairs BOTH complaints at once — the row's
+ * evidence is internally inconsistent AND out of date.
+ *
+ * SO A ROW CAN LEGITIMATELY SHOW BOTH BADGES, `Crosses generations` beside
+ * `Superseded`, which is not a conflict to be resolved but the two axes the
+ * presentation was split along on purpose: see `RowStaleBadge`'s "a SECOND badge
+ * rather than a fourth lineage state", where the argument is that state is about
+ * the combination and staleness is about the passage of time. Both directions are
+ * pinned by their own case, because a future guard added here could flip either
+ * with nothing red otherwise.
  */
 export function fresherCoherentSelection(
   selection: readonly unknown[],
   projectDocuments: readonly unknown[],
 ): readonly string[] | null {
   const selected = selectionEntries(selection)
+  // `repeatsAType` AND NOT `hasSupersededSource`, which is the one place the two
+  // rules that both answer `crossGeneration` are treated differently — deliberately,
+  // and argued in the docstring's last two paragraphs. A repeated type leaves no
+  // single "same expectations" candidate to form; a superseded source leaves the
+  // arithmetic intact, and the candidate it produces is checked for crossing
+  // generations on its own account below. So a `supersededSource` row CAN be
+  // reported stale and show both badges at once. Both directions are pinned by
+  // their own case, so a guard added here cannot flip either quietly.
   if (selected.length === 0 || repeatsAType(selected)) return null
   // A type nobody can read states no expectation — see the docstring's first
   // condition. Left in, `newestOfType(available, '')` would answer the project's

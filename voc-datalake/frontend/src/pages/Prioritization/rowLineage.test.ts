@@ -90,7 +90,16 @@
  *  * `fresher` narrowed from `some` to `every` → "only ONE of its types has a newer
  *    version" (the case `lineage.staleReason`'s wording answers to);
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
- *    nothing".
+ *    nothing";
+ *  * the `repeatsAType` guard in `fresherCoherentSelection` widened to every
+ *    `crossGeneration` row (e.g. gating on the classification instead) → "DOES mark a
+ *    supersededSource row stale, unlike its repeatedType sibling". The TWO reasons
+ *    that both answer `crossGeneration` diverge here on purpose, and this case is the
+ *    only thing pinning the half that does NOT withhold — the other half is
+ *    "withholds staleness for a row already holding two versions of one type". Each
+ *    stays green under the other's revert, and the divergent case asserts its sibling
+ *    FIRST on the same project read, so widening the guard cannot pass by making both
+ *    rows withhold.
  *
  * TWO CASES PIN A BOUNDARY RATHER THAN A BRANCH, and are deliberately NOT in the map
  * above: "reads only a document's OWN sources, so a crossing two hops out is not
@@ -776,6 +785,42 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
 
     expect(lineage.state).toBe('crossGeneration')
     expect(lineage.stale).toBe(false)
+  })
+
+  it('DOES mark a supersededSource row stale, unlike its repeatedType sibling', () => {
+    // The other of the two reasons that answer `crossGeneration`, pinned in the
+    // opposite direction — because only one of them withholds and nothing else in the
+    // suite said which. `repeatsAType` is called inside `fresherCoherentSelection`
+    // and short-circuits it; `hasSupersededSource` is not, so this row runs the whole
+    // comparison and can be reported stale.
+    //
+    // It SHOULD be: the arithmetic is well-defined here (one readable type each, one
+    // candidate per type), the candidate is genuinely newer, and it is checked for
+    // crossing generations on its own account — asserted below, so this case shows
+    // the advice is true rather than merely permitted. One Add-row repairs both
+    // complaints, since the row's evidence is inconsistent AND out of date.
+    const faqFromPrd1 = doc('faq_1', 'prfaq', '2025-01-01', builtFrom('prd_1'))
+    const faqFromPrd2 = doc('faq_2', 'prfaq', '2025-03-01', builtFrom('prd_2'))
+    const crossing = [prd1, prd2, faqFromPrd1, faqFromPrd2]
+
+    // THE SIBLING, asserted FIRST and on the same project read, because the claim is a
+    // DIVERGENCE: a case that only asserted this row's staleness would stay green if
+    // the repeated-type guard were widened to every `crossGeneration` row, which is
+    // exactly the change this pair exists to catch.
+    expect(rowLineageOf(frozenRow([prd1, prd2]), crossing).stale).toBe(false)
+
+    const lineage = rowLineageOf(frozenRow([prd2, faqFromPrd1]), crossing)
+
+    // The state is unchanged — staleness is a second axis, so this row shows BOTH
+    // badges (see `RowStaleBadge`'s "a second badge, not a fourth state"). Pinning
+    // the coexistence rather than only the boolean.
+    expect(lineage.state).toBe('crossGeneration')
+    expect(lineage.reason).toBe('supersededSource')
+    expect(lineage.stale).toBe(true)
+    expect(lineage.fresherDocumentIds).toEqual(['prd_2', 'faq_2'])
+    // And the combination it names does not itself cross generations, which is what
+    // makes advising it honest rather than trading one bad row for another.
+    expect(classifySelectionLineage([prd2, faqFromPrd2], crossing).state).toBe('coherent')
   })
 
   it('compares the INSTANT a timestamp names, not the string that spells it', () => {
