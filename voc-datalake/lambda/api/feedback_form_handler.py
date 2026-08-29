@@ -980,6 +980,10 @@ def get_form_iframe(form_id: str):
     # `enabled` and the visitor gets a raw API Gateway 404 frame instead, which is
     # a worse answer for the customer who turned the form off on purpose.
     # `test_a_disabled_form_still_serves_its_page_so_the_widget_can_say_so` pins it.
+    #
+    # Both halves of the pair are discarded, including the validated id it hands
+    # back for `/stats` and `/submissions` to build their filter from: this route
+    # already holds that string, having passed it in.
     _load_form_for_query(validated, 'Failed to load form')
 
     host = app.current_event.request_context.get('domainName', '')
@@ -1058,7 +1062,9 @@ def _form_source_pk(form: dict) -> str:
     return f"SOURCE#{effective_brand}" if effective_brand else 'SOURCE#feedback_form'
 
 
-def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
+def _load_form_for_query(
+    form_id: str, read_failure_message: str
+) -> tuple[str, dict]:
     """Load a form record for a stats/submissions query, failing loudly.
 
     One get_item answers both questions those routes need, so neither has to be
@@ -1079,17 +1085,24 @@ def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
     and the iframe page's existence gate — `_validated_form_id`'s cost argument
     then holds at every route that states it rather than at one.
 
-    The key is built from the VALIDATED value, like every other call site, rather
-    than from the parameter. Those are the same string today, and relying on that
-    was a latent split rather than a saving: a validator that normalized — a
-    plausible "form ids are case-insensitive" change — would have this function
-    read `FORM#DEADBEEF` while `/config` read `FORM#deadbeef` for the same URL,
-    and `/submissions` would then filter on a `source_channel` built by its caller
-    from the raw id, which no write ever used. A silent zero, which is the exact
-    defect class this function exists to prevent (#312). Keying on the validated
-    value removes the dependency instead of documenting it;
-    `test_the_validator_returns_its_input_unchanged` pins the exactness the
-    callers' own use of `form_id` still relies on.
+    Returns the VALIDATED id alongside the record, and that is the whole reason
+    this signature is a pair rather than a dict. The key here is built from the
+    validated value, but a caller's `source_channel` — the filter that selects
+    which submissions belong to this form — used to be built from the raw
+    parameter, so the read and the filter came from two different strings. They
+    are the same string today, and relying on that was a latent split rather than
+    a saving: a validator that normalized (a plausible "form ids are
+    case-insensitive" change) would have this function read `FORM#DEADBEEF` while
+    `/config` read `FORM#deadbeef` for the same URL, and the caller would filter
+    on `form_DEADBEEF` while every write used `form_deadbeef` — zero submissions
+    for a form that has them, reported as a 200. That is the exact defect class
+    this function exists to prevent (#312), arriving through the door the format
+    check installed. Handing the validated id back removes the dependency instead
+    of documenting it, so `submit_form_feedback`'s write (`f'form_{validated}'`)
+    and both read routes' filter are built from one string.
+    `test_the_validator_returns_its_input_unchanged` still pins the exactness, and
+    `test_the_key_a_query_route_reads_is_the_id_in_its_url` pins the pair
+    end to end.
     """
     validated = _validated_form_id(form_id)
     if not validated:
@@ -1108,7 +1121,7 @@ def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
     form = response.get('Item')
     if not form:
         raise NotFoundError('Form not found')
-    return form
+    return validated, form
 
 
 @app.get("/feedback-forms/<form_id>/submissions")
@@ -1124,9 +1137,14 @@ def get_form_submissions(form_id: str):
     # One read answers both the 404 and the partition, where this route used to
     # do its own existence check and then have _get_form_source_pk re-read the
     # same record (and swallow a failure of it).
-    form = _load_form_for_query(form_id, 'Failed to fetch form')
+    validated, form = _load_form_for_query(form_id, 'Failed to fetch form')
 
-    source_channel = f'form_{form_id}'
+    # From the VALIDATED id, so this filter and the write that produced the rows
+    # it selects (`submit_form_feedback`, `'source_channel': f'form_{validated}'`)
+    # are built from one string. See _load_form_for_query: a validator that
+    # normalized would otherwise have this route filter on a channel no write ever
+    # used, and the symptom is zero rows rather than an error.
+    source_channel = f'form_{validated}'
     source_pk = _form_source_pk(form)
 
     try:
@@ -1220,9 +1238,12 @@ def get_form_stats(form_id: str):
 
     # 404 for a deleted form, and the partition its submissions are in, from the
     # one read — never a partition guessed from a read that failed.
-    form = _load_form_for_query(form_id, 'Failed to fetch form stats')
+    validated, form = _load_form_for_query(form_id, 'Failed to fetch form stats')
 
-    source_channel = f'form_{form_id}'
+    # From the VALIDATED id, for the same reason as get_form_submissions above:
+    # this filter has to be the string `submit_form_feedback` wrote
+    # (`'source_channel': f'form_{validated}'`), or the count is a false zero.
+    source_channel = f'form_{validated}'
     source_pk = _form_source_pk(form)
 
     try:

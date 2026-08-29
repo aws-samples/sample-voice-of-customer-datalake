@@ -3466,31 +3466,73 @@ _FORM_ID_SINKS = frozenset({
     'aggregates_table', 'feedback_table', 'sqs', 'dynamodb',
 })
 
+# The OPERATION names, which is the property that is closed over spellings where
+# the receiver names above are not.
+#
+# A receiver allowlist cannot be complete for "reaches a form id into a sink",
+# because the handle can be produced by anything: this repo alone reads the same
+# table as `aggregates_table.get_item(...)`, as
+# `dynamodb.Table(AGGREGATES_TABLE).get_item(...)` (module scope, line ~40), as
+# `table = get_aggregates_table()` then `table.get_item(...)` (the PREVAILING
+# style — `ballots_handler.py:379`, `projects_handler.py:1347`/`:2283`/`:2402`,
+# `integrations_handler.py:545`, `scrapers_handler.py:228`, twelve sites), and
+# `lambda/shared/tables.py` routes that factory through
+# `get_dynamodb_resource().Table(...)`. Every one of those names a different
+# receiver and the same METHOD, and it is the method that makes the call a read or
+# a write. `ballots_handler` is the sibling `_validated_form_id`'s docstring names
+# as this design's model, so the shape the receiver allowlist could not see was the
+# one a new form-id route was most likely to be written in.
+#
+# Adding a name to the frozenset above closes one spelling; matching the operation
+# closes the class. Both are kept: the receiver match still catches a call whose
+# method this set does not name (a `meta.client` call, a paginator), and the
+# operation match catches a named method through any handle at all.
+#
+# Erring toward calling something a sink is the right side of this: a false
+# positive costs a route author an explanation, while a false negative is a read
+# NOBODY reports — an empty `sink_positions` makes `_validates_its_form_id`'s
+# `all(...)` vacuously True, so the instrument answers "bounded" when it understood
+# nothing.
+_SINK_OPERATIONS = frozenset({
+    'get_item', 'put_item', 'update_item', 'delete_item', 'query', 'scan',
+    'batch_get_item', 'batch_write_item', 'send_message', 'send_message_batch',
+})
+
 
 def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
     """Positions of every call in `function` that reaches a form id into a sink.
 
-    Matched on the CALLEE CHAIN rather than on `<sink>.<method>` alone, which is
-    what an earlier version of this derivation did — and it recognised a read only
-    when spelled `aggregates_table.get_item(...)` literally. Two shapes therefore
-    reported as bounded while reading before validating, and the failure mode was
+    A call counts as a sink two ways, and either is enough:
+
+    - its METHOD is one of `_SINK_OPERATIONS`, whatever handle it arrives through.
+      That is the one that is closed over spellings; the constant's comment carries
+      the argument and the in-repo lines it is derived from.
+    - a sink NAME appears anywhere in the callee chain — including a local alias of
+      one — which still catches a call whose method that set does not name.
+
+    Both exist because an earlier version had only the second, spelled as
+    `<sink>.<method>` on the immediate owner, and every shape it could not see
+    reported as bounded while reading before validating. The failure mode is
     SILENCE rather than a wrong answer: no sink found makes `sink_positions` empty,
-    and `all(...)` over an empty list is vacuously True.
+    and `all(...)` over an empty list is vacuously True. Each shape below is a
+    control in `TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes`:
 
-    - `table = aggregates_table` then `table.get_item(...)`. Locally bound sinks
-      are tracked below for this one.
-    - `dynamodb.Table(AGGREGATES_TABLE).get_item(...)`, where the sink name sits
-      further down the chain than `call.func.value`. Walking the whole callee
-      subtree is what catches it, and it is the more plausible of the two because
-      the module itself demonstrates that spelling.
+    - `table = aggregates_table` then `table.get_item(...)` — alias tracking.
+    - `dynamodb.Table(AGGREGATES_TABLE).get_item(...)` — the sink name sits deeper
+      in the chain than `call.func.value`.
+    - `table = get_aggregates_table()` then `table.get_item(...)`, and
+      `get_dynamodb_resource().Table(T).get_item(...)` — no sink name anywhere, so
+      only the operation match sees them.
 
-    Both are controls in `TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes`.
-
-    Aliases are collected from the function's TOP LEVEL, in source order, and only
-    from a plain `name = <expression mentioning a sink>`. A conditionally bound
-    alias is not tracked, deliberately: this derivation errs toward calling
-    something a sink, and the cost of a false positive is a route author being made
-    to say why — whereas a false negative is a read nobody reports.
+    Aliases are collected in source order and from NESTED bodies as well as the top
+    level (`try`, `with`, `if`, `for`), because every table read in this handler
+    sits inside a `try:` — so the plausible spelling of an alias is an indented
+    one, and three of the twelve in-repo `table = get_aggregates_table()` sites are
+    themselves inside one. An untracked alias is a FALSE NEGATIVE, not a cautious
+    false positive: the call drops out of `sink_positions` and the shorter list
+    makes the `all()` MORE likely to pass. That is the same vacuous pass the
+    controls exist to prevent, which is why alias collection is generous while the
+    REFUSAL's top-level requirement — a separate axis — stays strict.
     """
     aliases: set[str] = set()
 
@@ -3501,22 +3543,31 @@ def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
             for child in ast.walk(node)
         )
 
-    for statement in function.body:
-        if not isinstance(statement, ast.Assign):
-            continue
-        if not _mentions_a_sink(statement.value):
-            continue
-        aliases |= {
-            target.id for target in statement.targets
-            if isinstance(target, ast.Name)
-        }
+    def _collect_aliases(body: list[ast.stmt]) -> None:
+        for statement in body:
+            if isinstance(statement, ast.Assign) and _mentions_a_sink(
+                statement.value
+            ):
+                aliases.update(
+                    target.id for target in statement.targets
+                    if isinstance(target, ast.Name)
+                )
+            # A sink handle bound inside a `try:`/`with`/`if`/`for` is still bound.
+            for field in ('body', 'orelse', 'finalbody'):
+                nested = getattr(statement, field, None)
+                if isinstance(nested, list):
+                    _collect_aliases(nested)
+            for handler in getattr(statement, 'handlers', []):
+                _collect_aliases(handler.body)
+
+    _collect_aliases(function.body)
 
     return [
         (call.lineno, call.col_offset)
         for call in ast.walk(function)
         if isinstance(call, ast.Call)
         and isinstance(call.func, ast.Attribute)
-        and _mentions_a_sink(call.func)
+        and (call.func.attr in _SINK_OPERATIONS or _mentions_a_sink(call.func))
     ]
 
 
@@ -3546,7 +3597,43 @@ def _refused_names(function: ast.FunctionDef) -> dict[str, tuple[int, int]]:
     one, so hoisting just the assignment out of the dead block escaped the
     top-level requirement while nothing was ever refused
     (`test_the_derivation_refuses_a_refusal_that_only_runs_sometimes`).
+
+    A NEGATIVE test of the name — `if not <name>:` or `if <name> is None:` — and
+    not any `if` mentioning it. An earlier version accepted whatever the test
+    asserted, so an `if` returning on the SUCCESS path was credited as the
+    refusal: `if validated: return render(validated)` and
+    `if validated in _PAGE_CACHE: return _PAGE_CACHE[validated]` both reported a
+    bound while refusing nothing at all — the malformed id falls THROUGH the
+    condition with None bound and reaches the read. The second is the natural
+    spelling of the in-Lambda half of the `Cache-Control` follow-up recorded in
+    `lib/stacks/api-stack.ts`, so the gap sat in front of the next planned change
+    (`test_the_derivation_refuses_a_success_path_return`,
+    `test_the_derivation_refuses_a_cache_hit_return`).
+
+    Those two spellings are the only ones the module uses, so narrowing to them
+    changed no verdict. If a third legitimate one appears (`if validated is None
+    or ...`), widen this deliberately and add the control; do not go back to
+    accepting any test that names the value, because "the name is mentioned in a
+    condition" was never the claim.
     """
+    def _negatively_tested(test: ast.expr) -> list[str]:
+        # `if not <name>:`
+        if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+            if isinstance(test.operand, ast.Name):
+                return [test.operand.id]
+            return []
+        # `if <name> is None:`
+        if (
+            isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name)
+            and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.Is)
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is None
+        ):
+            return [test.left.id]
+        return []
+
     refused: dict[str, tuple[int, int]] = {}
     for node in function.body:
         if not isinstance(node, ast.If):
@@ -3558,11 +3645,9 @@ def _refused_names(function: ast.FunctionDef) -> dict[str, tuple[int, int]]:
         ):
             continue
         position = (node.lineno, node.col_offset)
-        for name in ast.walk(node.test):
-            if not isinstance(name, ast.Name):
-                continue
-            known = refused.get(name.id)
-            refused[name.id] = position if known is None else min(known, position)
+        for name in _negatively_tested(node.test):
+            known = refused.get(name)
+            refused[name] = position if known is None else min(known, position)
     return refused
 
 
@@ -3578,7 +3663,7 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     and each has a control below — the second one mattering most, since a route
     with no bound at all looked identical to a correct one.
 
-    A validating statement is one of two spellings, both required to sit at the
+    A validating statement is one of three spellings, all required to sit at the
     function's TOP LEVEL:
 
     - `<name> = _validated_form_id(...)` where `<name>` is later tested in an `if`
@@ -3587,6 +3672,16 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
       REFUSAL's, not the assignment's: an assignment that binds None costs nothing,
       so a read between it and the raise is a read of `FORM#None` that the check
       was supposed to prevent.
+    - `if not (<name> := _validated_form_id(...)):` — the walrus form, ACCEPTED
+      rather than tolerated. It is strictly safer than the two-statement one: there
+      is no statement boundary between the binding and the refusal, so the
+      `FORM#None` window the bullet above has to measure cannot exist in it at all.
+      An earlier version of this helper recognised only the two-statement spelling
+      and would therefore have reported a correctly guarded route as unbounded —
+      pushing whoever wrote the safer form back to the weaker one to get green,
+      which runs the cost of a false positive the wrong way
+      (`test_the_derivation_accepts_the_walrus_spelling`). The `if`'s own position
+      is the refusal's, because they are the same statement.
     - a call to `_load_form_for_query(...)`, which needs no result check because it
       RAISES for itself — so for that spelling the call's own position IS the
       refusal's. Following the delegation rather than demanding the direct call is
@@ -3598,7 +3693,7 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     validation together — a check that only runs on some paths is not a bound, and
     `if False:` is just the extreme of that. If a legitimate spelling ever needs to
     nest (validation inside a `with`, say), widen this deliberately and add the
-    control alongside the three below; do not relax it to get green.
+    control alongside the ones below; do not relax it to get green.
     """
     tree = ast.parse(source)
     functions = [
@@ -3617,8 +3712,37 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     def _named(call: ast.Call, name: str) -> bool:
         return isinstance(call.func, ast.Name) and call.func.id == name
 
+    def _walrus_refusal(statement) -> tuple[int, int] | None:
+        """`if not (<name> := _validated_form_id(...)):` — bind and refuse in one.
+
+        The `if`'s own position, because for this spelling the binding and the
+        refusal are the same statement — there is no gap between them to measure.
+        """
+        if not isinstance(statement, ast.If):
+            return None
+        test = statement.test
+        if not (isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not)):
+            return None
+        bound = test.operand
+        if not (
+            isinstance(bound, ast.NamedExpr)
+            and isinstance(bound.value, ast.Call)
+            and _named(bound.value, '_validated_form_id')
+        ):
+            return None
+        if not any(
+            isinstance(child, (ast.Raise, ast.Return))
+            for node in statement.body
+            for child in ast.walk(node)
+        ):
+            return None
+        return (statement.lineno, statement.col_offset)
+
     validated_at = None
     for statement in function.body:
+        walrus = _walrus_refusal(statement)
+        if walrus is not None:
+            validated_at = min(validated_at or walrus, walrus)
         for call in _calls(statement):
             if _named(call, '_load_form_for_query'):
                 # This one raises for itself, so the call is the refusal.
@@ -3935,6 +4059,226 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'this is the spelling the module demonstrates at module scope'
         )
 
+    def test_the_derivation_refuses_a_read_through_a_table_factory(self):
+        """The sink-side gap in the spelling this PACKAGE actually prefers.
+
+        `table = get_aggregates_table()` is not a hypothetical: it is how the
+        aggregates table is read at twelve sites here — `ballots_handler.py:379`
+        (the sibling `_validated_form_id`'s docstring names as this design's model),
+        `projects_handler.py:1347`/`:2283`/`:2402`, `integrations_handler.py:545`,
+        `scrapers_handler.py:228` among them — and `lambda/shared/tables.py:17`
+        routes that factory through `get_dynamodb_resource().Table(...)`, which
+        `feedback_form_handler.py:31` is itself a caller of.
+
+        So the single most likely way the NEXT form-id route gets written in this
+        repo was the one shape a receiver-name allowlist could not see: no sink name
+        appears anywhere in the callee chain, `sink_positions` comes back empty, and
+        `all(...)` over an empty list is vacuously True. Matching the OPERATION
+        (`_SINK_OPERATIONS`) rather than the receiver is what closes the class
+        instead of one more spelling — the method is what makes a call a read.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/factory-read")
+            def get_factory_read(form_id: str):
+                table = get_aggregates_table()
+                item = table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return item
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_factory_read'), (
+            'a read through get_aggregates_table() was not recognised as a read — '
+            'no sink NAME appears in the chain, so only matching the operation '
+            'sees it, and this is the prevailing read idiom in this package'
+        )
+
+        # And the factory one level further out, which `shared/tables.py` itself
+        # composes and this module calls at line ~31 to obtain `dynamodb`.
+        resource_factory = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/resource-read")
+            def get_resource_read(form_id: str):
+                item = get_dynamodb_resource().Table(AGGREGATES_TABLE).get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return item
+            '''
+        )
+
+        assert not _validates_its_form_id(resource_factory, 'get_resource_read'), (
+            'a read through get_dynamodb_resource().Table(...) was not recognised '
+            'as a read — the receiver is produced by a call, so no name in the '
+            'chain is a sink and the verdict came from an EMPTY sink list'
+        )
+
+    def test_the_derivation_refuses_a_read_through_an_alias_bound_in_a_try(self):
+        """The alias one indentation level in, which is where the real ones are.
+
+        Aliases used to be collected from `function.body` only, so an alias bound
+        inside a `try:` was untracked — and EVERY table read in this handler sits
+        inside a `try:`, as do three of the twelve in-repo
+        `table = get_aggregates_table()` sites. The existing alias control passes
+        only because its own alias happens to be at the top level, which is the
+        less likely of the two placements.
+
+        Worth being precise about the direction, because the helper's own docstring
+        used to have it backwards: an untracked alias is a FALSE NEGATIVE. The call
+        drops out of `sink_positions`, and `all(...)` over the shorter list is MORE
+        likely to pass — so the read is not reported at all. That is the vacuous
+        pass these controls exist for, not a cautious over-report.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/nested-alias")
+            def get_nested_alias(form_id: str):
+                try:
+                    table = aggregates_table
+                    table.get_item(
+                        Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                    )
+                except Exception:
+                    pass
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_nested_alias'), (
+            'a read through an alias bound inside a try: was not recognised as a '
+            'read — alias collection has to descend into nested bodies, because '
+            'every read in this handler is inside one'
+        )
+
+    def test_the_derivation_refuses_a_success_path_return(self):
+        """An `if` that returns on the SUCCESS path is not a refusal.
+
+        `_refused_names` used to accept any top-level `if` whose body contained a
+        `Raise` or a `Return`, without looking at what the test asserted. So
+        `if validated: return render(validated)` was credited as the refusal while
+        refusing nothing at all: a malformed id falls THROUGH the condition with
+        `validated` bound to None and reaches the read below it, which is the
+        `Key={'sk': 'FORM#None'}` call the whole cost argument exists to avoid.
+
+        This is why the refusal is now recognised only as a NEGATIVE test of the
+        name — `if not <name>:` or `if <name> is None:`, the two spellings the
+        module uses. "An `if` mentions the value" was never the claim.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/success-return")
+            def get_success_return(form_id: str):
+                validated = _validated_form_id(form_id)
+                if validated:
+                    return render(validated)
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_success_return'), (
+            'a success-path return was counted as the refusal — nothing in this '
+            'function refuses anything, and the malformed id falls through to the '
+            'read with None bound'
+        )
+
+    def test_the_derivation_refuses_a_cache_hit_return(self):
+        """The same shape in the spelling the NEXT planned change would produce.
+
+        `lib/stacks/api-stack.ts` records a `Cache-Control` follow-up as unblocked
+        by #379. If it lands as an in-Lambda cache rather than at the edge, this is
+        what the route looks like — `if validated in _PAGE_CACHE: return ...` — and
+        under the old derivation it was credited as the refusal because the test
+        mentions the name and the body returns.
+
+        So the gap sat directly in front of the one change this PR declares next,
+        which is what makes it worth a case of its own rather than being covered by
+        the success-path one: they fail for the same reason, but only this one is
+        already on somebody's list.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/cached")
+            def get_cached(form_id: str):
+                validated = _validated_form_id(form_id)
+                if validated in _PAGE_CACHE:
+                    return _PAGE_CACHE[validated]
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_cached'), (
+            'a cache-hit return was counted as the refusal — a cache MISS for a '
+            'malformed id falls through to the read with None bound, so this '
+            'function has no bound at all'
+        )
+
+    def test_the_derivation_accepts_the_walrus_spelling(self):
+        """The one spelling that CANNOT exhibit the window the others are measured
+        against — accepted, not merely tolerated.
+
+        `if not (validated := _validated_form_id(form_id)):` binds and refuses in a
+        single statement, so there is no boundary between the two for a read to be
+        inserted into. Every other control in this class is about that gap: the
+        assignment binds None for free, so it is the refusal's position that has to
+        beat the first sink.
+
+        The derivation used to reject it, which is the wrong direction for the cost
+        of a false positive to run: the explanation offered to whoever wrote it
+        would have been "rewrite your safe code into the shape with the window in
+        it" to get green. Reported here as the accepting side so a future narrowing
+        of the helper cannot quietly reintroduce that.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/walrus")
+            def get_walrus(form_id: str):
+                if not (validated := _validated_form_id(form_id)):
+                    raise NotFoundError('Form not found')
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
+                )
+            '''
+        )
+
+        assert _validates_its_form_id(source, 'get_walrus'), (
+            'the walrus guard was reported as unbounded — it is strictly safer '
+            'than the two-statement form it models, so rejecting it pushes an '
+            'author toward the weaker spelling'
+        )
+
+        # And the same spelling with the read moved AHEAD of it, so acceptance is
+        # not simply "a walrus anywhere passes": the position still has to win.
+        read_first = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/walrus-late")
+            def get_walrus_late(form_id: str):
+                item = aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+                if not (validated := _validated_form_id(form_id)):
+                    raise NotFoundError('Form not found')
+                return item
+            '''
+        )
+
+        assert not _validates_its_form_id(read_first, 'get_walrus_late'), (
+            'a walrus guard AFTER the read was reported as a bound — recognising '
+            'the spelling must not cost the ordering that is the actual claim'
+        )
+
     def test_the_derivation_refuses_a_validator_whose_result_is_discarded(self):
         """The shape that has NO bound while looking exactly like one.
 
@@ -4067,22 +4411,29 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
 class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
     """`_validated_form_id` returns what it was given, and that is load-bearing.
 
-    Callers use their own `form_id` for things that are not the key —
-    `source_channel` in `/submissions`, the id echoed in a response — so the
+    Callers use their own `form_id` for the id echoed in a response, so the
     validated value and the parameter have to be the same string. `.strip()` was
     removed for a related reason, but exactness is the broader property and it was
     carried entirely by a sentence in a docstring.
+
+    The `source_channel` those routes filter on no longer depends on it — it is
+    built from the id `_load_form_for_query` hands back, which is the same string
+    the write side used — but the identity below is what keeps the echoed id and
+    the key describing the same form, and it is the assertion a future "form ids
+    are case-insensitive" change has to come and argue with.
     """
 
     def test_the_validator_returns_its_input_unchanged(self, feedback_form_handler):
         """Identity, not merely truthiness.
 
         A normalizing validator — lower-casing, say, for a plausible "form ids are
-        case-insensitive" change — would pass every existing test while splitting
-        the module: `/stats` would read the record its key names and then filter
-        submissions on a `source_channel` its CALLER built from the raw id, which
-        no write ever used. Zero submissions for a form that has them, which is
-        the false zero `_load_form_for_query` exists to prevent (#312).
+        case-insensitive" change — would pass every existing test while making the
+        record a route reads and the id it echoes describe two different forms: the
+        caller answers with its own `form_id` while the key names the normalized
+        one, so a client that stores what it was told would then address something
+        else. The `source_channel` half of that split is closed structurally
+        (`_load_form_for_query` hands the validated id to both read routes), which
+        is why this identity is the assertion that remains.
 
         So the invariant gets a test instead of a sentence. If ids ever should be
         case-insensitive, the normalization belongs at the mint and at every read
@@ -4157,11 +4508,17 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
     ):
         """The consequence, end to end on the route where it would surface.
 
-        `_load_form_for_query` keys on the VALIDATED value while its callers build
-        `source_channel` from the parameter. Both are asserted here against the id
-        in the URL, so the two halves cannot drift apart without a failure — which
-        is the only way this defect would ever have been noticed, since it produces
-        a plausible-looking zero rather than an error.
+        The `sk` read and the `source_channel` filtered on are asserted TOGETHER
+        against the id in the URL, because it is their agreement rather than either
+        one that decides whether the route reports the submissions a form has. Both
+        now come from the same string — `_load_form_for_query` returns the validated
+        id and its caller builds the channel from that — where the filter used to
+        be built from the raw parameter beside a key built from the validated one.
+
+        This is the only way the defect would ever have been noticed: a filter that
+        names a channel no write used produces a plausible-looking zero, not an
+        error. So the case has to be the composite one; asserting the key alone
+        passes while the filter is wrong.
         """
         mock_table.get_item.return_value = {
             'Item': {'form_id': 'DeadBeef', 'brand_name': 'acme'}
@@ -4184,6 +4541,66 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'ExpressionAttributeValues'
             ][':sc']
             == 'form_DeadBeef'
+        )
+
+    @patch('feedback_form_handler.feedback_table')
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_query_route_filters_on_the_id_it_read_even_if_the_validator_normalizes(
+        self,
+        mock_table,
+        mock_feedback_table,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
+    ):
+        """The case above cannot fail while the two strings are equal; this one can.
+
+        `test_the_key_a_query_route_reads_is_the_id_in_its_url` asserts the key and
+        the filter against the URL's id, which they both match whether the route
+        builds them from the validated value or from the raw parameter — so it
+        pins the OUTCOME today without pinning the DERIVATION. That leaves the very
+        coupling this test class exists for resting on the identity next door, and
+        a "form ids are case-insensitive" change would edit that identity rather
+        than discover this.
+
+        So the validator is made to normalize FOR THIS CASE ONLY, and the two are
+        asserted to still agree with each other. That is the property: whatever the
+        validator returns, the channel a read route filters on is the id its read
+        was keyed on, which is the id `submit_form_feedback` wrote
+        (`f'form_{validated}'`). A route that rebuilt the channel from its raw
+        parameter would filter on `form_DeadBeef` beside a key of `FORM#deadbeef`
+        and select nothing — zero submissions for a form that has them, answered
+        as a 200, which is #312's false zero.
+        """
+        exact = feedback_form_handler._validated_form_id
+        mock_table.get_item.return_value = {
+            'Item': {'form_id': 'deadbeef', 'brand_name': 'acme'}
+        }
+        mock_feedback_table.query.return_value = {'Items': []}
+
+        event = api_gateway_event(
+            method='GET',
+            path='/feedback-forms/DeadBeef/submissions',
+            path_params={'form_id': 'DeadBeef'},
+            resource='/feedback-forms/{form_id}/submissions',
+        )
+
+        with patch.object(
+            feedback_form_handler,
+            '_validated_form_id',
+            lambda raw: (exact(raw) or '').lower() or None,
+        ):
+            response = feedback_form_handler.lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        key = mock_table.get_item.call_args.kwargs['Key']['sk']
+        channel = mock_feedback_table.query.call_args.kwargs[
+            'ExpressionAttributeValues'
+        ][':sc']
+        assert (key, channel) == ('FORM#deadbeef', 'form_deadbeef'), (
+            f'the route read {key} and filtered on {channel} — the two are built '
+            'from different strings, so the filter names a source_channel no write '
+            'produced and the route reports zero for a form that has submissions'
         )
 
 
