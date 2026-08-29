@@ -3602,6 +3602,16 @@ def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
     makes the `all()` MORE likely to pass. That is the same vacuous pass the
     controls exist to prevent, which is why alias collection is generous while the
     REFUSAL's top-level requirement — a separate axis — stays strict.
+
+    An alias is a HANDLE, though, not a RESULT: `response = aggregates_table.
+    get_item(...)` mentions a sink and binds a dict, so counting it would make
+    every subsequent `response.get(...)` and `form.get(...)` a sink. That is not
+    merely noise — the whole point of the position comparison is which call comes
+    FIRST, so a spurious early "sink" on a line above the refusal would report a
+    correctly guarded route as unbounded. Hence an assignment whose value is itself
+    a call to a sink OPERATION binds nothing:
+    `test_the_derivation_names_only_the_real_sinks_in_the_module` pins the count on
+    the live routes, so this stays honest in both directions.
     """
     aliases: set[str] = set()
 
@@ -3612,10 +3622,20 @@ def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
             for child in ast.walk(node)
         )
 
+    def _is_operation_result(value: ast.expr) -> bool:
+        return (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Attribute)
+            and value.func.attr in _SINK_OPERATIONS
+        )
+
     def _collect_aliases(body: list[ast.stmt]) -> None:
         for statement in body:
-            if isinstance(statement, ast.Assign) and _mentions_a_sink(
-                statement.value
+            if (
+                isinstance(statement, ast.Assign)
+                and _mentions_a_sink(statement.value)
+                # A handle, not what a read returned. See the docstring.
+                and not _is_operation_result(statement.value)
             ):
                 aliases.update(
                     target.id for target in statement.targets
@@ -3923,6 +3943,64 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'GET /feedback-forms/<form_id>/submissions',
             'GET /feedback-forms/<form_id>/stats',
         }
+
+    def test_the_derivation_names_only_the_real_sinks_in_the_module(
+        self, feedback_form_handler
+    ):
+        """The other half of non-vacuity: the sink count is right, not merely
+        non-zero.
+
+        The controls in this class all check that a read is not MISSED, because a
+        missed read makes `all(...)` vacuously true. This checks the opposite
+        direction, which matching on the operation name made possible: a call that
+        is not a read must not be counted either. `form.get('name')` and
+        `response.get('Item')` are dict access, and they were being counted while
+        `aliases` tracked the RESULT of a read as though it were a table handle —
+        twelve "sinks" in `submit_form_feedback`, ten of them dict lookups.
+
+        That is not cosmetic. The whole comparison is which call comes FIRST, so a
+        spurious sink on a line above the refusal reports a correctly guarded route
+        as unbounded — and the failure would arrive as this class's own universal
+        test accusing a route that is fine, which is the least useful failure it
+        could produce.
+
+        So the count is pinned per route, against what each one actually does. The
+        numbers are small enough to read: one read each, `submit_form_feedback`
+        alone having a read AND the send that makes its cost argument different.
+        """
+        source = Path(inspect.getsourcefile(feedback_form_handler)).read_text(
+            encoding='utf-8'
+        )
+        tree = ast.parse(source)
+
+        counted = {}
+        for route, function_name in _routes_keying_on_a_form_id(source).items():
+            function = next(
+                node for node in ast.walk(tree)
+                if isinstance(node, ast.FunctionDef) and node.name == function_name
+            )
+            counted[route] = len(_sink_call_positions(function))
+
+        assert counted == {
+            'GET /feedback-forms/<form_id>': 1,
+            'PUT /feedback-forms/<form_id>': 1,
+            'DELETE /feedback-forms/<form_id>': 1,
+            'GET /feedback-forms/<form_id>/config': 1,
+            # The read for the enabled check, and the enqueue.
+            'POST /feedback-forms/<form_id>/submit': 2,
+            # The existence gate is inside `_load_form_for_query`, so this route
+            # touches no sink of its own — which is why "no sink" is deliberately
+            # not a pass by default in `_validates_its_form_id`.
+            'GET /feedback-forms/<form_id>/iframe': 0,
+            'GET /feedback-forms/<form_id>/submissions': 1,
+            'GET /feedback-forms/<form_id>/stats': 1,
+        }, (
+            f'{counted} — a route gained or lost a read, or the derivation started '
+            'counting something that is not one. If a count went UP without the '
+            'route changing, suspect `aliases`: binding the RESULT of a read makes '
+            'every subsequent `.get(...)` on it look like a sink, and the earliest '
+            'of those decides the verdict.'
+        )
 
     def test_the_derivation_can_fail(self):
         """A route that keys on an id and does not check it must be REPORTED.
