@@ -3576,16 +3576,23 @@ def _sink_bearing_helpers(tree: ast.Module) -> frozenset[str]:
     that hands an unvalidated id to a helper writes it to the table with no sink
     call of its own anywhere in its body. `_sink_calls` matched only an
     `ast.Attribute` callee, so a plain `helper(form_id)` was not a sink at all, the
-    list came back empty, and the vacuous `all(...)` reported the route as bounded.
-    Silence again, this time through the call SHAPE rather than the receiver name.
+    list came back empty, and a route with nothing to answer for was reported
+    bounded. Silence again, through the call SHAPE rather than the receiver name.
 
-    Excluded: any function that calls `_validated_form_id` itself. That is what
-    makes `_load_form_for_query` — which reads, and is called by three routes — not
-    a hole: it establishes the bound on the id it was handed before its own read,
-    which is the delegating spelling `_validates_its_form_id` already accepts as a
-    refusal. Counting it as an unguarded sink would report `/iframe`, `/stats` and
-    `/submissions` as unbounded, which is the false-positive direction. The same
-    rule excludes the route handlers, each of which validates.
+    Two exclusions, both in the false-positive direction, because this set only
+    ever ADDS sinks to a caller:
+
+    - A function that calls `_validated_form_id` itself. That is what keeps
+      `_load_form_for_query` — which reads, and which three routes delegate to —
+      a refusal rather than an unguarded sink: it bounds the id it was handed
+      before its own read, which `_validates_its_form_id` already accepts as the
+      delegating spelling. Counting it would report `/iframe`, `/stats` and
+      `/submissions` as unbounded.
+    - A ROUTE handler, since a route is entered by the resolver rather than called
+      by another function here. Without this the set names `list_forms`,
+      `create_form`, `get_form_stats` and `get_form_submissions` — true of them
+      (they do read) and useless, because nothing calls them; and the day something
+      did, the caller would be accused for a read the route bounds for itself.
 
     A fixpoint rather than one level, because a helper calling a helper is the same
     hole one step further out and the loop costs four lines. It resolves NAMES in
@@ -3593,15 +3600,25 @@ def _sink_bearing_helpers(tree: ast.Module) -> frozenset[str]:
     which is the remaining ceiling — worth stating rather than implying, since the
     failure mode is the vacuous pass this whole helper exists to close.
     """
-    candidates = {
-        node.name: node for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and not any(
+    def _eligible(node: ast.FunctionDef) -> bool:
+        validates = any(
             isinstance(call, ast.Call)
             and isinstance(call.func, ast.Name)
             and call.func.id == '_validated_form_id'
             for call in ast.walk(node)
         )
+        routed = any(
+            isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Attribute)
+            and isinstance(decorator.func.value, ast.Name)
+            and decorator.func.value.id == 'app'
+            for decorator in node.decorator_list
+        )
+        return not validates and not routed
+
+    candidates = {
+        node.name: node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and _eligible(node)
     }
     helpers: set[str] = set()
     growing = True
@@ -4179,6 +4196,37 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'answer when the call really does reach an id into a table, and both '
             'are a false positive otherwise — the earliest sink is what decides '
             'the verdict, so one spurious early entry accuses a correct route.'
+        )
+
+    def test_the_only_helper_that_writes_what_it_is_handed_is_the_brand_anchor(
+        self, feedback_form_handler
+    ):
+        """The helper set is exactly one function, and the two exclusions earn it.
+
+        `_sink_bearing_helpers` only ever ADDS sinks to a caller, so its
+        over-reporting direction is the one that accuses a correct route. Both
+        exclusions were needed to get here and neither is cosmetic: without the
+        `_validated_form_id` one, `_load_form_for_query` becomes an unguarded sink
+        and `/iframe`, `/stats` and `/submissions` are all reported unbounded;
+        without the route-decorator one, the set names `list_forms`, `create_form`,
+        `get_form_stats` and `get_form_submissions` — each of which does read, and
+        none of which is CALLED by anything here, so naming them buys nothing and
+        would accuse whatever first called one.
+
+        Pinned as a set rather than a count so the failure says which function
+        arrived. A helper that starts writing SHOULD appear here — that is the
+        finding, not the breakage — and then every route calling it has to bound its
+        id first.
+        """
+        source = Path(inspect.getsourcefile(feedback_form_handler)).read_text(
+            encoding='utf-8'
+        )
+
+        assert _sink_bearing_helpers(ast.parse(source)) == {'_anchor_form_brand'}, (
+            'the set of module-level helpers that write what they are handed '
+            'changed. If a new helper appears, check every route that calls it '
+            'validates first; if one disappeared, check the exclusions have not '
+            'started swallowing a real write.'
         )
 
     def test_the_derivation_can_fail(self):
