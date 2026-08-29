@@ -30,15 +30,16 @@ WHAT THIS FILE COSTS, stated plainly because a previous version of this heading 
 
     944 lines   on `development`, the scanner version
     455 lines   after the scanner was deleted
-  ~1080 lines   now
+   1230 lines   now
 
 So it is LONGER than the scanner it replaced, and the claim that it was short was
-false for two review rounds. What the growth is: ~60% of the file is PROSE (this
-docstring ~230 lines, test docstrings ~245, comments ~190). The ~415 lines of code are
+false for two review rounds. What the growth is: 64% of the file is PROSE (this
+docstring 266 lines, test docstrings 314, comments 212). The 372 lines of code are
 `_without_comments` and `_doc_type_union` with their shape fixtures, plus the text
 assertions keeping two type-level pins and their four controls present. If these
 counts and the file disagree, the file is right and this block is stale — recompute
-rather than trusting it.
+rather than trusting it, with `ast` rather than by eye (this block has been stale
+twice, both times because a figure was written while the file was still being edited).
 
 Whether that is proportionate is a fair question and was asked in review. The honest
 answer: the PINS are cheap and they are what bite — every widening mutation tried is
@@ -55,14 +56,21 @@ cases nothing else noticed:
   * remove `...WouldSeeNarrowing` (narrowed side), then collapse it to the forward
     one-way `[Left] extends [Right]` -> `tsc` reports NOTHING in that file.
 
-With both present, those two collapses are 2 errors each, and a `BothWays` degenerated
-to constant `true` is 4. So neither control covers the other's axis and there is no
-third one to add.
+With both present, those two collapses are 2 errors each — one per pin, since each
+control now compares its OWN pin's operand — and a `BothWays` degenerated to constant
+`true` is 5. So neither control covers the other's axis and there is no third one to
+add.
 
 THE RULE THAT REPLACES ADDING MORE: when a guard turns out to be evadable, move the
 check to the compiler or pin the whole construct. Do NOT add a longer text fragment —
 that was tried four times and defeated four times, because a fragment of the thing
 being pinned is always a substring something else can supply.
+
+Its corollary, which took a fifth defeat to see: also ask WHERE the string is allowed
+to come from. Pinning the whole declaration still passed on a copy inside a template
+literal, so the pins match against `_declarations(...)` — comment AND string bodies
+blanked — rather than against comment-stripped text. "Commentary is not a declaration"
+was only half the rule; a string is not one either.
 
 WHAT ENFORCES WHICH HALF, measured rather than assumed — the compiler does NOT do
 all of it, and an earlier version of this docstring claimed it did:
