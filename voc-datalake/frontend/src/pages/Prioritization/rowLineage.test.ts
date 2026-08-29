@@ -99,7 +99,13 @@
  *    to have run and stayed green). The two reasons that both answer `crossGeneration`
  *    diverge on purpose and this is the only thing pinning the half that does NOT
  *    withhold; the other half is "withholds staleness for a row already holding two
- *    versions of one type", and each stays green under the other's revert.
+ *    versions of one type", which stays green under this widening (measured) — the
+ *    widening makes BOTH rows withhold, so only a case asserting a row that must NOT
+ *    withhold can see it. The reverse does not hold and is not claimed: removing the
+ *    refusal of a crossing candidate turns this case red too, through its sibling
+ *    control (measured, at the `toBe(false)` on line 818), which is the correct
+ *    sensitivity for a control — it asserts a real behaviour and fails when that
+ *    behaviour breaks;
  *
  *    NOTE THE DIRECTION: this entry names a WIDENING, not a deletion, because
  *    DELETING `repeatsAType` from `fresherCoherentSelection` is a measured NOOP — the
