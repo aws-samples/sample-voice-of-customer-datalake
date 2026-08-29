@@ -91,15 +91,23 @@
  *    version" (the case `lineage.staleReason`'s wording answers to);
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
  *    nothing";
- *  * the `repeatsAType` guard in `fresherCoherentSelection` widened to every
- *    `crossGeneration` row (e.g. gating on the classification instead) → "DOES mark a
- *    supersededSource row stale, unlike its repeatedType sibling". The TWO reasons
- *    that both answer `crossGeneration` diverge here on purpose, and this case is the
- *    only thing pinning the half that does NOT withhold — the other half is
- *    "withholds staleness for a row already holding two versions of one type". Each
- *    stays green under the other's revert, and the divergent case asserts its sibling
- *    FIRST on the same project read, so widening the guard cannot pass by making both
- *    rows withhold.
+ *  * the `repeatsAType` guard in `fresherCoherentSelection` WIDENED to every
+ *    `crossGeneration` row (gating on the classification instead) → "DOES mark a
+ *    supersededSource row stale, unlike its repeatedType sibling", and only that case
+ *    (measured: 1 failed / 444 passed in `src/pages/Prioritization`, with the failure
+ *    landing on the `stale` assertion, so the sibling control asserted FIRST is shown
+ *    to have run and stayed green). The two reasons that both answer `crossGeneration`
+ *    diverge on purpose and this is the only thing pinning the half that does NOT
+ *    withhold; the other half is "withholds staleness for a row already holding two
+ *    versions of one type", and each stays green under the other's revert.
+ *
+ *    NOTE THE DIRECTION: this entry names a WIDENING, not a deletion, because
+ *    DELETING `repeatsAType` from `fresherCoherentSelection` is a measured NOOP — the
+ *    doubled candidate such a row produces classifies `repeatedType` on its own
+ *    account, so the fifth condition refuses it anyway (measured: 445/445 green with
+ *    the call removed). Both guards must go before "withholds staleness for a row
+ *    already holding two versions" turns red. Recorded because an entry claiming the
+ *    deletion is caught would be false, which is the failure the map exists to avoid;
  *
  * TWO CASES PIN A BOUNDARY RATHER THAN A BRANCH, and are deliberately NOT in the map
  * above: "reads only a document's OWN sources, so a crossing two hops out is not

@@ -723,11 +723,22 @@ function newestOfType(
  *    asserted rather than described.
  *
  * ONLY ONE OF THE TWO `crossGeneration` REASONS WITHHOLDS, and the asymmetry is
- * deliberate rather than a gap in the guards above. `repeatedType` withholds, via
- * the FIRST condition's `repeatsAType` call: a row already holding two generations
- * of a type has no single "same expectations" candidate to compare with, because
- * "the newest of each type the row holds" collapses its two PRDs onto one and would
- * silently answer a one-document combination for a two-document row.
+ * deliberate rather than a gap in the guards above. `repeatedType` withholds because
+ * a row already holding two generations of a type has no single "same expectations"
+ * candidate to compare with: "the newest of each type the row holds" collapses its
+ * two PRDs onto one, so the candidate would answer the SAME document twice for a
+ * two-document row.
+ *
+ * TWO RULES REFUSE THAT ROW, WHICH IS WHY DELETING EITHER ALONE CHANGES NOTHING —
+ * measured, and worth stating because it is the opposite of how the rest of this
+ * function is built. The first condition's `repeatsAType` call short-circuits it
+ * before any candidate is formed; and if that call were removed, the doubled
+ * candidate `[prd_2, prd_2]` itself classifies `crossGeneration`/`repeatedType`
+ * (measured), so the FIFTH condition refuses it anyway. Deleting `repeatsAType` here
+ * is therefore a NOOP against the whole suite, and the early call earns its place by
+ * saying so at the top rather than by being the only thing standing between a
+ * repeated-type row and a nonsense candidate.
+ *
  * `supersededSource` does NOT withhold, and must not: the arithmetic stays
  * well-defined — one readable type per document, one candidate per type — and the
  * candidate it produces is checked for crossing generations on its own account
@@ -752,12 +763,18 @@ export function fresherCoherentSelection(
   const selected = selectionEntries(selection)
   // `repeatsAType` AND NOT `hasSupersededSource`, which is the one place the two
   // rules that both answer `crossGeneration` are treated differently — deliberately,
-  // and argued in the docstring's last two paragraphs. A repeated type leaves no
+  // and argued in the docstring's last three paragraphs. A repeated type leaves no
   // single "same expectations" candidate to form; a superseded source leaves the
   // arithmetic intact, and the candidate it produces is checked for crossing
   // generations on its own account below. So a `supersededSource` row CAN be
-  // reported stale and show both badges at once. Both directions are pinned by
-  // their own case, so a guard added here cannot flip either quietly.
+  // reported stale and show both badges at once.
+  //
+  // A SHORT-CIRCUIT RATHER THAN THE ONLY GUARD: the doubled candidate a repeated-type
+  // row would produce classifies `repeatedType` itself, so the fifth condition
+  // refuses it even without this call — deleting this call alone is a measured noop.
+  // What is NOT redundant is the direction each reason takes, and both are pinned by
+  // their own case, so widening this guard to every `crossGeneration` row cannot
+  // silence the `supersededSource` advisory quietly.
   if (selected.length === 0 || repeatsAType(selected)) return null
   // A type nobody can read states no expectation — see the docstring's first
   // condition. Left in, `newestOfType(available, '')` would answer the project's
