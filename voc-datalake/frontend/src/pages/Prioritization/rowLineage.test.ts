@@ -71,6 +71,13 @@
  *    rather than on the record). Both halves are separately revert-sensitive: the
  *    ISO zone-less assertions fail if the offset is taken from the runtime, and the
  *    non-ISO ones fail if an unreadable spelling is allowed to decide;
+ *  * `restoreZone`'s `delete` branch dropped (assigning an absent `TZ` back, which
+ *    stores the STRING 'undefined' and resolves to UTC) → the same case's restore
+ *    assertion. It is the one assertion here about the SUITE rather than the module:
+ *    `singleFork` shares one `process.env` across all 191 files, so a `TZ` left
+ *    pinned to UTC shifts every local-time date another file renders. It forces `TZ`
+ *    unset before asserting, because that is the only ambient state the asymmetry is
+ *    observable in — this container's own zone is UTC, which is what hid it;
  *  * `instantOf`'s grammar narrowed or widened → "reads every timestamp
  *    shape the system stores, and withholds on the rest", which is the boundary an
  *    allow-list has to pin from BOTH sides: narrowed, a real stored shape stops
@@ -815,10 +822,28 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // property of the data. That is the one defect class the rest of the file
     // withholds precisely to avoid.
     //
-    // Three zones, spanning the sign of the offset and its extreme: UTC itself, one
+    // Four zones, spanning the sign of the offset and its extreme: UTC itself, one
     // behind and the two furthest ahead. Each assertion is made in EVERY zone and
     // must agree, so the case pins zone-INDEPENDENCE rather than one zone's answer.
     const zones = ['UTC', 'America/Los_Angeles', 'Asia/Tokyo', 'Pacific/Kiritimati']
+    /**
+     * Puts `TZ` back SYMMETRICALLY with the save: a variable that was absent is
+     * DELETED, never assigned.
+     *
+     * `process.env.TZ = undefined` stores the literal string `'undefined'`, and Node
+     * resolves an unrecognised zone name to UTC rather than erroring — so assigning
+     * an absent value does not restore the ambient zone, it silently pins the process
+     * to UTC. `vitest.config.ts` sets `poolOptions.forks.singleFork`, so that
+     * `process.env` is shared by every test file in the run, and many components
+     * format local time (`format(new Date(row.created_at), 'MMM d, yyyy')`), which a
+     * UTC pin shifts by a day for any timestamp late enough in the evening. That
+     * would be this case's own defect one level up: an outcome that depends on who
+     * is running it rather than on the code.
+     */
+    const restoreZone = (before: string | undefined): void => {
+      if (before === undefined) delete process.env.TZ
+      else process.env.TZ = before
+    }
     const inEveryZone = <T>(answer: () => T): readonly [string, T][] => {
       const before = process.env.TZ
       try {
@@ -827,7 +852,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
           return [zone, answer()] as const
         })
       } finally {
-        process.env.TZ = before
+        restoreZone(before)
       }
     }
     /** Asserts one answer is `expected` in all four zones, naming the zone that broke. */
@@ -835,6 +860,21 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
       for (const [zone, actual] of inEveryZone(answer)) {
         expect(actual, zone).toEqual(expected)
       }
+    }
+
+    // THE RESTORE IS FAITHFUL, which is the half no zone assertion covers: the vacuity
+    // guard below proves `TZ` is HONOURED while set, never that it is put back. Asserted
+    // with `TZ` forced UNSET rather than as-found, because that is the only ambient
+    // state the asymmetry is visible in — on a machine whose zone happens to be set,
+    // assigning it back is indistinguishable from restoring it, which is exactly why
+    // this shipped: the container's own zone is UTC.
+    const ambient = process.env.TZ
+    try {
+      delete process.env.TZ
+      inEveryZone(() => Date.parse('2025-01-01T09:00:00'))
+      expect('TZ' in process.env, 'TZ deleted, not set to the string "undefined"').toBe(false)
+    } finally {
+      restoreZone(ambient)
     }
 
     // A zone-less datetime against a date-only value ON THE SAME DAY. '2025-01-01' is
