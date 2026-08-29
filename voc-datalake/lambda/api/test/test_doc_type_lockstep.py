@@ -30,16 +30,16 @@ WHAT THIS FILE COSTS, stated plainly because a previous version of this heading 
 
     944 lines   on `development`, the scanner version
     455 lines   after the scanner was deleted
-   1230 lines   now
+   1445 lines   now
 
 So it is LONGER than the scanner it replaced, and the claim that it was short was
-false for two review rounds. What the growth is: 64% of the file is PROSE (this
-docstring 266 lines, test docstrings 314, comments 212). The 372 lines of code are
-`_without_comments` and `_doc_type_union` with their shape fixtures, plus the text
-assertions keeping two type-level pins and their four controls present. If these
-counts and the file disagree, the file is right and this block is stale — recompute
-rather than trusting it, with `ast` rather than by eye (this block has been stale
-twice, both times because a figure was written while the file was still being edited).
+false for two review rounds. What the growth is: 65% of the file is PROSE (this
+docstring 308 lines, test docstrings 420, comments 213). The 346 lines of code are
+`_without_comments`, `_doc_type_union` and the pin matcher with their shape fixtures,
+plus the text assertions keeping two type-level pins and their four controls present.
+If these counts and the file disagree, the file is right and this block is stale —
+recompute rather than trusting it, with `ast` rather than by eye (this block has been
+stale twice, both times because a figure was written while the file was still edited).
 
 Whether that is proportionate is a fair question and was asked in review. The honest
 answer: the PINS are cheap and they are what bite — every widening mutation tried is
@@ -71,6 +71,24 @@ to come from. Pinning the whole declaration still passed on a copy inside a temp
 literal, so the pins match against `_declarations(...)` — comment AND string bodies
 blanked — rather than against comment-stripped text. "Commentary is not a declaration"
 was only half the rule; a string is not one either.
+
+And its second corollary, from a SIXTH defeat: blanking is not comparing. Matching both
+sides through `_declarations` made the quoted operands INSIDE a pin equal by LENGTH —
+`'not-a-doc-type'` and `'AAAAAAAAAAAAAA'` blank to the same fourteen spaces — so a
+control's member could be swapped for an arbitrary same-length string with `tsc` at exit
+0 and every test here green. `_declaration_offset` therefore locates a candidate in the
+blanked view and then requires the RAW text to match there: structure decides WHERE,
+exact text decides WHAT. The compiler backstops one shape of this (a pin repointed at a
+field that does not exist is a TS2339) but not the operand swap, since one arbitrary
+non-member is as good as another to `BothWays` and the control goes on working.
+
+THE GUARDS' OWN FIXES ARE PINNED TOO, which took its own finding. The two repairs made
+in the fifth round shipped with no test, and reverting either left all 30 tests here
+green — a green result meaning "did not check", applied to the machinery this file uses
+to refuse exactly that. `TestThePinMatcher` covers `_declaration_offset` and
+`_carries_expect_error` directly, so each repair is red when reverted. That the pin
+matcher then needed a SIXTH repair, in a step whose first version was untested, is the
+argument for having it.
 
 WHAT ENFORCES WHICH HALF, measured rather than assumed — the compiler does NOT do
 all of it, and an earlier version of this docstring claimed it did:
@@ -211,6 +229,22 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     `` const historical = `export type DocType = 'prd' | 'legacy'` `` above the live
     union returned the DECOY's members, so the equality test compared the wrong set.
     Same silent failure as the commented-out predecessor, one quote character away.
+  * `TestThePinMatcher` — the pin MATCHER itself degenerating, which is what every
+    round's finding about these guards has actually been. Each case is one revert of a
+    repair that shipped untested and was therefore silently revertible:
+      - matching against comment-stripped text rather than `_declarations(...)`, so a
+        copy in an exported template literal supplies a pin that was DELETED;
+      - locating the `@ts-expect-error` with an independent `raw.find`, which such a
+        decoy redirects onto its own line, so the live control needs no directive;
+      - accepting a preceding line that merely MENTIONS the directive, which the prose
+        in these files does;
+      - dropping the exact-text step, which compares a pin's quoted operands by LENGTH
+        and lets `'not-a-doc-type'` become any other fourteen characters;
+      - stopping at the FIRST candidate offset, which a decoy above the live
+        declaration occupies — a false FAILURE rather than a false pass, and the reason
+        the search continues.
+    Each was measured against the live tree, `tsc` at exit 0 in every case. Positive
+    assertions sit beside the negative ones so none can pass by rejecting everything.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
     itself, in both directions.
   * `test_both_client_signatures_use_the_shared_request_body` — a signature
@@ -597,16 +631,87 @@ def _declarations(raw: str) -> str:
     return _without_comments(raw, blank_strings=True)
 
 
-def _pinned(expected: str, raw: str) -> bool:
-    """Whether `raw` DECLARES `expected`, comparing like with like.
+def _declaration_offset(expected: str, raw: str) -> int | None:
+    """Where `raw` DECLARES `expected`, or None — structurally located, exactly matched.
 
-    Both sides go through `_declarations`, which is the point: the expected text
-    contains quoted members (`'not-a-doc-type'`), so blanking string bodies on only
-    one side would never match. Blanking both leaves the declaration's structure —
-    which is what is being pinned — while denying a decoy the ability to supply it
-    from inside a string.
+    Two steps, and both are needed:
+
+      1. WHERE. The candidate offsets come from `_declarations(raw)` matched against
+         `_declarations(expected)`, so a copy of the declaration inside a comment or a
+         template literal is not a place this can match. Blanking is done on BOTH
+         sides because the expected text contains quoted members
+         (`'not-a-doc-type'`), which blanking one side only would never match.
+      2. WHAT. At each candidate offset the RAW text must equal `expected`. Blanking
+         preserves length, so the offset is valid in `raw`.
+
+    🔑 Step 2 exists because step 1 alone compares quoted operands by LENGTH, not
+    content — blanking maps `'not-a-doc-type'` and `'AAAAAAAAAAAAAA'` to the same
+    fourteen spaces. Measured on the shipped tree: swapping the widened control's
+    member for an arbitrary same-length string left `tsc` at exit 0 with every test
+    here green, and swapping `['doc_type']` for `['bogusKey']` in the pin was caught
+    only by the compiler (TS2339), not here. The second is backstopped; the first is
+    not, since one arbitrary non-member is as good as another to the compiler and the
+    control keeps working — so nothing but this comparison notices the literals
+    drifting. A guard that reads a pin's operands by length is the same vacuity class
+    as the four this file already records, one level in.
+
+    Several candidates are tried rather than just the first, so a commented-out or
+    quoted copy ABOVE the live declaration cannot mask it: that copy blanks to the
+    same shape and would otherwise be the only offset examined, fail step 2, and
+    report the live pin missing.
+
+    Returns the OFFSET rather than a bool because the `@ts-expect-error` lookup needs
+    the same location, and computing it twice by different means is how the two
+    drifted apart before: that lookup used its own `find` and a decoy redirected it.
     """
-    return _declarations(expected) in _declarations(raw)
+    needle = _declarations(expected)
+    haystack = _declarations(raw)
+    located = haystack.find(needle)
+    while located != -1:
+        if raw[located:located + len(expected)] == expected:
+            return located
+        located = haystack.find(needle, located + 1)
+    return None
+
+
+def _pinned(expected: str, raw: str) -> bool:
+    """Whether `raw` declares `expected`. See `_declaration_offset`."""
+    return _declaration_offset(expected, raw) is not None
+
+
+def _directive_above(declaration: str, raw: str) -> str | None:
+    """The line directly above where `raw` declares `declaration`, or None if it does
+    not declare it at all.
+
+    Located via `_declaration_offset`, so it is the LIVE declaration's line and not
+    that of a copy in a comment or a template literal — an independent `raw.find` here
+    was measured to land on such a decoy, which let both real `@ts-expect-error`
+    directives be deleted with every gate green.
+
+    Returned rather than asserted on so the caller's rule ("must BE the directive, not
+    merely mention it") is checkable from a test without a fixture file. Both halves of
+    this lookup were silently revertible before that was possible.
+    """
+    located = _declaration_offset(declaration, raw)
+    if located is None:
+        return None
+    return raw[:located].rstrip().rsplit('\n', 1)[-1]
+
+
+def _carries_expect_error(declaration: str, raw: str) -> bool:
+    """Whether `raw` declares `declaration` with an `@ts-expect-error` directly above.
+
+    🔑 The line must BE the directive, not merely contain it: several comments in these
+    two files DISCUSS `@ts-expect-error` in prose, and a substring test over the
+    preceding line was measured to be satisfied by one of them — so both real
+    directives could be deleted and `extends true` dropped from a verdict helper,
+    disabling both pins and all four controls, with `tsc` at exit 0 and every test here
+    green.
+    """
+    preceding = _directive_above(declaration, raw)
+    if preceding is None:
+        return False
+    return preceding.lstrip().startswith(f'// {EXPECT_ERROR_DIRECTIVE}')
 
 
 def _doc_type_union(source: str) -> frozenset[str]:
@@ -847,6 +952,117 @@ class TestTheUnionParser:
             f'_doc_type_union should carry exactly {self.EXPECTED_REFUSALS} refusals '
             f'(anchor, non-literal term, unread term); found {len(raises)}'
         )
+
+
+class TestThePinMatcher:
+    """`_declaration_offset` — what `test_the_type_level_pins_are_present` locates the
+    pins with, on synthetic sources.
+
+    Its own controls, for the same reason `TestTheUnionParser` has them: every defect
+    ever found in the pin guards was the matcher accepting something that did not
+    declare the pin, and each fix to it was silently revertible — reverting either of
+    the two made in the fifth round left all 30 tests here green, which is the "green
+    result meaning did not check" this file exists to refuse, applied to its own
+    machinery. A positive assertion sits beside every negative one so none of these
+    can pass by rejecting everything.
+    """
+
+    # A pin's shape, without depending on the live ones: those are pinned as exact text
+    # elsewhere, and a fixture that tracked them would fail for a legitimate edit to
+    # them rather than for a defect in the matcher.
+    PIN = "export type X = MustBeTrue<BothWays<Body['doc_type'], DocType>>"
+
+    def test_a_declaration_inside_a_template_literal_is_not_pinned(self):
+        """A string is not a declaration — the fifth vacuity, and the general form of
+        the four before it.
+
+        A copy in an exported template literal survives comment-stripping, survives
+        `noUnusedLocals`, and can carry newlines. Measured on the shipped tree: with
+        the pins matched against comment-stripped text only, the real pin could be
+        DELETED, a copy left in such a literal, and the field it guards widened, with
+        `tsc` at exit 0 and every test here green.
+        """
+        decoy = f'export const historical = `\n{self.PIN}\n`\n'
+        assert not _pinned(self.PIN, decoy)
+        # The control: the same text as real code must still be found, or this would
+        # pass by matching nothing.
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+
+    def test_a_declaration_inside_a_comment_is_not_pinned(self):
+        """The same for a commented-out copy, which is the shape a maintainer actually
+        produces — disabling a pin by commenting it out, rather than by building a
+        decoy."""
+        assert not _pinned(self.PIN, f'// {self.PIN}\n')
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+
+    def test_a_decoy_above_the_live_declaration_does_not_mask_it(self):
+        """Both copies blank to the same shape, so the FIRST candidate offset is the
+        decoy's. Examining only that one would fail the exact-text step and report the
+        live pin missing — a false failure, and the reason the search continues past a
+        candidate that does not match rather than stopping at it."""
+        source = f'export const historical = `\n{self.PIN}\n`\n{self.PIN}\n'
+        assert _pinned(self.PIN, source)
+
+    def test_a_pinned_literal_may_not_be_swapped_for_another_of_equal_length(self):
+        """🔑 Blanking string bodies compares quoted operands by LENGTH, so this is
+        what compares them by CONTENT.
+
+        Measured on the shipped tree before this existed: swapping the widened
+        control's `'not-a-doc-type'` for `'AAAAAAAAAAAAAA'` left `tsc` at exit 0 with
+        every test here green, because the two blank to the same fourteen spaces. The
+        compiler does not backstop it — one arbitrary non-member is as good as another
+        to `BothWays`, so the control keeps working and nothing else looks at the
+        literal. A pin whose operands are read by length is a guard reporting success
+        while comparing less than it names.
+        """
+        same_length = self.PIN.replace("'doc_type'", "'bogusKey'")
+        assert len(same_length) == len(self.PIN), 'fixture must differ only in content'
+        assert not _pinned(self.PIN, f'{same_length}\n')
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+
+    def test_a_line_that_merely_mentions_the_directive_is_not_one(self):
+        """`@ts-expect-error` in prose is not a directive.
+
+        Several comments in `types.ts` and `projectsApi.ts` discuss the mechanism by
+        name — this file's own docstrings do too — so a substring test over the
+        preceding line is satisfied by explanatory text. Measured before this existed:
+        with such a line above each control, both real directives could be deleted and
+        `extends true` dropped from a verdict helper, disabling both pins and all four
+        controls, with `tsc` at exit 0 and every test here green.
+        """
+        prose = f'// the control below relies on {EXPECT_ERROR_DIRECTIVE} to assert it\n'
+        assert not _carries_expect_error(self.PIN, f'{prose}{self.PIN}\n')
+        assert _carries_expect_error(
+            self.PIN, f'// {EXPECT_ERROR_DIRECTIVE} must not compare equal\n{self.PIN}\n'
+        )
+
+    def test_a_directive_above_a_quoted_copy_does_not_count_for_the_live_one(self):
+        """The other half of the same defect: the directive was found by an index into
+        the RAW source, so a decoy copy of the control carrying a directive was the
+        first match and its line was the one inspected. The live declaration could then
+        have no directive at all.
+
+        Both halves had to be reverted together to reopen it, which is why they are one
+        function now — and why this asserts on `_carries_expect_error` rather than on
+        the index.
+        """
+        decoy = (
+            f'export const historical = `\n'
+            f'// {EXPECT_ERROR_DIRECTIVE} historical\n{self.PIN}\n`\n'
+        )
+        assert not _carries_expect_error(self.PIN, f'{decoy}{self.PIN}\n')
+        # Same decoy, but the LIVE declaration keeps its directive: still true, so this
+        # rejects the decoy rather than anything that merely follows one.
+        assert _carries_expect_error(
+            self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
+        )
+
+    def test_a_quoted_member_inside_the_pin_still_matches(self):
+        """The reason both sides are blanked at all: the pins contain string literals,
+        so blanking only the source would never match one. The negative cases above
+        are only meaningful if this positive one holds — otherwise they would pass by
+        the matcher rejecting every pin, live ones included."""
+        assert _pinned(self.PIN, f'const before = 1\n{self.PIN}\nconst after = 2\n')
 
 
 def _rendered_union(members: tuple[str, ...], comment: str = '') -> str:
@@ -1178,11 +1394,12 @@ class TestDocTypeLockstep:
         path = _repo_root() / relative
         assert path.is_file(), f'{relative} moved — update TYPE_LEVEL_PINS'
         raw = path.read_text(encoding='utf-8')
-        # Comment AND string bodies blanked for the declarations, so neither a
-        # commented-out copy nor one inside a template literal can satisfy them; raw
-        # for the directives, which are themselves comments. Same length, so an index
-        # from `source` is valid against `raw`.
-        source = _declarations(raw)
+        # Both checks take the RAW source. `_pinned` and `_carries_expect_error` do the
+        # blanking themselves — a declaration is located in the comment-and-string-blanked
+        # view and then matched exactly against the raw text there, and a directive is a
+        # comment so it only exists raw. Kept inside those helpers rather than spelled
+        # here because `TestThePinMatcher` can then pin them, which is what two rounds of
+        # silently revertible repairs to this lookup argued for.
         assert _pinned(pin, raw), (
             f'{relative} no longer declares, exactly:\n'
             f'    {pin}\n'
@@ -1206,23 +1423,13 @@ class TestDocTypeLockstep:
                 f'here. A widened-side control cannot detect the one-way collapse, '
                 f'so the narrowed-side one is not redundant.'
             )
-            # The line immediately above the control, in the RAW source — the
-            # declarations are pinned against the stripped source, but a directive IS a
-            # comment, so it only exists here.
-            #
-            # 🔑 Indexed with `source`, not `raw`. `source` has comment and string
-            # bodies blanked at the same length, so this finds the DECLARATION and not a
-            # copy of it sitting in a comment or a template literal above. Measured:
-            # with `raw.find`, two decoys carrying a directive and a copy of each
-            # control made this inspect their lines instead, so both real directives
-            # could be deleted and `extends true` dropped — `tsc` exit 0, every test
-            # here green, and the field they guard widened past the route's allowlist.
-            located = source.find(_declarations(control))
-            preceding = raw[:located].rstrip().rsplit('\n', 1)[-1]
-            # Must BE the directive, not merely mention it: a preceding line that
-            # DISCUSSES `@ts-expect-error` (as several comments in these files do) was
-            # measured to satisfy a substring test.
-            assert preceding.lstrip().startswith(f'// {EXPECT_ERROR_DIRECTIVE}'), (
+            # The directive on the line directly above, read from the RAW source — the
+            # declarations are pinned against the blanked view, but a directive IS a
+            # comment, so it only exists here. Both the location and the "must BE the
+            # directive" rule live in `_carries_expect_error`, and are pinned by
+            # `TestThePinMatcher`: each half of this lookup was silently revertible
+            # while it was spelled inline here.
+            assert _carries_expect_error(control, raw), (
                 f'{relative} declares the control\n'
                 f'    {control}\n'
                 f'but the line above it is not a `{EXPECT_ERROR_DIRECTIVE}`. That '
@@ -1234,5 +1441,5 @@ class TestDocTypeLockstep:
                 f'instead. The line must BE the directive: merely MENTIONING it, and a '
                 f'decoy copy of the control in a comment or template literal that this '
                 f'lookup once landed on instead, were both measured to pass.\n'
-                f'Found instead: {preceding.strip()!r}'
+                f'Found instead: {(_directive_above(control, raw) or "").strip()!r}'
             )
