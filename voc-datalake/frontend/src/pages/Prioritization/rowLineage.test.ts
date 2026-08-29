@@ -73,11 +73,12 @@
  *    non-ISO ones fail if an unreadable spelling is allowed to decide;
  *  * `restoreZone`'s `delete` branch dropped (assigning an absent `TZ` back, which
  *    stores the STRING 'undefined' and resolves to UTC) → the same case's restore
- *    assertion. It is the one assertion here about the SUITE rather than the module:
- *    `singleFork` shares one `process.env` across all 191 files, so a `TZ` left
- *    pinned to UTC shifts every local-time date another file renders. It forces `TZ`
- *    unset before asserting, because that is the only ambient state the asymmetry is
- *    observable in — this container's own zone is UTC, which is what hid it;
+ *    assertion. It is the one assertion here about the HARNESS rather than the module:
+ *    a `TZ` left pinned to UTC changes every later assertion in this case. It forces
+ *    `TZ` unset before asserting, because that is the only ambient state the asymmetry
+ *    is observable in — this container's own zone is UTC, which is what hid it. The
+ *    cross-FILE version of that hazard is inert on the installed runner; see
+ *    `restoreZone`'s docstring for the measurement and the condition that revives it;
  *  * `instantOf`'s grammar narrowed or widened → "reads every timestamp
  *    shape the system stores, and withholds on the rest", which is the boundary an
  *    allow-list has to pin from BOTH sides: narrowed, a real stored shape stops
@@ -892,12 +893,25 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
      * `process.env.TZ = undefined` stores the literal string `'undefined'`, and Node
      * resolves an unrecognised zone name to UTC rather than erroring — so assigning
      * an absent value does not restore the ambient zone, it silently pins the process
-     * to UTC. `vitest.config.ts` sets `poolOptions.forks.singleFork`, so that
-     * `process.env` is shared by every test file in the run, and many components
-     * format local time (`format(new Date(row.created_at), 'MMM d, yyyy')`), which a
-     * UTC pin shifts by a day for any timestamp late enough in the evening. That
-     * would be this case's own defect one level up: an outcome that depends on who
-     * is running it rather than on the code.
+     * to UTC.
+     *
+     * THE DEFECT THAT PINS IS WITHIN THIS CASE, and that is enough on its own: every
+     * assertion after the leak would read UTC instead of the ambient zone, which is
+     * this case's own defect one level up — an outcome that depends on who is running
+     * it rather than on the record.
+     *
+     * The CROSS-FILE version of the same hazard is NOT reachable on the installed
+     * runner, and the distinction is worth stating because it is easy to assume the
+     * other way. `vitest.config.ts` still nests `forks.singleFork` under `poolOptions`
+     * (lines 20-24), a key Vitest 4 REMOVED — every run prints `DEPRECATED
+     * test.poolOptions was removed in Vitest 4`, so the setting is silently inert and
+     * each test file gets its own process. Measured on vitest 4.1.11 with four throwaway
+     * probe files: four distinct pids, and none observed a `process.env` marker set by
+     * an earlier file. So a `TZ` left pinned here cannot today shift a local-time date
+     * another file renders (`format(new Date(row.created_at), 'MMM d, yyyy')` in
+     * `PRFAQRow.tsx` and several others), and this restore would become load-bearing
+     * across files again the moment that config is migrated to the top-level
+     * `singleFork` option that replaced it.
      */
     const restoreZone = (before: string | undefined): void => {
       if (before === undefined) delete process.env.TZ
