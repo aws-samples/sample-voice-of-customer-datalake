@@ -108,7 +108,7 @@
     "repeatedTypeReason": "Cette ligne contient plusieurs versions du même type de document : un bulletin couvre donc deux générations à la fois. Elle reste notable — ajoutez une ligne si vous voulez noter une seule génération.",
     "stale": "Dépassée",
     "staleAction": "Cette ligne est verrouillée : ses documents et ses bulletins restent tels quels. Utilisez « {{action}} » pour noter la combinaison plus récente.",
-    "staleReason": "Une version plus récente d'au moins un type de document de cette ligne existe. Les documents les plus récents de chaque type que la ligne contient forment une combinaison qui ne mélange pas les générations, et aucun document de la ligne n'est plus récent que cette combinaison.",
+    "staleReason": "Une version plus récente d'au moins un type de document de cette ligne existe. Les documents les plus récents de chaque type que la ligne contient forment une combinaison dans laquelle aucun n'a été créé directement à partir d'une version antérieure d'un autre document de cette combinaison, et aucun document de la ligne n'est plus récent que cette combinaison.",
     "supersededSourceReason": "L'un de ces documents a été créé à partir d'une version antérieure d'un autre document de cette ligne : la combinaison franchit donc les générations. Elle reste notable."
   },
   "loading": "Chargement des documents...",

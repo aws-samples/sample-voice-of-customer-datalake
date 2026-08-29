@@ -79,6 +79,28 @@
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
  *    nothing".
  *
+ * TWO CASES PIN A BOUNDARY RATHER THAN A BRANCH, and are deliberately NOT in the map
+ * above: "reads only a document's OWN sources, so a crossing two hops out is not
+ * reported" and "advises a candidate that crosses generations only two hops out,
+ * because the check is depth-1". Their SUBJECT assertion — the two-hop shape reading
+ * coherent, and its candidate being advised — is not revert-sensitive at all, because
+ * it asserts what the rule does NOT see: no deletion can make an unseen crossing
+ * seen. That is the point, and it is why they are listed apart from a map whose every
+ * other entry names a branch.
+ *
+ * MEASURED, so the distinction is not taken on trust: breaking `hasSupersededSource`
+ * does turn both cases red, and in both it is the one-hop CONTROL that fails (the
+ * classifier case on `crossGeneration`/`supersededSource`, the advisory case on
+ * `toBeNull`) while the depth assertion beside it stays green. So each case fails
+ * loudly if the rule stops working and says nothing if only the depth changes — which
+ * is the correct sensitivity for a case documenting scope, and the reason each carries
+ * the shorter control at all.
+ *
+ * They exist because that depth is a CHOICE rather than an oversight: traversing greys
+ * the ordinary regenerated row (measured, and argued at `hasSupersededSource`), the
+ * second case reaches a user-facing ADVISORY rather than a label, and
+ * `lineage.staleReason`'s wording is scoped to exactly this limit.
+ *
  * Legacy derivation shapes are covered throughout rather than in one case: they
  * are what `resolveDerivation` normalises, and the point is that this module never
  * asks which shape an answer came from. Every expectation is a literal.
@@ -158,6 +180,24 @@ describe('the lineage tables are complete and resolvable', () => {
     expect(lineage.stale).toBeTruthy()
     expect(lineage.staleReason).toBeTruthy()
     expect(lineage.staleAction).toBeTruthy()
+  })
+
+  it('keeps staleReason\'s claim scoped to the DIRECT crossing the rule checks', () => {
+    // Truthiness is all the case above asks of this sentence, and truthiness is what
+    // let three successive versions of the coherent copy ship claims the rule does not
+    // verify. This one is worth a stronger check because it is the wording that closes
+    // a boundary rather than describing one: the candidate check is depth-1, so a
+    // fresher combination whose PR/FAQ descends from the row's own PRD generation VIA a
+    // research report IS advised (pinned by "advises a candidate that crosses
+    // generations only two hops out"). The sentence therefore has to promise the direct
+    // relation and not a general absence of crossing.
+    const reason: string = prioritizationEn.lineage.staleReason
+
+    expect(reason).toContain('directly')
+    // And it must NOT make the unqualified claim the depth cannot support. Asserted as
+    // the exact phrase a widening would reintroduce, since that is the one this line
+    // replaced.
+    expect(reason).not.toContain('does not cross generations')
   })
 })
 
@@ -346,6 +386,33 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     expect(classifySelectionLineage([heldPrfaq, prd], [heldPrfaq, readableSource, prd]))
       .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
   })
+
+  it('reads only a document\'s OWN sources, so a crossing two hops out is not reported', () => {
+    // PINS THE DEPTH, not a deletable branch: deleting `hasSupersededSource` leaves
+    // this case green, because it asserts what the rule does NOT see. The direct
+    // control below is what makes it a statement about depth rather than about the
+    // rule being broken — swap one source id and the crossing IS reported.
+    //
+    // Reachable through an ordinary product path: research_step_handler.py:198
+    // records a selected PRD on a research report as ROLE_REFERENCE, and
+    // document_generator/handler.py:176 records research documents on a generated
+    // PR/FAQ the same way — so PRD → research → PR/FAQ is a normal two-hop chain.
+    const prd1 = doc('prd_1', 'prd', '2025-01-01', builtFromFeedback)
+    const prd2 = doc('prd_2', 'prd', '2025-02-01', builtFromFeedback)
+    const research = doc('res_1', 'research', '2025-01-15', builtFrom('prd_1'))
+    const transitive = doc('prfaq_t', 'prfaq', '2025-01-20', builtFrom('res_1'))
+    const project = [prd1, prd2, research, transitive]
+
+    // The PR/FAQ descends from PRD 1 while the row holds PRD 2 — and reads coherent,
+    // because nothing here walks a source's sources.
+    expect(classifySelectionLineage([prd2, transitive], project))
+      .toEqual({ state: 'coherent', reason: 'oneChain' })
+    // THE CONTROL, asserted so the case cannot pass by the rule having gone missing:
+    // the same shape one hop shorter — the PR/FAQ naming PRD 1 itself — does cross.
+    const direct = doc('prfaq_d', 'prfaq', '2025-01-20', builtFrom('prd_1'))
+    expect(classifySelectionLineage([prd2, direct], [prd1, prd2, direct]))
+      .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+  })
 })
 
 describe('a frozen row is stale only when a real fresher coherent combination exists', () => {
@@ -430,6 +497,36 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const coherentPrfaq2 = doc('prfaq_2', 'prfaq', '2025-03-01', builtFrom('prd_2'))
     expect(fresherCoherentSelection([prd1, prfaq1], [prd1, prfaq1, prd2, coherentPrfaq2]))
       .toEqual(['prd_2', 'prfaq_2'])
+  })
+
+  it('advises a candidate that crosses generations only two hops out, because the check is depth-1', () => {
+    // PINS THE DEPTH of the candidate check, which is the boundary that reaches an
+    // ADVISORY rather than a label — so it is worth asserting rather than describing.
+    // Deleting `hasSupersededSource` leaves this green: it states what the rule does
+    // not see. The refusal it inherits is one hop deep, so a candidate whose newest
+    // PR/FAQ descends from the row's own PRD generation VIA a research report is
+    // advised. Traversing is measurably the wrong repair — it greys the ordinary
+    // regenerated row, argued at `hasSupersededSource` — so `lineage.staleReason` is
+    // worded to this limit instead.
+    const research = doc('res_x', 'research', '2025-02-01', builtFrom('prd_1'))
+    const transitivePrfaq2 = doc('prfaq_2', 'prfaq', '2025-03-02', builtFrom('res_x'))
+    const project2 = [prd1, prfaq1, prd2, research, transitivePrfaq2]
+
+    // THE CONTROL FIRST, and deliberately: a failing assertion ends a case, so a
+    // control placed after the assertion under test cannot be shown to have run. One
+    // hop shorter — the same PR/FAQ naming PRD 1 itself — and the candidate IS refused.
+    const directPrfaq2 = doc('prfaq_2', 'prfaq', '2025-03-02', builtFrom('prd_1'))
+    expect(fresherCoherentSelection([prd1, prfaq1], [prd1, prfaq1, prd2, directPrfaq2]))
+      .toBeNull()
+    // Two hops out, the crossing is invisible and the combination is advised.
+    expect(fresherCoherentSelection([prd1, prfaq1], project2)).toEqual(['prd_2', 'prfaq_2'])
+    // And the candidate's own classification is why: nothing walks a source's sources.
+    expect(classifySelectionLineage([prd2, transitivePrfaq2], project2))
+      .toEqual({ state: 'coherent', reason: 'oneChain' })
+    // Through the entry point the page uses, which is where the badge and the sentence
+    // come from — so the shape is recorded as a user-visible outcome, not just as an
+    // arithmetic result.
+    expect(rowLineageOf(frozenRow([prd1, prfaq1]), project2).stale).toBe(true)
   })
 
   it('marks a row stale on a project where NO document records its lineage', () => {

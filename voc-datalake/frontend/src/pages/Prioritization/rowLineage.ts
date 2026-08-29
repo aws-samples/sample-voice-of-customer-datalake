@@ -246,6 +246,36 @@ function repeatsAType(selected: readonly SelectedDocument[]): boolean {
  * from `otherTypes`, which is the same reading `repeatsAType` takes when it skips
  * them and `fresherCoherentSelection` takes when it withholds staleness for one:
  * an unreadable field decides nothing anywhere in this module.
+ *
+ * DEPTH-1, AND THE ONE BOUNDARY OF THIS RULE THAT IS A CHOICE RATHER THAN A
+ * CONSEQUENCE. Only a selected document's OWN direct sources are compared, because
+ * `resolveDerivation` reads only those ("Depth-1 by construction: only the
+ * document's own direct sources are read, never a source's sources" —
+ * api/derivation.ts). So a crossing reachable only transitively is NOT reported and
+ * reads `coherent`: a row holding PRD 2 beside a PR/FAQ whose only source is a
+ * research report that referenced PRD 1 crosses generations two hops out and is
+ * called coherent here. The chain is an ordinary product path, not a contrivance —
+ * research/research_step_handler.py:198 records a selected PRD on a research report
+ * as ROLE_REFERENCE, and jobs/document_generator/handler.py:176 records research
+ * documents on a generated PR/FAQ as ROLE_REFERENCE.
+ *
+ * DELIBERATE, AND TRAVERSING WOULD BE WORSE — measured, not assumed. Walk the
+ * sources transitively and the row that goes grey is the ORDINARY one: regenerating
+ * a project produces research grounded in the previous PRD and then a new PRD and a
+ * new PR/FAQ both generated from that research, so on the perfectly coherent
+ * newest-of-each row {PRD 2, PR/FAQ 2} each document reaches PRD 1 at hop two — a
+ * type the row holds another copy of. A transitive rule reports that row as crossing
+ * generations, which is the "grey for everybody" failure the file docstring rejects
+ * `coherent`-by-proven-edge for, arrived at from the other direction. Traversal also
+ * needs cycle handling `resolveDerivation` deliberately does not have (its own
+ * docstring notes a cyclic chain is inert precisely BECAUSE there is no traversal to
+ * loop), and no control is gated on the state either way.
+ *
+ * THE LIMIT REACHES THE STALENESS ADVISORY TOO, which is the consequence worth
+ * following: `fresherCoherentSelection`'s candidate check calls this rule, so a
+ * candidate that crosses generations only transitively is ADVISED rather than
+ * refused. That is stated where it is load-bearing — at that condition, and at the
+ * call — and it is why the advisory's copy claims only what this depth verifies.
  */
 function hasSupersededSource(
   selection: readonly unknown[],
@@ -672,6 +702,20 @@ function newestOfType(
  *    docstring, and `LineageState`, which calls it "the ordinary answer for a
  *    hand-authored document … rather than a fault"). Withholding on it would be
  *    the one place in this module where absent lineage decides something.
+ *
+ *    THE CHECK IS DEPTH-1, INHERITED FROM `hasSupersededSource`, and this condition
+ *    is the reason that limit is worth stating twice. It refuses a candidate whose
+ *    newest PR/FAQ names the previous PRD DIRECTLY; it does not refuse one whose
+ *    newest PR/FAQ names a research report that named the previous PRD, because no
+ *    rule in this module reads a source's sources. So the row can be told it is
+ *    superseded and pointed at a combination that descends, two hops out, from the
+ *    generation it is being moved away from. Traversing is measurably the wrong
+ *    repair — it greys the ordinary regenerated row, argued at
+ *    `hasSupersededSource` — so the boundary is CLOSED IN THE COPY instead: the
+ *    sentence this drives claims only "does not cross generations" in the sense this
+ *    rule checks, and never that the fresher combination is coherent. Both the
+ *    classifier shape and this advisory shape are pinned by cases, so the limit is
+ *    asserted rather than described.
  */
 export function fresherCoherentSelection(
   selection: readonly unknown[],
@@ -797,6 +841,13 @@ export function fresherCoherentSelection(
   // lineage is not. `!== 'coherent'` here refused `absent` too, which silenced
   // staleness for every frozen row on a pre-`derivation` project — see the fifth
   // condition in the docstring for why only the contradictory state may withhold.
+  //
+  // AS DEEP AS `hasSupersededSource` READS, AND NO DEEPER, which bounds what this
+  // refusal can promise: a candidate whose newest PR/FAQ names the previous PRD
+  // directly is refused, one whose PR/FAQ names a research report that named it is
+  // not. `lineage.staleReason` is worded to that limit rather than to the stronger
+  // claim — see the fifth condition, and `hasSupersededSource` for why traversing
+  // would grey the ordinary regenerated row instead of fixing this.
   if (classifySelectionLineage(records, projectDocuments).state === 'crossGeneration') return null
   return chosen.map((entry) => entry.id)
 }
