@@ -30,11 +30,11 @@ WHAT THIS FILE COSTS, stated plainly because a previous version of this heading 
 
     944 lines   on `development`, the scanner version
     455 lines   after the scanner was deleted
-   1445 lines   now
+   1452 lines   now
 
 So it is LONGER than the scanner it replaced, and the claim that it was short was
 false for two review rounds. What the growth is: 65% of the file is PROSE (this
-docstring 308 lines, test docstrings 420, comments 213). The 346 lines of code are
+docstring 308 lines, test docstrings 427, comments 213). The 345 lines of code are
 `_without_comments`, `_doc_type_union` and the pin matcher with their shape fixtures,
 plus the text assertions keeping two type-level pins and their four controls present.
 If these counts and the file disagree, the file is right and this block is stale —
@@ -565,10 +565,12 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     line must BE the directive" spelling that was the obvious fix for it.
 
     Off by default because `_doc_type_union` reads the union's members, which ARE
-    string literals — blanking them there would blank the contract itself. On for the
-    declaration pins, where BOTH the source and the expected text go through it (see
-    `_pinned`), so a quoted member inside a pinned declaration still matches while a
-    decoy that merely contains the same characters no longer supplies them.
+    string literals — blanking them there would blank the contract itself. On for
+    LOCATING the declaration pins, where both the source and the expected text go
+    through it (see `_declaration_offset`), so a decoy that merely contains the same
+    characters is not a place a pin can match. What the pin says is then read from the
+    raw text at that offset: blanking cannot tell two same-length literals apart, so it
+    answers where a declaration is and never what it declares.
     """
     def blanked(text: str) -> str:
         return ''.join('\n' if char == '\n' else ' ' for char in text)
@@ -620,10 +622,15 @@ def _declarations(raw: str) -> str:
     """`raw` reduced to the text that can actually DECLARE something: comment bodies
     and string bodies both blanked, length preserved.
 
-    This is what every declaration pin below matches against, and the expected text is
-    put through it too (see `_pinned`) so the two are compared on equal terms — a
-    quoted member inside a pinned declaration still matches, while the same characters
-    sitting inside a template literal no longer supply them.
+    This is where a pin is LOCATED: `_declaration_offset` matches here, with the
+    expected text put through this too so the two are compared on equal terms, which is
+    what stops a copy inside a comment or a template literal from being a place a pin
+    can match.
+
+    ⚠️ Locating is all it does. Blanking makes two quoted operands of equal length
+    indistinguishable, so it cannot decide WHAT was declared — `_declaration_offset`
+    re-checks the raw text at each candidate for that, and the 🔑 note there carries
+    the measurement. Reading a pin's operands from this view alone was a vacuity.
 
     Length preserved, so an index found here is valid against `raw`. That is relied on
     for the `@ts-expect-error` lookup, which has to read a line this function blanks.
