@@ -259,7 +259,13 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     copies it). Each was `tsc` exit 0 with every test here green. Hence the RATIO,
     which a decoy adds to both sides of. A rename of `GenerateDocumentBody` or of the
     method fails it too, which is correct — the constants here are what the two files
-    must agree on.
+    must agree on. ⚠️ A FOURTH spelling of this guard was also vacuous, and for the
+    VIEW rather than the pattern: counted over comment-stripped text, a decoy inside an
+    exported template literal added to both sides, and respelling the real colon
+    (`generateDocument:(`) removed the real declaration from the count entirely —
+    `tsc` exit 0, eslint clean, every test here green. Counted over `_declarations(...)`
+    now, so this guard and the pins read the same code-only view; the `declared >= 1`
+    floor is what refuses the respelled colon.
   * `test_the_type_level_pins_are_present` — either type-level pin deleted, STUBBED
     to a bare constant, fed through an alias that compares a type to itself, left with
     only one of its two controls, or stripped of a control's `@ts-expect-error`. All
@@ -359,6 +365,18 @@ REQUEST_BODY_TYPE = 'GenerateDocumentBody'
 #
 # Not an enumeration of legal TypeScript — the thing this file refuses. There is one
 # string per side, and `generateDocument` is either declared here or it is not.
+#
+# ⚠️ A SIXTH vacuity, and it is the fourth one whose root cause was the VIEW rather
+# than the pattern: the ratio was counted over `_without_comments`, which blanks
+# comment bodies but leaves STRING bodies intact — so a copy of this signature inside
+# an exported template literal counted toward BOTH sides. Combined with respelling the
+# real method's colon `generateDocument:(` (legal TypeScript, lints clean, and NOT this
+# whitespace-exact opener), the real declaration went inline while the decoy supplied
+# one opener and one signature: measured `tsc` exit 0, eslint clean, every test here
+# green. The count is now taken over `_declarations(...)`, the same view the pins use,
+# so every text guard in this file reads code and only code. The `declared >= 1` floor
+# is what catches the colon half, and says so, because a method that is not SEEN is a
+# different failure from one seen and unpinned.
 #
 # The cost, as for the pins below: this signature must stay on ONE line in both files.
 GENERATE_DOCUMENT_SIGNATURE = (
@@ -684,6 +702,31 @@ def _declaration_offset(expected: str, raw: str) -> int | None:
 def _pinned(expected: str, raw: str) -> bool:
     """Whether `raw` declares `expected`. See `_declaration_offset`."""
     return _declaration_offset(expected, raw) is not None
+
+
+def _generate_document_ratio(raw: str) -> tuple[int, int]:
+    """How many times `raw` DECLARES `generateDocument`, and how many of those take the
+    shared request body — the two sides of the ratio
+    `test_both_client_signatures_use_the_shared_request_body` asserts.
+
+    🔑 Counted over `_declarations(...)`, not over comment-stripped text, and that was
+    a measured vacuity of its own: `_without_comments` leaves STRING bodies intact, so a
+    copy of the signature inside an exported template literal counted toward BOTH sides.
+    Paired with respelling the real method's colon (`generateDocument:(` — legal
+    TypeScript, lint-clean, and not the exact opener counted) the real declaration
+    vanished from the count while the decoy supplied one of each side, so the ratio held
+    with `tsc` at exit 0, eslint clean, and every test here green. Same root cause as
+    the pins' fourth vacuity, which is why both read one view now.
+
+    A function rather than two inline `str.count` calls so the property is reachable from
+    a test without a fixture file on disk — the fix above was silently revertible until
+    this existed, which is the failure mode this file's own controls exist to refuse.
+    """
+    source = _declarations(raw)
+    return (
+        source.count(GENERATE_DOCUMENT_DECLARATION),
+        source.count(GENERATE_DOCUMENT_SIGNATURE),
+    )
 
 
 def _directive_above(declaration: str, raw: str) -> str | None:
@@ -1064,6 +1107,48 @@ class TestThePinMatcher:
             self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
         )
 
+    # A `generateDocument` declaration taking the shared body, as the ratio counts it.
+    SIGNATURE = GENERATE_DOCUMENT_SIGNATURE
+
+    def test_a_signature_inside_a_template_literal_is_not_counted(self):
+        """The ratio guard's own version of the fifth vacuity — the same defect, in the
+        last text guard that still read comment-stripped text rather than
+        `_declarations(...)`.
+
+        A copy of the signature in an exported template literal counted toward BOTH
+        sides of the ratio, so pairing it with a respelled colon on the real method
+        (below) let the real parameter go inline with the ratio still holding. Measured
+        on the shipped tree: `tsc` exit 0, eslint clean, every test here green.
+        """
+        decoy = f'export const historical = `\n  {self.SIGNATURE}\n`\n'
+        assert _generate_document_ratio(decoy) == (0, 0)
+        # The control: the same text as real code must still be counted on both sides,
+        # or this would pass by counting nothing at all.
+        assert _generate_document_ratio(f'  {self.SIGNATURE}\n') == (1, 1)
+
+    def test_a_respelled_colon_is_not_counted_as_a_declaration(self):
+        """`generateDocument:(` — no space — is legal TypeScript and lints clean, but is
+        not the exact opener counted, so the real method disappears from the LEFT side.
+
+        Deliberately not tolerated by widening the pattern: the point is that the ratio
+        cannot be read as "the method is fine" when the method was never seen. The
+        `declared >= 1` floor is what refuses it, and its message says so, because
+        not-FOUND and found-and-unpinned want different fixes.
+        """
+        respelled = self.SIGNATURE.replace('generateDocument: (', 'generateDocument:(')
+        assert _generate_document_ratio(f'  {respelled}\n') == (0, 0)
+        assert _generate_document_ratio(f'  {self.SIGNATURE}\n') == (1, 1)
+
+    def test_an_inline_literal_leaves_its_opener_counted_but_unpinned(self):
+        """The respelling this guard exists to refuse: the declaration stays visible on
+        the left while the right loses its signature, so the ratio breaks.
+
+        This is the positive direction of the guard — without it the two tests above
+        could pass by the counter never counting anything.
+        """
+        inline = 'generateDocument: (projectId: string, data: { doc_type: DocType }) =>'
+        assert _generate_document_ratio(f'  {inline}\n') == (1, 0)
+
     def test_a_quoted_member_inside_the_pin_still_matches(self):
         """The reason both sides are blanked at all: the pins contain string literals,
         so blanking only the source would never match one. The negative cases above
@@ -1273,6 +1358,17 @@ class TestDocTypeLockstep:
         adds to both and passes, which is correct — it is not a respelling of the
         contract.
 
+        🔑 The ratio is counted over `_declarations(...)`, not over comment-stripped
+        text, and that WAS the fourth measured defect of this guard: `_without_comments`
+        leaves string bodies intact, so a copy of the signature inside an exported
+        template literal counted toward BOTH sides. Paired with respelling the real
+        method's colon (`generateDocument:(` — legal, lint-clean, and not the exact
+        opener counted), the real declaration went inline while the decoy supplied one of
+        each: `tsc` exit 0, eslint clean, every test here green. Same root cause as the
+        pins' own fourth vacuity, which is why both now read one view. The `declared >= 1`
+        floor catches the colon half and its message distinguishes not-FOUND from
+        found-and-unpinned, since those want different fixes.
+
         Not an enumeration of legal TypeScript, the thing this file refuses: there is
         one string per side, and the method is either declared here or it is not.
 
@@ -1290,19 +1386,27 @@ class TestDocTypeLockstep:
         for relative in GENERATE_DOCUMENT_CLIENTS:
             path = _repo_root() / relative
             assert path.is_file(), f'{relative} moved — update GENERATE_DOCUMENT_CLIENTS'
-            source = _without_comments(path.read_text(encoding='utf-8'))
-            assert 'generateDocument' in source, (
+            raw = path.read_text(encoding='utf-8')
+            assert 'generateDocument' in _declarations(raw), (
                 f'{relative} no longer mentions generateDocument. If the method '
                 f'moved, point GENERATE_DOCUMENT_CLIENTS at its new home; if this '
                 f'client dropped it, drop the entry.'
             )
-            declared = source.count(GENERATE_DOCUMENT_DECLARATION)
-            shared = source.count(GENERATE_DOCUMENT_SIGNATURE)
+            declared, shared = _generate_document_ratio(raw)
             assert declared >= 1, (
                 f'{relative} declares no `{GENERATE_DOCUMENT_DECLARATION}...`, so '
-                f'there is nothing here to pin. If the method changed shape, update '
-                f'GENERATE_DOCUMENT_DECLARATION; if this client dropped it, drop the '
-                f'entry from GENERATE_DOCUMENT_CLIENTS.'
+                f'there is nothing here to pin — the method was not FOUND, which is a '
+                f'different failure from found-and-unpinned below.\n'
+                f'The opener is matched as exact text, so a respelled colon '
+                f'(`generateDocument:(`, no space) is legal TypeScript that lints '
+                f'clean and is not counted at all. That was measured to combine with a '
+                f'decoy to defeat the ratio: with the real declaration invisible, a '
+                f'copy of the signature elsewhere supplied one of each side and the '
+                f'ratio held. This assertion is the floor that catches it.\n'
+                f'So: if the colon was respelled, restore `'
+                f'{GENERATE_DOCUMENT_DECLARATION}`; if the method genuinely changed '
+                f'shape, update GENERATE_DOCUMENT_DECLARATION; if this client dropped '
+                f'it, drop the entry from GENERATE_DOCUMENT_CLIENTS.'
             )
             assert shared == declared, (
                 f'{relative} declares generateDocument {declared} time(s) but only '
