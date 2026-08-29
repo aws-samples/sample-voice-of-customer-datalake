@@ -99,7 +99,12 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   raising, because it answers about several sources at once and one unknown name must not fail the
   whole response — and because its own default list contains `manual_import`, a legitimate source
   platform that deliberately has no plugin manifest. That is the same answer as before for every
-  request the UI sends, since a schedule rule only ever exists per plugin.
+  request the UI sends, since a schedule rule only ever exists per plugin. The `?sources=` list is
+  also de-duplicated and capped now: validation bounds *which* rules may be described but not how
+  *many* calls are made, and one valid name repeated 500 times issued 500 `describe_rule` calls while
+  overwriting the same response entry each time — the caller chose the AWS call count against a fixed
+  result, on an API throttled per account and shared with the rest of the stack. It is the only read
+  in this handler that fans out one AWS call per list element.
 - `POST`/`DELETE /integrations/{source}/apps`, `POST /sources/{source}/run` and
   `PUT /sources/{source}/enable|disable` now require the caller to be in the `admins` group. Only
   the two credentials routes were gated, so the boundary depended on which key a write happened to
@@ -172,6 +177,12 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   id. Neither this nor the synth-time id guard is retroactive: a key stored by a pre-upgrade write
   survives in the shared secret and is still read by whichever plugin's namespace it landed in.
   A deployment where an arbitrary `source` was used should delete the stale keys by hand.
+- **`GET /sources/status?sources=` accepts at most 50 distinct sources per request** and answers 400
+  above that. Counted after de-duplication, so repeating one name is not what trips it, and set well
+  above both the five plugin manifests and the route's own three-source default — the web app asks
+  for at most one source at a time, so no UI call approaches it. A caller passing the same source
+  more than once still receives the identical response; only the redundant `describe_rule` calls are
+  gone.
 - **Triggering a run, toggling a schedule, and writing or deleting an app config now require the
   `admins` group.** A caller in `users` alone receives 403 on `POST /sources/{source}/run`,
   `PUT /sources/{source}/enable|disable` and `POST`/`DELETE /integrations/{source}/apps`. Listing app

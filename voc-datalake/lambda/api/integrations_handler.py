@@ -87,9 +87,23 @@ app = create_api_resolver()
 # copies of the rule is how a value this path accepts becomes one that path
 # refuses. `shared/` is the only directory both bundles carry.
 #
-# The one rule that stays here, because only a write has a request to bound:
+# The rules that stay here, because they bound a REQUEST rather than validate a
+# value — there is no read side to share them with:
 #   • At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys per write request.
+#   • At most MAX_SOURCES_PER_STATUS_REQUEST distinct sources per status request.
 MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
+
+# `GET /sources/status?sources=a,b,c` issues one `describe_rule` per element, so
+# unlike every other read in this handler its AWS call count is chosen by the
+# caller. A write is not the only thing with a request to bound: a read that fans
+# out per list element has one too, and this is the only such read here.
+#
+# Sized well above the realistic plugin count (five manifests today, and the
+# route's own default list is three) so it bounds abuse rather than use — the UI
+# asks for at most one source at a time (`api.getSourcesStatus([plugin.id])`).
+# Applied AFTER de-duplication, because the bound that matters is the number of
+# rules actually described, not the length of a string the caller typed.
+MAX_SOURCES_PER_STATUS_REQUEST = 50
 
 
 def _validate_credential_key(key: str) -> None:
@@ -775,6 +789,11 @@ def get_sources_status():
     before: `SourceCard.tsx` and `PluginConfigModal.tsx` both read it for ordinary
     users, and gating it needs the same read/write reasoning applied to
     `list_app_configs`. Validating it closes the arbitrary-rule-enumeration half.
+
+    Validation bounds WHICH rules may be described; it does not bound how MANY
+    times, so the batch branch also de-duplicates and caps its list — see
+    `MAX_SOURCES_PER_STATUS_REQUEST`. This is the only read in the handler whose
+    AWS call count is chosen by the caller.
     """
     params = app.current_event.query_string_parameters or {}
 
@@ -792,9 +811,30 @@ def get_sources_status():
 
     # Use requested sources or fall back to defaults
     if sources_param:
-        sources = [s.strip() for s in sources_param.split(',') if s.strip()]
+        # `dict.fromkeys` rather than `set`: it de-duplicates while KEEPING first
+        # appearance order, and the response is a dict the caller reads by name,
+        # so the order is part of what a JSON consumer sees.
+        #
+        # Unobservable to any caller, and that is the point — `status` is keyed by
+        # source name, so a repeat overwrote the same entry and could not change
+        # the response, while still costing one `describe_rule` each.
+        # `?sources=` with one valid name repeated 500 times measured 200 / 500
+        # calls / 1 key in the body. `DescribeRule` is throttled per account, so
+        # those 499 spare calls came out of a budget the rest of the stack shares.
+        sources = list(dict.fromkeys(
+            s.strip() for s in sources_param.split(',') if s.strip()
+        ))
     else:
         sources = ['webscraper', 'manual_import', 's3_import']
+
+    # Raises, unlike the per-source check below: this is a malformed REQUEST, not
+    # an unaddressable source, so there is no per-entry answer to report and no
+    # partial response worth returning.
+    if len(sources) > MAX_SOURCES_PER_STATUS_REQUEST:
+        raise ValidationError(
+            f"Too many sources in request: {len(sources)} exceeds the limit of "
+            f"{MAX_SOURCES_PER_STATUS_REQUEST}."
+        )
 
     status = {}
     for source in sources:

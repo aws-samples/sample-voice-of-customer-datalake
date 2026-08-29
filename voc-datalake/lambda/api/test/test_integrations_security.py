@@ -49,6 +49,15 @@ Behaviours tested:
    default list contains the deliberate non-plugin `manual_import`), so the two
    branches are guarded differently.
    Regression: TestTheQueryStringSourceRouteIsValidated
+
+10. That route's fan-out is bounded as well as validated
+   Validation bounds WHICH EventBridge rules `?sources=` may describe, not how
+   MANY calls it makes: the list was neither de-duplicated nor capped, so one
+   valid name repeated 500 times measured 200 / 500 `describe_rule` calls / 1 key
+   in the response — every repeat overwriting the same entry, since the response
+   is keyed by source name. Asserted on the CALL COUNT, because a body-only
+   assertion cannot see this and every case in item 9 passes without the fix.
+   Regression: TestTheStatusRouteDoesNotFanOutPerDuplicate
 """
 import ast
 import inspect
@@ -2012,3 +2021,214 @@ class TestTheQueryStringSourceRouteIsValidated:
             if isinstance(node, ast.FunctionDef) and node.name == 'get_sources_status'
         )
         assert 'require_admin' not in _calls_in(route)
+
+
+class TestTheStatusRouteDoesNotFanOutPerDuplicate:
+    """`?sources=` describes each rule ONCE, however many times it was named.
+
+    The class above bounds WHICH rules this route may describe. It does not bound
+    how MANY calls it makes, and those are different properties: the list was
+    neither de-duplicated nor capped, so the caller chose the AWS call count. This
+    is the only read in the handler that fans out one call per list element.
+
+    Measured before the fix, as a caller whose only Cognito group is `users`:
+
+      ?sources=<one valid name × 500>  → 200, 500 describe_rule calls,
+                                         1 key in the response body
+
+    All 499 repeats overwrote the same `status[source]` entry, so they could not
+    change the response — work unbounded by the caller against a fixed observable
+    result, which is what makes it an amplifier rather than an inefficiency.
+    `DescribeRule` is throttled per account, shared with the rest of the stack.
+
+    Every assertion here is on the CALL COUNT rather than the body, deliberately:
+    the body is identical with and without the fix, which is exactly why the nine
+    cases in `TestTheQueryStringSourceRouteIsValidated` all pass on the pre-fix
+    code. A body-only assertion cannot see this defect.
+    """
+
+    @staticmethod
+    def _status_event(api_gateway_event, query):
+        return _non_admin_event(
+            api_gateway_event,
+            method='GET',
+            path='/sources/status',
+            query_params=query,
+        )
+
+    @staticmethod
+    def _stub(mock_events):
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+        mock_events.describe_rule.return_value = {
+            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
+        }
+
+    @patch('integrations_handler.events_client')
+    def test_a_repeated_source_is_described_once(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The reported case: one valid name repeated many times, one AWS call."""
+        self._stub(mock_events)
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(
+            api_gateway_event, {'sources': ','.join(['webscraper'] * 500)}
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert mock_events.describe_rule.call_count == 1, (
+            'a repeated source name fanned out one describe_rule call per '
+            f'occurrence ({mock_events.describe_rule.call_count} calls)'
+        )
+        # The response is unchanged by de-duplication — stated as an assertion
+        # because "the fix is observable to no caller" is the reason it is safe.
+        assert body['sources']['webscraper']['enabled'] is True
+        assert len(body['sources']) == 1
+
+    @patch('integrations_handler.events_client')
+    def test_the_control_distinct_sources_are_each_still_described(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """Non-vacuity: de-duplicating too eagerly would collapse a real request.
+
+        A fix that described only the first entry, or dropped the loop, would make
+        the call count trivially 1 and satisfy the case above. This asserts one call
+        PER distinct source, and the ORDER, which `dict.fromkeys` preserves and a
+        `set` would not.
+
+        Deliberately duplicate-free input, so this control stays GREEN under the
+        very mutation it controls for — the pre-fix code describes two distinct
+        sources twice as well. A control that fails alongside its subject proves
+        nothing about vacuity.
+        """
+        self._stub(mock_events)
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(
+            api_gateway_event, {'sources': 'webscraper,s3_import'}
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert mock_events.describe_rule.call_count == 2, (
+            'two distinct sources were not each described exactly once'
+        )
+        described = [c.kwargs['Name'] for c in mock_events.describe_rule.call_args_list]
+        assert described == [
+            'voc-ingest-webscraper-schedule', 'voc-ingest-s3_import-schedule',
+        ]
+        assert set(body['sources']) == {'webscraper', 's3_import'}
+
+    @patch('integrations_handler.events_client')
+    def test_a_source_list_over_the_cap_is_refused_before_any_lookup(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The cap raises rather than truncating, and describes nothing first.
+
+        A malformed REQUEST, unlike an unaddressable source: there is no per-entry
+        answer to report, so this branch behaves like the write path's key-count
+        guard. Asserting no call happened is the load-bearing half — a route that
+        answered 400 after describing 51 rules would pass a status-only assertion.
+        """
+        from integrations_handler import (
+            MAX_SOURCES_PER_STATUS_REQUEST,
+            lambda_handler,
+        )
+
+        self._stub(mock_events)
+        too_many = ','.join(
+            f'plugin_{i}' for i in range(MAX_SOURCES_PER_STATUS_REQUEST + 1)
+        )
+        event = self._status_event(api_gateway_event, {'sources': too_many})
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert mock_events.describe_rule.call_args_list == []
+
+    @patch('integrations_handler.events_client')
+    def test_the_control_a_list_at_the_cap_is_still_answered(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """Non-vacuity for the cap: an off-by-one that refused the limit itself
+        would satisfy the case above, and the cap is meant to bound abuse rather
+        than any request a caller could legitimately make."""
+        from integrations_handler import (
+            MAX_SOURCES_PER_STATUS_REQUEST,
+            lambda_handler,
+        )
+
+        self._stub(mock_events)
+        at_cap = ','.join(
+            f'plugin_{i}' for i in range(MAX_SOURCES_PER_STATUS_REQUEST)
+        )
+        event = self._status_event(api_gateway_event, {'sources': at_cap})
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        # None is a configured plugin, so the allowlist answers all of them and
+        # EventBridge is never reached — the cap is what is under test, and it
+        # must not fire at exactly the limit.
+        assert len(json.loads(response['body'])['sources']) == (
+            MAX_SOURCES_PER_STATUS_REQUEST
+        )
+
+    @patch('integrations_handler.events_client')
+    def test_the_cap_counts_distinct_sources_not_typed_ones(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """De-duplication runs BEFORE the cap, which is the useful order.
+
+        The bound that matters is the number of rules actually described, so a
+        caller who repeats one legitimate name past the cap is answered rather than
+        refused. Capping the typed list first would reject a request that costs one
+        AWS call.
+        """
+        from integrations_handler import (
+            MAX_SOURCES_PER_STATUS_REQUEST,
+            lambda_handler,
+        )
+
+        self._stub(mock_events)
+        event = self._status_event(api_gateway_event, {
+            'sources': ','.join(
+                ['webscraper'] * (MAX_SOURCES_PER_STATUS_REQUEST + 10)
+            ),
+        })
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        assert mock_events.describe_rule.call_count == 1
+
+    @patch('integrations_handler.events_client')
+    def test_the_default_request_is_unaffected_by_either_guard(
+        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The regression control, on the path every Settings render takes.
+
+        `SourceCard.tsx` calls `getSourcesStatus()` with no argument, so the
+        fallback list must reach the loop untouched by de-duplication or the cap —
+        it holds no duplicates and three entries, and `manual_import` among them is
+        a deliberate non-plugin.
+        """
+        mock_events.exceptions.ResourceNotFoundException = type(
+            'ResourceNotFoundException', (Exception,), {}
+        )
+        mock_events.describe_rule.side_effect = (
+            mock_events.exceptions.ResourceNotFoundException
+        )
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert set(body['sources']) == {'webscraper', 'manual_import', 's3_import'}
