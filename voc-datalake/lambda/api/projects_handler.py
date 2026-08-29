@@ -312,6 +312,20 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # What POST /projects/{id}/document accepts in `doc_type`. Mirrored in the
 # frontend's `DocType` union; `test_doc_type_lockstep.py` fails if the two drift.
 #
+# ⚠️ WIDENING THIS TUPLE TAKES A THIRD EDIT, and no gate asks for it. Adding a member
+# here and to `DocType` together leaves `tsc` at exit 0 and every lockstep test green
+# (measured) — but `lambda/jobs/document_generator/handler.py` dispatches `doc_type`
+# as a BINARY with PR-FAQ as the unconditional `else`, in three places: the
+# step-builder selection (`get_prd_generation_steps` vs `get_prfaq_generation_steps`),
+# the generation branch (`_generate_prd` vs `_generate_prfaq`) and the
+# assembly/result-indexing branch in `_assemble_and_save`. It never imports this
+# constant. So a new member is accepted here, routed into the chain by `is_chain`
+# below (true by construction once it is in this tuple), then generated and persisted
+# as a PR-FAQ — `document_type` and the `{DOC_TYPE}#` sort key say the new type while
+# the CONTENT is a PR-FAQ, after a Bedrock spend, with no error raised.
+# A third doc type therefore needs a step builder, a generation branch and an
+# assembly branch there, or it silently produces the wrong kind of document.
+#
 # ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
 # `build_prototype`, `product_report`) and this route's docstring names the
 # latter two, which reads like an argument for admitting them here. It isn't:

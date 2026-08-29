@@ -26,20 +26,30 @@ drift axis rather than testing it. Nothing here should ever again try to decide 
 an arbitrary TypeScript type expression MEANS.
 
 WHAT THIS FILE COSTS, stated plainly because a previous version of this heading read
-"WHY THIS FILE IS SHORT NOW" long after it had stopped being true. Measured:
+"WHY THIS FILE IS SHORT NOW" long after it had stopped being true. Two fixed points,
+both in OTHER commits and so both stable:
 
     944 lines   on `development`, the scanner version
     455 lines   after the scanner was deleted
-   1452 lines   now
 
-So it is LONGER than the scanner it replaced, and the claim that it was short was
-false for two review rounds. What the growth is: 65% of the file is PROSE (this
-docstring 308 lines, test docstrings 427, comments 213). The 345 lines of code are
-`_without_comments`, `_doc_type_union` and the pin matcher with their shape fixtures,
-plus the text assertions keeping two type-level pins and their four controls present.
-If these counts and the file disagree, the file is right and this block is stale —
-recompute rather than trusting it, with `ast` rather than by eye (this block has been
-stale twice, both times because a figure was written while the file was still edited).
+This file is now WELL OVER 1.5x the scanner it replaced, and about TWO THIRDS of it is
+prose — this docstring, the test docstrings and the comments — against a body of code
+that is `_without_comments`, `_doc_type_union` and the pin matcher with their shape
+fixtures, plus the text assertions keeping two type-level pins and their four controls
+present. So the claim that the file was short was false for two review rounds, and it
+is not becoming true.
+
+NO EXACT "NOW" FIGURE IS GIVEN HERE, and that is the fix rather than an omission. Three
+successive rounds shipped one wrong, each time for the same unavoidable reason: the
+count lives INSIDE the thing it counts, so any later edit — including an edit to this
+very block — falsifies it, and the last edit of a round is never the one that wrote the
+number. A self-referential exact count cannot be kept true by being more careful; the
+third recurrence landed in the same commit that added the instruction not to let it go
+wrong. The approximations above survive a hundred lines in either direction, which is
+the precision this argument actually needs. If a precise figure is wanted, MEASURE it
+rather than reading it here — parse the file with `ast`, take the module docstring's
+span, sum the docstring spans of every class and function, count lines whose stripped
+form starts with `#`, and derive code as total minus prose minus blank.
 
 Whether that is proportionate is a fair question and was asked in review. The honest
 answer: the PINS are cheap and they are what bite — every widening mutation tried is
@@ -129,6 +139,38 @@ all of it, and an earlier version of this docstring claimed it did:
     So a widening has to edit `DocType` itself — the declaration this file parses —
     and `GENERATED_DOC_TYPES` with it. Editing `GenerateDocumentBody.doc_type` is
     not a way around that: the pin above makes it a compiler error.
+
+⚠️ THOSE TWO EDITS ARE NOT THE WHOLE SUPPORTED CHANGE, and every round of this file
+claimed they were. A THIRD edit is required, in the generator, and nothing here or in
+the compiler asks for it: `lambda/jobs/document_generator/handler.py` dispatches on
+`doc_type` as a BINARY with PR-FAQ as the unconditional `else`, in three places —
+anchored on the symbols rather than line numbers, since a citation into a file this
+test does not read is exactly what goes stale (it has three times on this branch):
+
+    `_generate_prd` vs `_generate_prfaq`                — the generation branch
+    `get_prd_generation_steps` vs `get_prfaq_...`       — the step-builder selection
+    `_assemble_and_save`'s `if doc_type == 'prd'`       — assembly, result indexing
+
+— and it never imports `GENERATED_DOC_TYPES` (zero references). So a third member
+added the blessed way passes `_validated_doc_type`, is routed into the Step Functions
+chain by `is_chain = doc_type in GENERATED_DOC_TYPES` (true BY CONSTRUCTION for the
+new member), and is then generated as a PR-FAQ, persisted with `sk = '{DOC_TYPE}#...'`
+and `document_type = doc_type`. The user gets a document of the WRONG KIND under the
+right label, after a Bedrock spend, with no error anywhere.
+
+Measured: `DocType` and `GENERATED_DOC_TYPES` widened together leaves `tsc` at exit 0
+and every test here green — the correct false-positive result for THESE guards, and
+exactly why the incompleteness was invisible for seven rounds. That is worse than the
+drift this file does catch: a refused value is a visible 400, this is a wrong-content
+success. Adding a member therefore also needs a step builder, a generation branch and
+an assembly branch there.
+
+Deliberately NOT guarded here. That is a different contract — the generator's dispatch
+against the route's allowlist — and it wants its own test near the generator rather
+than a second responsibility bolted onto this file. What is fixed is the RECIPE: the
+ceiling is stated, so a widener reads it instead of discovering it from a mislabelled
+document. Same reasoning as `suggestDocumentBrief` above: name the boundary, do not
+grow the guard across it.
 
 WHY EACH GUARD IS THE KIND IT IS. The rule this file has converged on over several
 rounds, each of which found the same hole one level further in: a link TypeScript can
