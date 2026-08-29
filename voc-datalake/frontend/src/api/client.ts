@@ -1,3 +1,13 @@
+// ⚠️ This file is at the `max-lines` boundary: 599 counted lines against the limit of
+// 600 in eslint.config.js. ONE more line of code fails lint, and the error will name a
+// line number near the end of the file rather than whatever was added, so the next
+// person to add one learns it here instead of from a confusing failure.
+//
+// Comments and blank lines are FREE — the rule is configured `skipBlankLines: true,
+// skipComments: true` — so documentation costs nothing and only code counts. To
+// reclaim room, the `// Re-export all types for backward compatibility` block below is
+// the obvious candidate: this file is a thin wrapper whose methods mostly delegate via
+// `import('./projectsApi')`.
 import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'

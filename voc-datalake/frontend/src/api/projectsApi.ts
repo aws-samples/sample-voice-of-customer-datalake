@@ -425,7 +425,16 @@ export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustMatch<BothW
 // NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
 // control above cannot detect: a widened left side fails `[Left] extends [Right]`
 // under either form, so the two are indistinguishable to it (see the ⚠️ note on
-// `BothWays` in ./types). `never` is assignable to the body, so a one-way comparison
-// calls this `true`, the directive goes unused and the line becomes a TS2578.
-// @ts-expect-error `never` is narrower than the body, so it must NOT compare equal
-export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustMatch<BothWays<never, GenerateDocumentBody>>
+// `BothWays` in ./types). The declared parameter is narrower than a body whose members
+// are all optional, so a one-way comparison calls this `true`, the directive goes
+// unused and the line becomes a TS2578; two-way, it is `false` as required.
+//
+// 🔑 Left side reads `Parameters<...>[1]`, the same operand as the pin, rather than the
+// `never` this once used. `never` discriminates the two forms just as well, but it
+// mentions nothing about this method — so it was a second detector of a collapse in the
+// SHARED `BothWays` (already caught once in ./types) rather than a control on THIS pin,
+// and deleting it left the collapse detected only by the other file. `Partial<...>` is
+// derived from the body, so it names no member and cannot go stale when the contract is
+// widened.
+// @ts-expect-error the declared parameter must NOT equal a body of optional members
+export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], Partial<GenerateDocumentBody>>>

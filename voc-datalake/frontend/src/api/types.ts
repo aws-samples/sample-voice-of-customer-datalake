@@ -489,16 +489,23 @@ export interface GenerateDocumentBody {
 // INDISTINGUISHABLE to it, and collapsing this type to `[Left] extends [Right]`
 // was measured to leave `tsc` at exit 0 with every lockstep test green. Only a
 // NARROWED-side control separates them, which is why each pin below has one as well
-// (`...WouldSeeNarrowing`). Their left side is `never` — the maximally narrowed
-// type, assignable to everything — so it is `true` under a one-way comparison and
+// (`...WouldSeeNarrowing`). Each compares its OWN pin's left operand against a wider
+// type DERIVED from the right one, so it is `true` under a one-way comparison and
 // `false` under this one, with no member spelled out to go stale.
 //
-// `never` rather than the narrowed spellings that look more natural: measured,
-// `Omit<GenerateDocumentBody, 'doc_type'>` is NOT assignable to the interface (it
-// lacks a required property), so it is `false` under BOTH forms and detects
-// nothing. A narrowed-FIELD shape such as
-// `Omit<GenerateDocumentBody, 'doc_type'> & { doc_type: 'prd' }` does discriminate,
-// but it names a member and so goes stale the moment the contract is widened.
+// ⚠️ Not `Omit<...>`, which looks like the natural narrowing and detects nothing:
+// measured, `Omit<GenerateDocumentBody, 'doc_type'>` is NOT assignable to the
+// interface (it lacks a required property), so it is `false` under BOTH forms. A
+// narrowed-FIELD shape such as `Omit<GenerateDocumentBody, 'doc_type'> &
+// { doc_type: 'prd' }` does discriminate, but it names a member and so goes stale the
+// moment the contract is widened.
+//
+// ⚠️ Nor a bare `never` on the left, which the signature control used to have. It
+// discriminates the two forms perfectly well, but it mentions nothing about the thing
+// being pinned — so it was really a second detector of a collapse in THIS shared
+// helper (already reported once, here) rather than a control on that pin. Measured:
+// deleting it left a one-way collapse reported only by this file. Reading the pin's
+// own operand is what makes each control local to its pin.
 export type BothWays<Left, Right> = [Left] extends [Right]
   ? ([Right] extends [Left] ? true : false)
   : false
@@ -539,11 +546,15 @@ export type DocTypeFieldIsExactlyTheUnion = MustBeTrue<BothWays<GenerateDocument
 // @ts-expect-error the field plus a member DocType lacks must NOT compare equal
 export type DocTypeFieldPinWouldSeeDrift = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>>
 // NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
-// control above cannot see (see the ⚠️ note on `BothWays`). `never` is assignable to
-// `DocType`, so a one-way comparison calls this `true`, the directive goes unused and
-// the line becomes a TS2578; two-way, it is `false` as required.
-// @ts-expect-error `never` is narrower than DocType, so it must NOT compare equal
-export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<never, DocType>>
+// control above cannot see (see the ⚠️ note on `BothWays`). The field is narrower than
+// itself-plus-a-member, so a one-way comparison calls this `true`, the directive goes
+// unused and the line becomes a TS2578; two-way, it is `false` as required.
+//
+// Left side is the field — this pin's OWN operand — so this is a control on THIS pin
+// and not merely on the shared `BothWays`; right side is derived from it, so no member
+// is named that could go stale when the contract is widened.
+// @ts-expect-error the field is narrower than itself plus a member, so NOT equal
+export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType | 'not-a-doc-type'>>
 
 export interface ProjectDocument {
   document_id: string

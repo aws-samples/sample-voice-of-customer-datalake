@@ -137,6 +137,23 @@ That is not an enumeration of legal TypeScript, which is the thing this file ref
 there is one string per declaration, and any edit to it is either the same declaration
 or a different one. The cost is that these declarations must stay on ONE line.
 
+MATCHED AGAINST CODE, NOT AGAINST TEXT THAT MERELY LOOKS LIKE IT. Every pin above is
+compared against `_declarations(...)`, which blanks comment bodies AND string bodies.
+Blanking only comments — which is all this file did for seven rounds — left every one
+of these guards satisfiable by a decoy inside a template literal: it survives
+stripping, survives `noUnusedLocals` once exported, and can contain newlines, so it
+also redirects any index computed with `find`. Measured on the shipped tree: deleting
+`DocTypeFieldIsExactlyTheUnion` outright, putting a copy of it in an exported template
+literal and widening the field it guards left `tsc` at exit 0 with every test here
+green. The same decoy defeated the `@ts-expect-error` lookup, and would have defeated
+the narrower "the preceding line must BE the directive" spelling that was the obvious
+fix for that. This is the FOURTH shape of "some other construct supplies the string",
+after the three fragment defeats above, and it is the general form of them: the earlier
+three were about pinning too little of the declaration, this one about not caring where
+the declaration was. `_doc_type_union` had the same hole — a quoted union above the
+live one was read INSTEAD of it — and anchors in the same view now, while still reading
+its members from the comments-only view because those members ARE string literals.
+
 WHAT IS SELF-CHECKING, and therefore needs no text pin at all: the verdict helpers'
 `extends true`. Each control applies the same helper as its pin and expects to be
 rejected, via `@ts-expect-error`, so dropping the constraint — one edit that would
@@ -181,6 +198,11 @@ comparing nothing.
 REVERT MAP — which mutation each part catches, so a deletion is a decision:
   * `test_the_frontend_declaration_is_findable` — `DocType` renamed or the file
     moved, leaving the equality test comparing empty sets.
+  * `test_a_union_inside_a_string_is_not_read_as_the_declaration` — the union parser
+    anchoring on a quoted copy of the declaration instead of the live one. Measured: a
+    `` const historical = `export type DocType = 'prd' | 'legacy'` `` above the live
+    union returned the DECOY's members, so the equality test compared the wrong set.
+    Same silent failure as the commented-out predecessor, one quote character away.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
     itself, in both directions.
   * `test_both_client_signatures_use_the_shared_request_body` — a signature
@@ -215,11 +237,23 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     constraint turns every directive into a TS2578, so the constraint is
     self-checking rather than a further thing this file has to spell. `@ts-ignore`
     cannot be swapped in — `@typescript-eslint/ban-ts-comment` refuses it.
+    ⚠️ The directive is required to BE the line above the control, and is located by
+    an index into the comment-and-string-blanked view. Two weaker spellings were
+    measured to pass while both pins were fully disabled: a preceding line that merely
+    MENTIONS the directive (several comments in these files do), and an index taken
+    from the RAW source, which a decoy copy of a control in a comment or template
+    literal redirects onto its own line.
   * The `...WouldSeeNarrowing` controls — `BothWays` collapsed to a one-way
     `extends`, which admits a NARROWED field or parameter: the "capability nobody
     can reach" half of this contract's drift. The widened-side controls cannot see
     that collapse (a superset fails the one-way test too), and it was measured to
-    leave `tsc` at exit 0 with every test here green.
+    leave `tsc` at exit 0 with every test here green. Each reads the SAME operand as
+    the pin it controls: the signature one used `never`, which discriminates the two
+    forms but mentions nothing about the method, so it was a second detector of a
+    collapse in the shared `BothWays` — measured, deleting it left that collapse
+    reported only by `types.ts` — rather than a control on its own pin. Both right
+    sides are DERIVED (`Partial<...>`, the field itself) so neither names a member
+    that would go stale when the contract is legitimately widened.
   * `TestContractDriftIsCaught` — a parser that returns the allowlist however the
     union is edited, and its opposite, one that reports drift for a comment.
   * `TestTheUnionParser` — a legal restyling the parser reads wrongly or silently
@@ -342,11 +376,19 @@ TERMINAL_CLIENT = 'frontend/src/api/projectsApi.ts'
 # than a fourth thing this file has to spell. `@ts-ignore` cannot be swapped in: it is
 # a lint error under `@typescript-eslint/ban-ts-comment`.
 #
+# A FOURTH vacuity, and the general form of the three above: WHERE the string comes
+# from was never checked. Matching against the comment-stripped source stopped a
+# commented-out copy, but not one inside a template literal — which survives stripping,
+# survives `noUnusedLocals` once exported, and can carry newlines. Measured: delete
+# `DocTypeFieldIsExactlyTheUnion`, put a copy in an exported template literal and widen
+# the field it guards — `tsc` exit 0, every test here green. So these are matched
+# against `_declarations(...)`, which blanks string bodies as well; the expected text
+# goes through it too, so a quoted member inside a pinned declaration still matches.
+#
 # Keyed by relative path, since the pins live in two files. Each value is
 # (pin-declaration, control-declarations) — the controls are a tuple because each pin
 # needs TWO of them (widened and narrowed; see below). Every entry is the EXACT text of
-# a declaration, matched against the comment-stripped source so a commented-out copy
-# cannot satisfy it.
+# a declaration.
 TYPE_LEVEL_PINS = {
     # `GenerateDocumentBody.doc_type` admits exactly the members of `DocType`. Nothing
     # else in either language sees this field: this file parses only the
@@ -363,8 +405,8 @@ TYPE_LEVEL_PINS = {
                 "GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>>"
             ),
             (
-                'export type DocTypeFieldPinWouldSeeNarrowing = '
-                'MustBeTrue<BothWays<never, DocType>>'
+                'export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<'
+                "GenerateDocumentBody['doc_type'], DocType | 'not-a-doc-type'>>"
             ),
         ),
     ),
@@ -389,7 +431,8 @@ TYPE_LEVEL_PINS = {
             ),
             (
                 'export type GenerateDocumentSignaturePinWouldSeeNarrowing = '
-                'SignatureMustMatch<BothWays<never, GenerateDocumentBody>>'
+                'SignatureMustMatch<BothWays<Parameters<typeof '
+                'projectsApi.generateDocument>[1], Partial<GenerateDocumentBody>>>'
             ),
         ),
     ),
@@ -449,7 +492,7 @@ UNION_TERMS = re.compile(rf'{UNION_TERM}(?:\s*\|\s*{UNION_TERM})*')
 DOC_TYPE_UNION_ANCHOR = re.compile(r'export\s+type\s+DocType\s*=\s*\|?\s*')
 
 
-def _without_comments(source: str) -> str:
+def _without_comments(source: str, blank_strings: bool = False) -> str:
     """`source` with `//` and `/* */` comment BODIES blanked, same length.
 
     🔑 Kept when the scanner around it went (issue #381), because `_doc_type_union`
@@ -466,6 +509,24 @@ def _without_comments(source: str) -> str:
     not mistaken for a comment; a regex literal containing `//` would be, but this
     is a type declaration and the shapes that occur are pinned in
     `TestTheUnionParser`.
+
+    🔑 `blank_strings` additionally blanks STRING and TEMPLATE bodies, and exists
+    because "commentary is not a declaration" has a second half this file missed for
+    seven review rounds: a STRING is not a declaration either. Comments were the only
+    thing blanked, so every text guard here could be satisfied by a decoy inside a
+    template literal — which survives stripping, survives `noUnusedLocals` once
+    exported, and can carry newlines, so it also redirects an index computed with
+    `find`. Measured on the shipped tree: deleting `DocTypeFieldIsExactlyTheUnion`
+    outright, putting a copy in an exported template literal and widening the field it
+    guards left `tsc` at exit 0 with every test here green. The same decoy defeated
+    the `@ts-expect-error` check, and would have defeated the narrower "the preceding
+    line must BE the directive" spelling that was the obvious fix for it.
+
+    Off by default because `_doc_type_union` reads the union's members, which ARE
+    string literals — blanking them there would blank the contract itself. On for the
+    declaration pins, where BOTH the source and the expected text go through it (see
+    `_pinned`), so a quoted member inside a pinned declaration still matches while a
+    decoy that merely contains the same characters no longer supplies them.
     """
     def blanked(text: str) -> str:
         return ''.join('\n' if char == '\n' else ' ' for char in text)
@@ -476,13 +537,19 @@ def _without_comments(source: str) -> str:
     while index < len(source):
         char = source[index]
         if quote is not None:
-            out.append(char)
             if char == '\\':
-                out.append(source[index + 1:index + 2])
+                # Blank the escape as a unit, so a trailing `\` cannot swallow the
+                # closing quote and blank the rest of the file.
+                out.append(blanked(source[index:index + 2]) if blank_strings
+                           else source[index:index + 2])
                 index += 2
                 continue
             if char == quote:
+                out.append(char)
                 quote = None
+                index += 1
+                continue
+            out.append(blanked(char) if blank_strings else char)
             index += 1
             continue
         if char in '\'"`':
@@ -505,6 +572,33 @@ def _without_comments(source: str) -> str:
         out.append(char)
         index += 1
     return ''.join(out)
+
+
+def _declarations(raw: str) -> str:
+    """`raw` reduced to the text that can actually DECLARE something: comment bodies
+    and string bodies both blanked, length preserved.
+
+    This is what every declaration pin below matches against, and the expected text is
+    put through it too (see `_pinned`) so the two are compared on equal terms — a
+    quoted member inside a pinned declaration still matches, while the same characters
+    sitting inside a template literal no longer supply them.
+
+    Length preserved, so an index found here is valid against `raw`. That is relied on
+    for the `@ts-expect-error` lookup, which has to read a line this function blanks.
+    """
+    return _without_comments(raw, blank_strings=True)
+
+
+def _pinned(expected: str, raw: str) -> bool:
+    """Whether `raw` DECLARES `expected`, comparing like with like.
+
+    Both sides go through `_declarations`, which is the point: the expected text
+    contains quoted members (`'not-a-doc-type'`), so blanking string bodies on only
+    one side would never match. Blanking both leaves the declaration's structure —
+    which is what is being pinned — while denying a decoy the ability to supply it
+    from inside a string.
+    """
+    return _declarations(expected) in _declarations(raw)
 
 
 def _doc_type_union(source: str) -> frozenset[str]:
@@ -535,9 +629,20 @@ def _doc_type_union(source: str) -> frozenset[str]:
     `raise AssertionError` rather than `assert`: `python -O` strips `assert`, and a
     guard whose whole purpose is to not be the quiet option must not have a mode
     where it silently is. `pytest.raises(AssertionError)` is unaffected.
+
+    🔑 The ANCHOR is located in `_declarations(source)` — comment AND string bodies
+    blanked — while the MEMBERS are read from `code`, which blanks comments only. Both
+    are needed and neither alone will do: the members are string literals, so reading
+    them from the strings-blanked view would return a set of empty strings, but
+    anchoring there means a declaration quoted inside a template literal is not the
+    first `re.search` match. Measured: without this, a decoy
+    `` const historical = `export type DocType = 'prd' | 'legacy'` `` above the live
+    declaration was read INSTEAD of it, returning the decoy's members — the same
+    silent failure as the commented-out predecessor, one quote character away. The two
+    views are the same length, so an index from one is valid in the other.
     """
     code = _without_comments(source)
-    anchor = DOC_TYPE_UNION_ANCHOR.search(code)
+    anchor = DOC_TYPE_UNION_ANCHOR.search(_declarations(source))
     if anchor is None:
         return frozenset()
     terms_match = UNION_TERMS.match(code, anchor.end())
@@ -670,6 +775,21 @@ class TestTheUnionParser:
         parametrised rather than each pinned as its own grammar."""
         with pytest.raises(AssertionError, match='continues past the terms'):
             _doc_type_union(f"export type DocType = 'prd' | 'prfaq' | {member}\n")
+
+    def test_a_union_inside_a_string_is_not_read_as_the_declaration(self):
+        """The parser reads the LIVE union, not a copy of one in a template literal.
+
+        `_doc_type_union` deliberately does NOT blank string bodies — the members it
+        reads are string literals — so this pins that the anchor still has to match
+        real code. A decoy above the live declaration would otherwise be the first
+        `re.search` match, which is the same silent failure as the commented-out
+        predecessor `_without_comments` exists for.
+        """
+        source = (
+            "const historical = `export type DocType = 'prd' | 'legacy'`\n"
+            "export type DocType = 'prd' | 'prfaq'\n"
+        )
+        assert _doc_type_union(source) == frozenset({'prd', 'prfaq'})
 
     # The refusals `_doc_type_union` must carry: no readable term at the anchor, a
     # matched non-literal, an unread term after the match.
@@ -997,9 +1117,10 @@ class TestDocTypeLockstep:
             respelling USES the shared name, so neither `noUnusedLocals` nor the name
             assertion above sees it.
 
-        Text, not a parse — but text with three lessons in it, one per review round,
-        which is why what it requires is now each WHOLE DECLARATION rather than a
-        fragment of one. Each fragment tried was satisfiable while the pin did nothing:
+        Text, not a parse — but text with four lessons in it, one per review round,
+        which is why what it requires is now each WHOLE DECLARATION, matched against
+        code rather than against anything that merely contains the same characters.
+        Each weaker version was satisfiable while the pin did nothing:
 
           * The pin NAMES alone. Stub both a pin and its control to bare constants
             (`= true` / `= false`), delete the helper types so no unused-local fires,
@@ -1014,8 +1135,16 @@ class TestDocTypeLockstep:
             same alias. `tsc` exit 0, every test here green, and a caller able to send
             a value the route 400s.
 
-        So the operands are part of what is pinned, and the alias is gone. That the
-        comparisons BITE is still the compiler's job; this says a real one is spelled.
+          * All of the above, matched against COMMENT-stripped source only. A copy
+            inside an exported template literal satisfied any of them — it survives
+            stripping and `noUnusedLocals`, and its newlines redirect a `find` index —
+            so the real pin could be DELETED outright and the field widened, with `tsc`
+            at exit 0 and every test here green. That is why the match is now against
+            `_declarations(...)`, which blanks string bodies too.
+
+        So the operands are part of what is pinned, the alias is gone, and the match is
+        against code. That the comparisons BITE is still the compiler's job; this says a
+        real one is spelled, in a place that can actually declare something.
 
         TWO controls per pin, both required. `MustBeTrue<BothWays<...>>` is satisfied
         by a `BothWays` that degenerates to `true`, and by one collapsed to its
@@ -1023,8 +1152,11 @@ class TestDocTypeLockstep:
         control cannot see the second: a superset fails `[Left] extends [Right]` under
         either form, so both forms look identical to it. Measured — collapsing
         `BothWays` to `[Left] extends [Right]` left `tsc` at exit 0 with every test
-        here green. The narrowed-side controls (`...WouldSeeNarrowing`) are what
-        refuse that, using `never` as the left side.
+        here green. The narrowed-side controls (`...WouldSeeNarrowing`) are what refuse
+        that. Each compares the SAME operand as its own pin against a DERIVED wider
+        type, so it is a control on that pin rather than a second detector of a collapse
+        in the shared `BothWays`: the signature one used `never`, and deleting it was
+        measured to leave the collapse reported only by the other file.
 
         AND each control's `@ts-expect-error`, which is what makes the verdict helper's
         `extends true` self-checking. A control applies the same helper as the pin and
@@ -1038,10 +1170,12 @@ class TestDocTypeLockstep:
         path = _repo_root() / relative
         assert path.is_file(), f'{relative} moved — update TYPE_LEVEL_PINS'
         raw = path.read_text(encoding='utf-8')
-        # Comment-stripped for the declarations, so a commented-out copy cannot satisfy
-        # them; raw for the directives, which are themselves comments.
-        source = _without_comments(raw)
-        assert pin in source, (
+        # Comment AND string bodies blanked for the declarations, so neither a
+        # commented-out copy nor one inside a template literal can satisfy them; raw
+        # for the directives, which are themselves comments. Same length, so an index
+        # from `source` is valid against `raw`.
+        source = _declarations(raw)
+        assert _pinned(pin, raw), (
             f'{relative} no longer declares, exactly:\n'
             f'    {pin}\n'
             f'That is the only check on its half of this contract — nothing else in '
@@ -1054,7 +1188,7 @@ class TestDocTypeLockstep:
             f'together, which is the supported way to change the contract.'
         )
         for control in controls:
-            assert control in source, (
+            assert _pinned(control, raw), (
                 f'{relative} declares its pin but not this control, exactly:\n'
                 f'    {control}\n'
                 f'The pin is satisfied both by a comparison that degenerates to `true` '
@@ -1067,8 +1201,20 @@ class TestDocTypeLockstep:
             # The line immediately above the control, in the RAW source — the
             # declarations are pinned against the stripped source, but a directive IS a
             # comment, so it only exists here.
-            preceding = raw[:raw.find(control)].rstrip().rsplit('\n', 1)[-1]
-            assert EXPECT_ERROR_DIRECTIVE in preceding, (
+            #
+            # 🔑 Indexed with `source`, not `raw`. `source` has comment and string
+            # bodies blanked at the same length, so this finds the DECLARATION and not a
+            # copy of it sitting in a comment or a template literal above. Measured:
+            # with `raw.find`, two decoys carrying a directive and a copy of each
+            # control made this inspect their lines instead, so both real directives
+            # could be deleted and `extends true` dropped — `tsc` exit 0, every test
+            # here green, and the field they guard widened past the route's allowlist.
+            located = source.find(_declarations(control))
+            preceding = raw[:located].rstrip().rsplit('\n', 1)[-1]
+            # Must BE the directive, not merely mention it: a preceding line that
+            # DISCUSSES `@ts-expect-error` (as several comments in these files do) was
+            # measured to satisfy a substring test.
+            assert preceding.lstrip().startswith(f'// {EXPECT_ERROR_DIRECTIVE}'), (
                 f'{relative} declares the control\n'
                 f'    {control}\n'
                 f'but the line above it is not a `{EXPECT_ERROR_DIRECTIVE}`. That '
@@ -1077,5 +1223,8 @@ class TestDocTypeLockstep:
                 f'drop that constraint — one edit that disables the pin and every '
                 f'control at once, measured to leave tsc at exit 0 with every test '
                 f'here green — and each directive becomes an unused-directive error '
-                f'instead. Found instead: {preceding.strip()!r}'
+                f'instead. The line must BE the directive: merely MENTIONING it, and a '
+                f'decoy copy of the control in a comment or template literal that this '
+                f'lookup once landed on instead, were both measured to pass.\n'
+                f'Found instead: {preceding.strip()!r}'
             )
