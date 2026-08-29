@@ -1107,9 +1107,11 @@ class TestThePinMatcher:
             self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
         )
 
-    # A `generateDocument` declaration taking the shared body, as the ratio counts it.
-    SIGNATURE = GENERATE_DOCUMENT_SIGNATURE
-
+    # ⚠️ The ratio cases below use the LIVE `GENERATE_DOCUMENT_SIGNATURE`, unlike `PIN`
+    # above, and that is not an inconsistency: `_generate_document_ratio` counts by the
+    # module constants rather than taking the text as an argument, so a synthetic
+    # fixture would exercise nothing. Accepted knowingly — a legitimate rename of that
+    # constant also edits these fixtures, where for `PIN` it would not.
     def test_a_signature_inside_a_template_literal_is_not_counted(self):
         """The ratio guard's own version of the fifth vacuity — the same defect, in the
         last text guard that still read comment-stripped text rather than
@@ -1120,11 +1122,11 @@ class TestThePinMatcher:
         (below) let the real parameter go inline with the ratio still holding. Measured
         on the shipped tree: `tsc` exit 0, eslint clean, every test here green.
         """
-        decoy = f'export const historical = `\n  {self.SIGNATURE}\n`\n'
+        decoy = f'export const historical = `\n  {GENERATE_DOCUMENT_SIGNATURE}\n`\n'
         assert _generate_document_ratio(decoy) == (0, 0)
         # The control: the same text as real code must still be counted on both sides,
         # or this would pass by counting nothing at all.
-        assert _generate_document_ratio(f'  {self.SIGNATURE}\n') == (1, 1)
+        assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
 
     def test_a_respelled_colon_is_not_counted_as_a_declaration(self):
         """`generateDocument:(` — no space — is legal TypeScript and lints clean, but is
@@ -1135,9 +1137,11 @@ class TestThePinMatcher:
         `declared >= 1` floor is what refuses it, and its message says so, because
         not-FOUND and found-and-unpinned want different fixes.
         """
-        respelled = self.SIGNATURE.replace('generateDocument: (', 'generateDocument:(')
+        respelled = GENERATE_DOCUMENT_SIGNATURE.replace(
+            'generateDocument: (', 'generateDocument:('
+        )
         assert _generate_document_ratio(f'  {respelled}\n') == (0, 0)
-        assert _generate_document_ratio(f'  {self.SIGNATURE}\n') == (1, 1)
+        assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
 
     def test_an_inline_literal_leaves_its_opener_counted_but_unpinned(self):
         """The respelling this guard exists to refuse: the declaration stays visible on
