@@ -3559,32 +3559,88 @@ _FORM_ID_SINKS = frozenset({
 #
 # Erring toward calling something a sink is the right side of this: a false
 # positive costs a route author an explanation, while a false negative is a read
-# NOBODY reports — an empty `sink_positions` makes `_validates_its_form_id`'s
-# `all(...)` vacuously True, so the instrument answers "bounded" when it understood
-# nothing.
+# NOBODY reports — a sink the derivation cannot see is a sink it asks no question
+# about, so `_validates_its_form_id` answers "bounded" having understood nothing.
 _SINK_OPERATIONS = frozenset({
     'get_item', 'put_item', 'update_item', 'delete_item', 'query', 'scan',
     'batch_get_item', 'batch_write_item', 'send_message', 'send_message_batch',
 })
 
 
-def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
-    """Positions of every call in `function` that reaches a form id into a sink.
+def _sink_bearing_helpers(tree: ast.Module) -> frozenset[str]:
+    """Module-level functions that reach what they are handed into a sink.
 
-    A call counts as a sink two ways, and either is enough:
+    A sink does not have to be spelled in the route. `_anchor_form_brand`
+    (`feedback_form_handler.py:269`) performs an `update_item` on a key built from
+    the id it is passed, and `submit_form_feedback` already calls it — so a route
+    that hands an unvalidated id to a helper writes it to the table with no sink
+    call of its own anywhere in its body. `_sink_calls` matched only an
+    `ast.Attribute` callee, so a plain `helper(form_id)` was not a sink at all, the
+    list came back empty, and the vacuous `all(...)` reported the route as bounded.
+    Silence again, this time through the call SHAPE rather than the receiver name.
+
+    Excluded: any function that calls `_validated_form_id` itself. That is what
+    makes `_load_form_for_query` — which reads, and is called by three routes — not
+    a hole: it establishes the bound on the id it was handed before its own read,
+    which is the delegating spelling `_validates_its_form_id` already accepts as a
+    refusal. Counting it as an unguarded sink would report `/iframe`, `/stats` and
+    `/submissions` as unbounded, which is the false-positive direction. The same
+    rule excludes the route handlers, each of which validates.
+
+    A fixpoint rather than one level, because a helper calling a helper is the same
+    hole one step further out and the loop costs four lines. It resolves NAMES in
+    this module only: a sink reached through an imported function is still invisible,
+    which is the remaining ceiling — worth stating rather than implying, since the
+    failure mode is the vacuous pass this whole helper exists to close.
+    """
+    candidates = {
+        node.name: node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and not any(
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id == '_validated_form_id'
+            for call in ast.walk(node)
+        )
+    }
+    helpers: set[str] = set()
+    growing = True
+    while growing:
+        growing = False
+        for name, node in candidates.items():
+            if name not in helpers and _sink_calls(node, frozenset(helpers)):
+                helpers.add(name)
+                growing = True
+    return frozenset(helpers)
+
+
+def _sink_calls(
+    function: ast.FunctionDef, helpers: frozenset[str] = frozenset()
+) -> list[tuple[tuple[int, int], frozenset[str]]]:
+    """Every call in `function` that reaches a form id into a sink.
+
+    `(position, the names mentioned in the call's arguments)` per sink — the names
+    because a position alone answers "was something validated before this read",
+    and the claim is that the id THIS read keys on was. See
+    `_validates_its_form_id`.
+
+    A call counts as a sink three ways, and any one is enough:
 
     - its METHOD is one of `_SINK_OPERATIONS`, whatever handle it arrives through.
       That is the one that is closed over spellings; the constant's comment carries
       the argument and the in-repo lines it is derived from.
     - a sink NAME appears anywhere in the callee chain — including a local alias of
       one — which still catches a call whose method that set does not name.
+    - it calls a module-level function that reaches its own argument into a sink
+      (`_sink_bearing_helpers`), so an indirect write is a write.
 
-    Both exist because an earlier version had only the second, spelled as
+    All three exist because an earlier version had only the second, spelled as
     `<sink>.<method>` on the immediate owner, and every shape it could not see
     reported as bounded while reading before validating. The failure mode is
-    SILENCE rather than a wrong answer: no sink found makes `sink_positions` empty,
-    and `all(...)` over an empty list is vacuously True. Each shape below is a
-    control in `TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes`:
+    SILENCE rather than a wrong answer: a sink missing from this list is one
+    `_validates_its_form_id` asks neither of its questions about, so an empty list
+    passes both vacuously. Each shape below is a control in
+    `TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes`:
 
     - `table = aggregates_table` then `table.get_item(...)` — alias tracking.
     - `dynamodb.Table(AGGREGATES_TABLE).get_item(...)` — the sink name sits deeper
@@ -3592,14 +3648,16 @@ def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
     - `table = get_aggregates_table()` then `table.get_item(...)`, and
       `get_dynamodb_resource().Table(T).get_item(...)` — no sink name anywhere, so
       only the operation match sees them.
+    - `_anchor_form_brand(form_id, ...)` — no attribute callee at all, so only the
+      helper match sees it.
 
     Aliases are collected in source order and from NESTED bodies as well as the top
     level (`try`, `with`, `if`, `for`), because every table read in this handler
     sits inside a `try:` — so the plausible spelling of an alias is an indented
     one, and three of the twelve in-repo `table = get_aggregates_table()` sites are
     themselves inside one. An untracked alias is a FALSE NEGATIVE, not a cautious
-    false positive: the call drops out of `sink_positions` and the shorter list
-    makes the `all()` MORE likely to pass. That is the same vacuous pass the
+    false positive: the call drops out of this list, so nothing is asked about it
+    and the shorter list is MORE likely to pass. That is the same vacuous pass the
     controls exist to prevent, which is why alias collection is generous while the
     REFUSAL's top-level requirement — a separate axis — stays strict.
 
@@ -3651,12 +3709,34 @@ def _sink_call_positions(function: ast.FunctionDef) -> list[tuple[int, int]]:
 
     _collect_aliases(function.body)
 
+    def _is_sink(call: ast.Call) -> bool:
+        if isinstance(call.func, ast.Attribute):
+            return (
+                call.func.attr in _SINK_OPERATIONS or _mentions_a_sink(call.func)
+            )
+        # A module-level helper that writes what it is handed. See
+        # `_sink_bearing_helpers`.
+        return isinstance(call.func, ast.Name) and call.func.id in helpers
+
+    def _names_in_arguments(call: ast.Call) -> frozenset[str]:
+        """Every identifier the call's arguments mention.
+
+        Includes names inside an f-string, since `f'FORM#{form_id}'` is how every
+        key in this module is built — `ast.walk` reaches into `JoinedStr` for free.
+        The callee is deliberately excluded: `table.get_item(...)`'s receiver is not
+        an id that needed validating.
+        """
+        return frozenset(
+            child.id
+            for argument in [*call.args, *(kw.value for kw in call.keywords)]
+            for child in ast.walk(argument)
+            if isinstance(child, ast.Name)
+        )
+
     return [
-        (call.lineno, call.col_offset)
+        ((call.lineno, call.col_offset), _names_in_arguments(call))
         for call in ast.walk(function)
-        if isinstance(call, ast.Call)
-        and isinstance(call.func, ast.Attribute)
-        and (call.func.attr in _SINK_OPERATIONS or _mentions_a_sink(call.func))
+        if isinstance(call, ast.Call) and _is_sink(call)
     ]
 
 
@@ -3783,6 +3863,32 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     `if False:` is just the extreme of that. If a legitimate spelling ever needs to
     nest (validation inside a `with`, say), widen this deliberately and add the
     control alongside the ones below; do not relax it to get green.
+
+    Two questions are asked of every sink, not one:
+
+    - ORDER: no sink may precede the earliest refusal. That is the cost argument —
+      a read paid for before the check is a read the check existed to avoid — and
+      it holds even for a sink that mentions no id at all.
+    - LINKAGE: the id the sink keys on has to be one that WAS bounded. Position
+      alone answered "was something validated first", and a route that validated a
+      DIFFERENT capture satisfied that while keying on a raw one:
+      `validated = _validated_form_id(submission_id)` refused, then
+      `get_item(Key={'sk': f'FORM#{form_id}'})`. Reported bounded, with `form_id`
+      reaching the key unchecked. Not remote — the route selector is deliberately
+      capture-name-agnostic, so a two-capture route like
+      `/feedback-forms/<form_id>/submissions/<submission_id>` is already in the
+      universe, and it could satisfy the derivation by bounding whichever capture
+      was easier (`test_the_derivation_refuses_validating_the_wrong_capture`).
+
+    Linkage is asked of the PARAMETERS, because they are the untrusted values: a
+    parameter is bounded once it has been handed to `_validated_form_id` (or
+    `_load_form_for_query`) in a statement whose refusal precedes the sink, and so
+    is anything the validator handed back. Every other local is judged by what it
+    was built from, so `key = f'FORM#{form_id}'` before the check is a tainted key
+    rather than an unremarkable string. The ceiling: propagation follows `Assign`
+    and `AnnAssign` only, so an id smuggled through a `for` target or a mutated
+    container is not traced — a deliberate stopping point, since the shapes that
+    exist here build keys and filters by assignment.
     """
     tree = ast.parse(source)
     functions = [
@@ -3801,7 +3907,27 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     def _named(call: ast.Call, name: str) -> bool:
         return isinstance(call.func, ast.Name) and call.func.id == name
 
-    def _walrus_refusal(statement) -> tuple[int, int] | None:
+    def _mentioned(node: ast.AST) -> set[str]:
+        return {
+            child.id for child in ast.walk(node) if isinstance(child, ast.Name)
+        }
+
+    def _target_names(statement) -> set[str]:
+        targets = (
+            statement.targets if isinstance(statement, ast.Assign)
+            else [statement.target] if isinstance(statement, ast.AnnAssign)
+            else []
+        )
+        # A tuple target too: `validated, form = _load_form_for_query(...)` binds
+        # both, and the validated id is the one the caller keys and filters on.
+        return {
+            name.id
+            for target in targets
+            for name in ast.walk(target)
+            if isinstance(name, ast.Name)
+        }
+
+    def _walrus_refusal(statement) -> tuple[tuple[int, int], ast.Call] | None:
         """`if not (<name> := _validated_form_id(...)):` — bind and refuse in one.
 
         The `if`'s own position, because for this spelling the binding and the
@@ -3825,47 +3951,87 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
             for child in ast.walk(node)
         ):
             return None
-        return (statement.lineno, statement.col_offset)
+        return (statement.lineno, statement.col_offset), bound.value
 
-    validated_at = None
+    # name -> the earliest position from which it is known to be bounded. Both the
+    # id handed TO the validator and the value handed BACK are bounded from the
+    # refusal, since the refusal is what makes the one a well-formed id and the
+    # other not None.
+    bounded_at: dict[str, tuple[int, int]] = {}
+
+    def _bind(names, position: tuple[int, int]) -> None:
+        for name in names:
+            known = bounded_at.get(name)
+            bounded_at[name] = position if known is None else min(known, position)
+
     for statement in function.body:
         walrus = _walrus_refusal(statement)
         if walrus is not None:
-            validated_at = min(validated_at or walrus, walrus)
+            position, call = walrus
+            _bind(_mentioned(call) | _mentioned(statement.test), position)
         for call in _calls(statement):
             if _named(call, '_load_form_for_query'):
                 # This one raises for itself, so the call is the refusal.
                 position = (statement.lineno, statement.col_offset)
-                validated_at = min(validated_at or position, position)
+                _bind(_mentioned(call) | _target_names(statement), position)
             if not _named(call, '_validated_form_id'):
                 continue
             # The result has to be BOUND and then refused. An `Expr` statement, or
             # an assignment to a name nothing tests, is the shape that has no bound.
-            targets = (
-                statement.targets if isinstance(statement, ast.Assign)
-                else [statement.target] if isinstance(statement, ast.AnnAssign)
-                else []
-            )
+            targets = _target_names(statement)
             # The REFUSAL's position, not the assignment's: binding None is free,
-            # and anything between the two runs with it. Taking the earliest over
-            # the targets keeps `min` below meaningful when a function validates
-            # more than one id.
-            refusals = [
-                refused[target.id] for target in targets
-                if isinstance(target, ast.Name) and target.id in refused
-            ]
+            # and anything between the two runs with it.
+            refusals = [refused[target] for target in targets if target in refused]
             if refusals:
-                position = min(refusals)
-                validated_at = min(validated_at or position, position)
+                _bind(targets | _mentioned(call), min(refusals))
 
-    if validated_at is None:
+    if not bounded_at:
         return False
+    validated_at = min(bounded_at.values())
 
-    sink_positions = _sink_call_positions(function)
+    sinks = _sink_calls(function, _sink_bearing_helpers(tree))
     # No sink is not a pass by default: #379 was a route that touched no AWS
     # service at all and still put the id in its response, so a route that keys on
     # nothing yet takes an id out of the URL still has to establish the bound.
-    return all(validated_at < sink for sink in sink_positions)
+    if any(position <= validated_at for position, _ in sinks):
+        return False
+
+    parameters = {
+        argument.arg for argument in (
+            *function.args.posonlyargs, *function.args.args,
+            *function.args.kwonlyargs,
+        )
+    }
+    assignments = [
+        ((node.lineno, node.col_offset), _target_names(node), _mentioned(node.value))
+        for node in ast.walk(function)
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
+    ]
+
+    def _unbounded_at(position: tuple[int, int]) -> set[str]:
+        """Names holding a value no refusal before `position` has vouched for."""
+        tainted = {
+            name for name in parameters
+            if name not in bounded_at or bounded_at[name] >= position
+        }
+        growing = True
+        while growing:
+            growing = False
+            for at, targets, mentioned in assignments:
+                if at >= position or not (mentioned & tainted):
+                    continue
+                spreading = {
+                    target for target in targets - tainted
+                    if bounded_at.get(target, position) >= position
+                }
+                if spreading:
+                    tainted |= spreading
+                    growing = True
+        return tainted
+
+    return not any(
+        mentioned & _unbounded_at(position) for position, mentioned in sinks
+    )
 
 
 class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
@@ -3909,9 +4075,12 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'validator call at all; a result that is never refused, or refused by '
             'something that is not a NEGATIVE test of it — a success-path or '
             'cache-hit `return` is not a refusal (see `_refused_names`); a refusal '
-            'that is nested, so it runs on some paths only; or a REFUSAL that comes '
-            'after the table or the queue is touched. Add the check rather than '
-            'narrowing the claim: the value of a universal bound is that a reader '
+            'that is nested, so it runs on some paths only; a REFUSAL that comes '
+            'after the table or the queue is touched; or a bound established on a '
+            'DIFFERENT value than the one the read keys on — validating '
+            '`submission_id` and keying on a raw `form_id` reports here, as does a '
+            'key built from the raw id before the refusal. Add the check rather '
+            'than narrowing the claim: the value of a universal bound is that a reader '
             'does not have to hold the exceptions. And if the route is genuinely '
             'bounded in a spelling this derivation does not know, widen the '
             'derivation and add a control for it — '
@@ -3966,12 +4135,15 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
 
         So the count is pinned per route, against what each one actually does. The
         numbers are small enough to read: one read each, `submit_form_feedback`
-        alone having a read AND the send that makes its cost argument different.
+        alone having a read AND the send that makes its cost argument different —
+        plus the `_anchor_form_brand` call, which is a sink because that helper
+        writes what it is handed (`_sink_bearing_helpers`).
         """
         source = Path(inspect.getsourcefile(feedback_form_handler)).read_text(
             encoding='utf-8'
         )
         tree = ast.parse(source)
+        helpers = _sink_bearing_helpers(tree)
 
         counted = {}
         for route, function_name in _routes_keying_on_a_form_id(source).items():
@@ -3979,15 +4151,18 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
                 node for node in ast.walk(tree)
                 if isinstance(node, ast.FunctionDef) and node.name == function_name
             )
-            counted[route] = len(_sink_call_positions(function))
+            counted[route] = len(_sink_calls(function, helpers))
 
         assert counted == {
             'GET /feedback-forms/<form_id>': 1,
             'PUT /feedback-forms/<form_id>': 1,
             'DELETE /feedback-forms/<form_id>': 1,
             'GET /feedback-forms/<form_id>/config': 1,
-            # The read for the enabled check, and the enqueue.
-            'POST /feedback-forms/<form_id>/submit': 2,
+            # The read for the enabled check, the enqueue, and the
+            # `_anchor_form_brand` call — that helper's own `update_item` writes a
+            # key built from the id it is handed, so the call site is a write
+            # whatever it is spelled like.
+            'POST /feedback-forms/<form_id>/submit': 3,
             # The existence gate is inside `_load_form_for_query`, so this route
             # touches no sink of its own — which is why "no sink" is deliberately
             # not a pass by default in `_validates_its_form_id`.
@@ -3997,9 +4172,13 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
         }, (
             f'{counted} — a route gained or lost a read, or the derivation started '
             'counting something that is not one. If a count went UP without the '
-            'route changing, suspect `aliases`: binding the RESULT of a read makes '
-            'every subsequent `.get(...)` on it look like a sink, and the earliest '
-            'of those decides the verdict.'
+            'route changing, suspect two things: `aliases`, since binding the '
+            'RESULT of a read makes every subsequent `.get(...)` on it look like a '
+            'sink; and `_sink_bearing_helpers`, since a module-level function that '
+            'starts writing makes every call to it a sink. Both are the right '
+            'answer when the call really does reach an id into a table, and both '
+            'are a false positive otherwise — the earliest sink is what decides '
+            'the verdict, so one spurious early entry accuses a correct route.'
         )
 
     def test_the_derivation_can_fail(self):
@@ -4151,8 +4330,8 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
         selector matching only `<sink>.<method>` stops recognising it.
 
         The failure mode is what makes this worth a case rather than a note — it is
-        SILENCE, not a wrong answer. `sink_positions` comes back empty, and
-        `all(validated_at < sink for sink in [])` is vacuously True, so a route
+        SILENCE, not a wrong answer. `_sink_calls` comes back empty, so neither the
+        order question nor the linkage one is asked of anything, and a route
         reading before validating is reported as bounded. A derivation that reports
         "fine" when it understood nothing is worse than no derivation, because the
         docstring above it is then trusted.
@@ -4183,8 +4362,8 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
 
         `dynamodb.Table(AGGREGATES_TABLE).get_item(...)` puts the sink name deeper
         in the callee chain than `call.func.value`, so a selector looking only at
-        the attribute's immediate owner sees no sink and `sink_positions` is empty —
-        vacuously True again.
+        the attribute's immediate owner sees no sink and `_sink_calls` is empty —
+        nothing to ask a question about, vacuously bounded again.
 
         This is the more plausible of the two shapes, and that is the whole argument
         for the case: the module binds its tables exactly this way at module scope,
@@ -4225,8 +4404,8 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
 
         So the single most likely way the NEXT form-id route gets written in this
         repo was the one shape a receiver-name allowlist could not see: no sink name
-        appears anywhere in the callee chain, `sink_positions` comes back empty, and
-        `all(...)` over an empty list is vacuously True. Matching the OPERATION
+        appears anywhere in the callee chain, `_sink_calls` comes back empty, and a
+        read nothing was asked about is a read that passed. Matching the OPERATION
         (`_SINK_OPERATIONS`) rather than the receiver is what closes the class
         instead of one more spelling — the method is what makes a call a read.
         """
@@ -4273,6 +4452,169 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'chain is a sink and the verdict came from an EMPTY sink list'
         )
 
+    def test_the_derivation_refuses_a_write_through_an_in_module_helper(self):
+        """The sink-side gap that is not about the RECEIVER but about the call SHAPE.
+
+        Every control above spells the sink as a method on something. This one has
+        no attribute callee at all: `_anchor_form_brand(form_id, ...)` is a plain
+        call, and the `update_item` is inside the helper — on a key built from the
+        id it was handed (`feedback_form_handler.py:269`). So a route can write an
+        unvalidated id to the table with no sink call anywhere in its own body.
+
+        Not a spelling nobody would reach for: `submit_form_feedback` already calls
+        that helper, so it is the in-module example of writing through a function.
+        And it is the same silence as the receiver cases — matching only
+        `ast.Attribute` callees left the list EMPTY, and `all(...)` over an empty
+        list is vacuously True, so the instrument answered "bounded" having seen
+        nothing.
+
+        `_sink_bearing_helpers` derives the set of such helpers from the module
+        rather than naming them, and excludes any that validates for itself — which
+        is what keeps `_load_form_for_query` a refusal rather than an unguarded
+        sink.
+        """
+        source = textwrap.dedent(
+            '''
+            def _anchor_form_brand(form_id, effective_brand):
+                aggregates_table.update_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
+                    UpdateExpression='SET brand_name = :brand',
+                )
+
+            @app.post("/feedback-forms/<form_id>/helper-write")
+            def post_helper_write(form_id: str):
+                _anchor_form_brand(form_id, 'Acme')
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'post_helper_write'), (
+            'a write reached through an in-module helper was not recognised as a '
+            'write — the helper call has no attribute callee, so the sink list came '
+            'back EMPTY and the route was reported bounded vacuously'
+        )
+
+        # The accepting side, because a helper call must not become a blanket
+        # accusation: the same helper AFTER the refusal is what `submit_form_feedback`
+        # does, and it has to stay green.
+        after = textwrap.dedent(
+            '''
+            def _anchor_form_brand(form_id, effective_brand):
+                aggregates_table.update_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
+                    UpdateExpression='SET brand_name = :brand',
+                )
+
+            @app.post("/feedback-forms/<form_id>/helper-write")
+            def post_helper_write(form_id: str):
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                _anchor_form_brand(validated, 'Acme')
+            '''
+        )
+
+        assert _validates_its_form_id(after, 'post_helper_write'), (
+            'a helper write AFTER the refusal was reported as unbounded — the '
+            'helper match is meant to see an indirect write, not to accuse every '
+            'route that delegates one'
+        )
+
+    def test_the_derivation_refuses_validating_the_wrong_capture(self):
+        """Validating SOMETHING is not validating the id the read keys on.
+
+        The derivation used to compare positions only, which answers "was a refusal
+        reached before the first sink" — not "was the value this sink keys on the
+        one that was refused". So a route could bound one capture and key on
+        another: `_validated_form_id(submission_id)` refused, then
+        `Key={'sk': f'FORM#{form_id}'}` with `form_id` never checked at all.
+
+        This is the residual half of making the route selector capture-name-agnostic
+        rather than a hypothetical: a two-capture route under this prefix is already
+        in the derived universe, and
+        `/feedback-forms/<form_id>/submissions/<submission_id>` is the natural next
+        one for this module. Bounding whichever capture is easier would satisfy the
+        old check while the other one — the one that becomes the key — arrived raw.
+
+        Both directions, because only the pair means anything: validating the KEYED
+        capture passes, validating the other does not. Without the accepting case a
+        derivation that simply rejected every two-capture route would look correct
+        here.
+        """
+        wrong = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/submissions/<submission_id>")
+            def get_one_wrong(form_id: str, submission_id: str):
+                validated = _validated_form_id(submission_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(wrong, 'get_one_wrong'), (
+            'a route that validated one capture and keyed on another was reported '
+            'as bounded — the position of a refusal says nothing about WHICH value '
+            'it vouched for, and the raw one is what reached the key'
+        )
+
+        right = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/submissions/<submission_id>")
+            def get_one_right(form_id: str, submission_id: str):
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{validated}'}
+                )
+            '''
+        )
+
+        assert _validates_its_form_id(right, 'get_one_right'), (
+            'a two-capture route that validated the id it keys on was reported as '
+            'unbounded — the linkage check must judge WHICH value was bounded, not '
+            'refuse every route with more than one capture'
+        )
+
+    def test_the_derivation_refuses_a_key_built_before_the_check(self):
+        """The linkage check has to follow the value, not just the parameter name.
+
+        A route can put the raw id into a local first and hand THAT to the read:
+        `key = {'sk': f'FORM#{form_id}'}` above the refusal, `get_item(Key=key)`
+        below it. The sink then mentions no parameter at all, so a linkage check
+        that looked only for parameter names in the arguments would see nothing to
+        object to — while the key it reads was built from a value nothing had
+        vouched for at the time.
+
+        Ordering is what makes this the interesting case rather than a duplicate of
+        the read-before-check control: the READ is correctly placed after the
+        refusal. It is the key's CONSTRUCTION that is not, and the string does not
+        become well-formed later because the id it was built from was checked
+        afterwards.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/prebuilt-key")
+            def get_prebuilt_key(form_id: str, raw: str):
+                key = {'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{raw}'}
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return aggregates_table.get_item(Key=key)
+            '''
+        )
+
+        assert not _validates_its_form_id(source, 'get_prebuilt_key'), (
+            'a key built from an unvalidated value before the refusal was reported '
+            'as bounded — the read mentions only the local, so the derivation has '
+            'to follow what that local was built from'
+        )
+
     def test_the_derivation_refuses_a_read_through_an_alias_bound_in_a_try(self):
         """The alias one indentation level in, which is where the real ones are.
 
@@ -4285,9 +4627,9 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
 
         Worth being precise about the direction, because the helper's own docstring
         used to have it backwards: an untracked alias is a FALSE NEGATIVE. The call
-        drops out of `sink_positions`, and `all(...)` over the shorter list is MORE
-        likely to pass — so the read is not reported at all. That is the vacuous
-        pass these controls exist for, not a cautious over-report.
+        drops out of `_sink_calls`, so neither question is asked of it and the
+        shorter list is MORE likely to pass — the read is not reported at all. That
+        is the vacuous pass these controls exist for, not a cautious over-report.
         """
         source = textwrap.dedent(
             '''
