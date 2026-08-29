@@ -312,19 +312,31 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # What POST /projects/{id}/document accepts in `doc_type`. Mirrored in the
 # frontend's `DocType` union; `test_doc_type_lockstep.py` fails if the two drift.
 #
-# ⚠️ WIDENING THIS TUPLE TAKES A THIRD EDIT, and no gate asks for it. Adding a member
-# here and to `DocType` together leaves `tsc` at exit 0 and every lockstep test green
-# (measured) — but `lambda/jobs/document_generator/handler.py` dispatches `doc_type`
-# as a BINARY with PR-FAQ as the unconditional `else`, in three places: the
-# step-builder selection (`get_prd_generation_steps` vs `get_prfaq_generation_steps`),
-# the generation branch (`_generate_prd` vs `_generate_prfaq`) and the
-# assembly/result-indexing branch in `_assemble_and_save`. It never imports this
-# constant. So a new member is accepted here, routed into the chain by `is_chain`
-# below (true by construction once it is in this tuple), then generated and persisted
-# as a PR-FAQ — `document_type` and the `{DOC_TYPE}#` sort key say the new type while
-# the CONTENT is a PR-FAQ, after a Bedrock spend, with no error raised.
-# A third doc type therefore needs a step builder, a generation branch and an
+# ⚠️ WIDENING THIS TUPLE TAKES TWO FURTHER EDITS, and no gate asks for either. Adding a
+# member here and to `DocType` together leaves `tsc` at exit 0 and every lockstep test
+# green (measured).
+#
+# THE GENERATOR is the one that matters: `lambda/jobs/document_generator/handler.py`
+# dispatches `doc_type` as a BINARY with PR-FAQ as the unconditional `else`, in three
+# places: the step-builder selection (`get_prd_generation_steps` vs
+# `get_prfaq_generation_steps`), the generation branch (`_generate_prd` vs
+# `_generate_prfaq`) and the assembly/result-indexing branch in `_assemble_and_save`.
+# It never imports this constant. So a new member is accepted here, routed into the
+# chain by `is_chain` below (true by construction once it is in this tuple), then
+# generated and persisted as a PR-FAQ — `document_type` and the `{DOC_TYPE}#` sort key
+# say the new type while the CONTENT is a PR-FAQ, after a Bedrock spend, with no error
+# raised. A new doc type therefore needs a step builder, a generation branch and an
 # assembly branch there, or it silently produces the wrong kind of document.
+#
+# THE PICKER is the other, and it is benign by comparison — dead capability rather than
+# wrong content, but still an edit the widening needs.
+# `frontend/src/pages/ProjectDetail/Wizards.tsx` names its members as LITERALS:
+# `hasPrfaq`/`hasPrd`, the two `toggleDocType('...')` buttons in `renderFinalStep`, and
+# the `bothSelected`/`singleTitle`/`singleSubmitLabel` copy, all written as a
+# PRD-or-PR-FAQ binary. `tsc` accepts a narrower argument to `includes`/`filter`, so the
+# widening compiles clean while the picker keeps offering the OLD set (measured): the new
+# type is accepted here but never offered to a user. That file documents this from its
+# own side, beside the literals.
 #
 # ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
 # `build_prototype`, `product_report`) and this route's docstring names the

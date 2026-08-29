@@ -253,9 +253,15 @@ export function DocWizard({
   // `tsc` is fine with a narrower argument to `includes`/`filter`, so the picker
   // silently keeps offering the old set — measured: adding a third member to both
   // leaves `tsc -b` clean and every lockstep test green with this file untouched.
-  // Adding a doc type therefore means editing this file too: `hasPrfaq`/`hasPrd`
-  // above and the two `toggleDocType('…')` buttons in `renderFinalStep` name their
-  // members as literals (issue #381).
+  // Adding a doc type therefore means editing this file too, in three places that name
+  // their members as literals: `hasPrfaq`/`hasPrd` above, the two `toggleDocType('…')`
+  // buttons in `renderFinalStep`, and the `bothSelected`/`singleTitle`/
+  // `singleSubmitLabel` copy, which is written as a PRD-or-PR-FAQ binary — a third
+  // member would fall into its PR-FAQ branch and be labelled as one.
+  //
+  // The lockstep test's module docstring carries the same list as the FOURTH edit a
+  // widening needs, so a widener reading either place learns it; keep the two
+  // consistent (issue #381).
   const toggleDocType = (type: DocType) => {
     const next = docTypes.includes(type)
       ? docTypes.filter((d) => d !== type)

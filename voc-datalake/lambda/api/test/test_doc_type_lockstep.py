@@ -141,8 +141,10 @@ all of it, and an earlier version of this docstring claimed it did:
     not a way around that: the pin above makes it a compiler error.
 
 ⚠️ THOSE TWO EDITS ARE NOT THE WHOLE SUPPORTED CHANGE, and every round of this file
-claimed they were. A THIRD edit is required, in the generator, and nothing here or in
-the compiler asks for it: `lambda/jobs/document_generator/handler.py` dispatches on
+claimed they were. TWO MORE are required — in the generator and in the picker — and
+neither this file nor the compiler asks for either.
+
+THE THIRD EDIT: the generator. `lambda/jobs/document_generator/handler.py` dispatches on
 `doc_type` as a BINARY with PR-FAQ as the unconditional `else`, in three places —
 anchored on the symbols rather than line numbers, since a citation into a file this
 test does not read is exactly what goes stale (it has three times on this branch):
@@ -165,12 +167,28 @@ drift this file does catch: a refused value is a visible 400, this is a wrong-co
 success. Adding a member therefore also needs a step builder, a generation branch and
 an assembly branch there.
 
-Deliberately NOT guarded here. That is a different contract — the generator's dispatch
-against the route's allowlist — and it wants its own test near the generator rather
-than a second responsibility bolted onto this file. What is fixed is the RECIPE: the
-ceiling is stated, so a widener reads it instead of discovering it from a mislabelled
-document. Same reasoning as `suggestDocumentBrief` above: name the boundary, do not
-grow the guard across it.
+THE FOURTH EDIT: the picker. `frontend/src/pages/ProjectDetail/Wizards.tsx` names its
+members as LITERALS, so a widening leaves the new type accepted by this route but never
+OFFERED by the UI — dead capability rather than wrong content. Also symbol-anchored:
+
+    `hasPrfaq` / `hasPrd`                       — the two selection flags
+    the two `toggleDocType('...')` buttons      — in `renderFinalStep`
+    `bothSelected`, `singleTitle`,              — copy and layout, all written as
+      `singleSubmitLabel`                         a PRD-or-PR-FAQ binary
+
+Measured the same way: the two blessed edits alone leave `tsc -p tsconfig.app.json
+--noEmit` at exit 0 and every test here green, with the picker still rendering exactly
+two buttons — `tsc` is fine with a NARROWER argument to `includes`/`filter`, so nothing
+in that file has to change for it to compile. `Wizards.tsx` documents this direction
+from its own side, beside the literals; the two statements should stay consistent.
+
+Deliberately NOT guarded here, either of them. Those are different contracts — the
+generator's dispatch and the picker's offering, each against the route's allowlist —
+and each wants its own test next to the code it constrains rather than a second and
+third responsibility bolted onto this file. What is fixed is the RECIPE: the ceilings
+are stated, so a widener reads them instead of discovering one from a mislabelled
+document and the other from a button that never appears. Same reasoning as
+`suggestDocumentBrief` above: name the boundary, do not grow the guard across it.
 
 WHY EACH GUARD IS THE KIND IT IS. The rule this file has converged on over several
 rounds, each of which found the same hole one level further in: a link TypeScript can
