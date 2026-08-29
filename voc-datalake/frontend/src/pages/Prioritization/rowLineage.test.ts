@@ -24,6 +24,12 @@
  *    not coherent";
  *  * the `is_frozen` gate in `rowLineageOf` deleted → "an un-frozen row is never
  *    stale";
+ *  * the `composition_truncated` gate in `rowLineageOf` deleted → "does not mark a row
+ *    stale when its stored composition did not fully resolve", whose positive control
+ *    (the same selection with the flag absent, asserted FIRST) stays green, so the
+ *    case pins the gate and not the arithmetic. Its other half — `collectRows`
+ *    actually PASSING the flag — is pinned in `Prioritization.lineage.test.tsx`,
+ *    because a gate nothing feeds is a gate that never fires;
  *  * the candidate condition in `fresherCoherentSelection` deleted → "a fresher
  *    combination that itself crosses generations does not make a row stale";
  *  * that condition tightened from `=== 'crossGeneration'` back to
@@ -466,6 +472,32 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     expect(rowLineageOf({ is_frozen: false, documents: [prd1, prfaq1] }, project).stale)
       .toBe(false)
     expect(rowLineageOf(frozenRow([prd1, prfaq1]), project).stale).toBe(true)
+  })
+
+  it('does not mark a row stale when its stored composition did not fully resolve', () => {
+    // `collectRows` drops a stored id the project no longer holds and keeps the row as
+    // long as ANY id resolved, so a two-document row can arrive here as one document.
+    // The advisory would then name the newest of the SURVIVING type alone — a
+    // combination missing a type the ballots covered. The classification is untouched
+    // by this: it describes the documents on screen.
+    //
+    // The positive control FIRST, so the absence below is the truncation withholding
+    // and not the fixture failing to supersede anything: the identical selection with
+    // the flag absent IS stale.
+    const survivor = { is_frozen: true, documents: [prfaq1] }
+
+    expect(rowLineageOf(survivor, project).stale).toBe(true)
+
+    const truncated = rowLineageOf({ ...survivor, composition_truncated: true }, project)
+    expect(truncated.stale).toBe(false)
+    expect(truncated.fresherDocumentIds).toEqual([])
+    // Still described, and by the same rule as before — withholding the advisory is not
+    // withholding the state.
+    expect(truncated.state).toBe('coherent')
+    expect(truncated.reason).toBe('oneChain')
+    // `false` reads as "resolved fully", the same as absent: the flag may only ever
+    // take staleness away.
+    expect(rowLineageOf({ ...survivor, composition_truncated: false }, project).stale).toBe(true)
   })
 
   it('does not mark a row stale for a type it never held', () => {

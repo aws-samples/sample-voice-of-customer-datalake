@@ -24,6 +24,11 @@
  *    `coherent` candidate → "says so on a project where NO document records its
  *    lineage" (which is every pre-`derivation` deployment, so the badge was
  *    unreachable there);
+ *  * `collectRows`'s `composition_truncated` argument dropped, or the guard it feeds
+ *    in `rowLineageOf` → "says nothing of the sort when one of the row's stored
+ *    documents is gone", whose positive control (the same row on a project holding
+ *    both) stays green, so the case pins the truncation and not the staleness
+ *    arithmetic;
  *  * `<RowLineageNote>`'s stale sentence removed → "a stale row names Add row as
  *    the action";
  *  * the `{ action: t('composition.addRow') }` interpolation dropped from that
@@ -472,5 +477,36 @@ describe('a frozen row whose project has moved on', () => {
     await screen.findByTestId('row-lineage')
 
     expect(screen.queryByTestId('row-stale')).toBeNull()
+  })
+
+  it('says nothing of the sort when one of the row\'s stored documents is gone', async () => {
+    // The row is stored on a PRD and a PR/FAQ; the project no longer holds the PRD, so
+    // `collectRows` resolves ONE of the two ids and keeps the row (it drops a row only
+    // when not one id resolves). Advising from that subset would name a PR/FAQ-only
+    // combination for a row whose ballots covered both types — telling a reviewer to
+    // re-score on strictly LESS evidence than the row being replaced. A frozen row
+    // cannot be recomposed, so it is exactly the row that keeps the truncation.
+    //
+    // The POSITIVE CONTROL FIRST, and it is the whole reason this case is not vacuous:
+    // the identical row on a project that still holds both documents IS stale, so the
+    // absence below is the truncation withholding and not the fixture failing to
+    // supersede anything. Asserted first because a failing assertion ends a case, and a
+    // control placed after the negative one cannot be shown to have run.
+    givenProject([PRD_1, PRFAQ_1, PRD_2, PRFAQ_2], storedRow({ is_frozen: true }))
+    renderPage()
+    expect(await screen.findByTestId('row-stale')).toBeInTheDocument()
+    cleanup()
+
+    givenProject([PRFAQ_1, PRD_2, PRFAQ_2], storedRow({ is_frozen: true }))
+    renderPage()
+    const badge = await screen.findByTestId('row-lineage')
+
+    expect(screen.queryByTestId('row-stale')).toBeNull()
+    expect(screen.queryByText(staleAction())).toBeNull()
+    // The CLASSIFICATION still speaks, and that half is deliberate: it describes the
+    // documents on screen, and the row is rendering one of them. Only the advisory —
+    // which names a combination the reviewer does not yet have — withholds.
+    expect(badge).toHaveAttribute('data-lineage', 'coherent')
+    expect(badge).toHaveTextContent(t('lineage.coherent'))
   })
 })

@@ -1597,10 +1597,19 @@ export function collectRows(
        * measured against; a project whose detail has not landed contributes an
        * empty list, and every rule then withholds its judgement rather than
        * inventing one.
+       *
+       * UNLESS AN ID DID NOT RESOLVE, which is the one case where "the same concrete
+       * ids the ballots were cast on" stops being true of `documents`: the resolution
+       * above drops a stored id the project no longer holds, and a row survives that
+       * as long as ANY id resolved. `composition_truncated` carries the difference so
+       * the advisory can withhold — it would otherwise name a combination missing a
+       * type the ballots covered — while the classification still describes the
+       * documents actually on screen. Argued at `rowLineageOf`.
        */
       lineage: rowLineageOf({
         is_frozen: row.is_frozen,
         documents,
+        composition_truncated: documents.length !== row.document_ids.length,
       }, project.documents),
       prototype: byId.get(row.prototype_id) ?? latestPrototypeOf(project.documents),
     }]

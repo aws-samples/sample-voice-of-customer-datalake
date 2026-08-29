@@ -93,6 +93,11 @@ export interface RowLineage extends SelectionLineage {
    * optimisation: a row whose composition can still change has a better answer
    * than "add another row" — edit this one — so telling its reader to add a row
    * would send them the long way round. See `fresherCoherentSelection`.
+   *
+   * Never true for a row whose stored composition could not be fully resolved
+   * either — see `composition_truncated` on the argument to `rowLineageOf`, which
+   * is the one input that makes the SELECTION itself untrustworthy rather than
+   * some document in it.
    */
   readonly stale: boolean
   /**
@@ -864,16 +869,51 @@ export function fresherCoherentSelection(
  * fresher documents available is not stale, because its answer is to edit itself:
  * the composition controls are right there, and "add a row" would be advice to
  * take the long way round. See `RowLineage.stale`.
+ *
+ * AND ONLY OF A ROW WHOSE STORED COMPOSITION FULLY RESOLVED. `composition_truncated`
+ * says a stored `document_id` named a document the project read no longer holds, so
+ * `documents` is a strict SUBSET of what the ballots were cast on. Every other
+ * "cannot settle it" input in this module withholds rather than guesses
+ * (`hasUnreadableTimestamp`, both type gates); this is that case one axis up, about
+ * the selection itself rather than a field on one of its members.
+ *
+ * STALENESS WITHHOLDS, THE CLASSIFICATION DOES NOT, and the asymmetry is the whole
+ * of the decision:
+ *
+ *  * the classification describes THE DOCUMENTS ON SCREEN. A row rendering one
+ *    document is honestly described by what that one document records, and saying
+ *    nothing would replace a true statement about visible evidence with silence;
+ *  * the advisory NAMES A COMBINATION to go and score. Derived from a subset it
+ *    silently omits a type the ballots covered: a row stored as {prd, prfaq} that
+ *    lost its PRD advises a PR/FAQ-ONLY combination, so a reviewer is told to
+ *    re-score a proposal on strictly less evidence than the row they are replacing.
+ *    That is the mirror image of the missing-optional-document boundary in
+ *    `fresherCoherentSelection` — which protects a row that never held a PRD, and
+ *    would otherwise leave a row that HELD one and lost it unprotected.
+ *
+ * The freeze is exactly why this cannot be left to fix itself: a frozen row cannot be
+ * recomposed, so it is the one row that will keep the truncated composition. And
+ * `collectRows` keeps such a row on screen deliberately (it drops a row only when NOT
+ * ONE id resolves), which is what makes this reachable rather than theoretical.
  */
 export function rowLineageOf(
   row: {
     readonly is_frozen: boolean
     readonly documents: readonly unknown[]
+    /**
+     * Did a stored `document_id` fail to resolve against the project read?
+     *
+     * OPTIONAL, defaulting to "no", so the many callers holding a selection with no
+     * stored id list behind it — every case at this seam, and any future one — say
+     * nothing rather than being made to assert a negative. `collectRows` is the one
+     * caller that can know, because it is the one that does the resolving.
+     */
+    readonly composition_truncated?: boolean
   },
   projectDocuments: readonly unknown[],
 ): RowLineage {
   const lineage = classifySelectionLineage(row.documents, projectDocuments)
-  const fresher = row.is_frozen
+  const fresher = row.is_frozen && row.composition_truncated !== true
     ? fresherCoherentSelection(row.documents, projectDocuments)
     : null
   return {
