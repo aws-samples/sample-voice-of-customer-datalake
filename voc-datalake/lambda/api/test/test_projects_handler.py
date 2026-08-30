@@ -866,6 +866,105 @@ class TestGenerateDocumentDocType:
         )
 
 
+
+
+class TestMergeDocumentsBody:
+    """POST /projects/<id>/documents/merge validates the body before billing."""
+
+    @staticmethod
+    def _post(api_gateway_event, lambda_context, raw_body=None):
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/documents/merge',
+            path_params={'project_id': 'proj-123'},
+        )
+        if raw_body is not None:
+            event['body'] = raw_body
+
+        with patch(
+            'projects_handler.create_job', return_value=('job-1', {})
+        ) as mock_create_job, patch(
+            'projects_handler.invoke_lambda_async'
+        ) as mock_invoke:
+            response = lambda_handler(event, lambda_context)
+        return response, mock_create_job, mock_invoke
+
+    def test_an_object_body_still_starts_a_merge_job(
+        self, api_gateway_event, lambda_context
+    ):
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event,
+            lambda_context,
+            '{"output_type": "prd"}',
+        )
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['job_id'] == 'job-1'
+        assert mock_create_job.call_args.args[3] == {'output_type': 'prd'}
+        assert mock_invoke.call_args.args[1]['merge_config'] == {
+            'output_type': 'prd'
+        }
+
+    @pytest.mark.parametrize(
+        'raw_body',
+        [None, 'null'],
+        ids=['absent', 'json_null'],
+    )
+    def test_an_absent_or_null_body_keeps_the_empty_config_default(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event, lambda_context, raw_body
+        )
+
+        assert response['statusCode'] == 200
+        assert mock_create_job.call_args.args[3] == {}
+        assert mock_invoke.call_args.args[1]['merge_config'] == {}
+
+    @pytest.mark.parametrize(
+        'raw_body',
+        ['[1, 2]', '"hi"', '7', 'true', '[]', 'false', '0', '""'],
+        ids=[
+            'array',
+            'string',
+            'number',
+            'boolean',
+            'empty_array',
+            'false',
+            'zero',
+            'empty_string',
+        ],
+    )
+    def test_a_non_object_body_is_refused_before_job_creation(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event, lambda_context, raw_body
+        )
+
+        assert response['statusCode'] == 400
+        assert 'JSON object' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    @pytest.mark.parametrize(
+        'raw_body',
+        ['{not json', '   '],
+        ids=['malformed', 'whitespace'],
+    )
+    def test_unparseable_json_is_refused_before_job_creation(
+        self, api_gateway_event, lambda_context, raw_body
+    ):
+        response, mock_create_job, mock_invoke = self._post(
+            api_gateway_event, lambda_context, raw_body
+        )
+
+        assert response['statusCode'] == 400
+        assert 'must be JSON' in json.loads(response['body'])['error']
+        mock_create_job.assert_not_called()
+        mock_invoke.assert_not_called()
 class TestDocumentCRUDEndpoints:
     """Tests for document CRUD endpoints."""
 
