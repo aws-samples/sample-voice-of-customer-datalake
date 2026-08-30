@@ -456,8 +456,8 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
         (`test_an_awaited_group_is_not_a_control_head`), and that control is the ONLY thing
         red under the one-word fix — measured, with both older wrong-side controls green.
         ⚠️ The mapping has TWO halves and its `in admitted_by` membership test was itself
-        unpinned for a round: weakened to `keyword is not None`, all 65 tests passed while
-        `return await (w + h) / 2` was blanked. The `const a = …` fixture cannot see that —
+        unpinned for a round: weakened to `keyword is not None`, EVERY test here passed
+        while `return await (w + h) / 2` was blanked. The `const a = …` fixture cannot see that —
         its token before `await` is `=`, so no word precedes the modifier — so the same
         control now carries a KEYWORD-led fixture, which is what makes the membership half
         red. The mapping's other half needs no control: falling back to the head set for an
