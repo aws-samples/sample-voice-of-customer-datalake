@@ -253,11 +253,18 @@ export function DocWizard({
   // `tsc` is fine with a narrower argument to `includes`/`filter`, so the picker
   // silently keeps offering the old set — measured: adding a third member to both
   // leaves `tsc -b` clean and every lockstep test green with this file untouched.
-  // Adding a doc type therefore means editing this file too, in three places that name
+  // Adding a doc type therefore means editing this file too, in four places that name
   // their members as literals: `hasPrfaq`/`hasPrd` above, the two `toggleDocType('…')`
-  // buttons in `renderFinalStep`, and the `bothSelected`/`singleTitle`/
-  // `singleSubmitLabel` copy, which is written as a PRD-or-PR-FAQ binary — a third
-  // member would fall into its PR-FAQ branch and be labelled as one.
+  // buttons in `renderFinalStep`, the `bothSelected`/`singleTitle`/`singleSubmitLabel`
+  // copy, which is written as a PRD-or-PR-FAQ binary — a third member would fall into
+  // its PR-FAQ branch and be labelled as one — and `onSuggestBrief`'s
+  // `doc_type: … includes('prd') ? 'prd' : 'prfaq'`, the same binary against a
+  // DIFFERENT route: a third member selected alone asks `suggest-brief` for a PR-FAQ
+  // brief, so the AI-drafted title and description come back framed as a PR-FAQ for a
+  // document that is not one. That call is the only place the picker's set meets
+  // `suggestDocumentBrief`'s, which is deliberately left unbound to `DocType` (its
+  // signature and the reason sit at `api/projectsApi.ts`), so it needs naming rather
+  // than leaving implied by "unbound".
   //
   // The lockstep test's module docstring carries the same list as the FOURTH edit a
   // widening needs, so a widener reading either place learns it; keep the two

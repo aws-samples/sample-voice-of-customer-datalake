@@ -92,6 +92,17 @@ exact text decides WHAT. The compiler backstops one shape of this (a pin repoint
 field that does not exist is a TS2339) but not the operand swap, since one arbitrary
 non-member is as good as another to `BothWays` and the control goes on working.
 
+And its THIRD corollary, from a seventh defeat: asking where a string may come from is
+only answered if the answer knows where a string ENDS. `${...}` inside a template
+literal is code again, so a scan that ran to the next backtick had the inner template's
+opening backtick close the OUTER one — and a decoy in a nested template was in the
+blanked view as if it were real source. That one bug reopened every text guard here at
+once: the field pin could be DELETED with a copy in such a decoy and the field widened
+(`tsc` exit 0, eslint clean, all tests green, and NO compiler backstop for that pin);
+the union parser read the decoy's members instead of the live union's; the ratio was
+satisfied by a decoy alone. Fixed in `_without_comments` with a frame stack, which is
+the one mechanism all four guards share, rather than in any of them.
+
 THE GUARDS' OWN FIXES ARE PINNED TOO, which took its own finding. The two repairs made
 in the fifth round shipped with no test, and reverting either left all 30 tests here
 green — a green result meaning "did not check", applied to the machinery this file uses
@@ -175,6 +186,14 @@ OFFERED by the UI — dead capability rather than wrong content. Also symbol-anc
     the two `toggleDocType('...')` buttons      — in `renderFinalStep`
     `bothSelected`, `singleTitle`,              — copy and layout, all written as
       `singleSubmitLabel`                         a PRD-or-PR-FAQ binary
+    `onSuggestBrief`'s `doc_type` ternary       — the same binary against a DIFFERENT
+      (`...includes('prd') ? 'prd' : 'prfaq'`)    route: a third member selected alone
+                                                  asks `suggest-brief` for a PR-FAQ
+                                                  brief, so the AI-drafted title and
+                                                  description come back framed as one.
+                                                  The only place the picker's set meets
+                                                  `suggestDocumentBrief`'s, which is
+                                                  deliberately unbound (see above)
 
 Measured the same way: the two blessed edits alone leave `tsc -p tsconfig.app.json
 --noEmit` at exit 0 and every test here green, with the picker still rendering exactly
@@ -182,13 +201,28 @@ two buttons — `tsc` is fine with a NARROWER argument to `includes`/`filter`, s
 in that file has to change for it to compile. `Wizards.tsx` documents this direction
 from its own side, beside the literals; the two statements should stay consistent.
 
-Deliberately NOT guarded here, either of them. Those are different contracts — the
-generator's dispatch and the picker's offering, each against the route's allowlist —
-and each wants its own test next to the code it constrains rather than a second and
-third responsibility bolted onto this file. What is fixed is the RECIPE: the ceilings
-are stated, so a widener reads them instead of discovering one from a mislabelled
-document and the other from a button that never appears. Same reasoning as
-`suggestDocumentBrief` above: name the boundary, do not grow the guard across it.
+THE FIFTH EDIT: the wire type the generator writes. `ProjectDocument.document_type` in
+`frontend/src/api/types.ts` restates the doc types as LITERALS and is a SUPERSET of
+`DocType` — it also carries `research`, `custom`, `product_report` and `prototype`, which
+this route never accepts. The generator persists that field straight from `doc_type`, so
+a widened `DocType` produces rows the wire type does not admit: latent rather than
+absent, since `tsc` is clean until something assigns a `DocType` into the field, and a
+probe that makes the two meet is a TS2322 (measured).
+
+Referencing `DocType` there would remove the edit, and was tried — it is NOT available.
+`test_kiro_exportable_types_lockstep.py` parses that union as string literals to derive
+the full document-type set, and a referenced type makes it read zero members; it fails
+loudly, but it fails. That parser answers a different contract (Kiro export inclusion),
+so the ceiling is named at the field instead, beside the literals.
+
+Deliberately NOT guarded here, any of the three. Those are different contracts — the
+generator's dispatch, the picker's offering, and the wire type's superset, each against
+the route's allowlist — and each wants its own test next to the code it constrains rather
+than three further responsibilities bolted onto this file. What is fixed is the RECIPE:
+the ceilings are stated, so a widener reads them instead of discovering one from a
+mislabelled document, one from a button that never appears, and one from a type error in
+whatever code first makes the two unions meet. Same reasoning as `suggestDocumentBrief`
+above: name the boundary, do not grow the guard across it.
 
 WHY EACH GUARD IS THE KIND IT IS. The rule this file has converged on over several
 rounds, each of which found the same hole one level further in: a link TypeScript can
@@ -289,6 +323,12 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
     `` const historical = `export type DocType = 'prd' | 'legacy'` `` above the live
     union returned the DECOY's members, so the equality test compared the wrong set.
     Same silent failure as the commented-out predecessor, one quote character away.
+  * `test_a_union_inside_a_nested_template_is_not_read_as_the_declaration` — the same,
+    one interpolation deeper, which is the SEVENTH vacuity: `${` re-enters code, so a
+    scan running to the next backtick let the inner template's backtick close the outer
+    one and the decoy became code again. Red when `_without_comments`'s frame stack is
+    reverted to a single quote character, as are the three nested-template cases in
+    `TestThePinMatcher` — one bug, four guards, so all four are pinned.
   * `TestThePinMatcher` — the pin MATCHER itself degenerating, which is what every
     round's finding about these guards has actually been. Each case is one revert of a
     repair that shipped untested and was therefore silently revertible:
@@ -302,7 +342,12 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
         and lets `'not-a-doc-type'` become any other fourteen characters;
       - stopping at the FIRST candidate offset, which a decoy above the live
         declaration occupies — a false FAILURE rather than a false pass, and the reason
-        the search continues.
+        the search continues;
+      - scanning a template body to the next backtick, so a decoy in a NESTED template
+        (`` `${`...`}` ``) was code again and could supply a pin that was DELETED, feed
+        the union parser its own members, and satisfy both sides of the ratio alone.
+        Three cases cover it here plus one in `TestTheUnionParser`, because the bug was
+        in `_without_comments` and therefore in every guard that reads it.
     Each was measured against the live tree, `tsc` at exit 0 in every case. Positive
     assertions sit beside the negative ones so none can pass by rejecting everything.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
@@ -649,16 +694,42 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     characters is not a place a pin can match. What the pin says is then read from the
     raw text at that offset: blanking cannot tell two same-length literals apart, so it
     answers where a declaration is and never what it declares.
+
+    🔑 A template body is NOT opaque to its closing backtick, and scanning as if it
+    were was the seventh measured vacuity — a bug in this one function that reopened
+    every text guard in the file. `${...}` is CODE again, so the first backtick inside
+    an interpolation CLOSED the outer template under a single-quote-character scan and
+    everything after it was code once more. A decoy in a NESTED template was therefore
+    in the blanked view exactly as if it were real source. Measured on the tree that
+    shipped it, with `sonarjs/no-nested-template-literals` suppressed on one line
+    (legal, and lint-clean): `DocTypeFieldIsExactlyTheUnion` deleted outright, a copy
+    left in a nested template, and the field it guards widened left `tsc` at exit 0,
+    eslint clean, and every test here green — and that pin has NO compiler backstop,
+    since nothing else in either language compares the field to the union. The same
+    decoy also fed `_doc_type_union` the decoy's members instead of the live union's,
+    and supplied both sides of `_generate_document_ratio` on its own.
+
+    So the state is a STACK of frames rather than one quote character: inside a
+    template, `${` pushes an interpolation frame; inside that frame braces track depth
+    and the depth-0 `}` pops back into the template, with code rules (comments, new
+    strings) applying in between. `TestThePinMatcher` and `TestTheUnionParser` pin all
+    four consequences, since the previous round's finding was that repairs to these
+    helpers ship silently revertible.
     """
     def blanked(text: str) -> str:
         return ''.join('\n' if char == '\n' else ' ' for char in text)
 
     out: list[str] = []
-    quote = None
+    # A STACK, not a single quote character, because `${...}` inside a template
+    # literal is CODE again — see the 🔑 note above on the seventh vacuity. Frames are
+    # `('str', quote_char)` for a string or template body and `('interp', depth)` for
+    # an interpolation, whose brace depth says which `}` closes it.
+    frames: list[tuple[str, object]] = []
     index = 0
     while index < len(source):
         char = source[index]
-        if quote is not None:
+        if frames and frames[-1][0] == 'str':
+            quote = frames[-1][1]
             if char == '\\':
                 # Blank the escape as a unit, so a trailing `\` cannot swallow the
                 # closing quote and blank the rest of the file.
@@ -666,17 +737,33 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
                            else source[index:index + 2])
                 index += 2
                 continue
+            if quote == '`' and source.startswith('${', index):
+                frames.append(('interp', 0))
+                out.append(blanked('${') if blank_strings else '${')
+                index += 2
+                continue
             if char == quote:
                 out.append(char)
-                quote = None
+                frames.pop()
                 index += 1
                 continue
             out.append(blanked(char) if blank_strings else char)
             index += 1
             continue
         if char in '\'"`':
-            quote = char
+            frames.append(('str', char))
             out.append(char)
+            index += 1
+            continue
+        if frames and frames[-1][0] == 'interp' and char in '{}':
+            depth = frames[-1][1]
+            assert isinstance(depth, int)
+            if char == '}' and depth == 0:
+                # Back into the enclosing template body.
+                frames.pop()
+            else:
+                frames[-1] = ('interp', depth + (1 if char == '{' else -1))
+            out.append(blanked(char) if blank_strings else char)
             index += 1
             continue
         if source.startswith('//', index):
@@ -1014,6 +1101,21 @@ class TestTheUnionParser:
         )
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq'})
 
+    def test_a_union_inside_a_nested_template_is_not_read_as_the_declaration(self):
+        """The same, one interpolation deeper — the seventh vacuity.
+
+        `${` re-enters code, so under a scan that ran to the next backtick the inner
+        template's opening backtick closed the outer one and the decoy became code. The
+        union read was then the DECOY's, so a live union that had DRIFTED compared equal
+        to the route and reported no drift. The live union here carries the extra member
+        deliberately: this must read `onepager`, not agree with a stale copy.
+        """
+        source = (
+            "const historical = `kept: ${`export type DocType = 'prd' | 'legacy'`}`\n"
+            "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
+        )
+        assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
+
     # The refusals `_doc_type_union` must carry: no readable term at the anchor, a
     # matched non-literal, an unread term after the match.
     EXPECTED_REFUSALS = 3
@@ -1097,6 +1199,53 @@ class TestThePinMatcher:
         # The control: the same text as real code must still be found, or this would
         # pass by matching nothing.
         assert _pinned(self.PIN, f'{self.PIN}\n')
+
+    # 🔑 A NESTED template literal — the seventh vacuity. `${` re-enters code, so the
+    # backtick that opens the inner template used to CLOSE the outer one, and everything
+    # after it was code again: this decoy sat in the blanked view as if it were real
+    # source. Every case below is red when `_without_comments`'s frame stack is reverted
+    # to a single quote character.
+    NESTED_DECOY_OPEN = 'export const historical = `kept: ${`\n'
+    NESTED_DECOY_CLOSE = '`}`\n'
+
+    def test_a_declaration_inside_a_nested_template_literal_is_not_pinned(self):
+        """The seventh vacuity, and the one with no compiler backstop.
+
+        Measured on the tree that shipped it: the real pin DELETED, a copy left in a
+        nested template literal (one `// eslint-disable-next-line
+        sonarjs/no-nested-template-literals` away from lint-clean), and the field it
+        guards widened — `tsc` exit 0, eslint clean, every test here green. Unlike the
+        inline-literal cases the parameter pin backstops, nothing else in either language
+        compares `GenerateDocumentBody.doc_type` to `DocType`, so this one was the whole
+        guard.
+        """
+        decoy = f'{self.NESTED_DECOY_OPEN}{self.PIN}\n{self.NESTED_DECOY_CLOSE}'
+        assert not _pinned(self.PIN, decoy)
+        # The control, as everywhere here: real code must still be found.
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+
+    def test_a_directive_inside_a_nested_template_literal_is_not_the_live_one(self):
+        """The same decoy against the `@ts-expect-error` lookup: it carried both the
+        control's text and a directive above it, so the live control could have neither.
+        """
+        decoy = (
+            f'{self.NESTED_DECOY_OPEN}// {EXPECT_ERROR_DIRECTIVE} historical\n'
+            f'{self.PIN}\n{self.NESTED_DECOY_CLOSE}'
+        )
+        assert not _carries_expect_error(self.PIN, f'{decoy}{self.PIN}\n')
+        assert _carries_expect_error(
+            self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
+        )
+
+    def test_blanking_preserves_length_through_a_nested_template(self):
+        """The frame stack must not change how much it emits: every offset this module
+        computes is found in the blanked view and read back from the raw text, so a
+        length change would silently misread the pin at that offset rather than fail."""
+        source = (
+            f'{self.NESTED_DECOY_OPEN}{self.PIN}\n{self.NESTED_DECOY_CLOSE}{self.PIN}\n'
+        )
+        assert len(_declarations(source)) == len(source)
+        assert len(_without_comments(source)) == len(source)
 
     def test_a_declaration_inside_a_comment_is_not_pinned(self):
         """The same for a commented-out copy, which is the shape a maintainer actually
@@ -1186,6 +1335,18 @@ class TestThePinMatcher:
         assert _generate_document_ratio(decoy) == (0, 0)
         # The control: the same text as real code must still be counted on both sides,
         # or this would pass by counting nothing at all.
+        assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
+
+    def test_a_signature_inside_a_nested_template_literal_is_not_counted(self):
+        """The ratio's version of the seventh vacuity: paired with the respelled colon
+        below, the real method vanished from the left side while this decoy supplied one
+        of each, so the ratio held with `tsc` exit 0, eslint clean and every test green.
+        """
+        decoy = (
+            f'{self.NESTED_DECOY_OPEN}  {GENERATE_DOCUMENT_SIGNATURE}\n'
+            f'{self.NESTED_DECOY_CLOSE}'
+        )
+        assert _generate_document_ratio(decoy) == (0, 0)
         assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
 
     def test_a_respelled_colon_is_not_counted_as_a_declaration(self):

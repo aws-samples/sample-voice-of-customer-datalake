@@ -312,7 +312,7 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # What POST /projects/{id}/document accepts in `doc_type`. Mirrored in the
 # frontend's `DocType` union; `test_doc_type_lockstep.py` fails if the two drift.
 #
-# ⚠️ WIDENING THIS TUPLE TAKES TWO FURTHER EDITS, and no gate asks for either. Adding a
+# ⚠️ WIDENING THIS TUPLE TAKES THREE FURTHER EDITS, and no gate asks for any. Adding a
 # member here and to `DocType` together leaves `tsc` at exit 0 and every lockstep test
 # green (measured).
 #
@@ -331,12 +331,24 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # THE PICKER is the other, and it is benign by comparison — dead capability rather than
 # wrong content, but still an edit the widening needs.
 # `frontend/src/pages/ProjectDetail/Wizards.tsx` names its members as LITERALS:
-# `hasPrfaq`/`hasPrd`, the two `toggleDocType('...')` buttons in `renderFinalStep`, and
-# the `bothSelected`/`singleTitle`/`singleSubmitLabel` copy, all written as a
-# PRD-or-PR-FAQ binary. `tsc` accepts a narrower argument to `includes`/`filter`, so the
+# `hasPrfaq`/`hasPrd`, the two `toggleDocType('...')` buttons in `renderFinalStep`, the
+# `bothSelected`/`singleTitle`/`singleSubmitLabel` copy, and `onSuggestBrief`'s
+# `doc_type` ternary — all written as a PRD-or-PR-FAQ binary, so a third member selected
+# alone falls into the PR-FAQ branch: labelled as one by the copy, and drafted as one by
+# `suggest-brief`. `tsc` accepts a narrower argument to `includes`/`filter`, so the
 # widening compiles clean while the picker keeps offering the OLD set (measured): the new
 # type is accepted here but never offered to a user. That file documents this from its
 # own side, beside the literals.
+#
+# THE WIRE TYPE is the third: `ProjectDocument.document_type` in
+# `frontend/src/api/types.ts` restates the doc types as literals and is a SUPERSET of
+# `DocType` (it also carries `research`, `custom`, `product_report`, `prototype`, which
+# this route never accepts). The generator writes that field straight from `doc_type`, so
+# a widened `DocType` produces rows the wire type does not admit — latent, since `tsc` is
+# clean until some code makes the two unions meet, at which point it is a TS2322.
+# Referencing `DocType` there would remove the edit but breaks
+# `test_kiro_exportable_types_lockstep.py`, which parses that union as literals; the
+# reason sits at the field.
 #
 # ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
 # `build_prototype`, `product_report`) and this route's docstring names the
