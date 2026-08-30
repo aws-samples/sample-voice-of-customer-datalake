@@ -227,6 +227,10 @@ def _is_addressable_source(source: str) -> bool:
 
     Inherits the fail-open on an unavailable `PLUGIN_SECRET_DEFAULTS`, because
     `_validate_source_is_a_known_plugin` returns early in that state.
+
+    Applies to the `?sources=` branch ONLY. `?run_status=` raises on the same
+    `manual_import` this accepts, deliberately: see the comment at that branch for
+    why one identifier gets two answers from one route.
     """
     try:
         _validate_source_parameter(source)
@@ -804,6 +808,20 @@ def get_sources_status():
         # source, so a 400 names the actual problem instead of reporting an empty
         # status that reads as "never run". Every caller passes a real `plugin.id`
         # (GeneratorConfigModal, SyntheticSourceCard, Scrapers).
+        #
+        # So the two branches of this ONE route answer `manual_import` differently
+        # — 400 here, `{'enabled': False, 'exists': False}` there — and that
+        # disagreement is deliberate, because the two branches report different
+        # things about it. This one reports a run record, and only `run_source` and
+        # `BaseIngestor` write a `SOURCE_RUN#` partition: `manual_import` has no
+        # ingestor, so `SOURCE_RUN#manual_import` can never exist and a 400 naming
+        # the reason beats a 200 saying 'never_run' about a source that can never
+        # run. The batch branch reports SCHEDULE state, where "no rule exists" is a
+        # real answer to a real question, which is why it must not raise — see
+        # `_is_addressable_source`, whose docstring argues that half.
+        #
+        # Pinned in BOTH directions by TestTheQueryStringSourceRouteIsValidated, so
+        # neither answer can flip silently.
         _validate_source_parameter(run_status_source)
         return _get_source_run_status(run_status_source)
 

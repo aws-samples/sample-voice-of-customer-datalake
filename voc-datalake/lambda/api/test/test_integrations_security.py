@@ -47,7 +47,8 @@ Behaviours tested:
    and a `SOURCE_RUN#` partition key with any value a caller sent. Its batch branch
    cannot raise (one unknown name must not fail the whole response, and its own
    default list contains the deliberate non-plugin `manual_import`), so the two
-   branches are guarded differently.
+   branches are guarded differently — and therefore disagree about `manual_import`
+   itself, which is asserted in BOTH directions rather than only the accepting one.
    Regression: TestTheQueryStringSourceRouteIsValidated
 
 10. That route's fan-out is bounded as well as validated
@@ -1742,7 +1743,9 @@ class TestTheQueryStringSourceRouteIsValidated:
 
     The two branches are asserted differently because they behave differently, and
     the asymmetry is the point — see `_is_addressable_source` for why the batch
-    branch must NOT raise.
+    branch must NOT raise. Its visible consequence is that `manual_import` is
+    accepted by one branch and refused by the other, so both answers are asserted:
+    a claim asserted in one direction only can regress in the other.
     """
 
     @staticmethod
@@ -1901,6 +1904,41 @@ class TestTheQueryStringSourceRouteIsValidated:
         assert response['statusCode'] == 200
         assert set(body['sources']) == {'webscraper', 'manual_import', 's3_import'}
         assert body['sources']['manual_import'] == {'enabled': False, 'exists': False}
+
+    @patch('shared.tables.get_aggregates_table')
+    def test_the_run_status_branch_refuses_the_manual_import_the_other_accepts(
+        self, mock_table, api_gateway_event, lambda_context, plugin_secret_defaults,
+    ):
+        """The deliberate counterpart of the case above, and the ONE input on which
+        the two branches of this route disagree.
+
+        `manual_import` is accepted there and refused here. Both are right, because
+        the branches report different things about it: only `run_source` and
+        `BaseIngestor` write a `SOURCE_RUN#` partition, and `manual_import` has no
+        ingestor — so `SOURCE_RUN#manual_import` can never exist, and a 400 naming
+        the reason beats the pre-fix 200 `{'status': 'never_run'}` about a source
+        that can never have run. The batch branch reports schedule state, where "no
+        rule exists" is a real answer.
+
+        Asserting only the accepting half left the asymmetry unpinned in the
+        direction that could regress: a future edit swapping this branch to
+        `_is_addressable_source` would answer 200 with an empty status, which
+        `test_the_default_request_still_reports_all_three_of_its_sources` cannot
+        see. Separate from `..._an_unknown_run_status_source_queries_nothing`
+        because `not_a_plugin` is not in the route's own default list, so it does
+        not exercise the disagreement at all.
+        """
+        table = mock_table.return_value
+
+        from integrations_handler import lambda_handler
+
+        event = self._status_event(api_gateway_event, {'run_status': 'manual_import'})
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+        assert table.query.call_args_list == [], (
+            'a SOURCE_RUN# partition was queried for a source that has no ingestor'
+        )
 
     @patch('shared.tables.get_aggregates_table')
     def test_an_unknown_run_status_source_queries_nothing(
