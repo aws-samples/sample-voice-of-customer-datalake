@@ -120,6 +120,26 @@ a false FAILURE, bounded to the one line a regex body may occupy — while misre
 regex is this vacuity, a false PASS with no bound. The two mistakes are not symmetric,
 and `TestThePinMatcher` pins both directions.
 
+A NINTH defeat came from the same place one delimiter deeper, and it is why the lesson is
+better stated as a question about DELIMITERS than about any one construct: reading a regex
+is not enough if the scan is wrong about where the regex ENDS. A `/` inside a CHARACTER
+CLASS does not close one — `/[/`]/` is legal, and `node` confirms it compiles and matches
+a backtick — so a body scanned to the first `/` stopped at the class's own slash, leaving
+the backtick after it live to open a phantom template frame exactly as an unread regex
+had. Measured on the tree that shipped it, with the same resynchronising trailing regex:
+the field pin DELETED outright, a copy in such a decoy, the field widened to
+`DocType | 'onepager'` — `tsc` exit 0, eslint clean, every test here green, and again
+nothing for a lint rule to object to, since a character class needs no suppression. All
+four guards went with it, as in the seventh and eighth. The scan now tracks class state,
+and that fix has a wrong side of its own — treating every `[` as opening a class would
+swallow an indexed division — so both directions are pinned separately, because they are
+different mistakes.
+
+Rounds seven, eight and nine are ONE bug in ONE function surfacing in three constructs,
+each fixed in the shared helper rather than in any guard. That is the part worth keeping:
+the remaining surface is bounded by the ways JavaScript can open and close a string, not
+by the unbounded space of type expressions this file rightly refuses to model.
+
 THE GUARDS' OWN FIXES ARE PINNED TOO, which took its own finding. The two repairs made
 in the fifth round shipped with no test, and reverting either left all 30 tests here
 green — a green result meaning "did not check", applied to the machinery this file uses
@@ -373,6 +393,14 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
         regex blanks real code (`test_a_division_is_not_read_as_a_regex`), and deciding
         from the last character alone misses `return /`/` and desynchronises exactly as
         before (`test_a_keyword_led_regex_is_still_read_as_one`).
+      - scanning a regex body to the first `/`, which a CHARACTER CLASS may contain
+        (`/[/`]/` is legal) — so the body ended early and the backtick after it
+        desynchronised the scan just as an unread regex did. The NINTH vacuity, the
+        eighth's root cause one delimiter deeper, and again in every guard at once. Two
+        cases here plus one in `TestTheUnionParser` are red when the class tracking is
+        reverted, and its wrong side is pinned separately too: treating every `[` as
+        opening a class swallows an indexed division
+        (`test_an_indexed_division_is_not_read_as_a_character_class`).
     Each was measured against the live tree, `tsc` at exit 0 in every case. Positive
     assertions sit beside the negative ones so none can pass by rejecting everything.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
@@ -725,8 +753,9 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
 
     Blanked rather than deleted, newlines preserved, so indices still refer to the
     same place in the original. Quote state is tracked so a `//` inside a string is
-    not mistaken for a comment, and regex literals are read too — see the 🔑 note
-    below on the eighth vacuity, which is what that used to cost.
+    not mistaken for a comment, and regex literals are read too, character classes
+    included — see the 🔑 notes below on the eighth and ninth vacuities, which are what
+    each of those used to cost.
 
     🔑 `blank_strings` additionally blanks STRING and TEMPLATE bodies, and exists
     because "commentary is not a declaration" has a second half this file missed for
@@ -783,6 +812,16 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     is deliberately CONSERVATIVE: misreading a division blanks real code, which is a false
     FAILURE bounded to one line, while misreading a regex is the vacuity above, a false
     PASS with no bound. Both directions are pinned, because the fix has a wrong side too.
+
+    🔑 And a regex body does not necessarily END at the next `/` — a CHARACTER CLASS may
+    hold one, `/[/`]/` being legal — which was the NINTH vacuity and the eighth's root
+    cause one delimiter deeper. The body stopped at the class's own slash, so the backtick
+    after it stayed live and opened a phantom template frame exactly as an unread regex
+    had; measured the same way, with the field pin deleted and every gate green. So the
+    scan tracks class state, and its wrong side is pinned too: taking every `[` to open a
+    class would swallow an indexed division (`x[i] / 2 + y[j] / 3`), the same false-FAILURE
+    direction as misreading a division. Rounds seven to nine were one bug in this function
+    surfacing in three constructs, which is why each fix belongs here and not in a guard.
     """
     def blanked(text: str) -> str:
         return ''.join('\n' if char == '\n' else ' ' for char in text)
@@ -852,8 +891,22 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
         # commented-out predecessor and commented-out pin cases all fail.
         if char == '/' and _regex_allowed_here(out):
             stop = index + 1
-            while stop < len(source) and source[stop] not in '/\n':
-                stop += 2 if source[stop] == '\\' else 1
+            # A `/` inside a CHARACTER CLASS does not close the regex — `/[/`]/` is
+            # legal — and scanning to the first `/` regardless was the ninth vacuity.
+            # See the 🔑 note above; the class's own slash ended the body early, so the
+            # backtick after it opened a phantom template frame.
+            in_class = False
+            while stop < len(source) and source[stop] != '\n':
+                if source[stop] == '\\':
+                    stop += 2
+                    continue
+                if source[stop] == '[':
+                    in_class = True
+                elif source[stop] == ']':
+                    in_class = False
+                elif source[stop] == '/' and not in_class:
+                    break
+                stop += 1
             if stop < len(source) and source[stop] == '/':
                 out.append(char)
                 body = source[index + 1:stop]
@@ -1216,6 +1269,24 @@ class TestTheUnionParser:
         )
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
 
+    def test_a_union_inside_a_class_desynced_template_is_not_read(self):
+        """The same again where the regex's terminator is inside a CHARACTER CLASS — the
+        ninth vacuity.
+
+        `/[/`]/` is legal, so a body scanned to the first `/` stopped at the class's own
+        slash and left the backtick after it live, opening a phantom template frame. As in
+        the two cases above the live union carries the extra member deliberately: this must
+        read `onepager` rather than merely disagree with the decoy, or it would pass on a
+        parser that read nothing at all.
+        """
+        source = (
+            "const backtickMatcher = /[/`]/\n"
+            "const historical = `export type DocType = 'prd' | 'legacy'`\n"
+            "const secondMatcher = /[/`]/\n"
+            "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
+        )
+        assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
+
     # The refusals `_doc_type_union` must carry: no readable term at the anchor, a
     # matched non-literal, an unread term after the match.
     EXPECTED_REFUSALS = 3
@@ -1366,6 +1437,50 @@ class TestThePinMatcher:
         assert _pinned(self.PIN, f'{self.PIN}\n')
         assert _pinned(self.PIN, f'{self.REGEX_DESYNC}{self.PIN}\n')
 
+    # 🔑 A `/` inside a CHARACTER CLASS — the NINTH vacuity, and the eighth's root cause
+    # one delimiter deeper: `/[/`]/` is legal JavaScript (confirmed with `node`: it
+    # compiles and matches a backtick), but a body scanned to the first `/` ends at the
+    # class's own slash, so the backtick after it opened a phantom template frame exactly
+    # as an unread regex did. The trailing regex resynchronises the scan, as above.
+    CLASS_DESYNC = 'const backtickMatcher = /[/`]/\n'
+    CLASS_RESYNC = 'const secondMatcher = /[/`]/\n'
+
+    def test_a_declaration_inside_a_class_desynced_template_is_not_pinned(self):
+        """The ninth vacuity, again on the pin with no compiler backstop.
+
+        Measured on the tree that shipped it: `DocTypeFieldIsExactlyTheUnion` DELETED
+        outright, a copy left in a template literal opened by a class-borne backtick, and
+        the field it guards widened to `DocType | 'onepager'` — `tsc` exit 0, eslint
+        clean, and every test here green. A character class needs no lint suppression, so
+        nothing stood in the way of this one either.
+        """
+        decoy = (
+            f'{self.CLASS_DESYNC}export const historical = `\n{self.PIN}\n`\n'
+            f'{self.CLASS_RESYNC}'
+        )
+        assert not _pinned(self.PIN, decoy)
+        # The controls: a real declaration must still be found, and still be found with a
+        # genuine class-bearing regex above it — reading classes must not cost the live
+        # pin, which is the false-FAILURE direction of this fix.
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+        assert _pinned(self.PIN, f'{self.CLASS_DESYNC}{self.PIN}\n')
+
+    def test_an_indexed_division_is_not_read_as_a_character_class(self):
+        """The wrong side of the class fix, which is a different mistake from the wrong
+        side of the regex fix and so is pinned separately.
+
+        `x[i] / 2 + y[j] / 3` has brackets AND two divisions. If `[` were taken to open a
+        class wherever it appears, the first `/` would no longer close the body and the
+        code between the divisions would be blanked — a false FAILURE, the opposite error
+        from the vacuity above. The brackets here are an index, not a class, because
+        `_regex_allowed_here` never lets a `/` after `]` open a regex in the first place.
+        """
+        indexed = 'const a = x[i] / 2 + y[j] / 3\n'
+        assert _declarations(indexed) == indexed
+        # The control: a class-bearing regex body IS still blanked, so this cannot pass by
+        # never reading a regex at all — which is what would reopen the vacuity above.
+        assert _declarations('const m = /[/`]/\n') == 'const m = /    /\n'
+
     def test_a_division_is_not_read_as_a_regex(self):
         """The conservative direction of `_regex_allowed_here`, pinned from the other side.
 
@@ -1512,6 +1627,18 @@ class TestThePinMatcher:
         decoy = (
             f'{self.REGEX_DESYNC}export const historical = `\n'
             f'  {GENERATE_DOCUMENT_SIGNATURE}\n`\n{self.REGEX_RESYNC}'
+        )
+        assert _generate_document_ratio(decoy) == (0, 0)
+        assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
+
+    def test_a_signature_inside_a_class_desynced_template_is_not_counted(self):
+        """The ratio's version of the ninth vacuity: the regex's terminator sat inside a
+        character class, so the body ended early and the backtick after it desynchronised
+        the scan just as an unread regex did.
+        """
+        decoy = (
+            f'{self.CLASS_DESYNC}export const historical = `\n'
+            f'  {GENERATE_DOCUMENT_SIGNATURE}\n`\n{self.CLASS_RESYNC}'
         )
         assert _generate_document_ratio(decoy) == (0, 0)
         assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
