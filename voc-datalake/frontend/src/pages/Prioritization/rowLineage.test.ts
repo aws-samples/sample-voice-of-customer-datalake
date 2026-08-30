@@ -22,6 +22,11 @@
  *    its inputs is lineage the row can be judged on";
  *  * `recordsNoLineage` deleted → "documents that record nothing read as absent,
  *    not coherent";
+ *  * `recordsNoLineage`'s `selectionEntry` filter dropped → "lets an unreadable
+ *    document decide nothing", on its last assertion. That filter is what stops one
+ *    id-less record carrying a derivation casting the deciding "something can speak"
+ *    vote and turning an `absent` row `coherent`; the two-document `absent` baseline
+ *    beside it is the control, asserted FIRST so it is shown to hold;
  *  * the `is_frozen` gate in `rowLineageOf` deleted → "an un-frozen row is never
  *    stale";
  *  * the `composition_truncated` gate in `rowLineageOf` deleted → "does not mark a row
@@ -390,6 +395,25 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     expect(classifySelectionLineage([null, 'prd_1', {}, idless, prd], [prd]).state)
       .toBe('coherent')
     expect(classifySelectionLineage([], []).state).toBe('absent')
+
+    // And it cannot decide the ABSENT question either, which is the half that reads
+    // the selection rather than the entries. The control first, per the ordering this
+    // file settled on: a row of two documents recording nothing is `absent`.
+    const bare = doc('prfaq_1', 'prfaq', '2025-01-01')
+    const plain = doc('prd_1', 'prd', '2025-01-01')
+
+    expect(classifySelectionLineage([plain, bare], [plain, bare]))
+      .toEqual({ state: 'absent', reason: 'noneRecorded' })
+
+    // Now the same row plus a record with NO id that DOES carry a derivation. Counted
+    // in, its lineage was the only thing that could speak, so the row claimed a chain
+    // no document on it records — `coherent` over a row where nothing is readable.
+    const idlessRecording = {
+      document_type: 'prd', created_at: '2025-02-01', ...builtFromFeedback,
+    }
+
+    expect(classifySelectionLineage([plain, bare, idlessRecording], [plain, bare]))
+      .toEqual({ state: 'absent', reason: 'noneRecorded' })
   })
 
   it('does not treat two documents of unreadable type as versions of one type', () => {

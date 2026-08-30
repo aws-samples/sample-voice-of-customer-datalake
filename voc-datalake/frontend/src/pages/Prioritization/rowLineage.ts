@@ -317,12 +317,28 @@ function hasSupersededSource(
  * document that records its inputs is lineage the row can be judged on, and the
  * rest not recording theirs is the ordinary shape of a project that predates the
  * field.
+ *
+ * ASKED OF THE SAME DOCUMENTS EVERY OTHER RULE READS, which is why the selection
+ * is filtered through `selectionEntry` first rather than handed over raw.
+ * `resolveDerivation` will happily read a `derivation` off a record naming no
+ * document, so an unfiltered `every` let one junk record with a derivation cast the
+ * deciding "something can speak" vote and turn an `absent` row `coherent` — a row
+ * whose badge then claimed a chain that nothing on it records. An entry naming no
+ * document casts NEITHER vote here, exactly as it is skipped by `repeatsAType` and
+ * excluded from `hasSupersededSource`'s `otherTypes`: an input that cannot settle a
+ * question decides nothing anywhere in this module.
+ *
+ * The `every` semantics are unchanged by the filter. A selection with no readable
+ * member has nothing that can speak and still answers `absent`, which is the same
+ * answer the empty selection already gets and asserts.
  */
 function recordsNoLineage(
   selection: readonly unknown[],
   projectDocuments: readonly unknown[],
 ): boolean {
-  return selection.every((raw) => resolveDerivation(raw, projectDocuments).origin === 'none')
+  return selection
+    .filter((raw) => selectionEntry(raw) !== null)
+    .every((raw) => resolveDerivation(raw, projectDocuments).origin === 'none')
 }
 
 /**
