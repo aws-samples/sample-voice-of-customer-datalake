@@ -133,9 +133,24 @@ REVERT MAP
   per item) while reporting `completed` with empty `errors`
   -> `TestAConfigWithoutAnIdIsRefusedRatherThanRun::a_config_without_an_id_reports_an_error_rather_than_a_clean_run`,
   `a_config_without_an_id_makes_no_request`.
-- Restate the id rule here instead of importing the write path's
-  -> `the_ingestor_and_the_write_path_agree_on_a_usable_id`.
+- Restate the id rule here instead of importing the shared one
+  -> `the_ingestor_and_the_write_path_share_one_id_module`.
 - Refuse a config that HAS an id -> `a_config_with_an_id_still_yields_its_item`.
+- Apply the WRITE path's id rule to stored configs, so an integer, empty or
+  over-long id — every one of which yielded its item before — stops ingesting and
+  reports `error` on deploy
+  -> `TestAStoredIdThatWorkedKeepsWorking::an_integer_id_still_yields_its_item_under_the_same_item_id`,
+  `an_empty_or_over_long_stored_id_still_yields_its_item`.
+- Coerce an integer id to anything other than what the f-string already produced,
+  or coerce for the item id while scheduling under the stored value
+  -> `an_integer_id_still_yields_its_item_under_the_same_item_id`,
+  `the_coerced_id_is_the_one_the_watermark_uses`.
+- Interpolate an over-long id straight into the metric name, so Powertools raises
+  after the items were yielded and a good run reports `error`
+  -> `an_over_long_id_does_not_produce_an_illegal_metric_name`; truncate an
+  ordinary one -> `an_ordinary_id_is_left_exactly_as_it_is`.
+- Coerce a bool/list/dict id too, ingesting under an invented identity
+  -> `an_id_that_cannot_be_stringified_meaningfully_still_reports_error`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -1887,7 +1902,8 @@ class TestStoredPaginationIsBounded:
 
 class TestAConfigWithoutAnIdIsRefusedRatherThanRun:
     """
-    A config whose `id` the ingestor cannot use must not fetch at all.
+    A config whose `id` the ingestor cannot use must not fetch at all — and only
+    the ones it CANNOT use.
 
     Reading the id as `config.get('id', 'unknown')` in `_should_run_scraper`,
     `fetch_new_items` and `_configs_in_fairness_order` removed the KeyError that
@@ -1903,6 +1919,16 @@ class TestAConfigWithoutAnIdIsRefusedRatherThanRun:
     loss is entirely silent. Defaulting the remaining four reads would not fix it
     either: the id is the watermark key, so two id-less configs would collide on
     one schedule.
+
+    The ABSENT id is the whole of that defect, which is why this class also holds
+    the tests for the shapes that must keep working. Measured against the version
+    that applied the write path's `assert_scraper_id` here, one healthy page each:
+    `id=7`, `id=''` and a 200-character id all yielded their item BEFORE and zero
+    items AFTER, reporting `error`. An f-string interpolates any value, so refusing
+    them traded one config's silent loss for four configs' loud loss — and an
+    account holding an integer id would have stopped ingesting on deploy.
+    `TestAStoredIdThatWorkedKeepsWorking` covers those; see
+    `normalize_ingestable_scraper_id`.
     """
 
     def test_a_config_without_an_id_reports_an_error_rather_than_a_clean_run(
@@ -1951,12 +1977,151 @@ class TestAConfigWithoutAnIdIsRefusedRatherThanRun:
         assert requested == ['https://ok.example/a']
         assert len(items) == 1
 
-    def test_the_ingestor_and_the_write_path_agree_on_a_usable_id(self):
+    def test_the_ingestor_and_the_write_path_share_one_id_module(self):
         """
-        One definition of a usable id, imported rather than restated — a config the
-        API would refuse must not scrape, and a config it accepts must.
+        One place decides what an id may be, imported rather than restated.
+
+        The ingestor's rule is deliberately WEAKER than the write path's — see the
+        class docstring and `normalize_ingestable_scraper_id` — so this pins the
+        shared function rather than asserting the two verdicts are identical. A
+        local copy in the plugin is how the two rules would come to disagree about
+        what an id even is.
         """
-        from shared.scraper_urls import assert_scraper_id
+        from shared.scraper_urls import normalize_ingestable_scraper_id
         from webscraper.ingestor import handler
 
-        assert handler.assert_scraper_id is assert_scraper_id
+        assert (
+            handler.normalize_ingestable_scraper_id
+            is normalize_ingestable_scraper_id
+        )
+
+
+class TestAStoredIdThatWorkedKeepsWorking:
+    """
+    A stored `id` shape that ingested must keep ingesting.
+
+    The write path requires a non-empty string of at most MAX_SCRAPER_ID_LENGTH
+    characters, which is right for an id a write CREATES. Applying that rule to
+    configs ALREADY STORED stopped ingestion for shapes that worked end to end,
+    measured through the real `fetch_new_items` against one healthy page:
+
+        id='s1'      -> 1 item        (before and after)
+        id=7         -> 1 item BEFORE, 0 items and `error` AFTER
+        id=''        -> 1 item BEFORE, 0 items and `error` AFTER
+        id 200 chars -> 1 item BEFORE, 0 items and `error` AFTER
+        id ABSENT    -> 0 items, reporting `completed` — the actual defect
+
+    `f"scraper_{config['id']}_{item_id}"` interpolates any value, so the KeyError
+    fired only for a MISSING key. An integer id is a shape this codebase already
+    anticipates (`_stored_urls_by_id` and `_carries_the_stored_list_forward` both
+    guard `isinstance(config.get('id'), str)`), so an account holding one would have
+    stopped ingesting the moment this deployed — data loss on upgrade, which is
+    strictly worse than the silence it was meant to fix.
+    """
+
+    @staticmethod
+    def _run(ingestor, config):
+        return TestOneMalformedConfigCostsOneConfig._scheduled_run(
+            ingestor, [config], {}
+        )
+
+    def test_an_integer_id_still_yields_its_item_under_the_same_item_id(
+        self, ingestor
+    ):
+        """
+        Coerced, not refused, and coerced to what it already interpolated to: the
+        item id must stay `scraper_7_<hash>`, or the same review re-ingests under a
+        new identity and deduplication breaks on the very config being rescued.
+        """
+        requested, statuses, items = self._run(
+            ingestor, {**CSS_CONFIG, 'id': 7, 'urls': ['https://ok.example/a']}
+        )
+
+        assert requested == ['https://ok.example/a']
+        assert len(items) == 1
+        assert items[0]['id'].startswith('scraper_7_')
+        assert items[0]['scraper_id'] == '7'
+        terminal = [u for _id, u in statuses if 'status' in u]
+        assert not terminal or terminal[-1]['status'] == 'completed'
+
+    def test_the_coerced_id_is_the_one_the_watermark_uses(self, ingestor):
+        """
+        One identity per config. Coercing for the item id while scheduling under the
+        stored value would leave the config ingesting as '7' and watermarking as
+        something else, so it would look due on every invocation.
+        """
+        watermarks: dict = {}
+        config = {**CSS_CONFIG, 'id': 7, 'urls': ['https://ok.example/a']}
+        TestOneMalformedConfigCostsOneConfig._scheduled_run(
+            ingestor, [config], watermarks
+        )
+
+        assert 'scraper_7_last_run' in watermarks
+
+    @pytest.mark.parametrize('scraper_id', ['', 'x' * 200])
+    def test_an_empty_or_over_long_stored_id_still_yields_its_item(
+        self, ingestor, scraper_id
+    ):
+        """
+        Both ingested before and neither is repairable from the ingestor. The length
+        is a METRIC NAME problem, not an identity problem, so the metric name is
+        bounded instead — `_item_metric_name`. Refusing the config would stop the
+        ingestion the length does not actually prevent.
+        """
+        requested, _statuses, items = self._run(
+            ingestor,
+            {**CSS_CONFIG, 'id': scraper_id, 'urls': ['https://ok.example/a']},
+        )
+
+        assert requested == ['https://ok.example/a']
+        assert len(items) == 1
+
+    def test_an_over_long_id_does_not_produce_an_illegal_metric_name(self):
+        """
+        Powertools refuses a metric name outside 1..255 characters, and it raises at
+        `add_metric` time — after the items were yielded and the terminal status
+        written — so the exception lands in the per-config guard and a successful run
+        is reported `error`. Tolerating the id therefore requires bounding the name.
+        """
+        from webscraper.ingestor.handler import (
+            POWERTOOLS_MAX_METRIC_NAME_LENGTH,
+            _item_metric_name,
+        )
+
+        name = _item_metric_name('x' * 300)
+
+        assert len(name) <= POWERTOOLS_MAX_METRIC_NAME_LENGTH
+        # The shape an operator greps for survives the truncation.
+        assert name.startswith('Scraper_') and name.endswith('_Items')
+
+    def test_an_ordinary_id_is_left_exactly_as_it_is(self):
+        """
+        Positive control on the metric name: truncating or rewriting an id the write
+        path accepts would rename every existing account's metric.
+        """
+        from webscraper.ingestor.handler import _item_metric_name
+
+        assert _item_metric_name('scraper_1700000000') == (
+            'Scraper_scraper_1700000000_Items'
+        )
+
+    @pytest.mark.parametrize('scraper_id', [None, True, ['s1'], {'a': 1}])
+    def test_an_id_that_cannot_be_stringified_meaningfully_still_reports_error(
+        self, ingestor, scraper_id
+    ):
+        """
+        The other side of the line. `str(True)`/`str(['s1'])` would MAKE UP an
+        identity, and no client produces these — the editor generates
+        `scraper_${Date.now()}`. So they are refused, visibly, rather than ingested
+        under an invented id. Unlike the absent case this is not silent: the config
+        reports `error` with the reason.
+        """
+        requested, statuses, items = self._run(
+            ingestor,
+            {**CSS_CONFIG, 'id': scraper_id, 'urls': ['https://ok.example/a']},
+        )
+
+        assert requested == []
+        assert items == []
+        terminal = [u for _id, u in statuses if 'status' in u]
+        assert terminal and terminal[-1]['status'] == 'error'

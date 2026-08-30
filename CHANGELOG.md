@@ -159,8 +159,26 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   which is the silent-loss shape this release's page-counting fix was meant to eliminate. The
   id is also the schedule watermark key — two configurations without one shared a single
   schedule, so the second never ran — and the per-scraper metric name, which an over-long id
-  pushed past the metrics service's 255-character limit. The scheduled scraper applies the
-  same rule and reports such a configuration as an error rather than scraping into a drop.
+  pushed past the metrics service's 255-character limit.
+  - The requirement applies to an id a write **creates or changes**, not to one it carries
+    forward. The Settings card saves the whole array at once, so applying it retroactively
+    meant a single configuration stored without an id made every later save fail — including a
+    rename of an unrelated configuration — and that configuration could not be repaired: an
+    id is also what an edit is keyed on. This is the same carry-forward exemption the 50-URL
+    cap has, and for the same reason; a configuration the write *adds* is still refused.
+  - `DELETE /scrapers/<id>` can now remove a configuration stored with a non-string id. It
+    compared the stored value against a path parameter, so one stored as the number `7` could
+    never be matched and the delete reported success while removing nothing — leaving that
+    shape with no in-app remedy at all.
+  - The scheduled scraper is deliberately **more tolerant** than the write path for
+    configurations already stored, because only a *missing* id ever lost data. An id that is a
+    number, empty, or longer than the bound each prefixed its items and ingested normally —
+    the prefix is an interpolation, which accepts any value — so holding stored
+    configurations to the write rule would have stopped ingestion on deploy for an account
+    holding one. A numeric id is now coerced to the string its items already used, an empty or
+    over-long one keeps ingesting (the metric name is truncated instead, since the length
+    never prevented the scraping), and only an id that cannot be one — missing, or a
+    boolean/list/object, which no client produces — is reported as an error.
 - An unreadable scraper schedule is treated as due rather than raising, which now includes a
   `frequency_minutes` that is not a finite, non-negative number. `NaN` and `Infinity` are
   valid JSON tokens and computing a next-run time from either raised; the per-configuration

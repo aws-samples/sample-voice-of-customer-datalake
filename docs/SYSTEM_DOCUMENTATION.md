@@ -647,8 +647,15 @@ The policy itself:
   `errors: []` and a non-zero page count, which is indistinguishable from an empty but
   healthy run. It is also the watermark key (two id-less configurations collided on one
   schedule) and the `Scraper_<id>_Items` metric name, which a 300-character id pushed
-  past the 255-character limit. The scheduled reader applies the same check and refuses
-  to run such a configuration rather than scraping into a silent drop.
+  past the 255-character limit. Enforced on an id a write **creates or changes** only —
+  one stored without an id otherwise blocked every save through the whole-array route,
+  including edits to unrelated configurations, and could not be repaired because an edit
+  is keyed on the id; `DELETE /scrapers/<id>` now also matches a stored non-string id,
+  which it could not before. For configurations already stored the scheduled reader is
+  deliberately more tolerant: only a *missing* id lost data, since the prefix is an
+  interpolation and a numeric, empty or over-long id each ingested normally, so those are
+  coerced or tolerated (the metric name is truncated instead) and only an id that cannot
+  be one at all is reported as an error.
 - An unreadable schedule is treated as *due*, including a `frequency_minutes` that is
   not a finite, non-negative number. `NaN` and `Infinity` are valid JSON and computing
   a next-run time from either raised, which the per-configuration guard turned into that

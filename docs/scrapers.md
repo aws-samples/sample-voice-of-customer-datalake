@@ -278,8 +278,26 @@ What the policy accepts and refuses:
   — indistinguishable from a site that simply had nothing new. It is also the schedule
   watermark key and the metric name, so two configurations sharing an id share a
   schedule, and an over-long one exceeds the metrics service's 255-character name
-  limit. The scheduled scraper applies the same rule and refuses to run such a
-  configuration rather than scraping into a silent drop.
+  limit.
+
+  The requirement applies to an id a write **creates or changes**, not to one it
+  carries forward — the same carry-forward exemption the 50-URL cap has. The Settings
+  card saves the whole array, so applying it retroactively made one configuration
+  stored without an id block every later save, including a rename of an unrelated
+  one, with no way to repair the offender (an edit is keyed on the id). A
+  configuration the write *adds* is still refused. `DELETE /scrapers/<id>` also now
+  matches a stored non-string id, which it previously could not: one stored as the
+  number `7` was never matched and the delete removed nothing.
+
+  For configurations **already stored** the scheduled scraper is deliberately more
+  tolerant, because only a *missing* id ever lost data. A numeric, empty or over-long
+  id each prefixed its items and ingested normally — the prefix is an interpolation,
+  so it accepts any value — and refusing those would have stopped ingestion on deploy
+  for an existing account. A numeric id is coerced to the string its items already
+  used, an empty or over-long one keeps ingesting (the metric name is truncated
+  instead, since its length never prevented the scraping), and only an id that cannot
+  be one at all — missing, or a boolean/list/object, which no client produces — is
+  reported as an error rather than scraped into a silent drop.
 - An unreadable **schedule** is treated as *due* rather than raising, including a
   `frequency_minutes` that is not a finite, non-negative number. `NaN` and `Infinity`
   are valid JSON, and computing a next-run time from either raised — which the

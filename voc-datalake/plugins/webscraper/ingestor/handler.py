@@ -22,7 +22,11 @@ from shared.http_utils import OutboundUrlBlocked, fetch_checked_with_retry
 # the two would come to disagree. `lambda/shared` is staged into this bundle
 # alongside `plugins/_shared` — see `bundlePluginCode` in
 # lib/stacks/ingestion-stack.ts.
-from shared.scraper_urls import PAGINATION_INT_BOUNDS, assert_scraper_id
+from shared.scraper_urls import (
+    MAX_SCRAPER_ID_LENGTH,
+    PAGINATION_INT_BOUNDS,
+    normalize_ingestable_scraper_id,
+)
 import requests
 
 
@@ -99,6 +103,31 @@ SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS = 240
 # both guarantees hold at once: the truncated config is still due immediately, and
 # the configs behind it get the budget first.
 SCRAPER_TRUNCATED_WATERMARK = 'scraper_{scraper_id}_last_truncated'
+
+# Powertools refuses a metric name outside 1..255 characters, and it raises when
+# the metric is ADDED — i.e. after this config's items were already yielded and its
+# terminal status written, so the exception lands in the per-config guard and the
+# run is reported `error` over work that succeeded.
+#
+# The write path bounds a NEW id to MAX_SCRAPER_ID_LENGTH, which keeps this name
+# comfortably inside the limit. A stored id predating that bound is not repairable
+# from here, and its length does not stop it INGESTING — `f"scraper_{id}_{item}"`
+# has no limit — so the name is truncated rather than the config refused. Refusing
+# it instead is what stopped ingestion for a shape that worked.
+POWERTOOLS_MAX_METRIC_NAME_LENGTH = 255
+
+
+def _item_metric_name(scraper_id: str) -> str:
+    """
+    `Scraper_<id>_Items`, kept inside Powertools' 255-character limit.
+
+    Truncated on the ID rather than on the whole name, so the `Scraper_`/`_Items`
+    shape an operator greps for survives. MAX_SCRAPER_ID_LENGTH is the bound a
+    write already applies, so a config the API accepted is unaffected and only a
+    legacy over-long id is shortened — sharing that constant rather than deriving a
+    second one from 255 keeps the two from disagreeing about what "long" means.
+    """
+    return f"Scraper_{scraper_id[:MAX_SCRAPER_ID_LENGTH]}_Items"
 
 
 def _as_int(value: object, default: int, label: str, low: int, high: int | None) -> int:
@@ -713,22 +742,32 @@ class WebScraperIngestor(BaseIngestor):
             scraper_name = config.get('name', scraper_id)
 
             try:
-                # BEFORE any request, because an unusable id cannot be worked
-                # around downstream — it is the ITEM id prefix, and the KeyError
-                # from `f"scraper_{config['id']}_..."` in both extraction paths is
-                # swallowed by `_scrape_page`'s per-item handler. So such a config
-                # fetched every page and then dropped every item while reporting
-                # `status: 'completed'`, `errors: []` and a non-zero page count:
-                # silent loss that reads exactly like an empty healthy run. It is
-                # also the watermark key, so two id-less configs shared one
-                # schedule via `scraper_unknown_last_run`.
+                # BEFORE any request, because an id that cannot be interpolated
+                # cannot be worked around downstream — it is the ITEM id prefix,
+                # and the KeyError from `f"scraper_{config['id']}_..."` in both
+                # extraction paths is swallowed by `_scrape_page`'s per-item
+                # handler. So a config without one fetched every page and then
+                # dropped every item while reporting `status: 'completed'`,
+                # `errors: []` and a non-zero page count: silent loss that reads
+                # exactly like an empty healthy run. It is also the watermark key,
+                # so two id-less configs shared one schedule via
+                # `scraper_unknown_last_run`.
                 #
-                # The same check the write path applies, imported rather than
-                # restated, and raising into the guard below so the config is
-                # reported `error` with a named reason and the account's other
-                # configs still run. `assert_scraper_id` is the one definition of
-                # a usable id — a config the API would refuse must not scrape.
-                assert_scraper_id(config)
+                # NORMALIZED rather than held to the write path's rule, and the
+                # difference is measured rather than stylistic: applying
+                # `assert_scraper_id` here stopped ingestion for four shapes that
+                # worked end to end — `id=7`, `id=''` and a 200-character id each
+                # yielded their item before, because an f-string interpolates any
+                # value. Only the ABSENT id lost data. See
+                # `normalize_ingestable_scraper_id` for which shapes are coerced,
+                # which are tolerated and which cannot work at all.
+                #
+                # Raising into the guard below, so an id that genuinely cannot be
+                # used reports `error` with a named reason while the account's other
+                # configs still run. Reassigns `scraper_id` because a coerced value
+                # must be the one the watermarks and the metric use, or this config
+                # would ingest under one identity and be scheduled under another.
+                scraper_id = normalize_ingestable_scraper_id(config)
 
                 if not self.execution_id and not self._should_run_scraper(config):
                     logger.info(f"Skipping scraper {scraper_name} - not due yet")
@@ -940,7 +979,9 @@ class WebScraperIngestor(BaseIngestor):
                     'errors': errors
                 })
 
-                metrics.add_metric(name=f"Scraper_{scraper_id}_Items", unit="Count", value=items_found)
+                metrics.add_metric(
+                    name=_item_metric_name(scraper_id), unit="Count", value=items_found
+                )
                 logger.info(f"Scraper {scraper_name} found {items_found} items from {pages_scraped} pages")
 
                 if run_budget_exhausted:

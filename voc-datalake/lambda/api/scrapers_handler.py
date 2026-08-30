@@ -161,7 +161,23 @@ def delete_scraper(scraper_id: str):
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
         configs = json.loads(secrets.get('webscraper_configs', '[]'))
-        configs = [c for c in configs if c.get('id') != scraper_id]
+        # Compared as a STRING because a stored id may not be one —
+        # `_stored_urls_by_id` in shared/scraper_urls.py guards
+        # `isinstance(..., str)` for the same reason — while a path parameter always
+        # is. A config stored with `id: 7` could not be matched at all, so `DELETE
+        # /scrapers/7` reported success and deleted nothing: measured, all configs
+        # remained. That made it the one shape with no in-app remedy, since an edit
+        # is keyed on the same id.
+        #
+        # An id-less config is deliberately NOT matchable: `str(None)` is 'None', so
+        # comparing it would let `DELETE /scrapers/None` remove a config the caller
+        # never named — and would take a config genuinely stored as the STRING
+        # 'None' with it. Such a config is repaired through the array route instead,
+        # which no longer refuses it (see `_unusable_stored_ids`).
+        configs = [
+            c for c in configs
+            if c.get('id') is None or str(c.get('id')) != scraper_id
+        ]
         secrets['webscraper_configs'] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True}

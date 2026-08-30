@@ -63,6 +63,31 @@ REVERT MAP
   back through the API -> `does_not_echo_an_over_long_id_back_in_the_message`.
 - Require a character set or a length the editor's own `scraper_${Date.now()}` does
   not satisfy, making every save fail -> `accepts_every_id_a_client_produces`.
+- Apply the `id` requirement to an id a write carries forward, so ONE stored legacy
+  config makes every array save fail — including a rename of an unrelated config —
+  with no in-app way to repair it
+  -> `TestAStoredUnusableIdDoesNotLockTheArrayOut::editing_one_config_beside_a_legacy_one_still_saves`
+  (7 shapes), `the_single_config_route_agrees`.
+- Turn that exemption into a bypass, by exempting an id nothing stored holds, by not
+  consuming the claim, or by exempting a CHANGED unusable id
+  -> `a_newly_added_config_with_an_unusable_id_is_still_refused`,
+  `one_stored_offender_exempts_one_config_not_two`,
+  `changing_a_carried_forward_id_to_another_unusable_one_is_refused`,
+  `an_unreadable_stored_value_grants_no_id_exemption`.
+- Exempt anything but the `id` gate for such a config
+  -> `an_exempt_config_still_has_its_destinations_checked`,
+  `an_exempt_config_still_has_its_pagination_checked`.
+- Drop `_config_label` from the empty-id message, the one refusal in the module that
+  did not name the offending config -> `the_empty_id_refusal_names_the_config`.
+- Hold a STORED id to the write path's rule, so an integer, empty or over-long id —
+  each of which yielded its item before — stops ingesting on deploy
+  -> `TestTheIngestorsIdRuleIsWeakerOnPurpose::coerces_an_integer_id_to_what_the_item_ids_already_used`,
+  `tolerates_a_stored_id_the_write_path_would_refuse`.
+- Coerce a bool/list/dict/absent id too, ingesting under an invented identity
+  -> `refuses_an_id_it_cannot_stringify_meaningfully`.
+- Rewrite an ordinary id -> `leaves_an_ordinary_id_untouched`.
+- Weaken `assert_scraper_id` to match the ingestor's tolerance, relaxing the write
+  boundary -> `the_write_rule_stays_stricter_than_the_stored_one`.
 
 Every "refuses" case has a positive control, so an implementation that refused
 everything could not pass this file.
@@ -986,3 +1011,270 @@ class TestScraperId:
             'id': scraper_id,
             'base_url': 'https://example.com/reviews',
         })
+
+
+class TestAStoredUnusableIdDoesNotLockTheArrayOut:
+    """
+    Requiring `id` must not make an existing account unsaveable.
+
+    `validate_scraper_configs_json` revalidates EVERY config in the array, because
+    that route persists the whole array. So a stored config the `id` rule refuses
+    made every later save fail — measured with an id-less config stored beside a
+    healthy one:
+
+        re-save the array unchanged (a no-op)   REFUSED, naming the legacy config
+        edit ONLY the healthy config            REFUSED, naming the legacy config
+        remove the legacy config                accepted
+
+    That is the same failure MAX_SCRAPER_URLS' carry-forward exemption exists to
+    prevent, and the escape was worse: `DELETE /scrapers/<id>` compared a
+    path-parameter string against the stored value, so a config stored with
+    `id: 7` could not be matched at all. The offender could be neither renamed
+    (the array save was refused) nor deleted (the filter never matched).
+
+    The exemption covers the `id` gate only. Everything else about such a config —
+    destinations, pagination shape, URL count — is still checked, and the ingestor
+    still normalizes or refuses the id at fetch time.
+    """
+
+    @pytest.mark.parametrize('label,overrides', BAD_SCRAPER_IDS, ids=[c[0] for c in BAD_SCRAPER_IDS])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_editing_one_config_beside_a_legacy_one_still_saves(
+        self, mock_resolve, label, overrides
+    ):
+        """
+        The failure that matters: a rename of an UNRELATED config was refused, and
+        the message named a config the user never touched.
+        """
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        legacy = {'name': 'Legacy', 'base_url': 'https://example.com/legacy',
+                  **overrides}
+        stored = json.dumps([legacy, {'id': 's1', 'base_url': 'https://example.com/a'}])
+        incoming = json.dumps([
+            legacy,
+            {'id': 's1', 'name': 'renamed', 'base_url': 'https://example.com/a'},
+        ])
+
+        # Must not raise.
+        validate_scraper_configs_json(incoming, stored=stored)
+
+    @pytest.mark.parametrize('label,overrides', BAD_SCRAPER_IDS, ids=[c[0] for c in BAD_SCRAPER_IDS])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_the_single_config_route_agrees(self, mock_resolve, label, overrides):
+        """
+        Both routes or neither. The URL-cap exemption was wired into the array route
+        alone, so `POST /scrapers` refused a pre-existing offender on every save —
+        the same asymmetry, one gate along.
+        """
+        from shared.scraper_urls import validate_scraper_config_write
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        legacy = {'name': 'Legacy', 'base_url': 'https://example.com/legacy',
+                  **overrides}
+        stored = json.dumps([legacy])
+
+        # Must not raise.
+        validate_scraper_config_write(dict(legacy), stored=stored)
+
+    @pytest.mark.parametrize('label,overrides', BAD_SCRAPER_IDS, ids=[c[0] for c in BAD_SCRAPER_IDS])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_a_newly_added_config_with_an_unusable_id_is_still_refused(
+        self, mock_resolve, label, overrides
+    ):
+        """
+        The exemption may not become a bypass: nothing stored holds this id, so the
+        write is CREATING it.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        stored = json.dumps([{'id': 's1', 'base_url': 'https://example.com/a'}])
+        incoming = json.dumps([
+            {'id': 's1', 'base_url': 'https://example.com/a'},
+            {'name': 'New', 'base_url': 'https://example.com/new', **overrides},
+        ])
+
+        with pytest.raises(ValidationError, match='id'):
+            validate_scraper_configs_json(incoming, stored=stored)
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_one_stored_offender_exempts_one_config_not_two(self, mock_resolve):
+        """
+        The claim is CONSUMED. Otherwise one legacy id-less config would let a write
+        add any number of new id-less ones, which is the bypass this exemption has
+        to avoid while still unblocking the array.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        legacy = {'name': 'Legacy', 'base_url': 'https://example.com/legacy'}
+        stored = json.dumps([legacy])
+        incoming = json.dumps([legacy, {**legacy, 'name': 'Second'}])
+
+        with pytest.raises(ValidationError, match='id'):
+            validate_scraper_configs_json(incoming, stored=stored)
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_changing_a_carried_forward_id_to_another_unusable_one_is_refused(
+        self, mock_resolve
+    ):
+        """
+        Exempt because the write does not CHANGE the value. Swapping one unusable id
+        for a different unusable id is a change, and `7` and `'7'` are distinct for
+        the same reason — exempting one must not exempt the other.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        stored = json.dumps([{'id': 7, 'base_url': 'https://example.com/legacy'}])
+        incoming = json.dumps([{'id': '', 'base_url': 'https://example.com/legacy'}])
+
+        with pytest.raises(ValidationError, match='id'):
+            validate_scraper_configs_json(incoming, stored=stored)
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_an_exempt_config_still_has_its_destinations_checked(self, mock_resolve):
+        """
+        Only the `id` gate is relaxed. Otherwise a legacy config would be a place to
+        park an internal URL that no later write would look at — the reasoning the
+        URL-cap exemption already carries.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PRIVATE_ADDRINFO
+        legacy = {'name': 'Legacy', 'base_url': 'https://internal.example/'}
+        stored = json.dumps([legacy])
+
+        with pytest.raises(ValidationError, match='internal.example'):
+            validate_scraper_configs_json(json.dumps([legacy]), stored=stored)
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_an_exempt_config_still_has_its_pagination_checked(self, mock_resolve):
+        """Same reasoning: the ingestor still computes with this value."""
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        legacy = {
+            'name': 'Legacy', 'base_url': 'https://example.com/legacy',
+            'pagination': {'enabled': True, 'max_pages': '10'},
+        }
+        stored = json.dumps([legacy])
+
+        with pytest.raises(ValidationError, match='pagination'):
+            validate_scraper_configs_json(json.dumps([legacy]), stored=stored)
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_an_unreadable_stored_value_grants_no_id_exemption(self, mock_resolve):
+        """
+        Best-effort in one direction, like `_stored_urls_by_id`: a stored value this
+        cannot parse must not turn into a bypass, and must not fail the write for a
+        config that is otherwise fine either.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        incoming = json.dumps([{'base_url': 'https://example.com/a'}])
+
+        with pytest.raises(ValidationError, match='id'):
+            validate_scraper_configs_json(incoming, stored='not json at all')
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_the_empty_id_refusal_names_the_config(self, mock_resolve):
+        """
+        The array route refuses the WHOLE write, so every refusal has to say which
+        config. This was the one message in the module that did not — it read exactly
+        `id must not be empty` for a three-config array.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        incoming = json.dumps([
+            {'id': 's1', 'base_url': 'https://example.com/a'},
+            {'id': '', 'name': 'Nameless', 'base_url': 'https://example.com/b'},
+        ])
+
+        with pytest.raises(ValidationError, match='Nameless'):
+            validate_scraper_configs_json(incoming)
+
+
+class TestTheIngestorsIdRuleIsWeakerOnPurpose:
+    """
+    `normalize_ingestable_scraper_id` is the rule for a STORED id, and it is
+    deliberately weaker than `assert_scraper_id`.
+
+    Measured through the real `fetch_new_items` against one healthy page: `id=7`,
+    `id=''` and a 200-character id each yielded their item, because
+    `f"scraper_{config['id']}_{item_id}"` interpolates any value. Only an ABSENT id
+    lost data — it reported `completed` with zero items. Holding stored configs to
+    the write rule therefore stopped ingestion for four shapes that worked, which
+    is data loss on deploy for an account holding an integer id.
+    """
+
+    def test_coerces_an_integer_id_to_what_the_item_ids_already_used(self):
+        from shared.scraper_urls import normalize_ingestable_scraper_id
+
+        config = {'id': 7}
+
+        assert normalize_ingestable_scraper_id(config) == '7'
+        # Mutated, because both extraction paths read `config['id']` directly to
+        # build the item id: returning the string alone would leave those reads on
+        # the stored value and the coercion would be a claim the items do not honour.
+        assert config['id'] == '7'
+
+    @pytest.mark.parametrize('scraper_id', ['', 'x' * 300])
+    def test_tolerates_a_stored_id_the_write_path_would_refuse(self, scraper_id):
+        """
+        Both ingested before. The length is a metric-name problem, bounded by the
+        caller (`_item_metric_name`), not a reason to stop a config ingesting.
+        """
+        from shared.scraper_urls import normalize_ingestable_scraper_id
+
+        assert normalize_ingestable_scraper_id({'id': scraper_id}) == scraper_id
+
+    @pytest.mark.parametrize('overrides', [{}, {'id': None}, {'id': True},
+                                           {'id': ['s1']}, {'id': {'a': 1}}])
+    def test_refuses_an_id_it_cannot_stringify_meaningfully(self, overrides):
+        """
+        The other side of the line: absent is the silent drop, and `str(True)` /
+        `str(['s1'])` would MAKE UP an identity no client produced.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import normalize_ingestable_scraper_id
+
+        with pytest.raises(ValidationError, match='id'):
+            normalize_ingestable_scraper_id({'name': 'R', **overrides})
+
+    def test_leaves_an_ordinary_id_untouched(self):
+        """
+        Positive control. A normalizer that rewrote every id would satisfy the
+        coercion assertion while changing every existing item id in the lake.
+        """
+        from shared.scraper_urls import normalize_ingestable_scraper_id
+
+        config = {'id': 'scraper_1700000000'}
+
+        assert normalize_ingestable_scraper_id(config) == 'scraper_1700000000'
+        assert config['id'] == 'scraper_1700000000'
+
+    @pytest.mark.parametrize('label,overrides', BAD_SCRAPER_IDS, ids=[c[0] for c in BAD_SCRAPER_IDS])
+    def test_the_write_rule_stays_stricter_than_the_stored_one(self, label, overrides):
+        """
+        The asymmetry is the point, and it is asserted rather than left to the
+        docstrings: every shape the write path refuses must still be refused there,
+        whatever the ingestor tolerates. Without this, weakening one function would
+        silently weaken the write boundary too.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import assert_scraper_id
+
+        with pytest.raises(ValidationError, match='id'):
+            assert_scraper_id({'name': 'R', **overrides})

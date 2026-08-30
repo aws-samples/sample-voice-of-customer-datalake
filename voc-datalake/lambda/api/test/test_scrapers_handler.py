@@ -705,6 +705,71 @@ class TestDeleteScraper:
         assert len(saved_scrapers) == 1
         assert saved_scrapers[0]['id'] == 'keep-this'
 
+    @patch('scrapers_handler.secretsmanager')
+    def test_deletes_a_config_stored_with_a_non_string_id(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """
+        A STORED id may not be a string — `_stored_urls_by_id` guards for that — and
+        this route compares against a path parameter, which always is. So a config
+        stored with `id: 7` could not be matched: measured, all configs remained and
+        `DELETE /scrapers/7` reported success while deleting nothing.
+
+        That made it the one shape with no in-app remedy, since an edit is keyed on
+        the same id, which is why this pairs with the write path's carry-forward
+        exemption for such a config.
+        """
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_configs': json.dumps([
+                {'id': 7, 'name': 'Legacy'},
+                {'id': 'keep-this', 'name': 'Keep'},
+            ])})
+        }
+        mock_secrets.put_secret_value.return_value = {}
+
+        from scrapers_handler import lambda_handler
+        response = lambda_handler(api_gateway_event(
+            method='DELETE',
+            path='/scrapers/7',
+            path_params={'scraper_id': '7'},
+        ), lambda_context)
+
+        assert response['statusCode'] == 200
+        saved = json.loads(json.loads(
+            mock_secrets.put_secret_value.call_args[1]['SecretString']
+        )['webscraper_configs'])
+        assert [c['id'] for c in saved] == ['keep-this']
+
+    @patch('scrapers_handler.secretsmanager')
+    def test_does_not_delete_a_config_whose_id_merely_stringifies_alike(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """
+        Positive control on the `str()` comparison: matching too loosely would delete
+        a config the caller did not name. `None` stringifies to `'None'`, so a config
+        with no id must not be removed by `DELETE /scrapers/keep-this`.
+        """
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_configs': json.dumps([
+                {'name': 'No id at all'},
+                {'id': 'keep-this', 'name': 'Keep'},
+            ])})
+        }
+        mock_secrets.put_secret_value.return_value = {}
+
+        from scrapers_handler import lambda_handler
+        response = lambda_handler(api_gateway_event(
+            method='DELETE',
+            path='/scrapers/None',
+            path_params={'scraper_id': 'other'},
+        ), lambda_context)
+
+        assert response['statusCode'] == 200
+        saved = json.loads(json.loads(
+            mock_secrets.put_secret_value.call_args[1]['SecretString']
+        )['webscraper_configs'])
+        assert len(saved) == 2
+
 
 class TestGetTemplates:
     """Tests for GET /scrapers/templates endpoint."""
