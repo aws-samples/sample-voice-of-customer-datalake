@@ -152,11 +152,28 @@ one, and both are pinned, because a single over-broad rule produces only one of 
 admitting a regex after every `)` blanks a grouped division, and accepting any word before
 the matching `(` blanks a CALL's.
 
-Rounds seven through ten are ONE bug in ONE function surfacing in four constructs, each
+An ELEVENTH defeat then showed that fix had read the wrong word: the head KEYWORD is not
+always the word before the `(`, because one MODIFIER may sit between them. `for await (…)`
+ends in `await`, so `_closes_control_head` said False and `for await (const _c of []) /`/…`
+reopened all four guards exactly as the tenth had — measured on the tree that shipped it,
+with the field pin DELETED outright, a copy in such a decoy and the field widened: `tsc`
+exit 0, eslint clean, every test here green. `for await` is the ONLY modified head form in
+the language, so the surface here is one grammatical form rather than a construct; `catch`
+stays out because `catch (e) /`/` is TS1005 under `tsc` and a SyntaxError in `node`.
+
+⚠️ The one-word fix — adding `await` to `_REGEX_MAY_FOLLOW_HEAD` — is WRONG, and neither
+existing wrong-side control catches it (measured: both green under it). `await` also leads
+an EXPRESSION, so `await (w + h) / 2` is a legal division that a bare set membership blanks.
+`_REGEX_MAY_FOLLOW_HEAD_MODIFIER` maps each modifier to the heads admitting it, so the word
+before the modifier must be one of those, and `test_an_awaited_group_is_not_a_control_head`
+pins the direction the simpler fix would have broken.
+
+Rounds seven through eleven are ONE bug in ONE function surfacing in five constructs, each
 fixed in the shared helper rather than in any guard. That is the part worth keeping: the
 remaining surface is bounded by the ways JavaScript delimits a string — whether one is
 read, where it ends, and where it may begin — not by the unbounded space of type
-expressions this file rightly refuses to model.
+expressions this file rightly refuses to model. The eleventh is the narrowest of the five,
+being one grammatical form rather than a construct, which is what convergence looks like.
 
 THE GUARDS' OWN FIXES ARE PINNED TOO, which took its own finding. The two repairs made
 in the fifth round shipped with no test, and reverting either left all 30 tests here
@@ -429,6 +446,15 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
         division (`test_an_expression_division_is_not_read_as_a_regex`), and accepting any
         word before the matching `(` blanks a CALL's
         (`test_a_call_expression_is_not_a_control_head`).
+      - reading only the word before that `(` as the head KEYWORD, which misses the one
+        modified form the language has: `for await (…)` ends in `await`. The ELEVENTH
+        vacuity, the same root cause a fifth time and again in every guard at once, so the
+        four cases for the tenth are PARAMETRISED over both openers rather than duplicated
+        — the `for_await` id of each is red when the modifier retry is reverted. Its wrong
+        side is the reason the fix is a mapping and not one more set member: `await` leads
+        an expression too, so `await (w + h) / 2` divides
+        (`test_an_awaited_group_is_not_a_control_head`), and that control is the ONLY thing
+        red under the one-word fix — measured, with both older wrong-side controls green.
     Each was measured against the live tree, `tsc` at exit 0 in every case. Positive
     assertions sit beside the negative ones so none can pass by rejecting everything.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
@@ -755,9 +781,21 @@ _REGEX_MAY_FOLLOW_KEYWORD = frozenset({
     'void', 'instanceof', 'new',
 })
 # The heads whose closing `)` ends a STATEMENT position, so a `/` after it can only open
-# a regex. `catch` is absent deliberately: `catch (e) /`/` is not reachable code, and the
-# conservative direction costs nothing here.
+# a regex. `catch` is absent deliberately: `catch (e) /`/` is not reachable code — `tsc`
+# reports TS1005 and `node` a SyntaxError — and the conservative direction costs nothing.
 _REGEX_MAY_FOLLOW_HEAD = frozenset({'if', 'for', 'while', 'switch'})
+# 🔑 The modifiers a head may carry between the keyword and its `(`, mapped to the heads
+# that admit them. `for await (…)` is the only such form in the language, and reading only
+# the word immediately before the `(` — which is `await`, not `for` — was the ELEVENTH
+# vacuity: `_closes_control_head` said False, the regex after that `)` was read as a
+# division, and every guard here reopened.
+#
+# ⚠️ Mapped rather than folded into `_REGEX_MAY_FOLLOW_HEAD`, which is the one-word fix and
+# is WRONG: `await` also leads an expression, so `await (w + h) / 2` is a legal DIVISION
+# (`node` confirms it evaluates) that a bare set membership blanks. Requiring the word
+# BEFORE the modifier to be a head that admits it keeps the expression form dividing, so
+# this closes the vacuity without opening a false FAILURE beside it.
+_REGEX_MAY_FOLLOW_HEAD_MODIFIER = {'await': frozenset({'for'})}
 _TRAILING_WORD = re.compile(r'[A-Za-z_$][\w$]*$')
 
 # 🔑 The TENTH vacuity's decoy opener, shared by every guard's fixture for it because the
@@ -767,6 +805,14 @@ _TRAILING_WORD = re.compile(r'[A-Za-z_$][\w$]*$')
 # EOF and noisily swallowed whatever followed. Assigning `.lastIndex` rather than calling
 # `.test(...)` keeps it lint-clean, so nothing stood in the way of this one either.
 CONTROL_HEAD_DESYNC = 'for (const _c of []) /`/.lastIndex = Number(_c)\n'
+# 🔑 The ELEVENTH vacuity's opener: the same statement one MODIFIER wider. Every guard's
+# fixture for the tenth is parametrised over BOTH rather than duplicated, because the two
+# are one defect — the head keyword is not the word before the `(` — and four more test
+# bodies would have been four more places for the next round's fix to go untested.
+CONTROL_HEAD_DESYNCS = {
+    'for': CONTROL_HEAD_DESYNC,
+    'for_await': 'for await (const _c of []) /`/.lastIndex = Number(_c)\n',
+}
 
 
 def _closes_control_head(text: str) -> bool:
@@ -784,6 +830,13 @@ def _closes_control_head(text: str) -> bool:
     precedes the group. Errs toward returning False for the reason `_REGEX_MAY_FOLLOW`
     gives — an unmatched `(` or an unknown word leaves the `/` read as a division, which
     is a false FAILURE bounded to one line.
+
+    🔑 The word before the `(` is not always the HEAD KEYWORD, and assuming it was for one
+    round was the ELEVENTH vacuity: `for await (…)` ends in `await`, so this returned False
+    and the eleventh reopened all four guards exactly as the tenth had. One MODIFIER may sit
+    between the keyword and its `(`, so an unrecognised word is retried as one — see
+    `_REGEX_MAY_FOLLOW_HEAD_MODIFIER` for why that indirection is not the simpler set
+    addition, which would blank a legal `await (w + h) / 2`.
     """
     depth = 0
     for index in range(len(text) - 1, -1, -1):
@@ -794,7 +847,17 @@ def _closes_control_head(text: str) -> bool:
             depth -= 1
             if depth == 0:
                 head = _TRAILING_WORD.search(text[:index].rstrip())
-                return head is not None and head.group(0) in _REGEX_MAY_FOLLOW_HEAD
+                if head is None:
+                    return False
+                if head.group(0) in _REGEX_MAY_FOLLOW_HEAD:
+                    return True
+                # Not a head, so try it as a modifier: the head is then the word before it,
+                # and must be one this modifier is legal on.
+                admitted_by = _REGEX_MAY_FOLLOW_HEAD_MODIFIER.get(head.group(0))
+                if admitted_by is None:
+                    return False
+                keyword = _TRAILING_WORD.search(text[:head.start()].rstrip())
+                return keyword is not None and keyword.group(0) in admitted_by
     return False
 
 
@@ -906,9 +969,15 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     `for (const _c of []) /`/…` was read as a division and its backtick desynchronised the
     scan exactly as an unread regex had. Measured the same way, with the field pin deleted
     and every gate green including eslint. `_closes_control_head` decides it, and both of
-    its wrong sides are pinned — see there. Rounds seven to ten were one bug in this
-    function surfacing in four constructs, which is why each fix belongs here and not in a
-    guard.
+    its wrong sides are pinned — see there.
+
+    🔑 And WHERE it begins is decided from a word, which must be the right one: reading the
+    word before that `)`'s matching `(` misses `for await (…)`, whose is `await`. The
+    ELEVENTH vacuity, measured the same way — field pin deleted, every gate green — and the
+    reason `_closes_control_head` retries an unrecognised word as a MODIFIER rather than
+    taking `await` as a head, which would blank a legal `await (w + h) / 2`. Rounds seven to
+    eleven were one bug in this function surfacing in five constructs, which is why each fix
+    belongs here and not in a guard.
     """
     def blanked(text: str) -> str:
         return ''.join('\n' if char == '\n' else ' ' for char in text)
@@ -1374,19 +1443,27 @@ class TestTheUnionParser:
         )
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
 
-    def test_a_union_inside_a_control_head_desynced_template_is_not_read(self):
-        """The same again for a regex in STATEMENT position — the tenth vacuity.
+    @pytest.mark.parametrize(
+        'desync', CONTROL_HEAD_DESYNCS.values(), ids=CONTROL_HEAD_DESYNCS
+    )
+    def test_a_union_inside_a_control_head_desynced_template_is_not_read(self, desync):
+        """The same again for a regex in STATEMENT position — the tenth vacuity, and the
+        ELEVENTH in the `for_await` case.
 
         `_REGEX_MAY_FOLLOW` excludes `)` because `(a + b) / 2` divides, so a regex after a
         `for`/`if`/`while` head's `)` was read as a division and its backtick stayed live
         to open a phantom template frame. As in the three cases above the live union
         carries the extra member deliberately: this must read `onepager` rather than merely
         disagree with the decoy, or it would pass on a parser that read nothing at all.
+
+        Parametrised over both openers rather than duplicated, because they are one defect
+        read at two depths: `for await` ends in `await`, so a check reading only the word
+        before the `(` reopened this exactly as the tenth had.
         """
         source = (
-            f'{CONTROL_HEAD_DESYNC}'
+            f'{desync}'
             "const historical = `export type DocType = 'prd' | 'legacy'`\n"
-            f'{CONTROL_HEAD_DESYNC}'
+            f'{desync}'
             "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
         )
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
@@ -1569,26 +1646,35 @@ class TestThePinMatcher:
         assert _pinned(self.PIN, f'{self.PIN}\n')
         assert _pinned(self.PIN, f'{self.CLASS_DESYNC}{self.PIN}\n')
 
-    def test_a_declaration_inside_a_control_head_desynced_template_is_not_pinned(self):
-        """The tenth vacuity, again on the pin with no compiler backstop.
+    @pytest.mark.parametrize(
+        'desync', CONTROL_HEAD_DESYNCS.values(), ids=CONTROL_HEAD_DESYNCS
+    )
+    def test_a_declaration_inside_a_control_head_desynced_template_is_not_pinned(
+        self, desync
+    ):
+        """The tenth vacuity, again on the pin with no compiler backstop — and the ELEVENTH
+        in the `for_await` case, which is why this is parametrised rather than duplicated.
 
-        Measured on the tree that shipped it: `DocTypeFieldIsExactlyTheUnion` DELETED
+        Both measured on the tree that shipped each: `DocTypeFieldIsExactlyTheUnion` DELETED
         outright, a copy left in a template literal opened by the backtick of a regex in
         STATEMENT position, and the field it guards widened to `DocType | 'onepager'` —
         `tsc` exit 0, eslint clean, and every test here green. Nothing for a lint rule to
         object to either: unlike `if (x) /`/`, a `for` head assigning `.lastIndex` raises
         no `sonarjs/no-ignored-return` and no TS2774.
+
+        The `for_await` case is the same defect one word further out — the head keyword is
+        not the word before the `(` — so it needs no separate body, only the other opener.
         """
         decoy = (
-            f'{CONTROL_HEAD_DESYNC}export const historical = `\n{self.PIN}\n`\n'
-            f'{CONTROL_HEAD_DESYNC}'
+            f'{desync}export const historical = `\n{self.PIN}\n`\n'
+            f'{desync}'
         )
         assert not _pinned(self.PIN, decoy)
         # The controls: a real declaration must still be found, and still be found with a
         # genuine statement-position regex above it — reading those must not cost the live
         # pin, which is the false-FAILURE direction of this fix.
         assert _pinned(self.PIN, f'{self.PIN}\n')
-        assert _pinned(self.PIN, f'{CONTROL_HEAD_DESYNC}{self.PIN}\n')
+        assert _pinned(self.PIN, f'{desync}{self.PIN}\n')
 
     def test_an_expression_division_is_not_read_as_a_regex(self):
         """The wrong side of the control-head fix, which is a different mistake from the
@@ -1621,6 +1707,29 @@ class TestThePinMatcher:
         assert _declarations(divided) == divided
         # The control, as above: a real control head must still admit one.
         assert _declarations('if (x) /`/.test(y)\n') == 'if (x) / /.test(y)\n'
+
+    def test_an_awaited_group_is_not_a_control_head(self):
+        """The wrong side of the ELEVENTH fix, and the reason it is a MAPPING rather than
+        one more member of `_REGEX_MAY_FOLLOW_HEAD`.
+
+        `await` leads an expression as well as modifying a `for` head, so
+        `await (w + h) / 2` is a legal DIVISION — `node` evaluates it — while
+        `for await (…) /re/` is a regex. The one-word fix cannot tell them apart: adding
+        `await` to the head set blanks the code after the first `/` here, which is the same
+        false FAILURE `test_an_expression_division_is_not_read_as_a_regex` pins for the
+        grouped case, reached by a different route. Requiring the word BEFORE the modifier
+        to be a head that admits it is what discriminates.
+
+        Neither existing wrong-side control catches this: both are green under the one-word
+        fix, measured, because neither fixture contains an awaited group.
+        """
+        divided = 'const a = await (w + h) / 2 + await (i + j) / 3\n'
+        assert _declarations(divided) == divided
+        # The control: the MODIFIED head must still admit a regex, so this cannot pass on a
+        # rule that refuses `await` everywhere and reopens the eleventh vacuity.
+        assert _declarations('for await (const c of []) /`/.test(c)\n') == (
+            'for await (const c of []) / /.test(c)\n'
+        )
 
     def test_an_indexed_division_is_not_read_as_a_character_class(self):
         """The wrong side of the class fix, which is a different mistake from the wrong
@@ -1744,15 +1853,21 @@ class TestThePinMatcher:
             self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
         )
 
-    def test_a_directive_inside_a_control_head_desynced_template_is_not_the_live_one(self):
-        """The directive lookup's version of the tenth vacuity: the desynced decoy carried
-        both the control's text and a directive above it, so it was the offset inspected
-        and the live control could have no directive at all.
+    @pytest.mark.parametrize(
+        'desync', CONTROL_HEAD_DESYNCS.values(), ids=CONTROL_HEAD_DESYNCS
+    )
+    def test_a_directive_inside_a_control_head_desynced_template_is_not_the_live_one(
+        self, desync
+    ):
+        """The directive lookup's version of the tenth vacuity, and of the ELEVENTH in the
+        `for_await` case: the desynced decoy carried both the control's text and a directive
+        above it, so it was the offset inspected and the live control could have no
+        directive at all.
         """
         decoy = (
-            f'{CONTROL_HEAD_DESYNC}export const historical = `\n'
+            f'{desync}export const historical = `\n'
             f'// {EXPECT_ERROR_DIRECTIVE} historical\n{self.PIN}\n`\n'
-            f'{CONTROL_HEAD_DESYNC}'
+            f'{desync}'
         )
         assert not _carries_expect_error(self.PIN, f'{decoy}{self.PIN}\n')
         assert _carries_expect_error(
@@ -1815,14 +1930,20 @@ class TestThePinMatcher:
         assert _generate_document_ratio(decoy) == (0, 0)
         assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
 
-    def test_a_signature_inside_a_control_head_desynced_template_is_not_counted(self):
-        """The ratio's version of the tenth vacuity: a regex in statement position was read
-        as a division, so its backtick stayed live and the decoy supplied one of each side
-        on its own — the same shape as the three cases above, one delimiter over.
+    @pytest.mark.parametrize(
+        'desync', CONTROL_HEAD_DESYNCS.values(), ids=CONTROL_HEAD_DESYNCS
+    )
+    def test_a_signature_inside_a_control_head_desynced_template_is_not_counted(
+        self, desync
+    ):
+        """The ratio's version of the tenth vacuity, and of the ELEVENTH in the `for_await`
+        case: a regex in statement position was read as a division, so its backtick stayed
+        live and the decoy supplied one of each side on its own — the same shape as the three
+        cases above, one delimiter over.
         """
         decoy = (
-            f'{CONTROL_HEAD_DESYNC}export const historical = `\n'
-            f'  {GENERATE_DOCUMENT_SIGNATURE}\n`\n{CONTROL_HEAD_DESYNC}'
+            f'{desync}export const historical = `\n'
+            f'  {GENERATE_DOCUMENT_SIGNATURE}\n`\n{desync}'
         )
         assert _generate_document_ratio(decoy) == (0, 0)
         assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
