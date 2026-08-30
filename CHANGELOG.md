@@ -97,12 +97,34 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   previously a 500. A body that is absent altogether, a literal JSON `null`, or zero-length
   (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
 - **A feedback form id that this service could not have issued now answers 404 on every route that
-  takes one out of the URL**, before any read. Ids are at most 64 characters of letters, digits, `_`
-  and `-`, so an id containing anything else — a space, for instance — answers 404: ` abc123` is
-  refused on its format. Note that no route ever resolved ` abc123` to `abc123`; the space was always
-  part of the key, so there is no stored data to migrate. Forms created through this platform are
-  unaffected — the ids it mints are 8 hex characters — and a hand-seeded id like `website-form` still
-  works.
+  takes one out of the URL**, before any read. Ids are at most 64 characters of letters, digits, `_`,
+  `-` and `.`, so an id containing anything else — a space, for instance — answers 404: ` abc123` is
+  refused on its format. **No migration is needed for the whitespace case**, and only for that case:
+  no route ever resolved ` abc123` to `abc123`, so the space was always part of the key and no stored
+  row has become unreachable. Forms created through this platform are unaffected — the ids it mints
+  are 8 hex characters — and hand-seeded ids like `website-form` and `acme.website` still work. The
+  two exceptions are `.` and `..` on their own, which are refused because they are relative-path
+  segments: a client resolves them away when it joins them onto the API base, so such an id addressed
+  a different resource rather than a form.
+
+  **Check before upgrading if you have hand-seeded or imported form ids.** An id containing anything
+  outside that class — `:`, `+`, `@`, `%`, `~`, or any non-ASCII character, as in `a:b` or `café` —
+  *did* resolve on all five of its routes before this change and now answers `404 Form not found` on
+  all of them. Unlike the whitespace case those rows are genuinely reachable-then-orphaned, so scan
+  the aggregates table for them first and rename any you find (write the record under a new `sk` and
+  repoint the embed snippet; the old row's submissions stay under their original `source_channel`,
+  so also rewrite those if the form's stats matter):
+
+  ```bash
+  aws dynamodb scan --table-name "$AGGREGATES_TABLE" \
+    --filter-expression 'pk = :pk' \
+    --expression-attribute-values '{":pk":{"S":"FEEDBACK_FORM"}}' \
+    --projection-expression 'sk' --output text --query 'Items[].sk.S' \
+  | tr '\t' '\n' | sed 's/^FORM#//' \
+  | awk 'length($0) > 64 || $0 !~ /^[0-9A-Za-z_.-]+$/ || $0 == "." || $0 == ".."'
+  ```
+
+  No output means nothing to do. Any line printed is a form whose routes will start answering 404.
 - **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
   request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
   answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route

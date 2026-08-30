@@ -2267,6 +2267,17 @@ def _quoted_interpolations(source: str, function_name: str) -> list[str]:
     context and none is in an attribute. If a legitimate HTML-context value is
     added here, widen this derivation to allow it — do NOT remove the escaping to
     get green.
+
+    `ast.FunctionDef` alone, where `_sink_bearing_helpers` and
+    `_routes_keying_on_a_form_id` accept `ast.AsyncFunctionDef` too, and that is a
+    decision rather than the last place a widening was forgotten. The argument for
+    widening those two is a failure DIRECTION: a route or a helper they cannot see
+    leaves the universe silently, so the verdict is a vacuous pass. This function
+    fails LOUDLY instead — the assert below reports "found 0" and names the function
+    it could not find, because it is scoped to one concretely named subject rather
+    than deriving a set. So an `async def get_form_iframe` breaks this test rather
+    than emptying it, which is the outcome the widening exists to produce. Widen it
+    anyway if it ever takes its subject from a derivation.
     """
     tree = ast.parse(source)
     functions = [
@@ -2514,6 +2525,48 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
         )
 
         assert response['statusCode'] == 200
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_a_dotted_hand_seeded_form_id_still_resolves(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The sibling above pins the width for `-` and `_`; this pins it for `.`.
+
+        The one respect in which this change is not additive: the character class is
+        a NEW refusal applied to ids that are ALREADY STORED, so for a row outside
+        it the change turns a record that resolved into one that 404s on all five of
+        its routes. The whitespace case in the upgrade notes is exempt from that by
+        an argument — ` abc123` never addressed `abc123`, the space was always part
+        of the key — but a dotted id has no such argument available: `acme.website`
+        was found, and nothing about it is malformed.
+
+        `.` is therefore inside the class, and it costs the #379 fix nothing: a dot
+        cannot close a JavaScript string, open a tag or begin a statement, so no
+        character the serializer depends on moved. The characters still outside
+        (`:`, `+`, `@`, `%`, non-ASCII) get an operator scan in the upgrade notes
+        instead, because for those the 404 is real.
+
+        Asserted on the KEY the route read rather than on the status alone: a 200
+        would also be produced by a route that had stopped keying on the id at all,
+        and it is reachability of the stored row — not the response code — that this
+        case is about.
+        """
+        mock_table.get_item.return_value = {'Item': {'form_id': 'acme.website'}}
+
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, 'acme.website'), lambda_context
+        )
+
+        assert response['statusCode'] == 200, (
+            'a dotted hand-seeded id was refused its page — that row resolved '
+            'before this change, so refusing it is a stored form becoming '
+            'unreachable rather than a probe being refused'
+        )
+        assert (
+            mock_table.get_item.call_args.kwargs['Key']['sk'] == 'FORM#acme.website'
+        )
+        options = json.loads(_json_prefix(_init_call_argument(response['body'])))
+        assert options['formId'] == 'acme.website'
 
     @patch('feedback_form_handler.aggregates_table')
     def test_a_disabled_form_still_serves_its_page_so_the_widget_can_say_so(
@@ -5449,6 +5502,7 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
             'deadbeef',
             'DEADBEEF',
             'website-form_2',
+            'acme.website',
             'a',
             'a' * feedback_form_handler.FORM_ID_MAX_LENGTH,
             feedback_form_handler._minted_form_id(),
@@ -5458,6 +5512,73 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 f'{feedback_form_handler._validated_form_id(valid)!r} — a '
                 'normalized return makes the record a route reads and the id it '
                 'echoes back describe two different forms'
+            )
+
+    def test_the_two_relative_path_segments_are_not_form_ids(
+        self, feedback_form_handler
+    ):
+        """`.` and `..` are refused, and this is why admitting `.` is safe.
+
+        The exclusion is about URL RESOLUTION rather than about DynamoDB, so it is
+        the one part of the character class whose reason is not "this character
+        could close a string". `feedbackFormPublicUrl` and the snippet in
+        `docs/feedback-forms.md` both build a path by joining a base to
+        `feedback-forms/<id>/iframe`; with an id of `..` a client resolves that to a
+        path with the segment REMOVED before any request is sent, so the caller
+        reaches a different resource and sees it working rather than being refused.
+        A stored row cannot be addressed at all under those two ids, which makes
+        admitting them worse than refusing them.
+
+        Exactly those two strings, which is the reason for a negative lookahead
+        anchored with `\\Z` rather than a ban on dots in some position: `'...'` is an
+        ordinary path segment, and `.hidden-form` and `form.` are ordinary ids. A
+        blanket "no leading dot" rule would refuse three reachable shapes to
+        exclude two unreachable ones.
+        """
+        for relative in ('.', '..'):
+            assert feedback_form_handler._validated_form_id(relative) is None, (
+                f'{relative!r} was accepted as a form id — it is a relative-path '
+                'segment, so a client resolves it away and addresses a different '
+                'resource than the one asked for'
+            )
+        # The other direction, and the whole reason the exclusion is exact: without
+        # these the lookahead could be widened to any leading dot (or to any id
+        # containing one) and nothing would notice.
+        for ordinary in ('...', '.hidden-form', 'form.', 'acme.website'):
+            assert feedback_form_handler._validated_form_id(ordinary) == ordinary, (
+                f'{ordinary!r} was refused — it is an ordinary path segment, not a '
+                'relative one, so the exclusion has been widened past the two '
+                'strings it is for'
+            )
+
+    def test_widening_the_class_for_a_dot_moved_no_character_the_fix_needs(
+        self, feedback_form_handler
+    ):
+        """The control on the compatibility widening above.
+
+        `.` was added to the character class so a hand-seeded `acme.website` keeps
+        resolving, and the argument for that being free is that a dot cannot end a
+        JavaScript string, open an HTML tag or begin a statement. This is that
+        argument as an assertion rather than a sentence: every character the #379
+        fix actually turns on is still refused, so a future widening cannot cite
+        this one as precedent for `'` or `<`.
+
+        `:`, `+`, `@`, `%` and `é` are here for a different reason — they are the
+        exclusions the upgrade notes tell an operator to SCAN for, so they have to
+        be genuinely refused for that instruction to describe the code.
+        """
+        for dangerous in ('a\'b', 'a"b', 'a(b', 'a)b', 'a;b', 'a<b', 'a>b',
+                          'a&b', 'a\\b', 'a b', 'a\tb', 'a/b', 'a\nb'):
+            assert feedback_form_handler._validated_form_id(dangerous) is None, (
+                f'{dangerous!r} was accepted — this is a character the #379 fix '
+                'depends on being outside the class, and admitting `.` must not '
+                'have moved it'
+            )
+        for scanned in ('a:b', 'a+b', 'a@b', 'a%b', 'café', 'a~b'):
+            assert feedback_form_handler._validated_form_id(scanned) is None, (
+                f'{scanned!r} was accepted — CHANGELOG.md tells an operator to '
+                'scan stored ids for exactly these, so if one is now admitted the '
+                'upgrade note describes a refusal that does not happen'
             )
 
     def test_a_trailing_newline_is_not_a_valid_form_id(

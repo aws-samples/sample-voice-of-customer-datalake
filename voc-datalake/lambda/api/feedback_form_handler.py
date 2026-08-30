@@ -155,6 +155,32 @@ FORM_ID_LENGTH = 8
 # Powertools' dynamic-route capture group admits all of those (issue #379), so
 # this pattern, not the route, is what bounds them.
 #
+# `.` IS INSIDE the class, and it is here for a compatibility reason rather than
+# an aesthetic one. This pattern is a NEW refusal on records that already exist:
+# the character class is the only bound in this change that can turn a row which
+# used to resolve into a 404 on all five of its routes, and unlike the whitespace
+# case there is no argument that such a row was already unreachable. `acme.website`
+# resolved correctly before — the dot was part of the key and the key was found —
+# so narrowing it out is data loss dressed as hardening. A dotted id is also the
+# most plausible hand-seeded spelling after `website-form`, since it is how a
+# domain is written. It costs the fix nothing: `.` cannot close a JavaScript
+# string, open a tag or start a statement, so admitting it moves no character the
+# #379 serializer depends on. `test_a_dotted_hand_seeded_form_id_still_resolves`
+# is what fails if it is dropped again, and the remaining exclusions (`:`, `+`,
+# `@`, `%` and everything non-ASCII) are named to an operator with a pre-upgrade
+# scan in CHANGELOG.md's upgrade notes, since for those the 404 is real.
+#
+# The `(?!\.{1,2}\Z)` in front of the class is what makes admitting `.` safe, and
+# it is about URL RESOLUTION rather than about DynamoDB: '.' and '..' are the
+# relative-path segments, so a snippet built by joining a base to
+# `feedback-forms/../config` addresses a DIFFERENT resource — the id is removed
+# from the path by the client before a request is ever sent, and the caller sees a
+# working page for a form it did not ask for rather than a refusal. Only those two
+# exact strings are affected ('...' is an ordinary segment), so the exclusion is
+# an exact-match negative lookahead rather than a ban on leading dots, which would
+# refuse `.hidden-form` for no reason. `test_the_two_relative_path_segments_are_not_form_ids`
+# pins both directions.
+#
 # No whitespace either, and that is a choice rather than an oversight: see
 # `_validated_form_id`.
 #
@@ -168,7 +194,9 @@ FORM_ID_LENGTH = 8
 # what they say. `test_a_trailing_newline_is_not_a_valid_form_id` is what fails if
 # it goes back.
 FORM_ID_MAX_LENGTH = 64
-_FORM_ID_PATTERN = re.compile(rf'^[0-9A-Za-z_-]{{1,{FORM_ID_MAX_LENGTH}}}\Z')
+_FORM_ID_PATTERN = re.compile(
+    rf'^(?!\.{{1,2}}\Z)[0-9A-Za-z_.-]{{1,{FORM_ID_MAX_LENGTH}}}\Z'
+)
 
 
 def _minted_form_id() -> str:
@@ -225,6 +253,16 @@ def _validated_form_id(raw: Any) -> str | None:
     the structural serialization at the render site (`_js_value`) bounds what a
     value can do once there. Both, because either alone leaves the other's
     failure fatal.
+
+    A NEW refusal on data that already exists, which is the one respect in which
+    this is not purely additive: an id outside the pattern 404s on all five of its
+    routes, and for a hand-seeded row whose id resolved before, that is a reachable
+    record becoming unreachable rather than a probe being refused. `.` is admitted
+    for exactly that reason (see the pattern above). The characters still outside
+    the class — `:`, `+`, `@`, `%`, `~` and everything non-ASCII — are a deliberate
+    narrowing rather than an oversight, and the upgrade path is an operator scan of
+    the aggregates table for `FORM#` ids outside the class, written down in
+    CHANGELOG.md's upgrade notes rather than left for whoever reads the 404.
 
     NOT `.strip()`ed, which is where this parts company with the sibling it is
     modelled on. There a session id is a 128-bit token and the leniency is
@@ -563,7 +601,15 @@ def create_form():
             )
             raise ServiceError('Failed to create form') from e
         logger.error(f"Error creating form: {e}")
-        raise ServiceError('Failed to create form')
+        # `from e` on both branches, and this is the one that needed it more: the
+        # branch above already names its cause in prose, while here the underlying
+        # ClientError is all the diagnosis there is and `logger.error` stringifies
+        # it without a traceback. Matches `_load_form_for_query`,
+        # `get_form_submissions` and `get_form_stats`, which is the module's
+        # prevailing spelling. No response changes — both branches answer the same
+        # generic message on purpose, so a client cannot tell a collision from a
+        # table failure.
+        raise ServiceError('Failed to create form') from e
 
 
 @app.get("/feedback-forms/<form_id>")

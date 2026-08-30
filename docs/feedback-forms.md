@@ -155,9 +155,20 @@ Customize the form appearance:
 Every route above that takes an id out of the URL checks its **format** before it
 reads or writes anything: an id that this service could not have issued answers
 `404 Form not found` without a lookup. Ids are up to 64 characters of letters,
-digits, `_` and `-`. Anything else is refused on its format, so ` abc123` is a 404
-— and it never addressed `abc123` in the first place: the space was always part of
-the key, so nothing that used to resolve has stopped resolving.
+digits, `_`, `-` and `.`. Anything else is refused on its format, so ` abc123` is a
+404 — and it never addressed `abc123` in the first place: the space was always part
+of the key, so no whitespace-bearing id has stopped resolving.
+
+`.` is inside that class so that a hand-seeded id written like a domain
+(`acme.website`) keeps working, but `.` and `..` **on their own** are refused: they
+are relative-path segments, so a client resolves them away when it joins them onto
+the API base and the request addresses a different resource than the one asked for.
+`...`, `.hidden-form` and `form.` are ordinary ids and are accepted.
+
+Ids containing anything else — `:`, `+`, `@`, `%`, `~` or a non-ASCII character —
+*did* resolve before the change that closed #379 and now answer 404 on all five of
+their routes. If you seeded or imported form ids by hand, the pre-upgrade scan in
+[CHANGELOG.md](../CHANGELOG.md) finds them; there is no compatibility shim.
 
 Two consequences are worth knowing if you integrate against these routes, both new
 in the change that closed #379:
