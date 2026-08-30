@@ -455,6 +455,14 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
         an expression too, so `await (w + h) / 2` divides
         (`test_an_awaited_group_is_not_a_control_head`), and that control is the ONLY thing
         red under the one-word fix — measured, with both older wrong-side controls green.
+        ⚠️ The mapping has TWO halves and its `in admitted_by` membership test was itself
+        unpinned for a round: weakened to `keyword is not None`, all 65 tests passed while
+        `return await (w + h) / 2` was blanked. The `const a = …` fixture cannot see that —
+        its token before `await` is `=`, so no word precedes the modifier — so the same
+        control now carries a KEYWORD-led fixture, which is what makes the membership half
+        red. The mapping's other half needs no control: falling back to the head set for an
+        unrecognised word differs only for `for each (` / `if foo (`, and `node` rejects
+        every such shape as a SyntaxError, so that mutation is a noop rather than a vacuity.
     Each was measured against the live tree, `tsc` at exit 0 in every case. Positive
     assertions sit beside the negative ones so none can pass by rejecting everything.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
@@ -1725,8 +1733,17 @@ class TestThePinMatcher:
         """
         divided = 'const a = await (w + h) / 2 + await (i + j) / 3\n'
         assert _declarations(divided) == divided
-        # The control: the MODIFIED head must still admit a regex, so this cannot pass on a
-        # rule that refuses `await` everywhere and reopens the eleventh vacuity.
+        # 🔑 The MAPPING's second half, which the fixture above structurally cannot see: its
+        # token before `await` is `=`, so `_TRAILING_WORD` finds no word and a check weakened
+        # to `keyword is not None` still answers False. Here the preceding word is `return` —
+        # a keyword `await` may follow, but NOT a head that admits it as a modifier — so only
+        # the `in admitted_by` membership test keeps this line dividing. `node` evaluates it
+        # (to 5 for 2, 2, 6, 3), and `await` is already in `_REGEX_MAY_FOLLOW_KEYWORD`, so a
+        # keyword-led awaited group is a shape this module models rather than a contrivance.
+        keyword_led = 'return await (w + h) / 2 + await (i + j) / 3\n'
+        assert _declarations(keyword_led) == keyword_led
+        # The control: the MODIFIED head must still admit a regex, so neither assertion above
+        # can pass on a rule that refuses `await` everywhere and reopens the eleventh vacuity.
         assert _declarations('for await (const c of []) /`/.test(c)\n') == (
             'for await (const c of []) / /.test(c)\n'
         )
