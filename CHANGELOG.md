@@ -124,7 +124,7 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
     --expression-attribute-values '{":pk":{"S":"FEEDBACK_FORM"}}' \
     --projection-expression 'sk' --output json --query 'Items[].sk.S' \
   | jq -r '.[]' | sed 's/^FORM#//' \
-  | awk 'NF && (length($0) > 64 || $0 !~ /^[0-9A-Za-z_.-]+$/ || $0 == "." || $0 == "..")'
+  | awk 'length($0) && (length($0) > 64 || $0 !~ /^[0-9A-Za-z_.-]+$/ || $0 == "." || $0 == "..")'
   ```
 
   No output means nothing to do. Any line printed is a form whose routes will start answering 404.
@@ -135,8 +135,11 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   rather than `--output text | tr '\t' '\n'`, because `--output text` separates values with tabs and
   `tr` cannot tell a separator tab from a tab *inside* an id — `FORM#abc<TAB>def` would arrive as the
   two well-formed lines `abc` and `def`, and a form the routes will refuse would be reported as
-  absent. `NF &&` skips the empty record, so a table holding no `FEEDBACK_FORM` rows prints nothing
-  at all rather than a blank line indistinguishable from a finding. And it relies on the AWS CLI's
+  absent. `length($0) &&` skips the empty record, so a table holding no `FEEDBACK_FORM` rows prints
+  nothing at all rather than a blank line indistinguishable from a finding — `length` rather than the
+  more idiomatic `NF` because `awk` splits fields on whitespace, so `NF` is also 0 for an id
+  consisting *only* of spaces or a tab, which the routes refuse and the scan therefore has to flag.
+  And it relies on the AWS CLI's
   default auto-pagination to walk a table larger than one page — if you disable that (`--no-paginate`,
   `--max-items`, or `AWS_PAGER`/CLI config changes), the silence covers only the first page.
   One residual gap, since no line-oriented pipeline can close it: an id containing a literal newline

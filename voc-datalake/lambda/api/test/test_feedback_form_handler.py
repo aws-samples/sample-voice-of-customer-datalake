@@ -5574,6 +5574,14 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         merely ADDRESSED with surrounding space — ` abc123` never resolved to
         `abc123` — and not to whitespace-bearing ids as a category.
 
+        `my form` is deliberately NOT an independent detector, and saying so is the
+        honest version: `'a b'` in the loop above already fails on any class that
+        admits a space, so widening the class would be caught with or without it
+        (verified by mutation). It is here as the spelling an operator will actually
+        recognise in their own table, next to the characters the scan names, so the
+        list a reader checks the upgrade note against is the same list the note
+        gives them.
+
         The accepting cases at the top are the vacuity control, and they are what
         makes the two refusal loops an argument rather than a tautology. Adding a
         character to a class can never make a previously-refused string accepted, so
