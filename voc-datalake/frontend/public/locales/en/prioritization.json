@@ -109,7 +109,7 @@
     "stale": "Superseded",
     "staleAction": "This row is locked, so its documents and its ballots stay exactly as they are. Use {{action}} to score the fresher combination.",
     "staleReason": "A newer version of at least one document type on this row exists. The newest document of each type the row holds forms a combination in which none was built directly from an earlier version of another document in it, and nothing on the row is newer than that combination.",
-    "supersededSourceReason": "One of these documents was built from an earlier version of another document in this row, so the combination crosses generations. It is still scorable."
+    "supersededSourceReason": "One of these documents was built from a different generation of another document in this row, so the combination crosses generations. It is still scorable."
   },
   "loading": "Loading documents...",
   "noteTooLong": {

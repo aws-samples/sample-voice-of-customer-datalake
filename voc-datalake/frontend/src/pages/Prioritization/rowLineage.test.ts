@@ -97,6 +97,17 @@
  *    version" (the case `lineage.staleReason`'s wording answers to);
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
  *    nothing";
+ *  * any two `LINEAGE_REASON_KEY` entries cross-wired → "gives each reason the sentence
+ *    that describes IT". `tsc` pins that table's COVERAGE (a `Record` over the union)
+ *    and "names every state and every reason with a key the catalogue holds" pins that
+ *    each key RESOLVES; neither pins the MAPPING, and before this case three of the four
+ *    could be cross-wired with 881 tests green (measured) — a row printing another
+ *    state's sentence under its own badge. Sensitive to both a two-way swap (each reason
+ *    is asserted on a phrase only its own copy carries) and a collapse onto one key (the
+ *    four sentences must be distinct). It also pins that `supersededSourceReason` claims
+ *    no DIRECTION, which is the assertion that catches the copy regressing: the rule
+ *    compares a source's TYPE and never an order, so it reports the same reason when the
+ *    source is the LATER version, and directional copy is false for that half;
  *  * the `repeatsAType` guard in `fresherCoherentSelection` WIDENED to every
  *    `crossGeneration` row (gating on the classification instead) → "DOES mark a
  *    supersededSource row stale, unlike its repeatedType sibling", and only that case
@@ -155,6 +166,7 @@ import {
   LINEAGE_STYLE,
   rowLineageOf,
 } from './rowLineage'
+import type { LineageReason } from './rowLineage'
 import prioritizationEn from '../../../public/locales/en/prioritization.json'
 
 /**
@@ -240,6 +252,47 @@ describe('the lineage tables are complete and resolvable', () => {
     // the exact phrase a widening would reintroduce, since that is the one this line
     // replaced.
     expect(reason).not.toContain('does not cross generations')
+  })
+
+  it('gives each reason the sentence that describes IT', () => {
+    // `tsc` pins the table's COVERAGE — a `Record` over `LineageReason` means a fifth
+    // reason must be given a sentence to compile — and the case above pins that each
+    // key RESOLVES. Neither pins the MAPPING, so three of the four could be cross-wired
+    // and a row would describe itself with another state's words: a row holding two PRDs
+    // printing "None of these documents records what it was built from" under a
+    // `Crosses generations` badge, which is the conflation `LineageReason` exists to end
+    // ("a reader can act on the difference").
+    //
+    // Data-driven over the table so a fifth reason has to be given an expectation here
+    // too, and resolved against the shipped English catalogue rather than through `t`,
+    // matching the case above: this is about the DATA, not i18next's fallbacks.
+    const lineage: Record<string, string> = prioritizationEn.lineage
+    const sentenceOf = (reason: LineageReason) => lineage[
+      LINEAGE_REASON_KEY[reason].sentenceKey.replace('prioritization:lineage.', '')
+    ]
+    // A phrase only that reason's own copy carries. `supersededSource` is asserted on
+    // 'different generation' and NOT on 'earlier': the rule compares a source's TYPE
+    // against the other selected documents' types and never a timestamp or an ordinal,
+    // so it reports the same reason when the source is the LATER version — a row holding
+    // PRD 1 beside a PR/FAQ built from the newer PRD 2. Directional copy is false for
+    // exactly that half, which is why this sentence reads like `coherentReason`'s.
+    const OWN_PHRASE: Record<LineageReason, string> = {
+      oneChain: 'Nothing in this row crosses generations',
+      repeatedType: 'more than one version of the same document type',
+      supersededSource: 'was built from a different generation',
+      noneRecorded: 'records what it was built from',
+    }
+
+    for (const [reason, phrase] of Object.entries(OWN_PHRASE) as [LineageReason, string][]) {
+      expect(sentenceOf(reason), reason).toContain(phrase)
+    }
+    // And it must not claim a direction the rule does not compute.
+    expect(sentenceOf('supersededSource')).not.toContain('earlier')
+    // Distinctness catches a swap that keeps every sentence a real one — the phrase
+    // assertions above catch a two-way swap, this catches a collapse onto one key.
+    const sentences = (Object.keys(OWN_PHRASE) as LineageReason[]).map(sentenceOf)
+
+    expect(new Set(sentences).size).toBe(sentences.length)
   })
 })
 

@@ -109,7 +109,7 @@
     "stale": "Superada",
     "staleAction": "Esta fila está bloqueada, por lo que sus documentos y sus papeletas quedan tal como están. Use «{{action}}» para puntuar la combinación más reciente.",
     "staleReason": "Existe una versión más reciente de al menos un tipo de documento de esta fila. Los documentos más recientes de cada tipo que la fila contiene forman una combinación en la que ninguno se creó directamente a partir de una versión anterior de otro documento de esa combinación, y ningún documento de la fila es más reciente que esa combinación.",
-    "supersededSourceReason": "Uno de estos documentos se creó a partir de una versión anterior de otro documento de esta fila, así que la combinación cruza generaciones. Se puede puntuar igualmente."
+    "supersededSourceReason": "Uno de estos documentos se creó a partir de otra generación de otro documento de esta fila, así que la combinación cruza generaciones. Se puede puntuar igualmente."
   },
   "loading": "Cargando documentos...",
   "noteTooLong": {

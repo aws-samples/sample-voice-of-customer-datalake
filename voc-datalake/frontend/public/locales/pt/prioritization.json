@@ -109,7 +109,7 @@
     "stale": "Superada",
     "staleAction": "Esta linha está bloqueada, portanto seus documentos e suas cédulas permanecem como estão. Use “{{action}}” para pontuar a combinação mais recente.",
     "staleReason": "Existe uma versão mais recente de pelo menos um tipo de documento desta linha. Os documentos mais recentes de cada tipo que a linha contém formam uma combinação na qual nenhum foi criado diretamente a partir de uma versão anterior de outro documento dessa combinação, e nenhum documento da linha é mais recente que essa combinação.",
-    "supersededSourceReason": "Um destes documentos foi criado a partir de uma versão anterior de outro documento desta linha, então a combinação cruza gerações. Ela continua pontuável."
+    "supersededSourceReason": "Um destes documentos foi criado a partir de outra geração de outro documento desta linha, então a combinação cruza gerações. Ela continua pontuável."
   },
   "loading": "Carregando documentos...",
   "noteTooLong": {
