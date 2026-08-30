@@ -68,16 +68,38 @@ REVERT MAP — which mutation each test catches
   full before consulting `stop` -> `keeps_the_retry_backoff_inside_the_budget`.
 - Clamp that sleep to zero regardless of the budget, retiring the backoff
   -> `still_backs_off_fully_when_the_budget_has_room`.
+- Stop reading the BODY under the deadline, leaving `timeout=`'s per-socket-read
+  semantics as the only bound — an origin dripping just inside the hop timeout then
+  overran the budget by 1.6x-4.0x and returned 200
+  -> `TestTheResponseBodyIsBoundedToo::a_dripping_body_is_cut_off_at_the_budget`.
+- Reclassify that stall as anything but a retryable `Timeout`, or as a security
+  refusal -> `a_dripping_body_is_a_retryable_transport_failure`.
+- Read the streamed body with `iter_content`, which blocks until a chunk is FULL, so
+  the deadline is checked once — after the overrun
+  -> `a_dripping_body_is_cut_off_at_the_budget` (it measures WALL CLOCK, not just
+  that a Timeout eventually arrives).
+- Drop MAX_RESPONSE_BYTES, or count it from `Content-Length` so a compressed body
+  can expand past it -> `a_body_larger_than_the_cap_is_refused`; make it a retryable
+  `Timeout`, so an over-large body is downloaded once per attempt
+  -> the same test's final assertion.
+- Break `.text`/`.content` while streaming, or lower the cap onto ordinary pages
+  -> `an_ordinary_page_inside_the_budget_is_returned_intact`,
+  `a_body_at_the_cap_is_still_accepted`, `an_unbudgeted_fetch_still_returns_its_body`.
 
 Every "refuses" concern has a positive control (`TestPermittedDestinations`,
 `allows_a_public_redirect_chain_and_returns_the_final_page`) so an
 always-blocking implementation cannot make this file vacuously green.
 
-No test here touches the network: `socket.getaddrinfo` and `requests.request`
-are patched at their import boundary in `shared.http_utils`.
+Network: `socket.getaddrinfo` and `requests.request` are patched at their import
+boundary in `shared.http_utils`, with ONE deliberate exception —
+`TestTheResponseBodyIsBoundedToo` runs a loopback socket server, because a slow
+BODY cannot be expressed by a mock that raises `Timeout`, and modelling every stall
+as that raise is why the drip survived several rounds of tightening this budget.
+Nothing there leaves the machine.
 """
 
 import ipaddress
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1352,3 +1374,181 @@ class TestExceptionHierarchy:
         from shared.http_utils import OutboundUrlBlocked
 
         assert not issubclass(OutboundUrlBlocked, requests.exceptions.RequestException)
+
+
+class TestTheResponseBodyIsBoundedToo:
+    """
+    `total_timeout` must bound the BODY, not just the dispatch of each request.
+
+    `requests`' `timeout=` is a per-socket-READ deadline, and the budget used to be
+    consulted only before a request went out — so an origin sending each chunk just
+    inside the hop timeout was interrupted by nothing. Measured against a real
+    socket server, scaled to a tenth of the production constants:
+
+        ingestor shape: hop=1.5 budget=6.0, one byte every 0.6s x16
+            BEFORE wall=9.6s -> 200 with a full body   (1.6x the budget)
+            AFTER  wall=6.0s -> Timeout                (1.0x)
+        preview shape:  hop=1.0 budget=1.5, one byte every 0.75s x8
+            BEFORE wall=6.0s -> 200                    (4.0x)
+            AFTER  wall=1.5s -> Timeout                (1.0x)
+
+    At the real `(15, 60)` the before figure is ~96 s against a 60 s page budget,
+    and widening the gap toward the hop timeout scales without bound: ~14 s between
+    22 chunks is ~308 s, past the webscraper Lambda's 300 s timeout, which loses the
+    terminal `_update_run_status` and strands a manual run at `status: 'running'`.
+
+    These tests use a REAL loopback socket, deliberately. The rest of this file
+    mocks `requests.request` and models every stall as `raise Timeout` — the one
+    shape `timeout=` does catch — which is exactly why this case survived several
+    rounds of tightening the same budget. A drip is a slow BODY, not a raised
+    exception, and only a real socket expresses it. Only `assert_outbound_url_allowed`
+    is stubbed, so a loopback server is reachable; the read, retry and budget path
+    is entirely real. Nothing leaves the machine.
+    """
+
+    @staticmethod
+    def _serve(body_chunks, drip_seconds):
+        """A one-shot HTTP server dripping `body_chunks`. Returns its URL."""
+        import socket as socket_module
+        import threading
+
+        srv = socket_module.socket()
+        srv.setsockopt(socket_module.SOL_SOCKET, socket_module.SO_REUSEADDR, 1)
+        srv.bind(('127.0.0.1', 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        total = sum(len(c) for c in body_chunks)
+
+        def run():
+            try:
+                conn, _ = srv.accept()
+                conn.recv(65535)
+                conn.sendall(
+                    b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n'
+                    b'Content-Length: %d\r\nConnection: close\r\n\r\n' % total
+                )
+                for chunk in body_chunks:
+                    if drip_seconds:
+                        time.sleep(drip_seconds)
+                    conn.sendall(chunk)
+                conn.close()
+            except OSError:
+                # The client hung up when its budget expired, which is the point.
+                pass
+            finally:
+                srv.close()
+
+        threading.Thread(target=run, daemon=True).start()
+        return f'http://127.0.0.1:{port}/'
+
+    @pytest.fixture
+    def unpoliced(self):
+        """The policy stubbed so a loopback address is reachable. Nothing else."""
+        with patch('shared.http_utils.assert_outbound_url_allowed'):
+            yield
+
+    def test_a_dripping_body_is_cut_off_at_the_budget(self, unpoliced):
+        import requests
+
+        from shared.http_utils import fetch_checked_with_retry
+
+        url = self._serve([b'x'] * 16, drip_seconds=0.06)
+        started = time.monotonic()
+
+        with pytest.raises(requests.exceptions.Timeout):
+            fetch_checked_with_retry(url, timeout=0.15, total_timeout=0.6)
+
+        spent = time.monotonic() - started
+        # Exact rather than tolerant: a generous allowance would absorb precisely
+        # the overshoot this test exists to detect. The whole body would take 0.96s.
+        assert spent < 0.9, f'overran its 0.6s budget: {spent:.2f}s'
+
+    def test_a_dripping_body_is_a_retryable_transport_failure(self, unpoliced):
+        """
+        The classification, which is the part callers depend on. It must stay a
+        `Timeout` — a `RETRYABLE_EXCEPTIONS` member, so the retry contract holds
+        wherever in the exchange the stall happened — and a `RequestException`, so
+        `_scrape_page`'s warn-and-continue treats it as a page that did not load. It
+        must NOT be an `OutboundUrlBlocked`: nothing was refused.
+        """
+        import requests
+
+        from shared.http_utils import (
+            RETRYABLE_EXCEPTIONS,
+            OutboundUrlBlocked,
+            fetch_checked_with_retry,
+        )
+
+        url = self._serve([b'x'] * 16, drip_seconds=0.06)
+
+        with pytest.raises(requests.exceptions.Timeout) as excinfo:
+            fetch_checked_with_retry(url, timeout=0.15, total_timeout=0.6)
+
+        assert isinstance(excinfo.value, RETRYABLE_EXCEPTIONS)
+        assert isinstance(excinfo.value, requests.exceptions.RequestException)
+        assert not isinstance(excinfo.value, OutboundUrlBlocked)
+
+    def test_an_ordinary_page_inside_the_budget_is_returned_intact(self, unpoliced):
+        """
+        The positive control that makes the rest meaningful: an implementation that
+        timed out on every body would satisfy both assertions above. `.text` and
+        `.content` must read exactly as they did before the body was streamed, since
+        that is what both callers use.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        html = b'<html><body>' + b'a' * 5000 + b'</body></html>'
+        url = self._serve([html], drip_seconds=0)
+
+        response = fetch_checked_with_retry(url, timeout=5, total_timeout=10)
+
+        assert response.status_code == 200
+        assert response.content == html
+        assert response.text == html.decode()
+
+    def test_a_body_larger_than_the_cap_is_refused(self, unpoliced):
+        """
+        Counted while reading rather than from `Content-Length`, so a compressed body
+        cannot declare a small length and expand past it. A 40 MiB page was accepted
+        in full and then held again as `.text` and once more as a parse tree, against
+        the webscraper Lambda's 512 MB.
+        """
+        import requests
+
+        from shared.http_utils import MAX_RESPONSE_BYTES, fetch_checked_with_retry
+
+        oversized = b'x' * (MAX_RESPONSE_BYTES + 1024)
+        url = self._serve([oversized], drip_seconds=0)
+
+        with pytest.raises(requests.exceptions.RequestException) as excinfo:
+            fetch_checked_with_retry(url, timeout=5, total_timeout=10)
+
+        assert str(MAX_RESPONSE_BYTES) in str(excinfo.value)
+        # NOT a Timeout, which is where this started: a Timeout is retried, so an
+        # over-large body was re-downloaded on every attempt and spent the budget
+        # three times over. The size does not change on a retry.
+        assert not isinstance(excinfo.value, requests.exceptions.Timeout)
+
+    def test_a_body_at_the_cap_is_still_accepted(self, unpoliced):
+        """
+        The boundary, so the cap cannot quietly become "anything large fails".
+        """
+        from shared.http_utils import MAX_RESPONSE_BYTES, fetch_checked_with_retry
+
+        body = b'x' * MAX_RESPONSE_BYTES
+        url = self._serve([body], drip_seconds=0)
+
+        response = fetch_checked_with_retry(url, timeout=10, total_timeout=30)
+
+        assert len(response.content) == MAX_RESPONSE_BYTES
+
+    def test_an_unbudgeted_fetch_still_returns_its_body(self, unpoliced):
+        """
+        Positive control on the other branch: without a budget nothing is streamed,
+        and the app-review ingestors' unbudgeted calls must be untouched.
+        """
+        from shared.http_utils import fetch_checked_with_retry
+
+        url = self._serve([b'<html>ok</html>'], drip_seconds=0)
+
+        assert fetch_checked_with_retry(url, timeout=5).text == '<html>ok</html>'

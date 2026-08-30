@@ -81,6 +81,17 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   which killed the invocation mid-run, so the final run-status write never happened and the
   run row stayed at `running` indefinitely. A page exceeding the budget is now skipped with a
   warning and the configuration's remaining URLs still run.
+  - That budget now bounds the response BODY as well as the requests. A per-request timeout
+    is a per-socket-*read* deadline rather than a total, and the budget was only consulted
+    before a request was dispatched, so an origin sending each chunk just inside the timeout
+    was interrupted by nothing: measured against a real server, a page dripping one byte at a
+    time spent 1.6x its budget — and 4.0x for the preview route — and still succeeded, with
+    wider gaps reaching past the 300 second Lambda timeout. A budgeted fetch now streams and
+    reads the body against the same deadline, and a stall mid-body is reported the same way a
+    connect or read timeout is. The same read caps one response at 10 MiB, counted after
+    decompression so a small declared length cannot expand past it — a 40 MiB page was
+    previously held in full, then again as text and once more as a parse tree, against the
+    scraper's 512 MB.
 - The scheduled scraper invocation as a whole is bounded by a 240 second budget as well. A
   per-page bound does not bound their sum, and the sum is what the 300 second Lambda timeout
   is compared against: ten stalling paginated URLs spent 450 seconds, and because one

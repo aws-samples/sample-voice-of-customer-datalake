@@ -204,6 +204,16 @@ What the policy accepts and refuses:
   otherwise consume nearly all of it — which loses the run's final status write, not
   just that page. A page that exceeds the budget is skipped with a warning and the
   configuration's remaining URLs still run.
+
+  The budget covers the response **body**, not only the requests. A per-request
+  timeout is a per-socket-*read* deadline rather than a total, so an origin sending
+  each chunk just inside it was interrupted by nothing — measured, a dripping page
+  spent 1.6x the page budget (4.0x for the preview route) and still returned 200, and
+  a wider gap reaches past the 300 second Lambda timeout. A budgeted fetch streams
+  the body and reads it against the same deadline, reporting a mid-body stall exactly
+  as it reports a connect or read timeout. That read also caps one response at
+  **10 MiB**, counted after decompression so a small declared length cannot expand
+  past it.
 - The **invocation** carries its own budget (240 seconds), because the per-page one
   does not bound their sum: one invocation runs every configuration that is due, each
   with all of its URLs, so ten stalling pages spent 450 seconds against the 300 second

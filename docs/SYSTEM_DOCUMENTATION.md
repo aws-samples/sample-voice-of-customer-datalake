@@ -578,7 +578,13 @@ The policy itself:
   downgrade drop them while a same-host `http`→`https` upgrade does not. A `Location`
   resolving back to the requesting URL ends the walk instead of consuming the hops.
 - Each scheduled page fetch carries a 60 s wall-clock budget as well as a 15 s
-  per-request timeout, and the **invocation** as a whole carries a 240 s budget on top
+  per-request timeout. The budget bounds the response **body** too: a per-request
+  timeout is a per-socket-*read* deadline, so an origin dripping just inside it
+  overran the budget by 1.6x (4.0x on the preview route) and still returned 200 —
+  measured against a real server. A budgeted fetch streams and reads the body against
+  the same deadline, reporting a mid-body stall as the transport failure it is, and
+  caps one response at 10 MiB counted after decompression. The **invocation** as a
+  whole carries a 240 s budget on top
   of it. The Lambda has 300 s, one configuration may name 50 URLs and one invocation
   processes every due configuration, so a per-page bound alone still summed past the
   limit — which loses the final run-status write and leaves the run row at `running`.

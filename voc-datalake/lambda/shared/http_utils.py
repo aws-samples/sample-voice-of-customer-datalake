@@ -75,6 +75,19 @@ REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 # resolve-and-check, and an unbounded chain is a free request amplifier.
 MAX_REDIRECT_HOPS = 5
 
+# Read size per chunk while the body is being consumed under a deadline. Small
+# enough that the budget is consulted often, large enough that an ordinary page is
+# a handful of iterations.
+RESPONSE_CHUNK_BYTES = 64 * 1024
+
+# Ceiling on ONE response body, counted AFTER transport decoding — so a gzip
+# response declaring a small `Content-Length` cannot expand past this, which is
+# precisely why the cap lives in the read loop rather than on the header. The
+# webscraper Lambda has `"memory": 512` in its manifest and then holds the body
+# again as `response.text` and once more as a BeautifulSoup tree; a 40 MiB page was
+# accepted in full and held three times over.
+MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+
 # Headers dropped when a redirect leaves the site they were addressed to, on
 # exactly the hops `requests.SessionRedirectMixin.rebuild_auth` drops them — that
 # decision is DELEGATED to `should_strip_auth` (see `_should_strip_credentials`)
@@ -471,20 +484,140 @@ def fetch_with_retry(
     return response
 
 
+def _body_chunks(response: requests.Response):
+    """
+    The response body, in pieces that arrive as soon as the socket has bytes.
+
+    `iter_content` is the obvious choice and it does NOT work for this: it calls
+    `read(chunk_size)`, which blocks until the chunk is FULL or the body ends. A
+    server dripping one byte at a time therefore produced a single 16-byte chunk
+    after 9.6 s, so a deadline checked between chunks was checked once, after the
+    overrun it exists to prevent — measured, with the Timeout raised at 9.6 s
+    against a 6.0 s budget.
+
+    `raw.read1` returns what is already available instead, so the caller gets
+    control back between drips: the same server yielded a chunk every 0.6 s and the
+    budget was enforced at 2.4 s. `decode_content=True` keeps transport decoding on,
+    which is what makes MAX_RESPONSE_BYTES a bound on real memory.
+
+    Falls back to `iter_content` where `raw.read1` is unavailable — an older
+    urllib3, or a response double in a test. The bound is then only as tight as the
+    chunk boundary, which is why the real path is tried first.
+    """
+    read1 = getattr(getattr(response, 'raw', None), 'read1', None)
+    if read1 is not None:
+        while True:
+            try:
+                chunk = read1(RESPONSE_CHUNK_BYTES, decode_content=True)
+            except TypeError:
+                # A `read1` that takes no `decode_content` (a plain file object):
+                # the size argument is the part that matters here.
+                chunk = read1(RESPONSE_CHUNK_BYTES)
+            if not isinstance(chunk, (bytes, bytearray)):
+                # Not a real stream — a `raw` that is a mock or an adapter that
+                # returns something else. `iter_content` below is the contract every
+                # `Response` honours, so fall back rather than loop on a value whose
+                # emptiness cannot be tested. Checked on the value rather than by
+                # type-sniffing `raw`, because what breaks the loop is a chunk that
+                # is always truthy and never bytes.
+                break
+            if not chunk:
+                return
+            yield chunk
+
+    yield from response.iter_content(chunk_size=RESPONSE_CHUNK_BYTES)
+
+
+def _consume_within_deadline(
+    response: requests.Response, url: str, deadline: float | None
+) -> requests.Response:
+    """
+    Read a streamed body, checking the remaining budget before each chunk.
+
+    Why this exists: `requests`' `timeout=` is a per-socket-READ deadline, not a
+    total, and the budget was only consulted before a request was dispatched. An
+    origin that sends each chunk just inside the hop timeout was therefore
+    interrupted by nothing at all. Measured against a real socket server, scaled to
+    a tenth of the production constants: at `timeout=1.5, total_timeout=6.0` a
+    server dripping one byte every 0.6 s for 16 bytes spent 9.6 s and returned
+    200 — 1.6x the budget, successfully. The preview shape overran by 4.0x. At the
+    real `(15, 60)` that is ~96 s against a 60 s page budget, and widening the gap
+    toward the hop timeout scales without bound: ~14 s between 22 chunks is ~308 s,
+    past the webscraper Lambda's 300 s timeout — which loses the terminal
+    `_update_run_status` and strands a manual run's row at `status: 'running'`.
+
+    The run budget could not rescue it either: `remaining` is read at the TOP of
+    each URL iteration, so a page already inside its fetch runs to completion.
+
+    Raises `requests.exceptions.Timeout` mid-body deliberately, rather than a new
+    class: it is a `RETRYABLE_EXCEPTIONS` member, so the retry contract holds, and
+    `_scrape_page`'s `except requests.RequestException` keeps treating it as
+    warn-and-continue. `OutboundUrlBlocked` still escapes both.
+
+    The bytes are assembled back onto the response, so `.text`, `.content` and
+    `.json()` behave exactly as they did for an unstreamed response — every existing
+    caller reads one of those.
+    """
+    # Nothing to bound and nothing to stream: an unbudgeted caller gets the
+    # already-loaded body it always got.
+    if deadline is None:
+        return response
+
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        for chunk in _body_chunks(response):
+            if deadline - time.monotonic() <= 0:
+                raise requests.exceptions.Timeout(
+                    f'Exceeded the response-body budget while reading {url}'
+                )
+            if not chunk:
+                # A keep-alive chunk is not progress, but it is not a stall either —
+                # the deadline above is what decides.
+                continue
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                # NOT a Timeout, which is where this started: a Timeout is a
+                # RETRYABLE_EXCEPTIONS member, so an over-large body was downloaded
+                # again on every attempt and spent the budget three times over
+                # before failing. The size will not change on a retry, so this is a
+                # `ContentDecodingError` — a `RequestException`, so both callers'
+                # "this page did not load" handling still applies, but not one the
+                # retry policy acts on.
+                raise requests.exceptions.ContentDecodingError(
+                    f'Response body from {url} exceeded {MAX_RESPONSE_BYTES} bytes'
+                )
+            chunks.append(chunk)
+    finally:
+        # Released whether the read finished, timed out or hit the cap: a streamed
+        # response holds its connection until it is closed or fully read.
+        response.close()
+
+    # Assigned rather than returned separately so `.text`/`.content`/`.json()` work
+    # unchanged. `_content_consumed` is what stops requests trying to read the
+    # (now closed) socket again.
+    response._content = b''.join(chunks)
+    response._content_consumed = True
+    return response
+
+
 def _fetch_within_deadline(url: str, deadline: float, timeout: int, **rest):
     """
     One hop, retried, with every attempt kept inside `deadline`.
 
-    THREE things spend wall clock here, and bounding any two of them leaves the
+    FOUR things spend wall clock here, and bounding any three of them leaves the
     budget overrunnable. `stop_after_delay` is only consulted BETWEEN attempts, so
     it cannot stop an attempt that has already started from running past the
     budget; shortening the timeout once per hop cannot either, because the later
-    attempts still get the hop's full value; and the backoff SLEEP between
-    attempts is taken before `stop` is next consulted, so an unclamped one
-    overshot by up to its full interval (a 16 s budget at a 15 s hop timeout
-    finished at 17 s). So the timeout is recomputed from the remaining budget on
-    EVERY attempt, the stop condition ends the retries as soon as the budget is
-    gone, and `_wait_condition` clamps each sleep to what is left.
+    attempts still get the hop's full value; the backoff SLEEP between attempts is
+    taken before `stop` is next consulted, so an unclamped one overshot by up to
+    its full interval (a 16 s budget at a 15 s hop timeout finished at 17 s); and
+    `timeout=` is a per-socket-READ deadline rather than a total, so an origin
+    dripping the BODY just inside it was interrupted by nothing (measured 1.6x the
+    budget, returning 200). So the timeout is recomputed from the remaining budget
+    on EVERY attempt, the stop condition ends the retries as soon as the budget is
+    gone, `_wait_condition` clamps each sleep to what is left, and the body is
+    streamed and read under the same deadline — see `_consume_within_deadline`.
 
     `fetch_with_retry.__wrapped__` is its undecorated body: the retry policy for
     this call carries a deadline, so the default one must not also apply.
@@ -500,9 +633,26 @@ def _fetch_within_deadline(url: str, deadline: float, timeout: int, **rest):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise requests.exceptions.Timeout(f'Exceeded the budget for {url}')
-        return fetch_with_retry.__wrapped__(
-            url, timeout=min(timeout, remaining), **rest
-        )
+        # `stream=True` so the BODY is read under the deadline too — the fourth
+        # thing that spends wall clock here, and the one `timeout=` cannot see. A
+        # caller's own `stream` is overridden rather than honoured: this function
+        # returns a fully-read response, so streaming is an implementation detail
+        # of bounding it. See `_consume_within_deadline`.
+        try:
+            response = fetch_with_retry.__wrapped__(
+                url, timeout=min(timeout, remaining), **{**rest, 'stream': True}
+            )
+        except RetryableHTTPError as e:
+            # A 429/5xx is raised BEFORE the body is read, and a streamed response
+            # holds its connection until closed. Released here so a retried hop does
+            # not accumulate one per attempt.
+            if e.response is not None:
+                e.response.close()
+            raise
+        # Inside the attempt, so a mid-body Timeout is retried by THIS hop's policy
+        # exactly like a connect or read timeout — the retry contract does not
+        # distinguish where in the exchange the stall happened.
+        return _consume_within_deadline(response, url, deadline)
 
     remaining_now = max(deadline - time.monotonic(), 0)
     return create_retry_decorator(max_total_delay=remaining_now)(attempt)()
@@ -637,7 +787,13 @@ def fetch_checked_with_retry(
             timeout can no longer outrun it. A non-positive value means "already
             expired" — which is what a caller passing `deadline -
             time.monotonic()` produces once its own budget is gone — and raises
-            before any request is attempted.
+            before any request is attempted. It bounds the response BODY too: with
+            a budget set the body is streamed and read under the same deadline,
+            because `requests`' `timeout=` is per-socket-read and an origin
+            dripping just inside it overran the budget by 1.6x-4.0x while returning
+            200. That read also enforces MAX_RESPONSE_BYTES. Without a budget the
+            body is loaded as before and neither bound applies — an unbudgeted
+            caller has no synchronous deadline to miss.
 
     Raises:
         OutboundUrlBlocked: the initial URL, or any redirect target, is not a
@@ -648,9 +804,12 @@ def fetch_checked_with_retry(
             A transport error, NOT a refusal: every hop in it was resolved and
             cleared, so reporting a long public chain as a blocked destination
             raised a false SSRF alert.
-        requests.exceptions.Timeout: `total_timeout` elapsed mid-chain. A
-            transport failure, not a refusal, so callers that already treat a
-            `RequestException` as "this page did not load" keep behaving that way.
+        requests.exceptions.Timeout: `total_timeout` elapsed mid-chain, including
+            mid-BODY, or the body exceeded MAX_RESPONSE_BYTES. A transport failure,
+            not a refusal, so callers that already treat a `RequestException` as
+            "this page did not load" keep behaving that way — and it stays a
+            `RETRYABLE_EXCEPTIONS` member, so a stall is retried wherever in the
+            exchange it happened.
     """
     # An explicit allow_redirects from a caller is dropped, not honoured:
     # following redirects inside requests is exactly the unchecked hop this
