@@ -1223,7 +1223,12 @@ def get_form_submissions(form_id: str):
         
         return {
             'success': True,
-            'form_id': form_id,
+            # The VALIDATED id, like the key and the filter above: this response
+            # names the record those two addressed, so a normalizing validator
+            # cannot make it describe one row set while naming another id. See
+            # _load_form_for_query, and `submit_form_feedback` which already
+            # stores `'form_id': validated`.
+            'form_id': validated,
             'stats': {
                 'total_submissions': len(items),
                 'avg_rating': avg_rating,
@@ -1312,7 +1317,11 @@ def get_form_stats(form_id: str):
         
         return {
             'success': True,
-            'form_id': form_id,
+            # The VALIDATED id, for the same reason as get_form_submissions: the
+            # count reported here is of the rows the key and the filter above
+            # selected, so the id naming it has to be the one they were built
+            # from.
+            'form_id': validated,
             'stats': {
                 'total_submissions': submission_count,
                 'avg_rating': avg_rating,

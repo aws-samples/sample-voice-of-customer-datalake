@@ -3582,12 +3582,24 @@ def _sink_bearing_helpers(tree: ast.Module) -> frozenset[str]:
     Two exclusions, both in the false-positive direction, because this set only
     ever ADDS sinks to a caller:
 
-    - A function that calls `_validated_form_id` itself. That is what keeps
-      `_load_form_for_query` — which reads, and which three routes delegate to —
-      a refusal rather than an unguarded sink: it bounds the id it was handed
-      before its own read, which `_validates_its_form_id` already accepts as the
-      delegating spelling. Counting it would report `/iframe`, `/stats` and
-      `/submissions` as unbounded.
+    - A function that BOUNDS for itself — `_bounds_its_id`, the same
+      refusal-plus-order-plus-linkage decision the route check applies, asked of
+      the helper. That is what keeps `_load_form_for_query` — which reads, and
+      which three routes delegate to — a refusal rather than an unguarded sink:
+      it refuses the id it was handed before its own read, and keys that read on
+      the value the refusal vouched for. Counting it would report `/iframe`,
+      `/stats` and `/submissions` as unbounded.
+
+      Deliberately NOT "the body mentions `_validated_form_id` somewhere", which
+      is what this used to ask. A mention is not a bound, and the three shapes it
+      wrongly excluded are the ones a hardening edit produces: a validator call
+      under `if False:`, a call about a DIFFERENT value than the one written, and
+      a call whose result is never refused. Each dropped the helper out of this
+      set, so its write went back to being invisible and a route handing it a raw
+      id reported bounded. The last of those is `_anchor_form_brand` plus a
+      defensive-looking line, i.e. the plausible next edit to the one helper this
+      set names — see
+      `test_the_helper_set_is_not_escaped_by_mentioning_the_validator`.
     - A ROUTE handler, since a route is entered by the resolver rather than called
       by another function here. Without this the set names `list_forms`,
       `create_form`, `get_form_stats` and `get_form_submissions` — true of them
@@ -3595,37 +3607,51 @@ def _sink_bearing_helpers(tree: ast.Module) -> frozenset[str]:
       did, the caller would be accused for a read the route bounds for itself.
 
     A fixpoint rather than one level, because a helper calling a helper is the same
-    hole one step further out and the loop costs four lines. It resolves NAMES in
-    this module only: a sink reached through an imported function is still invisible,
-    which is the remaining ceiling — worth stating rather than implying, since the
-    failure mode is the vacuous pass this whole helper exists to close.
+    hole one step further out and the loop costs four lines. Both questions are
+    re-asked on every pass, since a helper joining the set can give another one a
+    sink it did not have before — the set only ever grows, so this terminates.
+
+    Three ceilings, all in the same direction — a write this set cannot see is one
+    no question is asked about, so the verdict is the vacuous pass the helper
+    exists to close. Named rather than implied, so the next reader knows they are
+    accepted rather than overlooked:
+
+    - it resolves NAMES defined in THIS module, so a sink reached through an
+      imported function is invisible;
+    - candidates are the module's TOP-LEVEL definitions, so a `def` nested one
+      level (inside `if TYPE_CHECKING:`, a `try:`/`except ImportError:` shim, a
+      feature flag) is not one;
+    - a call reaches a helper by its own NAME, so `fn = _writer` then `fn(id)` is
+      not matched — the alias class `_collect_aliases` handles for table handles,
+      unhandled for functions.
+
+    `async def` is NOT among them: it is a candidate like any other
+    (`test_the_helper_set_sees_an_async_writer`), because a different node type is
+    the weakest possible reason for a write to escape.
     """
-    def _eligible(node: ast.FunctionDef) -> bool:
-        validates = any(
-            isinstance(call, ast.Call)
-            and isinstance(call.func, ast.Name)
-            and call.func.id == '_validated_form_id'
-            for call in ast.walk(node)
-        )
-        routed = any(
+    def _routed(node) -> bool:
+        return any(
             isinstance(decorator, ast.Call)
             and isinstance(decorator.func, ast.Attribute)
             and isinstance(decorator.func.value, ast.Name)
             and decorator.func.value.id == 'app'
             for decorator in node.decorator_list
         )
-        return not validates and not routed
 
     candidates = {
         node.name: node for node in tree.body
-        if isinstance(node, ast.FunctionDef) and _eligible(node)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not _routed(node)
     }
     helpers: set[str] = set()
     growing = True
     while growing:
         growing = False
         for name, node in candidates.items():
-            if name not in helpers and _sink_calls(node, frozenset(helpers)):
+            if name in helpers:
+                continue
+            known = frozenset(helpers)
+            if _sink_calls(node, known) and not _bounds_its_id(node, known):
                 helpers.add(name)
                 growing = True
     return frozenset(helpers)
@@ -3837,9 +3863,20 @@ def _refused_names(function: ast.FunctionDef) -> dict[str, tuple[int, int]]:
     return refused
 
 
-def _validates_its_form_id(source: str, function_name: str) -> bool:
-    """Does `function_name` reach the validator, and REFUSE, before keying on
-    anything?
+def _bounds_its_id(
+    function, helpers: frozenset[str] = frozenset()
+) -> bool:
+    """Does `function` reach the validator, and REFUSE, before keying on anything?
+
+    THE decision, asked of any `FunctionDef` — a route (`_validates_its_form_id`,
+    which is this with the module parsed for it) or a module-level helper
+    (`_sink_bearing_helpers`, which excludes one that bounds for itself). One
+    function rather than two, because the two callers were asking the same
+    question and only one of them was asking it properly: the helper exclusion
+    used to test whether `_validated_form_id` was MENTIONED anywhere in the body,
+    which a dead call, a call about another value and an unenforced call all
+    satisfy. Sharing this makes "bounds its id" mean the same thing on both sides
+    by construction.
 
     Positional and result-aware, because the order and the refusal are the whole
     claim. An earlier version of this helper was an order-insensitive set-membership
@@ -3905,17 +3942,13 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     rather than an unremarkable string. The ceiling: propagation follows `Assign`
     and `AnnAssign` only, so an id smuggled through a `for` target or a mutated
     container is not traced — a deliberate stopping point, since the shapes that
-    exist here build keys and filters by assignment.
+    exist here build keys and filters by assignment. For the same reason the taint
+    SOURCE is the parameter list, so an id taken from `app.current_event` rather
+    than from the capture group is outside this instrument by construction:
+    Powertools always hands the capture in as a parameter, and an id out of the
+    request BODY is a different validation question. "Universal over the values
+    Powertools binds as parameters" is the accurate reading of the claim.
     """
-    tree = ast.parse(source)
-    functions = [
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == function_name
-    ]
-    assert len(functions) == 1, (
-        f'expected exactly one def {function_name}, found {len(functions)}'
-    )
-    function = functions[0]
     refused = _refused_names(function)
 
     def _calls(statement) -> list[ast.Call]:
@@ -3927,6 +3960,31 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     def _mentioned(node: ast.AST) -> set[str]:
         return {
             child.id for child in ast.walk(node) if isinstance(child, ast.Name)
+        }
+
+    def _bare_arguments(call: ast.Call) -> set[str]:
+        """The call's arguments that are a NAME and nothing else.
+
+        What the refusal of `_validated_form_id(form_id)` vouches for is `form_id`
+        — the value that was handed in. It vouches for nothing about a value that
+        was TRANSFORMED on the way in: `_validated_form_id(form_id.lower())`
+        establishes that the lowercased string is well formed, and a key built from
+        raw `form_id` afterwards is built from a value nothing checked.
+
+        That distinction is not academic here. `_load_form_for_query`'s docstring
+        reasons about "a plausible 'form ids are case-insensitive' change",
+        `_validated_form_id`'s argues at length against `.strip()`ing, and
+        `test_a_query_route_filters_on_the_id_it_read_even_if_the_validator_normalizes`
+        monkeypatches a normalizing validator for that exact reason — so a
+        normalizing spelling is the change this module has already anticipated
+        twice, and walking the whole argument expression would have made this
+        derivation the one instrument that kept reporting such a route bounded
+        (`test_the_derivation_refuses_a_bound_on_a_transformed_argument`).
+        """
+        return {
+            argument.id
+            for argument in [*call.args, *(kw.value for kw in call.keywords)]
+            if isinstance(argument, ast.Name)
         }
 
     def _target_names(statement) -> set[str]:
@@ -3944,11 +4002,17 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
             if isinstance(name, ast.Name)
         }
 
-    def _walrus_refusal(statement) -> tuple[tuple[int, int], ast.Call] | None:
+    def _walrus_refusal(
+        statement,
+    ) -> tuple[tuple[int, int], ast.Call, str] | None:
         """`if not (<name> := _validated_form_id(...)):` — bind and refuse in one.
 
         The `if`'s own position, because for this spelling the binding and the
         refusal are the same statement — there is no gap between them to measure.
+        The walrus TARGET is returned alongside the call, rather than read back out
+        of the condition with `_mentioned`, so this spelling binds exactly what the
+        two-statement one does: the target and the bare arguments, not every name a
+        transformed argument happens to mention.
         """
         if not isinstance(statement, ast.If):
             return None
@@ -3958,6 +4022,7 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
         bound = test.operand
         if not (
             isinstance(bound, ast.NamedExpr)
+            and isinstance(bound.target, ast.Name)
             and isinstance(bound.value, ast.Call)
             and _named(bound.value, '_validated_form_id')
         ):
@@ -3968,12 +4033,19 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
             for child in ast.walk(node)
         ):
             return None
-        return (statement.lineno, statement.col_offset), bound.value
+        return (
+            (statement.lineno, statement.col_offset), bound.value, bound.target.id
+        )
 
     # name -> the earliest position from which it is known to be bounded. Both the
     # id handed TO the validator and the value handed BACK are bounded from the
     # refusal, since the refusal is what makes the one a well-formed id and the
     # other not None.
+    #
+    # Only the names the refusal actually vouches for: the statement's TARGETS and
+    # the call's BARE-NAME arguments (`_bare_arguments`). A transformed argument is
+    # deliberately not a bound on its source — `_validated_form_id(form_id.lower())`
+    # says nothing about `form_id`.
     bounded_at: dict[str, tuple[int, int]] = {}
 
     def _bind(names, position: tuple[int, int]) -> None:
@@ -3984,13 +4056,13 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     for statement in function.body:
         walrus = _walrus_refusal(statement)
         if walrus is not None:
-            position, call = walrus
-            _bind(_mentioned(call) | _mentioned(statement.test), position)
+            position, call, target = walrus
+            _bind(_bare_arguments(call) | {target}, position)
         for call in _calls(statement):
             if _named(call, '_load_form_for_query'):
                 # This one raises for itself, so the call is the refusal.
                 position = (statement.lineno, statement.col_offset)
-                _bind(_mentioned(call) | _target_names(statement), position)
+                _bind(_bare_arguments(call) | _target_names(statement), position)
             if not _named(call, '_validated_form_id'):
                 continue
             # The result has to be BOUND and then refused. An `Expr` statement, or
@@ -4000,13 +4072,13 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
             # and anything between the two runs with it.
             refusals = [refused[target] for target in targets if target in refused]
             if refusals:
-                _bind(targets | _mentioned(call), min(refusals))
+                _bind(targets | _bare_arguments(call), min(refusals))
 
     if not bounded_at:
         return False
     validated_at = min(bounded_at.values())
 
-    sinks = _sink_calls(function, _sink_bearing_helpers(tree))
+    sinks = _sink_calls(function, helpers)
     # No sink is not a pass by default: #379 was a route that touched no AWS
     # service at all and still put the id in its response, so a route that keys on
     # nothing yet takes an id out of the URL still has to establish the bound.
@@ -4049,6 +4121,25 @@ def _validates_its_form_id(source: str, function_name: str) -> bool:
     return not any(
         mentioned & _unbounded_at(position) for position, mentioned in sinks
     )
+
+
+def _validates_its_form_id(source: str, function_name: str) -> bool:
+    """`_bounds_its_id` for the named function in `source`.
+
+    The route-facing entry point: it resolves the name against the module and
+    derives the sink-bearing helper set, which is the only thing the decision needs
+    beyond the function itself.
+    """
+    tree = ast.parse(source)
+    functions = [
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == function_name
+    ]
+    assert len(functions) == 1, (
+        f'expected exactly one def {function_name}, found {len(functions)}'
+    )
+    return _bounds_its_id(functions[0], _sink_bearing_helpers(tree))
 
 
 class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
@@ -4570,6 +4661,189 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
             'route that delegates one'
         )
 
+    @pytest.mark.parametrize(
+        'shape, helper',
+        [
+            pytest.param(
+                '''
+                def _writer(form_id):
+                    aggregates_table.put_item(Item={'sk': f'FORM#{form_id}'})
+                    if False:
+                        _validated_form_id(form_id)
+                ''',
+                '_writer',
+                id='the validator call is dead code',
+            ),
+            pytest.param(
+                '''
+                def _writer(form_id, brand):
+                    aggregates_table.put_item(Item={'sk': f'FORM#{form_id}'})
+                    if not _validated_form_id(brand):
+                        raise NotFoundError('Form not found')
+                ''',
+                '_writer',
+                id='it refuses a different value than the one it writes',
+            ),
+            pytest.param(
+                '''
+                def _anchor_form_brand(form_id, effective_brand):
+                    validated = _validated_form_id(form_id)
+                    aggregates_table.update_item(
+                        Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                    )
+                ''',
+                '_anchor_form_brand',
+                id='it validates but never refuses',
+            ),
+        ],
+    )
+    def test_the_helper_set_is_not_escaped_by_mentioning_the_validator(
+        self, shape, helper
+    ):
+        """A helper leaves the sink-bearing set by BOUNDING, not by mentioning.
+
+        The exclusion used to be `any(... == '_validated_form_id' ...)` over
+        `ast.walk` — the validator's name appearing anywhere in the body. Its own
+        docstring justified it with `_load_form_for_query`, "which bounds the id it
+        was handed BEFORE its own read": a refusal-and-order-and-linkage property.
+        The code asked the much weaker "does the name appear", so each shape here
+        dropped the helper out of the set, its write became invisible again, and a
+        route handing it a raw id was reported bounded on an EMPTY sink list — the
+        exact silence `_sink_bearing_helpers` was added to close.
+
+        None is exotic, and the third is not hypothetical at all: it is
+        `_anchor_form_brand` with a defensive-looking validator call added and the
+        two lines that refuse omitted, i.e. the plausible next hardening edit to the
+        one helper this set names — which under the old exclusion would silently
+        remove the control this class just gained for it.
+
+        `_bounds_its_id` is what decides the exclusion now, so "bounds its id" means
+        the same thing for a helper as for a route by construction.
+        """
+        helper_source = textwrap.dedent(shape)
+        source = helper_source + textwrap.dedent(
+            '''
+            @app.post("/feedback-forms/<form_id>/helper-write")
+            def post_helper_write(form_id: str):
+                _WRITER_(form_id, 'Acme')
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+            '''
+        ).replace('_WRITER_', helper)
+
+        assert _sink_bearing_helpers(ast.parse(source)) == {helper}, (
+            f'{helper} dropped out of the sink-bearing set because it MENTIONS '
+            '_validated_form_id — a dead, misdirected or unenforced call is not a '
+            'bound, and excluding on one makes the write it performs invisible'
+        )
+        assert not _validates_its_form_id(source, 'post_helper_write'), (
+            'the route handed a raw id to a helper that writes it and was reported '
+            'bounded — the helper escaped the set, so there was no sink to ask '
+            'either question about'
+        )
+
+    def test_the_helper_set_sees_an_async_writer(self):
+        """`async def` is a different node type, not a different question.
+
+        Candidates were `isinstance(node, ast.FunctionDef)` over `tree.body`, which
+        `ast.AsyncFunctionDef` is not — so an `async def` helper that wrote what it
+        was handed was never even considered, and the route calling it reported
+        bounded on an empty sink list. Nothing in this sync Lambda handler is
+        `async` today, which is exactly when the shape costs one token to close.
+
+        Pinned so the widening is deliberate rather than incidental. The two
+        remaining shapes — a `def` nested one level at module scope, and a helper
+        reached through a local alias — are named as accepted ceilings in
+        `_sink_bearing_helpers`'s docstring instead, since closing them needs
+        machinery rather than a token.
+        """
+        source = textwrap.dedent(
+            '''
+            async def _write_form(form_id):
+                aggregates_table.put_item(
+                    Item={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+
+            @app.post("/feedback-forms/<form_id>/async-write")
+            def post_async_write(form_id: str):
+                _write_form(form_id)
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+            '''
+        )
+
+        assert _sink_bearing_helpers(ast.parse(source)) == {'_write_form'}, (
+            'an async def helper that writes what it is handed was not a candidate '
+            'for the sink-bearing set — the node type is AsyncFunctionDef, and the '
+            'candidate filter has to admit both'
+        )
+        assert not _validates_its_form_id(source, 'post_async_write'), (
+            'a write through an async helper was reported as bounded — the sink '
+            'list was empty, so neither question was asked'
+        )
+
+    def test_the_derivation_refuses_a_bound_on_a_transformed_argument(self):
+        """Validating `form_id.lower()` is not validating `form_id`.
+
+        The linkage rule binds the names the refusal vouches for, and an earlier
+        version bound every name reachable inside the validator CALL. So a
+        normalizing spelling — `validated = _validated_form_id(form_id.lower())`,
+        refuse, then key on raw `form_id` — reported bounded, although only the
+        transformed value was ever checked and the key was built from the parameter.
+
+        This is the one shape worth its own case, because a normalizing validator is
+        a change this module has already anticipated twice and defended against:
+        `_validated_form_id`'s docstring argues at length against `.strip()`ing,
+        `_load_form_for_query`'s reasons about "a plausible 'form ids are
+        case-insensitive' change", and
+        `test_a_query_route_filters_on_the_id_it_read_even_if_the_validator_normalizes`
+        monkeypatches exactly that validator. The day such a change lands, this
+        derivation would have been the one instrument still reporting a route
+        bounded while it read a key it never checked.
+
+        Both directions, since narrowing the binding must not cost the spelling
+        every real route uses: the bare-name argument still binds the parameter.
+        """
+        transformed = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/normalized")
+            def get_normalized(form_id: str):
+                validated = _validated_form_id(form_id.lower())
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+            '''
+        )
+
+        assert not _validates_its_form_id(transformed, 'get_normalized'), (
+            'a route that validated form_id.lower() and keyed on raw form_id was '
+            'reported as bounded — the refusal vouches for the value handed IN, so '
+            'a transformed argument is not a bound on its source'
+        )
+
+        bare = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/plain")
+            def get_plain(form_id: str):
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return aggregates_table.get_item(
+                    Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
+                )
+            '''
+        )
+
+        assert _validates_its_form_id(bare, 'get_plain'), (
+            'the bare-name spelling stopped binding its argument — every real route '
+            'in the module passes the parameter directly and keys on it or on the '
+            'value handed back, so this must stay accepted'
+        )
+
     def test_the_derivation_refuses_validating_the_wrong_capture(self):
         """Validating SOMETHING is not validating the id the read keys on.
 
@@ -5086,12 +5360,14 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
             == 'form_DeadBeef'
         )
 
+    @pytest.mark.parametrize('route', ['submissions', 'stats'])
     @patch('feedback_form_handler.feedback_table')
     @patch('feedback_form_handler.aggregates_table')
     def test_a_query_route_filters_on_the_id_it_read_even_if_the_validator_normalizes(
         self,
         mock_table,
         mock_feedback_table,
+        route,
         api_gateway_event,
         lambda_context,
         feedback_form_handler,
@@ -5114,6 +5390,16 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         parameter would filter on `form_DeadBeef` beside a key of `FORM#deadbeef`
         and select nothing — zero submissions for a form that has them, answered
         as a 200, which is #312's false zero.
+
+        The RESPONSE's `form_id` is asserted alongside them, because it is the
+        third use of the same string and the one a caller reads: a body naming
+        `DeadBeef` beside a count measured on `form_deadbeef` reports a number for
+        a record it does not name, and it looks authoritative while doing it. Both
+        query routes therefore echo the validated id, as
+        `submit_form_feedback` already stores it — which is why this case runs over
+        BOTH of them rather than over `/submissions` alone: they are two copies of
+        the same three-way agreement, and only pinning each catches the one that
+        drifts.
         """
         exact = feedback_form_handler._validated_form_id
         mock_table.get_item.return_value = {
@@ -5123,9 +5409,9 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
 
         event = api_gateway_event(
             method='GET',
-            path='/feedback-forms/DeadBeef/submissions',
+            path=f'/feedback-forms/DeadBeef/{route}',
             path_params={'form_id': 'DeadBeef'},
-            resource='/feedback-forms/{form_id}/submissions',
+            resource=f'/feedback-forms/{{form_id}}/{route}',
         )
 
         with patch.object(
@@ -5140,10 +5426,15 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         channel = mock_feedback_table.query.call_args.kwargs[
             'ExpressionAttributeValues'
         ][':sc']
-        assert (key, channel) == ('FORM#deadbeef', 'form_deadbeef'), (
-            f'the route read {key} and filtered on {channel} — the two are built '
-            'from different strings, so the filter names a source_channel no write '
-            'produced and the route reports zero for a form that has submissions'
+        reported = json.loads(response['body'])['form_id']
+        assert (key, channel, reported) == (
+            'FORM#deadbeef', 'form_deadbeef', 'deadbeef'
+        ), (
+            f'the route read {key}, filtered on {channel} and reported '
+            f'{reported!r} — these are built from different strings, so the filter '
+            'names a source_channel no write produced (zero rows for a form that '
+            'has submissions) or the body names an id other than the record the '
+            'count was measured on'
         )
 
 
