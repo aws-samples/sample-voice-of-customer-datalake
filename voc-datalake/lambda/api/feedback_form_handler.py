@@ -158,8 +158,10 @@ FORM_ID_LENGTH = 8
 # `.` IS INSIDE the class, and it is here for a compatibility reason rather than
 # an aesthetic one. This pattern is a NEW refusal on records that already exist:
 # the character class is the only bound in this change that can turn a row which
-# used to resolve into a 404 on all eight of its routes, and unlike the whitespace
-# case there is no argument that such a row was already unreachable. `acme.website`
+# used to resolve into a 404 on all eight of its routes, and unlike an id merely
+# ADDRESSED with surrounding whitespace there is no argument that such a row was
+# already unreachable (a row STORED with a space in its id has no such argument
+# either, which is why the scan covers it). `acme.website`
 # resolved correctly before — the dot was part of the key and the key was found —
 # so narrowing it out is data loss dressed as hardening. A dotted id is also the
 # most plausible hand-seeded spelling after `website-form`, since it is how a
@@ -167,8 +169,9 @@ FORM_ID_LENGTH = 8
 # string, open a tag or start a statement, so admitting it moves no character the
 # #379 serializer depends on. `test_a_dotted_hand_seeded_form_id_still_resolves`
 # is what fails if it is dropped again, and the remaining exclusions (`:`, `+`,
-# `@`, `%` and everything non-ASCII) are named to an operator with a pre-upgrade
-# scan in CHANGELOG.md's upgrade notes, since for those the 404 is real.
+# `@`, `%`, everything non-ASCII, and whitespace inside an id) are named to an
+# operator with a pre-upgrade scan in CHANGELOG.md's upgrade notes, since for those
+# the 404 is real.
 #
 # The `(?!\.{1,2}\Z)` in front of the class is what makes admitting `.` safe, and
 # it is about URL RESOLUTION rather than about DynamoDB: '.' and '..' are the
@@ -259,10 +262,18 @@ def _validated_form_id(raw: Any) -> str | None:
     routes, and for a hand-seeded row whose id resolved before, that is a reachable
     record becoming unreachable rather than a probe being refused. `.` is admitted
     for exactly that reason (see the pattern above). The characters still outside
-    the class — `:`, `+`, `@`, `%`, `~` and everything non-ASCII — are a deliberate
-    narrowing rather than an oversight, and the upgrade path is an operator scan of
-    the aggregates table for `FORM#` ids outside the class, written down in
-    CHANGELOG.md's upgrade notes rather than left for whoever reads the 404.
+    the class — `:`, `+`, `@`, `%`, `~`, everything non-ASCII, and whitespace
+    WITHIN an id such as `'my form'` — are a deliberate narrowing rather than an
+    oversight, and the upgrade path is an operator scan of the aggregates table for
+    `FORM#` ids outside the class, written down in CHANGELOG.md's upgrade notes
+    rather than left for whoever reads the 404.
+
+    Interior whitespace belongs in that list rather than under the `.strip()`
+    argument below, and the two are easy to conflate: that argument is about an id
+    ADDRESSED with surrounding space, where nothing becomes unreachable because
+    `' deadbeef'` never resolved to `'deadbeef'` to begin with. A row STORED as
+    `'my form'` is the `acme.website` case instead — it resolved, and now it does
+    not — so it is scanned for rather than argued away.
 
     NOT `.strip()`ed, which is where this parts company with the sibling it is
     modelled on. There a session id is a 128-bit token and the leniency is

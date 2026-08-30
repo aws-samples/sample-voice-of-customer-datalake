@@ -99,32 +99,49 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 - **A feedback form id that this service could not have issued now answers 404 on every route that
   takes one out of the URL**, before any read. Ids are at most 64 characters of letters, digits, `_`,
   `-` and `.`, so an id containing anything else — a space, for instance — answers 404: ` abc123` is
-  refused on its format. **No migration is needed for the whitespace case**, and only for that case:
-  no route ever resolved ` abc123` to `abc123`, so the space was always part of the key and no stored
-  row has become unreachable. Forms created through this platform are unaffected — the ids it mints
-  are 8 hex characters — and hand-seeded ids like `website-form` and `acme.website` still work. The
-  two exceptions are `.` and `..` on their own, which are refused because they are relative-path
-  segments: a client resolves them away when it joins them onto the API base, so such an id addressed
-  a different resource rather than a form.
+  refused on its format. **No migration is needed for an id that was merely ADDRESSED with
+  surrounding whitespace**, and only for that case: no route ever resolved ` abc123` to `abc123`, so
+  the space was always part of the key and the record under `abc123` is reached exactly as it was.
+  That argument is about a caller's typo, and it does not extend to a form whose *stored* id contains
+  whitespace — see the scan below, which covers those. Forms created through this platform are
+  unaffected — the ids it mints are 8 hex characters — and hand-seeded ids like `website-form` and
+  `acme.website` still work. The two exceptions are `.` and `..` on their own, which are refused
+  because they are relative-path segments: a client resolves them away when it joins them onto the
+  API base, so such an id addressed a different resource rather than a form.
 
   **Check before upgrading if you have hand-seeded or imported form ids.** An id containing anything
-  outside that class — `:`, `+`, `@`, `%`, `~`, or any non-ASCII character, as in `a:b` or `café` —
-  *did* resolve on all eight of its routes before this change and now answers `404 Form not found` on
-  all of them. Unlike the whitespace case those rows are genuinely reachable-then-orphaned, so scan
-  the aggregates table for them first and rename any you find (write the record under a new `sk` and
-  repoint the embed snippet; the old row's submissions stay under their original `source_channel`,
-  so also rewrite those if the form's stats matter):
+  outside that class — `:`, `+`, `@`, `%`, `~`, any non-ASCII character, or whitespace *within* the
+  id, as in `a:b`, `café` or `my form` — *did* resolve on all eight of its routes before this change
+  and now answers `404 Form not found` on all of them. Unlike an id addressed with surrounding
+  whitespace, those rows are genuinely reachable-then-orphaned, so scan the aggregates table for them
+  first and rename any you find (write the record under a new `sk` and repoint the embed snippet; the
+  old row's submissions stay under their original `source_channel`, so also rewrite those if the
+  form's stats matter):
 
   ```bash
   aws dynamodb scan --table-name "$AGGREGATES_TABLE" \
     --filter-expression 'pk = :pk' \
     --expression-attribute-values '{":pk":{"S":"FEEDBACK_FORM"}}' \
-    --projection-expression 'sk' --output text --query 'Items[].sk.S' \
-  | tr '\t' '\n' | sed 's/^FORM#//' \
-  | awk 'length($0) > 64 || $0 !~ /^[0-9A-Za-z_.-]+$/ || $0 == "." || $0 == ".."'
+    --projection-expression 'sk' --output json --query 'Items[].sk.S' \
+  | jq -r '.[]' | sed 's/^FORM#//' \
+  | awk 'NF && (length($0) > 64 || $0 !~ /^[0-9A-Za-z_.-]+$/ || $0 == "." || $0 == "..")'
   ```
 
   No output means nothing to do. Any line printed is a form whose routes will start answering 404.
+  (`jq` is the same tool `voc-datalake/frontend/scripts/deploy.sh` already needs, so a machine that
+  can deploy this stack can run the scan.)
+
+  Three things about that command are deliberate. It asks for `--output json` and splits with `jq`
+  rather than `--output text | tr '\t' '\n'`, because `--output text` separates values with tabs and
+  `tr` cannot tell a separator tab from a tab *inside* an id — `FORM#abc<TAB>def` would arrive as the
+  two well-formed lines `abc` and `def`, and a form the routes will refuse would be reported as
+  absent. `NF &&` skips the empty record, so a table holding no `FEEDBACK_FORM` rows prints nothing
+  at all rather than a blank line indistinguishable from a finding. And it relies on the AWS CLI's
+  default auto-pagination to walk a table larger than one page — if you disable that (`--no-paginate`,
+  `--max-items`, or `AWS_PAGER`/CLI config changes), the silence covers only the first page.
+  One residual gap, since no line-oriented pipeline can close it: an id containing a literal newline
+  splits into two lines whatever the transport, so if you may have seeded such an id, find it with a
+  scan that keeps the JSON intact (`--output json --query 'Items[].sk.S'` and inspect the array).
 - **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
   request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
   answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route

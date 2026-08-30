@@ -157,7 +157,10 @@ reads or writes anything: an id that this service could not have issued answers
 `404 Form not found` without a lookup. Ids are up to 64 characters of letters,
 digits, `_`, `-` and `.`. Anything else is refused on its format, so ` abc123` is a
 404 — and it never addressed `abc123` in the first place: the space was always part
-of the key, so no whitespace-bearing id has stopped resolving.
+of the key, so nothing that resolved through `abc123` has stopped resolving. That
+covers an id *addressed* with surrounding whitespace and nothing more: a form whose
+**stored** id contains a space, like `my form`, did resolve before and now answers
+404, so it is one of the ids the pre-upgrade scan below is for.
 
 `.` is inside that class so that a hand-seeded id written like a domain
 (`acme.website`) keeps working, but `.` and `..` **on their own** are refused: they
@@ -165,10 +168,11 @@ are relative-path segments, so a client resolves them away when it joins them on
 the API base and the request addresses a different resource than the one asked for.
 `...`, `.hidden-form` and `form.` are ordinary ids and are accepted.
 
-Ids containing anything else — `:`, `+`, `@`, `%`, `~` or a non-ASCII character —
-*did* resolve before the change that closed #379 and now answer 404 on all eight of
-their routes. If you seeded or imported form ids by hand, the pre-upgrade scan in
-[CHANGELOG.md](../CHANGELOG.md) finds them; there is no compatibility shim.
+Ids containing anything else — `:`, `+`, `@`, `%`, `~`, a non-ASCII character, or
+whitespace *within* the id — *did* resolve before the change that closed #379 and now
+answer 404 on all eight of their routes. If you seeded or imported form ids by hand,
+the pre-upgrade scan in [CHANGELOG.md](../CHANGELOG.md) finds them (it flags a space
+as readily as a colon); there is no compatibility shim.
 
 Two consequences are worth knowing if you integrate against these routes, both new
 in the change that closed #379:

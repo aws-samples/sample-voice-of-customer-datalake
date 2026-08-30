@@ -5563,10 +5563,34 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         fix actually turns on is still refused, so a future widening cannot cite
         this one as precedent for `'` or `<`.
 
-        `:`, `+`, `@`, `%` and `é` are here for a different reason — they are the
-        exclusions the upgrade notes tell an operator to SCAN for, so they have to
-        be genuinely refused for that instruction to describe the code.
+        `:`, `+`, `@`, `%`, `é` and `my form` are here for a different reason — they
+        are the exclusions the upgrade notes tell an operator to SCAN for, so they
+        have to be genuinely refused for that instruction to describe the code.
+        `my form` earns its place for the same reason `a:b` has one: a stored id with
+        INTERIOR whitespace resolved before this change (every route keyed
+        `f'FORM#{form_id}'` with nothing checked) and answers 404 after it, so it is
+        reachable-then-orphaned rather than exempt. That is why the whitespace
+        exemption in `CHANGELOG.md` and `docs/feedback-forms.md` is scoped to an id
+        merely ADDRESSED with surrounding space — ` abc123` never resolved to
+        `abc123` — and not to whitespace-bearing ids as a category.
+
+        The accepting cases at the top are the vacuity control, and they are what
+        makes the two refusal loops an argument rather than a tautology. Adding a
+        character to a class can never make a previously-refused string accepted, so
+        the refusal loops alone are one-directional in the direction a NARROWING
+        travels — which is the direction the compatibility regression this change is
+        about actually moves. Without the accepting cases every assertion here is
+        satisfied by reverting the class to `[0-9A-Za-z_-]`, and also by an oracle
+        that refuses every input; with them, both of those fail.
         """
+        for accepted in ('acme.website', 'website-form', 'a_b',
+                         feedback_form_handler._minted_form_id()):
+            assert feedback_form_handler._validated_form_id(accepted) == accepted, (
+                f'{accepted!r} was refused — the refusal loops below only mean '
+                'something read against a class that still admits the shapes the '
+                'widening exists for, so this is the control that stops them '
+                'passing against a validator which refuses everything'
+            )
         for dangerous in ('a\'b', 'a"b', 'a(b', 'a)b', 'a;b', 'a<b', 'a>b',
                           'a&b', 'a\\b', 'a b', 'a\tb', 'a/b', 'a\nb'):
             assert feedback_form_handler._validated_form_id(dangerous) is None, (
@@ -5574,7 +5598,7 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'depends on being outside the class, and admitting `.` must not '
                 'have moved it'
             )
-        for scanned in ('a:b', 'a+b', 'a@b', 'a%b', 'café', 'a~b'):
+        for scanned in ('a:b', 'a+b', 'a@b', 'a%b', 'café', 'a~b', 'my form'):
             assert feedback_form_handler._validated_form_id(scanned) is None, (
                 f'{scanned!r} was accepted — CHANGELOG.md tells an operator to '
                 'scan stored ids for exactly these, so if one is now admitted the '
