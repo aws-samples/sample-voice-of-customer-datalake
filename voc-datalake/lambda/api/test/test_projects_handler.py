@@ -866,8 +866,6 @@ class TestGenerateDocumentDocType:
         )
 
 
-
-
 class TestMergeDocumentsBody:
     """POST /projects/<id>/documents/merge validates the body before billing."""
 
@@ -880,8 +878,7 @@ class TestMergeDocumentsBody:
             path='/projects/proj-123/documents/merge',
             path_params={'project_id': 'proj-123'},
         )
-        if raw_body is not None:
-            event['body'] = raw_body
+        event['body'] = raw_body
 
         with patch(
             'projects_handler.create_job', return_value=('job-1', {})
@@ -965,6 +962,8 @@ class TestMergeDocumentsBody:
         assert 'must be JSON' in json.loads(response['body'])['error']
         mock_create_job.assert_not_called()
         mock_invoke.assert_not_called()
+
+
 class TestDocumentCRUDEndpoints:
     """Tests for document CRUD endpoints."""
 
