@@ -151,6 +151,20 @@ REVERT MAP
   ordinary one -> `an_ordinary_id_is_left_exactly_as_it_is`.
 - Coerce a bool/list/dict id too, ingesting under an invented identity
   -> `an_id_that_cannot_be_stringified_meaningfully_still_reports_error`.
+- Let the per-config guard claim a failure AFTER the terminal status write is an
+  unusable configuration, appending a contradictory second `error` row over a run
+  whose items were yielded and firing `ScraperConfigUnusable` for a healthy run
+  -> `TestAReportingFailureIsNotBlamedOnTheConfig::a_failure_after_the_terminal_write_is_reported_as_reporting`,
+  `a_metrics_failure_does_not_cost_a_healthy_run_its_status`,
+  `both_configs_still_run_when_the_first_ones_metric_fails`.
+- Set that flag BEFORE the terminal write, so a write that RAISES stops replacing a
+  manual run's `running` row
+  -> `a_failure_writing_the_terminal_status_is_still_the_config_path`.
+- Unwrap the item counter, so a rejected metric name costs the run its status
+  -> `a_metrics_failure_does_not_cost_a_healthy_run_its_status`; swallow it silently
+  -> `a_metrics_failure_is_not_silent`.
+- Narrow the guard until a genuinely unreadable config reports nothing
+  -> `a_genuinely_unusable_config_still_reports_error`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -2124,4 +2138,226 @@ class TestAStoredIdThatWorkedKeepsWorking:
         assert requested == []
         assert items == []
         terminal = [u for _id, u in statuses if 'status' in u]
+        assert terminal and terminal[-1]['status'] == 'error'
+
+
+class TestAReportingFailureIsNotBlamedOnTheConfig:
+    """
+    The per-config guard spans the bookkeeping AFTER the terminal status write, so a
+    failure there was reported as an "unusable configuration".
+
+    Measured with two healthy configs and `add_metric` raising on the per-scraper
+    counter: 2 items yielded, and then
+
+        row A: ('completed', [])
+        row A: ('error', ['Unusable scraper configuration: ...'])
+        row B: ('completed', [])
+        row B: ('error', ['Unusable scraper configuration: ...'])
+        metrics: [Scraper_A_Items, ScraperConfigUnusable,
+                  Scraper_B_Items, ScraperConfigUnusable]
+
+    Two rows per config, the second contradicting the first, on a run whose items
+    were already on their way to the queue — and `ScraperConfigUnusable`, which
+    exists to make an UNREADABLE config alertable, firing for a healthy run.
+
+    Fixed by narrowing what the guard CLAIMS rather than by moving the block out of
+    it: the terminal write and the `run_budget_exhausted` break are entangled, and
+    restructuring them risks the abandoned `running` row the budget exists to
+    prevent. A classification is part of the contract here, the same argument that
+    moved hop exhaustion off `OutboundUrlBlocked`.
+    """
+
+    @staticmethod
+    def _run_with_failing_metric(ingestor, configs, failing_prefix='Scraper_'):
+        """A scheduled run where the per-scraper item counter raises."""
+        statuses, emitted, watermarks = [], [], {}
+
+        def add_metric(name, unit, value):
+            emitted.append(name)
+            if name.startswith(failing_prefix) and name.endswith('_Items'):
+                raise ValueError(
+                    'The metric name should be between 1 and 255 characters'
+                )
+
+        ingestor.execution_id = None
+        ingestor.scraper_configs = configs
+
+        with (
+            patch('shared.http_utils.requests.request',
+                  return_value=_response(200, text=REVIEW_HTML)),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch('webscraper.ingestor.handler.time.sleep'),
+            patch('webscraper.ingestor.handler.metrics.add_metric',
+                  side_effect=add_metric),
+            patch.object(
+                ingestor, '_update_run_status',
+                lambda _id, u: statuses.append((_id, u)),
+            ),
+            patch.object(
+                ingestor, 'set_watermark',
+                lambda key, value: watermarks.__setitem__(key, value),
+            ),
+            patch.object(
+                ingestor, 'get_watermark',
+                lambda key, default=None: watermarks.get(key, default),
+            ),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        return statuses, emitted, items
+
+    def test_a_metrics_failure_does_not_cost_a_healthy_run_its_status(self, ingestor):
+        statuses, emitted, items = self._run_with_failing_metric(
+            ingestor, [HEALTHY_CONFIG]
+        )
+
+        assert len(items) == 1, 'the items were lost'
+        terminal = [u['status'] for _id, u in statuses if 'status' in u]
+        assert terminal == ['completed'], (
+            f'expected exactly one terminal row, got {terminal}'
+        )
+        assert 'ScraperConfigUnusable' not in emitted, (
+            'a healthy run was counted as an unreadable configuration'
+        )
+
+    def test_a_metrics_failure_is_not_silent(self, ingestor):
+        """
+        Handled where it happens rather than by the guard — the item counter has its
+        own wrapper, so a failing counter costs the data point and nothing else — but
+        it must still be logged, or a metric that stops publishing looks like a
+        scraper that stopped finding items.
+        """
+        with patch('webscraper.ingestor.handler.logger.warning') as mock_warn:
+            self._run_with_failing_metric(ingestor, [HEALTHY_CONFIG])
+
+        assert any(
+            'item count' in str(c) for c in mock_warn.call_args_list
+        ), f'the metrics failure was swallowed silently: {mock_warn.call_args_list}'
+
+    def test_both_configs_still_run_when_the_first_ones_metric_fails(self, ingestor):
+        """
+        The invocation-scope claim: a counter that fails for config A may not stop B.
+        """
+        configs = [
+            {**CSS_CONFIG, 'id': 'A', 'name': 'A', 'urls': ['https://ok.example/a']},
+            {**CSS_CONFIG, 'id': 'B', 'name': 'B', 'urls': ['https://ok.example/b']},
+        ]
+        statuses, emitted, items = self._run_with_failing_metric(ingestor, configs)
+
+        assert len(items) == 2
+        assert [u['status'] for _id, u in statuses if 'status' in u] == [
+            'completed', 'completed'
+        ]
+        assert 'ScraperConfigUnusable' not in emitted
+
+    def test_a_failure_after_the_terminal_write_is_reported_as_reporting(
+        self, ingestor
+    ):
+        """
+        The general case rather than the metric one, since wrapping `add_metric`
+        alone would leave the next line added after it unprotected. Driven through
+        the log call that follows the terminal write.
+
+        Asserts all three claims the old handler got wrong: no second terminal row,
+        no `ScraperConfigUnusable`, and a distinct counter so the two stay separable
+        in an alarm.
+        """
+        emitted: list = []
+        statuses: list = []
+        watermarks: dict = {}
+        ingestor.execution_id = None
+        ingestor.scraper_configs = [HEALTHY_CONFIG]
+
+        def info(message, *args, **kwargs):
+            if 'found' in str(message):
+                raise ValueError('the log client failed')
+
+        with (
+            patch('shared.http_utils.requests.request',
+                  return_value=_response(200, text=REVIEW_HTML)),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch('webscraper.ingestor.handler.time.sleep'),
+            patch('webscraper.ingestor.handler.logger.info', side_effect=info),
+            patch('webscraper.ingestor.handler.metrics.add_metric',
+                  side_effect=lambda name, unit, value: emitted.append(name)),
+            patch.object(ingestor, '_update_run_status',
+                         lambda _id, u: statuses.append(u)),
+            patch.object(ingestor, 'set_watermark',
+                         lambda key, value: watermarks.__setitem__(key, value)),
+            patch.object(ingestor, 'get_watermark',
+                         lambda key, default=None: watermarks.get(key, default)),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        assert len(items) == 1, 'the items were lost'
+        assert [u['status'] for u in statuses if 'status' in u] == ['completed']
+        assert 'ScraperConfigUnusable' not in emitted
+        assert 'ScraperReportingFailed' in emitted
+
+    def test_a_failure_writing_the_terminal_status_is_still_the_config_path(
+        self, ingestor
+    ):
+        """
+        The boundary of the flag, and why it is set AFTER the write returns rather
+        than before it: a write that RAISES has not reported anything, so a manual
+        run's `status: 'running'` row still needs replacing — which is the whole
+        reason the unusable-config path writes one.
+        """
+        emitted: list = []
+        watermarks: dict = {}
+        ingestor.execution_id = None
+        ingestor.scraper_configs = [HEALTHY_CONFIG]
+
+        def update_run_status(_id, updates):
+            if updates.get('status') == 'completed':
+                raise ValueError('DynamoDB throttled')
+
+        with (
+            patch('shared.http_utils.requests.request',
+                  return_value=_response(200, text=REVIEW_HTML)),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch('webscraper.ingestor.handler.time.sleep'),
+            patch('webscraper.ingestor.handler.metrics.add_metric',
+                  side_effect=lambda name, unit, value: emitted.append(name)),
+            patch.object(ingestor, '_update_run_status', update_run_status),
+            patch.object(ingestor, 'set_watermark',
+                         lambda key, value: watermarks.__setitem__(key, value)),
+            patch.object(ingestor, 'get_watermark',
+                         lambda key, default=None: watermarks.get(key, default)),
+        ):
+            list(ingestor.fetch_new_items())
+
+        assert 'ScraperConfigUnusable' in emitted
+        assert 'ScraperReportingFailed' not in emitted
+
+    def test_a_genuinely_unusable_config_still_reports_error(self, ingestor):
+        """
+        The control that stops the narrower scope degrading into never reporting: a
+        config that really cannot be read must still write a terminal `error`, log at
+        ERROR and emit `ScraperConfigUnusable` exactly once.
+        """
+        emitted: list = []
+        statuses: list = []
+        watermarks: dict = {}
+        ingestor.execution_id = None
+        ingestor.scraper_configs = [{**CSS_CONFIG, 'id': 'b', 'urls': 7}]
+
+        with (
+            patch('shared.http_utils.requests.request',
+                  return_value=_response(200, text=REVIEW_HTML)),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch('webscraper.ingestor.handler.time.sleep'),
+            patch('webscraper.ingestor.handler.metrics.add_metric',
+                  side_effect=lambda name, unit, value: emitted.append(name)),
+            patch.object(ingestor, '_update_run_status',
+                         lambda _id, u: statuses.append(u)),
+            patch.object(ingestor, 'set_watermark',
+                         lambda key, value: watermarks.__setitem__(key, value)),
+            patch.object(ingestor, 'get_watermark',
+                         lambda key, default=None: watermarks.get(key, default)),
+        ):
+            list(ingestor.fetch_new_items())
+
+        assert emitted.count('ScraperConfigUnusable') == 1
+        terminal = [u for u in statuses if 'status' in u]
         assert terminal and terminal[-1]['status'] == 'error'

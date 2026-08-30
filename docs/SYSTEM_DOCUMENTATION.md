@@ -627,7 +627,10 @@ The policy itself:
   configuration loop catches anything remaining, logs at ERROR, emits
   `ScraperConfigUnusable`, writes a terminal `error` status and continues to the next
   configuration. An unusable configuration records no `last_run`, so fixing it does not
-  mean waiting out its frequency.
+  mean waiting out its frequency. That attribution stops at the run's own status write:
+  a failure after it — a rejected metric, a throttled update — leaves the recorded status
+  standing and emits `ScraperReportingFailed` instead, because it previously appended a
+  contradictory `error` row and fired `ScraperConfigUnusable` over a run that succeeded.
 - `pagination` names no destination — its URLs are built from `base_url` and so carry a
   host already checked — but its **shape** is validated on write, because the scheduled
   reader does arithmetic with those numbers: `max_pages` and `start` must be integers,

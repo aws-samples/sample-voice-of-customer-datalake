@@ -259,6 +259,12 @@ What the policy accepts and refuses:
   `ScraperConfigUnusable` metric, writes a terminal `error` status and moves on to the
   next configuration. An unusable configuration is not marked as having run, so
   correcting it does not mean waiting out its frequency first.
+
+  That blame stops at the run's own status write. A failure *after* it — a rejected
+  metric name, a throttled status update — leaves the recorded status alone and emits
+  `ScraperReportingFailed` instead of `ScraperConfigUnusable`, because it previously
+  appended a second, contradictory `error` row over a run whose items had already been
+  queued and made the unusable-configuration alarm fire for healthy runs.
 - `pagination` is checked for **shape** on write even though it names no destination
   (its URLs are built from `base_url`, so they carry a host already checked, and each
   is re-checked before its request in any case). `max_pages` and `start` must be

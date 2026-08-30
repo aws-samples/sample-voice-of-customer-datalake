@@ -138,6 +138,16 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   configuration alone — logged at ERROR, counted by a new `ScraperConfigUnusable` metric, given
   a terminal `error` status — and continues. Such a configuration is not recorded as having
   run, so correcting it does not mean waiting out its frequency.
+  - That report is now scoped to failures the configuration is actually responsible for. The
+    guarded region reaches past the run's own status write, so a failure in the *reporting* —
+    a rejected metric, a throttled status update — was labelled an unusable configuration:
+    measured with two healthy configurations, each got a second terminal `error` row
+    contradicting the `completed` row written moments earlier, over a run whose items were
+    already on their way to the queue, and `ScraperConfigUnusable` fired for both. A failure
+    after the status has been recorded now leaves that status standing and is counted by a
+    separate `ScraperReportingFailed` metric, so the unusable-configuration alarm keeps
+    meaning what it says. The per-scraper item counter is also recorded defensively, since a
+    metric the service will not accept should never cost a run its status.
 - Scraper `pagination` is validated for shape on write: `max_pages` and `start` must be
   integers and `max_pages` must be between 1 and 50, matching the bounds the editor enforces.
   The key names no network destination — its URLs derive from `base_url` and carry an

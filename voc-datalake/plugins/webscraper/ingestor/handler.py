@@ -733,6 +733,10 @@ class WebScraperIngestor(BaseIngestor):
             # by `shared/scraper_urls.py`, and coerced in `_get_urls_to_scrape` and
             # `_should_run_scraper` for configs already stored. This is what makes
             # the guarantee hold for the shape nobody has thought of yet.
+            #
+            # What it does NOT do is attribute everything it catches to the config.
+            # The region reaches past this config's terminal status write, and a
+            # failure there is a reporting problem — see `reported` below.
             # Read OUTSIDE the guard, because the guard's own error message names
             # them: `.get` on a dict cannot raise, and a non-dict never reaches
             # here (`_configs_in_fairness_order` drops it), so there is nothing to
@@ -740,6 +744,11 @@ class WebScraperIngestor(BaseIngestor):
             # handler if that ever stopped being true.
             scraper_id = config.get('id', 'unknown')
             scraper_name = config.get('name', scraper_id)
+            # Whether this config's TERMINAL status has already been written, so the
+            # guard below can tell an unreadable configuration from a failure in the
+            # REPORTING of a run that worked. Read the guard's comment for what went
+            # wrong without it.
+            reported = False
 
             try:
                 # BEFORE any request, because an id that cannot be interpolated
@@ -978,10 +987,24 @@ class WebScraperIngestor(BaseIngestor):
                     'items_found': items_found,
                     'errors': errors
                 })
+                # This config's outcome is now RECORDED. Anything failing after this
+                # point is a reporting problem, not a configuration problem.
+                reported = True
 
-                metrics.add_metric(
-                    name=_item_metric_name(scraper_id), unit="Count", value=items_found
-                )
+                try:
+                    metrics.add_metric(
+                        name=_item_metric_name(scraper_id),
+                        unit="Count",
+                        value=items_found,
+                    )
+                except Exception as e:  # noqa: BLE001 — a counter may not cost a run
+                    # Powertools validates the name and the value and raises on a
+                    # metric it will not publish. Letting that reach the guard below
+                    # appended a contradictory `error` row over a run whose items were
+                    # already on their way to the queue. A missing data point is a
+                    # smaller loss than a run row that says the opposite of what
+                    # happened.
+                    logger.warning(f"Could not record the item count for {scraper_name}: {e}")
                 logger.info(f"Scraper {scraper_name} found {items_found} items from {pages_scraped} pages")
 
                 if run_budget_exhausted:
@@ -1007,6 +1030,32 @@ class WebScraperIngestor(BaseIngestor):
                     )
                     break
             except Exception as e:  # noqa: BLE001 — the breadth is the point, see above
+                if reported:
+                    # This config already wrote its terminal status, so whatever raised
+                    # is in the BOOKKEEPING after the run, not in the configuration.
+                    # Claiming otherwise was wrong three ways at once: it appended a
+                    # second terminal row contradicting the `completed` one written
+                    # moments earlier, over a run whose items were already on their way
+                    # to the queue; it logged "unusable scraper configuration" about a
+                    # config that had just been read successfully; and it fired
+                    # `ScraperConfigUnusable`, whose whole purpose is to make an
+                    # UNREADABLE config alertable — so the metric started counting
+                    # healthy runs and stopped being a signal. Measured with two healthy
+                    # configs and `add_metric` raising: 2 items yielded, and each config
+                    # got both a `completed` row and an `error` row.
+                    #
+                    # A classification is part of the contract here, the same reasoning
+                    # that moved hop exhaustion off `OutboundUrlBlocked`. Separate metric
+                    # so the two remain distinguishable in an alarm.
+                    logger.error(
+                        f"Scraper {scraper_name} failed AFTER reporting its run; the "
+                        f"run status stands and is not overwritten: {e}"
+                    )
+                    metrics.add_metric(
+                        name="ScraperReportingFailed", unit="Count", value=1
+                    )
+                    continue
+
                 # A manual run has already had a `status: 'running'` row written for
                 # it by `POST /scrapers/<id>/run`, and this is the last chance to
                 # replace it: leaving the loop without a terminal write abandons that
