@@ -132,7 +132,14 @@
  *    equivalent likewise. Pinned as a PAIR, the shape the `staleReason` case uses —
  *    the qualifier the fix added, plus the unqualified sentence a widening would
  *    reintroduce, asserted with its terminating period — because either half alone is
- *    satisfiable by a reword that keeps the overclaim or drops the promise;
+ *    satisfiable by a reword that keeps the overclaim or drops the promise. BOTH
+ *    halves are per locale, and the second had to be: measured, keeping each locale's
+ *    qualifier while re-appending its own unqualified overclaim left the same 508
+ *    green for de, es, fr and ja, while the identical mutation in English turned the
+ *    English case red — so the positive half alone left seven eighths of that
+ *    mutation class unpinned. Each half is independently sensitive (measured: the
+ *    re-appending mutation fails only the negative assertion, and restoring a
+ *    catalogue's pre-fix unqualified sentence fails only the positive one);
  *  * the `repeatsAType` guard in `fresherCoherentSelection` WIDENED to every
  *    `crossGeneration` row (gating on the classification instead) → "DOES mark a
  *    supersededSource row stale, unlike its repeatedType sibling", and only that case
@@ -205,6 +212,28 @@ import prioritizationJa from '../../../public/locales/ja/prioritization.json'
 import prioritizationKo from '../../../public/locales/ko/prioritization.json'
 import prioritizationPt from '../../../public/locales/pt/prioritization.json'
 import prioritizationZh from '../../../public/locales/zh/prioritization.json'
+
+/**
+ * Every shipped catalogue, keyed by locale — a fact about the project's locales
+ * rather than about any one assertion, so it is stated ONCE here and read by both
+ * per-locale cases below. Each of those keeps its own phrase tables, which are per
+ * assertion rather than project-wide.
+ *
+ * The `Record<SupportedLanguage, ...>` is the point of the shape: a ninth catalogue
+ * is a typecheck failure in ONE place now rather than in two that could drift — one
+ * table gaining the locale while the other keeps its own complete-looking eight,
+ * which would leave the failure pointing at only half the coverage.
+ */
+const CATALOGUES: Record<SupportedLanguage, { lineage: Record<string, string> }> = {
+  en: prioritizationEn,
+  de: prioritizationDe,
+  es: prioritizationEs,
+  fr: prioritizationFr,
+  ja: prioritizationJa,
+  ko: prioritizationKo,
+  pt: prioritizationPt,
+  zh: prioritizationZh,
+}
 
 /**
  * One project document, as the project read supplies it.
@@ -370,18 +399,20 @@ describe('the lineage tables are complete and resolvable', () => {
     // SETS and `i18n:check` reports a non-English string only when it is
     // byte-identical to English.
     //
-    // Driven by `supportedLanguages` off statically imported catalogues, so a ninth
-    // locale is a TYPECHECK failure rather than a silently skipped one.
-    const catalogues: Record<SupportedLanguage, { lineage: Record<string, string> }> = {
-      en: prioritizationEn,
-      de: prioritizationDe,
-      es: prioritizationEs,
-      fr: prioritizationFr,
-      ja: prioritizationJa,
-      ko: prioritizationKo,
-      pt: prioritizationPt,
-      zh: prioritizationZh,
-    }
+    // Driven by `supportedLanguages` off `CATALOGUES`, so a ninth locale is a
+    // TYPECHECK failure rather than a silently skipped one.
+    //
+    // BOTH halves of the pair, per locale, for the reason the English case gives for
+    // carrying both: either alone is weaker, because a sentence can hold the
+    // qualifier AND still make the broader claim elsewhere, and a reword can drop the
+    // promise without restoring the old words. That reasoning is a fact about
+    // `hasSupersededSource` rather than about English, so it applies verbatim in all
+    // eight. Measured before the negative half existed: keeping each locale's
+    // qualifier while re-appending its own unqualified overclaim left
+    // `src/pages/Prioritization src/i18n` green at 508 tests for de, es, fr and ja,
+    // while the identical mutation in English turned the English case red — so the
+    // assertion worked and was simply present in one catalogue of eight.
+    //
     // Each catalogue's own rendering of the qualifier, taken from the shipped bytes
     // rather than composed here, and verified against the pre-fix bytes: every one of
     // these eight is present now and ABSENT in the unqualified version, so each entry
@@ -397,16 +428,39 @@ describe('the lineage tables are complete and resolvable', () => {
       pt: 'de outro documento desta linha',
       zh: '本行中另一个文档',
     }
+    // The unqualified claim each catalogue shipped BEFORE the qualifier landed — the
+    // sentence a widening would REINTRODUCE, which is the mutation the positive
+    // assertion cannot see: a reviewer re-appending the broader claim leaves the
+    // qualifier in place. Terminating punctuation is included where the language has
+    // it, because that full stop is exactly where the unqualified claim ended.
+    // Derived from the pre-fix bytes and verified BOTH ways: every one of these eight
+    // is present in the unqualified version and ABSENT in the shipped copy, so each
+    // entry is the exact regression it names. (The Korean is a mid-clause run rather
+    // than a sentence ending, because that catalogue's qualifier is inserted inside
+    // the clause rather than before its full stop.)
+    const UNQUALIFIED: Record<SupportedLanguage, string> = {
+      en: 'points at a different generation.',
+      de: 'auf eine andere Generation.',
+      es: 'a otra generación.',
+      fr: 'à une autre génération.',
+      ja: '別の世代を指していません。',
+      ko: '출처 가운데 다른 세대를',
+      pt: 'para outra geração.',
+      zh: '指向另一代。',
+    }
 
     for (const locale of supportedLanguages) {
-      const sentence = catalogues[locale].lineage.coherentReason
+      const sentence = CATALOGUES[locale].lineage.coherentReason
 
       // Non-vacuity first: a path typo or a catalogue whose `lineage` block went
       // missing would satisfy a `toContain` on nothing by failing loudly, but an
-      // EMPTY string would read as a real absence rather than a lookup miss.
+      // EMPTY string would read as a real absence rather than a lookup miss — and it
+      // would satisfy the `not.toContain` below vacuously.
       expect(sentence, `${locale} coherentReason`).toBeTruthy()
       expect(sentence, `${locale} scopes the crossing to this row`)
         .toContain(SCOPE[locale])
+      expect(sentence, `${locale} makes no unqualified crossing claim`)
+        .not.toContain(UNQUALIFIED[locale])
     }
   })
 
@@ -425,19 +479,10 @@ describe('the lineage tables are complete and resolvable', () => {
     // saying the wrong thing is invisible to both.
     //
     // Both tables are keyed by `SupportedLanguage` and the loop is driven by
-    // `supportedLanguages`, so a ninth locale is a TYPECHECK failure rather than a
-    // silently skipped one — the shape `DataSourceWizard/localization.test.tsx` uses
-    // for the same reason.
-    const catalogues: Record<SupportedLanguage, { lineage: Record<string, string> }> = {
-      en: prioritizationEn,
-      de: prioritizationDe,
-      es: prioritizationEs,
-      fr: prioritizationFr,
-      ja: prioritizationJa,
-      ko: prioritizationKo,
-      pt: prioritizationPt,
-      zh: prioritizationZh,
-    }
+    // `supportedLanguages` off `CATALOGUES`, so a ninth locale is a TYPECHECK failure
+    // rather than a silently skipped one — the shape
+    // `DataSourceWizard/localization.test.tsx` uses for the same reason.
+    //
     // The directional term each catalogue actually used before the fix, verified
     // against the pre-fix bytes: every one of these eight was present then and is
     // absent now, so each entry is the exact regression it names rather than a term
@@ -469,7 +514,7 @@ describe('the lineage tables are complete and resolvable', () => {
     }
 
     for (const locale of supportedLanguages) {
-      const sentence = catalogues[locale].lineage.supersededSourceReason
+      const sentence = CATALOGUES[locale].lineage.supersededSourceReason
 
       expect(sentence, `${locale} supersededSourceReason`).toBeTruthy()
       expect(sentence, `${locale} names a generation`).toContain(GENERATION[locale])
