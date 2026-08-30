@@ -1915,10 +1915,18 @@ class TestTheQueryStringSourceRouteIsValidated:
         `manual_import` is accepted there and refused here. Both are right, because
         the branches report different things about it: only `run_source` and
         `BaseIngestor` write a `SOURCE_RUN#` partition, and `manual_import` has no
-        ingestor — so `SOURCE_RUN#manual_import` can never exist, and a 400 naming
-        the reason beats the pre-fix 200 `{'status': 'never_run'}` about a source
-        that can never have run. The batch branch reports schedule state, where "no
-        rule exists" is a real answer.
+        ingestor — so no current path writes `SOURCE_RUN#manual_import` while the
+        allowlist is available, and a 400 naming the reason beats the pre-fix 200
+        `{'status': 'never_run'}` about a source with nothing to report. The batch
+        branch reports schedule state, where "no rule exists" is a real answer.
+
+        Scoped to the configured state, not stated as impossible, for the two
+        reasons the handler comment records: neither guard is retroactive, so a
+        deployment upgraded from the pre-guard base may hold a stale row (measured
+        on that base — a `users` caller wrote it); and the documented fail-open on
+        an unavailable PLUGIN_SECRET_DEFAULTS admits `manual_import` on both
+        branches, which is why `plugin_secret_defaults` is a fixture here rather
+        than assumed.
 
         Asserting only the accepting half left the asymmetry unpinned in the
         direction that could regress: a future edit swapping this branch to
@@ -1938,6 +1946,41 @@ class TestTheQueryStringSourceRouteIsValidated:
         assert response['statusCode'] == 400
         assert table.query.call_args_list == [], (
             'a SOURCE_RUN# partition was queried for a source that has no ingestor'
+        )
+
+    @patch('shared.tables.get_aggregates_table')
+    def test_the_asymmetry_is_a_property_of_the_configured_state_only(
+        self, mock_table, api_gateway_event, lambda_context, monkeypatch,
+    ):
+        """With the allowlist unavailable the two branches STOP disagreeing.
+
+        The case above is the configured state. The allowlist is what produces its
+        400, so under the documented fail-open — `_validate_source_is_a_known_plugin`
+        returning early, which `_is_addressable_source` inherits — this branch admits
+        `manual_import` like the batch one, and the partition is queried.
+
+        Pinned because the comment at that branch now scopes its claim to the
+        configured state instead of calling `SOURCE_RUN#manual_import` impossible,
+        and that scoping is the kind of prose this PR has already had to correct
+        twice: true when written, unverifiable afterwards. Asserting it means a
+        change making the fail-open stricter has to update the comment rather than
+        leave it describing a state that no longer exists.
+        """
+        import integrations_handler as h
+
+        table = mock_table.return_value
+        table.query.return_value = {'Items': []}
+        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
+        h._plugin_secret_defaults.cache_clear()
+
+        event = self._status_event(api_gateway_event, {'run_status': 'manual_import'})
+        response = h.lambda_handler(event, lambda_context)
+        h._plugin_secret_defaults.cache_clear()
+
+        assert response['statusCode'] == 200
+        assert len(table.query.call_args_list) == 1, (
+            'the fail-open should admit manual_import here as it does in the batch '
+            'branch; if it no longer does, the scoping comment on that branch is stale'
         )
 
     @patch('shared.tables.get_aggregates_table')

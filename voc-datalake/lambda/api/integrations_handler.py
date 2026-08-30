@@ -226,7 +226,9 @@ def _is_addressable_source(source: str) -> bool:
     value stops reaching EventBridge and stops having a rule name reflected back.
 
     Inherits the fail-open on an unavailable `PLUGIN_SECRET_DEFAULTS`, because
-    `_validate_source_is_a_known_plugin` returns early in that state.
+    `_validate_source_is_a_known_plugin` returns early in that state — so in that
+    state this accepts everything the other branch does too, and the deliberate
+    disagreement below is a property of the CONFIGURED state only.
 
     Applies to the `?sources=` branch ONLY. `?run_status=` raises on the same
     `manual_import` this accepts, deliberately: see the comment at that branch for
@@ -813,12 +815,30 @@ def get_sources_status():
         # — 400 here, `{'enabled': False, 'exists': False}` there — and that
         # disagreement is deliberate, because the two branches report different
         # things about it. This one reports a run record, and only `run_source` and
-        # `BaseIngestor` write a `SOURCE_RUN#` partition: `manual_import` has no
-        # ingestor, so `SOURCE_RUN#manual_import` can never exist and a 400 naming
-        # the reason beats a 200 saying 'never_run' about a source that can never
-        # run. The batch branch reports SCHEDULE state, where "no rule exists" is a
-        # real answer to a real question, which is why it must not raise — see
-        # `_is_addressable_source`, whose docstring argues that half.
+        # `BaseIngestor` write a `SOURCE_RUN#` partition: no CURRENT path writes
+        # `SOURCE_RUN#manual_import` while the allowlist is available, since
+        # `manual_import` has no ingestor and `run_source` validates against the
+        # same allowlist. So on a clean deployment that partition is empty, and a
+        # 400 naming the reason beats a 200 saying 'never_run' about a source with
+        # nothing to report. The batch branch reports SCHEDULE state, where "no rule
+        # exists" is a real answer to a real question, which is why it must not
+        # raise — see `_is_addressable_source`, whose docstring argues that half.
+        #
+        # Two states this stops short of, so no reader concludes such a row is
+        # IMPOSSIBLE and skips handling one (`_get_source_run_status` reports
+        # whatever it finds):
+        #
+        #   * neither guard is retroactive. `run_source` on the pre-guard base had
+        #     neither `require_admin` nor this validation — measured, a `users`
+        #     caller got 200 and wrote `SOURCE_RUN#manual_import` — so a deployment
+        #     upgraded from that build may hold a stale row today. Same limitation
+        #     the namespace guards in `plugin-loader.ts` carry for secret keys: they
+        #     close the entrances, not what is already stored.
+        #   * with PLUGIN_SECRET_DEFAULTS unavailable the documented fail-open
+        #     admits `manual_import` on BOTH branches, so the asymmetry described
+        #     above disappears and an admin can write that partition again. That is
+        #     consistent — `_is_addressable_source` inherits the same fail-open —
+        #     but it means this whole comment describes the CONFIGURED state.
         #
         # Pinned in BOTH directions by TestTheQueryStringSourceRouteIsValidated, so
         # neither answer can flip silently.
