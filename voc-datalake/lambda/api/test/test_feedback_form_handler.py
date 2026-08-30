@@ -3,6 +3,7 @@ Tests for feedback_form_handler.py - /feedback-forms/* endpoints.
 """
 import ast
 import inspect
+import itertools
 import json
 import os
 import re
@@ -3486,11 +3487,20 @@ def _routes_keying_on_a_form_id(source: str) -> dict[str, str]:
     under this prefix that captures something OTHER than a form id (a submission
     id, say) would be included and would have to establish the bound or say why —
     which is the right side to err on, since the alternative is silence.
+
+    `async def` is selected too, and this is the one place where a node type the
+    selector cannot see costs more than anywhere else: a route missing from THIS
+    dict is not judged unbounded, it leaves the universal claim entirely. The
+    decision function answers correctly for an `async` route when asked — it was
+    never asked, and the pinned-route assertion in
+    `test_the_derivation_sees_the_routes_this_module_actually_has` cannot catch the
+    omission either, because an absent route matches the pinned set on both sides.
+    `test_an_async_route_is_inside_the_universal_claim` is the control.
     """
     tree = ast.parse(source)
     routes = {}
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for decorator in node.decorator_list:
             if not isinstance(decorator, ast.Call):
@@ -3611,6 +3621,23 @@ def _sink_bearing_helpers(tree: ast.Module) -> frozenset[str]:
     re-asked on every pass, since a helper joining the set can give another one a
     sink it did not have before — the set only ever grows, so this terminates.
 
+    Termination is not the whole argument, though, and the other half is what makes
+    the ANSWER well defined rather than merely reached. Each candidate is judged
+    against `known`, the set as it stands on THIS pass, and a name is never
+    re-examined once added — so the result is a LEAST fixpoint, and its value rests
+    on growth being monotone: adding a helper can only give a caller MORE sinks, and
+    more sinks can only move `_bounds_its_id` from True to False, never back. So a
+    candidate excluded early against a small set cannot become includable later in a
+    way this loop misses, and one added cannot need withdrawing.
+
+    Worth stating because `candidates` is a dict and its iteration order is SOURCE
+    order: if that invariant broke, the symptom would be a verdict that depends on
+    the order two helpers happen to be defined in — a failure that reproduces only
+    under the file it was written against.
+    `test_the_helper_set_does_not_depend_on_definition_order` is the control, over
+    every permutation of a three-link chain and of the case that actually exercises
+    re-evaluation (a helper whose own bound comes AFTER its indirect write).
+
     Three ceilings, all in the same direction — a write this set cannot see is one
     no question is asked about, so the verdict is the vacuous pass the helper
     exists to close. Named rather than implied, so the next reader knows they are
@@ -3658,7 +3685,8 @@ def _sink_bearing_helpers(tree: ast.Module) -> frozenset[str]:
 
 
 def _sink_calls(
-    function: ast.FunctionDef, helpers: frozenset[str] = frozenset()
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    helpers: frozenset[str] = frozenset(),
 ) -> list[tuple[tuple[int, int], frozenset[str]]]:
     """Every call in `function` that reaches a form id into a sink.
 
@@ -3783,7 +3811,9 @@ def _sink_calls(
     ]
 
 
-def _refused_names(function: ast.FunctionDef) -> dict[str, tuple[int, int]]:
+def _refused_names(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, tuple[int, int]]:
     """Name -> position of the earliest top-level `if` refusing it.
 
     `_validated_form_id` returns None rather than raising — deliberately, since
@@ -3864,13 +3894,17 @@ def _refused_names(function: ast.FunctionDef) -> dict[str, tuple[int, int]]:
 
 
 def _bounds_its_id(
-    function, helpers: frozenset[str] = frozenset()
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    helpers: frozenset[str] = frozenset(),
 ) -> bool:
     """Does `function` reach the validator, and REFUSE, before keying on anything?
 
-    THE decision, asked of any `FunctionDef` — a route (`_validates_its_form_id`,
-    which is this with the module parsed for it) or a module-level helper
-    (`_sink_bearing_helpers`, which excludes one that bounds for itself). One
+    THE decision, asked of any `FunctionDef` or `AsyncFunctionDef` — a route
+    (`_validates_its_form_id`, which is this with the module parsed for it) or a
+    module-level helper (`_sink_bearing_helpers`, which excludes one that bounds
+    for itself). Both node types are real inputs at both call sites, which is what
+    `test_the_helper_set_sees_an_async_writer` and
+    `test_an_async_route_is_inside_the_universal_claim` pin. One
     function rather than two, because the two callers were asking the same
     question and only one of them was asking it properly: the helper exclusion
     used to test whether `_validated_form_id` was MENTIONED anywhere in the body,
@@ -4257,7 +4291,8 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
         for route, function_name in _routes_keying_on_a_form_id(source).items():
             function = next(
                 node for node in ast.walk(tree)
-                if isinstance(node, ast.FunctionDef) and node.name == function_name
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == function_name
             )
             counted[route] = len(_sink_calls(function, helpers))
 
@@ -4782,6 +4817,160 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
         assert not _validates_its_form_id(source, 'post_async_write'), (
             'a write through an async helper was reported as bounded — the sink '
             'list was empty, so neither question was asked'
+        )
+
+    @pytest.mark.parametrize(
+        'definitions, expected',
+        [
+            pytest.param(
+                {
+                    '_a': '''
+                        def _a(form_id):
+                            aggregates_table.put_item(Item={'sk': f'FORM#{form_id}'})
+                    ''',
+                    '_b': '''
+                        def _b(form_id):
+                            _a(form_id)
+                    ''',
+                    '_c': '''
+                        def _c(form_id):
+                            _b(form_id)
+                    ''',
+                },
+                {'_a', '_b', '_c'},
+                id='a three-link chain, every link reached transitively',
+            ),
+            pytest.param(
+                {
+                    '_a': '''
+                        def _a(form_id):
+                            aggregates_table.put_item(Item={'sk': f'FORM#{form_id}'})
+                    ''',
+                    '_h': '''
+                        def _h(form_id):
+                            _a(form_id)
+                            validated = _validated_form_id(form_id)
+                            if not validated:
+                                raise NotFoundError('Form not found')
+                    ''',
+                },
+                {'_a', '_h'},
+                id='a helper whose own bound comes after its indirect write',
+            ),
+            pytest.param(
+                {
+                    '_a': '''
+                        def _a(form_id):
+                            aggregates_table.put_item(Item={'sk': f'FORM#{form_id}'})
+                    ''',
+                    '_g': '''
+                        def _g(form_id):
+                            validated = _validated_form_id(form_id)
+                            if not validated:
+                                raise NotFoundError('Form not found')
+                            _a(validated)
+                    ''',
+                },
+                {'_a'},
+                id='a helper that refuses before its indirect write',
+            ),
+        ],
+    )
+    def test_the_helper_set_does_not_depend_on_definition_order(
+        self, definitions, expected
+    ):
+        """The fixpoint's value, not just its termination.
+
+        Each candidate is judged against the set as it stands on the current pass,
+        and a name is never re-examined once added — so the result is a least
+        fixpoint whose value rests on growth being monotone (more helpers ⇒ more
+        sinks ⇒ `_bounds_its_id` only ever goes True→False). `candidates` is a
+        source-ordered dict, so the symptom of that invariant breaking is not a
+        wrong answer but an answer that depends on the order two helpers happen to
+        be defined in — which reproduces only under the file it was written against
+        and looks like a flake everywhere else.
+
+        Every permutation is asserted, so no single ordering can be the one that
+        happens to work. The second and third cases are the ones that exercise
+        re-evaluation rather than merely transitivity: `_h` acquires its sink only
+        once `_a` is in the set, and it must then be judged UNBOUNDED because its
+        refusal sits after that write — under a single-pass exclusion it escapes.
+        `_g` is the same shape with the refusal first, and must stay out, so the
+        pair pins both directions rather than "everything ends up in the set".
+        """
+        for order in itertools.permutations(definitions):
+            source = ''.join(
+                textwrap.dedent(definitions[name]) for name in order
+            )
+
+            assert _sink_bearing_helpers(ast.parse(source)) == expected, (
+                f'definition order {order} derived a different sink-bearing set '
+                'than its permutations — the fixpoint judges each candidate '
+                'against the partial set of the current pass, so its result is '
+                'well defined only while growth is monotone (see '
+                '_sink_bearing_helpers). An order-dependent answer means an edit '
+                'broke that, not that this expectation is stale'
+            )
+
+    def test_an_async_route_is_inside_the_universal_claim(self):
+        """A route the selector cannot see does not fail the claim — it leaves it.
+
+        The `async def` widening landed at the two functions that DECIDE (the helper
+        set and the name resolution) and stopped one short of the one that chooses
+        the UNIVERSE. So an `async` route keying on a raw id was answered correctly
+        whenever it was asked — and it was never asked, because
+        `_routes_keying_on_a_form_id` short-circuited on `ast.FunctionDef`.
+
+        That is a worse failure than a wrong verdict, and it is the direction this
+        whole class exists to close: an unbounded route that fails is a red test
+        naming it, while an unbounded route that is not in the universe is a green
+        one. The sibling pinned-route assertion cannot substitute for this control,
+        because it asserts set EQUALITY against the eight known routes — an added
+        `async` route is absent from the derived set and from the pinned set alike,
+        so it matches.
+
+        Both halves are asserted: the route is selected, and once selected it is
+        judged unbounded. Asserting only the first would pass with the decision
+        function broken; asserting only the second is what already passed while the
+        route sat outside the claim.
+        """
+        source = textwrap.dedent(
+            '''
+            @app.get("/feedback-forms/<form_id>/sync")
+            def get_sync(form_id: str):
+                validated = _validated_form_id(form_id)
+                if not validated:
+                    raise NotFoundError('Form not found')
+                return aggregates_table.get_item(Key={'sk': f'FORM#{validated}'})
+
+            @app.get("/feedback-forms/<form_id>/asyncroute")
+            async def get_async(form_id: str):
+                return aggregates_table.get_item(Key={'sk': f'FORM#{form_id}'})
+            '''
+        )
+
+        routes = _routes_keying_on_a_form_id(source)
+
+        assert routes == {
+            'GET /feedback-forms/<form_id>/sync': 'get_sync',
+            'GET /feedback-forms/<form_id>/asyncroute': 'get_async',
+        }, (
+            'an async def route under /feedback-forms/<...> was not selected into '
+            'the universe the universal claim is asked about — the node type is '
+            'AsyncFunctionDef, and a route the selector cannot see is one no '
+            'question is asked about, so the suite stays green while it reads a raw '
+            'id'
+        )
+        # And the route the selector now admits is genuinely judged, so the
+        # widening buys a verdict rather than only an entry.
+        unbounded = sorted(
+            function for function in routes.values()
+            if not _validates_its_form_id(source, function)
+        )
+        assert unbounded == ['get_async'], (
+            'the async route was selected but its verdict is wrong — it keys on the '
+            'raw parameter with no refusal anywhere, so it must report unbounded, '
+            'and the bounded sync route beside it must not'
         )
 
     def test_the_derivation_refuses_a_bound_on_a_transformed_argument(self):
