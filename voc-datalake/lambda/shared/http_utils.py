@@ -621,8 +621,11 @@ def fetch_checked_with_retry(
 
     Args:
         max_redirects: Hops allowed after the first request. Exhausting it
-            raises rather than returning the last redirect, so a caller cannot
-            mistake a 302 body for the page.
+            raises `TooManyRedirects` rather than returning the last redirect, so
+            a caller cannot mistake a 302 body for the page. Lower than
+            `requests`' own default of 30, because each hop here is a fresh
+            resolve-and-check: a public site needing more than this many hops is
+            refused where it previously succeeded.
         total_timeout: Optional wall-clock budget for the WHOLE chain, in
             seconds. Without it, a chain of slow-but-valid hops costs up to
             `(max_redirects + 1) * timeout` plus retries, which overruns API
@@ -638,7 +641,13 @@ def fetch_checked_with_retry(
 
     Raises:
         OutboundUrlBlocked: the initial URL, or any redirect target, is not a
-            permitted destination — or the chain exceeded `max_redirects`.
+            permitted destination. Reserved for a POLICY refusal — deliberately
+            not a `RequestException`, so it escapes the "this page did not load"
+            handlers and is reported as the security event it is.
+        requests.exceptions.TooManyRedirects: the chain exceeded `max_redirects`.
+            A transport error, NOT a refusal: every hop in it was resolved and
+            cleared, so reporting a long public chain as a blocked destination
+            raised a false SSRF alert.
         requests.exceptions.Timeout: `total_timeout` elapsed mid-chain. A
             transport failure, not a refusal, so callers that already treat a
             `RequestException` as "this page did not load" keep behaving that way.
@@ -729,7 +738,23 @@ def fetch_checked_with_retry(
         current_url = next_url
         logger.info(f"Following checked redirect to {current_url}")
 
-    raise OutboundUrlBlocked(f'Too many redirects (limit {max_redirects})')
+    # A TRANSPORT error, not a policy refusal, and the distinction is the whole
+    # reason this is not an `OutboundUrlBlocked`: every one of those hops was
+    # resolved and CLEARED, so nothing was blocked. Raising the security type made
+    # a public site with a long chain log `Blocked outbound URL` at ERROR and fire
+    # `ScraperOutboundUrlBlocked` — a metric whose own comment says it exists for
+    # the one case worth alerting on, a saved host that has started resolving
+    # internally. That paged someone about an SSRF event that did not happen. Same
+    # argument as the self-referential `Location` above: misclassifying a transport
+    # oddity as a blocked destination is a defect in its own right.
+    #
+    # `TooManyRedirects` is a `RequestException`, so `_scrape_page`'s
+    # warn-and-continue handles it as the "this page did not load" it is, while
+    # `OutboundUrlBlocked` still escapes for a genuine refusal. The preview route
+    # catches it explicitly to keep answering 400 rather than becoming a 500.
+    raise requests.exceptions.TooManyRedirects(
+        f'Exceeded {max_redirects} redirects for {url}'
+    )
 
 
 def fetch_json_with_retry(

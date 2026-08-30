@@ -240,6 +240,13 @@ What the policy accepts and refuses:
   finishing silently, so a manually triggered run cannot be left at `running` with nothing
   to reconcile it. An unusable entry alongside working ones is dropped and logged, and the
   working ones still run.
+- Exceeding the five-hop redirect bound is reported as a **transport** failure rather
+  than a blocked destination — every hop in such a chain was cleared, so treating it as
+  a refusal raised a security alert for a site that was simply long-winded. The page is
+  skipped with a warning like any other fetch failure, and the preview route still
+  answers 400 naming the limit. Note that five is lower than the HTTP client's own
+  default of 30, because each hop here costs a fresh resolve-and-check: a public site
+  needing more hops is refused where it previously succeeded.
 - One unreadable configuration costs that configuration, not the whole invocation.
   A missing `id`, a `pagination.max_pages` of `"10"`, a `pagination` that is not an
   object, or an unparseable stored `last_run`/`frequency_minutes` used to stop the

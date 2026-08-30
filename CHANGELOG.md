@@ -117,6 +117,15 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   iterated nothing, and left a manually triggered run's row at `running` with nothing to
   reconcile it. An unusable entry stored alongside working ones is dropped and logged, and the
   working ones still run.
+- Exceeding the scraper's redirect limit is now reported as a transport error rather than a
+  blocked destination. Every hop in such a chain has been resolved and cleared, so a wholly
+  public site with a long redirect chain was logging `Blocked outbound URL` at ERROR and
+  emitting the `ScraperOutboundUrlBlocked` metric — which exists to alert on a saved host that
+  has started resolving internally — and so raised an SSRF alert for an event that did not
+  happen. The page is skipped with a warning like any other fetch failure and the preview route
+  still answers 400 naming the limit. Note that the effective redirect limit is 5, where the
+  HTTP client's own default was 30: each hop costs a fresh DNS resolve and check, so a public
+  site needing more hops than that is refused where it previously succeeded.
 - A single unreadable scraper configuration no longer stops every other one. A configuration
   without an `id`, a `pagination.max_pages` of `"10"`, a `pagination` that is not an object, or
   an unparseable stored `last_run`/`frequency_minutes` raised out of the scheduled scraping

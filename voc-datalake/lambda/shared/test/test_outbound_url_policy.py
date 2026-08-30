@@ -8,6 +8,9 @@ the only check was a string-and-denylist `validate_url` in
 
 REVERT MAP — which mutation each test catches
 ---------------------------------------------
+- Raise `OutboundUrlBlocked` for hop exhaustion, reporting a chain whose every hop
+  was CLEARED as a blocked destination (ERROR log plus the security metric)
+  -> `refuses_a_redirect_chain_longer_than_the_bound`.
 - Drop `not ip.is_multicast` (or reduce the predicate set to bare `is_global`)
   -> `refuses_multicast_and_unspecified_targets`.
 - Stop unwrapping IPv4 inside IPv6 (`_embedded_ipv4`)
@@ -492,7 +495,16 @@ class TestCheckedFetchRedirects:
         below and returns after one request — so this test would have gone on
         passing for the wrong reason, measuring the loop guard rather than the
         bound. A counter in the path is what keeps the two apart.
+
+        The TYPE is half the contract here, paired with
+        `a_blocked_url_is_not_a_request_exception`: every hop was resolved and
+        CLEARED, so exhausting the bound is a transport error, not a policy
+        refusal. Raising `OutboundUrlBlocked` made a wholly public site with a long
+        chain log `Blocked outbound URL` at ERROR and fire the
+        `ScraperOutboundUrlBlocked` metric — a false SSRF alert.
         """
+        import requests
+
         from shared.http_utils import (
             MAX_REDIRECT_HOPS,
             OutboundUrlBlocked,
@@ -505,10 +517,15 @@ class TestCheckedFetchRedirects:
             302, location=f'https://example.com/hop/{next(hop)}'
         )
 
-        with pytest.raises(OutboundUrlBlocked, match='[Tt]oo many redirects'):
+        with pytest.raises(requests.exceptions.TooManyRedirects) as raised:
             fetch_checked_with_retry('https://example.com/start')
 
         assert mock_request.call_count == MAX_REDIRECT_HOPS + 1
+        # A `RequestException`, so `_scrape_page` warns and continues; NOT the
+        # policy type, so nothing reports a security event for a cleared chain.
+        assert isinstance(raised.value, requests.RequestException)
+        assert not isinstance(raised.value, OutboundUrlBlocked)
+        assert str(MAX_REDIRECT_HOPS) in str(raised.value)
 
     @patch('shared.http_utils.socket.getaddrinfo')
     @patch('shared.http_utils.requests.request')

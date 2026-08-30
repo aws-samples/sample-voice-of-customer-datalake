@@ -611,6 +611,11 @@ The policy itself:
 - A stored configuration array with no usable entry reports an `error` run instead of
   iterating nothing, so a manual run's row is not abandoned at `running`; an unusable entry
   beside working ones is dropped and logged at ERROR and the working ones still run.
+- Exceeding the 5-hop bound is reported as a **transport** error, not a blocked
+  destination: every hop in such a chain was resolved and cleared, so reporting it as a
+  refusal fired the SSRF metric for a site that was merely long-winded. Note the
+  effective redirect limit is 5 where the HTTP client's own default was 30, so a public
+  site needing more hops is now refused.
 - One unreadable configuration costs that configuration, never the invocation. A missing
   `id`, a `pagination.max_pages` of `'10'`, a non-dict `pagination` or an unparseable
   stored `last_run`/`frequency_minutes` used to raise out of the scraping loop, so **no**

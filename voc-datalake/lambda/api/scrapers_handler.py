@@ -31,6 +31,10 @@ from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 import boto3
+# For `TooManyRedirects` only: this route does not make requests itself, it goes
+# through `fetch_checked_with_retry`, which raises that transport error for an
+# over-long chain.
+import requests
 
 secretsmanager = get_secrets_client()
 lambda_client = boto3.client("lambda")
@@ -311,6 +315,13 @@ def analyze_url():
     except OutboundUrlBlocked as e:
         # A redirect into an internal destination is the caller's URL being
         # refused, not a server fault: 400 with the reason, not an opaque 500.
+        raise ValidationError(str(e)) from e
+    except requests.exceptions.TooManyRedirects as e:
+        # Caught beside the refusal above, not left to the generic handler, so an
+        # over-long chain stays a 400 naming the limit. It is a `RequestException`
+        # — deliberately, since every hop was CLEARED and it is not a security
+        # event — and would otherwise have become an opaque 500 telling the user
+        # nothing about their URL.
         raise ValidationError(str(e)) from e
     except (ValidationError, ServiceError):
         raise

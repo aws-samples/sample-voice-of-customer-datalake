@@ -89,6 +89,11 @@ REVERT MAP
 - Widen that guard so a malformed entry alongside a usable one aborts the run
   -> `a_usable_config_alongside_a_malformed_one_still_runs`,
   `an_ordinary_run_is_unaffected`.
+- Raise the security-shaped `OutboundUrlBlocked` for hop exhaustion again, so a
+  public chain of CLEARED hops fires the SSRF metric
+  -> `a_public_over_long_chain_emits_no_security_metric`.
+- Reclassify a genuine internal redirect along with it, or drop the metric
+  -> `a_genuine_internal_redirect_still_emits_it`.
 - Let one unreadable config raise out of the config loop, so no config in the array
   ingests and a manual run's row is abandoned at `status: 'running'`
   -> `a_healthy_config_behind_a_malformed_one_still_runs` (8 shapes),
@@ -1569,6 +1574,66 @@ class TestRunReportsABlockedUrl:
             c for c in mock_metrics.add_metric.call_args_list
             if c.kwargs.get('name') == 'ScraperOutboundUrlBlocked'
         ]
+
+
+class TestALongPublicChainIsNotASecurityEvent:
+    """
+    Exhausting the hop bound on a PUBLIC chain must not report a blocked
+    destination.
+
+    Every hop in such a chain was resolved and cleared, so it is a transport
+    oddity. While it raised `OutboundUrlBlocked` the run's `errors` said "Blocked
+    outbound URL", it was logged at ERROR, and `ScraperOutboundUrlBlocked` fired —
+    a metric whose own comment says it exists for the one case worth alerting on,
+    a saved host that has started resolving internally. A site with a long
+    redirect chain paged someone about an SSRF event that did not happen.
+    """
+
+    @staticmethod
+    def _run(ingestor, transport):
+        metric_names = []
+        with (
+            patch('shared.http_utils.requests.request', side_effect=transport),
+            patch('shared.http_utils.socket.getaddrinfo') as mock_resolve,
+            patch('webscraper.ingestor.handler.metrics.add_metric') as mock_metric,
+            patch.object(ingestor, '_update_run_status'),
+            patch.object(ingestor, 'set_watermark'),
+            patch.object(ingestor, 'get_watermark', lambda key, default=None: default),
+            patch('webscraper.ingestor.handler.time.sleep'),
+        ):
+            mock_resolve.side_effect = lambda hostname, *a, **k: (
+                PUBLIC_ADDRINFO if hostname == 'ok.example' else INTERNAL_ADDRINFO
+            )
+            mock_metric.side_effect = lambda **kw: metric_names.append(kw['name'])
+            ingestor.execution_id = 'exec-1'
+            ingestor.scraper_configs = [
+                {**CSS_CONFIG, 'id': 'A', 'urls': ['https://ok.example/start']}
+            ]
+            list(ingestor.fetch_new_items())
+        return metric_names
+
+    def test_a_public_over_long_chain_emits_no_security_metric(self, ingestor):
+        hop = iter(range(1, 40))
+        metric_names = self._run(
+            ingestor,
+            lambda **_k: _response(302, location=f'https://ok.example/h{next(hop)}'),
+        )
+
+        assert 'ScraperOutboundUrlBlocked' not in metric_names, (
+            'a cleared public chain was reported as a blocked destination'
+        )
+
+    def test_a_genuine_internal_redirect_still_emits_it(self, ingestor):
+        """
+        Positive control. Reclassifying the hop limit must not reclassify a real
+        refusal — without this, deleting the metric entirely would pass above.
+        """
+        metric_names = self._run(
+            ingestor,
+            lambda **_k: _response(302, location='http://169.254.169.254/latest/'),
+        )
+
+        assert 'ScraperOutboundUrlBlocked' in metric_names
 
 
 class TestOnePolicyForBothCallSites:
