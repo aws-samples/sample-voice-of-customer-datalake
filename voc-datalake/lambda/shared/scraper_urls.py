@@ -67,6 +67,29 @@ MAX_SCRAPER_URLS = 50
 # not bound anything, because 400 configs on one site with 400 distinct paths are
 # 400 distinct URLs and so were 400 resolver calls inside the 29 s window.
 
+# `pagination` names no destination — its URLs are built from base_url by
+# concatenation, so they carry a host this module has already cleared, and the
+# ingestor re-checks each one before its request anyway. It is checked here for a
+# different reason: it is the one exempted key whose VALUE the ingestor does
+# arithmetic with. `range(start + 1, start + max_pages)` raised TypeError on
+# `max_pages: '10'`, and `pagination.get(...)` raised AttributeError on a non-dict
+# — and both escaped `fetch_new_items`, stopping every config in the account
+# rather than costing this one its pages. Both write routes accepted every one of
+# those shapes, so the write path was checking the field that cannot hurt it and
+# not the field that can. So: exempt from DESTINATION checking, not from SHAPE
+# checking.
+#
+# `max_pages` is bounded the way the editor already bounds it (`min={1} max={50}`
+# in frontend/src/pages/Scrapers/ScraperEditor.tsx), which also bounds the
+# fetched-URL count — MAX_SCRAPER_URLS caps the URLs a config NAMES, and
+# pagination multiplies that, so a config naming one base_url could ask for 1000
+# fetches. A stored value outside the bound is refused rather than exempted like
+# an over-cap `urls` list: unlike that list, the offender is one number the editor
+# puts on screen, and the 400 names it, so it is fixable in-app without a save
+# having to succeed first.
+PAGINATION_FIELD = 'pagination'
+PAGINATION_INT_BOUNDS = {'max_pages': (1, MAX_SCRAPER_URLS), 'start': (0, None)}
+
 
 def _config_label(scraper: dict) -> str:
     """
@@ -94,6 +117,46 @@ def _dedup_key(url: str) -> str | None:
     except ValueError:
         return None
     return hostname.lower() if hostname else None
+
+
+def _assert_pagination_shape(scraper: dict) -> None:
+    """
+    Refuse a `pagination` the ingestor cannot compute with.
+
+    Shape only — see PAGINATION_INT_BOUNDS for why this key is checked at all
+    despite naming no destination. A bool is refused explicitly because
+    `isinstance(True, int)` is True in Python, so `max_pages: true` would
+    otherwise pass as the integer 1 and silently mean "one page".
+
+    Absent is legal, and so is `{'enabled': False}`: the editor ships a pagination
+    object for every scraper whether it is switched on or not. The bounds apply
+    regardless of `enabled`, because the value is what gets stored and the toggle
+    can be flipped later without re-validating.
+    """
+    pagination = scraper.get(PAGINATION_FIELD)
+    if pagination is None:
+        return
+    if not isinstance(pagination, dict):
+        raise ValidationError(
+            f"{PAGINATION_FIELD} must be an object for {_config_label(scraper)}, "
+            f"got {type(pagination).__name__}"
+        )
+
+    for key, (low, high) in PAGINATION_INT_BOUNDS.items():
+        value = pagination.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValidationError(
+                f"{PAGINATION_FIELD}.{key} must be an integer for "
+                f"{_config_label(scraper)}, got {type(value).__name__}"
+            )
+        if value < low or (high is not None and value > high):
+            bound = f"{low}-{high}" if high is not None else f"{low} or more"
+            raise ValidationError(
+                f"{PAGINATION_FIELD}.{key} must be {bound} for "
+                f"{_config_label(scraper)}, got {value}"
+            )
 
 
 def validate_scraper_destinations(
@@ -142,7 +205,10 @@ def validate_scraper_destinations(
         ValidationError: any destination is not a permitted outbound target, or
             a field does not hold the type it is documented to hold. Names the
             offending URL, because a config can hold several and "one of your
-            URLs is invalid" is not actionable.
+            URLs is invalid" is not actionable. Also raised for a `pagination`
+            the ingestor could not compute with — that key names no destination,
+            but its value shape is this boundary's business (see
+            PAGINATION_INT_BOUNDS).
     """
     if not isinstance(scraper, dict):
         # A list would sail past `.get()`-based validation as "no URLs to check".
@@ -150,6 +216,11 @@ def validate_scraper_destinations(
 
     if seen is None:
         seen = set()
+
+    # Before the destinations, so the cheap local answer arrives without a
+    # resolver call, and so a config with both problems names this one — it is the
+    # one a user can act on from the editor.
+    _assert_pagination_shape(scraper)
 
     for field in SCRAPER_URL_FIELDS:
         value = scraper.get(field)

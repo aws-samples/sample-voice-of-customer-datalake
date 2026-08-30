@@ -611,6 +611,25 @@ The policy itself:
 - A stored configuration array with no usable entry reports an `error` run instead of
   iterating nothing, so a manual run's row is not abandoned at `running`; an unusable entry
   beside working ones is dropped and logged at ERROR and the working ones still run.
+- One unreadable configuration costs that configuration, never the invocation. A missing
+  `id`, a `pagination.max_pages` of `'10'`, a non-dict `pagination` or an unparseable
+  stored `last_run`/`frequency_minutes` used to raise out of the scraping loop, so **no**
+  configuration in the account ingested and a manual run's row was again left at
+  `running`. Closed in three places: the write routes refuse those shapes (an actionable
+  400 naming the field), the scheduled reader coerces them for values already stored —
+  falling back to the same defaults an absent value gets, and treating an unreadable
+  schedule as *due* since never running again is the worse direction — and the
+  configuration loop catches anything remaining, logs at ERROR, emits
+  `ScraperConfigUnusable`, writes a terminal `error` status and continues to the next
+  configuration. An unusable configuration records no `last_run`, so fixing it does not
+  mean waiting out its frequency.
+- `pagination` names no destination — its URLs are built from `base_url` and so carry a
+  host already checked — but its **shape** is validated on write, because the scheduled
+  reader does arithmetic with those numbers: `max_pages` and `start` must be integers,
+  `max_pages` within 1-50, matching the bounds the editor already enforces. That also
+  bounds the number of URLs one configuration can cause to be fetched, which the 50-URL
+  cap does not: the cap counts URLs a configuration *names*, and pagination multiplies
+  them.
 - At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
   write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
   limit. Enforced only on a list the write changes, so a pre-existing longer list keeps

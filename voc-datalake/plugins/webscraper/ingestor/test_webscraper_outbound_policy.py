@@ -89,6 +89,22 @@ REVERT MAP
 - Widen that guard so a malformed entry alongside a usable one aborts the run
   -> `a_usable_config_alongside_a_malformed_one_still_runs`,
   `an_ordinary_run_is_unaffected`.
+- Let one unreadable config raise out of the config loop, so no config in the array
+  ingests and a manual run's row is abandoned at `status: 'running'`
+  -> `a_healthy_config_behind_a_malformed_one_still_runs` (8 shapes),
+  `a_manual_run_over_an_unusable_config_writes_a_terminal_status`.
+- Read `config['id']` in `_should_run_scraper` again, or let an unparseable
+  `last_run`/`frequency_minutes` raise instead of treating the config as due
+  -> `a_healthy_config_behind_a_malformed_one_still_runs[missing id]`,
+  `[last_run not a date]`, `[last_run not a string]`, `[frequency_minutes string]`.
+- Compute with `pagination` unchecked in `_get_urls_to_scrape`
+  -> `a_healthy_config_behind_a_malformed_one_still_runs[max_pages string]`,
+  `[max_pages None]`, `[pagination string]`, `[start string]`.
+- Advance the watermark for a config that could not be read, so it waits out its
+  whole frequency before being retried -> `an_unusable_config_does_not_record_a_run`.
+- Swallow so much that ordinary work is skipped, or coerce a USABLE pagination
+  value away -> `an_ordinary_two_config_run_is_unaffected`,
+  `a_valid_pagination_still_produces_its_pages`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -1239,6 +1255,214 @@ class TestAnUnusableConfigArrayStillReportsATerminalStatus:
 
         assert len(items) == 1
         assert statuses[-1]['status'] == 'completed'
+
+
+# A config the ingestor is meant to survive, and the malformed shapes it must
+# survive. Module-level like STALLING_CONFIG above rather than class attributes:
+# same convention, and a mutable class attribute is a RUF012.
+HEALTHY_CONFIG = {
+    **CSS_CONFIG, 'id': 'healthy', 'name': 'healthy',
+    'urls': ['https://ok.example/a'],
+}
+
+# (label, malformed config, watermarks it needs to be stored)
+MALFORMED_CONFIGS = [
+    # `id` is REMOVED, not merely left unspread: CSS_CONFIG carries one, so
+    # `{**CSS_CONFIG, ...}` cannot express this case at all — a first version
+    # that tried passed against the unfixed handler for that reason.
+    ("missing id", {k: v for k, v in CSS_CONFIG.items() if k != 'id'}
+     | {'name': 'no-id', 'urls': ['https://bad.example/a']}, {}),
+    ("max_pages string", {**CSS_CONFIG, 'id': 'b', 'base_url': 'https://bad.example/',
+                          'pagination': {'enabled': True, 'max_pages': '10'}}, {}),
+    ("max_pages None", {**CSS_CONFIG, 'id': 'b', 'base_url': 'https://bad.example/',
+                        'pagination': {'enabled': True, 'max_pages': None}}, {}),
+    ("pagination string", {**CSS_CONFIG, 'id': 'b', 'base_url': 'https://bad.example/',
+                           'pagination': 'x'}, {}),
+    ("start string", {**CSS_CONFIG, 'id': 'b', 'base_url': 'https://bad.example/',
+                      'pagination': {'enabled': True, 'start': 'x'}}, {}),
+    ("last_run not a date", {**CSS_CONFIG, 'id': 'wm',
+                             'urls': ['https://bad.example/a']},
+     {'scraper_wm_last_run': 'not-a-date'}),
+    ("last_run not a string", {**CSS_CONFIG, 'id': 'wm',
+                               'urls': ['https://bad.example/a']},
+     {'scraper_wm_last_run': 12345}),
+    ("frequency_minutes string", {**CSS_CONFIG, 'id': 'fq', 'frequency_minutes': 'x',
+                                  'urls': ['https://bad.example/a']},
+     {'scraper_fq_last_run': '2020-01-01T00:00:00+00:00'}),
+]
+
+
+class TestOneMalformedConfigCostsOneConfig:
+    """
+    A config the ingestor cannot read must cost that config, not the invocation.
+
+    Every shape below is accepted by `POST /scrapers` and then raised out of
+    `fetch_new_items`, so NO config in the array ran — measured, a healthy config
+    sitting behind the malformed one was fetched 0 times in every case. Two of the
+    shapes come from DynamoDB rather than the config, via `_should_run_scraper`.
+
+    That is the same "one unusable value stops all scraping" failure
+    `_configs_in_fairness_order`'s sort-key guard was written to prevent; these are
+    the remaining routes to it. For a MANUAL run it is worse than a lost
+    invocation: `POST /scrapers/<id>/run` has already written a `status: 'running'`
+    row, and an exception leaving the loop means nothing terminal replaces it.
+
+    The `range()`/`config['id']` reads predate this PR, so this is defence made
+    consistent rather than a regression fixed. It is closed in three places, and
+    each has its own reason: refused on WRITE by `shared/scraper_urls.py` (the
+    actionable 400), coerced in `_get_urls_to_scrape`/`_should_run_scraper` for
+    configs already stored, and caught per-config in the loop — which is the only
+    one of the three that also covers the shape nobody has thought of yet.
+    """
+
+    @staticmethod
+    def _scheduled_run(ingestor, configs, watermarks):
+        """A scheduled invocation, returning (requested URLs, status writes)."""
+        requested = []
+        statuses = []
+
+        def transport(**kwargs):
+            requested.append(kwargs['url'])
+            return _response(200, text=REVIEW_HTML)
+
+        ingestor.execution_id = None
+        ingestor.scraper_configs = configs
+
+        with (
+            patch('shared.http_utils.requests.request', side_effect=transport),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch('webscraper.ingestor.handler.time.sleep'),
+            patch.object(
+                ingestor, '_update_run_status',
+                lambda _id, u: statuses.append((_id, u)),
+            ),
+            patch.object(
+                ingestor, 'set_watermark',
+                lambda key, value: watermarks.__setitem__(key, value),
+            ),
+            patch.object(
+                ingestor, 'get_watermark',
+                lambda key, default=None: watermarks.get(key, default),
+            ),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        return requested, statuses, items
+
+    @pytest.mark.parametrize(
+        'malformed,stored', [(c, w) for _label, c, w in MALFORMED_CONFIGS],
+        ids=[label for label, _c, _w in MALFORMED_CONFIGS],
+    )
+    def test_a_healthy_config_behind_a_malformed_one_still_runs(
+        self, malformed, stored, ingestor
+    ):
+        """
+        Asserted on the URLs actually REQUESTED, not on watermarks: a watermark can
+        move without the config having been fetched.
+        """
+        requested, _statuses, _items = self._scheduled_run(
+            ingestor, [malformed, HEALTHY_CONFIG], dict(stored)
+        )
+
+        assert 'https://ok.example/a' in requested, (
+            'the malformed config stopped the whole invocation'
+        )
+
+    def test_a_manual_run_over_an_unusable_config_writes_a_terminal_status(
+        self, ingestor
+    ):
+        """
+        The specific thing an escaping exception loses. `POST /scrapers/<id>/run`
+        has already written `status: 'running'`, and nothing reconciles one that is
+        never replaced.
+
+        Driven through a config whose `urls` cannot be iterated — a shape neither
+        the write check nor the coercions cover — so this measures the per-config
+        guard rather than one of the narrower fixes.
+        """
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 'b'
+        ingestor.scraper_configs = [{**CSS_CONFIG, 'id': 'b', 'urls': 7}]
+
+        statuses = []
+        with (
+            patch('shared.http_utils.requests.request',
+                  return_value=_response(200, text=REVIEW_HTML)),
+            patch('shared.http_utils.socket.getaddrinfo', return_value=PUBLIC_ADDRINFO),
+            patch('webscraper.ingestor.handler.time.sleep'),
+            patch.object(
+                ingestor, '_update_run_status', lambda _id, u: statuses.append(u)
+            ),
+            patch.object(ingestor, 'set_watermark'),
+            patch.object(ingestor, 'get_watermark', lambda key, default=None: default),
+        ):
+            items = list(ingestor.fetch_new_items())
+
+        assert items == []
+        assert statuses, 'no terminal status: the run row stays at running for ever'
+        assert statuses[-1]['status'] == 'error'
+        assert statuses[-1]['completed_at']
+
+    def test_an_unusable_config_does_not_record_a_run(self, ingestor):
+        """
+        It never ran, so its `last_run` must not move — otherwise a config that
+        fails to load waits out its whole `frequency_minutes` before being tried
+        again, and a fixed config would too.
+        """
+        watermarks = {}
+        self._scheduled_run(
+            ingestor,
+            [{**CSS_CONFIG, 'id': 'b', 'urls': 7}, HEALTHY_CONFIG],
+            watermarks,
+        )
+
+        assert 'scraper_b_last_run' not in watermarks
+        assert 'scraper_healthy_last_run' in watermarks, (
+            'the healthy config did not record its run either'
+        )
+
+    def test_an_ordinary_two_config_run_is_unaffected(self, ingestor):
+        """
+        Positive control. A guard that swallowed too much — or coercions that
+        defaulted a valid value away — would satisfy every assertion above while
+        quietly ingesting nothing, so this pins that both configs are still
+        fetched, both yield, and both record their run.
+        """
+        watermarks = {}
+        requested, statuses, items = self._scheduled_run(
+            ingestor,
+            [
+                {**CSS_CONFIG, 'id': 'one', 'urls': ['https://one.example/a']},
+                {**CSS_CONFIG, 'id': 'two', 'urls': ['https://two.example/a']},
+            ],
+            watermarks,
+        )
+
+        assert requested == ['https://one.example/a', 'https://two.example/a']
+        assert len(items) == 2
+        assert watermarks.keys() >= {'scraper_one_last_run', 'scraper_two_last_run'}
+        assert [u['status'] for _id, u in statuses if 'status' in u] == [
+            'completed', 'completed'
+        ]
+
+    def test_a_valid_pagination_still_produces_its_pages(self, ingestor):
+        """
+        Positive control on the coercion specifically: `_as_int` must narrow only
+        what it cannot use. `max_pages: 3` means base_url plus pages 2 and 3, so
+        coercing a usable value to the default would show up here.
+        """
+        requested, _statuses, _items = self._scheduled_run(
+            ingestor,
+            [{**CSS_CONFIG, 'id': 'p', 'base_url': 'https://ok.example/r',
+              'pagination': {'enabled': True, 'max_pages': 3, 'start': 1}}],
+            {},
+        )
+
+        assert requested == [
+            'https://ok.example/r',
+            'https://ok.example/r?page=2',
+            'https://ok.example/r?page=3',
+        ]
 
 
 class TestRunReportsABlockedUrl:

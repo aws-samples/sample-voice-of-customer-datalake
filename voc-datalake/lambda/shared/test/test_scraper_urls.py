@@ -40,6 +40,17 @@ REVERT MAP
 - Wire the exemption into the array route only, leaving `POST /scrapers` unable to
   re-save a pre-existing over-cap config
   -> `TestSingleConfigWrite::accepts_an_unchanged_over_cap_list`.
+- Stop checking `pagination`'s shape, so a write stores a `max_pages` the ingestor
+  cannot compute with and the next scheduled invocation aborts for EVERY config
+  -> `TestPaginationShape` (`refuses_a_max_pages_that_is_not_an_integer`,
+  `refuses_an_unusable_start_page`, `refuses_a_pagination_that_is_not_an_object`).
+- Drop the 1..50 bound, so `max_pages: 1000` is accepted with one resolver call and
+  then fetched as 1000 URLs
+  -> `refuses_a_max_pages_outside_the_editors_own_bounds`.
+- Check the shape on one write route only
+  -> `both_write_routes_refuse_the_same_shape`.
+- Refuse pagination outright, or refuse `{'enabled': False}` / an absent key, making
+  the toggle unsaveable -> `accepts_every_shape_the_editor_produces`.
 
 Every "refuses" case has a positive control, so an implementation that refused
 everything could not pass this file.
@@ -648,3 +659,185 @@ class TestOnePolicyForEveryWritePath:
             scraper_urls.validate_scraper_configs_json(json.dumps([{'id': 'a'}, {'id': 'b'}]))
 
         assert mock_check.call_count == 2
+
+
+class TestPaginationShape:
+    """
+    `pagination` names no destination, but the write path must still refuse a
+    shape the ingestor cannot read.
+
+    It is the one exempted key whose VALUE the ingestor computes with:
+    `range(start + 1, start + max_pages)` raised TypeError on `max_pages: '10'`
+    and `pagination.get(...)` raised AttributeError on a non-dict, and either
+    escaped `fetch_new_items` and stopped EVERY config in the account. Both write
+    routes accepted all of those shapes — measured — so the write path was
+    checking the field that cannot hurt it and not the field that can.
+
+    Not an SSRF gap, and this file must not be read as claiming it is: the URLs
+    pagination produces are built from base_url by concatenation, so they carry a
+    host already cleared here, and the ingestor re-checks each one before its
+    request. `NON_DESTINATION_KEYS` in the lockstep test records that reasoning.
+    """
+
+    @pytest.mark.parametrize('max_pages', ['10', 10.5, True, [], {}])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_max_pages_that_is_not_an_integer(self, mock_resolve, max_pages):
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='pagination.max_pages'):
+            validate_scraper_destinations({
+                'id': 'p1',
+                'base_url': 'https://example.com/reviews',
+                'pagination': {'enabled': True, 'max_pages': max_pages},
+            })
+
+    @pytest.mark.parametrize('max_pages', [0, -5, 51])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_max_pages_outside_the_editors_own_bounds(
+        self, mock_resolve, max_pages
+    ):
+        """
+        1..50 is what `ScraperEditor.tsx` already enforces with `min`/`max`. It
+        also bounds the fetched-URL count, which MAX_SCRAPER_URLS does not: that
+        caps the URLs a config NAMES, and pagination multiplies them, so
+        `max_pages: 1000` was accepted with one resolver call and then fetched
+        1000 URLs.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='pagination.max_pages'):
+            validate_scraper_destinations({
+                'id': 'p1',
+                'base_url': 'https://example.com/reviews',
+                'pagination': {'enabled': True, 'max_pages': max_pages},
+            })
+
+    @pytest.mark.parametrize('start', ['x', 1.5, True, -1])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_an_unusable_start_page(self, mock_resolve, start):
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='pagination.start'):
+            validate_scraper_destinations({
+                'id': 'p1',
+                'base_url': 'https://example.com/reviews',
+                'pagination': {'enabled': True, 'start': start},
+            })
+
+    @pytest.mark.parametrize('pagination', ['x', [], 7])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_pagination_that_is_not_an_object(self, mock_resolve, pagination):
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='pagination must be an object'):
+            validate_scraper_destinations({
+                'id': 'p1',
+                'base_url': 'https://example.com/reviews',
+                'pagination': pagination,
+            })
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_names_the_config_so_an_array_write_is_actionable(self, mock_resolve):
+        """
+        The array route refuses the whole write, so the message has to say which
+        config — the same reason `_config_label` exists for the URL fields.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match="id 'second'"):
+            validate_scraper_configs_json(json.dumps([
+                {'id': 'first', 'base_url': 'https://example.com/a'},
+                {
+                    'id': 'second',
+                    'base_url': 'https://example.com/b',
+                    'pagination': {'enabled': True, 'max_pages': '10'},
+                },
+            ]))
+
+    @pytest.mark.parametrize('pagination', [
+        None,
+        {'enabled': False},
+        {'enabled': True, 'max_pages': 10, 'start': 1},
+        {'enabled': True, 'max_pages': 50, 'start': 0},
+        {'enabled': True, 'param': 'p'},
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_accepts_every_shape_the_editor_produces(self, mock_resolve, pagination):
+        """
+        Positive control. A check that refused pagination outright would satisfy
+        every assertion above while making the pagination toggle unsaveable —
+        including `{'enabled': False}`, which the editor ships for every scraper
+        whether the toggle is on or not, and an absent key, which the API's own
+        older configs have.
+        """
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        # Must not raise.
+        validate_scraper_destinations({
+            'id': 'p1',
+            'base_url': 'https://example.com/reviews',
+            'pagination': pagination,
+        })
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_both_write_routes_refuse_the_same_shape(self, mock_resolve):
+        """
+        The whole reason this module exists: checking one route and not the other
+        is the same bug in a different place. `POST /scrapers` goes through
+        `validate_scraper_config_write` and the Settings card through
+        `validate_scraper_configs_json`.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import (
+            validate_scraper_config_write,
+            validate_scraper_configs_json,
+        )
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+        config = {
+            'id': 'p1',
+            'base_url': 'https://example.com/reviews',
+            'pagination': {'enabled': True, 'max_pages': '10'},
+        }
+
+        with pytest.raises(ValidationError, match='pagination.max_pages'):
+            validate_scraper_config_write(config)
+        with pytest.raises(ValidationError, match='pagination.max_pages'):
+            validate_scraper_configs_json(json.dumps([config]))
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_the_shape_without_spending_a_resolver_call(self, mock_resolve):
+        """
+        Checked before the destinations, so the cheap local answer does not wait
+        on a lookup — the same reason the scheme check precedes resolution.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='pagination'):
+            validate_scraper_destinations({
+                'id': 'p1',
+                'base_url': 'https://example.com/reviews',
+                'pagination': 'x',
+            })
+
+        mock_resolve.assert_not_called()

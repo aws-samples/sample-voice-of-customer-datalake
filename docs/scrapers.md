@@ -240,6 +240,25 @@ What the policy accepts and refuses:
   finishing silently, so a manually triggered run cannot be left at `running` with nothing
   to reconcile it. An unusable entry alongside working ones is dropped and logged, and the
   working ones still run.
+- One unreadable configuration costs that configuration, not the whole invocation.
+  A missing `id`, a `pagination.max_pages` of `"10"`, a `pagination` that is not an
+  object, or an unparseable stored `last_run`/`frequency_minutes` used to stop the
+  scraping loop outright — so **no** configuration in the account ingested, and a
+  manually triggered run was again left at `running`. It is handled at three points:
+  the write routes refuse those shapes with a 400 naming the field; the scheduled
+  scraper coerces values already stored, using the same defaults an absent value
+  gets and treating an unreadable schedule as *due* (never running again is the worse
+  failure); and the configuration loop catches anything else, logs at ERROR, emits a
+  `ScraperConfigUnusable` metric, writes a terminal `error` status and moves on to the
+  next configuration. An unusable configuration is not marked as having run, so
+  correcting it does not mean waiting out its frequency first.
+- `pagination` is checked for **shape** on write even though it names no destination
+  (its URLs are built from `base_url`, so they carry a host already checked, and each
+  is re-checked before its request in any case). `max_pages` and `start` must be
+  integers, and `max_pages` must be between **1 and 50** — the bounds the editor
+  already applies. This is also what bounds how many URLs one configuration can cause
+  to be fetched, which the 50-URL cap does not: that cap counts the URLs a
+  configuration *names*, and pagination multiplies them.
 - A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
   DNS lookup inside the saving request, and both write routes answer through API
   Gateway's 29 second limit; identical hosts within one write are resolved once. The

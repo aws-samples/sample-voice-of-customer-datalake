@@ -117,6 +117,25 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   iterated nothing, and left a manually triggered run's row at `running` with nothing to
   reconcile it. An unusable entry stored alongside working ones is dropped and logged, and the
   working ones still run.
+- A single unreadable scraper configuration no longer stops every other one. A configuration
+  without an `id`, a `pagination.max_pages` of `"10"`, a `pagination` that is not an object, or
+  an unparseable stored `last_run`/`frequency_minutes` raised out of the scheduled scraping
+  loop, so no configuration in the account ingested at all — and a manually triggered run's row
+  was left at `running` with nothing to reconcile it, the same failure the run budget exists to
+  prevent by a different route. Both write routes now refuse those shapes with a 400 naming the
+  field; the scheduled scraper coerces values already stored, falling back to the defaults an
+  absent value gets and treating an unreadable schedule as due, since never running again is
+  the worse outcome; and the configuration loop reports anything remaining against that
+  configuration alone — logged at ERROR, counted by a new `ScraperConfigUnusable` metric, given
+  a terminal `error` status — and continues. Such a configuration is not recorded as having
+  run, so correcting it does not mean waiting out its frequency.
+- Scraper `pagination` is validated for shape on write: `max_pages` and `start` must be
+  integers and `max_pages` must be between 1 and 50, matching the bounds the editor enforces.
+  The key names no network destination — its URLs derive from `base_url` and carry an
+  already-checked host — but the scheduled scraper computes with those numbers, so a wrongly
+  typed one was accepted by both write routes and then aborted the whole invocation. The bound
+  also limits how many URLs one configuration can cause to be fetched, which the 50-URL cap
+  does not: that counts the URLs a configuration names, and pagination multiplies them.
 - A wall-clock fetch budget now bounds the retry backoff as well as the attempts. The backoff
   sleep between attempts was taken in full and the budget only re-checked once it returned, so
   a budget could be overrun by up to one backoff interval — enough to push the scraper's run

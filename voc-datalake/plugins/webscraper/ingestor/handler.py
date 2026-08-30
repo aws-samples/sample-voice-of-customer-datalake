@@ -93,6 +93,24 @@ SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS = 240
 SCRAPER_TRUNCATED_WATERMARK = 'scraper_{scraper_id}_last_truncated'
 
 
+def _as_int(value: object, default: int, label: str) -> int:
+    """
+    `value` as an int, or `default` if it cannot be one.
+
+    For stored config values the ingestor computes with. A bool is rejected
+    explicitly — `int(True)` is 1, so `max_pages: true` would silently mean "one
+    page" rather than being reported as the mistake it is.
+    """
+    if isinstance(value, bool) or value is None:
+        logger.warning(f"Ignoring {label}={value!r}: using {default}")
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning(f"Ignoring {label}={value!r}: using {default}")
+        return default
+
+
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
 
@@ -141,7 +159,7 @@ class WebScraperIngestor(BaseIngestor):
             update_expr = 'SET ' + ', '.join([f'#{k} = :{k}' for k in updates.keys()])
             expr_names = {f'#{k}': k for k in updates.keys()}
             expr_values = {f':{k}': v for k, v in updates.items()}
-            
+
             self.aggregates_table.update_item(
                 Key={'pk': f'SCRAPER_RUN#{scraper_id}', 'sk': self.execution_id},
                 UpdateExpression=update_expr,
@@ -169,14 +187,14 @@ class WebScraperIngestor(BaseIngestor):
         """Extract rating from element."""
         if not element:
             return None
-        
+
         rating_attr = config.get('rating_attribute', 'data-rating')
         if element.has_attr(rating_attr):
             try:
                 return int(float(element[rating_attr]))
             except (ValueError, TypeError):
                 pass
-        
+
         for cls in element.get('class', []):
             match = re.search(r'(\d+)', cls)
             if match:
@@ -189,22 +207,22 @@ class WebScraperIngestor(BaseIngestor):
             word_rating = WORD_STAR_RATINGS.get(cls.lower())
             if word_rating is not None:
                 return word_rating
-        
+
         text = element.get_text(strip=True)
         match = re.search(r'(\d+(?:\.\d+)?)\s*(?:/\s*5|stars?|★)', text, re.I)
         if match:
             return min(5, max(1, int(float(match.group(1)))))
-        
+
         return None
 
     def _extract_jsonld_reviews(self, soup: BeautifulSoup, config: dict, url: str) -> Generator[dict, None, None]:
         """Extract reviews from JSON-LD structured data."""
         scripts = soup.find_all('script', type='application/ld+json')
-        
+
         for script in scripts:
             try:
                 data = json.loads(script.string)
-                
+
                 if isinstance(data, dict) and '@graph' in data:
                     items = data['@graph']
                 elif isinstance(data, dict) and 'review' in data:
@@ -213,15 +231,15 @@ class WebScraperIngestor(BaseIngestor):
                     items = data
                 else:
                     items = [data]
-                
+
                 for item in items:
                     if item.get('@type') != 'Review':
                         continue
-                    
+
                     review_data = self._extract_from_jsonld_item(item, config, url)
                     if review_data:
                         yield review_data
-                        
+
             except json.JSONDecodeError:
                 continue
             except Exception as e:
@@ -233,9 +251,9 @@ class WebScraperIngestor(BaseIngestor):
             text = item.get('reviewBody', '')
             if not text or len(text) < 5:
                 return None
-            
+
             title = item.get('headline', item.get('name', ''))
-            
+
             rating = None
             rating_value = item.get('reviewRating', {})
             if isinstance(rating_value, dict):
@@ -245,7 +263,7 @@ class WebScraperIngestor(BaseIngestor):
                     rating = int(float(rating))
                 except (ValueError, TypeError):
                     rating = None
-            
+
             author = 'Anonymous'
             author_url = None
             author_data = item.get('author', {})
@@ -254,7 +272,7 @@ class WebScraperIngestor(BaseIngestor):
                 author_url = author_data.get('url')
             elif isinstance(author_data, str):
                 author = author_data
-            
+
             date_published = item.get('datePublished', '')
             created_at = datetime.now(timezone.utc).isoformat()
             if date_published:
@@ -269,10 +287,10 @@ class WebScraperIngestor(BaseIngestor):
                     created_at = dt_cet.isoformat()
                 except Exception:
                     created_at = date_published
-            
+
             item_id = self._generate_id(author_url or url, text)
             scraper_name = config.get('name', urlparse(url).netloc)
-            
+
             return {
                 'id': f"scraper_{config['id']}_{item_id}",
                 'channel': 'web_scrape_jsonld',
@@ -436,42 +454,83 @@ class WebScraperIngestor(BaseIngestor):
                 logger.warning(f"Error extracting item from {url}: {e}")
 
     def _get_urls_to_scrape(self, config: dict) -> list[str]:
-        """Get list of URLs to scrape based on config."""
+        """
+        Get list of URLs to scrape based on config.
+
+        `pagination` is read defensively because it is the one stored value this
+        function does ARITHMETIC with, and both write routes let its shape
+        through: `max_pages: '10'` made `start_page + max_pages` raise TypeError,
+        a non-dict `pagination` made `.get` raise AttributeError, and either
+        escaped `fetch_new_items` and stopped EVERY config in the account rather
+        than costing this one its pages. `shared/scraper_urls.py` now refuses
+        those shapes on write, which is the better place to catch a typo; this is
+        the second line for the ones already stored.
+        """
         urls = []
-        
+
         if config.get('urls'):
             urls.extend(config['urls'])
-        
+
         base_url = config.get('base_url')
         if base_url:
             urls.append(base_url)
-            
+
             pagination = config.get('pagination', {})
+            if not isinstance(pagination, dict):
+                logger.warning(
+                    f"Ignoring pagination for {config.get('id', 'unknown')}: "
+                    f"expected an object, got {type(pagination).__name__}"
+                )
+                pagination = {}
             if pagination.get('enabled'):
-                max_pages = pagination.get('max_pages', 5)
+                # Coerced with the SAME defaults an absent value gets, so a
+                # wrongly-typed one costs the config its pagination rather than
+                # the invocation. `int()` also narrows a float, which `range`
+                # would otherwise reject.
+                max_pages = _as_int(pagination.get('max_pages'), 5, 'max_pages')
                 page_param = pagination.get('param', 'page')
-                start_page = pagination.get('start', 1)
-                
+                start_page = _as_int(pagination.get('start'), 1, 'start')
+
                 for page in range(start_page + 1, start_page + max_pages):
                     if '?' in base_url:
                         urls.append(f"{base_url}&{page_param}={page}")
                     else:
                         urls.append(f"{base_url}?{page_param}={page}")
-        
+
         return urls
 
     def _should_run_scraper(self, config: dict) -> bool:
-        """Check if scraper should run based on frequency."""
-        scraper_id = config['id']
+        """
+        Check if scraper should run based on frequency.
+
+        Every read here fails OPEN — an unusable value means "due" — for two
+        reasons. The values come from a stored config and from DynamoDB, and
+        raising aborted `fetch_new_items` for the whole invocation rather than
+        for this config: `config['id']` on a config without one was a KeyError, a
+        `last_run` that is not an ISO string was a ValueError, and a non-numeric
+        `frequency_minutes` was a TypeError. And of the two directions, "run more
+        often than intended" is recoverable where "never run again" is not.
+
+        The id is read the same way `fetch_new_items` and
+        `_configs_in_fairness_order` read it, so all three agree on what a config
+        without one is called.
+        """
+        scraper_id = config.get('id', 'unknown')
         last_run = self.get_watermark(f'scraper_{scraper_id}_last_run')
-        
-        if not last_run:
+
+        if not last_run or not isinstance(last_run, str):
             return True
-        
-        frequency_minutes = config.get('frequency_minutes', 60)
-        last_run_time = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
+
+        try:
+            frequency_minutes = float(config.get('frequency_minutes', 60))
+            last_run_time = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
+        except (TypeError, ValueError) as e:
+            logger.warning(
+                f"Running {scraper_id} because its schedule is unreadable: {e}"
+            )
+            return True
         next_run = last_run_time + timedelta(minutes=frequency_minutes)
-        
+
         return datetime.now(timezone.utc) >= next_run
 
     def _configs_in_fairness_order(self) -> list:
@@ -569,244 +628,280 @@ class WebScraperIngestor(BaseIngestor):
         # that truncated last time must not get first refusal again. See
         # `_configs_in_fairness_order` and SCRAPER_TRUNCATED_WATERMARK.
         for config in configs:
+            # One unusable config must cost ONE config, not the invocation. Every
+            # read below touches a value that came from a stored config or from
+            # DynamoDB, and any of them raising escaped `fetch_new_items` and ended
+            # the whole run: a config without an `id`, a `pagination.max_pages` of
+            # '10', a non-dict `pagination`, an unparseable `last_run`. Measured with
+            # a healthy config behind the malformed one, the healthy config was
+            # fetched 0 times in every case. That is the same "one bad value stops
+            # all scraping" failure `_configs_in_fairness_order`'s sort-key guard was
+            # written to prevent, by the remaining routes.
+            #
+            # The specific shapes are ALSO handled at their source — refused on write
+            # by `shared/scraper_urls.py`, and coerced in `_get_urls_to_scrape` and
+            # `_should_run_scraper` for configs already stored. This is what makes
+            # the guarantee hold for the shape nobody has thought of yet.
+            # Read OUTSIDE the guard, because the guard's own error message names
+            # them: `.get` on a dict cannot raise, and a non-dict never reaches
+            # here (`_configs_in_fairness_order` drops it), so there is nothing to
+            # protect — but leaving them inside would mean an unbound name in the
+            # handler if that ever stopped being true.
             scraper_id = config.get('id', 'unknown')
             scraper_name = config.get('name', scraper_id)
-            
-            if not self.execution_id and not self._should_run_scraper(config):
-                logger.info(f"Skipping scraper {scraper_name} - not due yet")
-                continue
-            
-            logger.info(f"Running scraper: {scraper_name}")
-            urls = self._get_urls_to_scrape(config)
-            items_found = 0
-            pages_scraped = 0
-            errors = []
-            # Whether THIS config's URL loop was cut short, as distinct from the
-            # invocation-wide flag: it decides the watermark below, and a config
-            # that ran to the end must still record its run.
-            config_truncated = False
-            # Whether the budget was already gone when this config was reached, so
-            # it requested nothing at all. Distinct from `config_truncated`, which
-            # means this config spent the budget: a config that made no request has
-            # neither been truncated nor run, and must be reported as neither.
-            config_unattempted = False
 
-            for index, url in enumerate(urls):
-                remaining = run_deadline - time.monotonic()
-                if remaining <= 0:
-                    run_budget_exhausted = True
-                    # Alertable without reading a run's `errors`, and without the
-                    # scraper id in the name so a persistently truncating config
-                    # cannot fan out into unbounded metric names — the same
-                    # reasoning as ScraperOutboundUrlBlocked below. An account that
-                    # truncates on every schedule is ingesting less than it thinks,
-                    # which the run row alone does not surface for SCHEDULED runs:
-                    # `_update_run_status` returns early without an execution_id.
-                    # Once per truncated invocation: the config loop breaks below.
-                    metrics.add_metric(
-                        name="ScraperRunBudgetExhausted", unit="Count", value=1
-                    )
-                    if index == 0:
-                        # This config has requested NOTHING, so it did not spend the
-                        # budget — the config before it did, by finishing its own URL
-                        # list with the budget exactly gone. Blaming the config that
-                        # merely discovered the shortage inverted everything
-                        # downstream: it recorded `completed_with_errors` and "N
-                        # URL(s) not attempted" against a scraper that made no
-                        # request, while the culprit recorded a clean run, and the
-                        # truncation marker demoted the victim so the culprit kept
-                        # first refusal for ever. Measured with 5 stalling URLs ahead
-                        # of one healthy config: the healthy config was fetched 0
-                        # times across 40 scheduled invocations. Handled after this
-                        # loop, where the run's other bookkeeping is.
-                        config_unattempted = True
+            try:
+                if not self.execution_id and not self._should_run_scraper(config):
+                    logger.info(f"Skipping scraper {scraper_name} - not due yet")
+                    continue
+
+                logger.info(f"Running scraper: {scraper_name}")
+                urls = self._get_urls_to_scrape(config)
+                items_found = 0
+                pages_scraped = 0
+                errors = []
+                # Whether THIS config's URL loop was cut short, as distinct from the
+                # invocation-wide flag: it decides the watermark below, and a config
+                # that ran to the end must still record its run.
+                config_truncated = False
+                # Whether the budget was already gone when this config was reached, so
+                # it requested nothing at all. Distinct from `config_truncated`, which
+                # means this config spent the budget: a config that made no request has
+                # neither been truncated nor run, and must be reported as neither.
+                config_unattempted = False
+
+                for index, url in enumerate(urls):
+                    remaining = run_deadline - time.monotonic()
+                    if remaining <= 0:
+                        run_budget_exhausted = True
+                        # Alertable without reading a run's `errors`, and without the
+                        # scraper id in the name so a persistently truncating config
+                        # cannot fan out into unbounded metric names — the same
+                        # reasoning as ScraperOutboundUrlBlocked below. An account that
+                        # truncates on every schedule is ingesting less than it thinks,
+                        # which the run row alone does not surface for SCHEDULED runs:
+                        # `_update_run_status` returns early without an execution_id.
+                        # Once per truncated invocation: the config loop breaks below.
+                        metrics.add_metric(
+                            name="ScraperRunBudgetExhausted", unit="Count", value=1
+                        )
+                        if index == 0:
+                            # This config has requested NOTHING, so it did not spend the
+                            # budget — the config before it did, by finishing its own URL
+                            # list with the budget exactly gone. Blaming the config that
+                            # merely discovered the shortage inverted everything
+                            # downstream: it recorded `completed_with_errors` and "N
+                            # URL(s) not attempted" against a scraper that made no
+                            # request, while the culprit recorded a clean run, and the
+                            # truncation marker demoted the victim so the culprit kept
+                            # first refusal for ever. Measured with 5 stalling URLs ahead
+                            # of one healthy config: the healthy config was fetched 0
+                            # times across 40 scheduled invocations. Handled after this
+                            # loop, where the run's other bookkeeping is.
+                            config_unattempted = True
+                            break
+                        # Stop while there is still time to RECORD stopping. Running
+                        # into the Lambda's own timeout instead loses the terminal
+                        # `_update_run_status` below, and the run row stays at
+                        # `status: 'running'` for ever with nothing to reconcile it.
+                        # The message goes into `errors` so the run reports
+                        # completed_with_errors: a truncated run reporting `completed`
+                        # would hide exactly the truncation this budget introduces.
+                        error_msg = (
+                            f"Run budget of {SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s exhausted; "
+                            f"{len(urls) - index} URL(s) not attempted for {scraper_name}"
+                        )
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+                        config_truncated = True
                         break
-                    # Stop while there is still time to RECORD stopping. Running
-                    # into the Lambda's own timeout instead loses the terminal
-                    # `_update_run_status` below, and the run row stays at
-                    # `status: 'running'` for ever with nothing to reconcile it.
-                    # The message goes into `errors` so the run reports
-                    # completed_with_errors: a truncated run reporting `completed`
-                    # would hide exactly the truncation this budget introduces.
-                    error_msg = (
-                        f"Run budget of {SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s exhausted; "
-                        f"{len(urls) - index} URL(s) not attempted for {scraper_name}"
+
+                    # Recorded BEFORE the fetch, and only where the budget had time
+                    # left: this config is about to spend from it, so it is the one
+                    # accountable if the next config finds the budget gone.
+                    budget_spender_id = scraper_id
+
+                    try:
+                        page_items = 0
+                        outcome: dict = {}
+                        for item in self._scrape_page(
+                            config,
+                            url,
+                            # Whichever bound bites first: one page may not overrun the
+                            # invocation just because its own budget has room left.
+                            total_timeout=min(SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS, remaining),
+                            outcome=outcome,
+                        ):
+                            items_found += 1
+                            page_items += 1
+                            yield item
+                        # Only a page that was actually retrieved counts. Counting
+                        # every attempt made a run whose every page timed out report
+                        # `completed`, `errors: []` and a non-zero page count — which
+                        # reads exactly like an empty but healthy run.
+                        if outcome.get('fetched'):
+                            pages_scraped += 1
+
+                        if page_items == 0:
+                            logger.info(f"No items found on {url}")
+
+                        self._update_run_status(scraper_id, {
+                            'pages_scraped': pages_scraped,
+                            'items_found': items_found,
+                            'current_url': url
+                        })
+
+                        # Rate limit: randomized delay between pages to avoid bot
+                        # detection. Clamped to what is left of the run budget, and
+                        # skipped once that is gone: the pause paces the NEXT request,
+                        # and when the loop is about to stop there is none — measured
+                        # 243 s against a 240 s budget before this, because a pause
+                        # taken after the last page still spends from the invocation.
+                        remaining_after = run_deadline - time.monotonic()
+                        if remaining_after > 0:
+                            time.sleep(min(random.uniform(2.0, 5.0), remaining_after))
+                    except OutboundUrlBlocked as e:
+                        # Logged at ERROR, unlike the generic warning below: a saved
+                        # config pointing at an internal address — or redirecting to
+                        # one — is a security signal, not a flaky page. The URL is
+                        # still only skipped so the scraper's other URLs proceed.
+                        error_msg = f"Blocked outbound URL {url}: {e}"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+                        # Emitted so a config blocked on every scheduled run is
+                        # visible without opening a run's `errors`: a run reports
+                        # completed_with_errors either way, and the ONE case worth
+                        # alerting on — a saved host that has started resolving
+                        # internally — otherwise looks like an ordinary flaky page in
+                        # the run list. Named without the scraper id, unlike the
+                        # per-scraper item counter below, so a repeatedly-blocked
+                        # config cannot fan out into unbounded metric names.
+                        metrics.add_metric(name="ScraperOutboundUrlBlocked", unit="Count", value=1)
+                    except Exception as e:
+                        error_msg = f"Error scraping {url}: {str(e)}"
+                        logger.warning(error_msg)
+                        errors.append(error_msg)
+
+                if config_unattempted:
+                    # This config requested nothing, so there is nothing to report about
+                    # it: no watermark (leaving it due, which is what an unreached config
+                    # gets anyway), and no run row claiming URLs it never attempted. The
+                    # truncation is attributed to the config that actually spent the
+                    # budget, so `_configs_in_fairness_order` demotes the culprit rather
+                    # than this one — the inversion that let a stalling config keep first
+                    # refusal for ever.
+                    logger.warning(
+                        f"Not attempting {scraper_name}: the "
+                        f"{SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s run budget was already "
+                        f"spent by {budget_spender_id}, which is the config demoted"
                     )
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-                    config_truncated = True
+                    if budget_spender_id:
+                        self.set_watermark(
+                            SCRAPER_TRUNCATED_WATERMARK.format(
+                                scraper_id=budget_spender_id
+                            ),
+                            datetime.now(timezone.utc).isoformat(),
+                        )
                     break
 
-                # Recorded BEFORE the fetch, and only where the budget had time
-                # left: this config is about to spend from it, so it is the one
-                # accountable if the next config finds the budget gone.
-                budget_spender_id = scraper_id
-
-                try:
-                    page_items = 0
-                    outcome: dict = {}
-                    for item in self._scrape_page(
-                        config,
-                        url,
-                        # Whichever bound bites first: one page may not overrun the
-                        # invocation just because its own budget has room left.
-                        total_timeout=min(SCRAPE_PAGE_TOTAL_TIMEOUT_SECONDS, remaining),
-                        outcome=outcome,
-                    ):
-                        items_found += 1
-                        page_items += 1
-                        yield item
-                    # Only a page that was actually retrieved counts. Counting
-                    # every attempt made a run whose every page timed out report
-                    # `completed`, `errors: []` and a non-zero page count — which
-                    # reads exactly like an empty but healthy run.
-                    if outcome.get('fetched'):
-                        pages_scraped += 1
-                    
-                    if page_items == 0:
-                        logger.info(f"No items found on {url}")
-                    
-                    self._update_run_status(scraper_id, {
-                        'pages_scraped': pages_scraped,
-                        'items_found': items_found,
-                        'current_url': url
-                    })
-                    
-                    # Rate limit: randomized delay between pages to avoid bot
-                    # detection. Clamped to what is left of the run budget, and
-                    # skipped once that is gone: the pause paces the NEXT request,
-                    # and when the loop is about to stop there is none — measured
-                    # 243 s against a 240 s budget before this, because a pause
-                    # taken after the last page still spends from the invocation.
-                    remaining_after = run_deadline - time.monotonic()
-                    if remaining_after > 0:
-                        time.sleep(min(random.uniform(2.0, 5.0), remaining_after))
-                except OutboundUrlBlocked as e:
-                    # Logged at ERROR, unlike the generic warning below: a saved
-                    # config pointing at an internal address — or redirecting to
-                    # one — is a security signal, not a flaky page. The URL is
-                    # still only skipped so the scraper's other URLs proceed.
-                    error_msg = f"Blocked outbound URL {url}: {e}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-                    # Emitted so a config blocked on every scheduled run is
-                    # visible without opening a run's `errors`: a run reports
-                    # completed_with_errors either way, and the ONE case worth
-                    # alerting on — a saved host that has started resolving
-                    # internally — otherwise looks like an ordinary flaky page in
-                    # the run list. Named without the scraper id, unlike the
-                    # per-scraper item counter below, so a repeatedly-blocked
-                    # config cannot fan out into unbounded metric names.
-                    metrics.add_metric(name="ScraperOutboundUrlBlocked", unit="Count", value=1)
-                except Exception as e:
-                    error_msg = f"Error scraping {url}: {str(e)}"
-                    logger.warning(error_msg)
-                    errors.append(error_msg)
-
-            if config_unattempted:
-                # This config requested nothing, so there is nothing to report about
-                # it: no watermark (leaving it due, which is what an unreached config
-                # gets anyway), and no run row claiming URLs it never attempted. The
-                # truncation is attributed to the config that actually spent the
-                # budget, so `_configs_in_fairness_order` demotes the culprit rather
-                # than this one — the inversion that let a stalling config keep first
-                # refusal for ever.
-                logger.warning(
-                    f"Not attempting {scraper_name}: the "
-                    f"{SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s run budget was already "
-                    f"spent by {budget_spender_id}, which is the config demoted"
-                )
-                if budget_spender_id:
+                # NOT advanced for a config the run budget truncated. `_should_run_
+                # scraper` reads this watermark, so writing it for a config whose URLs
+                # went unattempted marks it as having just run and it waits out its
+                # whole `frequency_minutes` before trying again. And because
+                # `_get_urls_to_scrape` rebuilds the list in the same order every
+                # time, the next invocation restarts at URL 0 — so the skipped tail
+                # was not deferred, it was STARVED: measured with 20 stalling URLs
+                # followed by 10 healthy ones, the healthy tail was reached 0 of 10
+                # times, on every invocation, indefinitely.
+                #
+                # Holding the watermark leaves the config due, so the next scheduled
+                # invocation retries it. That retry re-walks the URL list from the
+                # start rather than resuming — making progress through a persistently
+                # stalling prefix needs a stored resume index, which is a larger
+                # change than keeping the retry claim true.
+                #
+                # Being due is not the same as getting to RUN, though, and holding this
+                # watermark alone bought the first at the cost of the second: a config
+                # that is due on every invocation and is visited first on every
+                # invocation starves every config behind it. So the truncation is
+                # recorded separately, and `_configs_in_fairness_order` reads it to put
+                # this config behind the ones it just blocked. Both guarantees together:
+                # retried immediately, and unable to monopolise the loop.
+                if config_truncated:
+                    logger.warning(
+                        f"Holding the watermark for {scraper_name}: the run budget "
+                        f"truncated it, so it stays due for the next invocation"
+                    )
                     self.set_watermark(
-                        SCRAPER_TRUNCATED_WATERMARK.format(
-                            scraper_id=budget_spender_id
-                        ),
+                        SCRAPER_TRUNCATED_WATERMARK.format(scraper_id=scraper_id),
                         datetime.now(timezone.utc).isoformat(),
                     )
-                break
+                else:
+                    self.set_watermark(
+                        f'scraper_{scraper_id}_last_run',
+                        datetime.now(timezone.utc).isoformat(),
+                    )
+                    # Cleared once this config gets through all of its URLs, so the
+                    # demotion is self-correcting: a site that was slow one day would
+                    # otherwise sort behind every never-truncated config for ever, on
+                    # the strength of a truncation it has since recovered from. Written
+                    # only when there is something to clear, so an ordinary run costs
+                    # the one watermark write it always did.
+                    truncated_key = SCRAPER_TRUNCATED_WATERMARK.format(
+                        scraper_id=scraper_id
+                    )
+                    if self.get_watermark(truncated_key):
+                        self.set_watermark(truncated_key, '')
 
-            # NOT advanced for a config the run budget truncated. `_should_run_
-            # scraper` reads this watermark, so writing it for a config whose URLs
-            # went unattempted marks it as having just run and it waits out its
-            # whole `frequency_minutes` before trying again. And because
-            # `_get_urls_to_scrape` rebuilds the list in the same order every
-            # time, the next invocation restarts at URL 0 — so the skipped tail
-            # was not deferred, it was STARVED: measured with 20 stalling URLs
-            # followed by 10 healthy ones, the healthy tail was reached 0 of 10
-            # times, on every invocation, indefinitely.
-            #
-            # Holding the watermark leaves the config due, so the next scheduled
-            # invocation retries it. That retry re-walks the URL list from the
-            # start rather than resuming — making progress through a persistently
-            # stalling prefix needs a stored resume index, which is a larger
-            # change than keeping the retry claim true.
-            #
-            # Being due is not the same as getting to RUN, though, and holding this
-            # watermark alone bought the first at the cost of the second: a config
-            # that is due on every invocation and is visited first on every
-            # invocation starves every config behind it. So the truncation is
-            # recorded separately, and `_configs_in_fairness_order` reads it to put
-            # this config behind the ones it just blocked. Both guarantees together:
-            # retried immediately, and unable to monopolise the loop.
-            if config_truncated:
-                logger.warning(
-                    f"Holding the watermark for {scraper_name}: the run budget "
-                    f"truncated it, so it stays due for the next invocation"
-                )
-                self.set_watermark(
-                    SCRAPER_TRUNCATED_WATERMARK.format(scraper_id=scraper_id),
-                    datetime.now(timezone.utc).isoformat(),
-                )
-            else:
-                self.set_watermark(
-                    f'scraper_{scraper_id}_last_run',
-                    datetime.now(timezone.utc).isoformat(),
-                )
-                # Cleared once this config gets through all of its URLs, so the
-                # demotion is self-correcting: a site that was slow one day would
-                # otherwise sort behind every never-truncated config for ever, on
-                # the strength of a truncation it has since recovered from. Written
-                # only when there is something to clear, so an ordinary run costs
-                # the one watermark write it always did.
-                truncated_key = SCRAPER_TRUNCATED_WATERMARK.format(
-                    scraper_id=scraper_id
-                )
-                if self.get_watermark(truncated_key):
-                    self.set_watermark(truncated_key, '')
+                self._update_run_status(scraper_id, {
+                    'status': 'completed' if not errors else 'completed_with_errors',
+                    'completed_at': datetime.now(timezone.utc).isoformat(),
+                    'pages_scraped': pages_scraped,
+                    'items_found': items_found,
+                    'errors': errors
+                })
 
-            self._update_run_status(scraper_id, {
-                'status': 'completed' if not errors else 'completed_with_errors',
-                'completed_at': datetime.now(timezone.utc).isoformat(),
-                'pages_scraped': pages_scraped,
-                'items_found': items_found,
-                'errors': errors
-            })
-            
-            metrics.add_metric(name=f"Scraper_{scraper_id}_Items", unit="Count", value=items_found)
-            logger.info(f"Scraper {scraper_name} found {items_found} items from {pages_scraped} pages")
+                metrics.add_metric(name=f"Scraper_{scraper_id}_Items", unit="Count", value=items_found)
+                logger.info(f"Scraper {scraper_name} found {items_found} items from {pages_scraped} pages")
 
-            if run_budget_exhausted:
-                # After this config's terminal status write, not instead of it: the
-                # budget exists to leave time for that write, so breaking earlier
-                # would recreate the abandoned-run row it is meant to prevent.
-                #
-                # Every config remains due for the next scheduled invocation, by
-                # three routes: the ones never reached were never written, the
-                # truncated one had its write SKIPPED above, and a config the budget
-                # never let start returns early above without writing either. Only
-                # the first is automatic — see the watermark block.
-                #
-                # Being due is only half of it. Because this `break` stops the loop,
-                # the ORDER decides who runs at all, and the truncated config would
-                # otherwise be due-and-first for ever — starving everything behind
-                # it. `_configs_in_fairness_order` moves it to the back, so the two
-                # guarantees hold together: a truncated config is retried, and it
-                # cannot prevent other configs from running.
-                logger.error(
-                    f"Stopping the invocation after {scraper_name}: the "
-                    f"{SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s run budget is spent"
-                )
-                break
+                if run_budget_exhausted:
+                    # After this config's terminal status write, not instead of it: the
+                    # budget exists to leave time for that write, so breaking earlier
+                    # would recreate the abandoned-run row it is meant to prevent.
+                    #
+                    # Every config remains due for the next scheduled invocation, by
+                    # three routes: the ones never reached were never written, the
+                    # truncated one had its write SKIPPED above, and a config the budget
+                    # never let start returns early above without writing either. Only
+                    # the first is automatic — see the watermark block.
+                    #
+                    # Being due is only half of it. Because this `break` stops the loop,
+                    # the ORDER decides who runs at all, and the truncated config would
+                    # otherwise be due-and-first for ever — starving everything behind
+                    # it. `_configs_in_fairness_order` moves it to the back, so the two
+                    # guarantees hold together: a truncated config is retried, and it
+                    # cannot prevent other configs from running.
+                    logger.error(
+                        f"Stopping the invocation after {scraper_name}: the "
+                        f"{SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS}s run budget is spent"
+                    )
+                    break
+            except Exception as e:  # noqa: BLE001 — the breadth is the point, see above
+                # A manual run has already had a `status: 'running'` row written for
+                # it by `POST /scrapers/<id>/run`, and this is the last chance to
+                # replace it: leaving the loop without a terminal write abandons that
+                # row for ever with nothing to reconcile it, which is the outcome the
+                # run budget exists to avoid, reached by a different route.
+                # `_update_run_status` is a no-op for a scheduled run, where the log
+                # line and the metric are the signal instead.
+                logger.error(f"Skipping unusable scraper configuration {scraper_id}: {e}")
+                metrics.add_metric(name="ScraperConfigUnusable", unit="Count", value=1)
+                self._update_run_status(scraper_id, {
+                    'status': 'error',
+                    'completed_at': datetime.now(timezone.utc).isoformat(),
+                    'errors': [f'Unusable scraper configuration: {e}'],
+                })
+                continue
 
 
 @logger.inject_lambda_context

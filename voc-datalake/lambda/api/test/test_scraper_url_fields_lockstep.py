@@ -49,7 +49,13 @@ URL_BUILDER = '_get_urls_to_scrape'
 #
 # 'pagination' holds only a param name, page count and start index; the URLs it
 # produces are built from base_url and so carry base_url's already-checked host.
-NON_DESTINATION_KEYS = frozenset({'pagination'})
+# Exempt from DESTINATION checking only: `validate_scraper_destinations` does
+# check its value SHAPE, because the ingestor does arithmetic with those numbers
+# and a wrongly-typed one used to abort the whole scheduled invocation.
+#
+# 'id' is read only to name the config in the log line about an unusable
+# `pagination`. It is an identifier, never fetched.
+NON_DESTINATION_KEYS = frozenset({'pagination', 'id'})
 
 
 def _ingestor_path() -> Path:
