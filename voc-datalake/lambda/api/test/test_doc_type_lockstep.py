@@ -103,6 +103,23 @@ the union parser read the decoy's members instead of the live union's; the ratio
 satisfied by a decoy alone. Fixed in `_without_comments` with a frame stack, which is
 the one mechanism all four guards share, rather than in any of them.
 
+An EIGHTH defeat then made the same point about a different construct, which is why that
+corollary is phrased about where a string ENDS rather than about `${`: the scan had no
+notion of a REGEX literal, so a backtick inside one opened a phantom template frame that
+the decoy's own opening backtick then closed — and everything after it was code again,
+exactly as before. A second regex after the decoy resynchronises the scan, so only the
+decoy is affected and the evasion is clean rather than noisy (a bare desync runs to EOF
+and incidentally swallows whatever follows). Measured on the tree that shipped it: the
+field pin DELETED, a copy left in such a decoy, and the field widened — `tsc` exit 0,
+eslint clean, every test here green, and no lint rule in the way this time since nothing
+is nested. `_regex_allowed_here` now decides whether a `/` opens a regex or divides, and
+its branch sits AFTER the two comment branches: placed before them it consumes `//` as an
+empty regex, which is measured to break the commented-out predecessor and commented-out
+pin cases. It errs toward reading LESS, because misreading a division blanks real code —
+a false FAILURE, bounded to the one line a regex body may occupy — while misreading a
+regex is this vacuity, a false PASS with no bound. The two mistakes are not symmetric,
+and `TestThePinMatcher` pins both directions.
+
 THE GUARDS' OWN FIXES ARE PINNED TOO, which took its own finding. The two repairs made
 in the fifth round shipped with no test, and reverting either left all 30 tests here
 green — a green result meaning "did not check", applied to the machinery this file uses
@@ -348,6 +365,14 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
         the union parser its own members, and satisfy both sides of the ratio alone.
         Three cases cover it here plus one in `TestTheUnionParser`, because the bug was
         in `_without_comments` and therefore in every guard that reads it.
+      - having no notion of a REGEX literal, so a backtick inside one desynchronised the
+        scan the same way — the EIGHTH vacuity, same root cause one construct over, and
+        again in every guard at once. Two cases here plus one in `TestTheUnionParser` are
+        red when the regex branch is reverted. Its two failure directions are pinned
+        separately, since the fix has a wrong side of its own: reading a DIVISION as a
+        regex blanks real code (`test_a_division_is_not_read_as_a_regex`), and deciding
+        from the last character alone misses `return /`/` and desynchronises exactly as
+        before (`test_a_keyword_led_regex_is_still_read_as_one`).
     Each was measured against the live tree, `tsc` at exit 0 in every case. Positive
     assertions sit beside the negative ones so none can pass by rejecting everything.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
@@ -656,6 +681,35 @@ UNION_TERMS = re.compile(rf'{UNION_TERM}(?:\s*\|\s*{UNION_TERM})*')
 # read at all.
 DOC_TYPE_UNION_ANCHOR = re.compile(r'export\s+type\s+DocType\s*=\s*\|?\s*')
 
+# A `/` opens a REGEX rather than dividing when the last significant thing before it
+# cannot end an expression. Deliberately CONSERVATIVE: mistaking a division for a regex
+# would blank real code, while mistaking a regex for a division is what the eighth
+# vacuity was — so the two errors are not symmetric, and this errs toward reading less.
+_REGEX_MAY_FOLLOW = '=(,:[!&|?{};+-*%~^<>'
+# The keywords a regex may directly follow, where the preceding CHARACTER is a word
+# character and so says nothing on its own (`return /`/.test(x)`).
+_REGEX_MAY_FOLLOW_KEYWORD = frozenset({
+    'return', 'typeof', 'case', 'in', 'of', 'do', 'else', 'yield', 'await', 'delete',
+    'void', 'instanceof', 'new',
+})
+_TRAILING_WORD = re.compile(r'[A-Za-z_$][\w$]*$')
+
+
+def _regex_allowed_here(emitted: list[str]) -> bool:
+    """Whether a `/` at this point starts a REGEX rather than being a division operator.
+
+    Decided from what has already been emitted, since that is the only context a
+    single-pass scan has. See `_REGEX_MAY_FOLLOW` for why the conservative direction is
+    the safe one.
+    """
+    text = ''.join(emitted).rstrip()
+    if not text:
+        return True
+    if text[-1] in _REGEX_MAY_FOLLOW:
+        return True
+    trailing = _TRAILING_WORD.search(text)
+    return trailing is not None and trailing.group(0) in _REGEX_MAY_FOLLOW_KEYWORD
+
 
 def _without_comments(source: str, blank_strings: bool = False) -> str:
     """`source` with `//` and `/* */` comment BODIES blanked, same length.
@@ -671,9 +725,8 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
 
     Blanked rather than deleted, newlines preserved, so indices still refer to the
     same place in the original. Quote state is tracked so a `//` inside a string is
-    not mistaken for a comment; a regex literal containing `//` would be, but this
-    is a type declaration and the shapes that occur are pinned in
-    `TestTheUnionParser`.
+    not mistaken for a comment, and regex literals are read too — see the 🔑 note
+    below on the eighth vacuity, which is what that used to cost.
 
     🔑 `blank_strings` additionally blanks STRING and TEMPLATE bodies, and exists
     because "commentary is not a declaration" has a second half this file missed for
@@ -715,6 +768,21 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     strings) applying in between. `TestThePinMatcher` and `TestTheUnionParser` pin all
     four consequences, since the previous round's finding was that repairs to these
     helpers ship silently revertible.
+
+    🔑 A REGEX literal is not code either, and having no notion of one was the EIGHTH
+    measured vacuity — the same root cause as the seventh, one construct over, and the
+    reason the module docstring's corollary is about where a string ENDS rather than about
+    `${`. A backtick inside a regex (`/`/`) opened a phantom template frame, which the
+    decoy's own opening backtick then CLOSED, so the decoy body was emitted as code; a
+    second regex after it resynchronises the scan, making the evasion clean rather than
+    running to EOF and swallowing whatever follows. Measured on the tree that shipped it:
+    the field pin deleted, a copy in such a decoy, the field widened — `tsc` exit 0,
+    eslint clean, every test here green, and this time no lint rule in the way.
+
+    `_regex_allowed_here` decides regex-versus-division from what has been emitted, and it
+    is deliberately CONSERVATIVE: misreading a division blanks real code, which is a false
+    FAILURE bounded to one line, while misreading a regex is the vacuity above, a false
+    PASS with no bound. Both directions are pinned, because the fix has a wrong side too.
     """
     def blanked(text: str) -> str:
         return ''.join('\n' if char == '\n' else ' ' for char in text)
@@ -778,6 +846,21 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
             out.append(blanked(source[index:stop]))
             index = stop
             continue
+        # ⚠️ AFTER the two comment branches, never before: a `/` that opens `//` or `/*`
+        # would otherwise be consumed as an empty regex, and reading a comment as code is
+        # the defect `_without_comments` exists for. Measured — placed first, the
+        # commented-out predecessor and commented-out pin cases all fail.
+        if char == '/' and _regex_allowed_here(out):
+            stop = index + 1
+            while stop < len(source) and source[stop] not in '/\n':
+                stop += 2 if source[stop] == '\\' else 1
+            if stop < len(source) and source[stop] == '/':
+                out.append(char)
+                body = source[index + 1:stop]
+                out.append(blanked(body) if blank_strings else body)
+                out.append('/')
+                index = stop + 1
+                continue
         out.append(char)
         index += 1
     return ''.join(out)
@@ -1116,6 +1199,23 @@ class TestTheUnionParser:
         )
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
 
+    def test_a_union_inside_a_regex_desynced_template_is_not_read(self):
+        """The same again for a REGEX-borne backtick — the eighth vacuity.
+
+        The regex's backtick opened a phantom template frame which the decoy's own opening
+        backtick closed, so the decoy was anchored as if it were code and its members were
+        compared against the route. As above, the live union carries the extra member
+        deliberately: this must read `onepager` rather than merely disagree with the decoy,
+        or it would pass on a parser that read nothing at all.
+        """
+        source = (
+            "const backtickMatcher = /`/\n"
+            "const historical = `export type DocType = 'prd' | 'legacy'`\n"
+            "const secondMatcher = /`/\n"
+            "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
+        )
+        assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
+
     # The refusals `_doc_type_union` must carry: no readable term at the anchor, a
     # matched non-literal, an unread term after the match.
     EXPECTED_REFUSALS = 3
@@ -1237,6 +1337,62 @@ class TestThePinMatcher:
             self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
         )
 
+    # 🔑 A REGEX literal containing a backtick — the EIGHTH vacuity, and the same root
+    # cause as the seventh one construct over: the scan had no notion of a regex, so this
+    # backtick opened a phantom template frame that the DECOY's opening backtick then
+    # closed, and the pin body was emitted as code. The trailing regex resynchronises the
+    # scan, which is what makes it a clean evasion rather than a noisy one: a bare desync
+    # runs to EOF and incidentally swallows whatever follows, so the first attempt at this
+    # shape went red by accident rather than by design.
+    REGEX_DESYNC = 'const backtickMatcher = /`/\n'
+    REGEX_RESYNC = 'const secondMatcher = /`/\n'
+
+    def test_a_declaration_inside_a_regex_desynced_template_is_not_pinned(self):
+        """The eighth vacuity, on the pin with no compiler backstop.
+
+        Measured on the tree that shipped it: `DocTypeFieldIsExactlyTheUnion` DELETED
+        outright, a copy left in a template literal that a regex-borne backtick had
+        desynchronised, and the field it guards widened — `tsc` exit 0, eslint clean, and
+        every test here green. Unlike the nested-template shape no lint rule stands in the
+        way, since nothing here is nested.
+        """
+        decoy = (
+            f'{self.REGEX_DESYNC}export const historical = `\n{self.PIN}\n`\n'
+            f'{self.REGEX_RESYNC}'
+        )
+        assert not _pinned(self.PIN, decoy)
+        # The controls: a real declaration must still be found, and must still be found
+        # with a genuine regex above it — reading regexes must not cost the live pin.
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+        assert _pinned(self.PIN, f'{self.REGEX_DESYNC}{self.PIN}\n')
+
+    def test_a_division_is_not_read_as_a_regex(self):
+        """The conservative direction of `_regex_allowed_here`, pinned from the other side.
+
+        TWO divisions on one line are what discriminates: read as a regex, the first `/`
+        swallows through to the second and the code BETWEEN them is blanked. That is a
+        false FAILURE rather than a false pass — the opposite error from the eighth
+        vacuity — and it is bounded to the one line a regex body may occupy, which is why
+        the two mistakes are not symmetric and this scan errs toward reading less.
+        """
+        divided = 'const mid = width / 2 + height / 2\n'
+        assert _declarations(divided) == divided
+        # The control: a genuine regex body IS blanked, so this cannot pass by never
+        # reading a regex at all — which would reopen the vacuity above.
+        assert _declarations('const m = /`/\n') == 'const m = / /\n'
+
+    def test_a_keyword_led_regex_is_still_read_as_one(self):
+        """Why the check consults the trailing WORD and not just the last character:
+        `return /`/` ends in `n`, so a character-only rule would read it as a division,
+        leave its backtick live, and desynchronise the scan exactly as the eighth vacuity
+        did."""
+        assert not _pinned(
+            self.PIN,
+            f'const t = () => {{ return /`/.test(x) }}\nexport const h = `\n'
+            f'{self.PIN}\n`\n{self.REGEX_RESYNC}',
+        )
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+
     def test_blanking_preserves_length_through_a_nested_template(self):
         """The frame stack must not change how much it emits: every offset this module
         computes is found in the blanked view and read back from the raw text, so a
@@ -1345,6 +1501,17 @@ class TestThePinMatcher:
         decoy = (
             f'{self.NESTED_DECOY_OPEN}  {GENERATE_DOCUMENT_SIGNATURE}\n'
             f'{self.NESTED_DECOY_CLOSE}'
+        )
+        assert _generate_document_ratio(decoy) == (0, 0)
+        assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
+
+    def test_a_signature_inside_a_regex_desynced_template_is_not_counted(self):
+        """The ratio's version of the eighth vacuity, which the desync reopened along with
+        every other text guard here — the decoy supplied one of each side on its own.
+        """
+        decoy = (
+            f'{self.REGEX_DESYNC}export const historical = `\n'
+            f'  {GENERATE_DOCUMENT_SIGNATURE}\n`\n{self.REGEX_RESYNC}'
         )
         assert _generate_document_ratio(decoy) == (0, 0)
         assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
