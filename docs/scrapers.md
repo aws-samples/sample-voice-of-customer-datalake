@@ -265,7 +265,27 @@ What the policy accepts and refuses:
   integers, and `max_pages` must be between **1 and 50** — the bounds the editor
   already applies. This is also what bounds how many URLs one configuration can cause
   to be fetched, which the 50-URL cap does not: that cap counts the URLs a
-  configuration *names*, and pagination multiplies them.
+  configuration *names*, and pagination multiplies them. The scheduled scraper
+  **clamps** a stored value to the same bounds rather than only coercing its type,
+  because a value saved before the bound existed is exactly what it is there for: a
+  stored `max_pages` of `"100000"` built 100 000 URLs, and larger values exhausted the
+  function's memory before it made a single request — which loses the terminal status
+  write and strands a manually triggered run at `running`.
+- `id` is **required** on write, and must be a non-empty string of at most 128
+  characters. It names no destination either, but the scraper computes with it: it is
+  the prefix of every extracted item's id, so a configuration without one fetched all
+  of its pages and then dropped every item while reporting `completed` with no errors
+  — indistinguishable from a site that simply had nothing new. It is also the schedule
+  watermark key and the metric name, so two configurations sharing an id share a
+  schedule, and an over-long one exceeds the metrics service's 255-character name
+  limit. The scheduled scraper applies the same rule and refuses to run such a
+  configuration rather than scraping into a silent drop.
+- An unreadable **schedule** is treated as *due* rather than raising, including a
+  `frequency_minutes` that is not a finite, non-negative number. `NaN` and `Infinity`
+  are valid JSON, and computing a next-run time from either raised — which the
+  per-configuration guard turned into that configuration being skipped on every
+  invocation, for ever. Of the two directions, running more often than intended is
+  recoverable and never running again is not.
 - A configuration may name at most **50** URLs in `urls`. Each distinct host costs one
   DNS lookup inside the saving request, and both write routes answer through API
   Gateway's 29 second limit; identical hosts within one write are resolved once. The

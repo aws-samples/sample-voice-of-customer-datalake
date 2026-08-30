@@ -51,6 +51,18 @@ REVERT MAP
   -> `both_write_routes_refuse_the_same_shape`.
 - Refuse pagination outright, or refuse `{'enabled': False}` / an absent key, making
   the toggle unsaveable -> `accepts_every_shape_the_editor_produces`.
+- Stop requiring `id`, so a config is stored that fetches its pages and then drops
+  every item (the KeyError from `f"scraper_{config['id']}_..."` is swallowed per
+  item) while reporting `completed` with empty `errors`
+  -> `TestScraperId::refuses_a_config_whose_id_the_ingestor_cannot_use` (7 shapes),
+  `both_write_routes_refuse_the_same_id`.
+- Drop MAX_SCRAPER_ID_LENGTH, so `Scraper_<id>_Items` exceeds Powertools' 255-char
+  metric-name limit and raises after the items were yielded
+  -> `refuses_a_config_whose_id_the_ingestor_cannot_use[too long]`.
+- Stop truncating the id in an error message, echoing a 300-character stored value
+  back through the API -> `does_not_echo_an_over_long_id_back_in_the_message`.
+- Require a character set or a length the editor's own `scraper_${Date.now()}` does
+  not satisfy, making every save fail -> `accepts_every_id_a_client_produces`.
 
 Every "refuses" case has a positive control, so an implementation that refused
 everything could not pass this file.
@@ -66,6 +78,19 @@ import pytest
 
 PUBLIC_ADDRINFO = [(2, 1, 6, '', ('93.184.216.34', 80))]
 PRIVATE_ADDRINFO = [(2, 1, 6, '', ('10.1.2.3', 80))]
+
+# `id` shapes the ingestor cannot use. Module level rather than a class attribute
+# because a mutable class attribute is a RUF012, the convention the sibling
+# ingestor test file follows for the same reason.
+BAD_SCRAPER_IDS = [
+    ('absent', {}),
+    ('empty', {'id': ''}),
+    ('an int', {'id': 7}),
+    ('None', {'id': None}),
+    ('a bool', {'id': True}),
+    ('a list', {'id': ['s1']}),
+    ('too long', {'id': 'x' * 300}),
+]
 
 
 class TestSingleConfig:
@@ -88,7 +113,7 @@ class TestSingleConfig:
         from shared.scraper_urls import validate_scraper_destinations
 
         with pytest.raises(ValidationError, match='urls'):
-            validate_scraper_destinations({'urls': 'https://example.com/'})
+            validate_scraper_destinations({'id': 's1', 'urls': 'https://example.com/'})
 
         mock_resolve.assert_not_called()
 
@@ -97,7 +122,7 @@ class TestSingleConfig:
         from shared.scraper_urls import validate_scraper_destinations
 
         with pytest.raises(ValidationError, match='base_url'):
-            validate_scraper_destinations({'base_url': ['https://example.com/']})
+            validate_scraper_destinations({'id': 's1', 'base_url': ['https://example.com/']})
 
     def test_names_the_index_of_a_non_string_url(self):
         """
@@ -109,7 +134,7 @@ class TestSingleConfig:
 
         with pytest.raises(ValidationError, match=r'urls\[1\]'):
             validate_scraper_destinations(
-                {'urls': ['https://example.com/', {'u': 'x'}]}
+                {'id': 's1', 'urls': ['https://example.com/', {'u': 'x'}]}
             )
 
     @patch('shared.http_utils.socket.getaddrinfo')
@@ -122,7 +147,8 @@ class TestSingleConfig:
 
         with pytest.raises(ValidationError, match='Too many URLs'):
             validate_scraper_destinations(
-                {'urls': [f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 1)]}
+                {'id': 's1',
+                 'urls': [f'https://example.com/{i}' for i in range(MAX_SCRAPER_URLS + 1)]}
             )
 
     @patch('shared.http_utils.socket.getaddrinfo')
@@ -133,7 +159,7 @@ class TestSingleConfig:
         mock_resolve.return_value = PRIVATE_ADDRINFO
 
         with pytest.raises(ValidationError, match='sneaky.example'):
-            validate_scraper_destinations({'base_url': 'https://sneaky.example/'})
+            validate_scraper_destinations({'id': 's1', 'base_url': 'https://sneaky.example/'})
 
     @patch('shared.http_utils.socket.getaddrinfo')
     def test_accepts_an_all_public_config(self, mock_resolve):
@@ -143,6 +169,7 @@ class TestSingleConfig:
         mock_resolve.return_value = PUBLIC_ADDRINFO
 
         validate_scraper_destinations({
+            'id': 's1',
             'base_url': 'https://reviews.example.com/',
             'urls': ['https://reviews.example.com/page/2'],
         })
@@ -171,7 +198,7 @@ class TestSingleConfig:
 
         for _ in range(5):
             validate_scraper_destinations(
-                {'base_url': 'https://reviews.example.com/'}, seen=seen
+                {'id': 's1', 'base_url': 'https://reviews.example.com/'}, seen=seen
             )
 
         assert mock_resolve.call_count == 1
@@ -192,6 +219,7 @@ class TestSingleConfig:
         mock_resolve.return_value = PUBLIC_ADDRINFO
 
         validate_scraper_destinations({
+            'id': 's1',
             'urls': [
                 f'https://reviews.example.com/page-{i}'
                 for i in range(MAX_SCRAPER_URLS)
@@ -212,7 +240,9 @@ class TestSingleConfig:
         mock_resolve.return_value = PUBLIC_ADDRINFO
 
         for _ in range(2):
-            validate_scraper_destinations({'base_url': 'https://reviews.example.com/'})
+            validate_scraper_destinations(
+                {'id': 's1', 'base_url': 'https://reviews.example.com/'}
+            )
 
         assert mock_resolve.call_count == 2
 
@@ -335,7 +365,8 @@ class TestSerializedConfigsArray:
 
         with pytest.raises(ValidationError, match='http and https'):
             validate_scraper_destinations(
-                {'urls': ['https://h.example.com/a', 'gopher://h.example.com/b']},
+                {'id': 's1',
+                 'urls': ['https://h.example.com/a', 'gopher://h.example.com/b']},
                 seen=set(),
             )
 
@@ -841,3 +872,117 @@ class TestPaginationShape:
             })
 
         mock_resolve.assert_not_called()
+
+
+class TestScraperId:
+    """
+    `id` names no destination, and is required for the same reason
+    `pagination`'s shape is checked: the ingestor computes with it.
+
+    Unlike every other shape in this file, an unusable `id` failed SILENTLY. Both
+    extraction paths build `f"scraper_{config['id']}_{item_id}"`, and that
+    KeyError is swallowed by `_scrape_page`'s per-item `except Exception` — so the
+    config fetched its pages and dropped every item while the run reported
+    `status: 'completed'`, `errors: []`, `pages_scraped: 1`, `items_found: 0`.
+    Measured against a control with the id present that yields 1 item. That is
+    indistinguishable from an empty but healthy run.
+
+    It is also the watermark key and the metric name, so two id-less configs
+    collided on `scraper_unknown_last_run` and the second was treated as not due,
+    and a 300-character id made `Scraper_<id>_Items` 314 characters — past
+    Powertools' 255-character limit, which raises at `add_metric` time, after the
+    items have already been yielded.
+    """
+
+    @pytest.mark.parametrize('label,overrides', BAD_SCRAPER_IDS, ids=[c[0] for c in BAD_SCRAPER_IDS])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_a_config_whose_id_the_ingestor_cannot_use(
+        self, mock_resolve, label, overrides
+    ):
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_config_write
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='id'):
+            validate_scraper_config_write(
+                {'base_url': 'https://example.com/reviews', **overrides}
+            )
+
+    @pytest.mark.parametrize('label,overrides', BAD_SCRAPER_IDS, ids=[c[0] for c in BAD_SCRAPER_IDS])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_both_write_routes_refuse_the_same_id(
+        self, mock_resolve, label, overrides
+    ):
+        """
+        The reason this check lives in this module: `PUT /integrations/webscraper/
+        credentials` persists the same stored value, so refusing on one route only
+        is the same defect in a different route.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_configs_json
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='id'):
+            validate_scraper_configs_json(json.dumps(
+                [{'base_url': 'https://example.com/reviews', **overrides}]
+            ))
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_refuses_an_unusable_id_without_spending_a_resolver_call(
+        self, mock_resolve
+    ):
+        """Checked before the destinations, like the pagination shape."""
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError, match='id'):
+            validate_scraper_destinations({'base_url': 'https://example.com/'})
+
+        mock_resolve.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_does_not_echo_an_over_long_id_back_in_the_message(self, mock_resolve):
+        """
+        The value is a stored string of unbounded length and the message is
+        returned by the API: naming a 300-character id echoed all 300 characters,
+        in the very message refusing it for being too long.
+        """
+        from shared.exceptions import ValidationError
+        from shared.scraper_urls import validate_scraper_destinations
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        with pytest.raises(ValidationError) as excinfo:
+            validate_scraper_destinations(
+                {'id': 'x' * 300, 'base_url': 'https://example.com/'}
+            )
+
+        assert 'x' * 300 not in str(excinfo.value)
+        assert '128' in str(excinfo.value)
+
+    @pytest.mark.parametrize('scraper_id', [
+        'scraper_1700000000',
+        's1',
+        'Reviews-EU_2024',
+        'x' * 128,
+    ])
+    @patch('shared.http_utils.socket.getaddrinfo')
+    def test_accepts_every_id_a_client_produces(self, mock_resolve, scraper_id):
+        """
+        Positive control. A check that refused every id would satisfy each
+        assertion above while making EVERY save fail — including the editor's own
+        `scraper_${Date.now()}`, which is what every stored config has.
+        """
+        from shared.scraper_urls import validate_scraper_config_write
+
+        mock_resolve.return_value = PUBLIC_ADDRINFO
+
+        # Must not raise.
+        validate_scraper_config_write({
+            'id': scraper_id,
+            'base_url': 'https://example.com/reviews',
+        })

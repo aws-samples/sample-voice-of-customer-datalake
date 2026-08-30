@@ -9,12 +9,20 @@ from typing import Generator
 from urllib.parse import urljoin, urlparse
 import hashlib
 import json
+import math
 import random
 import re
 import time
 
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
 from shared.http_utils import OutboundUrlBlocked, fetch_checked_with_retry
+# The write path's pagination bounds and id check, imported rather than restated:
+# this ingestor clamps stored values to the same bounds (see `_as_int`) and skips a
+# config whose id the write path would refuse, and a second copy of either is how
+# the two would come to disagree. `lambda/shared` is staged into this bundle
+# alongside `plugins/_shared` — see `bundlePluginCode` in
+# lib/stacks/ingestion-stack.ts.
+from shared.scraper_urls import PAGINATION_INT_BOUNDS, assert_scraper_id
 import requests
 
 
@@ -93,22 +101,52 @@ SCRAPE_RUN_TOTAL_TIMEOUT_SECONDS = 240
 SCRAPER_TRUNCATED_WATERMARK = 'scraper_{scraper_id}_last_truncated'
 
 
-def _as_int(value: object, default: int, label: str) -> int:
+def _as_int(value: object, default: int, label: str, low: int, high: int | None) -> int:
     """
-    `value` as an int, or `default` if it cannot be one.
+    `value` as an int inside `low..high`, or `default` if it cannot be one.
 
     For stored config values the ingestor computes with. A bool is rejected
     explicitly — `int(True)` is 1, so `max_pages: true` would silently mean "one
     page" rather than being reported as the mistake it is.
+
+    The MAGNITUDE is bounded, not only the type, and by the same
+    PAGINATION_INT_BOUNDS the write path refuses out-of-range values with, so the
+    two cannot drift. Coercing the type alone left the arithmetic unbounded for
+    exactly the population this function exists for — values ALREADY stored, which
+    predate that write-side check: a stored `max_pages` of `'5000000'` built five
+    million URLs at 496 MiB peak RSS against the manifest's `"memory": 512`,
+    materialised before the run budget's first check and before any request. An OOM
+    kill is the worst of the failure shapes here, because the terminal
+    `_update_run_status` never runs and a manual run's row stays at
+    `status: 'running'` for ever — the per-config guard cannot catch a killed
+    invocation.
+
+    An ABSENT value (None) is not a mistake and is not logged: that is what
+    `pagination.get('max_pages')` returns for the entirely legal
+    `pagination: {'enabled': True}`, which both write routes accept by decision.
+    Logging it made "Ignoring max_pages=..." fire on every invocation for such a
+    config, which is noise in the signal the warning exists for — a genuinely bad
+    stored value.
     """
-    if isinstance(value, bool) or value is None:
+    if value is None:
+        return default
+    if isinstance(value, bool):
         logger.warning(f"Ignoring {label}={value!r}: using {default}")
         return default
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        coerced = int(value)
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError for the same reason `_should_run_scraper` catches it:
+        # `int(float('inf'))` raises that rather than ValueError, and `Infinity` is
+        # a JSON token both write routes see, so a stored `max_pages: Infinity`
+        # would otherwise escape this coercion and cost the config its whole run.
         logger.warning(f"Ignoring {label}={value!r}: using {default}")
         return default
+
+    clamped = max(low, coerced) if high is None else min(max(low, coerced), high)
+    if clamped != coerced:
+        logger.warning(f"Clamping {label}={coerced} to {clamped}")
+    return clamped
 
 
 class WebScraperIngestor(BaseIngestor):
@@ -487,9 +525,17 @@ class WebScraperIngestor(BaseIngestor):
                 # wrongly-typed one costs the config its pagination rather than
                 # the invocation. `int()` also narrows a float, which `range`
                 # would otherwise reject.
-                max_pages = _as_int(pagination.get('max_pages'), 5, 'max_pages')
+                # Bounds shared with the write path rather than restated, so a
+                # value refused on write and a value clamped here cannot disagree.
+                max_pages = _as_int(
+                    pagination.get('max_pages'), 5, 'max_pages',
+                    *PAGINATION_INT_BOUNDS['max_pages'],
+                )
                 page_param = pagination.get('param', 'page')
-                start_page = _as_int(pagination.get('start'), 1, 'start')
+                start_page = _as_int(
+                    pagination.get('start'), 1, 'start',
+                    *PAGINATION_INT_BOUNDS['start'],
+                )
 
                 for page in range(start_page + 1, start_page + max_pages):
                     if '?' in base_url:
@@ -514,6 +560,17 @@ class WebScraperIngestor(BaseIngestor):
         The id is read the same way `fetch_new_items` and
         `_configs_in_fairness_order` read it, so all three agree on what a config
         without one is called.
+
+        The guarded region has to reach the ARITHMETIC, not just the parse.
+        `float('inf')` and `float('nan')` both succeed and then
+        `timedelta(minutes=...)` raises — OverflowError for the infinities, which
+        was not in the caught tuple at all, and ValueError for NaN. Both are plain
+        JSON tokens (`json.loads('{"frequency_minutes": NaN}')` parses), so a
+        stored config could reach this, the per-config guard in `fetch_new_items`
+        would catch it, and the config would be skipped on EVERY invocation —
+        never running again, which is the one direction this method's fail-open
+        stance exists to rule out. A non-finite or negative frequency is therefore
+        treated as unreadable rather than computed with.
         """
         scraper_id = config.get('id', 'unknown')
         last_run = self.get_watermark(f'scraper_{scraper_id}_last_run')
@@ -523,13 +580,18 @@ class WebScraperIngestor(BaseIngestor):
 
         try:
             frequency_minutes = float(config.get('frequency_minutes', 60))
+            # Rejected before `timedelta` sees it: `timedelta(minutes=float('inf'))`
+            # is an OverflowError and `timedelta(minutes=float('nan'))` a
+            # ValueError, and neither says anything a caller could act on.
+            if not math.isfinite(frequency_minutes) or frequency_minutes < 0:
+                raise ValueError(f"frequency_minutes must be a finite, non-negative number, got {frequency_minutes!r}")
             last_run_time = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
-        except (TypeError, ValueError) as e:
+            next_run = last_run_time + timedelta(minutes=frequency_minutes)
+        except (TypeError, ValueError, OverflowError) as e:
             logger.warning(
                 f"Running {scraper_id} because its schedule is unreadable: {e}"
             )
             return True
-        next_run = last_run_time + timedelta(minutes=frequency_minutes)
 
         return datetime.now(timezone.utc) >= next_run
 
@@ -651,6 +713,23 @@ class WebScraperIngestor(BaseIngestor):
             scraper_name = config.get('name', scraper_id)
 
             try:
+                # BEFORE any request, because an unusable id cannot be worked
+                # around downstream — it is the ITEM id prefix, and the KeyError
+                # from `f"scraper_{config['id']}_..."` in both extraction paths is
+                # swallowed by `_scrape_page`'s per-item handler. So such a config
+                # fetched every page and then dropped every item while reporting
+                # `status: 'completed'`, `errors: []` and a non-zero page count:
+                # silent loss that reads exactly like an empty healthy run. It is
+                # also the watermark key, so two id-less configs shared one
+                # schedule via `scraper_unknown_last_run`.
+                #
+                # The same check the write path applies, imported rather than
+                # restated, and raising into the guard below so the config is
+                # reported `error` with a named reason and the account's other
+                # configs still run. `assert_scraper_id` is the one definition of
+                # a usable id — a config the API would refuse must not scrape.
+                assert_scraper_id(config)
+
                 if not self.execution_id and not self._should_run_scraper(config):
                     logger.info(f"Skipping scraper {scraper_name} - not due yet")
                     continue

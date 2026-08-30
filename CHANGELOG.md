@@ -144,7 +144,33 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   already-checked host — but the scheduled scraper computes with those numbers, so a wrongly
   typed one was accepted by both write routes and then aborted the whole invocation. The bound
   also limits how many URLs one configuration can cause to be fetched, which the 50-URL cap
-  does not: that counts the URLs a configuration names, and pagination multiplies them.
+  does not: that counts the URLs a configuration names, and pagination multiplies them. The
+  scheduled scraper now clamps a stored value to the same bounds instead of only coercing its
+  type — which is what the coercion is for, since the write bound postdates the values it
+  guards: a stored `max_pages` of `"100000"` built 100 000 URLs, and larger values exhausted
+  the function's memory before it made a single request, losing the terminal status write and
+  leaving a manually triggered run at `running`.
+- A scraper `id` is now required on write: a non-empty string of at most 128 characters,
+  refused by both write routes with a 400 naming the field. Like `pagination` it names no
+  network destination, but the scraper computes with it — it prefixes every extracted item's
+  id, and that read sits inside the per-item error handler, so a configuration without one
+  fetched all of its pages and then dropped every item while reporting `completed` with no
+  errors and a non-zero page count. That is indistinguishable from a site with nothing new,
+  which is the silent-loss shape this release's page-counting fix was meant to eliminate. The
+  id is also the schedule watermark key — two configurations without one shared a single
+  schedule, so the second never ran — and the per-scraper metric name, which an over-long id
+  pushed past the metrics service's 255-character limit. The scheduled scraper applies the
+  same rule and reports such a configuration as an error rather than scraping into a drop.
+- An unreadable scraper schedule is treated as due rather than raising, which now includes a
+  `frequency_minutes` that is not a finite, non-negative number. `NaN` and `Infinity` are
+  valid JSON tokens and computing a next-run time from either raised; the per-configuration
+  guard caught it, so the invocation survived, but that configuration was then skipped on
+  every scheduled invocation indefinitely — never running again, the one direction this
+  fail-open behaviour exists to rule out.
+- A scraper's page list no longer logs a warning for pagination values that are simply absent.
+  `pagination: {"enabled": true}` with no `max_pages` is valid and accepted on write, but it
+  was reported the same way a wrongly typed value is, on every invocation — which buried the
+  signal the warning exists for.
 - A wall-clock fetch budget now bounds the retry backoff as well as the attempts. The backoff
   sleep between attempts was taken in full and the budget only re-checked once it returned, so
   a budget could be overrun by up to one backoff interval — enough to push the scraper's run

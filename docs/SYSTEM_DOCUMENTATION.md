@@ -634,7 +634,26 @@ The policy itself:
   `max_pages` within 1-50, matching the bounds the editor already enforces. That also
   bounds the number of URLs one configuration can cause to be fetched, which the 50-URL
   cap does not: the cap counts URLs a configuration *names*, and pagination multiplies
-  them.
+  them. The scheduled reader **clamps** stored values to the same bounds — shared as one
+  constant, not restated — rather than only coercing their type: a stored `max_pages` of
+  `'100000'` built 100 000 URLs and larger values exhausted the function's 512 MB before
+  any request, which loses the terminal status write and strands a manual run at
+  `running`. That is the population the coercion exists for, since the write bound
+  postdates those values.
+- `id` is required on write: a non-empty string of at most 128 characters. It names no
+  destination, but it prefixes every extracted item's id, and that read is inside
+  `_scrape_page`'s per-item `except Exception` — so a configuration without one fetched
+  every page and then dropped every item while reporting `status: 'completed'`,
+  `errors: []` and a non-zero page count, which is indistinguishable from an empty but
+  healthy run. It is also the watermark key (two id-less configurations collided on one
+  schedule) and the `Scraper_<id>_Items` metric name, which a 300-character id pushed
+  past the 255-character limit. The scheduled reader applies the same check and refuses
+  to run such a configuration rather than scraping into a silent drop.
+- An unreadable schedule is treated as *due*, including a `frequency_minutes` that is
+  not a finite, non-negative number. `NaN` and `Infinity` are valid JSON and computing
+  a next-run time from either raised, which the per-configuration guard turned into that
+  configuration being skipped on every invocation indefinitely — the one direction this
+  fail-open stance exists to rule out.
 - At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
   write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
   limit. Enforced only on a list the write changes, so a pre-existing longer list keeps

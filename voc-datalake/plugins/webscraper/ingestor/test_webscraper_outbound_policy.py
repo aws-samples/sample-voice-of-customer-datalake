@@ -110,6 +110,32 @@ REVERT MAP
 - Swallow so much that ordinary work is skipped, or coerce a USABLE pagination
   value away -> `an_ordinary_two_config_run_is_unaffected`,
   `a_valid_pagination_still_produces_its_pages`.
+- Narrow `_should_run_scraper`'s fail-open `try` back off the `timedelta`
+  arithmetic, or drop `OverflowError`/the non-finite check, so
+  `frequency_minutes: 'inf'` raises and the config is skipped on EVERY invocation
+  -> `TestAnUnreadableScheduleStillRuns::a_config_with_an_unreadable_frequency_is_still_fetched`
+  (5 shapes).
+- Treat every schedule as due -> `a_recent_run_on_a_readable_frequency_is_still_skipped`.
+- Bound `_as_int`'s type without its MAGNITUDE, so a stored `max_pages: '100000'`
+  materialises 100000 URLs before any request (millions OOM-kill the function and
+  strand the run row at `running`)
+  -> `TestStoredPaginationIsBounded::an_over_large_stored_max_pages_is_clamped`,
+  `a_negative_stored_start_page_produces_no_negative_pages`.
+- Restate the bound instead of importing PAGINATION_INT_BOUNDS, letting the write
+  path's refusal and this clamp drift -> `the_bound_is_the_one_the_write_path_enforces`.
+- Clamp a USABLE value away -> `a_usable_pagination_is_left_alone`.
+- Warn for an ABSENT max_pages/start again, so the legal `pagination: {'enabled':
+  True}` logs twice per page-list build and buries the real signal
+  -> `an_absent_max_pages_is_not_reported_as_a_mistake`; silence a PRESENT unusable
+  one -> `a_present_but_unusable_max_pages_is_still_reported`.
+- Let a config without a usable `id` scrape, so it fetches every page and then
+  drops every item (the KeyError from `f"scraper_{config['id']}_..."` is swallowed
+  per item) while reporting `completed` with empty `errors`
+  -> `TestAConfigWithoutAnIdIsRefusedRatherThanRun::a_config_without_an_id_reports_an_error_rather_than_a_clean_run`,
+  `a_config_without_an_id_makes_no_request`.
+- Restate the id rule here instead of importing the write path's
+  -> `the_ingestor_and_the_write_path_agree_on_a_usable_id`.
+- Refuse a config that HAS an id -> `a_config_with_an_id_still_yields_its_item`.
 
 Nothing here touches the network: resolution and HTTP are patched at
 `shared.http_utils`'s import boundary, which is where the ingestor's fetch
@@ -1271,6 +1297,10 @@ HEALTHY_CONFIG = {
 }
 
 # (label, malformed config, watermarks it needs to be stored)
+# Frequencies `_should_run_scraper` cannot compute with. Module-level for the same
+# reason as the configs above: a mutable class attribute is a RUF012.
+UNREADABLE_FREQUENCIES = ['nan', 'inf', '-inf', float('nan'), float('inf'), -5]
+
 MALFORMED_CONFIGS = [
     # `id` is REMOVED, not merely left unspread: CSS_CONFIG carries one, so
     # `{**CSS_CONFIG, ...}` cannot express this case at all — a first version
@@ -1692,3 +1722,241 @@ class TestOnePolicyForBothCallSites:
         assert 'fetch_with_retry' not in called | imported, (
             'ingestor fetches without the policy'
         )
+
+
+class TestAnUnreadableScheduleStillRuns:
+    """
+    `_should_run_scraper` fails OPEN, and the guarded region has to reach the
+    ARITHMETIC for that to hold.
+
+    Its docstring states the decision: of the two directions, "runs more often
+    than intended" is recoverable where "never runs again" is not. The `try`
+    covered `float()` and `fromisoformat()` but not
+    `timedelta(minutes=frequency_minutes)` on the next line, and that is where the
+    remaining shapes raised — `ValueError` for NaN, and `OverflowError` for the
+    infinities, which was not in the caught tuple at all, so widening the region
+    without widening the tuple would not have been enough either.
+
+    `'nan'` and `'inf'` are plain JSON tokens: `json.loads('{"f": NaN}')` parses
+    and `json.dumps` emits `NaN`. The per-config guard catches the exception, so
+    the invocation survives — but this config was then skipped on EVERY scheduled
+    invocation, indefinitely, which is the outcome the fail-open stance rules out.
+    """
+
+    @pytest.mark.parametrize('frequency', UNREADABLE_FREQUENCIES)
+    def test_a_config_with_an_unreadable_frequency_is_still_fetched(
+        self, frequency, ingestor
+    ):
+        """
+        Asserted on the URL actually REQUESTED, not on the absence of an
+        exception: the per-config guard means an exception here is invisible from
+        the outside while the config silently stops ingesting.
+        """
+        requested, _statuses, items = TestOneMalformedConfigCostsOneConfig._scheduled_run(
+            ingestor,
+            [{**CSS_CONFIG, 'id': 'fq', 'frequency_minutes': frequency,
+              'urls': ['https://ok.example/a']}],
+            {'scraper_fq_last_run': '2020-01-01T00:00:00+00:00'},
+        )
+
+        assert requested == ['https://ok.example/a'], (
+            'the config was skipped, so it never ingests again'
+        )
+        assert len(items) == 1
+
+    def test_a_recent_run_on_a_readable_frequency_is_still_skipped(self, ingestor):
+        """
+        Positive control. Treating every schedule as due would satisfy the
+        assertions above while making every scraper run on every invocation
+        regardless of its frequency.
+        """
+        recent = datetime.now(timezone.utc) - timedelta(minutes=5)
+        requested, _statuses, _items = TestOneMalformedConfigCostsOneConfig._scheduled_run(
+            ingestor,
+            [{**CSS_CONFIG, 'id': 'fq', 'frequency_minutes': 60,
+              'urls': ['https://ok.example/a']}],
+            {'scraper_fq_last_run': recent.isoformat()},
+        )
+
+        assert requested == [], 'a config that is not due was fetched anyway'
+
+
+class TestStoredPaginationIsBounded:
+    """
+    `_as_int` must bound the MAGNITUDE, not only the type.
+
+    The write path refuses `max_pages` outside 1..MAX_SCRAPER_URLS, and this
+    coercion is the second line for values ALREADY stored — which is exactly the
+    population that predates that check. Coercing the type alone left the
+    arithmetic unbounded: a stored `'100000'` built 100000 URLs and millions built
+    millions, at 496 MiB peak RSS against the manifest's `"memory": 512`.
+
+    The list is materialised before the URL loop begins, so it is spent before the
+    run budget's first `remaining` check and before any request — and an OOM kill
+    is the worst shape here, because the terminal `_update_run_status` never runs
+    and a manual run's row stays at `status: 'running'` for ever. The per-config
+    guard cannot catch a killed invocation.
+    """
+
+    @pytest.mark.parametrize('max_pages', [
+        '100000', 100000, 5000000,
+        # `Infinity` is a JSON token, and `int(float('inf'))` is an OverflowError
+        # rather than a ValueError — the same shape as the schedule defect above.
+        float('inf'), float('nan'),
+    ])
+    def test_an_over_large_stored_max_pages_is_clamped(self, max_pages, ingestor):
+        from shared.scraper_urls import MAX_SCRAPER_URLS
+
+        urls = ingestor._get_urls_to_scrape({
+            'id': 'p', 'base_url': 'https://ok.example/r',
+            'pagination': {'enabled': True, 'max_pages': max_pages},
+        })
+
+        assert len(urls) <= MAX_SCRAPER_URLS
+
+    def test_the_bound_is_the_one_the_write_path_enforces(self):
+        """
+        Shared rather than restated. Two copies of the number are how the write
+        path's refusal and this clamp would come to disagree, which is the argument
+        this issue has used throughout.
+        """
+        from webscraper.ingestor import handler
+
+        assert 'PAGINATION_INT_BOUNDS' in handler.__dict__
+
+    def test_a_negative_stored_start_page_produces_no_negative_pages(self, ingestor):
+        urls = ingestor._get_urls_to_scrape({
+            'id': 'p', 'base_url': 'https://ok.example/r',
+            'pagination': {'enabled': True, 'max_pages': 3, 'start': -5},
+        })
+
+        assert not any('page=-' in u for u in urls)
+
+    def test_a_usable_pagination_is_left_alone(self, ingestor):
+        """
+        Positive control. A clamp that defaulted a usable value away would satisfy
+        both assertions above while quietly scraping the wrong pages.
+        """
+        urls = ingestor._get_urls_to_scrape({
+            'id': 'p', 'base_url': 'https://ok.example/r',
+            'pagination': {'enabled': True, 'max_pages': 3, 'start': 1},
+        })
+
+        assert urls == [
+            'https://ok.example/r',
+            'https://ok.example/r?page=2',
+            'https://ok.example/r?page=3',
+        ]
+
+    def test_an_absent_max_pages_is_not_reported_as_a_mistake(self, ingestor):
+        """
+        `pagination: {'enabled': True}` is legal on both write routes by decision,
+        and `pagination.get('max_pages')` returns None for it. Warning about that
+        fired on every invocation for such a config, which is noise in the signal
+        the warning exists for — a genuinely bad stored value.
+        """
+        with patch('webscraper.ingestor.handler.logger.warning') as mock_warn:
+            urls = ingestor._get_urls_to_scrape({
+                'id': 'p', 'base_url': 'https://ok.example/r',
+                'pagination': {'enabled': True},
+            })
+
+        assert len(urls) == 5
+        assert mock_warn.call_args_list == []
+
+    @pytest.mark.parametrize('max_pages', ['x', True, 100000])
+    def test_a_present_but_unusable_max_pages_is_still_reported(
+        self, max_pages, ingestor
+    ):
+        """
+        Positive control: silencing None must not silence a real mistake. `True` is
+        one because `int(True)` is 1, so `max_pages: true` would otherwise mean
+        "one page" silently; `100000` is one because it is clamped, and a clamp
+        nobody is told about is a config scraping fewer pages than it asks for.
+        `'10'` is deliberately NOT here — it coerces to the 10 that was meant, so
+        warning about it would be the same noise this test's sibling removes.
+        """
+        with patch('webscraper.ingestor.handler.logger.warning') as mock_warn:
+            ingestor._get_urls_to_scrape({
+                'id': 'p', 'base_url': 'https://ok.example/r',
+                'pagination': {'enabled': True, 'max_pages': max_pages},
+            })
+
+        assert mock_warn.call_args_list, 'an unusable stored value was silent'
+
+
+class TestAConfigWithoutAnIdIsRefusedRatherThanRun:
+    """
+    A config whose `id` the ingestor cannot use must not fetch at all.
+
+    Reading the id as `config.get('id', 'unknown')` in `_should_run_scraper`,
+    `fetch_new_items` and `_configs_in_fairness_order` removed the KeyError that
+    aborted the invocation, but four other reads still require the key:
+    `_extract_from_jsonld_item` and the CSS path build
+    `f"scraper_{config['id']}_{item_id}"`, and that KeyError is swallowed by
+    `_scrape_page`'s per-item `except Exception`. So the config was no longer
+    skipped — it was fetched, and then dropped every item, reporting
+    `status: 'completed'`, `errors: []`, `pages_scraped: 1`, `items_found: 0`.
+
+    That is the "indistinguishable from an empty but healthy run" shape the
+    `outcome`/`pages_scraped` work eliminated, reached by another route, and the
+    loss is entirely silent. Defaulting the remaining four reads would not fix it
+    either: the id is the watermark key, so two id-less configs would collide on
+    one schedule.
+    """
+
+    def test_a_config_without_an_id_reports_an_error_rather_than_a_clean_run(
+        self, ingestor
+    ):
+        no_id = {k: v for k, v in CSS_CONFIG.items() if k != 'id'} | {
+            'name': 'no-id', 'urls': ['https://ok.example/a'],
+        }
+        _requested, statuses, items = (
+            TestOneMalformedConfigCostsOneConfig._scheduled_run(ingestor, [no_id], {})
+        )
+
+        assert items == [], 'items were yielded for a config with no id'
+        terminal = [u for _id, u in statuses if 'status' in u]
+        assert terminal, 'no terminal status at all'
+        assert terminal[-1]['status'] == 'error'
+        assert any('id' in e for e in terminal[-1]['errors'])
+
+    def test_a_config_without_an_id_makes_no_request(self, ingestor):
+        """
+        Refused BEFORE the fetch. Reporting the error after scraping would still
+        spend the budget, and the run would look like a page that failed to parse.
+        """
+        no_id = {k: v for k, v in CSS_CONFIG.items() if k != 'id'} | {
+            'name': 'no-id', 'urls': ['https://ok.example/a'],
+        }
+        requested, _statuses, _items = (
+            TestOneMalformedConfigCostsOneConfig._scheduled_run(ingestor, [no_id], {})
+        )
+
+        assert requested == []
+
+    def test_a_config_with_an_id_still_yields_its_item(self, ingestor):
+        """
+        Positive control, and the one that shows the extraction path depends on the
+        key: the same config with an id yields 1 item, which is what makes the
+        silent-drop measurement above meaningful rather than a claim about an
+        unparseable page.
+        """
+        requested, _statuses, items = (
+            TestOneMalformedConfigCostsOneConfig._scheduled_run(
+                ingestor, [HEALTHY_CONFIG], {}
+            )
+        )
+
+        assert requested == ['https://ok.example/a']
+        assert len(items) == 1
+
+    def test_the_ingestor_and_the_write_path_agree_on_a_usable_id(self):
+        """
+        One definition of a usable id, imported rather than restated — a config the
+        API would refuse must not scrape, and a config it accepts must.
+        """
+        from shared.scraper_urls import assert_scraper_id
+        from webscraper.ingestor import handler
+
+        assert handler.assert_scraper_id is assert_scraper_id
