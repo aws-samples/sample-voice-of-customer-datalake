@@ -16,8 +16,16 @@
  *  * the badge's `sr-only` reason dropped to `title` alone → "the reason is
  *    announced, not only hovered" (a `title` never appears on touch and is
  *    announced inconsistently);
- *  * one state's `LINEAGE_STYLE` entry pointed at another's → "each state reads as
- *    itself" (which compares the three rendered labels rather than one spelling);
+ *  * one state's `LINEAGE_STYLE` entry pointed at another's → the three per-state cases
+ *    ("reads as one generation…", "reads as crossing generations…", "reads as
+ *    lineage-absent…"), each of which asserts its own label verbatim, and "gives each
+ *    state its own words", which compares the three rendered LABELS against each other
+ *    and so catches a collapse the per-state cases cannot see (two states sharing a key
+ *    that one of them owns). That last case earns the entry only since it started
+ *    excluding the badge's `sr-only` reason: comparing `textContent` stayed size 3
+ *    through the REASONS being distinct, so every label could be pointed at one key with
+ *    it green (measured). Its label-distinctness and reason-distinctness assertions are
+ *    separately revert-sensitive;
  *  * `<RowStaleBadge>` removed, or its `is_frozen` gate lost → "a frozen row whose
  *    documents were superseded says so" and "a current frozen row does not";
  *  * `fresherCoherentSelection`'s candidate condition tightened to require a
@@ -285,8 +293,25 @@ describe('the resting row states what its documents say about each other', () =>
   it('gives each state its own words, so none is told apart by colour alone', async () => {
     // Three renders, three labels, compared against EACH OTHER rather than against one
     // spelling: a table entry pointed at a neighbour's key would still render a
-    // plausible label, and each of the cases above would still pass.
+    // plausible label, and a case asserting one state's own label cannot see two states
+    // sharing it.
+    //
+    // THE LABEL ALONE, excluding the `sr-only` reason, and that exclusion is what makes
+    // this case about what it says: the badge renders label AND reason, so a
+    // `textContent` comparison stayed size 3 through the REASONS being distinct — every
+    // label could be collapsed onto one key with this case green (measured). The reasons
+    // are collected too, and asserted separately, so the coverage that comparison had by
+    // accident is kept rather than traded for this one.
+    const labelOf = (badge: HTMLElement) => Array.from(badge.childNodes)
+      .filter((node) => !(node instanceof HTMLElement && node.classList.contains('sr-only')))
+      .map((node) => node.textContent ?? '')
+      .join('')
+      .trim()
+    const reasonOf = (badge: HTMLElement) => (
+      badge.querySelector('.sr-only')?.textContent ?? ''
+    ).trim()
     const labels: string[] = []
+    const reasons: string[] = []
     for (const [documents, row] of [
       [[PRD_1, PRFAQ_1], storedRow()],
       [[PRD_1, PRD_2], storedRow({ document_ids: [PRD_2.document_id, PRD_1.document_id] })],
@@ -297,13 +322,17 @@ describe('the resting row states what its documents say about each other', () =>
     ] as const) {
       givenProject(documents, row)
       const badge = await lineageBadge()
-      labels.push(badge.textContent ?? '')
+      labels.push(labelOf(badge))
+      reasons.push(reasonOf(badge))
       // Unmounted between renders, so the next `findByTestId` cannot match the
       // previous row's badge and report three renders of one state as three states.
       cleanup()
     }
 
+    // Non-vacuous: a `labelOf` that stripped everything would collapse to one ''.
+    expect(labels.every((label) => label !== '')).toBe(true)
     expect(new Set(labels).size).toBe(3)
+    expect(new Set(reasons).size).toBe(3)
   })
 
   it('announces the reason rather than only hovering it', async () => {
