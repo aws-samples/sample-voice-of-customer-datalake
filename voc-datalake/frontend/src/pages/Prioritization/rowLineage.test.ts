@@ -107,7 +107,18 @@
  *    four sentences must be distinct). It also pins that `supersededSourceReason` claims
  *    no DIRECTION, which is the assertion that catches the copy regressing: the rule
  *    compares a source's TYPE and never an order, so it reports the same reason when the
- *    source is the LATER version, and directional copy is false for that half;
+ *    source is the LATER version, and directional copy is false for that half — in
+ *    ENGLISH only, which is why the case below it exists;
+ *  * `lineage.supersededSourceReason` going directional again in any ONE of the other
+ *    seven catalogues → "claims no DIRECTION for supersededSource in any of the eight
+ *    catalogues". The case above it reads `prioritizationEn` alone, so seven eighths
+ *    of that copy fix was unpinned: measured, restoring the directional German
+ *    wording left `src/pages/Prioritization src/i18n` green at 506 tests, because
+ *    `localeParity` compares key SETS and `i18n:check` reports a non-English string
+ *    only when it is byte-identical to English. The property is language-independent
+ *    (it is a fact about `hasSupersededSource`, not about English), so it is asserted
+ *    per locale, driven by `supportedLanguages` so a ninth catalogue fails to compile
+ *    rather than going unchecked;
  *  * the `repeatsAType` guard in `fresherCoherentSelection` WIDENED to every
  *    `crossGeneration` row (gating on the classification instead) → "DOES mark a
  *    supersededSource row stale, unlike its repeatedType sibling", and only that case
@@ -167,7 +178,19 @@ import {
   rowLineageOf,
 } from './rowLineage'
 import type { LineageReason } from './rowLineage'
+import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages'
 import prioritizationEn from '../../../public/locales/en/prioritization.json'
+// The other seven catalogues, imported statically rather than read from disk so a
+// locale cannot be silently skipped the way a glob or a dynamic path could, and so
+// `tsc` sees the table below is total over `SupportedLanguage`. Follows the
+// precedent `DataSourceWizard/localization.test.tsx` set for the same reason.
+import prioritizationDe from '../../../public/locales/de/prioritization.json'
+import prioritizationEs from '../../../public/locales/es/prioritization.json'
+import prioritizationFr from '../../../public/locales/fr/prioritization.json'
+import prioritizationJa from '../../../public/locales/ja/prioritization.json'
+import prioritizationKo from '../../../public/locales/ko/prioritization.json'
+import prioritizationPt from '../../../public/locales/pt/prioritization.json'
+import prioritizationZh from '../../../public/locales/zh/prioritization.json'
 
 /**
  * One project document, as the project read supplies it.
@@ -293,6 +316,73 @@ describe('the lineage tables are complete and resolvable', () => {
     const sentences = (Object.keys(OWN_PHRASE) as LineageReason[]).map(sentenceOf)
 
     expect(new Set(sentences).size).toBe(sentences.length)
+  })
+
+  it('claims no DIRECTION for supersededSource in any of the eight catalogues', () => {
+    // The case above pins English, and English is one eighth of what the copy fix
+    // touched. The property is not a property of English: `hasSupersededSource`
+    // compares a source's `document_type` against the types the OTHER selected
+    // documents hold, and never a timestamp or an ordinal — so it reports the same
+    // reason when the source is the LATER version (a row holding PRD 1 beside a
+    // PR/FAQ built from the newer PRD 2, measured). Directional copy is therefore
+    // false for exactly that half in EVERY language, and every catalogue can regress
+    // the same way. Measured before this case existed: reintroducing the directional
+    // German wording alone left `src/pages/Prioritization src/i18n` green at 506
+    // tests, because `localeParity` compares key SETS and `i18n:check` reports a
+    // non-English string only when it is byte-identical to English — fluent German
+    // saying the wrong thing is invisible to both.
+    //
+    // Both tables are keyed by `SupportedLanguage` and the loop is driven by
+    // `supportedLanguages`, so a ninth locale is a TYPECHECK failure rather than a
+    // silently skipped one — the shape `DataSourceWizard/localization.test.tsx` uses
+    // for the same reason.
+    const catalogues: Record<SupportedLanguage, { lineage: Record<string, string> }> = {
+      en: prioritizationEn,
+      de: prioritizationDe,
+      es: prioritizationEs,
+      fr: prioritizationFr,
+      ja: prioritizationJa,
+      ko: prioritizationKo,
+      pt: prioritizationPt,
+      zh: prioritizationZh,
+    }
+    // The directional term each catalogue actually used before the fix, verified
+    // against the pre-fix bytes: every one of these eight was present then and is
+    // absent now, so each entry is the exact regression it names rather than a term
+    // the language merely might use.
+    const DIRECTIONAL: Record<SupportedLanguage, string> = {
+      en: 'earlier',
+      de: 'früher',
+      es: 'anterior',
+      fr: 'antérieur',
+      ja: '旧バージョン',
+      ko: '이전 버전',
+      pt: 'anterior',
+      zh: '较早',
+    }
+    // Each language's own word for a generation. NOT a regression detector — the
+    // pre-fix copy contained it too, in the "crosses generations" clause — but the
+    // non-vacuity control the negative assertion needs: it proves the lookup landed
+    // on real copy in THAT language, so a path typo or a catalogue whose `lineage`
+    // block went missing cannot satisfy `not.toContain` by resolving to nothing.
+    const GENERATION: Record<SupportedLanguage, string> = {
+      en: 'generation',
+      de: 'Generation',
+      es: 'generación',
+      fr: 'génération',
+      ja: '世代',
+      ko: '세대',
+      pt: 'geração',
+      zh: '代',
+    }
+
+    for (const locale of supportedLanguages) {
+      const sentence = catalogues[locale].lineage.supersededSourceReason
+
+      expect(sentence, `${locale} supersededSourceReason`).toBeTruthy()
+      expect(sentence, `${locale} names a generation`).toContain(GENERATION[locale])
+      expect(sentence, `${locale} claims no direction`).not.toContain(DIRECTIONAL[locale])
+    }
   })
 })
 
