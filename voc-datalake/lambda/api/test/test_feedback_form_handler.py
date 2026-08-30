@@ -2534,7 +2534,7 @@ class TestThePublicIframePageRefusesAnIdItCannotHaveMinted:
 
         The one respect in which this change is not additive: the character class is
         a NEW refusal applied to ids that are ALREADY STORED, so for a row outside
-        it the change turns a record that resolved into one that 404s on all five of
+        it the change turns a record that resolved into one that 404s on all eight of
         its routes. The whitespace case in the upgrade notes is exempt from that by
         an argument — ` abc123` never addressed `abc123`, the space was always part
         of the key — but a dotted id has no such argument available: `acme.website`

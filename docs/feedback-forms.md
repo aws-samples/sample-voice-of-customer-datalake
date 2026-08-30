@@ -166,7 +166,7 @@ the API base and the request addresses a different resource than the one asked f
 `...`, `.hidden-form` and `form.` are ordinary ids and are accepted.
 
 Ids containing anything else — `:`, `+`, `@`, `%`, `~` or a non-ASCII character —
-*did* resolve before the change that closed #379 and now answer 404 on all five of
+*did* resolve before the change that closed #379 and now answer 404 on all eight of
 their routes. If you seeded or imported form ids by hand, the pre-upgrade scan in
 [CHANGELOG.md](../CHANGELOG.md) finds them; there is no compatibility shim.
 

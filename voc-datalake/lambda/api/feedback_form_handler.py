@@ -158,7 +158,7 @@ FORM_ID_LENGTH = 8
 # `.` IS INSIDE the class, and it is here for a compatibility reason rather than
 # an aesthetic one. This pattern is a NEW refusal on records that already exist:
 # the character class is the only bound in this change that can turn a row which
-# used to resolve into a 404 on all five of its routes, and unlike the whitespace
+# used to resolve into a 404 on all eight of its routes, and unlike the whitespace
 # case there is no argument that such a row was already unreachable. `acme.website`
 # resolved correctly before — the dot was part of the key and the key was found —
 # so narrowing it out is data loss dressed as hardening. A dotted id is also the
@@ -255,7 +255,7 @@ def _validated_form_id(raw: Any) -> str | None:
     failure fatal.
 
     A NEW refusal on data that already exists, which is the one respect in which
-    this is not purely additive: an id outside the pattern 404s on all five of its
+    this is not purely additive: an id outside the pattern 404s on all eight of its
     routes, and for a hand-seeded row whose id resolved before, that is a reachable
     record becoming unreachable rather than a probe being refused. `.` is admitted
     for exactly that reason (see the pattern above). The characters still outside

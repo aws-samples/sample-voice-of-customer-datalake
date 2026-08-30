@@ -109,7 +109,7 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
   **Check before upgrading if you have hand-seeded or imported form ids.** An id containing anything
   outside that class — `:`, `+`, `@`, `%`, `~`, or any non-ASCII character, as in `a:b` or `café` —
-  *did* resolve on all five of its routes before this change and now answers `404 Form not found` on
+  *did* resolve on all eight of its routes before this change and now answers `404 Form not found` on
   all of them. Unlike the whitespace case those rows are genuinely reachable-then-orphaned, so scan
   the aggregates table for them first and rename any you find (write the record under a new `sk` and
   repoint the embed snippet; the old row's submissions stay under their original `source_channel`,
