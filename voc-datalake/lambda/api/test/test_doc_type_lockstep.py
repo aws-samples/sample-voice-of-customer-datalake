@@ -135,10 +135,28 @@ and that fix has a wrong side of its own — treating every `[` as opening a cla
 swallow an indexed division — so both directions are pinned separately, because they are
 different mistakes.
 
-Rounds seven, eight and nine are ONE bug in ONE function surfacing in three constructs,
-each fixed in the shared helper rather than in any guard. That is the part worth keeping:
-the remaining surface is bounded by the ways JavaScript can open and close a string, not
-by the unbounded space of type expressions this file rightly refuses to model.
+A TENTH defeat came from the third way a scan can be wrong about a regex: not whether it
+reads one, nor where one ends, but WHERE ONE MAY BEGIN. `_REGEX_MAY_FOLLOW` excludes `)`,
+which is right for an expression — `(a + b) / 2` divides — and wrong for the `)` that
+closes an `if`/`for`/`while`/`switch` HEAD, after which a statement follows and a statement
+cannot begin with a division. So `for (const _c of []) /`/…` was read as a division, its
+backtick stayed live, and a decoy's own backtick closed the phantom frame it opened, with
+the same resynchronising trailing statement as the eighth and ninth. Measured on the tree
+that shipped it: the field pin DELETED outright, a copy in such a decoy, the field widened
+to `DocType | 'onepager'` — `tsc` exit 0, eslint clean, every test here green, and nothing
+for a lint rule to object to (assigning `.lastIndex` rather than calling `.test(...)`
+raises no `sonarjs/no-ignored-return` and no TS2774). All four guards went with it again.
+`_closes_control_head` walks back to the matching `(` and reads the word before it, which
+is the only thing distinguishing the two `)`s. That fix has TWO wrong sides rather than
+one, and both are pinned, because a single over-broad rule produces only one of them:
+admitting a regex after every `)` blanks a grouped division, and accepting any word before
+the matching `(` blanks a CALL's.
+
+Rounds seven through ten are ONE bug in ONE function surfacing in four constructs, each
+fixed in the shared helper rather than in any guard. That is the part worth keeping: the
+remaining surface is bounded by the ways JavaScript delimits a string — whether one is
+read, where it ends, and where it may begin — not by the unbounded space of type
+expressions this file rightly refuses to model.
 
 THE GUARDS' OWN FIXES ARE PINNED TOO, which took its own finding. The two repairs made
 in the fifth round shipped with no test, and reverting either left all 30 tests here
@@ -401,6 +419,16 @@ REVERT MAP — which mutation each part catches, so a deletion is a decision:
         reverted, and its wrong side is pinned separately too: treating every `[` as
         opening a class swallows an indexed division
         (`test_an_indexed_division_is_not_read_as_a_character_class`).
+      - reading a `/` after a control-flow head's `)` as a DIVISION, which it cannot be —
+        a statement cannot begin with one. The TENTH vacuity, the same root cause a fourth
+        time, and again in every guard at once: `for (const _c of []) /`/…` left its
+        backtick live to open a phantom template frame. Three cases here plus one in
+        `TestTheUnionParser` are red when `_closes_control_head` is no longer consulted.
+        This fix has TWO wrong sides, pinned separately because a single over-broad rule
+        would produce only one of them: admitting a regex after every `)` blanks a grouped
+        division (`test_an_expression_division_is_not_read_as_a_regex`), and accepting any
+        word before the matching `(` blanks a CALL's
+        (`test_a_call_expression_is_not_a_control_head`).
     Each was measured against the live tree, `tsc` at exit 0 in every case. Positive
     assertions sit beside the negative ones so none can pass by rejecting everything.
   * `test_the_route_accepts_exactly_what_the_doc_type_union_offers` — the contract
@@ -713,6 +741,12 @@ DOC_TYPE_UNION_ANCHOR = re.compile(r'export\s+type\s+DocType\s*=\s*\|?\s*')
 # cannot end an expression. Deliberately CONSERVATIVE: mistaking a division for a regex
 # would blank real code, while mistaking a regex for a division is what the eighth
 # vacuity was — so the two errors are not symmetric, and this errs toward reading less.
+#
+# ⚠️ `)` is NOT here, and must not be: `(a + b) / 2` is a division, and taking every `)`
+# to admit a regex would blank the rest of that line. The one `)` that cannot be
+# followed by a division is the one closing an `if`/`for`/`while`/`switch` HEAD, which
+# `_closes_control_head` decides separately — leaving it out of both readings was the
+# TENTH vacuity.
 _REGEX_MAY_FOLLOW = '=(,:[!&|?{};+-*%~^<>'
 # The keywords a regex may directly follow, where the preceding CHARACTER is a word
 # character and so says nothing on its own (`return /`/.test(x)`).
@@ -720,7 +754,48 @@ _REGEX_MAY_FOLLOW_KEYWORD = frozenset({
     'return', 'typeof', 'case', 'in', 'of', 'do', 'else', 'yield', 'await', 'delete',
     'void', 'instanceof', 'new',
 })
+# The heads whose closing `)` ends a STATEMENT position, so a `/` after it can only open
+# a regex. `catch` is absent deliberately: `catch (e) /`/` is not reachable code, and the
+# conservative direction costs nothing here.
+_REGEX_MAY_FOLLOW_HEAD = frozenset({'if', 'for', 'while', 'switch'})
 _TRAILING_WORD = re.compile(r'[A-Za-z_$][\w$]*$')
+
+# 🔑 The TENTH vacuity's decoy opener, shared by every guard's fixture for it because the
+# defect was one — a regex in STATEMENT position, whose backtick opened a phantom template
+# frame that a decoy's own backtick then closed. Two of these bracket the decoy: the second
+# resynchronises the scan, which is what made the evasion clean rather than one that ran to
+# EOF and noisily swallowed whatever followed. Assigning `.lastIndex` rather than calling
+# `.test(...)` keeps it lint-clean, so nothing stood in the way of this one either.
+CONTROL_HEAD_DESYNC = 'for (const _c of []) /`/.lastIndex = Number(_c)\n'
+
+
+def _closes_control_head(text: str) -> bool:
+    """Whether `text` ends with the `)` that closed an `if`/`for`/`while`/`switch` head.
+
+    🔑 The TENTH vacuity, and the same root cause as the seventh through ninth: a `/`
+    after such a `)` can only open a regex, since a control-flow head is followed by a
+    STATEMENT and a statement cannot begin with a division. `_REGEX_MAY_FOLLOW` excludes
+    `)` — correctly, for an expression `)` — so `for (const _c of []) /`/…` was read as
+    a division, its backtick stayed live, and the phantom template frame it opened was
+    closed by a decoy's own backtick. Everything after that was code again.
+
+    Walks back to the matching `(` and reads the word before it, which is the only way to
+    tell the two `)`s apart: `(w + h) / 2` and `for (x of y) /re/` differ solely in what
+    precedes the group. Errs toward returning False for the reason `_REGEX_MAY_FOLLOW`
+    gives — an unmatched `(` or an unknown word leaves the `/` read as a division, which
+    is a false FAILURE bounded to one line.
+    """
+    depth = 0
+    for index in range(len(text) - 1, -1, -1):
+        char = text[index]
+        if char == ')':
+            depth += 1
+        elif char == '(':
+            depth -= 1
+            if depth == 0:
+                head = _TRAILING_WORD.search(text[:index].rstrip())
+                return head is not None and head.group(0) in _REGEX_MAY_FOLLOW_HEAD
+    return False
 
 
 def _regex_allowed_here(emitted: list[str]) -> bool:
@@ -728,13 +803,15 @@ def _regex_allowed_here(emitted: list[str]) -> bool:
 
     Decided from what has already been emitted, since that is the only context a
     single-pass scan has. See `_REGEX_MAY_FOLLOW` for why the conservative direction is
-    the safe one.
+    the safe one, and `_closes_control_head` for the one `)` that admits a regex.
     """
     text = ''.join(emitted).rstrip()
     if not text:
         return True
     if text[-1] in _REGEX_MAY_FOLLOW:
         return True
+    if text[-1] == ')':
+        return _closes_control_head(text)
     trailing = _TRAILING_WORD.search(text)
     return trailing is not None and trailing.group(0) in _REGEX_MAY_FOLLOW_KEYWORD
 
@@ -820,8 +897,18 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     had; measured the same way, with the field pin deleted and every gate green. So the
     scan tracks class state, and its wrong side is pinned too: taking every `[` to open a
     class would swallow an indexed division (`x[i] / 2 + y[j] / 3`), the same false-FAILURE
-    direction as misreading a division. Rounds seven to nine were one bug in this function
-    surfacing in three constructs, which is why each fix belongs here and not in a guard.
+    direction as misreading a division.
+
+    🔑 And a regex does not only END where the scan must be right — it also BEGINS there,
+    which was the TENTH vacuity. A `/` after the `)` closing an `if`/`for`/`while`/`switch`
+    head can only open a regex, since what follows such a head is a statement; but `)` is
+    absent from `_REGEX_MAY_FOLLOW` (correctly, for a grouped `(a + b) / 2`), so
+    `for (const _c of []) /`/…` was read as a division and its backtick desynchronised the
+    scan exactly as an unread regex had. Measured the same way, with the field pin deleted
+    and every gate green including eslint. `_closes_control_head` decides it, and both of
+    its wrong sides are pinned — see there. Rounds seven to ten were one bug in this
+    function surfacing in four constructs, which is why each fix belongs here and not in a
+    guard.
     """
     def blanked(text: str) -> str:
         return ''.join('\n' if char == '\n' else ' ' for char in text)
@@ -1287,6 +1374,23 @@ class TestTheUnionParser:
         )
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
 
+    def test_a_union_inside_a_control_head_desynced_template_is_not_read(self):
+        """The same again for a regex in STATEMENT position — the tenth vacuity.
+
+        `_REGEX_MAY_FOLLOW` excludes `)` because `(a + b) / 2` divides, so a regex after a
+        `for`/`if`/`while` head's `)` was read as a division and its backtick stayed live
+        to open a phantom template frame. As in the three cases above the live union
+        carries the extra member deliberately: this must read `onepager` rather than merely
+        disagree with the decoy, or it would pass on a parser that read nothing at all.
+        """
+        source = (
+            f'{CONTROL_HEAD_DESYNC}'
+            "const historical = `export type DocType = 'prd' | 'legacy'`\n"
+            f'{CONTROL_HEAD_DESYNC}'
+            "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
+        )
+        assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
+
     # The refusals `_doc_type_union` must carry: no readable term at the anchor, a
     # matched non-literal, an unread term after the match.
     EXPECTED_REFUSALS = 3
@@ -1465,6 +1569,59 @@ class TestThePinMatcher:
         assert _pinned(self.PIN, f'{self.PIN}\n')
         assert _pinned(self.PIN, f'{self.CLASS_DESYNC}{self.PIN}\n')
 
+    def test_a_declaration_inside_a_control_head_desynced_template_is_not_pinned(self):
+        """The tenth vacuity, again on the pin with no compiler backstop.
+
+        Measured on the tree that shipped it: `DocTypeFieldIsExactlyTheUnion` DELETED
+        outright, a copy left in a template literal opened by the backtick of a regex in
+        STATEMENT position, and the field it guards widened to `DocType | 'onepager'` —
+        `tsc` exit 0, eslint clean, and every test here green. Nothing for a lint rule to
+        object to either: unlike `if (x) /`/`, a `for` head assigning `.lastIndex` raises
+        no `sonarjs/no-ignored-return` and no TS2774.
+        """
+        decoy = (
+            f'{CONTROL_HEAD_DESYNC}export const historical = `\n{self.PIN}\n`\n'
+            f'{CONTROL_HEAD_DESYNC}'
+        )
+        assert not _pinned(self.PIN, decoy)
+        # The controls: a real declaration must still be found, and still be found with a
+        # genuine statement-position regex above it — reading those must not cost the live
+        # pin, which is the false-FAILURE direction of this fix.
+        assert _pinned(self.PIN, f'{self.PIN}\n')
+        assert _pinned(self.PIN, f'{CONTROL_HEAD_DESYNC}{self.PIN}\n')
+
+    def test_an_expression_division_is_not_read_as_a_regex(self):
+        """The wrong side of the control-head fix, which is a different mistake from the
+        wrong side of the class fix and so is pinned separately.
+
+        `(w + h) / 2 + (i + j) / 3` closes two GROUPS, not two control heads, and both
+        `/`s divide. Admitting a regex after every `)` — the obvious over-broad fix — would
+        make the first `/` swallow through to the second and blank the code between them: a
+        false FAILURE, the opposite error from the vacuity above. `_closes_control_head`
+        reads the word before the matching `(` for exactly this reason.
+        """
+        divided = 'const a = (w + h) / 2 + (i + j) / 3\n'
+        assert _declarations(divided) == divided
+        # The control: a statement-position regex body IS still blanked, so this cannot
+        # pass by never reading a regex after `)` at all — which is the vacuity above.
+        assert _declarations('for (const c of []) /`/.test(c)\n') == (
+            'for (const c of []) / /.test(c)\n'
+        )
+
+    def test_a_call_expression_is_not_a_control_head(self):
+        """A function whose NAME happens to be a control keyword's neighbour must not open
+        a regex: `foo(bar) / 2` divides, and so does `matchAll(re) / n`.
+
+        Pinned separately from the group case above because the two reach
+        `_closes_control_head` by different routes — a group's `(` is preceded by an
+        operator, a call's by an identifier — and only the second could be admitted by a
+        rule that looked at the preceding word without checking it against a fixed set.
+        """
+        divided = 'const a = foo(bar) / 2 + baz(qux) / 3\n'
+        assert _declarations(divided) == divided
+        # The control, as above: a real control head must still admit one.
+        assert _declarations('if (x) /`/.test(y)\n') == 'if (x) / /.test(y)\n'
+
     def test_an_indexed_division_is_not_read_as_a_character_class(self):
         """The wrong side of the class fix, which is a different mistake from the wrong
         side of the regex fix and so is pinned separately.
@@ -1587,6 +1744,21 @@ class TestThePinMatcher:
             self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
         )
 
+    def test_a_directive_inside_a_control_head_desynced_template_is_not_the_live_one(self):
+        """The directive lookup's version of the tenth vacuity: the desynced decoy carried
+        both the control's text and a directive above it, so it was the offset inspected
+        and the live control could have no directive at all.
+        """
+        decoy = (
+            f'{CONTROL_HEAD_DESYNC}export const historical = `\n'
+            f'// {EXPECT_ERROR_DIRECTIVE} historical\n{self.PIN}\n`\n'
+            f'{CONTROL_HEAD_DESYNC}'
+        )
+        assert not _carries_expect_error(self.PIN, f'{decoy}{self.PIN}\n')
+        assert _carries_expect_error(
+            self.PIN, f'{decoy}// {EXPECT_ERROR_DIRECTIVE} live\n{self.PIN}\n'
+        )
+
     # ⚠️ The ratio cases below use the LIVE `GENERATE_DOCUMENT_SIGNATURE`, unlike `PIN`
     # above, and that is not an inconsistency: `_generate_document_ratio` counts by the
     # module constants rather than taking the text as an argument, so a synthetic
@@ -1639,6 +1811,18 @@ class TestThePinMatcher:
         decoy = (
             f'{self.CLASS_DESYNC}export const historical = `\n'
             f'  {GENERATE_DOCUMENT_SIGNATURE}\n`\n{self.CLASS_RESYNC}'
+        )
+        assert _generate_document_ratio(decoy) == (0, 0)
+        assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
+
+    def test_a_signature_inside_a_control_head_desynced_template_is_not_counted(self):
+        """The ratio's version of the tenth vacuity: a regex in statement position was read
+        as a division, so its backtick stayed live and the decoy supplied one of each side
+        on its own — the same shape as the three cases above, one delimiter over.
+        """
+        decoy = (
+            f'{CONTROL_HEAD_DESYNC}export const historical = `\n'
+            f'  {GENERATE_DOCUMENT_SIGNATURE}\n`\n{CONTROL_HEAD_DESYNC}'
         )
         assert _generate_document_ratio(decoy) == (0, 0)
         assert _generate_document_ratio(f'  {GENERATE_DOCUMENT_SIGNATURE}\n') == (1, 1)
