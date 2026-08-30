@@ -119,6 +119,20 @@
  *    (it is a fact about `hasSupersededSource`, not about English), so it is asserted
  *    per locale, driven by `supportedLanguages` so a ninth catalogue fails to compile
  *    rather than going unchecked;
+ *  * `lineage.coherentReason` losing the qualifier that scopes the crossing to another
+ *    document IN THE ROW → "gives each reason the sentence that describes IT" for
+ *    English, and "scopes coherentReason to another document IN THE ROW in all eight
+ *    catalogues" for every locale. `OWN_PHRASE.oneChain` cannot catch this: both the
+ *    unqualified and the scoped wording open with "Nothing in this row crosses
+ *    generations", so the phrase matches either, and it cannot be REPLACED by the
+ *    scope clause because that clause is shared with `supersededSourceReason` while
+ *    the phrases must be unique per reason to catch a two-way swap. Measured before
+ *    these assertions existed: restoring the unqualified English wording left
+ *    `src/pages/Prioritization src/i18n` green at 507 tests, and the German
+ *    equivalent likewise. Pinned as a PAIR, the shape the `staleReason` case uses —
+ *    the qualifier the fix added, plus the unqualified sentence a widening would
+ *    reintroduce, asserted with its terminating period — because either half alone is
+ *    satisfiable by a reword that keeps the overclaim or drops the promise;
  *  * the `repeatsAType` guard in `fresherCoherentSelection` WIDENED to every
  *    `crossGeneration` row (gating on the classification instead) → "DOES mark a
  *    supersededSource row stale, unlike its repeatedType sibling", and only that case
@@ -311,11 +325,89 @@ describe('the lineage tables are complete and resolvable', () => {
     }
     // And it must not claim a direction the rule does not compute.
     expect(sentenceOf('supersededSource')).not.toContain('earlier')
+    // `oneChain`'s SCOPE, pinned separately from its phrase above and paired the way
+    // the `staleReason` case is, because the phrase alone cannot see this. Both the
+    // pre- and post-scoping wordings open with "Nothing in this row crosses
+    // generations", so `OWN_PHRASE.oneChain` matches either and the qualifier that
+    // narrowed the claim to what `hasSupersededSource` computes was unpinned in every
+    // catalogue: measured, restoring the unqualified English sentence left
+    // `src/pages/Prioritization src/i18n` green at 507 tests. It cannot BE that
+    // phrase either — the scope clause is shared with `supersededSourceReason`, and
+    // the phrases above have to be unique per reason to catch a two-way swap.
+    //
+    // The pairing is what makes it a boundary rather than a wording preference. The
+    // positive half pins the qualifier the fix ADDED; the negative half pins the
+    // sentence a widening would REINTRODUCE, asserted with its terminating period
+    // because that full stop is exactly where the unqualified claim ended. Either
+    // alone is weaker: a sentence can carry the qualifier and still make the broader
+    // claim elsewhere, and a reword can drop the promise without restoring the old
+    // words. Why the copy must stay scoped: the rule compares a source's type against
+    // the types the OTHER selected documents hold, so a merged PRD's own
+    // `merge_input` sources — earlier generations of its own type — are never read,
+    // and an unqualified "nothing recorded here" is false for the commonest shape
+    // that reaches `coherent`.
+    expect(sentenceOf('oneChain')).toContain('of another document in this row')
+    expect(sentenceOf('oneChain')).not.toContain('points at a different generation.')
     // Distinctness catches a swap that keeps every sentence a real one — the phrase
     // assertions above catch a two-way swap, this catches a collapse onto one key.
     const sentences = (Object.keys(OWN_PHRASE) as LineageReason[]).map(sentenceOf)
 
     expect(new Set(sentences).size).toBe(sentences.length)
+  })
+
+  it('scopes coherentReason to another document IN THE ROW in all eight catalogues', () => {
+    // The English case above pins this with a phrase-plus-negative pair; this pins the
+    // other seven, for the same reason the direction case below it exists. The
+    // exposure is identical and the property is again a fact about the RULE rather
+    // than about English: `hasSupersededSource` compares a source's type against the
+    // types the OTHER selected documents hold, so a document's sources of its OWN type
+    // are never read — a merged PRD's `merge_input` sources being exactly that. An
+    // unqualified "nothing recorded here points at a different generation" is
+    // therefore false in every language for the commonest shape reaching `coherent`,
+    // and every catalogue can lose the qualifier the same way. Measured before this
+    // case existed: restoring the unqualified wording in German alone left
+    // `src/pages/Prioritization src/i18n` green, because `localeParity` compares key
+    // SETS and `i18n:check` reports a non-English string only when it is
+    // byte-identical to English.
+    //
+    // Driven by `supportedLanguages` off statically imported catalogues, so a ninth
+    // locale is a TYPECHECK failure rather than a silently skipped one.
+    const catalogues: Record<SupportedLanguage, { lineage: Record<string, string> }> = {
+      en: prioritizationEn,
+      de: prioritizationDe,
+      es: prioritizationEs,
+      fr: prioritizationFr,
+      ja: prioritizationJa,
+      ko: prioritizationKo,
+      pt: prioritizationPt,
+      zh: prioritizationZh,
+    }
+    // Each catalogue's own rendering of the qualifier, taken from the shipped bytes
+    // rather than composed here, and verified against the pre-fix bytes: every one of
+    // these eight is present now and ABSENT in the unqualified version, so each entry
+    // is the exact regression it names. (The German is "Dokuments in dieser Zeile" —
+    // the shipped copy carries that preposition.)
+    const SCOPE: Record<SupportedLanguage, string> = {
+      en: 'of another document in this row',
+      de: 'eines anderen Dokuments in dieser Zeile',
+      es: 'de otro documento de esta fila',
+      fr: "d'un autre document de cette ligne",
+      ja: 'この行にある別のドキュメント',
+      ko: '이 행에 있는 다른 문서',
+      pt: 'de outro documento desta linha',
+      zh: '本行中另一个文档',
+    }
+
+    for (const locale of supportedLanguages) {
+      const sentence = catalogues[locale].lineage.coherentReason
+
+      // Non-vacuity first: a path typo or a catalogue whose `lineage` block went
+      // missing would satisfy a `toContain` on nothing by failing loudly, but an
+      // EMPTY string would read as a real absence rather than a lookup miss.
+      expect(sentence, `${locale} coherentReason`).toBeTruthy()
+      expect(sentence, `${locale} scopes the crossing to this row`)
+        .toContain(SCOPE[locale])
+    }
   })
 
   it('claims no DIRECTION for supersededSource in any of the eight catalogues', () => {
