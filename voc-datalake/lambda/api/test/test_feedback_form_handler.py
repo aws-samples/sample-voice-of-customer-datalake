@@ -5661,12 +5661,20 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         """The scan's REACH, which is a different claim from its accuracy.
 
         `CHANGELOG.md` tells an operator that the ids it names went from resolving
-        to answering 404, and that a literal tab or newline is NOT something the
-        scan has to find. Both halves rest on one fact about a file this one does
-        not own: powertools' capture group admits a space but excludes a tab and a
-        newline, so an id containing either never matched a route and answered 404
-        before this change as well as after — unreachable rather than
+        to answering 404, and that a literal tab or newline — and a non-ASCII symbol
+        or space — is NOT something the scan has to find. Both halves rest on one
+        fact about a file this one does not own: powertools' capture group lists a
+        literal space but no other whitespace, and reaches past ASCII only through
+        `\\w`, which is Unicode-aware for LETTERS AND DIGITS alone. So an id holding
+        a tab, a newline, or a non-ASCII symbol never matched a route and answered
+        404 before this change as well as after — unreachable rather than
         reachable-then-orphaned.
+
+        The `\\w` half is asserted rather than the ASCII boundary, because that is
+        where the line actually falls and the two are easy to conflate: `'café'` and
+        `'表単'` are both non-ASCII and both resolved, while `'form€a'` is non-ASCII
+        and never did. An upgrade note that said "any non-ASCII character" would send
+        an operator to rename a row that was never served.
 
         That is the SAME distinction the whole upgrade note turns on, applied one
         level down: ` abc123` is exempt because it never resolved, and `abc<TAB>def`
@@ -5687,7 +5695,7 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         path that matches NOTHING — which would report every character as excluded
         and pass an assertion set made only of exclusions.
         """
-        for reachable in ('my form', '   ', 'a:b', 'café'):
+        for reachable in ('my form', '   ', 'a:b', 'café', '表単'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(
@@ -5707,7 +5715,7 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'not belong in the scan at all'
             )
 
-        for unreachable in ('abc\tdef', 'abc\ndef'):
+        for unreachable in ('abc\tdef', 'abc\ndef', 'form€a', 'form\xa0a'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(
@@ -5717,11 +5725,12 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
             ]
             assert not admitting, (
                 f'{unreachable!r} is now admitted by {admitting} — powertools has '
-                'widened its capture group, so an id containing a tab or a newline '
-                'CAN reach a handler and is reachable-then-orphaned after all. '
-                "CHANGELOG.md's paragraph saying the scan need not find one is now "
-                'wrong, and the scan itself cannot find one through a line-oriented '
-                'pipeline'
+                'widened its capture group, so this id CAN reach a handler and is '
+                'reachable-then-orphaned after all. '
+                "CHANGELOG.md's paragraph saying the scan need not find it is now "
+                'wrong, in the under-reporting direction: an operator is told the '
+                'row was never served when it was. (For a tab or a newline the '
+                'scan could not find one anyway, through a line-oriented pipeline.)'
             )
 
     def test_a_trailing_newline_is_not_a_valid_form_id(

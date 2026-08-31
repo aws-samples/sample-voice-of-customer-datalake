@@ -168,14 +168,21 @@ are relative-path segments, so a client resolves them away when it joins them on
 the API base and the request addresses a different resource than the one asked for.
 `...`, `.hidden-form` and `form.` are ordinary ids and are accepted.
 
-Ids containing anything else — `:`, `+`, `@`, `%`, `~`, a non-ASCII character, or a
-space *within* the id — *did* resolve before the change that closed #379 and now
-answer 404 on all eight of their routes. If you seeded or imported form ids by hand,
-the pre-upgrade scan in [CHANGELOG.md](../CHANGELOG.md) finds them (it flags a space
-as readily as a colon); there is no compatibility shim. A *tab* or newline inside an
-id is the one shape that is not in scope, and not because the scan would miss it: the
-route's own capture group excludes both characters, so such an id never reached a
-handler and answered 404 before this change as well as after.
+Ids containing anything else — `:`, `+`, `@`, `%`, `~`, a non-ASCII **letter or
+digit** such as `café` or `表単`, or a space *within* the id — *did* resolve before
+the change that closed #379 and now answer 404 on all eight of their routes. If you
+seeded or imported form ids by hand, the pre-upgrade scan in
+[CHANGELOG.md](../CHANGELOG.md) finds them (it flags a space as readily as a colon);
+there is no compatibility shim.
+
+Some shapes are **not** in scope, and not because the scan would miss them — it flags
+them too. They never reached a handler, so they answered 404 before this change as
+well as after: a *tab* or newline inside an id, and a non-ASCII character that is not
+a letter or digit (a symbol or punctuation mark like `€`, `—` or an emoji, or a
+non-ASCII space such as U+00A0 or U+3000). The route's own capture group is what
+excludes them: the only part of it that reaches beyond ASCII is `\w`, which is
+Unicode-aware for letters and digits alone. That is also why an ASCII space *is* in
+scope while a tab is not — the class lists a literal space, and `\w` covers neither.
 
 Two consequences are worth knowing if you integrate against these routes, both new
 in the change that closed #379:

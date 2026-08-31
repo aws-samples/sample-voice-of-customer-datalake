@@ -168,10 +168,13 @@ FORM_ID_LENGTH = 8
 # written. It costs the fix nothing: `.` cannot close a JavaScript string, open
 # a tag or start a statement, so admitting it moves no character the #379
 # serializer depends on. `test_a_dotted_hand_seeded_form_id_still_resolves` is
-# what fails if it is dropped again, and the remaining exclusions (`:`, `+`,
-# `@`, `%`, everything non-ASCII, and a space inside an id) are named to an
-# operator with a pre-upgrade scan in CHANGELOG.md's upgrade notes, since for
-# those the 404 is real.
+# what fails if it is dropped again, and the remaining exclusions that a route
+# COULD resolve (`:`, `+`, `@`, `%`, a non-ASCII letter or digit, and a space
+# inside an id) are named to an operator with a pre-upgrade scan in CHANGELOG.md's
+# upgrade notes, since for those the 404 is real. A non-ASCII SYMBOL or space is
+# not on that list and is not the scan's to find: the route's capture group reaches
+# past ASCII only through `\w`, which covers letters and digits, so `café`
+# resolved while `form€a` never matched a route at all.
 #
 # The `(?!\.{1,2}\Z)` in front of the class is what makes admitting `.` safe, and
 # it is about URL RESOLUTION rather than about DynamoDB: '.' and '..' are the
@@ -262,17 +265,23 @@ def _validated_form_id(raw: Any) -> str | None:
     routes, and for a hand-seeded row whose id resolved before, that is a reachable
     record becoming unreachable rather than a probe being refused. `.` is admitted
     for exactly that reason (see the pattern above). The characters still outside
-    the class — `:`, `+`, `@`, `%`, `~`, everything non-ASCII, and a SPACE within
-    an id such as `'my form'` — are a deliberate narrowing rather than an
-    oversight, and the upgrade path is an operator scan of the aggregates table for
-    `FORM#` ids outside the class, written down in CHANGELOG.md's upgrade notes
-    rather than left for whoever reads the 404.
+    the class — `:`, `+`, `@`, `%`, `~`, a non-ASCII LETTER OR DIGIT such as
+    `'café'`, and a SPACE within an id such as `'my form'` — are a deliberate
+    narrowing rather than an oversight, and the upgrade path is an operator scan of
+    the aggregates table for `FORM#` ids outside the class, written down in
+    CHANGELOG.md's upgrade notes rather than left for whoever reads the 404.
 
-    A space rather than "whitespace" in that list, because the two are not the same
-    category and only one of them is this change's to answer for: the route's own
-    capture group admits a space but excludes a tab and a newline, so an id holding
-    either never matched a route and answered 404 before this change as well as
-    after. `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` pins that
+    That list is narrower than "everything non-ASCII" and than "whitespace", and
+    both narrowings come from ONE fact about the route rather than about this
+    pattern: powertools' capture group reaches past ASCII only through `\\w`, which
+    is Unicode-aware for letters and digits alone, and it lists a literal space but
+    no other whitespace. So `'café'` and `'my form'` matched a route and are the
+    scan's to find, while a tab, a newline, and a non-ASCII SYMBOL or space
+    (`'form€a'`, `'form\\xa0a'`) never matched one at all — those rows answered 404
+    before this change as well as after, so they are unreachable rather than
+    reachable-then-orphaned. Telling an operator to rename one would be renaming a
+    row that was never served.
+    `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` pins the whole
     split off the live resolver, since it is what bounds the operator scan's reach.
 
     Interior whitespace belongs in that list rather than under the `.strip()`

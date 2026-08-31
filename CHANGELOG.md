@@ -110,17 +110,17 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   API base, so such an id addressed a different resource rather than a form.
 
   **Check before upgrading if you have hand-seeded or imported form ids.** An id containing anything
-  outside that class — `:`, `+`, `@`, `%`, `~`, any non-ASCII character, or a space *within* the
-  id, as in `a:b`, `café` or `my form` — *did* resolve on all eight of its routes before this change
-  and now answers `404 Form not found` on all of them. Unlike an id addressed with surrounding
+  outside that class — `:`, `+`, `@`, `%`, `~`, a non-ASCII **letter or digit**, or a space *within*
+  the id, as in `a:b`, `café` or `my form` — *did* resolve on all eight of its routes before this
+  change and now answers `404 Form not found` on all of them. Unlike an id addressed with surrounding
   whitespace, those rows are genuinely reachable-then-orphaned, so scan the aggregates table for them
   first and rename any you find (write the record under a new `sk` and repoint the embed snippet; the
   old row's submissions stay under their original `source_channel`, so also rewrite those if the
   form's stats matter):
 
   ```bash
-  aws dynamodb scan --table-name "$AGGREGATES_TABLE" \
-    --filter-expression 'pk = :pk' \
+  aws dynamodb query --table-name "$AGGREGATES_TABLE" \
+    --key-condition-expression 'pk = :pk' \
     --expression-attribute-values '{":pk":{"S":"FEEDBACK_FORM"}}' \
     --projection-expression 'sk' --output json --query 'Items[].sk.S' \
   | jq -r '.[]' | sed 's/^FORM#//' \
@@ -131,7 +131,16 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   (`jq` is the same tool `voc-datalake/frontend/scripts/deploy.sh` already needs, so a machine that
   can deploy this stack can run the scan.)
 
-  Three things about that command are deliberate. It asks for `--output json` and splits with `jq`
+  Four things about that command are deliberate. It is a `query` rather than a `scan`, because `pk` is
+  the table's partition key and `FEEDBACK_FORM` is one whole partition — the same read `list_forms`
+  makes in `lambda/api/feedback_form_handler.py`, for the same reason. This table is shared: it also
+  holds `METRIC#`, `LOGS#`, `PROJECT#`, `SOURCE#`, `SOURCE_RUN#`, `SCRAPER#`, `SCRAPER_RUN#`,
+  `MANUAL_IMPORT#`, `SETTINGS#` and `VOTING_SESSION` partitions, and the `METRIC#`/`LOGS#` rows are
+  per-day, so on a deployment with history the forms are a small minority and a filtered `scan` would
+  read — and bill for — overwhelmingly rows it then discards. It also removes a second way for the
+  silence below to be misleading: DynamoDB applies its 1 MB page limit *before* a filter expression,
+  so a filtered `scan` can return a page of zero matches with more pages left, where a `query` reads
+  only the partition that can contain a hit. Next, it asks for `--output json` and splits with `jq`
   rather than `--output text | tr '\t' '\n'`, because the classifier has to agree with the code's own
   check on every *stored* shape and `tr` cannot tell a separator tab from a tab inside an id:
   `--output text` separates values with tabs, so `FORM#abc<TAB>def` would arrive as the two lines
@@ -146,11 +155,20 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   first page.
 
   What the scan does **not** need to find, so that its silence means what it says: an id containing a
-  literal tab or newline. Those cannot occur in an id any route ever resolved, because the route's own
-  capture group excludes both characters (it admits a space, which is why `my form` is in scope
-  above), so such a row answered 404 before this change as well as after and is not
-  reachable-then-orphaned. That is also why the tab example above is about the classifier
+  literal tab or newline, or a non-ASCII character that is not a letter or digit — a symbol or
+  punctuation mark like `€`, `—`, `°` or an emoji, or a non-ASCII space such as U+00A0 (NBSP) or
+  U+3000. None of those can occur in an id any route ever resolved, because the route's own capture
+  group admits only `[-._~()'!*:@,;=+&$%<> \[\]{}|^\w]`, and `\w` — the one member of that class that
+  reaches beyond ASCII — is Unicode-aware for *letters and digits* only. So `café` and `表単` did
+  resolve and are in scope above, while `form€a` and `form\xa0a` never matched a route at all: those
+  rows answered 404 before this change as well as after and are not reachable-then-orphaned. The same
+  `\w` fact is why a space is in scope but a tab is not — the class lists a literal space and `\w`
+  covers neither. The scan still *flags* every one of these, which is the safe direction (it
+  over-reports rather than misses), and it is also why the tab example above is about the classifier
   disagreeing with the code rather than about a form being missed.
+  `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` asserts this split off the installed
+  resolver, so a powertools upgrade that widened the class fails a test rather than silently making
+  this paragraph wrong.
 - **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
   request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
   answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route
