@@ -5665,9 +5665,9 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         or space — is NOT something the scan has to find. Both halves rest on one
         fact about a file this one does not own: powertools' capture group lists a
         literal space but no other whitespace, and reaches past ASCII only through
-        `\\w`, which is Unicode-aware for LETTERS AND DIGITS alone. So an id holding
-        a tab, a newline, or a non-ASCII symbol never matched a route and answered
-        404 before this change as well as after — unreachable rather than
+        `\\w`, which matches any Unicode LETTER OR NUMBER. So an id holding a tab, a
+        newline, or a non-ASCII symbol never matched a route and answered 404 before
+        this change as well as after — unreachable rather than
         reachable-then-orphaned.
 
         The `\\w` half is asserted rather than the ASCII boundary, because that is
@@ -5675,6 +5675,20 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         `'表単'` are both non-ASCII and both resolved, while `'form€a'` is non-ASCII
         and never did. An upgrade note that said "any non-ASCII character" would send
         an operator to rename a row that was never served.
+
+        The `\\w` boundary is sampled across CATEGORIES rather than at the ASCII
+        line, and that is the point of `'hawaiʼi-form'` and `'surface-m²'` being in
+        the reachable loop next to `'café'`. `\\w` spans every `L*` and `N*`
+        category — `Ll`, `Lm`, `Lo`, `Lt`, `Lu`, `Nd`, `Nl`, `No` — so a modifier
+        letter (U+02BC, the correct ʻokina, which looks like an apostrophe) and a
+        superscript or fraction are routable while reading to a human as
+        punctuation. A note glossing `\\w` as "a letter or a digit" puts those in the
+        SAME sentence as `€` and `—`, and that error runs in the expensive
+        direction: an operator sees `hawaiʼi-form` printed by the scan, classifies
+        it out of scope, skips the rename, and the row 404s in production. Every
+        other imprecision in this note over-reports; this one loses a reachable row,
+        which is why the loop samples `Lm` and `No` rather than trusting `Ll` and
+        `Lo` to stand for all eight.
 
         That is the SAME distinction the whole upgrade note turns on, applied one
         level down: ` abc123` is exempt because it never resolved, and `abc<TAB>def`
@@ -5695,7 +5709,8 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         path that matches NOTHING — which would report every character as excluded
         and pass an assertion set made only of exclusions.
         """
-        for reachable in ('my form', '   ', 'a:b', 'café', '表単'):
+        for reachable in ('my form', '   ', 'a:b', 'café', '表単',
+                          'hawaiʼi-form', 'surface-m²'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(
@@ -5715,7 +5730,15 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'not belong in the scan at all'
             )
 
-        for unreachable in ('abc\tdef', 'abc\ndef', 'form€a', 'form\xa0a'):
+        # The last entry is the DECOMPOSED spelling of `caf\u00e9`, written with an
+        # escape because it is visually identical to the composed `caf\u00e9` in
+        # the loop above, and the whole point is that the two are different strings
+        # with different verdicts: a combining accent is a MARK, which `\w` does
+        # not match, so the decomposed form never reached a route while the composed
+        # one did. Both documents name `caf\u00e9` in scope without saying which of
+        # the two spellings they mean.
+        for unreachable in ('abc\tdef', 'abc\ndef', 'form€a', 'form\xa0a',
+                            'cafe\u0301'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(

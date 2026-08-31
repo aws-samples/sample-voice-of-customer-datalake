@@ -169,12 +169,14 @@ FORM_ID_LENGTH = 8
 # a tag or start a statement, so admitting it moves no character the #379
 # serializer depends on. `test_a_dotted_hand_seeded_form_id_still_resolves` is
 # what fails if it is dropped again, and the remaining exclusions that a route
-# COULD resolve (`:`, `+`, `@`, `%`, a non-ASCII letter or digit, and a space
+# COULD resolve (`:`, `+`, `@`, `%`, a non-ASCII letter or NUMBER, and a space
 # inside an id) are named to an operator with a pre-upgrade scan in CHANGELOG.md's
-# upgrade notes, since for those the 404 is real. A non-ASCII SYMBOL or space is
-# not on that list and is not the scan's to find: the route's capture group reaches
-# past ASCII only through `\w`, which covers letters and digits, so `café`
-# resolved while `form€a` never matched a route at all.
+# upgrade notes, since for those the 404 is real. A non-ASCII SYMBOL, punctuation
+# mark, combining accent or space is not on that list and is not the scan's to
+# find: the route's capture group reaches past ASCII only through `\w`, which
+# matches any Unicode letter or number — every `L*` and `N*` category, so a modifier
+# letter (`hawaiʼi-form`) and a fraction (`surface-m²`) are in scope despite reading
+# as punctuation — so `café` resolved while `form€a` never matched a route at all.
 #
 # The `(?!\.{1,2}\Z)` in front of the class is what makes admitting `.` safe, and
 # it is about URL RESOLUTION rather than about DynamoDB: '.' and '..' are the
@@ -265,7 +267,7 @@ def _validated_form_id(raw: Any) -> str | None:
     routes, and for a hand-seeded row whose id resolved before, that is a reachable
     record becoming unreachable rather than a probe being refused. `.` is admitted
     for exactly that reason (see the pattern above). The characters still outside
-    the class — `:`, `+`, `@`, `%`, `~`, a non-ASCII LETTER OR DIGIT such as
+    the class — `:`, `+`, `@`, `%`, `~`, a non-ASCII LETTER OR NUMBER such as
     `'café'`, and a SPACE within an id such as `'my form'` — are a deliberate
     narrowing rather than an oversight, and the upgrade path is an operator scan of
     the aggregates table for `FORM#` ids outside the class, written down in
@@ -274,15 +276,26 @@ def _validated_form_id(raw: Any) -> str | None:
     That list is narrower than "everything non-ASCII" and than "whitespace", and
     both narrowings come from ONE fact about the route rather than about this
     pattern: powertools' capture group reaches past ASCII only through `\\w`, which
-    is Unicode-aware for letters and digits alone, and it lists a literal space but
-    no other whitespace. So `'café'` and `'my form'` matched a route and are the
-    scan's to find, while a tab, a newline, and a non-ASCII SYMBOL or space
-    (`'form€a'`, `'form\\xa0a'`) never matched one at all — those rows answered 404
-    before this change as well as after, so they are unreachable rather than
+    matches any Unicode letter or number, and it lists a literal space but no other
+    whitespace. So `'café'` and `'my form'` matched a route and are the scan's to
+    find, while a tab, a newline, and a non-ASCII SYMBOL, PUNCTUATION MARK,
+    COMBINING ACCENT or space (`'form€a'`, `'form\\xa0a'`, `'form«a'`, an NFD
+    `'cafe\\u0301'`) never matched one at all — those rows answered 404 before this
+    change as well as after, so they are unreachable rather than
     reachable-then-orphaned. Telling an operator to rename one would be renaming a
     row that was never served.
     `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` pins the whole
     split off the live resolver, since it is what bounds the operator scan's reach.
+
+    Read `\\w` as the `L*` and `N*` CATEGORIES rather than as "letters and digits",
+    because the difference falls on the shapes an operator is most likely to
+    misfile: a modifier letter (`'hawaiʼi-form'`, whose `ʼ` is U+02BC — how an
+    ʻokina is correctly spelled, and visually an apostrophe), a fraction or
+    superscript (`'half-½-price'`, `'surface-m²'`) and a roman numeral
+    (`'section-Ⅷ'`) are all `\\w`, hence routable, hence the scan's to find, however
+    much they read as punctuation. That is the ONE direction of this split with a
+    real cost: over-reporting wastes a rename, but under-reporting means an operator
+    reads a printed row as out of scope, skips it, and it 404s in production.
 
     Interior whitespace belongs in that list rather than under the `.strip()`
     argument below, and the two are easy to conflate: that argument is about an id

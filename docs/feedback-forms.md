@@ -169,20 +169,28 @@ the API base and the request addresses a different resource than the one asked f
 `...`, `.hidden-form` and `form.` are ordinary ids and are accepted.
 
 Ids containing anything else — `:`, `+`, `@`, `%`, `~`, a non-ASCII **letter or
-digit** such as `café` or `表単`, or a space *within* the id — *did* resolve before
-the change that closed #379 and now answer 404 on all eight of their routes. If you
-seeded or imported form ids by hand, the pre-upgrade scan in
+number** such as `café`, `表単`, `hawaiʼi-form` or `surface-m²`, or a space *within* the
+id — *did* resolve before the change that closed #379 and now answer 404 on all eight
+of their routes. If you seeded or imported form ids by hand, the pre-upgrade scan in
 [CHANGELOG.md](../CHANGELOG.md) finds them (it flags a space as readily as a colon);
 there is no compatibility shim.
 
 Some shapes are **not** in scope, and not because the scan would miss them — it flags
 them too. They never reached a handler, so they answered 404 before this change as
-well as after: a *tab* or newline inside an id, and a non-ASCII character that is not
-a letter or digit (a symbol or punctuation mark like `€`, `—` or an emoji, or a
-non-ASCII space such as U+00A0 or U+3000). The route's own capture group is what
-excludes them: the only part of it that reaches beyond ASCII is `\w`, which is
-Unicode-aware for letters and digits alone. That is also why an ASCII space *is* in
-scope while a tab is not — the class lists a literal space, and `\w` covers neither.
+well as after: a *tab* or newline inside an id, and a non-ASCII **symbol, punctuation
+mark, combining accent or space** (`€`, `—`, `«`, an emoji, U+00A0, U+3000, or the
+`e` + U+0301 spelling of `é`). The route's own capture group is what excludes them:
+the only part of it that reaches beyond ASCII is `\w`, which matches any Unicode
+letter or number and nothing else. Read that as the `L*`/`N*` categories rather than
+as "letters and digits", because the surprising members are all **in** scope: a
+modifier letter (the `ʼ` of `hawaiʼi-form`, U+02BC, which is how an ʻokina is
+correctly spelled and looks like an apostrophe), a fraction or superscript
+(`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are letters and
+numbers to `\w`, so those rows resolved and need renaming however much they read as
+punctuation. Misreading one of those as out of scope is the costly direction: the
+rename is skipped and the row 404s in production. That `\w` fact is also why an ASCII
+space *is* in scope while a tab is not — the class lists a literal space, and `\w`
+covers neither.
 
 Two consequences are worth knowing if you integrate against these routes, both new
 in the change that closed #379:
