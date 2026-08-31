@@ -4234,7 +4234,10 @@ class TestTheFormIdBoundIsUniversalRatherThanAListOfRoutes:
 
     That claim was false when it was written — `/config`, `/submit`, `/iframe`,
     `/stats` and `/submissions` were covered and the authenticated CRUD trio was
-    not, while the docstring enumerated five routes as if they were all of them.
+    not, while the docstring enumerated only those five public and read routes as
+    if they were all of them. (It now enumerates all eight, which is the number
+    `test_the_derivation_sees_the_routes_this_module_actually_has` pins; the five
+    here is the historical shape of the defect, not a live count.)
     A prose list is the wrong instrument for a universal claim: it goes stale
     silently, and the reader who trusts it assumes a protection that is not there.
 
