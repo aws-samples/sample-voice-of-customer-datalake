@@ -139,9 +139,9 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   nothing at all rather than a blank line indistinguishable from a finding — `length` rather than the
   more idiomatic `NF` because `awk` splits fields on whitespace, so `NF` is also 0 for an id
   consisting *only* of spaces or a tab, which the routes refuse and the scan therefore has to flag.
-  And it relies on the AWS CLI's
-  default auto-pagination to walk a table larger than one page — if you disable that (`--no-paginate`,
-  `--max-items`, or `AWS_PAGER`/CLI config changes), the silence covers only the first page.
+  And it relies on the AWS CLI's default auto-pagination to walk a table larger than one page — if
+  you disable that (`--no-paginate`, `--max-items`, or `AWS_PAGER`/CLI config changes), the silence
+  covers only the first page.
   One residual gap, since no line-oriented pipeline can close it: an id containing a literal newline
   splits into two lines whatever the transport, so if you may have seeded such an id, find it with a
   scan that keeps the JSON intact (`--output json --query 'Items[].sk.S'` and inspect the array).
