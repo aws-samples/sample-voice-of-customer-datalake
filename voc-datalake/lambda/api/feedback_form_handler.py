@@ -161,17 +161,17 @@ FORM_ID_LENGTH = 8
 # used to resolve into a 404 on all eight of its routes, and unlike an id merely
 # ADDRESSED with surrounding whitespace there is no argument that such a row was
 # already unreachable (a row STORED with a space in its id has no such argument
-# either, which is why the scan covers it). `acme.website`
-# resolved correctly before — the dot was part of the key and the key was found —
-# so narrowing it out is data loss dressed as hardening. A dotted id is also the
-# most plausible hand-seeded spelling after `website-form`, since it is how a
-# domain is written. It costs the fix nothing: `.` cannot close a JavaScript
-# string, open a tag or start a statement, so admitting it moves no character the
-# #379 serializer depends on. `test_a_dotted_hand_seeded_form_id_still_resolves`
-# is what fails if it is dropped again, and the remaining exclusions (`:`, `+`,
-# `@`, `%`, everything non-ASCII, and whitespace inside an id) are named to an
-# operator with a pre-upgrade scan in CHANGELOG.md's upgrade notes, since for those
-# the 404 is real.
+# either, which is why the scan covers it). `acme.website` resolved correctly
+# before — the dot was part of the key and the key was found — so narrowing it
+# out is data loss dressed as hardening. A dotted id is also the most plausible
+# hand-seeded spelling after `website-form`, since it is how a domain is
+# written. It costs the fix nothing: `.` cannot close a JavaScript string, open
+# a tag or start a statement, so admitting it moves no character the #379
+# serializer depends on. `test_a_dotted_hand_seeded_form_id_still_resolves` is
+# what fails if it is dropped again, and the remaining exclusions (`:`, `+`,
+# `@`, `%`, everything non-ASCII, and a space inside an id) are named to an
+# operator with a pre-upgrade scan in CHANGELOG.md's upgrade notes, since for
+# those the 404 is real.
 #
 # The `(?!\.{1,2}\Z)` in front of the class is what makes admitting `.` safe, and
 # it is about URL RESOLUTION rather than about DynamoDB: '.' and '..' are the
@@ -262,11 +262,18 @@ def _validated_form_id(raw: Any) -> str | None:
     routes, and for a hand-seeded row whose id resolved before, that is a reachable
     record becoming unreachable rather than a probe being refused. `.` is admitted
     for exactly that reason (see the pattern above). The characters still outside
-    the class — `:`, `+`, `@`, `%`, `~`, everything non-ASCII, and whitespace
-    WITHIN an id such as `'my form'` — are a deliberate narrowing rather than an
+    the class — `:`, `+`, `@`, `%`, `~`, everything non-ASCII, and a SPACE within
+    an id such as `'my form'` — are a deliberate narrowing rather than an
     oversight, and the upgrade path is an operator scan of the aggregates table for
     `FORM#` ids outside the class, written down in CHANGELOG.md's upgrade notes
     rather than left for whoever reads the 404.
+
+    A space rather than "whitespace" in that list, because the two are not the same
+    category and only one of them is this change's to answer for: the route's own
+    capture group admits a space but excludes a tab and a newline, so an id holding
+    either never matched a route and answered 404 before this change as well as
+    after. `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` pins that
+    split off the live resolver, since it is what bounds the operator scan's reach.
 
     Interior whitespace belongs in that list rather than under the `.strip()`
     argument below, and the two are easy to conflate: that argument is about an id

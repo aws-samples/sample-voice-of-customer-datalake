@@ -110,7 +110,7 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   API base, so such an id addressed a different resource rather than a form.
 
   **Check before upgrading if you have hand-seeded or imported form ids.** An id containing anything
-  outside that class — `:`, `+`, `@`, `%`, `~`, any non-ASCII character, or whitespace *within* the
+  outside that class — `:`, `+`, `@`, `%`, `~`, any non-ASCII character, or a space *within* the
   id, as in `a:b`, `café` or `my form` — *did* resolve on all eight of its routes before this change
   and now answers `404 Form not found` on all of them. Unlike an id addressed with surrounding
   whitespace, those rows are genuinely reachable-then-orphaned, so scan the aggregates table for them
@@ -132,19 +132,25 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   can deploy this stack can run the scan.)
 
   Three things about that command are deliberate. It asks for `--output json` and splits with `jq`
-  rather than `--output text | tr '\t' '\n'`, because `--output text` separates values with tabs and
-  `tr` cannot tell a separator tab from a tab *inside* an id — `FORM#abc<TAB>def` would arrive as the
-  two well-formed lines `abc` and `def`, and a form the routes will refuse would be reported as
-  absent. `length($0) &&` skips the empty record, so a table holding no `FEEDBACK_FORM` rows prints
-  nothing at all rather than a blank line indistinguishable from a finding — `length` rather than the
-  more idiomatic `NF` because `awk` splits fields on whitespace, so `NF` is also 0 for an id
-  consisting *only* of spaces or a tab, which the routes refuse and the scan therefore has to flag.
-  And it relies on the AWS CLI's default auto-pagination to walk a table larger than one page — if
-  you disable that (`--no-paginate`, `--max-items`, or `AWS_PAGER`/CLI config changes), the silence
-  covers only the first page.
-  One residual gap, since no line-oriented pipeline can close it: an id containing a literal newline
-  splits into two lines whatever the transport, so if you may have seeded such an id, find it with a
-  scan that keeps the JSON intact (`--output json --query 'Items[].sk.S'` and inspect the array).
+  rather than `--output text | tr '\t' '\n'`, because the classifier has to agree with the code's own
+  check on every *stored* shape and `tr` cannot tell a separator tab from a tab inside an id:
+  `--output text` separates values with tabs, so `FORM#abc<TAB>def` would arrive as the two lines
+  `abc` and `def` and be classified as two ids that are not the one stored. `length($0) &&` is there
+  for the whitespace-only id — `awk` splits fields on whitespace, so the more idiomatic `NF` is 0 for
+  an id of nothing but spaces, which the routes refuse and the scan therefore has to flag, while
+  `length($0)` skips only the genuinely empty string. (It also skips an `sk` of exactly `FORM#`, an
+  empty id, and that is correct to skip: an empty path segment does not match the route, so such a row
+  was never served by any of the eight and its status is unchanged.) And it relies on the AWS CLI's
+  default auto-pagination to walk a table larger than one page — if you disable that
+  (`--no-paginate`, `--max-items`, or `AWS_PAGER`/CLI config changes), the silence covers only the
+  first page.
+
+  What the scan does **not** need to find, so that its silence means what it says: an id containing a
+  literal tab or newline. Those cannot occur in an id any route ever resolved, because the route's own
+  capture group excludes both characters (it admits a space, which is why `my form` is in scope
+  above), so such a row answered 404 before this change as well as after and is not
+  reachable-then-orphaned. That is also why the tab example above is about the classifier
+  disagreeing with the code rather than about a form being missed.
 - **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
   request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
   answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route

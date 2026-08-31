@@ -2225,6 +2225,39 @@ def _route_pattern_for_iframe(handler) -> re.Pattern:
     return routes[0].rule
 
 
+def _form_id_route_paths(handler, form_id: str) -> list[tuple[str, str, re.Pattern]]:
+    """Every form-id route's concrete path with `form_id` substituted in.
+
+    The generalization of `_route_pattern_for_iframe` to the whole set, and it
+    reaches into `app._dynamic_routes` for the same reason that one does: the
+    question is what the INSTALLED powertools admits, so a copy of its capture
+    group pasted here would answer it in the helper.
+
+    Substituting into the compiled pattern rather than composing the path from a
+    route table restated here, so the eight paths cannot drift from the eight
+    routes. The group is spliced out by locating `(?P<form_id>` and the `]+)` that
+    closes it, NOT by a non-greedy `\\(\\?P<form_id>.+?\\)` — powertools' class
+    contains a literal `)`, so the lazy form stops inside it and yields a path
+    every route rejects. That failure is silent in the direction that matters (an
+    "excluded" verdict for every character), which is why the caller's positive
+    control on a well-formed id is not optional.
+    """
+    paths = []
+    for route in handler.app._dynamic_routes:
+        pattern = route.rule.pattern
+        start = pattern.find('(?P<form_id>')
+        if start < 0:
+            continue
+        end = pattern.index(']+)', start) + len(']+)')
+        path = pattern[:start] + form_id + pattern[end:]
+        paths.append((
+            route.method,
+            path.removeprefix('^').removesuffix('/*$'),
+            route.rule,
+        ))
+    return paths
+
+
 def _init_call_argument(page: str) -> str:
     """The text between `VoCFeedbackForm.init(` and the end of the page.
 
@@ -5570,12 +5603,18 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         are the exclusions the upgrade notes tell an operator to SCAN for, so they
         have to be genuinely refused for that instruction to describe the code.
         `my form` earns its place for the same reason `a:b` has one: a stored id with
-        INTERIOR whitespace resolved before this change (every route keyed
+        an INTERIOR SPACE resolved before this change (every route keyed
         `f'FORM#{form_id}'` with nothing checked) and answers 404 after it, so it is
         reachable-then-orphaned rather than exempt. That is why the whitespace
         exemption in `CHANGELOG.md` and `docs/feedback-forms.md` is scoped to an id
         merely ADDRESSED with surrounding space — ` abc123` never resolved to
         `abc123` — and not to whitespace-bearing ids as a category.
+
+        A space rather than whitespace generally, which is the narrower claim and
+        the true one: a tab or a newline inside an id never matched the route either,
+        so such a row is unreachable rather than orphaned and is out of the scan's
+        scope. `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` below
+        is where that split is asserted, off the live resolver.
 
         `my form` is deliberately NOT an independent detector, and saying so is the
         honest version: `'a b'` in the loop above already fails on any class that
@@ -5614,6 +5653,75 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 f'{scanned!r} was accepted — CHANGELOG.md tells an operator to '
                 'scan stored ids for exactly these, so if one is now admitted the '
                 'upgrade note describes a refusal that does not happen'
+            )
+
+    def test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve(
+        self, feedback_form_handler
+    ):
+        """The scan's REACH, which is a different claim from its accuracy.
+
+        `CHANGELOG.md` tells an operator that the ids it names went from resolving
+        to answering 404, and that a literal tab or newline is NOT something the
+        scan has to find. Both halves rest on one fact about a file this one does
+        not own: powertools' capture group admits a space but excludes a tab and a
+        newline, so an id containing either never matched a route and answered 404
+        before this change as well as after — unreachable rather than
+        reachable-then-orphaned.
+
+        That is the SAME distinction the whole upgrade note turns on, applied one
+        level down: ` abc123` is exempt because it never resolved, and `abc<TAB>def`
+        is out of scope for the same reason. Only `my form` and `'   '` are in
+        scope, because those really did resolve — the merge base keyed
+        `f'FORM#{form_id}'` with nothing checked — and now do not.
+
+        Asserted off the live resolver rather than from the pattern quoted in the
+        note, because the note's scope is only as true as the installed powertools:
+        an upgrade that widened the class to admit a tab would make a tab-bearing id
+        reachable, and then the paragraph saying the scan need not look for one
+        would be wrong in the under-reporting direction. This is that sentence as an
+        assertion.
+
+        The `my form` half is the positive control, and it is doing real work here
+        rather than balancing the loop for symmetry: `_form_id_route_paths` splices
+        a substring out of a regex, and the plausible way for it to break yields a
+        path that matches NOTHING — which would report every character as excluded
+        and pass an assertion set made only of exclusions.
+        """
+        for reachable in ('my form', '   ', 'a:b', 'café'):
+            admitting = [
+                f'{method} {path}'
+                for method, path, rule in _form_id_route_paths(
+                    feedback_form_handler, reachable
+                )
+                if rule.match(path)
+            ]
+            assert len(admitting) == 8, (
+                f'{reachable!r} is admitted by {len(admitting)} of the form-id '
+                'routes, expected all 8 — CHANGELOG.md lists this id as one that '
+                'DID resolve before the validator existed, so if no route matches '
+                'it the upgrade note is telling an operator to scan for a row that '
+                'was never reachable'
+            )
+            assert feedback_form_handler._validated_form_id(reachable) is None, (
+                f'{reachable!r} is accepted, so it did not stop resolving and does '
+                'not belong in the scan at all'
+            )
+
+        for unreachable in ('abc\tdef', 'abc\ndef'):
+            admitting = [
+                f'{method} {path}'
+                for method, path, rule in _form_id_route_paths(
+                    feedback_form_handler, unreachable
+                )
+                if rule.match(path)
+            ]
+            assert not admitting, (
+                f'{unreachable!r} is now admitted by {admitting} — powertools has '
+                'widened its capture group, so an id containing a tab or a newline '
+                'CAN reach a handler and is reachable-then-orphaned after all. '
+                "CHANGELOG.md's paragraph saying the scan need not find one is now "
+                'wrong, and the scan itself cannot find one through a line-oriented '
+                'pipeline'
             )
 
     def test_a_trailing_newline_is_not_a_valid_form_id(
