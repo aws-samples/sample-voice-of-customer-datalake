@@ -158,29 +158,49 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   Run to completion neither is misleading, which is why cost carries the choice above.
 
   What the scan does **not** need to find, so that its silence means what it says: an id containing
-  a literal tab or newline, or a non-ASCII **symbol, punctuation mark, combining accent or space** —
-  `€`, `—`, `°`, `«`, an emoji, or a non-ASCII space such as U+00A0 (NBSP) or U+3000. None of those
-  can occur in an id any route ever resolved, because the route's own capture group admits only
+  a literal tab or newline, or a non-ASCII character that `\w` does not match. None of those can
+  occur in an id any route ever resolved, because the route's own capture group admits only
   `[-._~()'!*:@,;=+&$%<> \[\]{}|^\w]`, and `\w` — the one member of that class that reaches beyond
-  ASCII — matches any Unicode **letter or number** and nothing else. Read that as the `L*` and `N*`
-  CATEGORIES rather than as "a letter or a digit", because the difference is exactly the shapes an
-  operator is most likely to misfile: a modifier letter (`hawaiʼi-form`, whose `ʼ` is U+02BC — how
-  an ʻokina is correctly spelled, and visually an apostrophe), a fraction or superscript
-  (`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are all `\w`, so all of them
-  resolved and are **in scope above**, however much they read as punctuation. That is the one edge
-  of this split with a real cost: over-reporting wastes a rename, but reading a printed row as out
-  of scope means skipping it, and the row then 404s in production. So `café`, `表単`, `hawaiʼi-form`
-  and `surface-m²` did resolve and are in scope above, while `form€a` and `form\xa0a` never matched
-  a route at all: those rows answered 404 before this change as well as after and are not
-  reachable-then-orphaned. The same `\w` fact is why a space is in scope but a tab is not — the
-  class lists a literal space and `\w` covers neither — and why a *decomposed* spelling of an
-  accented id was never routable while its composed form was: a combining accent is a mark, so NFD
-  `café` (`e` + U+0301) is unreachable where NFC `café` (U+00E9) resolved. The scan still *flags*
-  every one of these, which is the safe direction (it over-reports rather than misses), and it is
-  also why the tab example above is about the classifier disagreeing with the code rather than about
-  a form being missed. `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` asserts this
-  split off the installed resolver, so a powertools upgrade that widened the class fails a test
-  rather than silently making this paragraph wrong.
+  ASCII — matches any Unicode **letter or number**, plus `_`. Take that as the `L*` and `N*`
+  CATEGORIES rather than as "a letter or a digit", and take the other side as the complement rather
+  than as a list of glyphs: what `\w` leaves out is **marks** (`M*`), **symbols** (`S*`),
+  **punctuation** (`P*`), **separators** (`Z*`) and **format characters** (`C*`). `€` and `°` are
+  symbols, `—` and `«` are punctuation, an emoji is a symbol, U+00A0 (NBSP) and U+3000 are
+  separators, a combining accent is a mark, and a zero-width joiner or a soft hyphen is a format
+  character. (`_` is inside the validator's *own* class, so an id holding one is accepted rather
+  than refused and appears in neither list. It really is the single exception to `L*`/`N*` — the
+  other connector punctuation, U+FF3F, U+2040 and U+203F, is outside `\w` like the rest of `P*`.)
+
+  Reading the categories rather than the gloss matters because the shapes an operator is most likely
+  to misfile fall on **both** sides of that line. In scope despite reading as punctuation: a
+  modifier letter (`hawaiʼi-form`, whose `ʼ` is U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII
+  `'`; the Hawaiian ʻokina, U+02BB, is the same category and equally in scope), a fraction or
+  superscript (`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are all `\w`, so all
+  of them resolved. `Lm` even holds five characters whose Unicode *names* are accents — U+02C6
+  MODIFIER LETTER CIRCUMFLEX ACCENT and U+02CA–U+02CF — so `formˆa` is in scope although "combining
+  accent" describes it in every sense but the categorical one. Out of scope despite reading as
+  letters: an id in a script that spells a vowel with a combining mark — Hindi `फॉर्म`, Thai
+  `แบบฟอร์ม`, Arabic `نَموذج` with its fatha — never matched a route, because the mark is `Mc`/`Mn`
+  even where the base character is `Lo`. (Precomposed Korean `피드백` is all `Lo`, and did resolve.)
+
+  That is the one edge of this split with a real cost: over-reporting wastes a rename, but reading a
+  printed row as out of scope means skipping it, and the row then 404s in production. So `café`,
+  `表単`, `hawaiʼi-form`, `surface-m²` and `section-Ⅷ` did resolve and are in scope above, while
+  `form€a`, `form\xa0a` and `फॉर्म` never matched a route at all: those rows answered 404 before this
+  change as well as after and are not reachable-then-orphaned. The same `\w` fact is why a space is
+  in scope but a tab is not — the class lists a literal space and `\w` covers neither — and why a
+  *decomposed* spelling of an accented id was never routable while its composed form was: a
+  combining accent is a mark, so NFD `café` (`e` + U+0301) is unreachable where NFC `café` (U+00E9)
+  resolved. One look-alike pair is worth naming for the same reason: `hawai’i-form` spelled with
+  U+2019 RIGHT SINGLE QUOTATION MARK is punctuation and never resolved, while the U+02BC and U+02BB
+  spellings are letters and did — the apostrophe glyphs land on both sides, so a printed row cannot
+  be triaged by eye. The scan still *flags* every one of these, which is the safe direction (it
+  over-reports rather than misses), and it is also why the tab example above is about the classifier
+  disagreeing with the code rather than about a form being missed.
+  `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` asserts this split off the
+  installed resolver, sampling each of the eight `\w` categories on the in-scope side and a mark, a
+  symbol, a separator, a format character and connector punctuation on the other, so a powertools
+  upgrade that moved the class fails a test rather than silently making this paragraph wrong.
 - **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
   request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
   answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route

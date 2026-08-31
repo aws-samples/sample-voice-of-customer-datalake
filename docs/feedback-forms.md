@@ -177,20 +177,33 @@ there is no compatibility shim.
 
 Some shapes are **not** in scope, and not because the scan would miss them — it flags
 them too. They never reached a handler, so they answered 404 before this change as
-well as after: a *tab* or newline inside an id, and a non-ASCII **symbol, punctuation
-mark, combining accent or space** (`€`, `—`, `«`, an emoji, U+00A0, U+3000, or the
-`e` + U+0301 spelling of `é`). The route's own capture group is what excludes them:
-the only part of it that reaches beyond ASCII is `\w`, which matches any Unicode
-letter or number and nothing else. Read that as the `L*`/`N*` categories rather than
-as "letters and digits", because the surprising members are all **in** scope: a
-modifier letter (the `ʼ` of `hawaiʼi-form`, U+02BC, which is how an ʻokina is
-correctly spelled and looks like an apostrophe), a fraction or superscript
-(`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are letters and
-numbers to `\w`, so those rows resolved and need renaming however much they read as
-punctuation. Misreading one of those as out of scope is the costly direction: the
-rename is skipped and the row 404s in production. That `\w` fact is also why an ASCII
-space *is* in scope while a tab is not — the class lists a literal space, and `\w`
-covers neither.
+well as after: a *tab* or newline inside an id, and any non-ASCII character that `\w`
+does not match. The route's own capture group is what excludes them: the only part of
+it that reaches beyond ASCII is `\w`, which matches any Unicode letter or number, plus
+`_`. Read both sides as Unicode CATEGORIES rather than as lists of glyphs — `\w` is
+`L*` and `N*`, and what it leaves out is marks (`M*`), symbols (`S*`), punctuation
+(`P*`), separators (`Z*`) and format characters (`C*`). So `€`, `°` and an emoji are
+symbols; `—` and `«` are punctuation; U+00A0 and U+3000 are separators; the `e` +
+U+0301 spelling of `é` is a mark; a zero-width joiner is a format character. (`_` is
+inside the validator's own class, so an id holding one is accepted and is in neither
+list; the other connector punctuation — U+FF3F, U+2040, U+203F — is outside `\w`.)
+
+The categories matter because the ids an operator is most likely to misfile fall on
+**both** sides. **In** scope though they read as punctuation: a modifier letter (the
+`ʼ` of `hawaiʼi-form`, U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII `'`; the
+Hawaiian ʻokina U+02BB is the same category and equally in scope), a fraction or
+superscript (`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are
+letters and numbers to `\w`, so those rows resolved and need renaming. `Lm` even holds
+five characters *named* as accents (U+02C6 MODIFIER LETTER CIRCUMFLEX ACCENT and
+U+02CA–U+02CF), so `formˆa` is in scope. **Out** of scope though they read as letters:
+an id in a script that writes a vowel as a combining mark — Hindi `फॉर्म`, Thai
+`แบบฟอร์ม`, Arabic `نَموذج` — never matched a route, because the mark is `Mc`/`Mn` even
+where the base letter is `Lo`. (Precomposed Korean `피드백` is all `Lo` and did resolve.)
+Misreading an in-scope row as out of scope is the costly direction: the rename is
+skipped and the row 404s in production. Note too that the apostrophe glyphs straddle
+the line — `hawai’i-form` with U+2019 is punctuation and never resolved — so a printed
+row cannot be triaged by eye. That same `\w` fact is why an ASCII space *is* in scope
+while a tab is not: the class lists a literal space, and `\w` covers neither.
 
 Two consequences are worth knowing if you integrate against these routes, both new
 in the change that closed #379:

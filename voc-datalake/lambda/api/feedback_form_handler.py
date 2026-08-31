@@ -171,12 +171,16 @@ FORM_ID_LENGTH = 8
 # what fails if it is dropped again, and the remaining exclusions that a route
 # COULD resolve (`:`, `+`, `@`, `%`, a non-ASCII letter or NUMBER, and a space
 # inside an id) are named to an operator with a pre-upgrade scan in CHANGELOG.md's
-# upgrade notes, since for those the 404 is real. A non-ASCII SYMBOL, punctuation
-# mark, combining accent or space is not on that list and is not the scan's to
-# find: the route's capture group reaches past ASCII only through `\w`, which
-# matches any Unicode letter or number — every `L*` and `N*` category, so a modifier
-# letter (`hawaiʼi-form`) and a fraction (`surface-m²`) are in scope despite reading
-# as punctuation — so `café` resolved while `form€a` never matched a route at all.
+# upgrade notes, since for those the 404 is real. A non-ASCII character that `\w`
+# does NOT match is not on that list and is not the scan's to find: the route's
+# capture group reaches past ASCII only through `\w`, which matches any Unicode
+# letter or number — every `L*` and `N*` category, plus `_` — so what it leaves out
+# is marks, symbols, punctuation, separators and format characters. Read both sides
+# as CATEGORIES, because the misfiling risk runs both ways: a modifier letter
+# (`hawaiʼi-form`, and the accent-NAMED U+02C6/U+02CA-U+02CF are `Lm` too) and a
+# fraction (`surface-m²`) are in scope despite reading as punctuation, while a script
+# writing a vowel as a combining mark (Hindi `फॉर्म`) is out of scope despite reading
+# as letters. So `café` resolved while `form€a` never matched a route at all.
 #
 # The `(?!\.{1,2}\Z)` in front of the class is what makes admitting `.` safe, and
 # it is about URL RESOLUTION rather than about DynamoDB: '.' and '..' are the
@@ -276,26 +280,34 @@ def _validated_form_id(raw: Any) -> str | None:
     That list is narrower than "everything non-ASCII" and than "whitespace", and
     both narrowings come from ONE fact about the route rather than about this
     pattern: powertools' capture group reaches past ASCII only through `\\w`, which
-    matches any Unicode letter or number, and it lists a literal space but no other
-    whitespace. So `'café'` and `'my form'` matched a route and are the scan's to
-    find, while a tab, a newline, and a non-ASCII SYMBOL, PUNCTUATION MARK,
-    COMBINING ACCENT or space (`'form€a'`, `'form\\xa0a'`, `'form«a'`, an NFD
-    `'cafe\\u0301'`) never matched one at all — those rows answered 404 before this
-    change as well as after, so they are unreachable rather than
-    reachable-then-orphaned. Telling an operator to rename one would be renaming a
-    row that was never served.
+    matches any Unicode letter or number plus `_`, and it lists a literal space but
+    no other whitespace. So `'café'` and `'my form'` matched a route and are the
+    scan's to find, while a tab, a newline, and any non-ASCII character `\\w` does
+    NOT match (`'form€a'`, `'form\\xa0a'`, `'form«a'`, an NFD `'cafe\\u0301'`) never
+    matched one at all — those rows answered 404 before this change as well as after,
+    so they are unreachable rather than reachable-then-orphaned. Telling an operator
+    to rename one would be renaming a row that was never served.
     `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` pins the whole
     split off the live resolver, since it is what bounds the operator scan's reach.
 
-    Read `\\w` as the `L*` and `N*` CATEGORIES rather than as "letters and digits",
-    because the difference falls on the shapes an operator is most likely to
-    misfile: a modifier letter (`'hawaiʼi-form'`, whose `ʼ` is U+02BC — how an
-    ʻokina is correctly spelled, and visually an apostrophe), a fraction or
-    superscript (`'half-½-price'`, `'surface-m²'`) and a roman numeral
-    (`'section-Ⅷ'`) are all `\\w`, hence routable, hence the scan's to find, however
-    much they read as punctuation. That is the ONE direction of this split with a
-    real cost: over-reporting wastes a rename, but under-reporting means an operator
-    reads a printed row as out of scope, skips it, and it 404s in production.
+    Read BOTH sides as Unicode CATEGORIES rather than as "letters and digits" versus
+    a list of glyphs: `\\w` is `L*` and `N*` (plus `_`), and what it excludes is
+    marks (`M*`), symbols (`S*`), punctuation (`P*`), separators (`Z*`) and format
+    characters (`C*`). The difference falls on the shapes an operator is most likely
+    to misfile, and it runs in BOTH directions. Routable, hence the scan's to find,
+    however much they read as punctuation: a modifier letter (`'hawaiʼi-form'`, whose
+    `ʼ` is U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII quote — as is the
+    Hawaiian ʻokina, U+02BB, which is the same category; and note `Lm` holds five
+    characters NAMED as accents, U+02C6 and U+02CA-U+02CF, so `'formˆa'` is in scope
+    too), a fraction or superscript (`'half-½-price'`, `'surface-m²'`) and a roman
+    numeral (`'section-Ⅷ'`). Unroutable, hence NOT the scan's, however much they read
+    as letters: a script that writes a vowel as a combining mark, so Hindi
+    `'फॉर्म'`, Thai `'แบบฟอร์ม'` and Arabic `'نَموذج'` never matched a route because the
+    mark is `Mc`/`Mn` even where the base character is `Lo` (precomposed Korean
+    `'피드백'` is all `Lo`, and did resolve). That is the ONE direction of this split
+    with a real cost: over-reporting wastes a rename, but under-reporting means an
+    operator reads a printed row as out of scope, skips it, and it 404s in
+    production.
 
     Interior whitespace belongs in that list rather than under the `.strip()`
     argument below, and the two are easy to conflate: that argument is about an id

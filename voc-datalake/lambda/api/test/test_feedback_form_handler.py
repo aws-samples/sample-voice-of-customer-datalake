@@ -5677,18 +5677,26 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         an operator to rename a row that was never served.
 
         The `\\w` boundary is sampled across CATEGORIES rather than at the ASCII
-        line, and that is the point of `'hawaiʼi-form'` and `'surface-m²'` being in
-        the reachable loop next to `'café'`. `\\w` spans every `L*` and `N*`
-        category — `Ll`, `Lm`, `Lo`, `Lt`, `Lu`, `Nd`, `Nl`, `No` — so a modifier
-        letter (U+02BC, the correct ʻokina, which looks like an apostrophe) and a
-        superscript or fraction are routable while reading to a human as
-        punctuation. A note glossing `\\w` as "a letter or a digit" puts those in the
-        SAME sentence as `€` and `—`, and that error runs in the expensive
-        direction: an operator sees `hawaiʼi-form` printed by the scan, classifies
-        it out of scope, skips the rename, and the row 404s in production. Every
-        other imprecision in this note over-reports; this one loses a reachable row,
-        which is why the loop samples `Lm` and `No` rather than trusting `Ll` and
-        `Lo` to stand for all eight.
+        line, and EVERY category is sampled on both sides rather than a
+        representative few. `\\w` is exactly `L* | N* | {'_'}` — verified by
+        enumerating all 0x110000 codepoints — so the reachable loop carries one id
+        per `\\w` category (`Ll` `'café'`, `Lm` `'hawaiʼi-form'`, `Lo` `'表単'`,
+        `Lt` `'ǅigit'`, `Lu` `'ÉCOLE'`, `Nd` `'form٠a'`, `Nl` `'section-Ⅷ'`, `No`
+        `'surface-m²'`) and the unreachable loop one per class `\\w` excludes
+        (`Mn`, `Mc`, `Me`, `Sc`, `Zs`, `Cf`, `Pc`).
+
+        Exhaustively rather than representatively, because a partial sample is what
+        let the prose go wrong twice. `Lm` and `No` read to a human as punctuation,
+        so a note glossing `\\w` as "a letter or a digit" put them in the SAME
+        sentence as `€` and `—` — and that error runs in the expensive direction:
+        an operator sees `hawaiʼi-form` printed by the scan, classifies it out of
+        scope, skips the rename, and the row 404s in production. Every other
+        imprecision in this note over-reports; that one loses a reachable row. The
+        converse is cheaper but also live: `Mc`/`Mn` read as LETTERS, so a
+        Devanagari or Thai id looks in scope while never having matched a route.
+        Both documents cite this test as asserting "the whole split", so a category
+        named in either of them and absent here would make that citation false —
+        which is the state a four-of-eight sample was in.
 
         That is the SAME distinction the whole upgrade note turns on, applied one
         level down: ` abc123` is exempt because it never resolved, and `abc<TAB>def`
@@ -5709,8 +5717,13 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         path that matches NOTHING — which would report every character as excluded
         and pass an assertion set made only of exclusions.
         """
-        for reachable in ('my form', '   ', 'a:b', 'café', '表単',
-                          'hawaiʼi-form', 'surface-m²'):
+        # After the three ASCII cases, one id per `\w` category, so no category
+        # stands in for another: `Ll` `café`, `Lm` `hawaiʼi-form` (U+02BC, an
+        # apostrophe to the eye), `Lo` `表単`, `Lt` `ǅigit`, `Lu` `ÉCOLE`, `Nd`
+        # `form٠a` (ARABIC-INDIC DIGIT ZERO), `Nl` `section-Ⅷ`, `No` `surface-m²`.
+        for reachable in ('my form', '   ', 'a:b', 'café', 'hawaiʼi-form', '表単',
+                          'ǅigit', 'ÉCOLE', 'form٠a', 'section-Ⅷ',
+                          'surface-m²'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(
@@ -5730,15 +5743,36 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'not belong in the scan at all'
             )
 
-        # The last entry is the DECOMPOSED spelling of `caf\u00e9`, written with an
-        # escape because it is visually identical to the composed `caf\u00e9` in
-        # the loop above, and the whole point is that the two are different strings
-        # with different verdicts: a combining accent is a MARK, which `\w` does
-        # not match, so the decomposed form never reached a route while the composed
-        # one did. Both documents name `caf\u00e9` in scope without saying which of
-        # the two spellings they mean.
+        # One id per class `\w` EXCLUDES, mirroring the per-category loop above so
+        # that neither side of the boundary rests on a representative sample:
+        # `form€a` is `Sc`, `form\xa0a` is `Zs`, `cafe\u0301` is `Mn`, the Devanagari
+        # id is `Mc`, `form\u0488a` is `Me`, `form\u200da` is `Cf` (a zero-width
+        # joiner) and `form\uff3fa` is `Pc`.
+        #
+        # `Pc` earns its line because it is the NEAR MISS: `_` is the one `\w`
+        # member outside `L*`/`N*`, and `_` is `Pc` — but the REST of `Pc` (U+FF3F
+        # here, also U+2040 and U+203F) is excluded like any other punctuation. So
+        # "connector punctuation" is not a shorthand for the exception; `_` alone is,
+        # and `_` is inside the validator's OWN class, so an id holding one is
+        # accepted rather than refused and belongs to neither of the scan's lists.
+        #
+        # The Devanagari id is Hindi for "form": `Lo` base letters carrying a matra,
+        # which is `Mc`. It is here as the OPPOSITE misfiling to `hawai\u02bci-form`
+        # in the loop above — this one reads as letters and never reached a route,
+        # that one reads as punctuation and resolved. Getting them from one fact
+        # (`\w` is `L*`/`N*`) is why both documents state the categories now.
+        #
+        # The confusable and invisible entries are spelled as escapes on purpose.
+        # `cafe\u0301` is the DECOMPOSED spelling of `caf\u00e9`, visually identical to
+        # the composed `caf\u00e9` in the loop above, and the whole point is that the
+        # two are different strings with OPPOSITE verdicts: a combining accent is a
+        # MARK, so the decomposed form never reached a route while the composed one
+        # did. Both documents name `caf\u00e9` in scope without saying which of the
+        # two spellings they mean. `\u200d` and `\u0488` would be invisible, or would
+        # stack onto the preceding character, in an editor.
         for unreachable in ('abc\tdef', 'abc\ndef', 'form€a', 'form\xa0a',
-                            'cafe\u0301'):
+                            'cafe\u0301', 'फॉर्म', 'form\u0488a',
+                            'form\u200da', 'form\uff3fa'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(
