@@ -19,6 +19,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   PluginField, SetupInstructions, ResultMessage,
 } from './PluginConfigParts'
@@ -177,7 +178,7 @@ export default function GeneratorConfigModal({
           <button
             onClick={() => generateMutation.mutate()}
             disabled={isBusy || !hasRequired || !isAdmin}
-            title={!isAdmin ? 'Admin access required' : undefined}
+            title={isAdmin ? undefined : ADMIN_ONLY_TITLE}
             className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}

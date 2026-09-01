@@ -17,6 +17,7 @@ from shared.exceptions import (
     ValidationError,
     NotFoundError,
     ConfigurationError,
+    SecretUnreadableError,
     ServiceError,
     AuthorizationError,
     ConflictError,
@@ -328,6 +329,11 @@ def _register_exception_handlers(app: APIGatewayRestResolver) -> None:
             body=json.dumps({'success': False, 'error': ex.message})
         )
     
+    # Intentionally covers the SecretUnreadableError SUBCLASS too, with no handler
+    # of its own: Powertools resolves a handler by walking `exp_type.__mro__`, and
+    # the HTTP answer is the same 500 — only callers that must decide whether to
+    # COUNT the failure (see BaseIngestor._report_construction_failure) care which
+    # of the two it is.
     @app.exception_handler(ConfigurationError)
     def handle_configuration_error(ex: ConfigurationError):
         logger.error(f"Configuration error: {ex.message}")
@@ -423,6 +429,7 @@ __all__ = [
     'ValidationError',
     'NotFoundError',
     'ConfigurationError',
+    'SecretUnreadableError',
     'ServiceError',
     'AuthorizationError',
     'ConflictError',

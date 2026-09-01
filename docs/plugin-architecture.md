@@ -1919,25 +1919,179 @@ for (const plugin of webhookPlugins) {
 
 Plugins share a single Secrets Manager secret, but each plugin only accesses its own keys:
 
+`BaseIngestor._load_secrets()` and `BaseWebhook._load_secrets()` both delegate to one
+helper, `plugins/_shared/plugin_secrets.py`:
+
 ```python
-# In base_ingestor.py
-class BaseIngestor:
-    def _load_secrets(self) -> dict:
-        """Load only this plugin's secrets."""
-        all_secrets = get_secret(SECRETS_ARN)
-        
-        # Filter to only keys prefixed with this plugin's ID
-        prefix = f"{self.source_platform}_"
-        return {
-            k.replace(prefix, ''): v 
-            for k, v in all_secrets.items() 
-            if k.startswith(prefix)
-        }
+# In plugins/_shared/plugin_secrets.py
+def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
+    """Return plugin_id's namespaced keys, prefix stripped — or raise."""
+    prefix = f"{plugin_id}_"
+    scoped = {
+        key[len(prefix):]: value
+        for key, value in all_secrets.items()
+        if key.startswith(prefix) and len(key) > len(prefix)
+    }
+    if not scoped:
+        raise ConfigurationError(...)  # names plugin_id and prefix, nothing else
+    return scoped
 ```
 
 This means:
 - `webscraper` plugin sees: `configs`
 - Each plugin can only access its own secrets
+
+**It fails closed** (issue #251). A prefix matching zero keys — a typo'd plugin id, an
+unknown identity, an empty secret — raises a `ConfigurationError` naming the plugin and
+the expected prefix. It used to return the *complete* shared secret in that case, on the
+theory that a plugin predating prefixing had not been migrated yet; the effect was that
+the isolation boundary held only while every plugin's prefix was correct, and a typo
+produced the maximally permissive outcome. All ingestion Lambdas share one IAM role, so
+nothing else was catching it.
+
+The error and its log name the identity and the expected prefix only — never a secret
+value, and never another plugin's key names.
+
+Three consequences of failing closed are worth knowing before you write a plugin:
+
+- **Every plugin must declare at least one key** in its manifest's `secrets` block. CDK
+  seeds the declared keys at deploy time; a plugin declaring none has no `<id>_*` key to
+  find, so its Lambda raises at construction on the first invocation. Pinned in CI by
+  `test_plugin_secret_isolation.py::TestTheDeployTimeInvariantsThisBoundaryNeeds`, so a
+  zero-secret manifest fails a test run rather than a production invocation.
+- **A construction failure still reports.** `_load_secrets()` runs in `__init__`, so the
+  raise never reaches `run()`'s `except`. `BaseIngestor` therefore reports it itself
+  (`_report_construction_failure`): the `SOURCE_RUN#` record moves to `status: 'error'`,
+  a `plugin.failed` audit event is emitted, and the circuit breaker records the failure —
+  **unless the secret was merely unreadable rather than misconfigured**, which is reported
+  but deliberately *not* counted (see "A transient Secrets Manager failure" below for why,
+  and for the alarm that exemption depends on). Without any of this, a manual "Run now"
+  would show a permanent "Running..." spinner — the UI polls until a terminal status and
+  the API writes `'running'` before invoking.
+- **A webhook Lambda returns 5xx for every delivery** while its secret is missing or
+  mis-prefixed, and most providers drop events after their retries expire. There is no
+  manual run to recover a webhook, so watch the plugin's log group for
+  `Refusing to load plugin secrets` and alarm on it; the shared-secret read is
+  load-bearing for a webhook in a way it is not for a scheduled ingestor.
+
+A transient Secrets Manager failure is *not* one of these cases, and two things keep it
+from becoming one. `get_secret` is cached and swallows a failed read into `{}`, so both
+`_load_secrets()` implementations evict the cache entry before refusing on an empty
+payload — the next invocation re-reads rather than the warm container staying wedged
+against a memoized failure. And because a failed read and a genuinely empty secret are
+indistinguishable from the plugin's side, that branch raises `SecretUnreadableError` (a
+`ConfigurationError` subclass) and `_report_construction_failure` **does not count it
+against the circuit breaker**. Counting it would let five AWS-side blips inside the
+breaker's 15-minute window call `_trip_breaker`, which disables the plugin's EventBridge
+schedule — and nothing re-enables a disabled rule, so a healthy plugin's ingestion would
+stop until an operator noticed. Only the auto-disable is withheld: the `plugin.failed` audit
+event still fires, and the run record does too on a manual run (on a scheduled one there is
+none to move — see the next paragraph). A malformed identity, a namespace that matches
+nothing, or a secret whose body is not a JSON object is someone's mistake, stays a plain
+`ConfigurationError`, and still counts — those never self-heal, and retrying them forever is
+what the breaker exists to stop.
+
+Each of those three reporting steps is guarded **independently**, which matters more than it
+looks: `CircuitBreaker.record_failure` resolves its DynamoDB resource in the `self.table`
+property, *above* its own `try`, so a failure building that resource escapes it. Under a
+single shared `try` that failure skipped every later step, losing the `plugin.failed` event
+in exactly the correlated case where the same DynamoDB trouble breaks both — and on a
+scheduled run that event is the only signal there is.
+
+**Alarm on the refusal log line.** That is not advice, it is the escalation path this
+exemption relies on. On a *manual* run the `SOURCE_RUN#` record clears the UI's spinner and
+carries the message. On a **scheduled** run there is no such record — `_update_source_run_status`
+is a no-op without an `execution_id` — so the only signals are the
+`Refusing to load plugin secrets` log line and the `plugin.failed` audit event, and that
+event reaches EventBridge only when `AUDIT_EVENT_BUS` is set (no stack in this repo sets it;
+otherwise it is a `logger.info("AUDIT", …)`). No stack creates a metric filter or alarm
+either. So a scheduled plugin with an unreadable secret is silently not ingesting, and the
+one mechanism that used to make that state visible in the console — the breaker disabling
+the rule — is now deliberately withheld. The trade is still the right one, but it moves the
+escalation from the breaker to your alarms, which means the alarm has to exist.
+
+One limitation the prefix scan cannot see: if a plugin id were ever a **prefix** of
+another (`app_reviews` alongside `app_reviews_ios`), the shorter one would also receive the
+longer one's keys. A plugin Lambda holds no list of its siblings by design, so this is
+refused at the two places that do see more than one id — and both are needed, because they
+close different entrances:
+
+- `loadPlugins` rejects a **manifest** id that is a prefix of another's, at synth time,
+  the only place the whole id set is known.
+- Every route taking a `<source>` path parameter restricts it to those same
+  manifest-derived ids (`_validate_source_parameter`, which applies both the form check and
+  `_validate_source_is_a_known_plugin`). The loader's guard cannot see a source invented in
+  a request: `source='app_reviews'` with key `ios_app_id` stored `app_reviews_ios_app_id`,
+  which `app_reviews_ios`'s next run consumed as its own `app_id`. A colliding *stored key*
+  needs no colliding manifest to exist. That check fails open if `PLUGIN_SECRET_DEFAULTS` is
+  unavailable, so one bad environment variable cannot break credential management
+  outright — the form check still applies.
+
+Neither guard is retroactive. A key already stored by a pre-upgrade write survives, and the
+plugin whose namespace it landed in still reads it; delete such keys by hand.
+
+#### Which `<source>` routes need admin
+
+`source` reaches three kinds of resource name, and the routes that WRITE one are admin-gated:
+a Secrets Manager key (`<source>_configs`), an ingestor Lambda name
+(`voc-ingestor-<source>`), and an EventBridge rule name (`voc-ingest-<source>-schedule`).
+
+| Route | `require_admin` | Why |
+|-------|-----------------|-----|
+| `GET`/`PUT /integrations/<source>/credentials` | yes | reads and writes credentials |
+| `POST`/`DELETE /integrations/<source>/apps` | yes | writes the shared secret |
+| `POST /sources/<source>/run` | yes | billed third-party fetch, invocable in a loop |
+| `PUT /sources/<source>/enable\|disable` | yes | disabling silently stops ingestion |
+| `GET /integrations/<source>/apps` | **no** | the Scrapers page lists configs for everyone; a config holds a public app-store id and a display name, not a credential |
+
+The gate is the server's. The Scrapers page and the Settings page also disable the
+corresponding controls for a non-admin so the reason is visible on hover rather than arriving
+as a 403, but that is presentation only. Both properties are pinned by an `ast` pass over the
+route decorators in `test_integrations_security.py`, so a route added later is asserted rather
+than forgotten — which is how the five unguarded ones came to look like deliberate scoping.
+
+#### The same split applies to `scrapers_handler`
+
+`scrapers_handler` writes the **same** shared secret, so it carries the same rule and its own
+`ast` pass (`test_scrapers_security.py`). Gating one handler and not the other would make the
+boundary depend on which handler a write arrived through rather than on what it changed.
+
+Titled for the **handler**, not for `/scrapers/*`: that URL prefix is served by two Lambdas, and
+this table covers one of them. `manual_import_handler` owns `/scrapers/manual/*` and is listed
+separately below.
+
+| Route | `require_admin` | Why |
+|-------|-----------------|-----|
+| `POST /scrapers` | yes | writes `webscraper_configs` on the shared secret — the URLs the ingestor fetches |
+| `DELETE /scrapers/<scraper_id>` | yes | same write, and destructive |
+| `POST /scrapers/<scraper_id>/run` | yes | billed third-party fetch, invocable in a loop |
+| `GET /scrapers`, `.../status`, `.../runs`, `/scrapers/templates` | **no** | the Scrapers page renders these for everyone |
+| `POST /scrapers/analyze-url` | **no** | persists nothing; the fetch is bounded by `validate_url`'s SSRF checks |
+
+`scraper_id` is deliberately **not** allowlisted the way `<source>` is. It is not a plugin id
+and reaches no secret key or function name — only a `SCRAPER_RUN#` partition and the invoke
+payload, where the webscraper matches it against its own configured list, so an unknown id is a
+run that finds nothing. The admin gate is what bounds who can write those partitions.
+
+#### `/scrapers/manual/*` is a second handler, and is **not** gated
+
+| Route | `require_admin` | Why |
+|-------|-----------------|-----|
+| `POST /scrapers/manual/parse`, `.../confirm`, `.../csv-upload`, `.../json-upload` | **no** | writes feedback **content** into the pipeline (S3 + the enrichment queue); reaches neither the shared secret nor any plugin resource |
+| `GET /scrapers/manual/parse/<job_id>` | **no** | reads the caller's own parse job |
+
+Recorded rather than fixed, and the distinction is the reason. The three gated routes above were
+gated because they reach a **credential namespace** or **invoke a plugin**; these reach neither.
+Content ingestion is open to any authenticated user everywhere in this tree — `POST /feedback-forms`
+and `POST /s3-import/upload-url` answer 200 to a `users`-group caller on the same basis — so gating
+only the manual-import routes would reintroduce a boundary that depends on which page a write came
+from, which is exactly what this change removed for the secret. Whether content ingestion as a whole
+should be admin-only is a product decision spanning several handlers and their pages.
+
+Asserted, not merely written down: `test_scrapers_security.py::TestTheInventoryIsOneHandlers` pins
+both this handler's route inventory and the fact that none of its routes is gated, so adding a gate
+to one of them fails and forces this section to be re-derived. The `ast` pass cannot see across
+module boundaries, which is why the scope needs stating at all.
 
 ### Cost Controls
 

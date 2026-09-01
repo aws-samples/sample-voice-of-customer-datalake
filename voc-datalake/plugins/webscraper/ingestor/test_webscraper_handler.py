@@ -12,6 +12,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 from bs4 import BeautifulSoup
 
+from _shared.test.scoped_secret import scoped_secret
+
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -29,7 +31,7 @@ def ingestor():
         patch("_shared.base_ingestor.get_dynamodb_resource") as mock_dynamo,
         patch("_shared.base_ingestor.get_s3_client"),
         patch("_shared.base_ingestor.get_sqs_client"),
-        patch("_shared.base_ingestor.get_secret", return_value={}),
+        patch("_shared.base_ingestor.get_secret", return_value=scoped_secret()),
     ):
         mock_dynamo.return_value.Table.return_value = MagicMock()
         from webscraper.ingestor.handler import WebScraperIngestor
@@ -167,7 +169,7 @@ class TestLambdaHandlerSecretCache:
 
         def record_get_secret(_arn):
             call_order.append("get_secret")
-            return {"configs": "[]"}
+            return scoped_secret(configs="[]")
 
         mock_get_secret.side_effect = record_get_secret
         mock_dynamo.return_value.Table.return_value = MagicMock()

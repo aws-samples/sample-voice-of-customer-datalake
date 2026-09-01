@@ -7,6 +7,7 @@ import clsx from 'clsx'
 import {
   Play, Settings, Trash2, Smartphone, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'
@@ -66,10 +67,17 @@ function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
 }
 
 export function AppConfigCard({
-  app, plugin, onEdit, onDelete, onRun, isRunning, runStatus,
+  app, plugin, isAdmin, onEdit, onDelete, onRun, isRunning, runStatus,
 }: Readonly<{
   app: AppConfig
   plugin: PluginManifest
+  /** Whether the current user is an admin. `POST /sources/{source}/run` and
+   *  `DELETE /integrations/{source}/apps/{id}` are admin-gated server-side, so Run
+   *  and Delete are disabled rather than allowed to fire a 403. Edit stays enabled:
+   *  it opens `PluginConfigModal`, whose `AppEditorForm` Save button carries the
+   *  gate for `POST /integrations/{source}/apps` — verified there, not assumed,
+   *  because the equivalent claim about `ScraperEditor` turned out to be false. */
+  isAdmin: boolean
   onEdit: () => void
   onDelete: () => void
   onRun: () => void
@@ -90,11 +98,11 @@ export function AppConfigCard({
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={onRun} disabled={isRunning} className={clsx('p-2 rounded transition-colors', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600')} title="Run now">
+          <button onClick={onRun} disabled={isRunning || !isAdmin} className={clsx('p-2 rounded transition-colors disabled:cursor-not-allowed', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600', isAdmin ? '' : 'opacity-50')} title={isAdmin ? 'Run now' : ADMIN_ONLY_TITLE}>
             {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
           </button>
           <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title="Edit"><Settings size={16} className="text-gray-500" /></button>
-          <button onClick={onDelete} className="p-2 hover:bg-gray-100 rounded text-red-500" title="Delete"><Trash2 size={16} /></button>
+          <button onClick={onDelete} disabled={!isAdmin} className="p-2 hover:bg-gray-100 rounded text-red-500 disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? 'Delete' : ADMIN_ONLY_TITLE}><Trash2 size={16} /></button>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-4 text-sm">

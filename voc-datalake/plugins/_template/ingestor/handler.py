@@ -23,7 +23,11 @@ class MySourceIngestor(BaseIngestor):
         # Never assign ingestor.execution_id after construction; that would
         # skip the guard (enforced by plugins/test_manual_run_guard.py).
         super().__init__(execution_id=execution_id)
-        # Access your secrets (prefixed keys are stripped automatically)
+        # Access your secrets by their BARE name — the `<plugin_id>_` prefix they
+        # are stored under is stripped for you. Declare every key in
+        # manifest.json's "secrets" block: construction FAILS if the shared secret
+        # holds no key under this plugin's prefix, rather than quietly handing you
+        # every other plugin's credentials (issue #251).
         self.api_key = self.secrets.get("api_key", "")
 
     def fetch_new_items(self) -> Generator[dict, None, None]:

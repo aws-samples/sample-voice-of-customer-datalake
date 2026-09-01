@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from _shared.test.scoped_secret import scoped_secret
+
 
 class TestBaseIngestorInit:
     """Tests for BaseIngestor initialization."""
@@ -37,23 +39,30 @@ class TestBaseIngestorInit:
     @patch('_shared.base_ingestor.get_s3_client')
     @patch('_shared.base_ingestor.get_sqs_client')
     @patch('_shared.base_ingestor.get_secret')
-    def test_does_not_leak_other_known_plugin_secrets(
+    def test_does_not_leak_another_plugins_or_an_unprefixed_secret(
         self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
     ):
-        """Keys prefixed for another KNOWN plugin must not leak into this plugin's secrets.
+        """Only this plugin's namespace is loaded — nothing else, however it is keyed.
 
-        Regression guard for per-plugin secret isolation: every plugin id must be
-        listed in BaseIngestor._get_known_prefixes(). If a plugin (e.g. synthetic_reviews)
-        is missing from that list, its `<plugin>_*` keys in the shared secret are treated
-        as unprefixed shared/legacy keys and leak into every other plugin's loaded config.
-        This test fails if a known plugin is dropped from the prefix list.
+        This used to depend on a hand-maintained plugin-id list inside
+        BaseIngestor: a key carrying no *known* prefix was passed through as a
+        shared/legacy value, so forgetting to add a plugin to that list made its
+        `<plugin>_*` keys read as unprefixed and leak into every other plugin.
+        The list is gone (issue #251); the prefix scan is now the whole rule, so
+        an unknown plugin's keys are excluded because they are not ours — not
+        because someone remembered to enumerate them.
+
+        Reverts-to-catch: restoring the "no known prefix -> shared/legacy"
+        branch makes `shared_legacy_key` appear, and makes
+        `synthetic_reviews_api_key` appear too as soon as that id falls off the
+        list.
         """
         from _shared.base_ingestor import BaseIngestor
 
         mock_get_secret.return_value = {
             'test_source_api_key': 'mine',            # this plugin's own key
-            'synthetic_reviews_api_key': 'not-mine',  # another known plugin's key
-            'shared_legacy_key': 'shared',            # no known prefix -> shared/legacy
+            'synthetic_reviews_api_key': 'not-mine',  # another plugin's key
+            'shared_legacy_key': 'shared',            # carries no plugin prefix
         }
         mock_dynamo.return_value.Table.return_value = MagicMock()
 
@@ -63,13 +72,11 @@ class TestBaseIngestorInit:
 
         ingestor = TestIngestor()  # source_platform = 'test_source' (conftest env)
 
-        # own key: present and prefix-stripped
-        assert ingestor.secrets.get('api_key') == 'mine'
-        # unprefixed key: kept as a shared/legacy value
-        assert ingestor.secrets.get('shared_legacy_key') == 'shared'
-        # another known plugin's key: excluded entirely, and never surfaced under any name
-        assert 'synthetic_reviews_api_key' not in ingestor.secrets
+        # own key: present and prefix-stripped — and it is the ONLY thing loaded
+        assert ingestor.secrets == {'api_key': 'mine'}
+        # neither foreign value is reachable under any name
         assert 'not-mine' not in ingestor.secrets.values()
+        assert 'shared' not in ingestor.secrets.values()
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
     @patch('_shared.base_ingestor.get_s3_client')
@@ -81,7 +88,7 @@ class TestBaseIngestorInit:
         """Creates CircuitBreaker for the plugin."""
         from _shared.base_ingestor import BaseIngestor
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_dynamo.return_value.Table.return_value = MagicMock()
         
         class TestIngestor(BaseIngestor):
@@ -112,7 +119,7 @@ class TestBaseIngestorWatermarks:
             'Item': {'value': '2025-01-01T00:00:00Z'}
         }
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -139,7 +146,7 @@ class TestBaseIngestorWatermarks:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}  # No Item
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -162,7 +169,7 @@ class TestBaseIngestorWatermarks:
         
         mock_table = MagicMock()
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -194,7 +201,7 @@ class TestBaseIngestorNormalizeItem:
         from _shared.base_ingestor import BaseIngestor
         
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -235,7 +242,7 @@ class TestBaseIngestorNormalizeItem:
         mock_s3_client = MagicMock()
         mock_s3.return_value = mock_s3_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -283,7 +290,7 @@ class TestBaseIngestorSendToQueue:
         mock_sqs_client.send_message_batch.side_effect = _batch_success
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -316,7 +323,7 @@ class TestBaseIngestorSendToQueue:
         mock_sqs_client = MagicMock()
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -357,7 +364,7 @@ class TestBaseIngestorSendToQueue:
         }
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -399,7 +406,7 @@ class TestBaseIngestorSendToQueue:
         }
         mock_sqs.return_value = mock_sqs_client
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -447,7 +454,7 @@ class TestBaseIngestorSendToQueue:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -486,7 +493,7 @@ class TestBaseIngestorRun:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -519,7 +526,7 @@ class TestBaseIngestorRun:
         from _shared.base_ingestor import BaseIngestor
         
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -562,7 +569,7 @@ class TestBaseIngestorRun:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -618,7 +625,7 @@ class TestBaseIngestorRun:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -668,7 +675,7 @@ class TestBaseIngestorRun:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -726,7 +733,7 @@ class TestBaseIngestorRun:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -780,7 +787,7 @@ class TestBaseIngestorRun:
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
         mock_dynamo.return_value.Table.return_value = mock_table
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
 
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -829,7 +836,7 @@ class TestBaseIngestorRun:
         from _shared.base_ingestor import BaseIngestor
         
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -859,7 +866,7 @@ class TestBaseIngestorGenerateDeterministicId:
         from _shared.base_ingestor import BaseIngestor
         
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -884,7 +891,7 @@ class TestBaseIngestorGenerateDeterministicId:
         from _shared.base_ingestor import BaseIngestor
         
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -913,7 +920,7 @@ class TestBaseIngestorGenerateDeterministicId:
         from _shared.base_ingestor import BaseIngestor
         
         mock_dynamo.return_value.Table.return_value = MagicMock()
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestIngestor(BaseIngestor):
             def fetch_new_items(self):
@@ -968,7 +975,7 @@ class TestManualRunSecretCacheClear:
 
         def record_get_secret(_arn):
             call_order.append('get_secret')
-            return {}
+            return scoped_secret()
 
         mock_get_secret.side_effect = record_get_secret
         mock_dynamo.return_value.Table.return_value = MagicMock()
@@ -986,7 +993,7 @@ class TestManualRunSecretCacheClear:
     def test_scheduled_run_keeps_the_warm_cache(
         self, mock_clear, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
     ):
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_dynamo.return_value.Table.return_value = MagicMock()
 
         ingestor = self._make_ingestor()
