@@ -312,6 +312,44 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # What POST /projects/{id}/document accepts in `doc_type`. Mirrored in the
 # frontend's `DocType` union; `test_doc_type_lockstep.py` fails if the two drift.
 #
+# ⚠️ WIDENING THIS TUPLE TAKES THREE FURTHER EDITS, and no gate asks for any. Adding a
+# member here and to `DocType` together leaves `tsc` at exit 0 and every lockstep test
+# green (measured).
+#
+# THE GENERATOR is the one that matters: `lambda/jobs/document_generator/handler.py`
+# dispatches `doc_type` as a BINARY with PR-FAQ as the unconditional `else`, in three
+# places: the step-builder selection (`get_prd_generation_steps` vs
+# `get_prfaq_generation_steps`), the generation branch (`_generate_prd` vs
+# `_generate_prfaq`) and the assembly/result-indexing branch in `_assemble_and_save`.
+# It never imports this constant. So a new member is accepted here, routed into the
+# chain by `is_chain` below (true by construction once it is in this tuple), then
+# generated and persisted as a PR-FAQ — `document_type` and the `{DOC_TYPE}#` sort key
+# say the new type while the CONTENT is a PR-FAQ, after a Bedrock spend, with no error
+# raised. A new doc type therefore needs a step builder, a generation branch and an
+# assembly branch there, or it silently produces the wrong kind of document.
+#
+# THE PICKER is the other, and it is benign by comparison — dead capability rather than
+# wrong content, but still an edit the widening needs.
+# `frontend/src/pages/ProjectDetail/Wizards.tsx` names its members as LITERALS:
+# `hasPrfaq`/`hasPrd`, the two `toggleDocType('...')` buttons in `renderFinalStep`, the
+# `bothSelected`/`singleTitle`/`singleSubmitLabel` copy, and `onSuggestBrief`'s
+# `doc_type` ternary — all written as a PRD-or-PR-FAQ binary, so a third member selected
+# alone falls into the PR-FAQ branch: labelled as one by the copy, and drafted as one by
+# `suggest-brief`. `tsc` accepts a narrower argument to `includes`/`filter`, so the
+# widening compiles clean while the picker keeps offering the OLD set (measured): the new
+# type is accepted here but never offered to a user. That file documents this from its
+# own side, beside the literals.
+#
+# THE WIRE TYPE is the third: `ProjectDocument.document_type` in
+# `frontend/src/api/types.ts` restates the doc types as literals and is a SUPERSET of
+# `DocType` (it also carries `research`, `custom`, `product_report`, `prototype`, which
+# this route never accepts). The generator writes that field straight from `doc_type`, so
+# a widened `DocType` produces rows the wire type does not admit — latent, since `tsc` is
+# clean until some code makes the two unions meet, at which point it is a TS2322.
+# Referencing `DocType` there would remove the edit but breaks
+# `test_kiro_exportable_types_lockstep.py`, which parses that union as literals; the
+# reason sits at the field.
+#
 # ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
 # `build_prototype`, `product_report`) and this route's docstring names the
 # latter two, which reads like an argument for admitting them here. It isn't:
@@ -321,8 +359,8 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 #     inputs before invoking the generator directly.
 #   * `api_generate_document` has no internal callers — the only occurrence of
 #     the symbol in `lambda/` is its own `def`.
-#   * The only frontend caller of this route types the field
-#     `doc_type: 'prd' | 'prfaq'`.
+#   * The only frontend caller types the field as `DocType`, declared once in
+#     `frontend/src/api/types.ts` (issue #381).
 # So narrowing this route cannot affect prototype building or product reports,
 # while widening it would re-open here the unvalidated entry those two
 # deliberately avoid. The docstring sentence is about which generator paths stay

@@ -1,3 +1,13 @@
+// ⚠️ This file is at the `max-lines` boundary: 599 counted lines against the limit of
+// 600 in eslint.config.js. ONE more line of code fails lint, and the error will name a
+// line number near the end of the file rather than whatever was added, so the next
+// person to add one learns it here instead of from a confusing failure.
+//
+// Comments and blank lines are FREE — the rule is configured `skipBlankLines: true,
+// skipComments: true` — so documentation costs nothing and only code counts. To
+// reclaim room, the `// Re-export all types for backward compatibility` block below is
+// the obvious candidate: this file is a thin wrapper whose methods mostly delegate via
+// `import('./projectsApi')`.
 import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'
@@ -31,6 +41,9 @@ import type {
   LogsSummary,
   ApiToken,
   CreateApiTokenResponse,
+  // The document-generation request body, shared with the `projectsApi` method
+  // this file's wrapper forwards to; see its declaration in `./types`.
+  GenerateDocumentBody,
 } from './types'
 
 // Re-export all types for backward compatibility
@@ -506,8 +519,17 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
-  generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
+  // Keep this signature on ONE line, and keep `data` taking the shared type by name:
+  // test_doc_type_lockstep.py matches it as exact text, and requires EVERY declaration
+  // of generateDocument to take `GenerateDocumentBody` (a ratio, because a mere
+  // substring search was satisfied by an unrelated occurrence while the real
+  // parameter was respelled inline — issue #381).
+  generateDocument: (projectId: string, data: GenerateDocumentBody) =>
     import('./projectsApi').then(m => m.projectsApi.generateDocument(projectId, data)),
+  // `output_type` is a DIFFERENT contract from `DocType`, not a copy that was
+  // missed: POST .../documents/merge takes a third value (`custom`) and the merger
+  // reads it unchecked (`lambda/jobs/document_merger/handler.py`), so it is not
+  // bound to the document route's allowlist. Widening it is a separate change.
   mergeDocuments: (projectId: string, data: { output_type: 'prd' | 'prfaq' | 'custom'; title: string; instructions: string; selected_document_ids: string[]; selected_persona_ids?: string[]; use_feedback?: boolean; feedback_sources?: string[]; feedback_categories?: string[]; days?: number }) =>
     import('./projectsApi').then(m => m.projectsApi.mergeDocuments(projectId, data)),
   getJobStatus: (projectId: string, jobId: string) =>

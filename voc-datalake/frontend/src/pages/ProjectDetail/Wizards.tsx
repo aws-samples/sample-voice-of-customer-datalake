@@ -12,7 +12,7 @@ import DataSourceWizard from '../../components/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { isWebSearchAvailable } from '../../runtimeConfig'
 import type {
-  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
+  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, DocType,
 } from './types'
 import type {
   ProjectPersona, ProjectDocument,
@@ -242,7 +242,34 @@ export function DocWizard({
   const hasPrfaq = docTypes.includes('prfaq')
   const hasPrd = docTypes.includes('prd')
 
-  const toggleDocType = (type: 'prd' | 'prfaq') => {
+  // `DocType`, not a respelt `'prd' | 'prfaq'` — a convention here, not something a
+  // test enforces: the lockstep test reads only the `DocType` declaration and the two
+  // api/ clients, never this file. Widening THIS annotation past `DocType` is caught,
+  // by the compiler at the `includes`/spread sites below, since `docConfig.docTypes`
+  // is `DocType[]`.
+  //
+  // ⚠️ The REVERSE is not caught, and it is the direction that actually happens: if
+  // `DocType` and `GENERATED_DOC_TYPES` are widened together, nothing here fails.
+  // `tsc` is fine with a narrower argument to `includes`/`filter`, so the picker
+  // silently keeps offering the old set — measured: adding a third member to both
+  // leaves `tsc -b` clean and every lockstep test green with this file untouched.
+  // Adding a doc type therefore means editing this file too, in four places that name
+  // their members as literals: `hasPrfaq`/`hasPrd` above, the two `toggleDocType('…')`
+  // buttons in `renderFinalStep`, the `bothSelected`/`singleTitle`/`singleSubmitLabel`
+  // copy, which is written as a PRD-or-PR-FAQ binary — a third member would fall into
+  // its PR-FAQ branch and be labelled as one — and `onSuggestBrief`'s
+  // `doc_type: … includes('prd') ? 'prd' : 'prfaq'`, the same binary against a
+  // DIFFERENT route: a third member selected alone asks `suggest-brief` for a PR-FAQ
+  // brief, so the AI-drafted title and description come back framed as a PR-FAQ for a
+  // document that is not one. That call is the only place the picker's set meets
+  // `suggestDocumentBrief`'s, which is deliberately left unbound to `DocType` (its
+  // signature and the reason sit at `api/projectsApi.ts`), so it needs naming rather
+  // than leaving implied by "unbound".
+  //
+  // The lockstep test's module docstring carries the same list as the FOURTH edit a
+  // widening needs, so a widener reading either place learns it; keep the two
+  // consistent (issue #381).
+  const toggleDocType = (type: DocType) => {
     const next = docTypes.includes(type)
       ? docTypes.filter((d) => d !== type)
       : [...docTypes, type]
