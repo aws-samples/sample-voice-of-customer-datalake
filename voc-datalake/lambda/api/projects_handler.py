@@ -476,7 +476,7 @@ def api_create_document(project_id: str):
 @tracer.capture_method
 def api_merge_documents(project_id: str):
     """Merge multiple documents."""
-    body = app.current_event.json_body or {}
+    body = _json_object_body()
     job_id, _ = create_job(project_id, 'merge_documents', 'merge_config', body, status='pending')
     invoke_lambda_async(DOCUMENT_MERGER_FUNCTION, {
         'project_id': project_id,
@@ -877,18 +877,10 @@ def _json_object_body() -> dict:
     Not extracted into `shared/` while it has two copies; the third one should do
     that rather than a second refactor of the first two.
 
-    SCOPE: the prioritization routes and `api_generate_document`. The other bodies
-    in this module have the same latent shape and predate this change, and
-    sweeping ~20 pre-existing routes is its own reviewable diff rather than a
-    rider on a change to one route.
-
-    One of those routes is not merely unswept but actively defective, and it is the
-    one a reader here would most likely assume is covered: `api_merge_documents`
-    still reads `json_body or {}` and calls `create_job` BEFORE anything inspects
-    the body, so a JSON array or a bare string produces a billed job row whose
-    `merge_config` is not an object. Tracked with the measurements in issue #380;
-    the fix is to call this helper. Adopting it here rather than there was the
-    scope line, not a judgement that the other route is fine.
+    SCOPE: the prioritization routes, `api_generate_document`, and
+    `api_merge_documents`. The other bodies in this module have the same latent
+    shape and predate this change; sweeping ~20 pre-existing routes is its own
+    reviewable diff rather than a rider on a change to one route.
     """
     try:
         body = app.current_event.json_body

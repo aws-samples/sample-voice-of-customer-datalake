@@ -151,6 +151,9 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a
   model call.
+- `POST /projects/{project_id}/documents/merge` now requires a JSON object before creating its job.
+  Arrays, strings, numbers and booleans previously became `merge_config` and failed only inside the
+  asynchronously invoked merger, after the job row existed and the invocation had been billed.
 
 ### Upgrade notes
 
@@ -208,6 +211,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   previously started a default `prd` generation. Unparseable JSON is a 400 too, where it was
   previously a 500. A body that is absent altogether, a literal JSON `null`, or zero-length
   (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
+- **`POST /projects/{project_id}/documents/merge` now applies the same body-shape contract before
+  creating a job.** A present array, string, number or boolean, and unparseable JSON, answer 400.
+  An absent body, JSON `null` or zero-length body still means an empty merge configuration and is
+  unchanged.
 
 ## [0.2.0] - 2026-08-19
 
