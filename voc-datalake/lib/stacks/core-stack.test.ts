@@ -735,18 +735,20 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
   // neither (an `Fn::If`, or the `Fn::Join` a token-bearing ARN renders as) must
   // STOP this block rather than flow through as an opaque object that
   // `/^lambda:/` fails to match and `toContain` never substring-searches. The
-  // union makes `PolicyDocumentSchema.parse()` throw on it instead, naming the
-  // offending statement.
+  // union throws on it instead, and says what to do about it — a legitimate
+  // future grant on this role is the likely way it fires.
   //
-  // `NotAction`/`NotResource` get the same fail-loud treatment via `z.never()`,
-  // for the opposite reason: they are the shapes that read cleanest here, because
-  // both fields above are legitimately ABSENT and zod would strip them. `Allow` +
-  // `NotAction` is the broadest grant IAM has — everything EXCEPT the listed
-  // actions, a superset of the `lambda:InvokeFunction` this block is about — so a
-  // statement carrying either must stop the case rather than yield an empty
-  // action set. Nothing in this repo writes one today; that is exactly why an
-  // extractor built to read only the positive fields must not silently ignore it.
-  const ActionOrResourceSchema = z.union([z.string(), z.array(z.string())]).optional();
+  // `NotAction`/`NotResource` fail loudly for the opposite reason: `Allow` +
+  // `NotAction` is a superset of the grant this block guards, and would read as
+  // an empty action set because both fields above are then legitimately absent.
+  const ActionOrResourceSchema = z
+    .union([z.string(), z.array(z.string())], {
+      errorMap: () => ({
+        message:
+          'unreadable Action/Resource shape (an Fn::If or Fn::Join?) — extend this schema to read it',
+      }),
+    })
+    .optional();
   const StatementSchema = z.object({
     Action: ActionOrResourceSchema,
     Resource: ActionOrResourceSchema,
@@ -793,6 +795,13 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
       .object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) })
       .parse(attachments[0].Properties?.Roles?.authenticated);
     return authenticated['Fn::GetAtt'][0];
+  }
+
+  /** The logical id of THIS deployment's Identity Pool, for the `aud` condition. */
+  function identityPoolLogicalId(template: Template): string {
+    const pools = Object.keys(template.findResources('AWS::Cognito::IdentityPool'));
+    expect(pools, 'expected exactly one Identity Pool').toHaveLength(1);
+    return pools[0];
   }
 
   /** Every statement that role can act under, however the policy is attached. */
@@ -897,16 +906,21 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     expect(federated, 'the role must still be assumable by the Identity Pool').toBeDefined();
 
     // The assertions carrying weight, read structurally rather than as substrings
-    // of the rendered statement: the presence of the condition KEY says nothing
+    // of the rendered statement: the presence of a condition KEY says nothing
     // about its VALUE, so flipping `amr` to `unauthenticated` — handing the role a
-    // signed-in browser assumes to any anonymous pool identity, a worse bug than
-    // the one this block guards — used to read as clean here. Both fields are
-    // typed narrowly on purpose: a shape this cannot read (an `amr` list, an
-    // `Action` array) must stop the case rather than pass it.
+    // signed-in browser assumes to any anonymous pool identity — used to read as
+    // clean here. Every field is typed narrowly on purpose: a shape this cannot
+    // read (an `amr` list, an `Action` array) must stop the case rather than pass
+    // it. Zod strips what it is not told about, so a condition key omitted from
+    // this parse is a condition key this case does not guard: BOTH halves of the
+    // trust are named, not just the one that regressed.
     const assumable = z
       .object({
         Action: z.string(),
         Condition: z.object({
+          StringEquals: z.object({
+            'cognito-identity.amazonaws.com:aud': z.object({ Ref: z.string() }),
+          }),
           'ForAnyValue:StringLike': z.object({
             'cognito-identity.amazonaws.com:amr': z.string(),
           }),
@@ -914,8 +928,18 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
       })
       .parse(federated);
 
-    // The other half of "assumable by the pool, and only that way".
+    // The mechanism: web identity, and only that way.
     expect(assumable.Action).toBe('sts:AssumeRoleWithWebIdentity');
+    // WHICH pool. Without this, dropping the `aud` condition makes the role
+    // assumable via web identity by any Identity Pool in any AWS account — a
+    // cross-ACCOUNT bypass, strictly worse than the cross-authorizer one this
+    // block is about. Matched against the pool in this template rather than a
+    // literal, so a hardcoded or foreign pool id fails too.
+    expect(
+      assumable.Condition.StringEquals['cognito-identity.amazonaws.com:aud'].Ref,
+      'the trust must be scoped to THIS Identity Pool',
+    ).toBe(identityPoolLogicalId(template));
+    // WHO within it: authenticated identities only.
     expect(
       assumable.Condition['ForAnyValue:StringLike']['cognito-identity.amazonaws.com:amr'],
       'the trust must admit AUTHENTICATED pool identities only',
