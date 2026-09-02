@@ -99,6 +99,18 @@
     "description": "Bewerten Sie jedes Dokument nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
     "title": "Priorisierungsrahmen"
   },
+  "lineage": {
+    "absent": "Keine Herkunft",
+    "absentReason": "Keines dieser Dokumente hält fest, woraus es erstellt wurde — die übliche Antwort für ein handgeschriebenes Dokument oder ein Dokument, das vor der Erfassung der Herkunft entstanden ist. Die Zeile ist weiterhin bewertbar; es gibt lediglich nichts, womit sich die Kombination prüfen ließe.",
+    "coherent": "Eine Generation",
+    "coherentReason": "In dieser Zeile überschreitet nichts Generationsgrenzen: keine zwei Dokumente sind Versionen desselben Typs, und keine erfasste Quelle verweist auf eine andere Generation eines anderen Dokuments in dieser Zeile. Ein Stimmzettel deckt eine Generation der Idee ab.",
+    "crossGeneration": "Überschreitet Generationen",
+    "repeatedTypeReason": "Diese Zeile enthält mehr als eine Version desselben Dokumenttyps, ein Stimmzettel deckt also zwei Generationen gleichzeitig ab. Sie ist weiterhin bewertbar — fügen Sie eine Zeile hinzu, wenn Sie eine einzelne Generation separat bewerten möchten.",
+    "stale": "Überholt",
+    "staleAction": "Diese Zeile ist gesperrt, ihre Dokumente und Stimmzettel bleiben also unverändert. Verwenden Sie „{{action}}“, um die neuere Kombination zu bewerten.",
+    "staleReason": "Von mindestens einem Dokumenttyp dieser Zeile existiert eine neuere Version. Die jeweils neuesten Dokumente der Typen dieser Zeile bilden zusammen eine Kombination, in der keines direkt aus einer früheren Version eines anderen Dokuments dieser Kombination erstellt wurde, und kein Dokument der Zeile ist neuer als diese Kombination.",
+    "supersededSourceReason": "Eines dieser Dokumente wurde aus einer anderen Generation eines anderen Dokuments dieser Zeile erstellt, die Kombination überschreitet also Generationsgrenzen. Sie ist weiterhin bewertbar."
+  },
   "loading": "Dokumente werden geladen...",
   "noteTooLong": {
     "description": "Notizen sind auf {{max}} Zeichen begrenzt, und eine längere Notiz wird nicht gekürzt, sondern abgelehnt. Kürzen Sie die Notiz in der bearbeiteten Zeile und speichern Sie dann erneut. Es wurde noch nichts gespeichert.",

@@ -175,6 +175,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from _shared.test.scoped_secret import scoped_secret
 from requests.structures import CaseInsensitiveDict
 
 PUBLIC_ADDRINFO = [(2, 1, 6, '', ('93.184.216.34', 80))]
@@ -223,12 +224,19 @@ def _response(status: int, *, location: str | None = None, text: str = '') -> Ma
 
 @pytest.fixture
 def ingestor():
-    """A real WebScraperIngestor with AWS mocked at the import boundary."""
+    """A real WebScraperIngestor with AWS mocked at the import boundary.
+
+    The secret is `scoped_secret()` rather than `{}`: since issue #251 a namespace
+    matching no key is a ConfigurationError out of `__init__`, so `{}` would fail
+    construction here for a reason that has nothing to do with outbound URLs. The
+    helper derives the prefix from the live `SOURCE_PLATFORM`, so this does not
+    restate a rule the read side owns.
+    """
     with (
         patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo,
         patch('_shared.base_ingestor.get_s3_client'),
         patch('_shared.base_ingestor.get_sqs_client'),
-        patch('_shared.base_ingestor.get_secret', return_value={}),
+        patch('_shared.base_ingestor.get_secret', return_value=scoped_secret()),
     ):
         mock_dynamo.return_value.Table.return_value = MagicMock()
         from webscraper.ingestor.handler import WebScraperIngestor

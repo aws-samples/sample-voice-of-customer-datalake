@@ -401,8 +401,184 @@ export interface ProjectPersona {
   source_breakdown?: Record<string, number>
 }
 
+// 🔑 The ONE declaration of what POST /projects/{id}/document accepts in
+// `doc_type`. `projects_handler.GENERATED_DOC_TYPES` is pinned against THIS line by
+// lambda/api/test/test_doc_type_lockstep.py, so widen both together or that test
+// fails. Keep it a union of string LITERALS: the lockstep parser refuses a derived
+// spelling (`typeof GENERATED_DOC_TYPES[number]`) rather than resolving it.
+//
+// It lives here, beside the other wire types, rather than in
+// `pages/ProjectDetail/types.ts` where it was declared before: the route owns this
+// contract, and `api/` importing from `pages/` inverted the layering. The document
+// picker re-exports it from there (issue #381).
+export type DocType = 'prd' | 'prfaq'
+
+// The POST /projects/{id}/document request body, named so that BOTH
+// `generateDocument` signatures — `projectsApi.ts` and the `client.ts` wrapper that
+// forwards to it — reference one declaration instead of restating the shape.
+//
+// 🔑 Why a named type and not just `doc_type: DocType` in each signature: the
+// `projectsApi` one is the TERMINAL consumer (its `data` is only spread into
+// `JSON.stringify`), so widening its annotation inline is an assignability error
+// NOWHERE — `tsc` accepts it and the request goes out with a value the route 400s.
+// Only the shared name closes that, and `test_doc_type_lockstep.py` asserts both
+// signatures still spell it.
+//
+// `doc_type` below is pinned to `DocType` by `DocTypeFieldIsExactlyTheUnion`, a few
+// lines down. Referencing the union HERE is not self-enforcing: nothing had stopped
+// this one field being respelled back to `'prd' | 'prfaq' | 'onepager'`, which was
+// measured to leave `tsc`, `eslint` and the whole lockstep suite green while the
+// route 400s the third value.
+export interface GenerateDocumentBody {
+  doc_type: DocType
+  title: string
+  feature_idea: string
+  data_sources: {
+    feedback: boolean;
+    personas: boolean;
+    documents: boolean;
+    research: boolean
+  }
+  selected_persona_ids: string[]
+  selected_document_ids: string[]
+  feedback_sources: string[]
+  feedback_categories: string[]
+  days: number
+  customer_questions?: string[]
+  response_language?: string
+}
+
+// 🔑 The pin on `GenerateDocumentBody.doc_type`. What it guarantees, stated as the
+// property it actually checks: that field admits EXACTLY the members of `DocType`,
+// in both directions. Deleting this block compiles cleanly, so
+// `test_the_type_level_pins_are_present` in
+// lambda/api/test/test_doc_type_lockstep.py keeps these declarations present.
+//
+// ⚠️ It does NOT check that the field REFERENCES `DocType` — an earlier version of
+// this comment said it did, and that was measured to be the opposite of the truth.
+// `BothWays` is a structural comparison, so respelling the field `'prd' | 'prfaq'`
+// — the same members, no reference to the union at all — passes it (verified: `tsc`
+// exit 0, every lockstep test green). Set equality is the weaker property and it is
+// the SUFFICIENT one: a same-member respelling is harmless today, and if `DocType`
+// is later widened the stale field stops being equal to it and this line becomes a
+// TS2344. So the drift this contract cares about is still caught at the moment it
+// would be introduced; only the coincidence is tolerated, and never silently.
+//
+// Why the pin is needed at all — measured, not assumed. Every other guard around
+// this contract stops one level further out:
+//   * the lockstep test parses only the `export type DocType =` declaration above,
+//     so it cannot see this interface;
+//   * `GenerateDocumentTakesTheSharedBody` in `projectsApi.ts` compares that
+//     method's PARAMETER to this interface, so a widened interface satisfies it by
+//     construction;
+//   * `noUnusedLocals` stays quiet, since `DocType` is still used by
+//     `ProjectDocument` below.
+// So respelling the field `'prd' | 'prfaq' | 'onepager'` was measured to exit `tsc`
+// 0, pass all lockstep tests and lint clean, while a caller could then send a value
+// the route 400s. That is the one edit the comments above direct a widener TO, which
+// is why it gets a compiler check and not a third text assertion.
+//
+// A one-way `extends` would not do: `'prd'` extends `DocType`, so a NARROWED field
+// (offering less than the route accepts — the "unreachable capability" half of the
+// drift this contract is about) would pass. Hence equality in both directions.
+// `[T] extends [U]` rather than `T extends U`: the bare form distributes over a
+// union, which would compare member-by-member and accept a subset.
+//
+// ⚠️ WHAT PINS THE SECOND DIRECTION. A WIDENED-side control does not: a superset
+// fails `[Left] extends [Right]` under the one-way form too, so the two forms are
+// INDISTINGUISHABLE to it, and collapsing this type to `[Left] extends [Right]`
+// was measured to leave `tsc` at exit 0 with every lockstep test green. Only a
+// NARROWED-side control separates them, which is why each pin below has one as well
+// (`...WouldSeeNarrowing`). Each compares its OWN pin's left operand against a wider
+// type DERIVED from the right one, so it is `true` under a one-way comparison and
+// `false` under this one, with no member spelled out to go stale.
+//
+// ⚠️ Not `Omit<...>`, which looks like the natural narrowing and detects nothing:
+// measured, `Omit<GenerateDocumentBody, 'doc_type'>` is NOT assignable to the
+// interface (it lacks a required property), so it is `false` under BOTH forms. A
+// narrowed-FIELD shape such as `Omit<GenerateDocumentBody, 'doc_type'> &
+// { doc_type: 'prd' }` does discriminate, but it names a member and so goes stale the
+// moment the contract is widened.
+//
+// ⚠️ Nor a bare `never` on the left, which the signature control used to have. It
+// discriminates the two forms perfectly well, but it mentions nothing about the thing
+// being pinned — so it was really a second detector of a collapse in THIS shared
+// helper (already reported once, here) rather than a control on that pin. Measured:
+// deleting it left a one-way collapse reported only by this file. Reading the pin's
+// own operand is what makes each control local to its pin.
+export type BothWays<Left, Right> = [Left] extends [Right]
+  ? ([Right] extends [Left] ? true : false)
+  : false
+// The ONE verdict helper. `Verdict extends true` is the whole assertion: applied to a
+// comparison that came back `false`, the constraint is unsatisfied and the line is a
+// TS2344.
+//
+// 🔑 There is deliberately no `MustBeFalse` companion. The controls below assert their
+// verdict by applying THIS helper and expecting the error, via `@ts-expect-error`, so
+// that dropping `extends true` cannot go unnoticed: with the constraint gone the
+// controls stop erroring and each directive becomes an "unused '@ts-expect-error'"
+// TS2578. A separate `MustBeFalse<Verdict extends false>` could not do that — it was
+// measured that deleting BOTH constraints left `tsc` at exit 0 with every lockstep
+// test green while the field below was widened, because a text check on the helpers'
+// names is satisfied by their own declarations.
+type MustBeTrue<Verdict extends true> = Verdict
+// Each declaration below is written on ONE line. That is load-bearing rather than a
+// formatting choice: the lockstep test pins each one as an EXACT string, so a wrapped
+// declaration puts a newline inside what it is looking for. See TYPE_LEVEL_PINS in
+// lambda/api/test/test_doc_type_lockstep.py for why it pins the whole declaration
+// rather than a fragment of it.
+//
+// Exported only so `noUnusedLocals` cannot be what deletes them; nothing imports
+// any of them, and nothing should.
+export type DocTypeFieldIsExactlyTheUnion = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType>>
+// The non-vacuity controls for the line above. `MustBeTrue<BothWays<...>>` is also
+// satisfied by a `BothWays` that degenerates to `true` or collapses to a one-way
+// `extends`, either of which is a pin reporting success while comparing less than it
+// claims. Both controls are derived from the field rather than listing members, so
+// widening the contract legitimately does not make either one the failure.
+//
+// Each is an INVERTED assertion: the comparison must NOT hold, so `MustBeTrue` must
+// reject it and `@ts-expect-error` consumes that error. This is self-checking in both
+// directions — if the comparison starts holding the directive goes unused (TS2578),
+// and if the directive is deleted the genuine TS2344 surfaces.
+//
+// WIDENED side — adding a member the route cannot accept must not compare equal.
+// @ts-expect-error the field plus a member DocType lacks must NOT compare equal
+export type DocTypeFieldPinWouldSeeDrift = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'] | 'not-a-doc-type', DocType>>
+// NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
+// control above cannot see (see the ⚠️ note on `BothWays`). The field is narrower than
+// itself-plus-a-member, so a one-way comparison calls this `true`, the directive goes
+// unused and the line becomes a TS2578; two-way, it is `false` as required.
+//
+// Left side is the field — this pin's OWN operand — so this is a control on THIS pin
+// and not merely on the shared `BothWays`; right side is derived from it, so no member
+// is named that could go stale when the contract is widened.
+// @ts-expect-error the field is narrower than itself plus a member, so NOT equal
+export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType | 'not-a-doc-type'>>
+
 export interface ProjectDocument {
   document_id: string
+  // ⚠️ A SUPERSET of `DocType`, RESTATED as literals rather than referencing it — which
+  // makes it a FIFTH edit a widening of `DocType` needs, stated here because no gate asks
+  // for it. The generator persists this field straight from `doc_type`
+  // (`'document_type': doc_type` at both save paths in
+  // `lambda/jobs/document_generator/handler.py`), so a widened `DocType` produces rows
+  // this union does not admit. Latent rather than absent: `tsc` is clean today only
+  // because nothing assigns a `DocType` into this field, and a one-line probe making the
+  // two meet is a TS2322 (measured).
+  //
+  // `DocType | 'research' | ...` would REMOVE the edit, and was tried. It is not
+  // available: `lambda/api/test/test_kiro_exportable_types_lockstep.py` parses THIS union
+  // as string literals to derive the full document-type set, and a referenced type makes
+  // it read zero members — loudly, but it fails. Teaching that parser to resolve
+  // `DocType` is a different contract's business (Kiro export inclusion, not this route's
+  // allowlist) and belongs beside it, so the ceiling is named here instead — the same
+  // call as the generator and picker ceilings in `lambda/api/test/test_doc_type_lockstep.py`.
+  //
+  // Superset deliberately: `research` and `custom` come from other routes,
+  // `product_report` and `prototype` from their own. So this is NOT a second copy of the
+  // route's contract and must not be pinned against `GENERATED_DOC_TYPES` — the same
+  // reason `suggestDocumentBrief` is left unbound.
   document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
   title: string
   // New (S3-only) HTML prototypes have NO `content` — the HTML lives at

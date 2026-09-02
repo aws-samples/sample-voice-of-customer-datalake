@@ -221,6 +221,96 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   longer list that predates it keeps saving untouched, so one such configuration cannot block
   edits to the others it is stored alongside. Its destinations are still checked, and adding to
   it is refused.
+- Plugin secret isolation now fails closed. Each plugin Lambda reads one shared Secrets Manager
+  secret whose keys are namespaced `<plugin_id>_<key>`, and — because every ingestion Lambda shares
+  one IAM role — that prefix is the only boundary between one plugin's credentials and another's. A
+  prefix matching zero keys previously returned the **complete** shared secret, on the theory that
+  such a plugin predated prefixing; the effect was that a typo in a plugin id, the input most likely
+  to be wrong, produced the maximally permissive outcome. It now raises, naming the plugin and the
+  prefix it expected and nothing else. The hand-maintained plugin-id list the filter needed is gone
+  with it: forgetting to add a plugin there reclassified its keys as "shared" and leaked them into
+  every other plugin.
+- A webhook Lambda is now deployed with the environment variable its code reads for the plugin
+  identity (`SOURCE_PLATFORM`, which only the ingestor Lambda carried). Combined with the above,
+  a deployed webhook would otherwise have failed on every delivery.
+- A Secrets Manager read that fails no longer counts against a plugin's circuit breaker. The
+  fail-closed change above turned an unreadable secret into a refusal to start, and a refusal was
+  counted as a plugin failure — but a read that failed is indistinguishable from an empty secret
+  (the client error is logged and discarded), so a handful of throttles inside the breaker's window
+  would disable a healthy plugin's ingestion schedule, which nothing re-enables automatically. An
+  unreadable secret is now reported without being counted: the `plugin.failed` audit event still
+  fires, and the run record moves to `error` on a *manual* run — a scheduled run has no run record
+  to move, so an alarm on the `Refusing to load plugin secrets` log line is the escalation path for
+  that case, and the exemption depends on it existing (see `docs/plugin-architecture.md`). Only a
+  genuine misconfiguration — a malformed plugin id, a namespace holding no keys, or a secret whose
+  body is not a JSON object — can trip the breaker.
+- Every route taking a `{source}` path parameter now requires `source` to be a plugin that exists.
+  Validating only its *form* left a cross-plugin credential write open, because the colliding value
+  is itself well-formed: `source=app_reviews` with key `ios_app_id` stored `app_reviews_ios_app_id`,
+  which `app_reviews_ios`'s next run then consumed as its own `app_id`. The synth-time guard on
+  colliding plugin ids does not reach this — a colliding *stored key* needs no colliding manifest —
+  so the namespace a request may address is now restricted to the manifest-derived ids CDK already
+  hands this Lambda. It fails open if that variable is unavailable, so one bad environment variable
+  cannot break credential management outright. `source` also reached an ingestor Lambda name and an
+  EventBridge rule name unvalidated on the `/sources/{source}/*` routes.
+- `GET /sources/status` validates the sources it takes from the query string. It is the only route
+  whose source is not a path parameter, so the guard above did not reach it, and both of its
+  branches derived a resource from an arbitrary value: `?sources=` named EventBridge rules it
+  called `describe_rule` on — reflecting each rule name back, so an arbitrary value could enumerate
+  rules and learn the naming convention — and `?run_status=` queried an arbitrary `SOURCE_RUN#`
+  partition. The `?run_status=` branch now answers 400 for a source that is not a plugin. The
+  `?sources=` branch reports such a source as `{'enabled': false, 'exists': false}` rather than
+  raising, because it answers about several sources at once and one unknown name must not fail the
+  whole response — and because its own default list contains `manual_import`, a legitimate source
+  platform that deliberately has no plugin manifest. That is the same answer as before for every
+  request the UI sends, since a schedule rule only ever exists per plugin. The `?sources=` list is
+  also de-duplicated and capped now: validation bounds *which* rules may be described but not how
+  *many* calls are made, and one valid name repeated 500 times issued 500 `describe_rule` calls while
+  overwriting the same response entry each time — the caller chose the AWS call count against a fixed
+  result, on an API throttled per account and shared with the rest of the stack. It is the only read
+  in this handler that fans out one AWS call per list element.
+- `POST`/`DELETE /integrations/{source}/apps`, `POST /sources/{source}/run` and
+  `PUT /sources/{source}/enable|disable` now require the caller to be in the `admins` group. Only
+  the two credentials routes were gated, so the boundary depended on which key a write happened to
+  land under: a caller whose only group was `users` could write `{source}_configs` on the same shared
+  Secrets Manager secret, invoke an ingestor (a billed third-party fetch, in a loop), and disable a
+  plugin's ingestion schedule — which nothing re-enables automatically. `GET /integrations/{source}/apps`
+  stays open deliberately: the Scrapers page lists app configs for every authenticated user, and a
+  config holds a public app-store id and a display name rather than a credential. On that page the
+  Run, Add, Save and Delete controls and the schedule toggle are now disabled for a non-admin, with
+  the reason on hover, rather than issuing a request that 403s — and so is the Enabled toggle on the
+  Settings page's source cards, which is the other UI caller of `enable|disable`.
+- `Save to Secrets Manager` on the Settings page's source cards is now disabled for a non-admin.
+  `PUT /integrations/{source}/credentials` behind it was already admin-gated, so unlike the toggle
+  above this was not a regression — the control had always behaved this way, and it was the last
+  ungated UI entrance to an admin-gated route. It was also the least visible failure of the set:
+  that mutation has an `onSuccess` but no `onError`, so the 403 rendered no message and the button
+  merely never became `Saved!` — a non-admin typed a credential, clicked Save, and got no indication
+  it had been refused. The credential fields stay editable and `Test` stays available, because
+  `POST /integrations/{source}/test` is not gated and a non-admin can already read those fields.
+- `POST /scrapers`, `DELETE /scrapers/{scraper_id}` and `POST /scrapers/{scraper_id}/run` now require
+  the `admins` group. No route in that handler had a gate, while two of them `put_secret_json` the
+  SAME shared API-credentials secret the credentials routes protect — rewriting `webscraper_configs`,
+  a key the webscraper ingestor consumes, so an unprivileged write steered which URLs got fetched —
+  and the third invoked that ingestor, a billed third-party fetch callable in a loop. Gating only the
+  `{source}` routes above would have left the boundary depending on which handler a write arrived
+  through rather than on what it changed. The `GET` routes and `POST /scrapers/analyze-url` stay open
+  to match the read/write split, and the Run and Delete controls on each scraper card are now disabled
+  for a non-admin — as is **Save in the scraper editor**, which is the only UI entrance to
+  `POST /scrapers` and was the worst of the three: the editor closed as though the change had been
+  stored, because it closes unconditionally and its mutation surfaces no error, so a non-admin's edit
+  was discarded silently. `scraper_id` is deliberately not allowlisted the way `{source}` is: it is
+  not a plugin id and reaches no secret key or function name, only a `SCRAPER_RUN#` partition and the
+  invoke payload, where the webscraper resolves it against its own configured list. `/scrapers/manual/*`
+  is a **second** handler and is deliberately not covered: those routes write feedback content into
+  the ingestion pipeline and reach neither the shared secret nor any plugin resource, which is the
+  basis on which the three above were gated — see `docs/plugin-architecture.md`.
+- A plugin's `plugin.failed` audit event is no longer lost when the circuit breaker's own DynamoDB
+  lookup fails. The three reporting steps for a construction failure shared one `try`, and
+  `record_failure` is not exception-safe on its first line (it resolves its table in a property,
+  outside its own `try`), so a failure there skipped the audit event — in exactly the correlated
+  case where the same DynamoDB trouble affects both, and on a scheduled run that event is the only
+  signal the failure leaves anywhere. Each step is now guarded independently.
 - `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a
@@ -228,6 +318,49 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Upgrade notes
 
+- **A plugin must declare at least one key in its manifest's `secrets` block.** Following the
+  fail-closed change above, a plugin whose namespace holds no key in the shared secret raises a
+  `ConfigurationError` when its Lambda is constructed, rather than silently receiving every other
+  plugin's keys. Every plugin shipped in this repo declares at least one key and CDK seeds them all
+  at deploy time, so no bundled plugin is affected; a custom plugin declaring none must add a key,
+  or override `_load_secrets` to return `{}` — a deliberate opt-out of the boundary. Declining to
+  *read* `self.secrets` does not avoid the raise: both base classes call `self._load_secrets()` in
+  `__init__`, before any subclass body runs. A test over the manifests now fails in CI
+  rather than letting this surface in a deployed Lambda. Any onboarding notes telling a plugin
+  author to register their prefix in `_get_known_prefixes()` are obsolete — that function no longer
+  exists, and registration was never needed for a correctly prefixed key.
+- **A plugin id may no longer be a prefix of another plugin id** (`app_reviews` alongside
+  `app_reviews_ios`). Secret keys are matched by string prefix, so the shorter id would receive the
+  longer one's credentials. `cdk synth` now refuses such a pair, which is the only point at which
+  the whole id set is known. No bundled pair collides.
+- **`source` on every `{source}` route must now be a configured plugin id.** A request naming a
+  well-formed but non-existent source (`app_reviews`, `webscraper_admin`) is answered 400 instead of
+  reading or writing that namespace, invoking `voc-ingestor-<source>` or toggling
+  `voc-ingest-<source>-schedule`. Anything addressing a real plugin id is unaffected, which is every
+  call the web app makes; a script that relied on an arbitrary namespace must use the owning plugin's
+  id. Neither this nor the synth-time id guard is retroactive: a key stored by a pre-upgrade write
+  survives in the shared secret and is still read by whichever plugin's namespace it landed in.
+  A deployment where an arbitrary `source` was used should delete the stale keys by hand.
+- **`GET /sources/status?sources=` accepts at most 50 distinct sources per request** and answers 400
+  above that. Counted after de-duplication, so repeating one name is not what trips it, and set well
+  above both the five plugin manifests and the route's own three-source default — the web app asks
+  for at most one source at a time, so no UI call approaches it. A caller passing the same source
+  more than once still receives the identical response; only the redundant `describe_rule` calls are
+  gone.
+- **Triggering a run, toggling a schedule, and writing or deleting an app config now require the
+  `admins` group.** A caller in `users` alone receives 403 on `POST /sources/{source}/run`,
+  `PUT /sources/{source}/enable|disable` and `POST`/`DELETE /integrations/{source}/apps`. Listing app
+  configs (`GET /integrations/{source}/apps`) is unchanged and still open to any authenticated
+  caller. A non-admin who previously used the Scrapers page to run a source or edit an app config now
+  sees those controls disabled; a script doing the same needs admin credentials. The same applies to
+  the scraper routes: `POST /scrapers`, `DELETE /scrapers/{scraper_id}` and
+  `POST /scrapers/{scraper_id}/run` answer 403 outside the `admins` group, while `GET /scrapers`, the
+  status and run-history reads and `POST /scrapers/analyze-url` stay open. On the Settings page the
+  Enabled toggle is now disabled for a non-admin, where it previously issued a request that failed
+  silently — as is `Save to Secrets Manager` on the same card, whose route was already admin-gated
+  but whose refusal rendered no message at all — and in the scraper editor so is Save, where the
+  modal previously closed as though the edit had been saved. The manual-import routes
+  (`/scrapers/manual/*`, a different Lambda) are unaffected and stay open to any authenticated caller.
 - **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
   `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
   too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty

@@ -17,6 +17,7 @@ import hashlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
+from shared.exceptions import ConfigurationError, SecretUnreadableError
 # The UNCHECKED fetch: no outbound-URL policy, and requests follows redirects
 # itself. Correct for a code-constructed endpoint (the app-review and synthetic
 # ingestors' fixed API URLs); an ingestor whose URL comes from a stored
@@ -32,6 +33,7 @@ from shared.aws import (
 )
 from .circuit_breaker import CircuitBreaker
 from .audit import emit_audit_event
+from .plugin_secrets import filter_plugin_secrets
 from .sqs_utils import send_messages_to_queue
 
 # Re-export for backwards compatibility with existing handlers. `fetch_with_retry`
@@ -68,48 +70,155 @@ class BaseIngestor(ABC):
         self.source_platform = SOURCE_PLATFORM
         self.brand_name = BRAND_NAME
         self.brand_handles = BRAND_HANDLES
-        self.secrets = self._load_secrets()
+        # Everything the failure path needs is wired BEFORE the secret is read.
+        # Since issue #251 a namespace miss raises here rather than silently
+        # widening to the whole shared secret, so construction failing is a
+        # routine outcome — and a raise out of __init__ never reaches run()'s
+        # except block, which is what tells the operator anything (see
+        # _report_construction_failure). Ordering this after the read is what left
+        # a manual run's status record stranded at 'running' with a permanent
+        # spinner in the UI.
         self.watermarks_table = get_dynamodb_resource().Table(WATERMARKS_TABLE)
+        self.aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+        self.circuit_breaker = CircuitBreaker(self.source_platform)
         self._s3 = get_s3_client()
         self._sqs = get_sqs_client()
-        self.circuit_breaker = CircuitBreaker(self.source_platform)
-        self.aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+        try:
+            self.secrets = self._load_secrets()
+        except ConfigurationError as error:
+            self._report_construction_failure(error)
+            raise
+
+    def _report_construction_failure(self, error: Exception) -> None:
+        """Give a construction-time failure the same reporting run() gives its own.
+
+        ``_load_secrets`` runs in ``__init__``, and every ``lambda_handler``
+        constructs the ingestor before calling ``run()`` — so a raise from here
+        bypasses run()'s ``except`` entirely. Three things that block go on to do
+        are what the operator actually sees, and all three were missing:
+
+          * the ``SOURCE_RUN#`` record stays at 'running', which
+            ``integrations_handler.run_source`` wrote before invoking us and which
+            the Scrapers UI polls with no timeout — so a manual "Run now" spins
+            forever and the diagnosis exists only in CloudWatch;
+          * the circuit breaker never counts the failure, so a plugin broken this
+            way does not auto-disable its schedule;
+          * no ``plugin.failed`` audit event is emitted.
+
+        The breaker is the exception, and deliberately so: a
+        ``SecretUnreadableError`` is NOT counted. ``get_secret`` swallows every
+        client error into ``{}``, so an unreadable secret may be an AWS-side
+        throttle the plugin did nothing to cause — and at the default threshold
+        (5 failures in 15 minutes) counting it lets a handful of blips call
+        ``_trip_breaker``, which disables the plugin's EventBridge schedule.
+        Nothing in this tree re-enables a disabled rule, so ingestion would stop
+        until an operator noticed. Only the auto-disable is withheld; the audit
+        event still fires, and the run record does too on a MANUAL run — on a
+        scheduled one there is no ``SOURCE_RUN#`` record to move, which is why the
+        audit event is the only remaining signal and why losing it mattered. See
+        ``docs/plugin-architecture.md`` on the alarm this exemption relies on. A
+        misconfiguration — a malformed identity or a namespace that
+        matches nothing — is a plain ``ConfigurationError`` and still counts, since
+        retrying it forever is exactly what the breaker exists to stop.
+
+        Reported HERE rather than in each plugin's ``lambda_handler`` for the same
+        reason the manual-run cache clear is centralized (#141/#215): a per-handler
+        wrapper is one a new plugin can forget, and forgetting it is silent.
+
+        Each step is INDEPENDENTLY guarded, and one step is not merely tidier than
+        one shared ``try`` — it is the difference between reporting and not.
+        ``CircuitBreaker.record_failure`` looks exception-safe but is not on its
+        first line: ``self.table`` is a property that calls
+        ``get_dynamodb_resource()`` OUTSIDE record_failure's own ``try``, so a
+        failure constructing that resource escapes it. Under one shared ``try``
+        that landed in the catch below and the audit event two lines later never
+        ran — losing the ONLY signal a scheduled run leaves behind, since
+        ``_update_source_run_status`` is a no-op without an ``execution_id``. That
+        is also the correlated case: the same DynamoDB trouble affects both.
+
+        Ordered audit-event first as well, but the per-step guards are what carry
+        the guarantee — the order alone is defence in depth and should not be
+        mistaken for the fix (with the guards in place, reordering these three
+        changes nothing, which is the point). ``emit_audit_event`` swallows its own
+        EventBridge errors and always logs, so it is the cheapest and most reliable
+        of the three; running it first means it survives even a future edit that
+        reintroduces a shared ``try``.
+
+        Never raises. It runs while a ConfigurationError is propagating, and
+        replacing that error with a DynamoDB one would hide the thing worth
+        reporting.
+        """
+        unreadable = isinstance(error, SecretUnreadableError)
+
+        # Deliberately blind catches: narrowing them means enumerating what three
+        # AWS clients can raise, and anything missed REPLACES the
+        # ConfigurationError being propagated with an unrelated one — hiding the
+        # only message that names the prefix the plugin expected. Pinned by
+        # test_the_report_does_not_replace_the_error_the_operator_needs.
+        try:
+            emit_audit_event("plugin.failed", self.source_platform, False, {
+                "error": str(error),
+                "error_type": type(error).__name__,
+                "phase": "construction",
+                # Names WHY the breaker did not count this one, so an operator
+                # reading the audit trail after a burst of these does not conclude
+                # the breaker is broken.
+                "counted_against_circuit_breaker": not unreadable,
+            })
+        except Exception as reporting_error:  # noqa: BLE001
+            logger.warning(f"Failed to emit construction failure audit event: {reporting_error}")
+
+        try:
+            self._update_source_run_status({
+                'status': 'error',
+                'items_found': 0,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'errors': [str(error)],
+            })
+        except Exception as reporting_error:  # noqa: BLE001
+            logger.warning(f"Failed to record construction failure run status: {reporting_error}")
+
+        if not unreadable:
+            try:
+                self.circuit_breaker.record_failure(str(error))
+            except Exception as reporting_error:  # noqa: BLE001
+                logger.warning(f"Failed to record construction failure with the circuit breaker: {reporting_error}")
 
     def _load_secrets(self) -> dict:
         """
-        Load API credentials from Secrets Manager.
-        
-        With per-plugin secrets isolation, each plugin has its own secret.
-        The secret keys are prefixed with the plugin ID, which we strip here.
+        Load this plugin's API credentials from the shared Secrets Manager secret.
+
+        Keys are stored namespaced as ``<plugin_id>_<key>``; ``filter_plugin_secrets``
+        returns only this plugin's namespace with the prefix stripped, and RAISES
+        rather than widening when the namespace matches nothing (issue #251 — the
+        old ``filtered if filtered else all_secrets`` turned a typo'd plugin id
+        into cross-plugin credential access). See ``_shared/plugin_secrets.py`` for
+        why the "keys with no known prefix are shared/legacy" branch, and the
+        plugin-id list it needed, are gone.
+
+        An absent SECRETS_ARN stays a warning rather than a raise: that is the
+        env-var-not-wired case, not a namespace mismatch, and no secret is read at
+        all — so there is nothing to over-share. It is also what a plugin invoked
+        outside the CDK-built environment (a local smoke run) hits.
         """
         if not SECRETS_ARN:
             logger.warning("SECRETS_ARN not configured")
             return {}
-        
-        all_secrets = get_secret(SECRETS_ARN)
-        
-        # Filter to only keys prefixed with this plugin's ID
-        prefix = f"{self.source_platform}_"
-        filtered = {}
-        for key, value in all_secrets.items():
-            if key.startswith(prefix):
-                # Strip the prefix for cleaner access
-                clean_key = key[len(prefix):]
-                filtered[clean_key] = value
-            elif not any(key.startswith(f"{p}_") for p in self._get_known_prefixes()):
-                # Include keys without any known prefix (legacy/shared keys)
-                filtered[key] = value
-        
-        return filtered if filtered else all_secrets
 
-    def _get_known_prefixes(self) -> list[str]:
-        """Get list of known plugin prefixes for secret filtering."""
-        # This could be loaded from environment or manifest
-        return [
-            "webscraper", "s3_import", "manual_import",
-            "app_reviews_ios", "app_reviews_android",
-            "synthetic_reviews",
-        ]
+        all_secrets = get_secret(SECRETS_ARN)
+        if not all_secrets:
+            # `get_secret` is lru_cached and swallows EVERY exception into `{}`,
+            # so a throttle or timeout memoizes an empty payload under the ARN.
+            # filter_plugin_secrets refuses to run on it (correctly), but without
+            # this eviction the refusal is permanent: every later invocation in
+            # the warm container re-reads the cached `{}` and raises again with no
+            # further API call. Only a manual "Run now" clears the cache, so a
+            # SCHEDULED plugin would stay wedged for the container's lifetime
+            # after a single transient blip. Evicting here costs one extra read on
+            # the next invocation and makes the failure retry-safe.
+            clear_secret_cache()
+
+        return filter_plugin_secrets(self.source_platform, all_secrets)
 
     def get_watermark(self, key: str, default: str = None) -> str:
         """Get watermark for a specific source/key from DynamoDB."""

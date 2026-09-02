@@ -10,6 +10,8 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
+from _shared.test.scoped_secret import scoped_secret
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -265,7 +267,7 @@ def ingestor():
         patch("_shared.base_ingestor.get_dynamodb_resource") as mock_dynamo,
         patch("_shared.base_ingestor.get_s3_client"),
         patch("_shared.base_ingestor.get_sqs_client"),
-        patch("_shared.base_ingestor.get_secret", return_value={}),
+        patch("_shared.base_ingestor.get_secret", return_value=scoped_secret()),
     ):
         mock_dynamo.return_value.Table.return_value = MagicMock()
         from s3_import.ingestor.handler import S3ImportIngestor

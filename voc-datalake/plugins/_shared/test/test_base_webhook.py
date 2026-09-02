@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from _shared.test.scoped_secret import scoped_secret
+
 
 class TestBaseWebhookInit:
     """Tests for BaseWebhook initialization."""
@@ -30,6 +32,10 @@ class TestBaseWebhookInit:
         
         assert webhook.secrets.get('webhook_secret') == 'secret-123'
         assert webhook.secrets.get('api_key') == 'key-456'
+        # Equality, not two .get()s: an assertion pair cannot notice a THIRD
+        # key arriving, which is how the foreign 'other_plugin_key' used to
+        # slip through (issue #251).
+        assert webhook.secrets == {'webhook_secret': 'secret-123', 'api_key': 'key-456'}
 
     @patch('_shared.base_webhook.get_sqs_client')
     @patch('_shared.base_webhook.get_secret')
@@ -37,7 +43,7 @@ class TestBaseWebhookInit:
         """Creates SQS client for queue operations."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         mock_sqs.return_value = mock_sqs_client
         
@@ -59,7 +65,7 @@ class TestBaseWebhookNormalizeItem:
         """Converts webhook item to normalized schema."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
@@ -92,7 +98,7 @@ class TestBaseWebhookNormalizeItem:
         """Uses 'webhook' as default channel."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
@@ -115,7 +121,7 @@ class TestBaseWebhookSendToQueue:
         """Sends items to SQS in batches of 10."""
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         # Use a callable side_effect that derives Successful from the actual
         # Entries passed.  This is correct for any batch size and any number of
@@ -153,7 +159,7 @@ class TestBaseWebhookSendToQueue:
         """Does not call SQS when items list is empty."""
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         mock_sqs.return_value = mock_sqs_client
 
@@ -178,7 +184,7 @@ class TestBaseWebhookSendToQueue:
         """
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         mock_sqs_client.send_message_batch.return_value = {
             'Successful': [],
@@ -214,7 +220,7 @@ class TestBaseWebhookSendToQueue:
         """
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         mock_sqs_client.send_message_batch.return_value = {
             'Successful': [{'Id': '0'}],
@@ -256,7 +262,7 @@ class TestBaseWebhookHandle:
         """Parses payload, normalizes items, and queues them."""
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         mock_sqs_client.send_message_batch.return_value = {
             'Successful': [{'Id': '0'}, {'Id': '1'}],
@@ -305,7 +311,7 @@ class TestBaseWebhookHandle:
         """
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs.return_value = MagicMock()
 
         class TestWebhook(BaseWebhook):
@@ -351,7 +357,7 @@ class TestBaseWebhookHandle:
         """Returns success with 0 items when payload has no items."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
@@ -381,7 +387,7 @@ class TestBaseWebhookHandle:
         """Returns 400 when body is not valid JSON."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
@@ -410,7 +416,7 @@ class TestBaseWebhookHandle:
         """Returns 500 when processing fails."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
@@ -440,7 +446,7 @@ class TestBaseWebhookHandle:
         import base64
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         mock_sqs_client.send_message_batch.return_value = {
             'Successful': [{'Id': '0'}],
@@ -482,7 +488,7 @@ class TestBaseWebhookHandle:
         """Emits webhook.received audit event."""
         from _shared.base_webhook import BaseWebhook
 
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         mock_sqs_client = MagicMock()
         mock_sqs_client.send_message_batch.return_value = {
             'Successful': [{'Id': '0'}],
@@ -519,7 +525,7 @@ class TestBaseWebhookExtractClientIp:
         """Extracts source IP from API Gateway event."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):
@@ -543,7 +549,7 @@ class TestBaseWebhookExtractClientIp:
         """Returns 'unknown' when IP not in event."""
         from _shared.base_webhook import BaseWebhook
         
-        mock_get_secret.return_value = {}
+        mock_get_secret.return_value = scoped_secret()
         
         class TestWebhook(BaseWebhook):
             def parse_webhook_payload(self, body, headers):

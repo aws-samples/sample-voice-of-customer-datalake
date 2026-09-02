@@ -768,6 +768,18 @@ const rowView = (
     content: '',
     created_at: createdAt,
   }],
+  // Derived by `collectRows` on the page and asserted there and in
+  // `rowLineage.test.ts`; the sort is indifferent to it for the same reason it is
+  // indifferent to the freeze — lineage decides what a row SAYS, never where it
+  // lands. Stated as the single-document row's real answer (one document records
+  // nothing, so `origin: 'none'`) rather than as a placeholder, so a fixture
+  // nobody reads cannot claim a state the classifier would not produce.
+  lineage: {
+    state: 'absent' as const,
+    reason: 'noneRecorded' as const,
+    stale: false,
+    fresherDocumentIds: [],
+  },
 })
 
 const rowA = rowView('a', 'Alpha', '2025-01-01')

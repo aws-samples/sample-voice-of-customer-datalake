@@ -99,6 +99,18 @@
     "description": "Puntúe cada documento en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
     "title": "Marco de priorización"
   },
+  "lineage": {
+    "absent": "Sin linaje",
+    "absentReason": "Ninguno de estos documentos registra a partir de qué se creó — la respuesta habitual para un documento escrito a mano o creado antes de que se registrara el linaje. La fila se puede puntuar igualmente; simplemente no hay nada con lo que comprobar la combinación.",
+    "coherent": "Una generación",
+    "coherentReason": "Nada en esta fila cruza generaciones: no hay dos documentos que sean versiones del mismo tipo, y nada de lo registrado aquí apunta a otra generación de otro documento de esta fila. Una papeleta cubre una generación de la idea.",
+    "crossGeneration": "Cruza generaciones",
+    "repeatedTypeReason": "Esta fila contiene más de una versión del mismo tipo de documento, así que una papeleta cubre dos generaciones a la vez. Se puede puntuar igualmente: añada una fila si quiere una sola generación por separado.",
+    "stale": "Superada",
+    "staleAction": "Esta fila está bloqueada, por lo que sus documentos y sus papeletas quedan tal como están. Use «{{action}}» para puntuar la combinación más reciente.",
+    "staleReason": "Existe una versión más reciente de al menos un tipo de documento de esta fila. Los documentos más recientes de cada tipo que la fila contiene forman una combinación en la que ninguno se creó directamente a partir de una versión anterior de otro documento de esa combinación, y ningún documento de la fila es más reciente que esa combinación.",
+    "supersededSourceReason": "Uno de estos documentos se creó a partir de otra generación de otro documento de esta fila, así que la combinación cruza generaciones. Se puede puntuar igualmente."
+  },
   "loading": "Cargando documentos...",
   "noteTooLong": {
     "description": "Las notas están limitadas a {{max}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",

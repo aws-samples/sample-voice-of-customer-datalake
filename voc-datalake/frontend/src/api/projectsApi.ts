@@ -5,6 +5,10 @@ import { getDateBasisBodyParams } from './baseUrl'
 import type {
   Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
   ProductContext, ProductDoc, ProductInterviewTurnResponse,
+  // The document-generation request body; see its declaration for why it is a
+  // named type rather than an object literal spelled out here. `BothWays` comes with
+  // it for the signature pin at the foot of this file.
+  GenerateDocumentBody, BothWays,
 } from './types'
 
 export const projectsApi = {
@@ -114,24 +118,14 @@ export const projectsApi = {
       body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
     }),
 
-  generateDocument: (projectId: string, data: {
-    doc_type: 'prd' | 'prfaq'
-    title: string
-    feature_idea: string
-    data_sources: {
-      feedback: boolean;
-      personas: boolean;
-      documents: boolean;
-      research: boolean
-    }
-    selected_persona_ids: string[]
-    selected_document_ids: string[]
-    feedback_sources: string[]
-    feedback_categories: string[]
-    days: number
-    customer_questions?: string[]
-    response_language?: string
-  }) =>
+  // Keep this signature on ONE line, and keep `data` taking the shared type by name:
+  // test_doc_type_lockstep.py matches it as exact text, and requires EVERY declaration
+  // of generateDocument to take `GenerateDocumentBody`. That is a ratio rather than a
+  // substring search because a substring was satisfied by an unrelated occurrence —
+  // and by a decoy copy of this signature — while the real parameter was respelled as
+  // a structurally identical inline literal. The pin at the foot of this file cannot
+  // see that one either: an identical shape compares EQUAL (issue #381).
+  generateDocument: (projectId: string, data: GenerateDocumentBody) =>
     fetchApi<{
       success: boolean;
       job_id: string;
@@ -139,6 +133,10 @@ export const projectsApi = {
       message: string
     }>(`/projects/${projectId}/document`, {
       method: 'POST',
+      // `data` is only spread into the body — nothing here constrains its type. What
+      // stops the annotation above being widened is
+      // `GenerateDocumentTakesTheSharedBody` at the foot of this file; see there for
+      // why it is a type-level comparison and not a clause on this object (#381).
       body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
     }),
 
@@ -242,6 +240,14 @@ export const projectsApi = {
       },
     ),
 
+  // NOT `DocType`, and its agreement with that union today is coincidence rather
+  // than a floor: this is a DIFFERENT route (.../documents/suggest-brief) whose
+  // `doc_type` only picks a prompt label, with anything unrecognised falling back to
+  // 'PRD' (`projects.suggest_document_brief`). So it may legitimately fall behind a
+  // widening of the document route — the cost is one prompt labelled PRD instead of
+  // a new type's name, not a refused request. Binding it to `GENERATED_DOC_TYPES`
+  // would instead make widening THIS route fail a test named after the other one.
+  // If it is ever pinned it wants its own constant and its own rationale (#381).
   suggestDocumentBrief: (projectId: string, body: { doc_type?: 'prd' | 'prfaq'; response_language?: string } = {}) =>
     fetchApi<{ title: string; feature_idea: string }>(
       `/projects/${projectId}/documents/suggest-brief`,
@@ -360,3 +366,75 @@ export const projectsApi = {
     return fetchApi<{ project: Record<string, unknown>; files: Array<{ path: string; content: string }> }>(path)
   },
 }
+
+// 🔑 The pin on `generateDocument`'s request-body parameter: it must admit EXACTLY
+// `GenerateDocumentBody`, in both directions. `test_doc_type_lockstep.py` keeps this
+// block present, since deleting it compiles cleanly.
+//
+// Needed because this method is the TERMINAL consumer of `data` — it is only spread
+// into `JSON.stringify`, so the annotation is compared against nothing and any
+// widening of it type-checks on its own. Measured, both spellings:
+//   * `data: { doc_type: 'prd' | 'prfaq' | 'onepager', ... }` — the plain respelling;
+//   * `data: Omit<GenerateDocumentBody, 'doc_type'>
+//        & { doc_type: GenerateDocumentBody['doc_type'] | 'onepager' }` — which USES
+//     the shared name, so neither `noUnusedLocals` nor a text check for the name sees
+//     it.
+// Both exited `tsc` 0 and sent a value the route 400s.
+//
+// ⚠️ This replaced a `satisfies GenerateDocumentBody` clause inside the method body,
+// which was equivalent for the compiler but had to be pinned BY LOCATION from
+// Python: a whole-file text check passed with the clause moved to an unrelated
+// helper, and narrowing the search to the slice before the next method still passed
+// with the clause in a NEW method inserted into that slice — measured, `tsc` exit 0
+// and every lockstep test green while the axis was reopened. A comparison against
+// the method's own type has no location to migrate to, so the text guard, its two
+// method-name markers and their ordering assumption all went with it.
+//
+// `Parameters<...>[1]` reads the parameter off the METHOD rather than restating it, so
+// the left side of this comparison is whatever the signature actually declares.
+// Applied INLINE below rather than through an intermediate alias: an alias is a second
+// place the left side can be respelled, and repointing one at `GenerateDocumentBody`
+// made the pin compare the interface to itself — trivially equal forever, with both
+// controls still green because they read through the same alias. Measured: `tsc` exit
+// 0, every lockstep test green, and a caller sending a value the route 400s.
+//
+// Equality in both directions for the same reason as `DocTypeFieldIsExactlyTheUnion`:
+// a one-way `extends` passes on a NARROWED parameter, which is the "capability nobody
+// can reach" half of this contract's drift.
+//
+// Each declaration below is on ONE line, with its comparison applied inline: the
+// lockstep test pins each as an EXACT string, so wrapping puts a newline inside what
+// it looks for. See TYPE_LEVEL_PINS in lambda/api/test/test_doc_type_lockstep.py.
+//
+// One verdict helper, no `SignatureMustDiffer` companion — see the 🔑 note on
+// `MustBeTrue` in ./types: the controls assert their verdict by expecting THIS helper's
+// error, so dropping `extends true` makes each `@ts-expect-error` unused (TS2578)
+// instead of silently disabling every control at once.
+type SignatureMustMatch<Verdict extends true> = Verdict
+export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody>>
+// The non-vacuity controls. `SignatureMustMatch<BothWays<...>>` is also satisfied by a
+// `BothWays` that degenerates to `true` or collapses to one-way, each of which reports
+// success while comparing less than it claims. Both are INVERTED assertions: the
+// comparison must NOT hold, so the helper must reject it and `@ts-expect-error`
+// consumes that error — self-checking, since a comparison that starts holding leaves
+// the directive unused.
+//
+// WIDENED side — a body with one extra member must NOT compare equal.
+// @ts-expect-error the declared parameter must NOT equal a body with an extra member
+export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody & { not_in_the_body: true }>>
+// NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
+// control above cannot detect: a widened left side fails `[Left] extends [Right]`
+// under either form, so the two are indistinguishable to it (see the ⚠️ note on
+// `BothWays` in ./types). The declared parameter is narrower than a body whose members
+// are all optional, so a one-way comparison calls this `true`, the directive goes
+// unused and the line becomes a TS2578; two-way, it is `false` as required.
+//
+// 🔑 Left side reads `Parameters<...>[1]`, the same operand as the pin, rather than the
+// `never` this once used. `never` discriminates the two forms just as well, but it
+// mentions nothing about this method — so it was a second detector of a collapse in the
+// SHARED `BothWays` (already caught once in ./types) rather than a control on THIS pin,
+// and deleting it left the collapse detected only by the other file. `Partial<...>` is
+// derived from the body, so it names no member and cannot go stale when the contract is
+// widened.
+// @ts-expect-error the declared parameter must NOT equal a body of optional members
+export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], Partial<GenerateDocumentBody>>>

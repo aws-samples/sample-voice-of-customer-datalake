@@ -7,6 +7,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SourceCard from './SourceCard'
+// Imported rather than restated: the subject of these assertions is the admin GATE,
+// not the wording, so a later decision to translate the tooltip must not fail them.
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
 
 // Mock API
@@ -214,6 +217,61 @@ describe('SourceCard', () => {
 
       expect(screen.getByRole('checkbox')).toBeDisabled()
     })
+
+    /**
+     * The Enabled toggle calls `PUT /sources/{source}/enable|disable`, which is
+     * admin-gated server-side. It shipped enabled for a non-admin: rendered with
+     * `isAdmin={false}` the checkbox was not disabled and one click issued one
+     * `enableSource` call, whose 403 `toggleEnabled`'s empty `catch` swallows — so
+     * the checkbox silently reverted with no message.
+     *
+     * This is the only UI entrance to those two routes outside the Scrapers modal.
+     * The two cases assert the REQUEST is not issued, not merely that `disabled` is
+     * present, matching `Scrapers/AppConfigComponents.test.tsx`; the surrounding
+     * `isAdmin={true}` cases above are the positive control, so disabling the toggle
+     * for everyone cannot pass.
+     */
+    describe('when the user is not an admin', () => {
+      it('disables the toggle and issues no request when it is clicked', async () => {
+        const user = userEvent.setup()
+
+        render(
+          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
+          { wrapper: createWrapper() }
+        )
+
+        const toggle = screen.getByRole('checkbox')
+        expect(toggle).toBeDisabled()
+
+        await user.click(toggle)
+
+        // The observable that matters: no 403 was provoked.
+        expect(mockEnableSource).not.toHaveBeenCalled()
+        expect(mockDisableSource).not.toHaveBeenCalled()
+      })
+
+      it('explains why the toggle is disabled', () => {
+        render(
+          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
+          { wrapper: createWrapper() }
+        )
+
+        // On the label, not the input: a disabled input does not reliably surface
+        // its own title on hover.
+        expect(screen.getByTitle(ADMIN_ONLY_TITLE)).toBeInTheDocument()
+      })
+
+      it('leaves the toggle untitled for an admin', () => {
+        /** Non-vacuity for the case above: a title rendered unconditionally would
+         *  satisfy it while telling an admin their access is refused. */
+        render(
+          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
+          { wrapper: createWrapper() }
+        )
+
+        expect(screen.queryByTitle(ADMIN_ONLY_TITLE)).not.toBeInTheDocument()
+      })
+    })
   })
 
   describe('Credentials Section', () => {
@@ -283,6 +341,100 @@ describe('SourceCard', () => {
       // Verify mutation was called - the success message is shown via internal state
       await waitFor(() => {
         expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key' })
+      })
+    })
+
+    /**
+     * `Save to Secrets Manager` calls `PUT /integrations/{source}/credentials`,
+     * which `require_admin` gates server-side. Unlike the Enabled toggle above,
+     * that route was ALREADY gated before this PR, so the button has always
+     * behaved this way — measured before the fix, as a non-admin: `disabled` was
+     * false, there was no `title`, one click issued 1 `updateIntegrationCredentials`
+     * call, and because `updateCredentialsMutation` has an `onSuccess` but no
+     * `onError` the 403 rendered nothing at all. The button simply never became
+     * `Saved!`, so a non-admin typed a credential and got no indication it was
+     * refused — the same silent-discard shape `ScraperEditor`'s Save had.
+     *
+     * This was the last ungated UI entrance to an admin-gated route.
+     *
+     * The first case asserts the REQUEST is not issued rather than only that
+     * `disabled` is present, matching the toggle cases above and
+     * `Scrapers/AppConfigComponents.test.tsx`. The `isAdmin={true}` cases above
+     * ('saves credentials when save button is clicked') are its positive control,
+     * so disabling Save for everyone cannot pass.
+     */
+    describe('when the user is not an admin', () => {
+      /** Expand the card and enter a credential, so Save's only remaining
+       *  disable reason is the admin gate — `Object.keys(credentials).length === 0`
+       *  disables it on an untouched form regardless of who is looking. */
+      async function expandAndType(user: ReturnType<typeof userEvent.setup>, isAdmin: boolean) {
+        render(
+          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={isAdmin} />,
+          { wrapper: createWrapper() }
+        )
+        await user.click(screen.getByRole('button', { name: /test source/i }))
+        await user.type(screen.getByPlaceholderText('Enter api key'), 'secret-key')
+        return screen.getByRole('button', { name: /save/i })
+      }
+
+      it('disables save and issues no credential write when it is clicked', async () => {
+        const user = userEvent.setup()
+        const save = await expandAndType(user, false)
+
+        expect(save).toBeDisabled()
+
+        await user.click(save)
+
+        // The observable that matters: no 403 was provoked, so there is no
+        // silently-swallowed failure to present as success.
+        expect(mockUpdateIntegrationCredentials).not.toHaveBeenCalled()
+      })
+
+      it('explains why save is disabled', async () => {
+        const user = userEvent.setup()
+        const save = await expandAndType(user, false)
+
+        expect(save).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      })
+
+      it('leaves save untitled for an admin', async () => {
+        /** Non-vacuity for the case above: a title rendered unconditionally would
+         *  satisfy it while telling an administrator their access is refused. */
+        const user = userEvent.setup()
+        const save = await expandAndType(user, true)
+
+        expect(save).not.toHaveAttribute('title')
+      })
+
+      it('leaves the credential fields editable and gates only Save', async () => {
+        /** The gate's BOUNDARY, not the gate. A non-admin can already read these
+         *  fields — `GET /integrations/status` is what is admin-gated, not the
+         *  form — so freezing them would hide state rather than protect it. And
+         *  without this, "disable everything for a non-admin" would pass every
+         *  case above.
+         *
+         *  Save is asserted to be the ONLY control carrying the admin-only
+         *  reason, which is what pins the gate's extent. The `Test` button is
+         *  deliberately not asserted as clickable here: `POST /integrations/
+         *  {source}/test` is NOT admin-gated, but the button's `disabled` reads
+         *  `sourceStatus?.configured`, which comes from the admin-only
+         *  integration-status query — so it is already unreachable for a
+         *  non-admin for a reason that predates and is independent of this gate.
+         *  Asserting it enabled here would fail for that unrelated reason and
+         *  misattribute it to the admin gate. */
+        const user = userEvent.setup()
+        mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
+        await expandAndType(user, false)
+
+        expect(screen.getByPlaceholderText('Enter api key')).toBeEnabled()
+        expect(screen.getByPlaceholderText('Enter ID')).toBeEnabled()
+
+        // Show/Hide is a local view toggle and stays usable.
+        expect(screen.getByRole('button', { name: /show/i })).toBeEnabled()
+
+        // Save is the only control in this section carrying the admin-only
+        // reason — `Test` calls an ungated route and must not claim otherwise.
+        expect(screen.getByRole('button', { name: /^test$/i })).not.toHaveAttribute('title')
       })
     })
   })

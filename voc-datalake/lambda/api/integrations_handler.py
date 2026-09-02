@@ -5,7 +5,6 @@ Manages API credentials and data source schedules.
 
 import json
 import os
-import re
 from functools import lru_cache
 from typing import Any
 
@@ -18,6 +17,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
+from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 from shared.scraper_urls import validate_scraper_configs_json
 
 secretsmanager = get_secrets_client()
@@ -68,22 +68,30 @@ app = create_api_resolver()
 # Credential key validation
 #
 # We validate the *form* of each key rather than an enumerated per-source
-# list, because this Lambda cannot see plugin manifests (they are resolved at
-# CDK synth time, not at runtime).  A manifest-derived allowlist is the
-# stronger fix and is tracked as a follow-up.
+# list, because this Lambda cannot see plugin manifests directly (they are
+# resolved at CDK synth time, not at runtime).  The manifest-derived allowlist
+# that used to be described here as a follow-up now exists for the `source`
+# parameter — see `_validate_source_is_a_known_plugin` — because form validation
+# alone left a real cross-plugin credential write open.
 #
-# Rules:
-#   • Only lowercase letters, digits, and underscores (no dots, slashes,
-#     hyphens, or other characters that could escape or re-enter a namespace).
-#   • Length: 1–64 characters.
-#   • May not start or end with an underscore (prevents confusion with
-#     namespace prefixes / internal keys).
+# That allowlist applies to EVERY route taking a `<source>` path parameter, via
+# `_validate_source_parameter`. It was first wired into the two credentials routes
+# only, which left five routes turning the same request-supplied value into a
+# Secrets Manager key, an ingestor function name or an EventBridge rule name with
+# no check at all — an asymmetry that read as deliberate scoping but was just
+# where the trail of one reported bug ended.
+#
+# The character class itself lives in `shared/plugin_identity.py`, NOT here: the
+# READ side (`plugins/_shared/plugin_secrets.py`) has to validate the same shape
+# on the plugin identity it turns into a namespace prefix, and since issue #251 a
+# namespace miss there is a hard failure rather than a silent widening. Two
+# copies of the rule is how a value this path accepts becomes one that path
+# refuses. `shared/` is the only directory both bundles carry.
+#
+# The rules that stay here, because they bound a REQUEST rather than validate a
+# value — there is no read side to share them with:
 #   • At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys per write request.
-#
-# Single alternative: optional inner body of up to 62 chars means the total
-# length is 1 (just the initial char) or 2-64 (initial + inner + final).
-# re.fullmatch is used in _validate_credential_key so anchors are not needed.
-_CREDENTIAL_KEY_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
+#   • At most MAX_SOURCES_PER_STATUS_REQUEST distinct sources per status request.
 MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
 
 # The one source whose stored value names network destinations the platform will
@@ -94,20 +102,29 @@ MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
 WEBSCRAPER_SOURCE = 'webscraper'
 WEBSCRAPER_CONFIGS_KEY = 'configs'
 
+# `GET /sources/status?sources=a,b,c` issues one `describe_rule` per element, so
+# unlike every other read in this handler its AWS call count is chosen by the
+# caller. A write is not the only thing with a request to bound: a read that fans
+# out per list element has one too, and this is the only such read here.
+#
+# Sized well above the realistic plugin count (five manifests today, and the
+# route's own default list is three) so it bounds abuse rather than use — the UI
+# asks for at most one source at a time (`api.getSourcesStatus([plugin.id])`).
+# Applied AFTER de-duplication, because the bound that matters is the number of
+# rules actually described, not the length of a string the caller typed.
+MAX_SOURCES_PER_STATUS_REQUEST = 50
+
 
 def _validate_credential_key(key: str) -> None:
     """Raise ValidationError if *key* does not conform to the allowed form.
 
-    Uses re.fullmatch so no explicit anchors are needed in the pattern.
     The key preview in the error message is truncated to avoid reflecting
     unbounded caller input back in the response.
     """
-    if not isinstance(key, str) or not _CREDENTIAL_KEY_RE.fullmatch(key):
+    if not is_valid_plugin_identifier(key):
         preview = repr(key[:40]) if isinstance(key, str) else repr(key)
         raise ValidationError(
-            f"Invalid credential key {preview}: keys must contain only lowercase "
-            "letters, digits, and underscores, must start and end with a "
-            "letter or digit, and must be 1–64 characters long."
+            f"Invalid credential key {preview}: keys {PLUGIN_IDENTIFIER_RULES}."
         )
 
 
@@ -119,13 +136,118 @@ def _validate_source(source: str) -> None:
     'source identifier' rather than 'credential key' so it is clear which
     input parameter is invalid when debugging a 400.
     """
-    if not isinstance(source, str) or not _CREDENTIAL_KEY_RE.fullmatch(source):
+    if not is_valid_plugin_identifier(source):
         preview = repr(source[:40]) if isinstance(source, str) else repr(source)
         raise ValidationError(
-            f"Invalid source identifier {preview}: source must contain only "
-            "lowercase letters, digits, and underscores, must start and end "
-            "with a letter or digit, and must be 1–64 characters long."
+            f"Invalid source identifier {preview}: source {PLUGIN_IDENTIFIER_RULES}."
         )
+
+
+def _validate_source_is_a_known_plugin(source: str) -> None:
+    """Raise ValidationError unless *source* is a plugin CDK told us about.
+
+    The form check above cannot close the namespace-collision gap, because the
+    colliding value is WELL-FORMED. `source` becomes a key prefix, so
+    `source='app_reviews'` + key `'ios_app_id'` writes `app_reviews_ios_app_id`
+    — which `app_reviews_ios`'s Lambda then reads as its own `app_id`. Since
+    issue #251 the prefix scan in `plugins/_shared/plugin_secrets.py` is the
+    ENTIRE isolation boundary between plugins (all ingestion Lambdas share one
+    IAM role), so a write that lands inside another plugin's namespace is a
+    cross-plugin credential injection, not a display quirk. `plugin-loader.ts`
+    refuses a manifest id that is a prefix of another's, but that guard is over
+    *manifest ids* and cannot see a `source` invented in a request.
+
+    So the namespace a write may address is restricted to the plugin ids
+    themselves. `PLUGIN_SECRET_DEFAULTS` is the manifest-derived list this
+    handler is already handed for exactly this reason — no new plumbing, and it
+    cannot drift from the manifests CDK read.
+
+    Fails OPEN when that variable is absent or malformed: `_plugin_secret_defaults`
+    already degrades to `{}` rather than 500ing the Settings page, and turning
+    that degradation into "no source may be configured at all" would let one bad
+    environment variable break credential management entirely. The form check
+    still applies in that case, which is the state this route shipped in.
+
+    Applied through `_validate_source_parameter` on every route that turns
+    `<source>` into a secret key, a Lambda function name or an EventBridge rule
+    name — not just the two credentials routes it was first written for.
+    """
+    known = _plugin_secret_defaults()
+    if not known:
+        logger.warning(
+            "PLUGIN_SECRET_DEFAULTS unavailable; accepting any well-formed source"
+        )
+        return
+    if source not in known:
+        # Names the rejected source but NOT the known ones: an error caused by a
+        # wrong source must not become a directory of the right ones, which is the
+        # same discipline `filter_plugin_secrets` applies on the read side.
+        raise ValidationError(
+            f"Unknown source identifier {source[:40]!r}: it is not a configured plugin."
+        )
+
+
+def _validate_source_parameter(source: str) -> None:
+    """Both source checks, for every route that takes a `<source>` path parameter.
+
+    ONE helper rather than two calls per route, because the asymmetry this closed
+    was exactly that: the two checks were wired into the credentials routes and
+    into nothing else, while five other routes turned the same request-supplied
+    `<source>` into a resource name. Every one of them addresses something derived
+    from it — a Secrets Manager key (`_get_app_configs_key`), an ingestor function
+    name (`_build_ingestor_function_name`) or an EventBridge rule name
+    (`_build_rule_name`) — so there is no route on which "is this a real plugin?"
+    is the wrong question, and a single call site per route is one thing to
+    remember rather than two.
+
+    Order matters: the form check first, so a value that is not even a plausible
+    identifier is reported as malformed rather than as unknown.
+    """
+    _validate_source(source)
+    _validate_source_is_a_known_plugin(source)
+
+
+def _is_addressable_source(source: str) -> bool:
+    """The same rule as `_validate_source_parameter`, as a predicate.
+
+    Calls it rather than restating the rule, because a second copy of "is this a
+    real plugin?" is how the read side comes to accept a value the write side
+    refuses — the drift that put the character class in `shared/plugin_identity.py`
+    in the first place.
+
+    Needed because ONE route cannot raise. `GET /sources/status?sources=a,b,c`
+    answers about several sources at once, so raising on the first unknown name
+    would fail the whole response rather than that one entry — and its own default
+    list is `['webscraper', 'manual_import', 's3_import']`, where `manual_import`
+    is a deliberate non-plugin: it is a legitimate `source_platform` (it appears in
+    `KNOWN_SOURCES` in `plugins/_shared/schemas.py`) with no manifest, so it is
+    absent from `PLUGIN_SECRET_DEFAULTS` and a raising guard would answer 400 to
+    the argument-less request `SourceCard.tsx` issues on every Settings render —
+    for admins too.
+
+    Skipping the EventBridge call for a source this rejects is OUTPUT-IDENTICAL
+    for every input the UI sends. A schedule rule is only ever created per plugin
+    (`scheduleRuleName` in `lib/stacks/ingestion-stack.ts` is built from
+    `plugin.id`), so for every value rejected here `describe_rule` could only have
+    raised `ResourceNotFoundException`, which the route already answers with
+    `{'enabled': False, 'exists': False}` — exactly what the default request
+    returns today for all three of its sources. What changes is that an arbitrary
+    value stops reaching EventBridge and stops having a rule name reflected back.
+
+    Inherits the fail-open on an unavailable `PLUGIN_SECRET_DEFAULTS`, because
+    `_validate_source_is_a_known_plugin` returns early in that state — so in that
+    state this accepts everything the other branch does too, and the deliberate
+    disagreement below is a property of the CONFIGURED state only.
+
+    Applies to the `?sources=` branch ONLY. `?run_status=` raises on the same
+    `manual_import` this accepts, deliberately: see the comment at that branch for
+    why one identifier gets two answers from one route.
+    """
+    try:
+        _validate_source_parameter(source)
+    except ValidationError:
+        return False
+    return True
 
 
 # Stored strings that carry no configuration, whatever key they sit under.
@@ -258,11 +380,15 @@ def get_integration_status():
         status = {}
         for source, seeded in _plugin_secret_defaults().items():
             prefix = f"{source}_"
-            # ponytail: plain prefix match, so if one plugin id were ever a
+            # CAVEAT: plain prefix match, so if one plugin id were ever a
             # prefix of another ('app_reviews' alongside 'app_reviews_ios') the
             # shorter one would also list the longer one's keys. No current id
-            # pair does this. Upgrade path is to iterate `seeded` by declared
-            # key instead, which costs the write-through property above.
+            # pair does this, and `loadPlugins` now refuses such a manifest pair at
+            # synth time. Iterating `seeded` by declared key instead would remove
+            # the caveat here too, at the cost of the write-through property above.
+            # This loop is over ids CDK supplied, so it cannot be reached by a
+            # request-supplied source — that entrance is closed separately, in
+            # _validate_source_is_a_known_plugin.
             configured_keys = sorted(
                 key[len(prefix):]
                 for key, value in secrets.items()
@@ -311,8 +437,11 @@ def get_credentials(source: str):
 
     # Validate source before building the namespace prefix.  Without this
     # a caller sending source='foo_bar' + key='baz' would reach the same
-    # secret key as source='foo' + key='bar_baz' (namespace collision).
-    _validate_source(source)
+    # secret key as source='foo' + key='bar_baz' (namespace collision) — and the
+    # form check alone is not sufficient, because the colliding value is
+    # well-formed: source='app_reviews' + key='ios_app_id' addresses
+    # app_reviews_ios's namespace.
+    _validate_source_parameter(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
@@ -371,10 +500,11 @@ def update_credentials(source: str):
     """
     require_admin(app.current_event.raw_event)
 
-    # Validate source before building the namespace prefix.  Without this
-    # a caller sending source='foo_bar' + key='baz' would reach the same
-    # secret key as source='foo' + key='bar_baz' (namespace collision).
-    _validate_source(source)
+    # The write is the dangerous direction: without the allowlist half of this,
+    # a caller could inject a value into another plugin's namespace
+    # (source='app_reviews' + key 'ios_app_id' → app_reviews_ios_app_id) and that
+    # plugin's next run would use it as its own credential.
+    _validate_source_parameter(source)
 
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
@@ -459,7 +589,19 @@ def _get_app_configs_key(source: str) -> str:
 @app.get("/integrations/<source>/apps")
 @tracer.capture_method
 def list_app_configs(source: str):
-    """List all app configurations for a multi-instance plugin."""
+    """List all app configurations for a multi-instance plugin.
+
+    NOT admin-gated, unlike the two write routes below. The Scrapers page renders
+    this list for every authenticated user, and an app config holds a public app
+    store id and a display name — not a credential. The write routes are the ones
+    that reach the shared secret with caller-supplied content.
+    """
+    # Both source checks even though APP_CONFIG_PLUGINS is narrower and runs
+    # below: `source` reaches `_get_app_configs_key` and becomes a Secrets Manager
+    # key, so it goes through the same validation as every other route that does
+    # that. The two are not redundant in the direction that matters — a value can
+    # be a real plugin id and still not support app configs.
+    _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -481,7 +623,16 @@ def list_app_configs(source: str):
 @app.post("/integrations/<source>/apps")
 @tracer.capture_method
 def save_app_config(source: str):
-    """Save (create or update) an app configuration for a multi-instance plugin."""
+    """Save (create or update) an app configuration for a multi-instance plugin.
+
+    Admin-gated, matching PUT /integrations/<source>/credentials: this route calls
+    `put_secret_json` on the SAME shared API-credentials secret, with content the
+    caller supplied. Gating the credentials route while leaving this one open made
+    the boundary depend on which key a write happened to land under, and a
+    `users`-group caller could write `<source>_configs` on it — measured, 200.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -524,7 +675,15 @@ def save_app_config(source: str):
 @app.delete("/integrations/<source>/apps/<app_id>")
 @tracer.capture_method
 def delete_app_config(source: str, app_id: str):
-    """Delete an app configuration from a multi-instance plugin."""
+    """Delete an app configuration from a multi-instance plugin.
+
+    Admin-gated for the same reason as the POST above — it writes the shared
+    secret — and additionally because it is destructive: it rewrites
+    `<source>_configs` with one entry removed, which stops that app being
+    ingested.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
     if not SECRETS_ARN:
@@ -550,13 +709,28 @@ def delete_app_config(source: str, app_id: str):
 @tracer.capture_method
 def run_source(source: str):
     """Manually trigger a data source ingestor Lambda.
-    
+
     Optionally accepts a JSON body with `app_id` to run a single app
     config instead of all configs for the source.
+
+    Admin-gated: this invokes a Lambda that fetches from a third-party API and
+    writes to the data lake, so every call costs money and consumes whatever rate
+    limit that API grants. Ungated, a `users`-group caller could invoke it in a
+    loop — measured, 200 with a real `lambda:Invoke` and a `SOURCE_RUN#` row
+    written. `enable_source`/`disable_source` are gated for the mirror reason:
+    disabling a schedule silently stops ingestion.
+
+    `source` is also validated, which it was not: it is interpolated straight into
+    `_build_ingestor_function_name`, so an arbitrary value both named a function
+    to invoke and wrote a `SOURCE_RUN#<source>` partition that nothing ever reads
+    or expires.
     """
     from datetime import datetime, timezone
 
     from shared.tables import get_aggregates_table
+
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
 
     function_name = _build_ingestor_function_name(source)
 
@@ -635,24 +809,108 @@ def _get_source_run_status(source: str):
 @app.get("/sources/status")
 @tracer.capture_method
 def get_sources_status():
-    """Get status of all data source schedules, or run status for a specific source."""
+    """Get status of all data source schedules, or run status for a specific source.
+
+    The only route taking a source from the QUERY STRING rather than a `<source>`
+    path parameter, which is why it is outside the path-parameter guard the other
+    seven share and validates its sources here instead. Both branches derive a
+    resource from the value — `_build_rule_name` for an EventBridge rule this
+    `describe_rule`s, and a `SOURCE_RUN#` partition key for `_get_source_run_status`
+    — so "is this a real plugin?" is as much the question here as on
+    `enable`/`disable`, of which this is the read-side mirror.
+
+    The two branches answer it differently because only one of them can raise; see
+    `_is_addressable_source`. Open to any authenticated user, deliberately and as
+    before: `SourceCard.tsx` and `PluginConfigModal.tsx` both read it for ordinary
+    users, and gating it needs the same read/write reasoning applied to
+    `list_app_configs`. Validating it closes the arbitrary-rule-enumeration half.
+
+    Validation bounds WHICH rules may be described; it does not bound how MANY
+    times, so the batch branch also de-duplicates and caps its list — see
+    `MAX_SOURCES_PER_STATUS_REQUEST`. This is the only read in the handler whose
+    AWS call count is chosen by the caller.
+    """
     params = app.current_event.query_string_parameters or {}
-    
+
     # If source param provided, return run status for that source
     run_status_source = params.get('run_status')
     if run_status_source:
+        # RAISES here, unlike the batch branch below: this answers about a single
+        # source, so a 400 names the actual problem instead of reporting an empty
+        # status that reads as "never run". Every caller passes a real `plugin.id`
+        # (GeneratorConfigModal, SyntheticSourceCard, Scrapers).
+        #
+        # So the two branches of this ONE route answer `manual_import` differently
+        # — 400 here, `{'enabled': False, 'exists': False}` there — and that
+        # disagreement is deliberate, because the two branches report different
+        # things about it. This one reports a run record, and only `run_source` and
+        # `BaseIngestor` write a `SOURCE_RUN#` partition: no CURRENT path writes
+        # `SOURCE_RUN#manual_import` while the allowlist is available, since
+        # `manual_import` has no ingestor and `run_source` validates against the
+        # same allowlist. So on a clean deployment that partition is empty, and a
+        # 400 naming the reason beats a 200 saying 'never_run' about a source with
+        # nothing to report. The batch branch reports SCHEDULE state, where "no rule
+        # exists" is a real answer to a real question, which is why it must not
+        # raise — see `_is_addressable_source`, whose docstring argues that half.
+        #
+        # Two states this stops short of, so no reader concludes such a row is
+        # IMPOSSIBLE and skips handling one (`_get_source_run_status` reports
+        # whatever it finds):
+        #
+        #   * neither guard is retroactive. `run_source` on the pre-guard base had
+        #     neither `require_admin` nor this validation — measured, a `users`
+        #     caller got 200 and wrote `SOURCE_RUN#manual_import` — so a deployment
+        #     upgraded from that build may hold a stale row today. Same limitation
+        #     the namespace guards in `plugin-loader.ts` carry for secret keys: they
+        #     close the entrances, not what is already stored.
+        #   * with PLUGIN_SECRET_DEFAULTS unavailable the documented fail-open
+        #     admits `manual_import` on BOTH branches, so the asymmetry described
+        #     above disappears and an admin can write that partition again. That is
+        #     consistent — `_is_addressable_source` inherits the same fail-open —
+        #     but it means this whole comment describes the CONFIGURED state.
+        #
+        # Pinned in BOTH directions by TestTheQueryStringSourceRouteIsValidated, so
+        # neither answer can flip silently.
+        _validate_source_parameter(run_status_source)
         return _get_source_run_status(run_status_source)
-    
+
     sources_param = params.get('sources', '')
-    
+
     # Use requested sources or fall back to defaults
     if sources_param:
-        sources = [s.strip() for s in sources_param.split(',') if s.strip()]
+        # `dict.fromkeys` rather than `set`: it de-duplicates while KEEPING first
+        # appearance order, and the response is a dict the caller reads by name,
+        # so the order is part of what a JSON consumer sees.
+        #
+        # Unobservable to any caller, and that is the point — `status` is keyed by
+        # source name, so a repeat overwrote the same entry and could not change
+        # the response, while still costing one `describe_rule` each.
+        # `?sources=` with one valid name repeated 500 times measured 200 / 500
+        # calls / 1 key in the body. `DescribeRule` is throttled per account, so
+        # those 499 spare calls came out of a budget the rest of the stack shares.
+        sources = list(dict.fromkeys(
+            s.strip() for s in sources_param.split(',') if s.strip()
+        ))
     else:
         sources = ['webscraper', 'manual_import', 's3_import']
-    
+
+    # Raises, unlike the per-source check below: this is a malformed REQUEST, not
+    # an unaddressable source, so there is no per-entry answer to report and no
+    # partial response worth returning.
+    if len(sources) > MAX_SOURCES_PER_STATUS_REQUEST:
+        raise ValidationError(
+            f"Too many sources in request: {len(sources)} exceeds the limit of "
+            f"{MAX_SOURCES_PER_STATUS_REQUEST}."
+        )
+
     status = {}
     for source in sources:
+        if not _is_addressable_source(source):
+            # No rule can exist for a source that is not a plugin, so this is the
+            # answer `describe_rule` would have given — see `_is_addressable_source`
+            # for why that makes it output-identical, and why it must not raise.
+            status[source] = {'enabled': False, 'exists': False}
+            continue
         rule_name = _build_rule_name(source)
         try:
             response = events_client.describe_rule(Name=rule_name)
@@ -674,7 +932,15 @@ def get_sources_status():
 @app.put("/sources/<source>/enable")
 @tracer.capture_method
 def enable_source(source: str):
-    """Enable a data source schedule."""
+    """Enable a data source schedule.
+
+    Admin-gated and validated — see `run_source`. `source` reaches
+    `_build_rule_name`, so an arbitrary value named an EventBridge rule to
+    enable.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
+
     rule_name = _build_rule_name(source)
     try:
         events_client.enable_rule(Name=rule_name)
@@ -687,7 +953,15 @@ def enable_source(source: str):
 @app.put("/sources/<source>/disable")
 @tracer.capture_method
 def disable_source(source: str):
-    """Disable a data source schedule."""
+    """Disable a data source schedule.
+
+    Admin-gated and validated — see `run_source`. This is the direction that
+    silently stops ingestion, so leaving it open was a denial-of-data any
+    authenticated user could cause.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
+
     rule_name = _build_rule_name(source)
     try:
         events_client.disable_rule(Name=rule_name)

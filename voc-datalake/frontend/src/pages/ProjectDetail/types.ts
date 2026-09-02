@@ -2,7 +2,7 @@
  * Shared types for ProjectDetail components
  */
 import type {
-  ProjectPersona, Project,
+  ProjectPersona, Project, DocType,
 } from '../../api/types'
 
 export type Tab = 'overview' | 'personas' | 'product' | 'documents' | 'chat' | 'mcp'
@@ -26,7 +26,12 @@ export interface ResearchToolConfig {
   useWebSearch: boolean
 }
 
-export type DocType = 'prd' | 'prfaq'
+// What POST /projects/{id}/document accepts, RE-EXPORTED for the picker — the
+// declaration itself lives in `api/types.ts` beside the other wire types, because
+// that route owns the contract and the lockstep test pins it there. It was declared
+// here and imported by the two clients, which pointed `api/` at `pages/`; issue #381
+// turned it round. Do not respell `'prd' | 'prfaq'` from either side.
+export type { DocType } from '../../api/types'
 
 export interface DocToolConfig {
   // Which documents to generate. Both can be selected to generate PRD + PR-FAQ

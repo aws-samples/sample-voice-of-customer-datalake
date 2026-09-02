@@ -66,6 +66,22 @@ class ConfigurationError(ApiError):
     status_code = 500
 
 
+class SecretUnreadableError(ConfigurationError):
+    """Raised when a secret could not be READ, as distinct from being misconfigured.
+
+    A subclass so every existing ``except ConfigurationError`` keeps catching it —
+    the HTTP answer is the same 500 — while a caller that needs to tell the two
+    apart can. The distinction matters where a failure is *counted* against the
+    thing that failed: ``shared.aws.get_secret`` logs and swallows every client
+    error into ``{}``, so an empty payload means either "genuinely empty" or "the
+    read failed", and a plugin whose ingestion schedule is auto-disabled after N
+    failures must not be disabled by an AWS-side throttle it did nothing to cause
+    (see ``BaseIngestor._report_construction_failure``).
+
+    HTTP Status: 500 Internal Server Error
+    """
+
+
 class ServiceError(ApiError):
     """Raised when an external service call fails.
     

@@ -4,6 +4,8 @@
  */
 
 import { z } from 'zod'
+import { rowLineageOf } from './rowLineage'
+import type { RowLineage } from './rowLineage'
 import type {
   Project, ProjectDocument, PrioritizationScore, PrioritizationAggregate,
   PrioritizationBallotEdit, PrioritizationRow,
@@ -61,6 +63,24 @@ export interface PrioritizationRowView {
    * let the server answer rather than hide an action that may well be legal.
    */
   readonly is_default: boolean
+  /**
+   * What the row's documents say about EACH OTHER: one derivation chain, a
+   * combination crossing generations, or no lineage recorded — and, for a frozen
+   * row, whether a fresher combination of the same document types exists that does
+   * not itself cross generations. See `rowLineage`.
+   *
+   * ON THE VIEW rather than derived in the component, for the reason the team
+   * view is resolved once before the sort: `resolveDerivation` runs per document
+   * per row, and this page re-renders on every slider drag. Resolved where the
+   * row's documents and the project's are both already in hand
+   * (`collectRows`), so nothing can look the documents up a second time and
+   * disagree with the first.
+   *
+   * DESCRIBES, NEVER GATES. Every state is scorable and keeps every composition
+   * control it would otherwise have; the only thing this decides is what the row
+   * SAYS. See the `rowLineage` module docstring.
+   */
+  readonly lineage: RowLineage
   // The row's prototype (if any), resolved the same way. Surfaced under the
   // document preview so reviewers can see the demo without leaving the page.
   readonly prototype?: ProjectDocument
@@ -1566,6 +1586,31 @@ export function collectRows(
       // Carried for the one courtesy gate that reads it — see the field's own comment
       // on `PrioritizationRowView` and `rowsPerProject`.
       is_default: row.is_default,
+      /**
+       * What these documents say about each other, resolved HERE because this is
+       * where the row's own documents and the project's whole list are both in
+       * hand — and once per row rather than per render.
+       *
+       * The row's RESOLVED documents are the selection, so the lineage describes
+       * the same concrete ids the ballots were cast on. The project's documents
+       * are what each recorded source is looked up against, and staleness is
+       * measured against; a project whose detail has not landed contributes an
+       * empty list, and every rule then withholds its judgement rather than
+       * inventing one.
+       *
+       * UNLESS AN ID DID NOT RESOLVE, which is the one case where "the same concrete
+       * ids the ballots were cast on" stops being true of `documents`: the resolution
+       * above drops a stored id the project no longer holds, and a row survives that
+       * as long as ANY id resolved. `composition_truncated` carries the difference so
+       * the advisory can withhold — it would otherwise name a combination missing a
+       * type the ballots covered — while the classification still describes the
+       * documents actually on screen. Argued at `rowLineageOf`.
+       */
+      lineage: rowLineageOf({
+        is_frozen: row.is_frozen,
+        documents,
+        composition_truncated: documents.length !== row.document_ids.length,
+      }, project.documents),
       prototype: byId.get(row.prototype_id) ?? latestPrototypeOf(project.documents),
     }]
   })
