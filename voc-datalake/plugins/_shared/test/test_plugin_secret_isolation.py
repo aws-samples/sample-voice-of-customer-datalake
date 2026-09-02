@@ -20,6 +20,17 @@ REVERT MAP — each assertion below names the mutation it catches:
       swallows), so a plugin would run credential-less believing it was
       configured.
 
+  test_a_missing_or_malformed_identity_raises
+    — deletes `if not is_valid_plugin_identifier(plugin_id)` from
+      `filter_plugin_secrets`. The mutation used to survive: the namespace-miss
+      branch below raises the SAME `ConfigurationError` for every malformed id, so
+      a class-only assertion stayed green while the identity was no longer checked
+      at all — and an unvalidated id becomes a key prefix, which is the whole
+      isolation boundary (issue #398 A.1). The assertion now names the rule the
+      identity broke, which only that branch states; its control
+      (test_the_control_a_namespace_miss_is_not_reported_as_a_malformed_identity)
+      pins that the miss branch does not start stating it too.
+
   test_a_key_outside_every_plugin_namespace_is_not_returned
     — restores BaseIngestor's "no KNOWN prefix means shared/legacy" branch and
       the hand-maintained plugin-id list it needed. Under that branch a plugin id
@@ -158,7 +169,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import shared.aws as shared_aws
 from shared.exceptions import ConfigurationError, SecretUnreadableError
-from shared.plugin_identity import is_valid_plugin_identifier
+from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
 from _shared import base_ingestor, base_webhook
 from _shared.plugin_secrets import filter_plugin_secrets, plugin_secret_prefix
@@ -285,9 +296,43 @@ class TestANamespaceMissFailsClosed:
         """A plugin id becomes a key prefix, so it is validated on the same
         character class the write path enforces on `source`. An empty identity is
         the one that matters most: `prefix = '_'` would otherwise match nothing
-        and, under the old fallback, return everything."""
-        with pytest.raises(ConfigurationError):
+        and, under the old fallback, return everything.
+
+        `pytest.raises(ConfigurationError)` ALONE does not pin the identity guard,
+        and that is not theoretical: delete `if not is_valid_plugin_identifier` and
+        every fixture here still raises `ConfigurationError`, from the namespace-miss
+        branch three checks below — none of these malformed ids has a matching key
+        in `MIXED_SECRET`, by construction. The class is the same, so the MESSAGE is
+        the only evidence of which branch ran (issue #398 A.1).
+
+        Asserted against the imported `PLUGIN_IDENTIFIER_RULES` rather than a
+        quoted phrase: it is the actionable half of the identity message, only that
+        branch states it, and a test carrying its own copy of the wording would
+        fail on a rewording that broke nothing. The paired control below pins that
+        the two branches remain distinguishable this way.
+        """
+        with pytest.raises(ConfigurationError) as excinfo:
             filter_plugin_secrets(identity, MIXED_SECRET)
+
+        # Only the failure mode is named, never the payload: this message must stay
+        # free of secret values and of another plugin's key names, so the assertion
+        # output does too (TestErrorsRevealTheMisconfigurationAndNothingElse pins
+        # the message itself).
+        assert PLUGIN_IDENTIFIER_RULES in str(excinfo.value), (
+            'the refusal must identify a missing or malformed plugin identity and '
+            'state the rule it broke; a message that instead reports a missing '
+            'secret namespace means the identity guard did not run'
+        )
+
+    def test_the_control_a_namespace_miss_is_not_reported_as_a_malformed_identity(self):
+        """Non-vacuity for the assertion above: it separates the two refusals only
+        while their messages differ. A namespace miss carries a VALID identity, so
+        restating the identity rules there would silently make that assertion pass
+        with the guard deleted."""
+        with pytest.raises(ConfigurationError) as excinfo:
+            filter_plugin_secrets(PLUGIN_ID, FOREIGN_ONLY_SECRET)
+
+        assert PLUGIN_IDENTIFIER_RULES not in str(excinfo.value)
 
 
 class TestErrorsRevealTheMisconfigurationAndNothingElse:
