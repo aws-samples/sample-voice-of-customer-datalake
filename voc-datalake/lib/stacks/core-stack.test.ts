@@ -707,6 +707,137 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
 });
 
 /**
+ * Regression guard for issue #254: the Identity Pool's AUTHENTICATED role must
+ * not be able to invoke a Lambda directly.
+ *
+ * The role carried `lambda:InvokeFunction` + `lambda:InvokeFunctionUrl` on
+ * `function:*voc-chat-stream*` from the era when the browser signed a Lambda
+ * Function URL with SigV4. Streaming chat is `POST /chat/stream` on the REST API
+ * now (Cognito authorizer, `Integration.ResponseTransferMode: STREAM`) and the
+ * Function URL is gone — but the grant is not merely dead, it is a bypass: any
+ * signed-in user can exchange their JWT for pool credentials and call the
+ * function directly, skipping the authorizer, per-method throttling, request
+ * validation and access logs.
+ *
+ * Reached through the ROLE ATTACHMENT rather than by logical id, so the case
+ * measures "whatever role a signed-in browser can actually assume" and not
+ * "the construct that happens to be called CognitoAuthenticatedRole". It reads
+ * both attachment shapes a role can acquire a permission through — an inline
+ * `Policies` block on the role and a separate `AWS::IAM::Policy` naming it — plus
+ * the managed-policy list, because the grant could come back through any of
+ * them.
+ */
+describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
+  const StatementSchema = z.object({
+    Action: z.unknown().optional(),
+    Resource: z.unknown().optional(),
+  });
+  const PolicyDocumentSchema = z.object({ Statement: z.array(StatementSchema) });
+
+  /** The logical id the Identity Pool hands to a signed-in browser. */
+  function authenticatedRoleLogicalId(template: Template): string {
+    const attachments = Object.values(
+      template.findResources('AWS::Cognito::IdentityPoolRoleAttachment'),
+    );
+    // The attachment itself is the still-required wiring: Amplify's JWT ->
+    // AWS-credentials exchange fails outright without it, so its absence is a
+    // regression and NOT a way for this case to pass by finding no role.
+    expect(attachments, 'expected exactly one IdentityPoolRoleAttachment').toHaveLength(1);
+    const authenticated = z
+      .object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) })
+      .parse(attachments[0].Properties?.Roles?.authenticated);
+    return authenticated['Fn::GetAtt'][0];
+  }
+
+  /** Every statement that role can act under, however the policy is attached. */
+  function authenticatedRoleStatements(template: Template): z.infer<typeof StatementSchema>[] {
+    const logicalId = authenticatedRoleLogicalId(template);
+    const role = template.findResources('AWS::IAM::Role')[logicalId];
+    expect(role, `the attachment names ${logicalId}, which is not a role in this template`)
+      .toBeDefined();
+
+    // A managed policy's contents are not in this template, so it cannot be
+    // inspected — fail loudly rather than report a clean action set that only
+    // looks clean because the grant moved somewhere unreadable.
+    expect(role.Properties?.ManagedPolicyArns ?? [], 'authenticated role gained a managed policy')
+      .toEqual([]);
+
+    // Both attachment shapes, reduced to a flat list of policy DOCUMENTS: an
+    // inline `Policies` entry on the role, and a standalone AWS::IAM::Policy
+    // naming it (what `addToPolicy()` renders as).
+    const documents: unknown[] = [
+      ...((role.Properties?.Policies ?? []) as { PolicyDocument?: unknown }[])
+        .map((policy) => policy.PolicyDocument),
+      ...Object.values(template.findResources('AWS::IAM::Policy'))
+        .filter((policy) => JSON.stringify(policy.Properties?.Roles ?? []).includes(`"${logicalId}"`))
+        .map((policy) => policy.Properties?.PolicyDocument),
+    ];
+
+    return documents.flatMap((document) => PolicyDocumentSchema.parse(document).Statement);
+  }
+
+  it('grants neither lambda:InvokeFunction nor lambda:InvokeFunctionUrl', () => {
+    const statements = authenticatedRoleStatements(synthCoreTemplate());
+
+    // Asserted on the parsed action set, not on a substring of the rendered
+    // template: `lambda:InvokeFunctionUrl` contains `lambda:InvokeFunction` as a
+    // prefix, so a naive `toContain` on JSON cannot tell the two apart, and a
+    // single-action statement renders as a bare string rather than an array.
+    const actions = statements.flatMap((statement) =>
+      typeof statement.Action === 'string' ? [statement.Action] : (statement.Action as string[]) ?? [],
+    );
+
+    expect(actions, 'a signed-in browser must reach chat only through API Gateway')
+      .not.toContain('lambda:InvokeFunction');
+    expect(actions).not.toContain('lambda:InvokeFunctionUrl');
+    // And nothing else in the lambda: namespace either — `lambda:*` or
+    // `lambda:InvokeAsync` would be the same bypass under a different spelling.
+    expect(actions.filter((action) => /^lambda:|^\*$/.test(action))).toEqual([]);
+  });
+
+  it('names no chat-stream Lambda among its resources', () => {
+    // The complement of the action check, and the one that survives a rename of
+    // the action: the role has no business referencing that function at all.
+    const resources = authenticatedRoleStatements(synthCoreTemplate()).flatMap((statement) =>
+      typeof statement.Resource === 'string' ? [statement.Resource] : (statement.Resource as string[]) ?? [],
+    );
+
+    for (const resource of resources) {
+      expect(resource).not.toContain('voc-chat-stream');
+    }
+  });
+
+  it('keeps the pool attachment and the federated trust policy intact', () => {
+    // The removal above is a permission removal only. The pool, the role and the
+    // attachment stay — Amplify is configured from `identityPoolId` and the
+    // credential exchange needs an assumable role — so a change that deleted the
+    // role outright would make the two cases above vacuously green.
+    const template = synthCoreTemplate();
+    const role = template.findResources('AWS::IAM::Role')[authenticatedRoleLogicalId(template)];
+
+    // StatementsSchema, not PolicyDocumentSchema: the latter's statement shape
+    // lists Action/Resource and zod strips the rest, which would drop the
+    // `Principal` this case is about.
+    const trust = StatementsSchema.parse(role.Properties?.AssumeRolePolicyDocument);
+    const federated = z
+      .object({ Principal: z.object({ Federated: z.literal('cognito-identity.amazonaws.com') }) })
+      .parse(trust.Statement[0]);
+    expect(federated.Principal.Federated).toBe('cognito-identity.amazonaws.com');
+    expect(JSON.stringify(trust.Statement[0])).toContain('cognito-identity.amazonaws.com:amr');
+  });
+
+  it('leaves no AwsSolutions-IAM5 suppression on the role with no wildcard left to suppress', () => {
+    // The grant's blanket suppression (no `appliesTo`) was removed with it. A
+    // suppression that outlives its finding is worse than none: it silences
+    // whatever wildcard the next edit adds here, and cdk-nag would not complain.
+    const template = synthCoreTemplate();
+    const role = template.findResources('AWS::IAM::Role')[authenticatedRoleLogicalId(template)];
+
+    expect(JSON.stringify(role.Metadata ?? {})).not.toContain('AwsSolutions-IAM5');
+  });
+});
+
+/**
  * Regression guard for issue #252: the implicit OAuth grant was enabled
  * alongside authorization-code grant. The implicit grant returns tokens
  * in the URL fragment (browser history / Referer leakage) and cannot be

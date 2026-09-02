@@ -87,7 +87,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "12ddceb388eaa744402d9b135f247cfaeae1bf68b74ef6656340ebd0d63117c1",
+      "templateSha256": "aa5ab6f599c7b1ad4556bad293ebe17ef36483d17728daabfd3c8f4841140410",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -142,9 +142,7 @@
           "VocCoreStack:ExportsOutputRefWebsiteBucket75C24D94B5689ED3",
           "VocFrontendDomainName"
         ],
-        "policyResources": [
-          "arn:aws:lambda:us-east-1:111111111111:function:*voc-chat-stream*"
-        ],
+        "policyResources": [],
         "environmentNames": [
           "SERVICE_NAME = voc-product-doc-extractor"
         ]

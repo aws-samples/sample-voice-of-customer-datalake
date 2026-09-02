@@ -1048,31 +1048,27 @@ export class VocCoreStack extends VocStack {
       description: 'Role for authenticated Cognito Identity Pool users',
     });
 
-    // Grant permission to invoke chat stream Lambda Function URL
-    // Use wildcard to avoid circular dependency (specific Lambda is in ApiStack)
-    this.authenticatedRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['lambda:InvokeFunctionUrl', 'lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*${this.prefixed('voc-chat-stream')}*`],
-    }));
-
-    // Suppress wildcard warning - necessary to avoid circular dependency.
+    // DELIBERATELY NO INLINE POLICY (issue #254).
     //
-    // No `appliesTo`, so it is blanket over this role and stays matching whatever
-    // the ARN above resolves to — including the prefixed form. That is why it
-    // needs no prefix threading, unlike pluginSystemSuppressions(), whose
-    // `appliesTo` regexes quote the concrete ARN and therefore must be a function
-    // of the prefix. Were that to change here, the zero-warnings assertion over
-    // the PREFIXED synth in lib/app-deployment-prefix.test.ts would catch it.
-    NagSuppressions.addResourceSuppressions(
-      this.authenticatedRole,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: 'Wildcard required to avoid circular dependency between CoreStack and ApiStack. Lambda name pattern ensures least-privilege.',
-        },
-      ],
-      true
-    );
+    // This role used to carry `lambda:InvokeFunction` +
+    // `lambda:InvokeFunctionUrl` on `function:*voc-chat-stream*`, from the era
+    // when the browser reached streaming chat by SigV4-signing a Lambda Function
+    // URL. Streaming now goes through `POST /chat/stream` on the REST API with
+    // the Cognito authorizer and `Integration.ResponseTransferMode: STREAM`
+    // (see api-stack.ts), and the Function URL — and its `ChatStreamUrl` output
+    // — are gone. What the grant still bought was a way for any signed-in user
+    // to exchange their JWT for pool credentials and invoke the function
+    // directly, skipping the authorizer, per-method throttling, request
+    // validation and access logs. So it is removed rather than narrowed; its
+    // blanket AwsSolutions-IAM5 suppression went with it, because there is no
+    // longer a wildcard to suppress.
+    //
+    // The pool and this role stay: Amplify's credential exchange is configured
+    // from `identityPoolId` (api-stack.ts runtime config), and a role attachment
+    // is required for that exchange to succeed at all. Private CDN paths
+    // (/avatars/*, /prototypes/*) are served by CloudFront signed URLs the API
+    // mints per request, not by browser IAM credentials, so nothing here needs
+    // a permission today.
 
     // Attach role to Identity Pool
     new cognito.CfnIdentityPoolRoleAttachment(this, 'IdentityPoolRoleAttachment', {
