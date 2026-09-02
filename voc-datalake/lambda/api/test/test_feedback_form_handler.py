@@ -5708,7 +5708,10 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         so `'form(1)'` and `'a;b'` are sampled beside the named `'a:b'`. Those two
         hold characters from the #379 payload itself, which is the reason a list
         written by hand omits them — they read as attack syntax rather than as an id
-        anyone would seed, and they resolved regardless.
+        anyone would seed, and they resolved regardless. The complement's other half
+        is asserted too: `"`, `#`, `/`, `?`, a backslash and a backtick are the
+        printable-ASCII characters the ROUTE omits, which all three documents state
+        alongside the 24, so they are in the unreachable loop.
 
         Exhaustively rather than representatively, because a partial sample is what
         let the prose go wrong twice. `Lm` and `No` read to a human as punctuation,
@@ -5795,6 +5798,15 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         # selection of only marks, one symbol, one separator and one format character
         # was in exactly that state.
         #
+        # The six printable-ASCII entries are the other half of the in-scope
+        # complement above: all three documents state the in-scope ASCII set as the
+        # 24 characters the route admits and this pattern does not, and then name
+        # `"`, `#`, `/`, `?`, `\\` and a backtick as the printable characters the
+        # ROUTE omits. That is a claim about the capture group rather than about the
+        # validator, so it belongs in THIS loop — the validator refuses all six
+        # either way, which is why asserting refusal alone could not tell the two
+        # claims apart.
+        #
         # `Zl` and `Zp` are the pair NEITHER document's `Z*` illustration covers:
         # U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are not `Zs` like the
         # U+00A0 and U+3000 both documents name, and they are the exact two characters
@@ -5822,7 +5834,8 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         # did. Both documents name `caf\u00e9` in scope without saying which of the
         # two spellings they mean. `\u200d` and `\u0488` would be invisible, or would
         # stack onto the preceding character, in an editor.
-        for unreachable in ('abc\tdef', 'abc\ndef', 'form€a', 'form°a',
+        for unreachable in ('abc\tdef', 'abc\ndef', 'a"b', 'a#b', 'a/b', 'a?b',
+                            'a\\b', 'a`b', 'form€a', 'form°a',
                             'form\U0001f600a', 'form—a', 'form«a',
                             'hawai\u2019i-form', 'form\uff3fa', 'cafe\u0301',
                             'फॉर्म', 'form\u0488a', 'form\u200da',

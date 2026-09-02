@@ -178,7 +178,8 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   Run to completion neither is misleading, which is why cost carries the choice above.
 
   What the scan does **not** need to find, so that its silence means what it says: an id containing
-  a literal tab or newline, or a non-ASCII character that `\w` does not match. None of those can
+  a literal tab or newline, one of the six printable-ASCII characters the route's class omits (`"`,
+  `#`, `/`, `?`, `\`, `` ` ``), or a non-ASCII character that `\w` does not match. None of those can
   occur in an id any route ever resolved, because the route's own capture group admits only
   `[-._~()'!*:@,;=+&$%<> \[\]{}|^\w]`, and `\w` — the one member of that class that reaches beyond
   ASCII — matches any Unicode **letter or number**, plus `_`. Take that as the `L*` and `N*`

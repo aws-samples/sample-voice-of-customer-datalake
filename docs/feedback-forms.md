@@ -193,8 +193,10 @@ all the same, which makes `form(1)` and `a;b` as much in scope as `a:b`. Convers
 
 Some shapes are **not** in scope, and not because the scan would miss them — it flags
 them too. They never reached a handler, so they answered 404 before this change as
-well as after: a *tab* or newline inside an id, and any non-ASCII character that `\w`
-does not match. The route's own capture group is what excludes them: the only part of
+well as after: a *tab* or newline inside an id, one of the six printable-ASCII
+characters the route's class omits (`"`, `#`, `/`, `?`, `\`, `` ` ``), and any non-ASCII
+character that `\w` does not match. The route's own capture group is what excludes
+them: the only part of
 it that reaches beyond ASCII is `\w`, which matches any Unicode letter or number, plus
 `_`. Read both sides as Unicode CATEGORIES rather than as lists of glyphs — `\w` is
 `L*` and `N*`, and what it leaves out is marks (`M*`), symbols (`S*`), punctuation
