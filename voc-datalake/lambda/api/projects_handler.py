@@ -46,7 +46,8 @@ from botocore.exceptions import ClientError
 import boto3
 
 from projects import (
-    list_projects, create_project, get_project, update_project, delete_project,
+    list_projects, create_project, get_project, get_project_chat_context,
+    update_project, delete_project,
     run_research,
     create_document, update_document, delete_document,
     create_persona, update_persona, delete_persona,
@@ -84,6 +85,10 @@ PERSONA_GENERATOR_FUNCTION = os.environ.get('PERSONA_GENERATOR_FUNCTION', '')
 DOCUMENT_GENERATOR_FUNCTION = os.environ.get('DOCUMENT_GENERATOR_FUNCTION', '')
 DOCUMENT_MERGER_FUNCTION = os.environ.get('DOCUMENT_MERGER_FUNCTION', '')
 PERSONA_IMPORTER_FUNCTION = os.environ.get('PERSONA_IMPORTER_FUNCTION', '')
+
+# Leave one MiB of headroom under Lambda's six-MiB synchronous response limit.
+MAX_CHAT_CONTEXT_LAMBDA_RESPONSE_BYTES = 5 * 1024 * 1024
+_CHAT_CONTEXT_PATH_SUFFIX = '/chat-context'
 
 
 def validate_persona_count(value, default=3):
@@ -123,6 +128,15 @@ def api_create_project():
 @tracer.capture_method
 def api_get_project(project_id: str):
     return get_project(project_id)
+
+
+@app.post("/projects/<project_id>/chat-context")
+@tracer.capture_method
+def api_project_chat_context(project_id: str):
+    body = _json_object_body()
+    return get_project_chat_context(
+        project_id, body.get('selected_document_ids', []),
+    )
 
 
 @app.put("/projects/<project_id>")
@@ -4282,6 +4296,40 @@ def api_generate_product_report(project_id: str):
 # Lambda Handler
 # ============================================
 
+def _bounded_chat_context_response(event: dict, result: dict) -> dict:
+    path = event.get('path')
+    status_code = result.get('statusCode')
+    if (
+        not isinstance(path, str)
+        or not path.endswith(_CHAT_CONTEXT_PATH_SUFFIX)
+        or not isinstance(status_code, int)
+        or status_code < 200
+        or status_code >= 300
+    ):
+        return result
+
+    response_bytes = len(
+        json.dumps(result, separators=(',', ':'), default=str).encode('utf-8')
+    )
+    if response_bytes <= MAX_CHAT_CONTEXT_LAMBDA_RESPONSE_BYTES:
+        return result
+
+    raw_headers = result.get('headers')
+    headers = dict(raw_headers) if isinstance(raw_headers, dict) else {}
+    headers['Content-Type'] = 'application/json'
+    return {
+        'statusCode': 413,
+        'headers': headers,
+        'isBase64Encoded': False,
+        'body': json.dumps({
+            'message': (
+                'Selected project context is too large. '
+                'Select fewer or smaller documents.'
+            ),
+        }),
+    }
+
+
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API."""
@@ -4297,6 +4345,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
         # DEBUG — it is the absence of the body, not the log level, that
         # protects the data.
         result = app.resolve(event, context)
+        result = _bounded_chat_context_response(event, result)
         logger.info("Returning response", extra={"status_code": result.get("statusCode")})
         return result
         

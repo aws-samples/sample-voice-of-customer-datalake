@@ -3,7 +3,7 @@
 import pytest
 
 # Import shared fixtures
-from jobs.conftest import *  # noqa: F401, F403
+from jobs.conftest import *
 
 
 @pytest.fixture
@@ -30,7 +30,9 @@ def mock_project_documents():
             'sk': 'PRD#doc_1',
             'document_id': 'doc_1',
             'document_type': 'prd',
-            'title': 'First PRD',
+            'base_title': 'First PRD',
+            'version': 1,
+            'title': 'First PRD (v1)',
             'content': 'Content of first PRD...',
         },
         {

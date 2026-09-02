@@ -2681,3 +2681,80 @@ describe('unauthorized gateway response', () => {
     expect(exposed).toContain('www-authenticate');
   });
 });
+
+
+describe('ChatStream canonical project delegation', () => {
+  const FunctionSchema = z.object({
+    Properties: z.object({
+      Environment: z.object({ Variables: z.record(z.unknown()) }),
+      Role: z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.string()]) }),
+    }),
+  });
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  const PolicySchema = z.object({
+    Properties: z.object({
+      Roles: z.array(z.object({ Ref: z.string() })),
+      PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+    }),
+  });
+
+  it('injects the Projects function and may invoke only that canonical reader', () => {
+    const functions = Object.entries(
+      apiTemplate().findResources('AWS::Lambda::Function'),
+    );
+    const parsedFunctions = functions.flatMap(([logicalId, resource]) => {
+      const parsed = FunctionSchema.safeParse(resource);
+      return parsed.success ? [{ logicalId, properties: parsed.data.Properties }] : [];
+    });
+    const chat = parsedFunctions.find(
+      ({ properties }) => properties.Environment.Variables.BEDROCK_MODEL_ID
+        === 'global.anthropic.claude-sonnet-5',
+    );
+    const projects = parsedFunctions.find(
+      ({ properties }) => properties.Environment.Variables.POWERTOOLS_SERVICE_NAME
+        === 'voc-projects-api',
+    );
+    expect(chat, 'ChatStream Lambda not found').toBeDefined();
+    expect(projects, 'Projects API Lambda not found').toBeDefined();
+    if (!chat || !projects) return;
+
+    expect(chat.properties.Environment.Variables.PROJECTS_FUNCTION).toStrictEqual({
+      Ref: projects.logicalId,
+    });
+
+    const chatRoleId = chat.properties.Role['Fn::GetAtt'][0];
+    const statements = Object.values(
+      apiTemplate().findResources('AWS::IAM::Policy'),
+    ).flatMap((resource) => {
+      const parsed = PolicySchema.safeParse(resource);
+      if (!parsed.success) return [];
+      const attached = parsed.data.Properties.Roles.some(
+        (role) => role.Ref === chatRoleId,
+      );
+      return attached ? parsed.data.Properties.PolicyDocument.Statement : [];
+    });
+    const invokeStatements = statements.filter((statement) => {
+      const actions = Array.isArray(statement.Action)
+        ? statement.Action
+        : [statement.Action];
+      return actions.includes('lambda:InvokeFunction');
+    });
+
+    expect(invokeStatements).toHaveLength(1);
+    expect(invokeStatements[0].Resource).toStrictEqual([
+      { 'Fn::GetAtt': [projects.logicalId, 'Arn'] },
+      {
+        'Fn::Join': [
+          '',
+          [
+            { 'Fn::GetAtt': [projects.logicalId, 'Arn'] },
+            ':*',
+          ],
+        ],
+      },
+    ]);
+  });
+});

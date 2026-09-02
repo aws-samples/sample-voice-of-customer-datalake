@@ -95,12 +95,14 @@ export default function DocumentsTab({
               >
                 <div className="flex items-center gap-2 mb-1">
                   <DocumentTypeBadge type={d.document_type} />
-                  {/* Six prototypes called "Prototype", four sharing a date, is the
-                      real shape of this list — the badge and the date do not tell
-                      them apart, and neither does the title. The ordinal does, and
-                      it is derived from creation order rather than stored, so it
-                      needs no migration and cannot disagree with the records. */}
-                  <DocumentOrdinalLabel ordinal={ordinals.get(d.document_id)} t={t} />
+                  {/* Persisted PRD/PRFAQ versions already live in the title. The
+                      contextual ordinal remains useful for unversioned document
+                      types such as prototypes, where repeated generic names still
+                      need a stable creation-order discriminator. */}
+                  <DocumentOrdinalLabel
+                    ordinal={d.version === undefined ? ordinals.get(d.document_id) : undefined}
+                    t={t}
+                  />
                   <span className="text-xs text-gray-400">{format(new Date(d.created_at), 'MMM d')}</span>
                 </div>
                 <h4 className="font-medium line-clamp-2 text-sm lg:text-base">{d.title}</h4>

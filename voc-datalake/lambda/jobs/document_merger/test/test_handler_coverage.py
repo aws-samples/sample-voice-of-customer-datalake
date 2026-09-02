@@ -10,18 +10,41 @@ from unittest.mock import MagicMock
 _RECENT_DATE = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
 
 
+def _managed_prd(document_id: str, title: str, content: str) -> dict[str, object]:
+    """Canonical persisted shape; these tests are not migration tests."""
+    return {
+        'sk': f'PRD#{document_id}',
+        'document_id': document_id,
+        'document_type': 'prd',
+        'base_title': title,
+        'version': 1,
+        'title': f'{title} (v1)',
+        'content': content,
+    }
+
+
 class TestDocumentMergerFeedbackPath:
     """Cover the use_feedback=True branch (lines 80-107, 115)."""
+
+    @staticmethod
+    def _projects_table(mock_dynamodb):
+        table = MagicMock()
+        table.name = 'test-projects-table'
+        table.get_item.return_value = {}
+        table.meta.client.transact_write_items.side_effect = (
+            mock_dynamodb['table'].meta.client.transact_write_items.side_effect
+        )
+        return table
 
     def test_includes_feedback_when_use_feedback_enabled(
         self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Cover the use_feedback=True path with feedback items."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = self._projects_table(mock_dynamodb)
         mock_feedback_table = MagicMock()
 
         project_items = [
-            {'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'document_type': 'prd', 'title': 'PRD 1', 'content': 'Content 1'},
+            _managed_prd('doc_1', 'PRD 1', 'Content 1'),
             {'sk': 'RESEARCH#doc_2', 'document_id': 'doc_2', 'document_type': 'research', 'title': 'Research', 'content': 'Content 2'},
         ]
         mock_projects_table.query.return_value = {'Items': project_items}
@@ -61,12 +84,12 @@ class TestDocumentMergerFeedbackPath:
         self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Cover feedback_categories filtering branch (line 115)."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = self._projects_table(mock_dynamodb)
         mock_feedback_table = MagicMock()
 
         project_items = [
-            {'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'document_type': 'prd', 'title': 'PRD 1', 'content': 'C1'},
-            {'sk': 'PRD#doc_2', 'document_id': 'doc_2', 'document_type': 'prd', 'title': 'PRD 2', 'content': 'C2'},
+            _managed_prd('doc_1', 'PRD 1', 'C1'),
+            _managed_prd('doc_2', 'PRD 2', 'C2'),
         ]
         mock_projects_table.query.return_value = {'Items': project_items}
         mock_projects_table.put_item.return_value = {}
@@ -103,12 +126,12 @@ class TestDocumentMergerFeedbackPath:
         self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Cover use_feedback=True when no feedback items are returned."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = self._projects_table(mock_dynamodb)
         mock_feedback_table = MagicMock()
 
         project_items = [
-            {'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'document_type': 'prd', 'title': 'PRD 1', 'content': 'C1'},
-            {'sk': 'PRD#doc_2', 'document_id': 'doc_2', 'document_type': 'prd', 'title': 'PRD 2', 'content': 'C2'},
+            _managed_prd('doc_1', 'PRD 1', 'C1'),
+            _managed_prd('doc_2', 'PRD 2', 'C2'),
         ]
         mock_projects_table.query.return_value = {'Items': project_items}
         mock_projects_table.put_item.return_value = {}

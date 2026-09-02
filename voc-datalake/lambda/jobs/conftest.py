@@ -2,8 +2,9 @@
 
 import os
 import sys
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add lambda directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,6 +24,28 @@ def mock_dynamodb():
     """Mock DynamoDB resource and tables where used in handler modules."""
     mock_resource = MagicMock()
     mock_table = MagicMock()
+    mock_table.name = 'test-projects-table'
+    mock_table.get_item.return_value = {}
+    mock_table.query.return_value = {'Items': []}
+
+    # Document version persistence uses one low-level transaction. Mirror its
+    # externally observable document and META writes so the existing job tests
+    # keep asserting behavior rather than a particular DynamoDB API surface.
+    def transact_write_items(*, TransactItems):
+        for action in TransactItems:
+            put = action.get('Put')
+            if put and str(put.get('Item', {}).get('pk', '')).startswith('PROJECT#'):
+                mock_table.put_item(Item=put['Item'])
+            update = action.get('Update')
+            if update and update.get('Key', {}).get('sk') == 'META':
+                mock_table.update_item(
+                    Key=update['Key'],
+                    UpdateExpression=update['UpdateExpression'],
+                    ExpressionAttributeValues=update['ExpressionAttributeValues'],
+                )
+        return {}
+
+    mock_table.meta.client.transact_write_items.side_effect = transact_write_items
     mock_resource.Table.return_value = mock_table
     patchers = [
         patch('shared.aws.get_dynamodb_resource', return_value=mock_resource),

@@ -913,6 +913,7 @@ export class VocApiStack extends VocStack {
       timeout: cdk.Duration.minutes(5),
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
+        PROJECTS_FUNCTION: projectsLambda.functionName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         // Streaming-chat ('chat' surface) default when no override is set.
@@ -933,12 +934,14 @@ export class VocApiStack extends VocStack {
           '@aws-sdk/*',
           '@smithy/*',
         ],
-        // The web-search SigV4 client imports these directly; bundle them so
-        // it runs against the pinned versions from package.json instead of
-        // whatever the managed runtime's SDK happens to hoist (transitive
-        // availability is not a documented contract). They are tiny.
+        // These modules are imported directly at runtime. Bundle their pinned
+        // versions instead of relying on whatever SDK the managed runtime
+        // happens to hoist: web-search signing uses the Smithy modules and
+        // credential provider; canonical project reads use client-lambda.
+        // The packages are small.
         nodeModules: [
           '@aws-sdk/credential-provider-node',
+          '@aws-sdk/client-lambda',
           '@smithy/protocol-http',
           '@smithy/signature-v4',
           // Reads the CloudFront URL-signing key. Pinned here for the same
@@ -983,6 +986,9 @@ export class VocApiStack extends VocStack {
       ],
       resources: [projectsTable.tableArn, `${projectsTable.tableArn}/index/*`],
     }));
+    // Canonical project reads, including one-time legacy version persistence,
+    // stay owned by the Python Projects API rather than being reimplemented here.
+    projectsLambda.grantInvoke(chatStreamLambda);
     kmsKey.grantDecrypt(chatStreamLambda);
 
     // Web search tool (AgentCore Gateway) — optional, opt-in per request.

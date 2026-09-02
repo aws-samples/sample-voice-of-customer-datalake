@@ -6,10 +6,9 @@
  * "what was this built FROM" (one `derivation` map, written by the backend).
  * These two answer questions the backend does not record at all:
  *
- * - **`ordinalByType`** — "PRD 2 of 3". Nothing stores a version. Creation order
- *   within a type is the whole answer, so a stored counter would only be needed
- *   if documents could be reordered or superseded out of creation order, which
- *   they cannot.
+ * - **`ordinalByType`** — contextual creation order for document types that do
+ *   not persist a version. PRD/PRFAQ versions are now stored and materialized in
+ *   their titles; callers suppress this fallback label when `version` is present.
  * - **`resolveRevision`** — "this prototype revises that one". `revised_from_id`
  *   and `revision_feedback` have been written on every feedback-driven prototype
  *   revision since that feature shipped, arrive on every project read, and until

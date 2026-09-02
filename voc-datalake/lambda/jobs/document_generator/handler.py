@@ -59,6 +59,7 @@ from shared.derivation import (
     build_derivation,
     derivation_source,
 )
+from shared.document_versions import persist_versioned_document
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -1096,18 +1097,10 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         content, analysis = _generate_prfaq(ctx, feature_idea, feedback_context, personas_context, doc_config, product_context_str)
 
     ctx.update_progress(90, 'saving_document')
-    now_dt = datetime.now(timezone.utc)
-    now = now_dt.isoformat()
-    doc_id = f"{doc_type}_{now_dt.strftime('%Y%m%d%H%M%S')}"
-
-    item = {
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'{doc_type.upper()}#{doc_id}',
+    now = datetime.now(timezone.utc).isoformat()
+    item_fields = {
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,
-        'document_id': doc_id,
-        'document_type': doc_type,
-        'title': title,
         'feature_idea': feature_idea,
         'content': content,
         'job_id': job_id,
@@ -1117,16 +1110,17 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         'created_at': now,
     }
     if analysis:
-        item['analysis'] = analysis
+        item_fields['analysis'] = analysis
 
-    projects_table.put_item(Item=item)
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = if_not_exists(document_count, :zero) + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':zero': 0, ':now': now}
+    item = persist_versioned_document(
+        projects_table,
+        project_id,
+        doc_type,
+        title,
+        job_id,
+        item_fields,
     )
-
-    return {'document_id': doc_id, 'title': title}
+    return {'document_id': item['document_id'], 'title': item['title']}
 
 
 # ── Step Functions step handlers ─────────────────────────────────────────────
@@ -1321,17 +1315,10 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
                 'internal_faq': results[3],
             }
 
-    now_dt = datetime.now(timezone.utc)
-    now = now_dt.isoformat()
-    doc_id = f"{doc_type}_{now_dt.strftime('%Y%m%d%H%M%S')}"
-    item = {
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'{doc_type.upper()}#{doc_id}',
+    now = datetime.now(timezone.utc).isoformat()
+    item_fields = {
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,
-        'document_id': doc_id,
-        'document_type': doc_type,
-        'title': title,
         'feature_idea': feature_idea,
         'content': content,
         'job_id': job_id,
@@ -1339,13 +1326,15 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
         'created_at': now,
     }
     if analysis:
-        item['analysis'] = analysis
+        item_fields['analysis'] = analysis
 
-    projects_table.put_item(Item=item)
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = if_not_exists(document_count, :zero) + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':zero': 0, ':now': now}
+    item = persist_versioned_document(
+        projects_table,
+        project_id,
+        doc_type,
+        title,
+        job_id,
+        item_fields,
     )
 
     # Best-effort cleanup of the scratch prefix for this job.
@@ -1358,9 +1347,9 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
 
     update_job_status(
         project_id, job_id, 'completed', 100, 'complete',
-        result={'document_id': doc_id, 'title': title}
+        result={'document_id': item['document_id'], 'title': item['title']}
     )
-    return {'document_id': doc_id, 'title': title}
+    return {'document_id': item['document_id'], 'title': item['title']}
 
 
 def _handle_step_error(event: dict) -> dict:

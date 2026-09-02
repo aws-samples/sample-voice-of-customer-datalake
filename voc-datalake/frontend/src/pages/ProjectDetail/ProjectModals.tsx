@@ -112,6 +112,7 @@ export function DocumentModalWrapper({
     <DocumentModal
       isEditing={!!editingDoc}
       title={title}
+      titleReadOnly={editingDoc?.document_type === 'prd' || editingDoc?.document_type === 'prfaq'}
       content={content}
       isSaving={isSaving}
       onTitleChange={onTitleChange}

@@ -5,6 +5,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 import json
 import os
 import re
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
@@ -47,6 +48,12 @@ from shared.avatar import (
 from shared.prototypes import prototype_signed_url
 from shared.tables import get_projects_table, get_feedback_table
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
+from shared.document_versions import (
+    VERSIONED_DOCUMENT_TYPES,
+    normalized_base_title,
+    persist_legacy_document_versions,
+    version_partition_key,
+)
 
 # Default instructions used when a project has not set its own kiro_export_prompt.
 # Kept here — ONE definition only — so both _build_steering_file and the
@@ -373,18 +380,109 @@ def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
     return item
 
 
+def _query_partition_items(partition_key: str) -> list[dict]:
+    """Read one complete projects-table partition, following every page."""
+    items = []
+    query = {
+        'KeyConditionExpression': Key('pk').eq(partition_key),
+        'ConsistentRead': True,
+    }
+    while True:
+        response = projects_table.query(**query)
+        if not isinstance(response, dict):
+            return items
+        page_items = response.get('Items')
+        if isinstance(page_items, list):
+            items.extend(page_items)
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return items
+        query['ExclusiveStartKey'] = cursor
+
+
+def _find_document(project_id: str, document_id: str) -> dict | None:
+    """Find one document using projected pages and stop at the first match."""
+    query = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'ConsistentRead': True,
+        'ProjectionExpression': (
+            'pk, sk, document_id, #type, #title, base_title, #version'
+        ),
+        'ExpressionAttributeNames': {
+            '#type': 'document_type',
+            '#title': 'title',
+            '#version': 'version',
+        },
+    }
+    while True:
+        response = projects_table.query(**query)
+        if not isinstance(response, dict):
+            return None
+        page_items = response.get('Items')
+        if isinstance(page_items, list):
+            match = next(
+                (
+                    item for item in page_items
+                    if isinstance(item, dict)
+                    and item.get('document_id') == document_id
+                ),
+                None,
+            )
+            if match is not None:
+                return match
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return None
+        query['ExclusiveStartKey'] = cursor
+
+
+def _iter_partition_keys(partition_key: str) -> Iterator[dict[str, str]]:
+    """Yield only primary keys from a complete partition query."""
+    query = {
+        'KeyConditionExpression': Key('pk').eq(partition_key),
+        'ConsistentRead': True,
+        'ProjectionExpression': 'pk, sk',
+    }
+    while True:
+        response = projects_table.query(**query)
+        if not isinstance(response, dict):
+            return
+        page_items = response.get('Items')
+        if isinstance(page_items, list):
+            for item in page_items:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get('pk'), str)
+                    and isinstance(item.get('sk'), str)
+                ):
+                    yield {'pk': item['pk'], 'sk': item['sk']}
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return
+        query['ExclusiveStartKey'] = cursor
+
+
+MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS = 20
+MAX_CHAT_CONTEXT_ID_LENGTH = 128
+_CHAT_CONTEXT_DOCUMENT_FIELDS = (
+    'sk',
+    'document_id',
+    'document_type',
+    'title',
+    'base_title',
+    'version',
+)
+
+
 @tracer.capture_method
 def get_project(project_id: str) -> dict:
     """Get a project with all its data."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
-    # Get all items for this project
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
-    )
-    
-    items = response.get('Items', [])
+    # Read the complete partition before assigning legacy versions. A partial
+    # collection can give two same-title documents the same apparent position.
+    items = _query_partition_items(f'PROJECT#{project_id}')
     if not items:
         raise NotFoundError('Project not found')
     
@@ -403,9 +501,15 @@ def get_project(project_id: str) -> dict:
             personas.append(item)
         elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#') or sk.startswith('PRODUCT_REPORT#') or sk.startswith('PROTOTYPE#'):
             documents.append(_with_signed_prototype_url(item, project_id))
-    
+
     if not project:
         raise NotFoundError('Project metadata not found')
+
+    # Persist canonical identity before returning it. Conditional writes and the
+    # per-series migration lease make this safe for concurrent first reads.
+    documents = persist_legacy_document_versions(
+        projects_table, project_id, documents,
+    )
 
     # Inject the default at read time so both consumers (the steering-file editor
     # and the per-document "Copy to Kiro" action) always agree on the fallback
@@ -418,6 +522,76 @@ def get_project(project_id: str) -> dict:
         'project': project,
         'personas': personas,
         'documents': documents
+    }
+
+
+def _validated_chat_context_document_ids(raw: object) -> list[str]:
+    if not isinstance(raw, list):
+        raise ValidationError('selected_document_ids must be an array')
+    if len(raw) > MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS:
+        raise ValidationError(
+            f'Select at most {MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS} documents'
+        )
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for value in raw:
+        if (
+            not isinstance(value, str)
+            or not value
+            or value != value.strip()
+            or len(value) > MAX_CHAT_CONTEXT_ID_LENGTH
+        ):
+            raise ValidationError(
+                'Each selected document id must be a non-empty string of at most '
+                f'{MAX_CHAT_CONTEXT_ID_LENGTH} characters'
+            )
+        if value not in seen:
+            seen.add(value)
+            selected.append(value)
+    return selected
+
+
+@tracer.capture_method
+def get_project_chat_context(
+    project_id: str, selected_document_ids: object,
+) -> dict:
+    """Canonical project context bounded for synchronous Lambda transport."""
+    if (
+        not isinstance(project_id, str)
+        or not project_id
+        or project_id != project_id.strip()
+        or len(project_id) > MAX_CHAT_CONTEXT_ID_LENGTH
+    ):
+        raise ValidationError(
+            f'project_id must be 1-{MAX_CHAT_CONTEXT_ID_LENGTH} characters'
+        )
+
+    selected_ids = set(
+        _validated_chat_context_document_ids(selected_document_ids)
+    )
+    project_data = get_project(project_id)
+    summaries = []
+    for document in project_data['documents']:
+        summary = {
+            field: document[field]
+            for field in _CHAT_CONTEXT_DOCUMENT_FIELDS
+            if field in document
+        }
+        document_id = document.get('document_id')
+        content = document.get('content')
+        if (
+            isinstance(document_id, str)
+            and document_id in selected_ids
+            and isinstance(content, str)
+        ):
+            summary['content'] = content
+        summaries.append(summary)
+
+    return {
+        'project': project_data['project'],
+        'personas': project_data['personas'],
+        'documents': summaries,
     }
 
 
@@ -466,20 +640,19 @@ def update_project(project_id: str, body: dict) -> dict:
 
 @tracer.capture_method
 def delete_project(project_id: str) -> dict:
-    """Delete a project and all its data."""
+    """Delete a project, its artifacts, and its version-counter partition."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    
-    # Get all items for this project
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
-    )
-    
-    # Delete all items
+
+    partition_keys = [
+        f'PROJECT#{project_id}',
+        version_partition_key(project_id),
+    ]
     with projects_table.batch_writer() as batch:
-        for item in response.get('Items', []):
-            batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
-    
+        for partition_key in partition_keys:
+            for key in _iter_partition_keys(partition_key):
+                batch.delete_item(Key=key)
+
     return {'success': True}
 
 
@@ -1454,7 +1627,12 @@ def create_document(project_id: str, body: dict) -> dict:
     title = body.get('title', 'Untitled Document')
     content = body.get('content', '')
     document_type = body.get('document_type', 'custom')
-    
+
+    if document_type != 'custom':
+        raise ValidationError(
+            'Only custom documents can be created directly. PRD and PR/FAQ '
+            'documents must be created through document generation.'
+        )
     if not content:
         raise ValidationError('Content is required')
     
@@ -1488,70 +1666,71 @@ def create_document(project_id: str, body: dict) -> dict:
 
 @tracer.capture_method
 def update_document(project_id: str, document_id: str, body: dict) -> dict:
-    """Update a document."""
-    from boto3.dynamodb.conditions import Attr
-    
+    """Update content while preserving managed document version identity."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    
+
+    document = _find_document(project_id, document_id)
+    if document is None:
+        raise NotFoundError('Document not found')
+
+    sk = str(document.get('sk') or '')
+    document_type = document.get('document_type')
+    managed = document_type in VERSIONED_DOCUMENT_TYPES or sk.startswith(('PRD#', 'PRFAQ#'))
+
     now = datetime.now(timezone.utc).isoformat()
-    
     update_expr = 'SET updated_at = :now'
-    expr_values = {':now': now}
+    expr_values = {':now': now, ':document_id': document_id}
     expr_names = {}
-    
+
     if 'title' in body:
-        update_expr += ', title = :title'
-        expr_values[':title'] = body['title']
+        if managed:
+            stored_title = document.get('base_title') or document.get('title') or 'Untitled'
+            if normalized_base_title(body['title']) != normalized_base_title(stored_title):
+                raise ValidationError(
+                    'Versioned PRD and PR/FAQ titles cannot be renamed. '
+                    'Generate a new document to start a new titled series.'
+                )
+        else:
+            update_expr += ', title = :title'
+            expr_values[':title'] = body['title']
     if 'content' in body:
         update_expr += ', #content = :content'
         expr_values[':content'] = body['content']
         expr_names['#content'] = 'content'
-    
-    # Find the SK for this document
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
-        FilterExpression=Attr('document_id').eq(document_id)
-    )
-    
-    items = response.get('Items', [])
-    if not items:
-        raise NotFoundError('Document not found')
-    
-    sk = items[0].get('sk')
-    
+
     update_params = {
         'Key': {'pk': f'PROJECT#{project_id}', 'sk': sk},
         'UpdateExpression': update_expr,
+        'ConditionExpression': (
+            'attribute_exists(pk) AND attribute_exists(sk) '
+            'AND document_id = :document_id'
+        ),
         'ExpressionAttributeValues': expr_values,
     }
     if expr_names:
         update_params['ExpressionAttributeNames'] = expr_names
-    
-    projects_table.update_item(**update_params)
-    
+
+    try:
+        projects_table.update_item(**update_params)
+    except ClientError as error:
+        if error.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+            raise NotFoundError('Document no longer exists') from error
+        raise
     return {'success': True}
 
 
 @tracer.capture_method
 def delete_document(project_id: str, document_id: str) -> dict:
     """Delete a document."""
-    from boto3.dynamodb.conditions import Attr
-    
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
-    # Find the SK for this document
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
-        FilterExpression=Attr('document_id').eq(document_id)
-    )
-    
-    items = response.get('Items', [])
-    if not items:
+    document = _find_document(project_id, document_id)
+    if document is None:
         raise NotFoundError('Document not found')
-    
-    sk = items[0].get('sk')
+
+    sk = document.get('sk')
     
     projects_table.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': sk})
     
