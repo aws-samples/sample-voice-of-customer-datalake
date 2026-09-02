@@ -725,8 +725,9 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
  * all three shapes a permission can arrive through whose contents are IN this
  * template — an inline `Policies` block on the role, a standalone
  * `AWS::IAM::Policy` naming it, and an `AWS::IAM::ManagedPolicy` naming it from
- * the policy side — and fails loudly on the one shape it cannot read, a
- * `ManagedPolicyArns` entry pointing outside the template.
+ * the policy side — and fails loudly on the one shape it does not read, any
+ * `ManagedPolicyArns` entry, since resolving such a reference is not attempted
+ * whether it points outside the template or at a policy defined in it.
  */
 describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
   // Action/Resource are typed rather than `z.unknown()` + a cast: CloudFormation
@@ -736,10 +737,21 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
   // `/^lambda:/` fails to match and `toContain` never substring-searches. The
   // union makes `PolicyDocumentSchema.parse()` throw on it instead, naming the
   // offending statement.
+  //
+  // `NotAction`/`NotResource` get the same fail-loud treatment via `z.never()`,
+  // for the opposite reason: they are the shapes that read cleanest here, because
+  // both fields above are legitimately ABSENT and zod would strip them. `Allow` +
+  // `NotAction` is the broadest grant IAM has — everything EXCEPT the listed
+  // actions, a superset of the `lambda:InvokeFunction` this block is about — so a
+  // statement carrying either must stop the case rather than yield an empty
+  // action set. Nothing in this repo writes one today; that is exactly why an
+  // extractor built to read only the positive fields must not silently ignore it.
   const ActionOrResourceSchema = z.union([z.string(), z.array(z.string())]).optional();
   const StatementSchema = z.object({
     Action: ActionOrResourceSchema,
     Resource: ActionOrResourceSchema,
+    NotAction: z.never().optional(),
+    NotResource: z.never().optional(),
   });
   const PolicyDocumentSchema = z.object({ Statement: z.array(StatementSchema) });
 
@@ -790,15 +802,18 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     expect(role, `the attachment names ${logicalId}, which is not a role in this template`)
       .toBeDefined();
 
-    // `addManagedPolicy()` with an AWS-managed or cross-stack ARN puts a string
-    // here whose contents are NOT in this template, so it cannot be inspected —
-    // fail loudly rather than report a clean action set that only looks clean
-    // because the grant moved somewhere unreadable. (A `ManagedPolicy` DEFINED in
-    // this stack is readable and is collected below instead; it does not land
-    // here.)
+    // ANY `ManagedPolicyArns` entry fails loudly, because this guard does not
+    // follow the reference: an AWS-managed or cross-stack ARN is a string whose
+    // contents are genuinely not in this template, and an in-stack policy attached
+    // with `role.addManagedPolicy()` renders a `{ Ref }` here whose contents ARE
+    // readable — but only by resolving it, which is not done. Failing on both
+    // beats reporting a clean action set that looks clean only because the grant
+    // moved out of the extractor's reach. The one managed-policy form collected
+    // below instead is the POLICY-side `new ManagedPolicy(..., { roles: [role] })`,
+    // which never lands here.
     expect(
       role.Properties?.ManagedPolicyArns ?? [],
-      'authenticated role gained a managed policy whose contents this template cannot show',
+      'authenticated role gained a managed policy — inspect it, and extend this guard to read it if it is in-stack',
     ).toEqual([]);
 
     // All three IN-TEMPLATE attachment shapes, reduced to a flat list of policy
@@ -880,9 +895,31 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     );
 
     expect(federated, 'the role must still be assumable by the Identity Pool').toBeDefined();
-    // The assertion carrying weight: the trust is conditioned on an AUTHENTICATED
-    // `amr`, so it is not assumable by an unauthenticated pool identity.
-    expect(JSON.stringify(federated)).toContain('cognito-identity.amazonaws.com:amr');
+
+    // The assertions carrying weight, read structurally rather than as substrings
+    // of the rendered statement: the presence of the condition KEY says nothing
+    // about its VALUE, so flipping `amr` to `unauthenticated` — handing the role a
+    // signed-in browser assumes to any anonymous pool identity, a worse bug than
+    // the one this block guards — used to read as clean here. Both fields are
+    // typed narrowly on purpose: a shape this cannot read (an `amr` list, an
+    // `Action` array) must stop the case rather than pass it.
+    const assumable = z
+      .object({
+        Action: z.string(),
+        Condition: z.object({
+          'ForAnyValue:StringLike': z.object({
+            'cognito-identity.amazonaws.com:amr': z.string(),
+          }),
+        }),
+      })
+      .parse(federated);
+
+    // The other half of "assumable by the pool, and only that way".
+    expect(assumable.Action).toBe('sts:AssumeRoleWithWebIdentity');
+    expect(
+      assumable.Condition['ForAnyValue:StringLike']['cognito-identity.amazonaws.com:amr'],
+      'the trust must admit AUTHENTICATED pool identities only',
+    ).toBe('authenticated');
   });
 
   it('leaves no AwsSolutions-IAM5 suppression on the role with no wildcard left to suppress', () => {
