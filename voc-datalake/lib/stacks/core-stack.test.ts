@@ -722,17 +722,51 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
  * Reached through the ROLE ATTACHMENT rather than by logical id, so the case
  * measures "whatever role a signed-in browser can actually assume" and not
  * "the construct that happens to be called CognitoAuthenticatedRole". It reads
- * both attachment shapes a role can acquire a permission through — an inline
- * `Policies` block on the role and a separate `AWS::IAM::Policy` naming it — plus
- * the managed-policy list, because the grant could come back through any of
- * them.
+ * all three shapes a permission can arrive through whose contents are IN this
+ * template — an inline `Policies` block on the role, a standalone
+ * `AWS::IAM::Policy` naming it, and an `AWS::IAM::ManagedPolicy` naming it from
+ * the policy side — and fails loudly on the one shape it cannot read, a
+ * `ManagedPolicyArns` entry pointing outside the template.
  */
 describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
+  // Action/Resource are typed rather than `z.unknown()` + a cast: CloudFormation
+  // renders either as a bare string or an array of them, and a shape that is
+  // neither (an `Fn::If`, or the `Fn::Join` a token-bearing ARN renders as) must
+  // STOP this block rather than flow through as an opaque object that
+  // `/^lambda:/` fails to match and `toContain` never substring-searches. The
+  // union makes `PolicyDocumentSchema.parse()` throw on it instead, naming the
+  // offending statement.
+  const ActionOrResourceSchema = z.union([z.string(), z.array(z.string())]).optional();
   const StatementSchema = z.object({
-    Action: z.unknown().optional(),
-    Resource: z.unknown().optional(),
+    Action: ActionOrResourceSchema,
+    Resource: ActionOrResourceSchema,
   });
   const PolicyDocumentSchema = z.object({ Statement: z.array(StatementSchema) });
+
+  /** A rendered `Action`/`Resource`, normalised to a list. */
+  function toList(value: string | string[] | undefined): string[] {
+    if (value === undefined) return [];
+    return typeof value === 'string' ? [value] : value;
+  }
+
+  /**
+   * Does a policy's `Roles` list name this role?
+   *
+   * A same-stack role renders as `{ Ref: <logical id> }`, so the ref is matched
+   * structurally rather than by searching the stringified list — the logical id
+   * appearing in some other position (a `PolicyName`, say) must not count.
+   * Anything else in the list is some OTHER role: this one has no explicit
+   * `roleName` to be referenced by, and it is defined here, not imported.
+   */
+  function namesRole(roles: unknown, logicalId: string): boolean {
+    return z
+      .array(z.unknown())
+      .parse(roles ?? [])
+      .some((entry) => {
+        const ref = z.object({ Ref: z.string() }).safeParse(entry);
+        return ref.success && ref.data.Ref === logicalId;
+      });
+  }
 
   /** The logical id the Identity Pool hands to a signed-in browser. */
   function authenticatedRoleLogicalId(template: Template): string {
@@ -756,21 +790,39 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     expect(role, `the attachment names ${logicalId}, which is not a role in this template`)
       .toBeDefined();
 
-    // A managed policy's contents are not in this template, so it cannot be
-    // inspected — fail loudly rather than report a clean action set that only
-    // looks clean because the grant moved somewhere unreadable.
-    expect(role.Properties?.ManagedPolicyArns ?? [], 'authenticated role gained a managed policy')
-      .toEqual([]);
+    // `addManagedPolicy()` with an AWS-managed or cross-stack ARN puts a string
+    // here whose contents are NOT in this template, so it cannot be inspected —
+    // fail loudly rather than report a clean action set that only looks clean
+    // because the grant moved somewhere unreadable. (A `ManagedPolicy` DEFINED in
+    // this stack is readable and is collected below instead; it does not land
+    // here.)
+    expect(
+      role.Properties?.ManagedPolicyArns ?? [],
+      'authenticated role gained a managed policy whose contents this template cannot show',
+    ).toEqual([]);
 
-    // Both attachment shapes, reduced to a flat list of policy DOCUMENTS: an
-    // inline `Policies` entry on the role, and a standalone AWS::IAM::Policy
-    // naming it (what `addToPolicy()` renders as).
+    // All three IN-TEMPLATE attachment shapes, reduced to a flat list of policy
+    // DOCUMENTS:
+    //   1. an inline `Policies` entry on the role;
+    //   2. a standalone AWS::IAM::Policy naming it (what `addToPolicy()` renders);
+    //   3. an AWS::IAM::ManagedPolicy naming it from the POLICY side, i.e.
+    //      `new iam.ManagedPolicy(..., { roles: [role] })` — which leaves both
+    //      `Policies` and `ManagedPolicyArns` undefined and emits no
+    //      AWS::IAM::Policy, so without this leg a live grant reads as clean.
+    // (2) and (3) are filtered identically: both carry `Roles` and
+    // `PolicyDocument` with the same shapes.
+    const attachedDocuments = (type: string): unknown[] =>
+      Object.values(template.findResources(type))
+        .filter((policy) => namesRole(policy.Properties?.Roles, logicalId))
+        .map((policy) => policy.Properties?.PolicyDocument);
+
     const documents: unknown[] = [
-      ...((role.Properties?.Policies ?? []) as { PolicyDocument?: unknown }[])
+      ...z
+        .array(z.object({ PolicyDocument: z.unknown() }))
+        .parse(role.Properties?.Policies ?? [])
         .map((policy) => policy.PolicyDocument),
-      ...Object.values(template.findResources('AWS::IAM::Policy'))
-        .filter((policy) => JSON.stringify(policy.Properties?.Roles ?? []).includes(`"${logicalId}"`))
-        .map((policy) => policy.Properties?.PolicyDocument),
+      ...attachedDocuments('AWS::IAM::Policy'),
+      ...attachedDocuments('AWS::IAM::ManagedPolicy'),
     ];
 
     return documents.flatMap((document) => PolicyDocumentSchema.parse(document).Statement);
@@ -783,9 +835,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     // template: `lambda:InvokeFunctionUrl` contains `lambda:InvokeFunction` as a
     // prefix, so a naive `toContain` on JSON cannot tell the two apart, and a
     // single-action statement renders as a bare string rather than an array.
-    const actions = statements.flatMap((statement) =>
-      typeof statement.Action === 'string' ? [statement.Action] : (statement.Action as string[]) ?? [],
-    );
+    const actions = statements.flatMap((statement) => toList(statement.Action));
 
     expect(actions, 'a signed-in browser must reach chat only through API Gateway')
       .not.toContain('lambda:InvokeFunction');
@@ -799,7 +849,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     // The complement of the action check, and the one that survives a rename of
     // the action: the role has no business referencing that function at all.
     const resources = authenticatedRoleStatements(synthCoreTemplate()).flatMap((statement) =>
-      typeof statement.Resource === 'string' ? [statement.Resource] : (statement.Resource as string[]) ?? [],
+      toList(statement.Resource),
     );
 
     for (const resource of resources) {
@@ -819,17 +869,30 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     // lists Action/Resource and zod strips the rest, which would drop the
     // `Principal` this case is about.
     const trust = StatementsSchema.parse(role.Properties?.AssumeRolePolicyDocument);
-    const federated = z
-      .object({ Principal: z.object({ Federated: z.literal('cognito-identity.amazonaws.com') }) })
-      .parse(trust.Statement[0]);
-    expect(federated.Principal.Federated).toBe('cognito-identity.amazonaws.com');
-    expect(JSON.stringify(trust.Statement[0])).toContain('cognito-identity.amazonaws.com:amr');
+    // Found by its principal rather than indexed at [0]: a second statement added
+    // ahead of the federated one must not break this case.
+    const federated = trust.Statement.find(
+      (statement) =>
+        z
+          .object({ Principal: z.object({ Federated: z.string() }) })
+          .safeParse(statement)
+          .data?.Principal.Federated === 'cognito-identity.amazonaws.com',
+    );
+
+    expect(federated, 'the role must still be assumable by the Identity Pool').toBeDefined();
+    // The assertion carrying weight: the trust is conditioned on an AUTHENTICATED
+    // `amr`, so it is not assumable by an unauthenticated pool identity.
+    expect(JSON.stringify(federated)).toContain('cognito-identity.amazonaws.com:amr');
   });
 
   it('leaves no AwsSolutions-IAM5 suppression on the role with no wildcard left to suppress', () => {
     // The grant's blanket suppression (no `appliesTo`) was removed with it. A
     // suppression that outlives its finding is worse than none: it silences
     // whatever wildcard the next edit adds here, and cdk-nag would not complain.
+    //
+    // SCOPE: this reads the suppressions attached to the ROLE RESOURCE. A
+    // stack-level one (`NagSuppressions.addStackSuppressions`) or one on an
+    // ancestor construct lands elsewhere in the template and is not seen here.
     const template = synthCoreTemplate();
     const role = template.findResources('AWS::IAM::Role')[authenticatedRoleLogicalId(template)];
 

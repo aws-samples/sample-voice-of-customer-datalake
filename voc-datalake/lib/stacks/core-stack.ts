@@ -1048,27 +1048,11 @@ export class VocCoreStack extends VocStack {
       description: 'Role for authenticated Cognito Identity Pool users',
     });
 
-    // DELIBERATELY NO INLINE POLICY (issue #254).
-    //
-    // This role used to carry `lambda:InvokeFunction` +
-    // `lambda:InvokeFunctionUrl` on `function:*voc-chat-stream*`, from the era
-    // when the browser reached streaming chat by SigV4-signing a Lambda Function
-    // URL. Streaming now goes through `POST /chat/stream` on the REST API with
-    // the Cognito authorizer and `Integration.ResponseTransferMode: STREAM`
-    // (see api-stack.ts), and the Function URL — and its `ChatStreamUrl` output
-    // — are gone. What the grant still bought was a way for any signed-in user
-    // to exchange their JWT for pool credentials and invoke the function
-    // directly, skipping the authorizer, per-method throttling, request
-    // validation and access logs. So it is removed rather than narrowed; its
-    // blanket AwsSolutions-IAM5 suppression went with it, because there is no
-    // longer a wildcard to suppress.
-    //
-    // The pool and this role stay: Amplify's credential exchange is configured
-    // from `identityPoolId` (api-stack.ts runtime config), and a role attachment
-    // is required for that exchange to succeed at all. Private CDN paths
-    // (/avatars/*, /prototypes/*) are served by CloudFront signed URLs the API
-    // mints per request, not by browser IAM credentials, so nothing here needs
-    // a permission today.
+    // NO PERMISSIONS BY DESIGN: nothing a signed-in browser does uses these
+    // credentials — chat streams over `POST /chat/stream` behind the Cognito
+    // authorizer, private CDN paths use signed URLs the API mints. The pool and
+    // role are retained because Amplify is configured from `identityPoolId` and
+    // the JWT -> credentials exchange needs an assumable role. See issue #254.
 
     // Attach role to Identity Pool
     new cognito.CfnIdentityPoolRoleAttachment(this, 'IdentityPoolRoleAttachment', {
