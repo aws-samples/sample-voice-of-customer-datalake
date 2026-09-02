@@ -484,6 +484,52 @@ def fetch_with_retry(
     return response
 
 
+# How `requests` itself translates a urllib3 transport error raised while a body is
+# being read, copied from `Response.iter_content`'s `generate()` — the ONE place
+# that mapping is defined. Reading `raw.read1` directly is what makes repeating it
+# necessary: `iter_content` applies this, and bypassing it let urllib3's own
+# exception type escape into callers that catch `requests.RequestException`.
+#
+# ORDER MATTERS: this is checked with isinstance, and urllib3's exceptions are not
+# disjoint — `ReadTimeoutError` also derives from its `RequestError`/`HTTPError`.
+# Most specific first, and `_TRANSPORT_ERRORS` below is built from these keys so a
+# type caught cannot be one with no translation.
+#
+# A `ReadTimeoutError` becomes a `ConnectionError` rather than a `Timeout` because
+# that is what `requests` does — deliberately not "improved" here, since the retry
+# policy treats both as retryable and matching the library keeps one behaviour for
+# a stall wherever it is read from.
+def _transport_error_translation() -> tuple:
+    from urllib3.exceptions import (
+        DecodeError,
+        ProtocolError,
+        ReadTimeoutError,
+        SSLError,
+    )
+
+    return (
+        (ReadTimeoutError, requests.exceptions.ConnectionError),
+        (ProtocolError, requests.exceptions.ChunkedEncodingError),
+        (DecodeError, requests.exceptions.ContentDecodingError),
+        (SSLError, requests.exceptions.SSLError),
+    )
+
+
+_TRANSPORT_ERROR_TRANSLATION = _transport_error_translation()
+_TRANSPORT_ERRORS = tuple(source for source, _ in _TRANSPORT_ERROR_TRANSLATION)
+
+
+def _as_requests_error(error: Exception) -> Exception:
+    """The `requests` exception `iter_content` would have raised for *error*."""
+    for source, translated in _TRANSPORT_ERROR_TRANSLATION:
+        if isinstance(error, source):
+            return translated(error)
+    # Unreachable while _TRANSPORT_ERRORS is derived from the same table; kept so a
+    # later edit that widens one without the other cannot silently pass the
+    # untranslated urllib3 type to a caller catching RequestException.
+    return requests.exceptions.RequestException(error)
+
+
 def _body_chunks(response: requests.Response):
     """
     The response body, in pieces that arrive as soon as the socket has bytes.
@@ -503,6 +549,13 @@ def _body_chunks(response: requests.Response):
     Falls back to `iter_content` where `raw.read1` is unavailable — an older
     urllib3, or a response double in a test. The bound is then only as tight as the
     chunk boundary, which is why the real path is tried first.
+
+    Reading `raw` directly also means bypassing the exception translation
+    `iter_content` does, so this repeats it — see `_TRANSPORT_ERROR_TRANSLATION`.
+    Without that, a mid-body socket stall surfaced as `urllib3`'s own
+    `ReadTimeoutError`, which is NOT a `requests.RequestException`: it escaped
+    `_scrape_page`'s warn-and-continue and was not retried. Measured against a real
+    server that sent headers and then went silent.
     """
     read1 = getattr(getattr(response, 'raw', None), 'read1', None)
     if read1 is not None:
@@ -513,6 +566,8 @@ def _body_chunks(response: requests.Response):
                 # A `read1` that takes no `decode_content` (a plain file object):
                 # the size argument is the part that matters here.
                 chunk = read1(RESPONSE_CHUNK_BYTES)
+            except _TRANSPORT_ERRORS as e:
+                raise _as_requests_error(e) from e
             if not isinstance(chunk, (bytes, bytearray)):
                 # Not a real stream — a `raw` that is a mock or an adapter that
                 # returns something else. `iter_content` below is the contract every

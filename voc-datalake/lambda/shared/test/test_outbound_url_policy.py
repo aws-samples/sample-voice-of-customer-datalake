@@ -85,6 +85,13 @@ REVERT MAP — which mutation each test catches
 - Break `.text`/`.content` while streaming, or lower the cap onto ordinary pages
   -> `an_ordinary_page_inside_the_budget_is_returned_intact`,
   `a_body_at_the_cap_is_still_accepted`, `an_unbudgeted_fetch_still_returns_its_body`.
+- Drop the urllib3 -> requests translation from the `raw.read1` loop, so a mid-body
+  stall raises urllib3's own `ReadTimeoutError` — outside the `requests` hierarchy,
+  so it escapes `_scrape_page`'s warn-and-continue and is not retried
+  -> `a_stall_mid_body_is_still_a_requests_transport_failure`.
+- Point an entry of `_TRANSPORT_ERROR_TRANSLATION` at a non-`RequestException`, or
+  catch a source type the table does not translate
+  -> `the_translation_is_the_one_requests_uses`.
 
 Every "refuses" concern has a positive control (`TestPermittedDestinations`,
 `allows_a_public_redirect_chain_and_returns_the_final_page`) so an
@@ -1441,11 +1448,120 @@ class TestTheResponseBodyIsBoundedToo:
         threading.Thread(target=run, daemon=True).start()
         return f'http://127.0.0.1:{port}/'
 
+    @staticmethod
+    def _serve_then_stall(sent: bytes = b'partial', declared: int = 1000):
+        """
+        A server that sends headers plus `sent`, then goes SILENT for ever.
+
+        Distinct from `_serve` on the axis that matters: a drip trips the wall-clock
+        BUDGET, while going silent past the hop timeout trips the socket's own READ
+        timeout — a different exception, raised from inside the chunk read rather
+        than by the budget check around it. `Content-Length` declares more than is
+        ever sent, so the read cannot end early.
+
+        The connection is held by the thread rather than closed, because closing it
+        would deliver EOF and end the read cleanly, which is not a stall.
+        """
+        import socket as socket_module
+        import threading
+
+        srv = socket_module.socket()
+        srv.setsockopt(socket_module.SOL_SOCKET, socket_module.SO_REUSEADDR, 1)
+        srv.bind(('127.0.0.1', 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        held = []
+
+        def run():
+            try:
+                conn, _ = srv.accept()
+                held.append(conn)  # kept referenced so it is not GC-closed
+                conn.recv(65535)
+                conn.sendall(
+                    b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n'
+                    b'Content-Length: %d\r\nConnection: close\r\n\r\n' % declared
+                )
+                conn.sendall(sent)
+                time.sleep(30)
+            except OSError:
+                pass
+            finally:
+                srv.close()
+
+        threading.Thread(target=run, daemon=True).start()
+        return f'http://127.0.0.1:{port}/'
+
     @pytest.fixture
     def unpoliced(self):
         """The policy stubbed so a loopback address is reachable. Nothing else."""
         with patch('shared.http_utils.assert_outbound_url_allowed'):
             yield
+
+    def test_a_stall_mid_body_is_still_a_requests_transport_failure(self, unpoliced):
+        """
+        The body is read through `raw.read1`, which bypasses the exception
+        translation `iter_content` performs — so urllib3's OWN `ReadTimeoutError`
+        reached callers. It is not a `requests.RequestException`, so measured
+        against this server it escaped `_scrape_page`'s warn-and-continue (a stalled
+        page was not "a page that did not load") and was not retried, because
+        `RETRYABLE_EXCEPTIONS` names `requests` types.
+
+        Asserted on the classification rather than on a message: that is the whole
+        contract the two callers depend on.
+        """
+        import requests
+
+        from shared.http_utils import RETRYABLE_EXCEPTIONS, fetch_checked_with_retry
+
+        url = self._serve_then_stall()
+
+        # A hop timeout well INSIDE the budget, so what fires is the socket's read
+        # timeout mid-body and NOT the budget check — otherwise this test would be
+        # a second copy of the drip case above.
+        with pytest.raises(requests.RequestException) as caught:
+            fetch_checked_with_retry(url, timeout=0.2, total_timeout=30)
+
+        assert isinstance(caught.value, tuple(RETRYABLE_EXCEPTIONS)), (
+            'a mid-body stall must stay retryable, or one slow response ends the '
+            f'hop that a retry would have recovered: got {caught.value!r}'
+        )
+        assert 'urllib3' not in type(caught.value).__module__, (
+            'urllib3 exception leaked past the requests hierarchy: '
+            f'{type(caught.value).__module__}.{type(caught.value).__name__}'
+        )
+
+    def test_the_translation_is_the_one_requests_uses(self):
+        """
+        Guards the table against drift, since it is a copy of a mapping `requests`
+        owns. Both halves matter: an entry whose target is not a `RequestException`
+        would put back the leak, and a source type missing from the caught tuple
+        would never be translated at all.
+        """
+        import requests
+
+        from shared.http_utils import (
+            _TRANSPORT_ERROR_TRANSLATION,
+            _TRANSPORT_ERRORS,
+            _as_requests_error,
+        )
+
+        assert _TRANSPORT_ERROR_TRANSLATION, 'an empty table translates nothing'
+
+        for source, translated in _TRANSPORT_ERROR_TRANSLATION:
+            assert issubclass(translated, requests.RequestException), (
+                f'{source.__name__} -> {translated.__name__} is not a '
+                'RequestException, so it would escape both callers'
+            )
+            assert source in _TRANSPORT_ERRORS, (
+                f'{source.__name__} is translated but never caught'
+            )
+
+        # The specific mapping the measured defect turned on, asserted by value:
+        # `requests` makes a read timeout a ConnectionError, and both are retryable.
+        from urllib3.exceptions import ReadTimeoutError
+
+        translated = _as_requests_error(ReadTimeoutError(None, 'u', 'timed out'))
+        assert isinstance(translated, requests.exceptions.ConnectionError)
 
     def test_a_dripping_body_is_cut_off_at_the_budget(self, unpoliced):
         import requests

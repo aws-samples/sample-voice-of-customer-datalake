@@ -92,6 +92,15 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
     decompression so a small declared length cannot expand past it — a 40 MiB page was
     previously held in full, then again as text and once more as a parse tree, against the
     scraper's 512 MB.
+  - Reading the body against that deadline is done at a lower level than the HTTP client's
+    own body iterator, which is what makes the bound tight enough to be useful — but that
+    level does not translate its transport errors. A page that sent its headers and then went
+    silent therefore surfaced the underlying library's own timeout type, which is outside the
+    exception hierarchy the rest of the code catches: measured against a real server, such a
+    page escaped the scraper's "this page did not load" handling instead of being skipped with
+    a warning, and was not retried. Those errors are now translated exactly as the HTTP client
+    translates them, so a stall reads the same whether it happens while connecting, while
+    waiting for headers, or midway through the body.
 - The scheduled scraper invocation as a whole is bounded by a 240 second budget as well. A
   per-page bound does not bound their sum, and the sum is what the 300 second Lambda timeout
   is compared against: ten stalling paginated URLs spent 450 seconds, and because one
