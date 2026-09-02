@@ -131,7 +131,9 @@ class TestDocumentGeneratorHandler:
         item = put_call.kwargs.get('Item', {})
         assert 'document_id' in item
         assert item.get('document_type') == 'prd'
-        assert item.get('title') == 'Test PRD'
+        assert item.get('title') == 'Test PRD (v1)'
+        assert item.get('base_title') == 'Test PRD'
+        assert item.get('version') == 1
         assert 'content' in item
         assert 'created_at' in item
         assert item.get('feature_idea') == 'Improve user onboarding flow'
@@ -242,7 +244,7 @@ class TestDocumentGeneratorHandler:
 
         result = lambda_handler(prd_generation_event, lambda_context)
 
-        assert result.get('title') == 'Test PRD'
+        assert result.get('title') == 'Test PRD (v1)'
 
     def test_passes_response_language_to_chain_steps(
         self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,

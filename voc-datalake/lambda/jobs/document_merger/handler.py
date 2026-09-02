@@ -24,6 +24,7 @@ from shared.derivation import (
     build_derivation,
     derivation_source,
 )
+from shared.document_versions import VERSIONED_DOCUMENT_TYPES, persist_versioned_document
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -135,17 +136,10 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     
     ctx.update_progress(90, 'saving_document')
     now = datetime.now(timezone.utc).isoformat()
-    doc_type_prefix = output_type if output_type in ['prd', 'prfaq'] else 'doc'
-    doc_id = f"{doc_type_prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
-    projects_table.put_item(Item={
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'{doc_type_prefix.upper()}#{doc_id}',
+    document_type = output_type if output_type in VERSIONED_DOCUMENT_TYPES else 'custom'
+    item_fields = {
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,
-        'document_id': doc_id,
-        'document_type': output_type if output_type in ['prd', 'prfaq'] else 'custom',
-        'title': title,
         'content': content,
         'job_id': job_id,
         # Unchanged: the requested ids, in the merger's own long-standing shape.
@@ -160,14 +154,38 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
             persona_ids=used_persona_ids,
         ),
         'created_at': now,
-    })
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':now': now}
-    )
-    
-    return {'document_id': doc_id, 'title': title}
+    }
+
+    if document_type in VERSIONED_DOCUMENT_TYPES:
+        item = persist_versioned_document(
+            projects_table,
+            project_id,
+            document_type,
+            title,
+            job_id,
+            item_fields,
+        )
+    else:
+        doc_id = f"doc_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        item = {
+            **item_fields,
+            'pk': f'PROJECT#{project_id}',
+            'sk': f'DOC#{doc_id}',
+            'document_id': doc_id,
+            'document_type': document_type,
+            'title': title,
+        }
+        projects_table.put_item(Item=item)
+        projects_table.update_item(
+            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+            UpdateExpression=(
+                'SET document_count = if_not_exists(document_count, :zero) + :one, '
+                'updated_at = :now'
+            ),
+            ExpressionAttributeValues={':one': 1, ':zero': 0, ':now': now},
+        )
+
+    return {'document_id': item['document_id'], 'title': item['title']}
 
 
 @logger.inject_lambda_context

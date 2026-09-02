@@ -9,6 +9,7 @@ export function getUpdateDocumentTool(): Tool {
       name: 'update_document',
       description:
         'Update the content of a project document (PRD, PR/FAQ, research, or custom). ' +
+        'PRD and PR/FAQ titles are version-managed and cannot be renamed; generate a new document to start a differently titled series. ' +
         'Use this when the user asks to edit, modify, add to, or rewrite a document. ' +
         'Always provide the COMPLETE updated content, not just the changes.',
       inputSchema: {
@@ -21,7 +22,8 @@ export function getUpdateDocumentTool(): Tool {
             },
             title: {
               type: 'string',
-              description: 'Updated title (optional, only if the user wants to rename).',
+              description:
+                'Updated title for research or custom documents only. Version-managed PRD and PR/FAQ titles cannot be renamed.',
             },
             content: {
               type: 'string',
@@ -44,8 +46,8 @@ export function getCreateDocumentTool(): Tool {
     toolSpec: {
       name: 'create_document',
       description:
-        'Create a new document in the project from the conversation. ' +
-        'Use this when the user asks to create a new PRD, PR/FAQ, or custom document.',
+        'Create a new custom document in the project from the conversation. ' +
+        'PRDs and PR/FAQs must use document generation so their versions are allocated atomically.',
       inputSchema: {
         json: {
           type: 'object',
@@ -60,8 +62,8 @@ export function getCreateDocumentTool(): Tool {
             },
             document_type: {
               type: 'string',
-              enum: ['prd', 'prfaq', 'custom'],
-              description: 'Type of document to create.',
+              enum: ['custom'],
+              description: 'Custom document; version-managed PRD/PRFAQ use the generation workflow.',
             },
           },
           required: ['title', 'content', 'document_type'],

@@ -25,8 +25,9 @@ class TestDocumentMergerHandler:
         self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Test that merge fails when less than 2 documents are selected."""
-        from jobs.document_merger.handler import lambda_handler
         from shared.exceptions import ServiceError
+
+        from jobs.document_merger.handler import lambda_handler
         
         # Only one document available
         mock_dynamodb['table'].query.return_value = {
@@ -91,8 +92,16 @@ class TestDocumentMergerHandler:
     ):
         """Test that personas are included in context when selected."""
         mock_items = [
-            {'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'content': 'PRD content'},
-            {'sk': 'PRD#doc_2', 'document_id': 'doc_2', 'content': 'PRD content 2'},
+            {
+                'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'document_type': 'prd',
+                'base_title': 'First PRD', 'version': 1,
+                'title': 'First PRD (v1)', 'content': 'PRD content',
+            },
+            {
+                'sk': 'PRD#doc_2', 'document_id': 'doc_2', 'document_type': 'prd',
+                'base_title': 'Second PRD', 'version': 1,
+                'title': 'Second PRD (v1)', 'content': 'PRD content 2',
+            },
             {'sk': 'PERSONA#persona_1', 'persona_id': 'persona_1', 'name': 'Test User', 'tagline': 'A test persona'},
         ]
         mock_dynamodb['table'].query.return_value = {'Items': mock_items}

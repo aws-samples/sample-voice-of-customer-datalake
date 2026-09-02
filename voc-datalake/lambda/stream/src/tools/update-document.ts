@@ -2,9 +2,15 @@
  * update_document and create_document tool implementations.
  * Allows the AI to edit or create project documents during chat.
  */
-import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  QueryCommand,
+  UpdateCommand,
+  PutCommand,
+  type UpdateCommandInput,
+} from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
-import { NotFoundError, ConfigurationError } from '../lib/errors.js';
+import { NotFoundError, ConfigurationError, ValidationError } from '../lib/errors.js';
 
 // ── Input schemas ──
 
@@ -18,7 +24,10 @@ const updateDocumentInputSchema = z.object({
 const createDocumentInputSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
-  document_type: z.enum(['prd', 'prfaq', 'custom']),
+  // Canonical PRDs and PR/FAQs use the Python generation path, where the
+  // version counter and document row commit atomically. A direct TypeScript
+  // writer would be a second allocator and could issue duplicate versions.
+  document_type: z.literal('custom'),
 });
 
 // ── Result type ──
@@ -44,6 +53,30 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 function getString(item: Record<string, unknown>, key: string, fallback = ''): string {
   const val = item[key];
   return typeof val === 'string' ? val : fallback;
+}
+
+function hasManagedTitle(item: Record<string, unknown>, sk: string): boolean {
+  const documentType = getString(item, 'document_type');
+  return documentType === 'prd' || documentType === 'prfaq'
+    || sk.startsWith('PRD#') || sk.startsWith('PRFAQ#');
+}
+
+function isConditionalFailure(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ConditionalCheckFailedException';
+}
+
+async function sendExistingDocumentUpdate(
+  docClient: DynamoDBDocumentClient,
+  input: UpdateCommandInput,
+): Promise<void> {
+  try {
+    await docClient.send(new UpdateCommand(input));
+  } catch (error) {
+    if (isConditionalFailure(error)) {
+      throw new NotFoundError('Document no longer exists');
+    }
+    throw error;
+  }
 }
 
 // ── update_document ──
@@ -88,12 +121,21 @@ export async function executeUpdateDocument(
   const doc = items[0];
   if (!isStringRecord(doc)) throw new NotFoundError('Invalid document record');
   const sk = getString(doc, 'sk');
+  if (hasManagedTitle(doc, sk) && title !== undefined) {
+    throw new ValidationError(
+      'Versioned PRD and PR/FAQ titles cannot be renamed. Generate a new document to start a new titled series.',
+    );
+  }
   const docTitle = title ?? getString(doc, 'title', 'Untitled');
   const now = new Date().toISOString();
 
   // Build update expression
   const exprNames: Record<string, string> = { '#content': 'content' };
-  const exprValues: Record<string, string> = { ':content': content, ':now': now };
+  const exprValues: Record<string, string> = {
+    ':content': content,
+    ':now': now,
+    ':documentId': documentId,
+  };
   const updateParts = ['#content = :content', 'updated_at = :now'];
 
   if (title) {
@@ -101,15 +143,17 @@ export async function executeUpdateDocument(
     exprValues[':title'] = title;
   }
 
-  await docClient.send(
-    new UpdateCommand({
-      TableName: projectsTable,
-      Key: { pk: `PROJECT#${projectId}`, sk },
-      UpdateExpression: `SET ${updateParts.join(', ')}`,
-      ExpressionAttributeNames: exprNames,
-      ExpressionAttributeValues: exprValues,
-    }),
-  );
+  await sendExistingDocumentUpdate(docClient, {
+    TableName: projectsTable,
+    Key: { pk: `PROJECT#${projectId}`, sk },
+    UpdateExpression: `SET ${updateParts.join(', ')}`,
+    ConditionExpression: (
+      'attribute_exists(pk) AND attribute_exists(sk) '
+      + 'AND document_id = :documentId'
+    ),
+    ExpressionAttributeNames: exprNames,
+    ExpressionAttributeValues: exprValues,
+  });
 
   return {
     content: `Successfully updated document "${docTitle}". Changes: ${summary}`,

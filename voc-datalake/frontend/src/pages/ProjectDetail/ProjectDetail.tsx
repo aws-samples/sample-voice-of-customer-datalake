@@ -173,10 +173,12 @@ export default function ProjectDetail() {
 
   const handleSaveDocument = useCallback(() => {
     if (docModal.editingDoc) {
+      const managedTitle = docModal.editingDoc.document_type === 'prd'
+        || docModal.editingDoc.document_type === 'prfaq'
       updateDocMut.mutate(
         {
           docId: docModal.editingDoc.document_id,
-          title: docModal.newDocTitle,
+          ...(managedTitle ? {} : { title: docModal.newDocTitle }),
           content: docModal.newDocContent,
         },
         { onSuccess: docModal.resetAfterSave },

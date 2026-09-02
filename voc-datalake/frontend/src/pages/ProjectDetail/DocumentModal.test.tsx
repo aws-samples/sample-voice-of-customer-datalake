@@ -30,6 +30,24 @@ describe('DocumentModal', () => {
     expect(screen.getByPlaceholderText('Document title...')).toHaveValue('My Title')
   })
 
+  it('disables the title input when the title is version-managed', async () => {
+    const user = userEvent.setup()
+    const onTitleChange = vi.fn()
+    render(
+      <DocumentModal
+        {...defaultProps}
+        title="Launch (v2)"
+        titleReadOnly={true}
+        onTitleChange={onTitleChange}
+      />,
+    )
+
+    const titleInput = screen.getByPlaceholderText('Document title...')
+    expect(titleInput).toBeDisabled()
+    await user.type(titleInput, 'Different')
+    expect(onTitleChange).not.toHaveBeenCalled()
+  })
+
   it('renders content textarea with value', () => {
     render(<DocumentModal {...defaultProps} content="My content" />)
     expect(screen.getByPlaceholderText(/Write your document/)).toHaveValue('My content')

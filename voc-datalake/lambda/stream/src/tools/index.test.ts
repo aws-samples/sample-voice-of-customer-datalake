@@ -100,6 +100,19 @@ describe('getUpdateDocumentTool', () => {
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
     expect(schema.required).toStrictEqual(['document_id', 'content', 'summary']);
   });
+
+  it('tells the model that managed PRD and PR/FAQ titles cannot be renamed', () => {
+    const tool = getUpdateDocumentTool();
+
+    expect(tool.toolSpec?.description).toMatch(/PRD and PR\/FAQ titles.*cannot be renamed/i);
+    expect(tool.toolSpec?.inputSchema?.json).toMatchObject({
+      properties: {
+        title: {
+          description: expect.stringMatching(/PRD and PR\/FAQ titles.*cannot be renamed/i),
+        },
+      },
+    });
+  });
 });
 
 describe('getCreateDocumentTool', () => {
@@ -118,6 +131,6 @@ describe('getCreateDocumentTool', () => {
     const tool = getCreateDocumentTool();
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
     const props = schema.properties as Record<string, Record<string, unknown>>;
-    expect(props.document_type.enum).toStrictEqual(['prd', 'prfaq', 'custom']);
+    expect(props.document_type.enum).toStrictEqual(['custom']);
   });
 });

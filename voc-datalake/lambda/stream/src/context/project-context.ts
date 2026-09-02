@@ -2,14 +2,15 @@
  * Project Chat context builder.
  * Ported from Python shared/project_chat.py build_chat_context().
  */
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { signCloudFrontUrl } from '../lib/cloudfront-signing.js';
-import { ConfigurationError, NotFoundError } from '../lib/errors.js';
+import { NotFoundError } from '../lib/errors.js';
 import { fetchRecentFeedback } from './recent-feedback.js';
 import { buildSinglePersonaPrompt } from './persona-prompt.js';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
+import type { ProjectLoader } from './projects-client.js';
 
 // ── Avatar URL helpers ──
 
@@ -22,30 +23,74 @@ function stripTrailingSlashes(value: string): string {
   return value.endsWith('/') ? stripTrailingSlashes(value.slice(0, -1)) : value;
 }
 
+function trustedAvatarCdnUrl(url: string): string | undefined {
+  if (!AVATARS_CDN_URL) return undefined;
+  try {
+    const configured = new URL(stripTrailingSlashes(AVATARS_CDN_URL));
+    const candidate = new URL(url);
+    const pathPrefix = `${stripTrailingSlashes(configured.pathname)}/`;
+    if (
+      candidate.origin !== configured.origin
+      || !candidate.pathname.startsWith(pathPrefix)
+    ) return undefined;
+    return candidate.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+const CLOUDFRONT_AUTH_PARAMS = ['Expires', 'Signature', 'Key-Pair-Id'];
+
+function hasCurrentCloudFrontSignature(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (CLOUDFRONT_AUTH_PARAMS.some(
+      (name) => parsed.searchParams.getAll(name).length !== 1,
+    )) return false;
+    const expires = Number.parseInt(parsed.searchParams.get('Expires') ?? '', 10);
+    return Number.isSafeInteger(expires)
+      && expires > Math.floor(Date.now() / 1000)
+      && Boolean(parsed.searchParams.get('Signature'))
+      && Boolean(parsed.searchParams.get('Key-Pair-Id'));
+  } catch {
+    return false;
+  }
+}
+
+function withoutCloudFrontAuth(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    for (const name of CLOUDFRONT_AUTH_PARAMS) parsed.searchParams.delete(name);
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Turn the stored `s3://` URI into a SIGNED CloudFront URL (issue #229).
+ * Turn an avatar reference into one valid signed CloudFront URL.
  *
- * `/avatars/*` is restricted by a CloudFront trusted key group, so an unsigned
- * URL would 403 in the browser. Returning undefined when signing is
- * unavailable is deliberate — the SPA falls back to a gradient avatar, whereas
- * a bare URL would just be a broken image AND would mean we had handed out an
- * unauthenticated link.
- *
- * Stored persona rows hold the `s3://` form. The non-`s3://` branch exists for
- * legacy rows that already carry a CDN URL; those are signed as-is, since they
- * point at the same restricted behavior. Nothing is ever passed through
- * unsigned — an unsignable value yields undefined.
+ * The canonical Projects API already signs stored S3 avatar references. Keep a
+ * current, complete signature unchanged; signing it again would duplicate the
+ * reserved auth parameters and invalidate the resource. Legacy unsigned,
+ * partial, or expired CDN URLs are stripped of stale auth before re-signing.
  */
 async function resolveAvatarUrl(url: string | undefined): Promise<string | undefined> {
   if (!url) return undefined;
-  // Legacy rows may already hold a CDN URL. Sign it as-is; it points at the
-  // same restricted behavior.
-  if (!url.startsWith('s3://')) return signCloudFrontUrl(url);
-  if (!AVATARS_CDN_URL) return undefined;
+  if (!url.startsWith('s3://')) {
+    const trustedUrl = trustedAvatarCdnUrl(url);
+    if (!trustedUrl) return undefined;
+    if (hasCurrentCloudFrontSignature(trustedUrl)) return trustedUrl;
+    const unsignedUrl = withoutCloudFrontAuth(trustedUrl);
+    return unsignedUrl ? signCloudFrontUrl(unsignedUrl) : undefined;
+  }
   const parts = url.split('/');
   const filename = parts[parts.length - 1];
   if (!filename) return undefined;
-  return signCloudFrontUrl(`${stripTrailingSlashes(AVATARS_CDN_URL)}/${filename}`);
+  const trustedUrl = trustedAvatarCdnUrl(
+    `${stripTrailingSlashes(AVATARS_CDN_URL)}/${filename}`,
+  );
+  return trustedUrl ? signCloudFrontUrl(trustedUrl) : undefined;
 }
 
 interface ProjectChatContext {
@@ -115,6 +160,8 @@ const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
   document_id: z.string().optional(),
   document_type: z.string().optional(),
   title: z.string().optional(),
+  base_title: z.string().optional(),
+  version: z.number().int().positive().optional(),
   content: z.string().optional(),
   feature_idea: z.string().optional(),
   question: z.string().optional(),
@@ -124,6 +171,15 @@ const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
 export type ProjectItem = z.infer<typeof projectItemSchema>;
 
 // ── Item classification ──
+
+const DOCUMENT_SK_PREFIXES = [
+  'DOC#',
+  'RESEARCH#',
+  'PRD#',
+  'PRFAQ#',
+  'PRODUCT_REPORT#',
+  'PROTOTYPE#',
+];
 
 interface ClassifiedItems {
   project: ProjectItem | null;
@@ -137,8 +193,9 @@ function classifyItems(items: ProjectItem[]): ClassifiedItems {
     const sk = item.sk;
     if (sk === 'META') result.project = item;
     else if (sk.startsWith('PERSONA#')) result.personas.push(item);
-    else if (sk.startsWith('DOC#') || sk.startsWith('RESEARCH#') || sk.startsWith('PRD#') || sk.startsWith('PRFAQ#'))
+    else if (DOCUMENT_SK_PREFIXES.some((prefix) => sk.startsWith(prefix))) {
       result.documents.push(item);
+    }
   }
   return result;
 }
@@ -311,7 +368,7 @@ export interface RoundtableContext {
 
 export async function buildProjectChatContext(
   docClient: DynamoDBDocumentClient,
-  projectsTable: string,
+  loadProject: ProjectLoader,
   feedbackTable: string,
   projectId: string,
   message: string,
@@ -319,19 +376,7 @@ export async function buildProjectChatContext(
   selectedDocumentIds: string[] = [],
   responseLanguage?: SupportedLanguage,
 ): Promise<ProjectChatContext> {
-  if (!projectsTable) {
-    throw new ConfigurationError('Projects table not configured');
-  }
-
-  const resp = await docClient.send(
-    new QueryCommand({
-      TableName: projectsTable,
-      KeyConditionExpression: 'pk = :pk',
-      ExpressionAttributeValues: { ':pk': `PROJECT#${projectId}` },
-    }),
-  );
-
-  const rawItems = resp.Items ?? [];
+  const rawItems = await loadProject(projectId, selectedDocumentIds);
   if (rawItems.length === 0) {
     throw new NotFoundError('Project not found');
   }
@@ -381,7 +426,7 @@ export async function buildProjectChatContext(
 
 export async function buildRoundtableContext(
   docClient: DynamoDBDocumentClient,
-  projectsTable: string,
+  loadProject: ProjectLoader,
   feedbackTable: string,
   projectId: string,
   message: string,
@@ -389,19 +434,7 @@ export async function buildRoundtableContext(
   selectedDocumentIds: string[] = [],
   responseLanguage?: SupportedLanguage,
 ): Promise<RoundtableContext> {
-  if (!projectsTable) {
-    throw new ConfigurationError('Projects table not configured');
-  }
-
-  const resp = await docClient.send(
-    new QueryCommand({
-      TableName: projectsTable,
-      KeyConditionExpression: 'pk = :pk',
-      ExpressionAttributeValues: { ':pk': `PROJECT#${projectId}` },
-    }),
-  );
-
-  const rawItems = resp.Items ?? [];
+  const rawItems = await loadProject(projectId, selectedDocumentIds);
   if (rawItems.length === 0) throw new NotFoundError('Project not found');
 
   const items = rawItems.map((raw) => projectItemSchema.parse(raw));

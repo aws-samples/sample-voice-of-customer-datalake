@@ -600,3 +600,63 @@ class TestCreateTokenExpiry:
         tokens = {t['token_id']: t for t in json.loads(response['body'])['tokens']}
         assert tokens['tok_new']['expires_at'] == '2027-01-01T00:00:00+00:00'
         assert tokens['tok_legacy']['expires_at'] is None
+
+
+class TestProjectChatContextEndpoint:
+    """Bounded internal context route used by streaming project chat."""
+
+    @patch('projects_handler.get_project_chat_context')
+    def test_posts_selected_document_ids(
+        self, mock_get_context, api_gateway_event, lambda_context,
+    ):
+        mock_get_context.return_value = {
+            'project': {'project_id': 'proj-123'},
+            'personas': [],
+            'documents': [{'sk': 'PRD#d1', 'document_id': 'd1'}],
+        }
+
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/chat-context',
+            path_params={'project_id': 'proj-123'},
+            body={'selected_document_ids': ['d1']},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 200
+        mock_get_context.assert_called_once_with('proj-123', ['d1'])
+
+    @patch('projects_handler.get_project_chat_context')
+    def test_replaces_an_oversized_proxy_response_with_a_small_413(
+        self, mock_get_context, api_gateway_event, lambda_context,
+    ):
+        from projects_handler import (
+            MAX_CHAT_CONTEXT_LAMBDA_RESPONSE_BYTES,
+            lambda_handler,
+        )
+
+        repeated = MAX_CHAT_CONTEXT_LAMBDA_RESPONSE_BYTES // 10 + 1
+        mock_get_context.return_value = {
+            'project': {'project_id': 'proj-123'},
+            'personas': [],
+            'documents': [{
+                'sk': 'PRD#large',
+                'document_id': 'large',
+                'content': 'é"\\' * repeated,
+            }],
+        }
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-123/chat-context',
+            path_params={'project_id': 'proj-123'},
+            body={'selected_document_ids': ['large']},
+        )
+
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 413
+        assert 'fewer or smaller documents' in body['message']
+        assert len(json.dumps(response).encode('utf-8')) < 1024

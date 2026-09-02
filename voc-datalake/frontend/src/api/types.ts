@@ -328,6 +328,10 @@ export interface ProjectDocument {
   document_id: string
   document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
   title: string
+  /** User-supplied series title before the system-managed `(vN)` suffix. */
+  base_title?: string
+  /** Stable, monotonic version within this project/type/base-title series. */
+  version?: number
   // New (S3-only) HTML prototypes have NO `content` — the HTML lives at
   // `prototype_url` on CloudFront. Legacy prototypes (JSON specs, or
   // pre-migration HTML) and all non-prototype document types still use

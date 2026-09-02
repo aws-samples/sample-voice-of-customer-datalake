@@ -27,6 +27,7 @@ import type { DocumentChange } from './tools/update-document.js';
 import type { ProjectChange } from './tools/create-project.js';
 import { buildVocChatContext } from './context/voc-context.js';
 import { buildProjectChatContext, buildRoundtableContext } from './context/project-context.js';
+import { loadCanonicalProject as loadProject } from './context/projects-client.js';
 import { attachmentsToContentBlocks } from './attachments.js';
 
 // ── AWS Clients (module-level for connection reuse) ──
@@ -205,11 +206,11 @@ async function runConversationLoop(
 
   if (state.stopReason !== 'tool_use' || state.toolUseBlocks.length === 0) return;
 
-  // Trace which tools were requested this round — makes loop exhaustion (and
-  // repeated identical searches) diagnosable from CloudWatch.
+  // Trace only tool names. Inputs can contain complete customer documents and
+  // must not be copied into CloudWatch logs.
   console.log(
     `Tool round ${loopCount + 1}/${MAX_TOOL_LOOPS}:`,
-    JSON.stringify(state.toolUseBlocks.map((tb) => ({ name: tb.name, input: tb.input }))),
+    state.toolUseBlocks.map((toolBlock) => toolBlock.name).join(', '),
   );
 
   messages.push({ role: 'assistant', content: buildAssistantContent(state) });
@@ -291,7 +292,7 @@ async function handleRoundtableChat(
 ): Promise<void> {
   const ctx = await buildRoundtableContext(
     docClient,
-    PROJECTS_TABLE,
+    loadProject,
     FEEDBACK_TABLE,
     projectId,
     body.message,
@@ -393,7 +394,7 @@ async function handleProjectChat(
 ): Promise<void> {
   const ctx = await buildProjectChatContext(
     docClient,
-    PROJECTS_TABLE,
+    loadProject,
     FEEDBACK_TABLE,
     projectId,
     body.message,

@@ -71,9 +71,50 @@ describe('executeUpdateDocument', () => {
     expect(result.documentChange.document_id).toBe('doc-1');
     expect(result.documentChange.summary).toBe('fixed typos');
     expect(docClient.send).toHaveBeenCalledTimes(2);
+    expect(docClient.send).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      input: expect.objectContaining({
+        ConditionExpression: expect.stringContaining('attribute_exists(pk)'),
+        ExpressionAttributeValues: expect.objectContaining({
+          ':documentId': 'doc-1',
+        }),
+      }),
+    }));
   });
 
-  it('uses provided title when updating', async () => {
+  it('reports not found when the document is deleted after lookup', async () => {
+    let callCount = 0;
+    const docClient = createMockDocClient(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          Items: [{
+            pk: 'PROJECT#proj-1',
+            sk: 'DOC#doc-1',
+            title: 'My Doc',
+            document_id: 'doc-1',
+          }],
+        });
+      }
+      const error = new Error('gone');
+      error.name = 'ConditionalCheckFailedException';
+      return Promise.reject(error);
+    });
+
+    await expect(executeUpdateDocument(
+      docClient,
+      'projects-table',
+      'proj-1',
+      {
+        document_id: 'doc-1',
+        content: 'updated content',
+        summary: 'fixed typos',
+      },
+    )).rejects.toThrow('Document no longer exists');
+
+    expect(docClient.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses provided title when updating a custom document', async () => {
     let callCount = 0;
     const docClient = createMockDocClient(() => {
       callCount++;
@@ -93,6 +134,39 @@ describe('executeUpdateDocument', () => {
     });
 
     expect(result.documentChange.title).toBe('New Title');
+    expect(docClient.send).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      input: expect.objectContaining({
+        UpdateExpression: expect.stringContaining('title = :title'),
+        ExpressionAttributeValues: expect.objectContaining({ ':title': 'New Title' }),
+      }),
+    }));
+  });
+
+  it.each([
+    ['PRD#doc-1', undefined],
+    ['PRFAQ#doc-1', 'prfaq'],
+    ['DOC#doc-1', 'prd'],
+  ])('refuses title changes for managed document %s', async (sk, documentType) => {
+    const docClient = createMockDocClient(() => Promise.resolve({
+      Items: [{
+        pk: 'PROJECT#proj-1',
+        sk,
+        title: 'Launch (v2)',
+        base_title: 'Launch',
+        version: 2,
+        document_id: 'doc-1',
+        document_type: documentType,
+      }],
+    }));
+
+    await expect(executeUpdateDocument(docClient, 'projects-table', 'proj-1', {
+      document_id: 'doc-1',
+      title: 'Different series',
+      content: 'content',
+      summary: 'renamed',
+    })).rejects.toThrow(/cannot be renamed/);
+
+    expect(docClient.send).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -103,9 +177,9 @@ describe('executeCreateDocument', () => {
     const docClient = createMockDocClient();
     await expect(
       executeCreateDocument(docClient, '', 'proj-1', {
-        title: 'New PRD',
+        title: 'New document',
         content: 'content',
-        document_type: 'prd',
+        document_type: 'custom',
       }),
     ).rejects.toThrow('Projects table not configured');
   });
@@ -124,30 +198,36 @@ describe('executeCreateDocument', () => {
     const docClient = createMockDocClient(() => Promise.resolve({}));
 
     const result = await executeCreateDocument(docClient, 'projects-table', 'proj-1', {
-      title: 'New PRD',
-      content: '# Product Requirements',
-      document_type: 'prd',
+      title: 'New document',
+      content: '# Custom notes',
+      document_type: 'custom',
     });
 
     expect(result.content).toContain('Successfully created');
-    expect(result.content).toContain('PRD');
-    expect(result.content).toContain('New PRD');
+    expect(result.content).toContain('CUSTOM');
+    expect(result.content).toContain('New document');
     expect(result.documentChange.action).toBe('created');
-    expect(result.documentChange.title).toBe('New PRD');
+    expect(result.documentChange.title).toBe('New document');
     expect(result.documentChange.document_id).toMatch(/^doc_/);
     // PutCommand + UpdateCommand (increment count)
     expect(docClient.send).toHaveBeenCalledTimes(2);
   });
 
-  it('accepts all valid document types', async () => {
-    for (const docType of ['prd', 'prfaq', 'custom'] as const) {
-      const docClient = createMockDocClient(() => Promise.resolve({}));
-      const result = await executeCreateDocument(docClient, 'projects-table', 'proj-1', {
-        title: `Test ${docType}`,
-        content: 'content',
-        document_type: docType,
-      });
-      expect(result.documentChange.action).toBe('created');
-    }
+  it('accepts custom documents and refuses managed PRD types', async () => {
+    const customClient = createMockDocClient(() => Promise.resolve({}));
+    const custom = await executeCreateDocument(customClient, 'projects-table', 'proj-1', {
+      title: 'Notes',
+      content: 'content',
+      document_type: 'custom',
+    });
+    const managed = await executeCreateDocument(
+      createMockDocClient(() => Promise.resolve({})),
+      'projects-table',
+      'proj-1',
+      { title: 'Spec', content: 'content', document_type: 'prd' },
+    );
+
+    expect(custom.documentChange.action).toBe('created');
+    expect(managed.content).toContain('Invalid input');
   });
 });

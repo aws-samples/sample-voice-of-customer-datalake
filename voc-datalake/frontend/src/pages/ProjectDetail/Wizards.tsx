@@ -491,7 +491,7 @@ export function MergeWizard({
             <input type="text" value={mergeConfig.title} onChange={(e) => onMergeConfigChange({
               ...mergeConfig,
               title: e.target.value,
-            })} placeholder="e.g., Virtual Concierge PRD v2" className="w-full px-3 py-2 border rounded-lg" />
+            })} placeholder="e.g., Virtual Concierge" className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <div>
             <h3 className="font-medium mb-3">Remix Instructions</h3>

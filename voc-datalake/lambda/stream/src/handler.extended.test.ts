@@ -152,6 +152,7 @@ describe('handler - extended', () => {
 
   describe('tool loop execution', () => {
     it('executes tool when Bedrock returns tool_use stop reason', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       // First call: Bedrock requests a tool
       // Second call: Bedrock responds with text after tool result
       let callCount = 0;
@@ -167,7 +168,7 @@ describe('handler - extended', () => {
             };
             yield {
               contentBlockDelta: {
-                delta: { toolUse: { input: '{"query":"delivery"}' } },
+                delta: { toolUse: { input: '{"query":"secret-document-content"}' } },
                 contentBlockIndex: 0,
               },
             };
@@ -184,10 +185,17 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'show delivery feedback' });
 
-      await (handler as StreamHandler)(event, stream);
+      try {
+        await (handler as StreamHandler)(event, stream);
 
-      expect(mockExecuteTool).toHaveBeenCalledOnce();
-      expect(mockConverseStream).toHaveBeenCalledTimes(2);
+        expect(mockExecuteTool).toHaveBeenCalledOnce();
+        expect(mockConverseStream).toHaveBeenCalledTimes(2);
+        const logOutput = logSpy.mock.calls.flat().join(' ');
+        expect(logOutput).toContain('search_feedback');
+        expect(logOutput).not.toContain('secret-document-content');
+      } finally {
+        logSpy.mockRestore();
+      }
     });
 
     it('stops after MAX_TOOL_LOOPS iterations', async () => {
@@ -384,7 +392,7 @@ describe('handler - extended', () => {
 
       expect(mockBuildProjectChatContext).toHaveBeenCalledWith(
         expect.anything(),
-        expect.any(String),
+        expect.any(Function),
         expect.any(String),
         'my-proj-123',
         'hello',
@@ -405,7 +413,7 @@ describe('handler - extended', () => {
 
       expect(mockBuildProjectChatContext).toHaveBeenCalledWith(
         expect.anything(),
-        expect.any(String),
+        expect.any(Function),
         expect.any(String),
         'body-proj',
         expect.any(String),

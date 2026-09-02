@@ -19,7 +19,15 @@ SELECTED_IDS = ['doc_a', 'doc_b', 'doc_c', 'doc_d', 'doc_e']
 # generator actually feeds the model (the first three it iterates) are doc_e,
 # doc_d, doc_c — not the first three of the selection.
 PROJECT_DOCS = [
-    {'sk': f'PRD#{doc_id}', 'document_id': doc_id, 'title': doc_id.upper(), 'content': f'body of {doc_id}'}
+    {
+        'sk': f'PRD#{doc_id}',
+        'document_id': doc_id,
+        'document_type': 'prd',
+        'base_title': doc_id.upper(),
+        'version': 1,
+        'title': f'{doc_id.upper()} (v1)',
+        'content': f'body of {doc_id}',
+    }
     for doc_id in reversed(SELECTED_IDS)
 ]
 

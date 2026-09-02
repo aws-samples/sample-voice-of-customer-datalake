@@ -11,6 +11,14 @@ from unittest.mock import MagicMock
 _RECENT_DATE = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
 
 
+def _mock_projects_table():
+    table = MagicMock()
+    table.name = 'test-projects-table'
+    table.get_item.return_value = {}
+    table.meta.client.transact_write_items.return_value = {}
+    return table
+
+
 class TestDocumentGeneratorFeedbackGathering:
     """Cover feedback gathering with source/category filtering."""
 
@@ -19,7 +27,7 @@ class TestDocumentGeneratorFeedbackGathering:
         prd_generation_event, lambda_context
     ):
         """Cover feedback_sources filtering branch."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = _mock_projects_table()
         mock_feedback_table = MagicMock()
 
         mock_projects_table.query.return_value = {'Items': []}
@@ -56,7 +64,7 @@ class TestDocumentGeneratorFeedbackGathering:
         prd_generation_event, lambda_context
     ):
         """Cover feedback_categories filtering branch."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = _mock_projects_table()
         mock_feedback_table = MagicMock()
 
         mock_projects_table.query.return_value = {'Items': []}
@@ -95,7 +103,7 @@ class TestDocumentGeneratorPersonasGathering:
         prd_generation_event, lambda_context
     ):
         """Cover the personas gathering branch with selected IDs."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = _mock_projects_table()
         mock_feedback_table = MagicMock()
 
         mock_projects_table.query.return_value = {
@@ -136,13 +144,17 @@ class TestDocumentGeneratorDocumentsGathering:
         prd_generation_event, lambda_context
     ):
         """Cover the documents gathering branch — appended to feedback_context."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = _mock_projects_table()
         mock_feedback_table = MagicMock()
 
         mock_projects_table.query.return_value = {
             'Items': [
                 {'sk': 'RESEARCH#r1', 'document_id': 'r1', 'title': 'Research Report', 'content': 'Research findings...'},
-                {'sk': 'PRD#d1', 'document_id': 'd1', 'title': 'Existing PRD', 'content': 'PRD content...'},
+                {
+                    'sk': 'PRD#d1', 'document_id': 'd1', 'document_type': 'prd',
+                    'base_title': 'Existing PRD', 'version': 1,
+                    'title': 'Existing PRD (v1)', 'content': 'PRD content...',
+                },
             ]
         }
         mock_projects_table.put_item.return_value = {}
@@ -173,7 +185,7 @@ class TestDocumentGeneratorDocumentsGathering:
         prd_generation_event, lambda_context
     ):
         """Cover the research data_source branch."""
-        mock_projects_table = MagicMock()
+        mock_projects_table = _mock_projects_table()
         mock_feedback_table = MagicMock()
 
         mock_projects_table.query.return_value = {
