@@ -14,7 +14,6 @@ import os
 import uuid
 import boto3
 from typing import Any
-from botocore.exceptions import ClientError, BotoCoreError
 
 from shared.logging import logger, tracer
 from shared.api import create_api_resolver, api_handler, require_admin
@@ -35,7 +34,9 @@ USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
 # `logger.exception` at each site instead, which is where an operator needs it.
 #
 # Each block also re-raises `ApiError` ahead of its `except Exception`, so a typed
-# ValidationError/NotFoundError raised inside keeps its own 400/404.
+# ValidationError/NotFoundError raised inside keeps its own 400/404. Only
+# `update_user`'s is reachable today — the rest are precautionary against a future
+# edit, in the same spirit as `feedback_form_handler.py`'s two.
 FAILED_LIST_USERS = 'Failed to list users'
 FAILED_CREATE_USER = 'Failed to create user'
 FAILED_UPDATE_USER = 'Failed to update user'
@@ -106,7 +107,7 @@ def list_users():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Error listing users: {e}')
+        logger.exception('Error listing users')
         raise ServiceError(FAILED_LIST_USERS) from e
 
 
@@ -181,7 +182,7 @@ def create_user():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Error creating user: {e}')
+        logger.exception('Error creating user')
         raise ServiceError(FAILED_CREATE_USER) from e
 
 
@@ -247,12 +248,19 @@ def update_user(username: str):
 
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
-    # No `except ApiError: raise` here, unlike its siblings: this route already
-    # catches only the AWS error types, so the ValidationError it raises after
-    # admin_get_user ('...must be non-empty') is not swallowed. Widening this to
-    # `except Exception` would need that re-raise added first.
-    except (ClientError, BotoCoreError) as e:
-        logger.exception(f'Error updating user: {e}')
+    # 🔑 Load-bearing here rather than precautionary, unlike its siblings: this is
+    # the one route whose `try` raises a typed error of its own AFTER the AWS call
+    # ('...must be non-empty'), so without this clause the catch-all below would
+    # rewrap that 400 as a 500 — the #263 defect. Pinned by
+    # test_update_user_keeps_400_when_merged_names_are_empty.
+    except ApiError:
+        raise
+    # Was `except (ClientError, BotoCoreError)`, which left any other fault — e.g. a
+    # TypeError from a malformed admin_get_user response — escaping lambda_handler
+    # entirely, so API Gateway answered a bare 502 with no CORS headers where the
+    # other seven routes answer a controlled 500.
+    except Exception as e:
+        logger.exception('Error updating user')
         raise ServiceError(FAILED_UPDATE_USER) from e
 
 
@@ -304,7 +312,7 @@ def update_user_group(username: str):
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Error updating user group: {e}')
+        logger.exception('Error updating user group')
         raise ServiceError(FAILED_UPDATE_GROUP) from e
 
 
@@ -331,7 +339,7 @@ def reset_user_password(username: str):
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Error resetting password: {e}')
+        logger.exception('Error resetting password')
         raise ServiceError(FAILED_RESET_PASSWORD) from e
 
 
@@ -358,7 +366,7 @@ def enable_user(username: str):
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Error enabling user: {e}')
+        logger.exception('Error enabling user')
         raise ServiceError(FAILED_ENABLE_USER) from e
 
 
@@ -385,7 +393,7 @@ def disable_user(username: str):
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Error disabling user: {e}')
+        logger.exception('Error disabling user')
         raise ServiceError(FAILED_DISABLE_USER) from e
 
 
@@ -412,7 +420,7 @@ def delete_user(username: str):
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f'Error deleting user: {e}')
+        logger.exception('Error deleting user')
         raise ServiceError(FAILED_DELETE_USER) from e
 
 

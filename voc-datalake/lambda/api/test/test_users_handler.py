@@ -3,8 +3,10 @@ Tests for users_handler.py - /users/* endpoints.
 Cognito user management for admins.
 """
 import json
+import os
+import sys
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
@@ -22,10 +24,15 @@ from botocore.exceptions import ClientError
 # (issue #263).
 _SENTINEL = 'SENTINEL_INTERNAL_DETAIL'
 
-# The user pool this handler is configured with (conftest sets USER_POOL_ID).
-# A botocore ClientError from an admin_* call names it, so it is the concrete thing
-# `str(e)` published.
-_INTERNAL_POOL_ID = 'us-east-1_testpool'
+# The user pool this handler is configured with. A botocore ClientError from an
+# admin_* call names it, so it is the concrete thing `str(e)` published.
+#
+# 🔑 Read from the environment conftest sets, not copied as a literal: this feeds an
+# ABSENCE assertion, where a stale expected value passes instead of failing. Copy
+# the pool id here and change conftest, and `assert pool not in body` stays green
+# while checking a pool the handler never held. Subscript, so a missing var fails at
+# collection rather than degrading the check to a no-op.
+_INTERNAL_POOL_ID = os.environ['USER_POOL_ID']
 
 
 def _cognito_failure(operation: str = 'AdminGetUser') -> ClientError:
@@ -42,6 +49,27 @@ def _cognito_failure(operation: str = 'AdminGetUser') -> ClientError:
         }},
         operation,
     )
+
+
+def _recording_logger() -> MagicMock:
+    """A stand-in logger that records what `logger.exception` would really emit.
+
+    🔑 The handler passes a plain message and no longer interpolates `{e}`, because
+    Powertools' `Logger.exception` attaches the AMBIENT exception — its text, name
+    and a structured stack trace — to the record by itself. A bare MagicMock records
+    only the call args, so asserting on `call_args` alone would no longer see the
+    fault and the positive control below would silently become vacuous. This reads
+    `sys.exc_info()` at call time, which is the same source the real logger uses.
+    """
+    mock_logger = MagicMock()
+    emitted: list[str] = []
+
+    def _record(*args, **kwargs):
+        emitted.append(f'{args} {kwargs} exc={sys.exc_info()[1]!r}')
+
+    mock_logger.exception.side_effect = _record
+    mock_logger.emitted_exceptions = emitted
+    return mock_logger
 
 
 # Every route in this handler, as (route description, event kwargs). Exercised as
@@ -673,8 +701,9 @@ class TestErrorDisclosure:
     ):
         """Returns a 500 whose body names no pool, error code or operation."""
         # Arrange — fail whichever admin call the route makes.
+        mock_logger = _recording_logger()
         with patch('users_handler.cognito') as mock_cognito, \
-             patch('users_handler.logger') as mock_logger:
+             patch('users_handler.logger', mock_logger):
             # Real exception classes, so the typed `except cognito.exceptions.*`
             # clauses are catchable and do not match the injected fault.
             mock_cognito.exceptions.UserNotFoundException = type(
@@ -711,8 +740,11 @@ class TestErrorDisclosure:
             assert json.loads(raw_body)['error'].startswith('Failed to ')
 
             # Positive control: without this, "absent from the body" would also
-            # hold for a fault that was swallowed and never recorded.
-            logged = ' '.join(str(c.args) for c in mock_logger.exception.call_args_list)
+            # hold for a fault that was swallowed and never recorded. Asserts on the
+            # exception in flight at the call, not on the message args — the handler
+            # no longer interpolates it, Powertools attaches it (see
+            # _recording_logger).
+            logged = ' '.join(mock_logger.emitted_exceptions)
             assert _SENTINEL in logged, (
                 f'the fault must be logged for an operator; exception() calls: {logged}'
             )
@@ -724,10 +756,10 @@ class TestErrorDisclosure:
         """PUT /users/<username> answers 400 for a ValidationError raised mid-block.
 
         The refusal ('...must be non-empty') is raised AFTER the admin_get_user
-        call, i.e. inside the same `try` that answers AWS failures with a 500.
-        Pins the boundary this slice relies on: widening that catch to
-        `except Exception` without an `except ApiError: raise` in front would turn
-        this 400 into a 500, exactly the #263 defect. Duplicates
+        call, i.e. inside the same `try` that answers AWS failures with a 500 — and
+        since that catch is now `except Exception`, the `except ApiError: raise` in
+        front of it is the only thing keeping this a 400 rather than the #263
+        defect's 500. Deleting that clause makes this test red. Duplicates
         TestUpdateUser::test_rejects_whitespace_only_names' scenario on purpose —
         that one only asserts the status, this one names the boundary and asserts
         no write happened.
@@ -754,4 +786,40 @@ class TestErrorDisclosure:
         # Assert
         assert response['statusCode'] == 400
         assert 'non-empty' in body['error']
+        mock_cognito.admin_update_user_attributes.assert_not_called()
+
+    @patch('users_handler.cognito')
+    def test_update_user_returns_500_for_a_non_botocore_fault(
+        self, mock_cognito, api_gateway_event, lambda_context
+    ):
+        """PUT /users/<username> answers a controlled 500, not an escaped exception.
+
+        This route used to catch only `(ClientError, BotoCoreError)`, so any other
+        fault inside the block escaped `lambda_handler` entirely — API Gateway then
+        answered a bare 502 with no CORS headers, unlike the seven sibling routes.
+        A malformed `admin_get_user` payload reproduces it: the dict comprehension
+        over `UserAttributes` raises TypeError on a string.
+        """
+        # Arrange
+        mock_cognito.exceptions.UserNotFoundException = type(
+            'UserNotFoundException', (Exception,), {}
+        )
+        mock_cognito.admin_get_user.return_value = {'UserAttributes': 'not-a-list'}
+
+        from users_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/users/testuser',
+            path_params={'username': 'testuser'},
+            body={'given_name': 'New'}
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
+
+        # Act — must not raise; before the widening this propagated out.
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        # Assert
+        assert response['statusCode'] == 500
+        assert body['error'] == 'Failed to update user'
         mock_cognito.admin_update_user_attributes.assert_not_called()

@@ -3,6 +3,8 @@ Tests for data_explorer_handler.py - /data-explorer/* endpoints.
 Full CRUD for S3 raw data and DynamoDB feedback.
 """
 import json
+import os
+import sys
 import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
@@ -18,9 +20,16 @@ _SENTINEL = 'SENTINEL_INTERNAL_DETAIL'
 
 # The two internal names a botocore fault realistically drags along on these
 # routes, both of which are in this handler's own configuration: the DynamoDB table
-# and the S3 bucket (conftest sets both env vars).
-_INTERNAL_TABLE = 'test-feedback'
-_INTERNAL_BUCKET = 'test-raw-data-bucket'
+# and the S3 bucket.
+#
+# 🔑 Read from the environment conftest sets, which is the same place the handler
+# reads them, rather than copied as literals. These are used in ABSENCE assertions,
+# where a stale expected value passes instead of failing: copy 'test-feedback' here
+# and change conftest, and `assert name not in body` keeps going green while no
+# longer checking any name the handler actually holds. Subscript, not `.get`, so a
+# missing var fails at collection rather than degrading the check to a no-op.
+_INTERNAL_TABLE = os.environ['FEEDBACK_TABLE']
+_INTERNAL_BUCKET = os.environ['RAW_DATA_BUCKET']
 
 
 def _aws_failure(operation: str) -> ClientError:
@@ -38,6 +47,27 @@ def _aws_failure(operation: str) -> ClientError:
         }},
         operation,
     )
+
+
+def _recording_logger() -> MagicMock:
+    """A stand-in logger that records what `logger.exception` would really emit.
+
+    🔑 The handlers pass a plain message and no longer interpolate `{e}`, because
+    Powertools' `Logger.exception` attaches the AMBIENT exception — its text, name
+    and a structured stack trace — to the record by itself. A bare MagicMock records
+    only the call args, so asserting on `call_args` alone would no longer see the
+    fault and the positive control below would silently become vacuous. This reads
+    `sys.exc_info()` at call time, which is the same source the real logger uses.
+    """
+    mock_logger = MagicMock()
+    emitted: list[str] = []
+
+    def _record(*args, **kwargs):
+        emitted.append(f'{args} {kwargs} exc={sys.exc_info()[1]!r}')
+
+    mock_logger.exception.side_effect = _record
+    mock_logger.emitted_exceptions = emitted
+    return mock_logger
 
 
 # Every route in this handler that answers an AWS failure with a 500, as
@@ -208,28 +238,106 @@ class TestPreviewS3File:
     def test_returns_error_for_missing_file(
         self, mock_s3, api_gateway_event, lambda_context
     ):
-        """Returns error when file not found."""
+        """Returns 404 for the fault head_object really raises on a missing key.
+
+        🔑 A bare ``ClientError`` with code ``404``, NOT ``NoSuchKey``: a HEAD
+        response carries no body, so botocore has nothing to model the typed shape
+        from and only ``get_object`` raises ``NoSuchKey``. An earlier version of
+        this test injected a synthetic ``NoSuchKey`` from ``head_object`` — a shape
+        production cannot produce — so it passed while a real missing file fell
+        through to the catch-all and answered 500.
+        """
         # Arrange
-        class NoSuchKey(Exception):
-            pass
         mock_s3.exceptions = MagicMock()
-        mock_s3.exceptions.NoSuchKey = NoSuchKey
-        mock_s3.head_object.side_effect = NoSuchKey()
-        
+        mock_s3.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {'Code': '404', 'Message': 'Not Found'}}, 'HeadObject'
+        )
+
         from data_explorer_handler import lambda_handler
         event = api_gateway_event(
             method='GET',
             path='/data-explorer/s3/preview',
             query_params={'bucket': 'raw-data', 'key': 'nonexistent.json'}
         )
-        
+
         # Act
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
-        
+
         # Assert - now returns 404 with error key
         assert response['statusCode'] == 404
-        assert 'error' in body
+        assert 'not found' in body['error'].lower()
+
+    @patch('data_explorer_handler.s3_client')
+    def test_returns_404_for_the_get_object_missing_key_shape_too(
+        self, mock_s3, api_gateway_event, lambda_context
+    ):
+        """The typed ``NoSuchKey`` path (get_object) still answers 404.
+
+        The 404-by-code clause is what covers ``head_object``; this pins that
+        adding it did not cost the modelled shape the other call raises.
+        """
+        # Arrange — HEAD succeeds, the body read is what fails.
+        mock_s3.exceptions = MagicMock()
+        mock_s3.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
+        mock_s3.head_object.return_value = {
+            'ContentLength': 10, 'ContentType': 'application/json'
+        }
+        mock_s3.get_object.side_effect = mock_s3.exceptions.NoSuchKey()
+
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/data-explorer/s3/preview',
+            query_params={'bucket': 'raw-data', 'key': 'vanished.json'}
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+
+        # Assert
+        assert response['statusCode'] == 404
+
+    @patch('data_explorer_handler.s3_client')
+    def test_non_404_client_error_is_still_a_generic_500(
+        self, mock_s3, api_gateway_event, lambda_context
+    ):
+        """An AccessDenied keeps its 500 and leaks no exception text.
+
+        The negative half of the clause above: matching a missing key by error code
+        must not turn EVERY ClientError into a 404, and the generic message must
+        still apply on the path that now catches ClientError explicitly.
+        """
+        # Arrange
+        mock_s3.exceptions = MagicMock()
+        mock_s3.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {
+                'Code': 'AccessDenied',
+                'Message': f'{_SENTINEL} on {_INTERNAL_BUCKET}',
+            }},
+            'HeadObject',
+        )
+
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='GET',
+            path='/data-explorer/s3/preview',
+            query_params={'bucket': 'raw-data', 'key': 'forbidden.json'}
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+        raw_body = response['body']
+
+        # Assert
+        assert response['statusCode'] == 500
+        for leak in (_SENTINEL, _INTERNAL_BUCKET, 'AccessDenied'):
+            assert leak not in raw_body, (
+                f'{leak!r} must not reach the client; body was: {raw_body}'
+            )
+        assert json.loads(raw_body)['error'] == 'Failed to preview file'
 
 
 class TestSaveS3File:
@@ -637,9 +745,10 @@ class TestErrorDisclosure:
     ):
         """Returns a 500 whose body names no table, bucket, key or boto text."""
         # Arrange — fail whichever AWS call the route makes.
+        mock_logger = _recording_logger()
         with patch('data_explorer_handler.s3_client') as mock_s3, \
              patch('data_explorer_handler.dynamodb') as mock_dynamodb, \
-             patch('data_explorer_handler.logger') as mock_logger:
+             patch('data_explorer_handler.logger', mock_logger):
             # A real exception class, so the `except s3_client.exceptions.NoSuchKey`
             # clause on the preview route is catchable and does not match.
             mock_s3.exceptions = MagicMock()
@@ -672,8 +781,11 @@ class TestErrorDisclosure:
             assert json.loads(raw_body)['error'].startswith('Failed to ')
 
             # Positive control: without this, "absent from the body" would also
-            # hold for a fault that was swallowed and never recorded.
-            logged = ' '.join(str(c.args) for c in mock_logger.exception.call_args_list)
+            # hold for a fault that was swallowed and never recorded. Asserts on the
+            # exception in flight at the call, not on the message args — the handler
+            # no longer interpolates it, Powertools attaches it (see
+            # _recording_logger).
+            logged = ' '.join(mock_logger.emitted_exceptions)
             assert _SENTINEL in logged, (
                 f'the fault must be logged for an operator; exception() calls: {logged}'
             )
@@ -687,9 +799,11 @@ class TestErrorDisclosure:
         exactly why it was missed: `bucket_info['error'] = str(e)` leaked the same
         detail as a ServiceError message would.
         """
-        # Arrange
+        # Arrange — s3_client only: /stats reads FEEDBACK_TABLE as a NAME and makes
+        # no DynamoDB call, so there is no client to stub there.
+        mock_logger = _recording_logger()
         with patch('data_explorer_handler.s3_client') as mock_s3, \
-             patch('data_explorer_handler.logger') as mock_logger:
+             patch('data_explorer_handler.logger', mock_logger):
             mock_s3.list_objects_v2.side_effect = _aws_failure('ListObjectsV2')
 
             from data_explorer_handler import lambda_handler
@@ -709,7 +823,9 @@ class TestErrorDisclosure:
                     f'{leak!r} must not reach the client; body was: {raw_body}'
                 )
 
-            logged = ' '.join(str(c.args) for c in mock_logger.exception.call_args_list)
+            # Positive control, as above: the exception in flight at the call, since
+            # the message no longer interpolates it.
+            logged = ' '.join(mock_logger.emitted_exceptions)
             assert _SENTINEL in logged, (
                 f'the fault must be logged for an operator; exception() calls: {logged}'
             )

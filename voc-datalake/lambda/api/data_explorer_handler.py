@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
@@ -52,7 +54,10 @@ app = create_api_resolver()
 #
 # Each broad `try` in this file also re-raises `ApiError` ahead of its
 # `except Exception`, so a typed ValidationError/NotFoundError raised INSIDE the
-# block keeps its own status instead of being rewrapped as this 500.
+# block keeps its own status instead of being rewrapped as this 500. Only
+# `save_feedback`'s and `delete_feedback`'s are reachable today — the S3 routes
+# raise nothing typed inside their `try`, so theirs are precautionary against a
+# future edit, in the same spirit as `feedback_form_handler.py`'s two.
 FAILED_LIST = 'Failed to list S3 objects'
 FAILED_PREVIEW = 'Failed to preview file'
 FAILED_SAVE = 'Failed to save file'
@@ -60,6 +65,15 @@ FAILED_DELETE = 'Failed to delete file'
 FAILED_UPDATE_FEEDBACK = 'Failed to update feedback'
 FAILED_DELETE_FEEDBACK = 'Failed to delete feedback'
 FAILED_BUCKET_STATS = 'Failed to read bucket contents'
+
+# The error codes S3 uses for "that key is not there", which differ by operation.
+#
+# 🔑 `head_object` does NOT raise the modelled `NoSuchKey`: a HEAD response has no
+# body, so botocore has nothing to build the typed shape from and raises a bare
+# ClientError with code '404'. Only `get_object` raises `NoSuchKey`. Matching on
+# the code covers both, and is why `preview_s3_file` can answer 404 for a missing
+# file at all — before this it fell through to the catch-all and returned 500.
+S3_MISSING_KEY_CODES = ('404', 'NoSuchKey', 'NotFound')
 
 
 def decimal_to_native(obj):
@@ -144,7 +158,7 @@ def list_s3_objects():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to list S3 objects: {e}")
+        logger.exception("Failed to list S3 objects")
         raise ServiceError(FAILED_LIST) from e
 
 
@@ -212,12 +226,22 @@ def preview_s3_file():
         except json.JSONDecodeError:
             return {'content': content, 'size': size, 'contentType': content_type, 'key': key}
             
-    except s3_client.exceptions.NoSuchKey:
-        raise NotFoundError('File not found')
+    except s3_client.exceptions.NoSuchKey as e:
+        # The get_object path. Kept alongside the ClientError clause below rather
+        # than folded into it: NoSuchKey IS a ClientError subclass, but relying on
+        # that would make the 404 depend on botocore's modelling choices.
+        raise NotFoundError('File not found') from e
+    except ClientError as e:
+        # The head_object path — see S3_MISSING_KEY_CODES. Anything that is not a
+        # missing key falls through to the generic 500 below.
+        if e.response.get('Error', {}).get('Code') in S3_MISSING_KEY_CODES:
+            raise NotFoundError('File not found') from e
+        logger.exception("Failed to preview S3 file")
+        raise ServiceError(FAILED_PREVIEW) from e
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to preview S3 file: {e}")
+        logger.exception("Failed to preview S3 file")
         raise ServiceError(FAILED_PREVIEW) from e
 
 
@@ -274,7 +298,7 @@ def save_s3_file():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to save S3 file: {e}")
+        logger.exception("Failed to save S3 file")
         raise ServiceError(FAILED_SAVE) from e
 
 
@@ -302,7 +326,7 @@ def delete_s3_file():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to delete S3 file: {e}")
+        logger.exception("Failed to delete S3 file")
         raise ServiceError(FAILED_DELETE) from e
 
 
@@ -428,7 +452,7 @@ def save_feedback():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to update feedback: {e}")
+        logger.exception("Failed to update feedback")
         raise ServiceError(FAILED_UPDATE_FEEDBACK) from e
 
 
@@ -469,7 +493,7 @@ def delete_feedback():
     except ApiError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to delete feedback: {e}")
+        logger.exception("Failed to delete feedback")
         raise ServiceError(FAILED_DELETE_FEEDBACK) from e
 
 
@@ -515,8 +539,11 @@ def get_data_stats():
                 folders = [p['Prefix'].rstrip('/') for p in response.get('CommonPrefixes', []) if p['Prefix'].rstrip('/')]
                 bucket_info['folders'] = folders
                 bucket_info['folder_count'] = len(folders)
-            except Exception as e:
-                logger.exception(f"Failed to get stats for bucket {bucket_name}: {e}")
+            # No `as e`: this block swallows rather than re-raises, and nothing below
+            # needs the object — `logger.exception` reads the in-flight exception
+            # from sys.exc_info() itself, so binding it would only be an unused name.
+            except Exception:
+                logger.exception(f"Failed to get stats for bucket {bucket_name}")
                 # Generic, for the same reason as the module constants above: this
                 # field is returned to the caller inside a 200 body, so `str(e)`
                 # here leaked boto text (bucket name, access-denied detail,
