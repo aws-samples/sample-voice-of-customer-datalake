@@ -2163,11 +2163,16 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
 # interpolated the caller-supplied path segment straight into a `<script>` block
 # inside handwritten quotes, and returned 200 without reading the table at all — so
 # an id the route's own pattern accepts could close those quotes and be executed as
-# script. `a',x:alert(1),y:'` is the shortest one that does through this exact
-# template (verified by rendering the merge-base f-string and running it); the
-# issue's own `a');alert(document.domain);x=('` was written for a bare-argument call
-# and leaves the object literal unparseable, which is why the constant below carries
-# that distinction rather than the tests resting on the sample's remainder.
+# script. `a',x:alert(1),y:'` is one that does through this exact template
+# (verified by rendering the merge-base f-string and running it), and it is not the
+# only shape or the shortest: `'+alert()+'` closes the same quote and concatenates
+# instead of supplying further keys, needing 11 characters to its 17, and all eight
+# routes admit it too. That the position was reachable by more than one shape is
+# why the fix is a serializer rather than a blocklist, so no length or spelling
+# here is load-bearing. The issue's own `a');alert(document.domain);x=('` was
+# written for a bare-argument call and leaves the object literal unparseable, which
+# is why the constant below carries that distinction rather than the tests resting
+# on the sample's remainder.
 
 # The payload from the issue, kept as one constant because three separate tests
 # assert three different things about the same string: that the ROUTE admits it,
@@ -5947,12 +5952,18 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         # character would pin the note's list rather than the class the classifier
         # actually tests.
         #
+        # `'+alert()+'` is here for the claim the header comment makes about it: the
+        # position was reachable by more than one payload shape, so the concatenation
+        # spelling is route-admitted exactly as `_EXECUTING_PAYLOAD`'s object-key
+        # spelling is. Asserted rather than stated, because a header comment naming a
+        # second shape is worth nothing if the routes stopped admitting it.
+        #
         # Then one id per `\w` category, so no category stands in for another: `Ll`
         # `café`, `Lm` `hawaiʼi-form` (U+02BC, an apostrophe to the eye), `Lo`
         # `表単`, `Lt` `ǅigit`, `Lu` `ÉCOLE`, `Nd` `form٠a` (ARABIC-INDIC DIGIT
         # ZERO), `Nl` `section-Ⅷ`, `No` `surface-m²`.
-        for reachable in ('my form', '   ', 'a:b', 'form(1)', 'a;b', 'café',
-                          'hawaiʼi-form', '表単', 'ǅigit', 'ÉCOLE',
+        for reachable in ('my form', '   ', 'a:b', 'form(1)', 'a;b', "'+alert()+'",
+                          'café', 'hawaiʼi-form', '表単', 'ǅigit', 'ÉCOLE',
                           'form٠a', 'section-Ⅷ', 'surface-m²'):
             admitting = [
                 f'{method} {path}'
