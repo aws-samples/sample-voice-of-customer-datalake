@@ -893,9 +893,13 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     // lists Action/Resource and zod strips the rest, which would drop the
     // `Principal` this case is about.
     const trust = StatementsSchema.parse(role.Properties?.AssumeRolePolicyDocument);
-    // Found by its principal rather than indexed at [0]: a second statement added
-    // ahead of the federated one must not break this case.
-    const federated = trust.Statement.find(
+    // Every federated statement, not the first one `find()` happens to return:
+    // IAM evaluates a trust document as a UNION, so the trust is only as tight as
+    // its LOOSEST statement. Reading one of them made the guard's outcome depend
+    // on statement ORDER — appending a second federated statement with no `aud`
+    // and `amr: unauthenticated` left this case green while the role became
+    // assumable by anonymous identities from any pool in any AWS account.
+    const federatedStatements = trust.Statement.filter(
       (statement) =>
         z
           .object({ Principal: z.object({ Federated: z.string() }) })
@@ -903,7 +907,22 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
           .data?.Principal.Federated === 'cognito-identity.amazonaws.com',
     );
 
-    expect(federated, 'the role must still be assumable by the Identity Pool').toBeDefined();
+    // Non-empty is the anti-vacuity half — the role must STILL be assumable by
+    // the pool, so deleting it cannot green the cases above. Exactly-one is the
+    // fail-open half: a second federated statement has no legitimate purpose
+    // here, so refusing the shape beats trying to read every way it could widen
+    // the trust, the same stance the `ManagedPolicyArns` guard takes.
+    expect(
+      federatedStatements,
+      'the trust must be exactly one federated statement, and must still have one',
+    ).toHaveLength(1);
+    // And nothing else in the document either. A statement with a NON-federated
+    // principal (`Principal.AWS: '*'` + `sts:AssumeRole`) never matches the
+    // predicate above, so counting only federated statements would not see it,
+    // yet it widens who can assume this role just as much.
+    expect(trust.Statement, 'the trust must carry no statement beyond that one').toHaveLength(1);
+
+    const federated = federatedStatements[0];
 
     // The assertions carrying weight, read structurally rather than as substrings
     // of the rendered statement: the presence of a condition KEY says nothing
@@ -912,8 +931,8 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     // clean here. Every field is typed narrowly on purpose: a shape this cannot
     // read (an `amr` list, an `Action` array) must stop the case rather than pass
     // it. Zod strips what it is not told about, so a condition key omitted from
-    // this parse is a condition key this case does not guard: BOTH halves of the
-    // trust are named, not just the one that regressed.
+    // this parse is a condition key this case does not guard: both halves of the
+    // ONE statement asserted above are named, not just the one that regressed.
     const assumable = z
       .object({
         Action: z.string(),
@@ -928,7 +947,8 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
       })
       .parse(federated);
 
-    // The mechanism: web identity, and only that way.
+    // The mechanism — web identity. "Only that way" is what the two length
+    // assertions above establish, since a second statement could name another.
     expect(assumable.Action).toBe('sts:AssumeRoleWithWebIdentity');
     // WHICH pool. Without this, dropping the `aud` condition makes the role
     // assumable via web identity by any Identity Pool in any AWS account — a
