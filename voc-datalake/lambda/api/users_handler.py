@@ -14,17 +14,37 @@ import os
 import uuid
 import boto3
 from typing import Any
-from botocore.exceptions import ClientError, BotoCoreError
 
 from shared.logging import logger, tracer
 from shared.api import create_api_resolver, api_handler, require_admin
-from shared.exceptions import ValidationError, NotFoundError, ServiceError, ConflictError
+from shared.exceptions import ApiError, ValidationError, NotFoundError, ServiceError, ConflictError
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
 
 # Configuration
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
+
+# Client-facing text for an unexpected Cognito failure, one message per operation.
+#
+# 🔑 Every one of these used to be `ServiceError(str(e))`, and `shared/api.py`
+# returns a ServiceError's message verbatim to the caller — so a botocore
+# ClientError published the USER_POOL_ID, the API name, and the Cognito request id
+# to anyone who could provoke a 500 (issue #263). The detail is logged with
+# `logger.exception` at each site instead, which is where an operator needs it.
+#
+# Each block also re-raises `ApiError` ahead of its `except Exception`, so a typed
+# ValidationError/NotFoundError raised inside keeps its own 400/404. Only
+# `update_user`'s is reachable today — the rest are precautionary against a future
+# edit, in the same spirit as `feedback_form_handler.py`'s two.
+FAILED_LIST_USERS = 'Failed to list users'
+FAILED_CREATE_USER = 'Failed to create user'
+FAILED_UPDATE_USER = 'Failed to update user'
+FAILED_UPDATE_GROUP = 'Failed to update user group'
+FAILED_RESET_PASSWORD = 'Failed to reset password'
+FAILED_ENABLE_USER = 'Failed to enable user'
+FAILED_DISABLE_USER = 'Failed to disable user'
+FAILED_DELETE_USER = 'Failed to delete user'
 
 app = create_api_resolver()
 
@@ -84,9 +104,11 @@ def list_users():
         
         return {'success': True, 'users': users}
     
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f'Error listing users: {e}')
-        raise ServiceError(str(e))
+        logger.exception('Error listing users')
+        raise ServiceError(FAILED_LIST_USERS) from e
 
 
 @app.post('/users')
@@ -157,9 +179,11 @@ def create_user():
     
     except cognito.exceptions.UsernameExistsException:
         raise ConflictError('A user with this email already exists')
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f'Error creating user: {e}')
-        raise ServiceError(str(e))
+        logger.exception('Error creating user')
+        raise ServiceError(FAILED_CREATE_USER) from e
 
 
 @app.put('/users/<username>')
@@ -224,9 +248,20 @@ def update_user(username: str):
 
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
-    except (ClientError, BotoCoreError) as e:
-        logger.exception(f'Error updating user: {e}')
-        raise ServiceError(str(e))
+    # 🔑 Load-bearing here rather than precautionary, unlike its siblings: this is
+    # the one route whose `try` raises a typed error of its own AFTER the AWS call
+    # ('...must be non-empty'), so without this clause the catch-all below would
+    # rewrap that 400 as a 500 — the #263 defect. Pinned by
+    # test_update_user_keeps_400_when_merged_names_are_empty.
+    except ApiError:
+        raise
+    # Was `except (ClientError, BotoCoreError)`, which left any other fault — e.g. a
+    # TypeError from a malformed admin_get_user response — escaping lambda_handler
+    # entirely, so API Gateway answered a bare 502 with no CORS headers where the
+    # other seven routes answer a controlled 500.
+    except Exception as e:
+        logger.exception('Error updating user')
+        raise ServiceError(FAILED_UPDATE_USER) from e
 
 
 @app.put('/users/<username>/group')
@@ -274,9 +309,11 @@ def update_user_group(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f'Error updating user group: {e}')
-        raise ServiceError(str(e))
+        logger.exception('Error updating user group')
+        raise ServiceError(FAILED_UPDATE_GROUP) from e
 
 
 @app.post('/users/<username>/reset-password')
@@ -299,9 +336,11 @@ def reset_user_password(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f'Error resetting password: {e}')
-        raise ServiceError(str(e))
+        logger.exception('Error resetting password')
+        raise ServiceError(FAILED_RESET_PASSWORD) from e
 
 
 @app.put('/users/<username>/enable')
@@ -324,9 +363,11 @@ def enable_user(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f'Error enabling user: {e}')
-        raise ServiceError(str(e))
+        logger.exception('Error enabling user')
+        raise ServiceError(FAILED_ENABLE_USER) from e
 
 
 @app.put('/users/<username>/disable')
@@ -349,9 +390,11 @@ def disable_user(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f'Error disabling user: {e}')
-        raise ServiceError(str(e))
+        logger.exception('Error disabling user')
+        raise ServiceError(FAILED_DISABLE_USER) from e
 
 
 @app.delete('/users/<username>')
@@ -374,9 +417,11 @@ def delete_user(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f'Error deleting user: {e}')
-        raise ServiceError(str(e))
+        logger.exception('Error deleting user')
+        raise ServiceError(FAILED_DELETE_USER) from e
 
 
 @api_handler
