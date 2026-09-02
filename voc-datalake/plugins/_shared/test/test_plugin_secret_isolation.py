@@ -20,16 +20,39 @@ REVERT MAP — each assertion below names the mutation it catches:
       swallows), so a plugin would run credential-less believing it was
       configured.
 
-  test_a_missing_or_malformed_identity_raises
+  test_a_malformed_identity_is_refused_even_when_its_prefix_would_match
     — deletes `if not is_valid_plugin_identifier(plugin_id)` from
-      `filter_plugin_secrets`. The mutation used to survive: the namespace-miss
-      branch below raises the SAME `ConfigurationError` for every malformed id, so
-      a class-only assertion stayed green while the identity was no longer checked
-      at all — and an unvalidated id becomes a key prefix, which is the whole
-      isolation boundary (issue #398 A.1). The assertion now names the rule the
-      identity broke, which only that branch states; its control
+      `filter_plugin_secrets`, caught by OUTCOME: with the guard gone the call
+      RETURNS `{'api_key': ...}` instead of raising, because this one fixture's
+      malformed id has matching keys in the payload. That is the production hazard
+      itself — an unvalidated identity turned into a Secrets Manager key prefix,
+      which since #251 is the whole isolation boundary — pinned as raise-vs-return,
+      so no rewording of either message can defeat it (issue #398 A.1).
+
+  test_a_missing_or_malformed_identity_raises
+    — the same deletion, caught by MESSAGE, over the seven malformed shapes the
+      character class rejects. Every one of those ids also misses the namespace, so
+      the miss branch raises the SAME `ConfigurationError` for all of them: a
+      class-only assertion stayed green while the identity was no longer checked at
+      all. The assertion now names the rule the identity broke, which only that
+      branch states; its control
       (test_the_control_a_namespace_miss_is_not_reported_as_a_malformed_identity)
-      pins that the miss branch does not start stating it too.
+      pins that the miss branch does not start stating it too. Message-based, hence
+      bounded by the two messages staying distinguishable — the outcome pin above
+      is the one that holds unconditionally.
+
+    — also drops the `[:40]` from `preview = repr(plugin_id[:40])`. The identity
+      branch is the ONE refusal here that echoes caller-controlled input back into
+      an error string, so the bound on how much of it is reflected is asserted, not
+      assumed. The `too_long` fixture (`'a' * 65`) drives straight through that
+      truncation. Mirrors `integrations_handler._validate_source`'s
+      `repr(source[:40])`, for the same reason on the write side.
+
+    — and empties `PLUGIN_IDENTIFIER_RULES`, the precondition both of that test's
+      message assertions rest on: `'' in message` is always true, so the pin would
+      go vacuous while its control failed as though the two messages had converged.
+      `test_the_identity_rule_is_the_one_the_write_path_enforces` pins the REGEX is
+      shared; nothing pinned the prose constant.
 
   test_a_key_outside_every_plugin_namespace_is_not_returned
     — restores BaseIngestor's "no KNOWN prefix means shared/legacy" branch and
@@ -197,9 +220,29 @@ MIXED_SECRET = {
 
 # The same payload with THIS plugin's namespace removed: what a mis-prefixed
 # identity really sees in production.
+#
+# Every key here MUST stay outside `PREFIX`. Several tests below are namespace-MISS
+# tests only because of that property — give this fixture a `test_source_*` key and
+# they start exercising the success path while still passing.
 FOREIGN_ONLY_SECRET = {
     OTHER_PLUGIN_KEY: OTHER_PLUGIN_VALUE,
     UNPREFIXED_KEY: UNPREFIXED_VALUE,
+}
+
+# A malformed identity — uppercase, so the character class refuses it — together
+# with a payload that DOES carry keys under the prefix it would produce. That pair
+# makes the identity guard observable as raise-vs-return rather than as a message;
+# see test_a_malformed_identity_is_refused_even_when_its_prefix_would_match.
+#
+# Module-level, like the two above and for the same reason: pytest expands test
+# LOCALS in a traceback (`--tb=long -l`), so a payload built inside a test body
+# would print its values on any failure in that test. This file's discipline is
+# that a refusal's output names the failure mode and nothing else.
+MALFORMED_ID = PLUGIN_ID.upper()
+MALFORMED_ID_PREFIX = plugin_secret_prefix(MALFORMED_ID)
+MALFORMED_ID_MATCHING_SECRET = {
+    f'{MALFORMED_ID_PREFIX}api_key': 'mine-key',
+    **FOREIGN_ONLY_SECRET,
 }
 
 
@@ -286,6 +329,38 @@ class TestANamespaceMissFailsClosed:
         with pytest.raises(ConfigurationError):
             filter_plugin_secrets(PLUGIN_ID, {PREFIX: 'junk', **FOREIGN_ONLY_SECRET})
 
+    def test_a_malformed_identity_is_refused_even_when_its_prefix_would_match(self):
+        """The identity guard pinned by OUTCOME rather than by wording.
+
+        Every fixture in the parametrised test below is malformed in a way that
+        ALSO misses the namespace, so deleting `if not is_valid_plugin_identifier`
+        is observable there only as a changed message — which is why that assertion
+        needs a control to stay meaningful. This case removes that dependency: the
+        payload DOES carry keys under the malformed id's prefix, so with the guard
+        deleted the call RETURNS that namespace's contents instead of raising. No
+        rewording of either message can defeat it, and it needs no control.
+
+        It is also the production hazard stated directly: an unvalidated identity
+        becoming a Secrets Manager key prefix. `'TEST_SOURCE'` is refused by the
+        character class, yet `TEST_SOURCE_api_key` is a key a write path that did
+        not share that class could have stored.
+        """
+        # Both halves of the fixture's premise, asserted rather than assumed — with
+        # either one broken by a later edit this silently becomes a second
+        # message-shaped test of the MISS branch, passing for the wrong reason.
+        assert not is_valid_plugin_identifier(MALFORMED_ID), (
+            f'{MALFORMED_ID!r} must be malformed for this to test the identity guard'
+        )
+        # The scan's own condition, so "the payload matches" means what the code
+        # means by it.
+        assert any(
+            key.startswith(MALFORMED_ID_PREFIX) and len(key) > len(MALFORMED_ID_PREFIX)
+            for key in MALFORMED_ID_MATCHING_SECRET
+        ), 'the payload must match the malformed prefix, or the miss branch raises instead'
+
+        with pytest.raises(ConfigurationError):
+            filter_plugin_secrets(MALFORMED_ID, MALFORMED_ID_MATCHING_SECRET)
+
     @pytest.mark.parametrize(
         'identity',
         ['', None, 'Test_Source', 'test-source', '_test_source', 'test_source_', 'a' * 65],
@@ -298,37 +373,58 @@ class TestANamespaceMissFailsClosed:
         the one that matters most: `prefix = '_'` would otherwise match nothing
         and, under the old fallback, return everything.
 
-        `pytest.raises(ConfigurationError)` ALONE does not pin the identity guard,
-        and that is not theoretical: delete `if not is_valid_plugin_identifier` and
-        every fixture here still raises `ConfigurationError`, from the namespace-miss
-        branch three checks below — none of these malformed ids has a matching key
-        in `MIXED_SECRET`, by construction. The class is the same, so the MESSAGE is
-        the only evidence of which branch ran (issue #398 A.1).
+        Every id here also MISSES the namespace, so `pytest.raises` alone proves
+        nothing about which branch ran — the message is the only evidence, and the
+        control below keeps it evidence. The outcome-based sibling above pins the
+        same guard without depending on either message; the REVERT MAP entry has
+        the full argument.
 
-        Asserted against the imported `PLUGIN_IDENTIFIER_RULES` rather than a
-        quoted phrase: it is the actionable half of the identity message, only that
-        branch states it, and a test carrying its own copy of the wording would
-        fail on a rewording that broke nothing. The paired control below pins that
-        the two branches remain distinguishable this way.
+        `PLUGIN_IDENTIFIER_RULES` is asserted as the IMPORTED constant, not a quoted
+        copy, so a rewording that breaks nothing does not fail this.
         """
         with pytest.raises(ConfigurationError) as excinfo:
             filter_plugin_secrets(identity, MIXED_SECRET)
 
-        # Only the failure mode is named, never the payload: this message must stay
-        # free of secret values and of another plugin's key names, so the assertion
-        # output does too (TestErrorsRevealTheMisconfigurationAndNothingElse pins
-        # the message itself).
-        assert PLUGIN_IDENTIFIER_RULES in str(excinfo.value), (
+        message = str(excinfo.value)
+
+        # The precondition both message assertions rest on, since `'' in anything`
+        # is True and `'' not in anything` is False: an emptied constant would make
+        # the check below pass on all seven fixtures with the guard deleted, and
+        # break the control in a way that reads as "the messages converged".
+        assert PLUGIN_IDENTIFIER_RULES, 'the rules constant must state the rules'
+
+        assert PLUGIN_IDENTIFIER_RULES in message, (
             'the refusal must identify a missing or malformed plugin identity and '
             'state the rule it broke; a message that instead reports a missing '
             'secret namespace means the identity guard did not run'
         )
 
+        # The identity message's OWN no-leak property, asserted here rather than
+        # borrowed: `TestErrorsRevealTheMisconfigurationAndNothingElse` covers the
+        # MISS message only — every case there passes a valid `PLUGIN_ID` and so
+        # never reaches this branch. And this is the branch that matters most for
+        # leakage, being the only refusal that echoes caller-controlled input back
+        # into the string.
+        assert OTHER_PLUGIN_VALUE not in message
+        assert UNPREFIXED_VALUE not in message
+        # Reflected input is BOUNDED at 40 characters, mirroring
+        # `integrations_handler._validate_source`'s `repr(source[:40])`. The
+        # `too_long` fixture is 65 `a`s, so a 41st means the truncation went.
+        assert 'a' * 41 not in message
+
     def test_the_control_a_namespace_miss_is_not_reported_as_a_malformed_identity(self):
         """Non-vacuity for the assertion above: it separates the two refusals only
         while their messages differ. A namespace miss carries a VALID identity, so
         restating the identity rules there would silently make that assertion pass
-        with the guard deleted."""
+        with the guard deleted.
+
+        Deliberately negative only. The POSITIVE half of this message — that it
+        names the identity and the expected prefix and nothing else — is asserted by
+        `TestErrorsRevealTheMisconfigurationAndNothingElse
+        ::test_the_error_names_the_identity_and_prefix_and_nothing_else`, off the
+        same call, so restating it here would be a second copy rather than more
+        coverage.
+        """
         with pytest.raises(ConfigurationError) as excinfo:
             filter_plugin_secrets(PLUGIN_ID, FOREIGN_ONLY_SECRET)
 
