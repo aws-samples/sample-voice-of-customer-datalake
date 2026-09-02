@@ -92,6 +92,19 @@ REVERT MAP — which mutation each test catches
 - Point an entry of `_TRANSPORT_ERROR_TRANSLATION` at a non-`RequestException`, or
   catch a source type the table does not translate
   -> `the_translation_is_the_one_requests_uses`.
+- Add a table entry for a urllib3 BASE type (`RequestError`, `HTTPError`) ahead of
+  the subclass it shadows, so the more specific translation is never reached
+  -> the same test's disjointness loop.
+- Put the translation back around only ONE of `_read_chunk`'s two `read1`
+  signatures — e.g. by inlining the fallback into a sibling `except TypeError` —
+  so the compatibility branch raises urllib3's own type again
+  -> `TestBothReadSignaturesTranslateTransportErrors::
+  every_translated_source_stays_inside_the_requests_hierarchy` (parametrized over
+  both signatures and every table entry).
+- Stop passing `decode_content=True`, disabling transport decoding so
+  MAX_RESPONSE_BYTES counts compressed wire bytes instead of real memory
+  -> `the_decode_content_signature_is_still_preferred`; drop the size-only call
+  while unifying the two -> `the_size_only_signature_still_reads_the_body`.
 
 Every "refuses" concern has a positive control (`TestPermittedDestinations`,
 `allows_a_public_redirect_chain_and_returns_the_final_page`) so an
@@ -1563,6 +1576,21 @@ class TestTheResponseBodyIsBoundedToo:
         translated = _as_requests_error(ReadTimeoutError(None, 'u', 'timed out'))
         assert isinstance(translated, requests.exceptions.ConnectionError)
 
+        # The disjointness the comment above the table claims, checked rather than
+        # asserted in prose. `_as_requests_error` walks the table with `isinstance`,
+        # so an entry for a BASE type (urllib3's `RequestError`/`HTTPError`, which
+        # `ReadTimeoutError` derives from) placed ahead of a subclass would shadow
+        # the more specific translation — silently, since every source still maps to
+        # SOME RequestException and the assertions above would stay green.
+        sources = [source for source, _ in _TRANSPORT_ERROR_TRANSLATION]
+        for earlier_index, earlier in enumerate(sources):
+            for later in sources[earlier_index + 1:]:
+                assert not issubclass(later, earlier), (
+                    f'{earlier.__name__} precedes its subclass {later.__name__}, so '
+                    f'a {later.__name__} would be translated as a '
+                    f'{earlier.__name__} and never reach its own entry'
+                )
+
     def test_a_dripping_body_is_cut_off_at_the_budget(self, unpoliced):
         import requests
 
@@ -1631,7 +1659,11 @@ class TestTheResponseBodyIsBoundedToo:
         """
         import requests
 
-        from shared.http_utils import MAX_RESPONSE_BYTES, fetch_checked_with_retry
+        from shared.http_utils import (
+            MAX_RESPONSE_BYTES,
+            RETRYABLE_EXCEPTIONS,
+            fetch_checked_with_retry,
+        )
 
         oversized = b'x' * (MAX_RESPONSE_BYTES + 1024)
         url = self._serve([oversized], drip_seconds=0)
@@ -1644,6 +1676,13 @@ class TestTheResponseBodyIsBoundedToo:
         # over-large body was re-downloaded on every attempt and spent the budget
         # three times over. The size does not change on a retry.
         assert not isinstance(excinfo.value, requests.exceptions.Timeout)
+        # Asserted on the retry SET as well as on the type, because that is the
+        # property the choice was made for and what the docstring now promises. A
+        # future reclassification onto another retryable type would satisfy the
+        # line above while restoring the three-downloads behaviour.
+        assert not isinstance(excinfo.value, tuple(RETRYABLE_EXCEPTIONS)), (
+            f'an over-large body must not be retried: got {excinfo.value!r}'
+        )
 
     def test_a_body_at_the_cap_is_still_accepted(self, unpoliced):
         """
@@ -1668,3 +1707,153 @@ class TestTheResponseBodyIsBoundedToo:
         url = self._serve([b'<html>ok</html>'], drip_seconds=0)
 
         assert fetch_checked_with_retry(url, timeout=5).text == '<html>ok</html>'
+
+
+def _raw_that_raises(error: Exception, accepts_decode_content: bool):
+    """
+    A `raw` whose `read1` raises *error*, on either of the two signatures.
+
+    `accepts_decode_content=False` is the older-urllib3 / response-double shape:
+    the kwarg is a `TypeError`, so the caller falls back to the size-only call.
+    """
+
+    class Raw:
+        def read1(self, size, **kwargs):
+            if 'decode_content' in kwargs and not accepts_decode_content:
+                raise TypeError(
+                    "read1() got an unexpected keyword argument 'decode_content'"
+                )
+            raise error
+
+    return Raw()
+
+
+class _ResponseWithRaw:
+    """Enough of a `Response` for `_body_chunks`: a `raw`, and the fallback path."""
+
+    def __init__(self, raw):
+        self.raw = raw
+
+    def iter_content(self, chunk_size=None):
+        yield b''
+
+
+def _instance_of(source):
+    """One instance of a `_TRANSPORT_ERROR_TRANSLATION` source type."""
+    from urllib3.exceptions import ReadTimeoutError
+
+    if source is ReadTimeoutError:
+        # Its __init__ takes (pool, url, message), unlike the others.
+        return ReadTimeoutError(None, 'http://host/', 'read timed out')
+    return source('transport failure')
+
+
+class TestBothReadSignaturesTranslateTransportErrors:
+    """
+    `_body_chunks` reads `raw.read1`, which bypasses the urllib3 -> requests
+    translation `iter_content` performs, so the loop repeats it. The translation
+    used to guard only the FIRST of the two `read1` calls: the size-only fallback
+    lived in a sibling `except TypeError` block, and an `except` clause does not
+    cover code running inside another `except` clause of the same `try`.
+
+    Measured on that shape, with a `read1` rejecting `decode_content`:
+
+        ReadTimeoutError -> urllib3.exceptions.ReadTimeoutError   RequestException=False
+        ProtocolError    -> urllib3.exceptions.ProtocolError      RequestException=False
+
+    against `ConnectionError`/`ChunkedEncodingError` on the covered branch. Both
+    documented consequences follow on that branch: `_scrape_page`'s
+    `except requests.RequestException` warn-and-continue does not absorb it, so a
+    stalled page escapes the handler, and `RETRYABLE_EXCEPTIONS` names `requests`
+    types, so the stall is not retried.
+
+    `a_stall_mid_body_is_still_a_requests_transport_failure` cannot see this: it
+    goes through a real socket, whose `raw` is a `urllib3.HTTPResponse` that DOES
+    accept `decode_content`, so it lands on the covered branch. The fallback exists
+    for an older urllib3 or a response double — exactly the population whose
+    signature differs — which is why it was the compatibility path with no
+    compatibility fix.
+    """
+
+    @staticmethod
+    def _sources():
+        from shared.http_utils import _TRANSPORT_ERROR_TRANSLATION
+
+        return [source for source, _ in _TRANSPORT_ERROR_TRANSLATION]
+
+    @pytest.mark.parametrize('accepts_decode_content', [True, False])
+    def test_every_translated_source_stays_inside_the_requests_hierarchy(
+        self, accepts_decode_content
+    ):
+        """
+        Parametrized over BOTH signatures and every table entry, so a future entry
+        is covered on both branches rather than only on the one a real socket takes.
+        """
+        import requests
+
+        from shared.http_utils import RETRYABLE_EXCEPTIONS, _body_chunks
+
+        for source in self._sources():
+            response = _ResponseWithRaw(
+                _raw_that_raises(_instance_of(source), accepts_decode_content)
+            )
+
+            with pytest.raises(requests.RequestException) as caught:
+                list(_body_chunks(response))
+
+            assert 'urllib3' not in type(caught.value).__module__, (
+                f'{source.__name__} leaked past the requests hierarchy with '
+                f'decode_content accepted={accepts_decode_content}: '
+                f'{type(caught.value).__module__}.{type(caught.value).__name__}'
+            )
+            # The two consequences the leak had, pinned rather than implied: a
+            # ReadTimeoutError becomes a retryable ConnectionError, so a stall is
+            # still retried on either signature.
+            from urllib3.exceptions import ReadTimeoutError
+
+            if source is ReadTimeoutError:
+                assert isinstance(caught.value, tuple(RETRYABLE_EXCEPTIONS)), (
+                    'a mid-body stall must stay retryable on both signatures: '
+                    f'got {caught.value!r}'
+                )
+
+    def test_the_decode_content_signature_is_still_preferred(self):
+        """
+        The positive control. A fix that stopped passing `decode_content` would
+        satisfy every assertion above while silently disabling transport decoding —
+        and then MAX_RESPONSE_BYTES would count compressed wire bytes, so it would
+        stop bounding the memory a decompressed body really costs.
+        """
+        from shared.http_utils import RESPONSE_CHUNK_BYTES, _body_chunks
+
+        calls = []
+
+        class Raw:
+            def read1(self, size, **kwargs):
+                calls.append((size, kwargs))
+                return b''
+
+        assert list(_body_chunks(_ResponseWithRaw(Raw()))) == []
+        assert calls, 'read1 was never called, so nothing was read from the socket'
+        assert calls[0] == (RESPONSE_CHUNK_BYTES, {'decode_content': True}), (
+            'the first read must ask for transport decoding, or MAX_RESPONSE_BYTES '
+            f'counts compressed bytes: {calls[0]!r}'
+        )
+
+    def test_the_size_only_signature_still_reads_the_body(self):
+        """
+        The other positive control: the fallback must still WORK, not merely
+        translate. Routing both calls through one helper could have dropped the
+        second call altogether, which no refusal assertion would notice.
+        """
+        from shared.http_utils import _body_chunks
+
+        chunks = [b'<html>', b'ok</html>', b'']
+
+        class Raw:
+            def read1(self, size, **kwargs):
+                if 'decode_content' in kwargs:
+                    raise TypeError('no decode_content on this read1')
+                return chunks.pop(0)
+
+        assert b''.join(_body_chunks(_ResponseWithRaw(Raw()))) == b'<html>ok</html>'

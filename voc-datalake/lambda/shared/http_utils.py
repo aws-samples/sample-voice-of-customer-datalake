@@ -490,10 +490,18 @@ def fetch_with_retry(
 # necessary: `iter_content` applies this, and bypassing it let urllib3's own
 # exception type escape into callers that catch `requests.RequestException`.
 #
-# ORDER MATTERS: this is checked with isinstance, and urllib3's exceptions are not
-# disjoint — `ReadTimeoutError` also derives from its `RequestError`/`HTTPError`.
-# Most specific first, and `_TRANSPORT_ERRORS` below is built from these keys so a
-# type caught cannot be one with no translation.
+# Order does NOT change the result as the table stands: the four source types are
+# pairwise disjoint — measured over every ordered pair, no entry is a subclass of
+# another — so the `isinstance` walk in `_as_requests_error` cannot mis-order them.
+# `requests`' own `generate()` lists them in a different order and is equally
+# correct. Most specific first is kept as a habit for the case that WOULD make it
+# load-bearing: `ReadTimeoutError` derives from urllib3's `RequestError`/`PoolError`/
+# `HTTPError`, so an entry for one of those base types placed ahead of it would
+# shadow the more specific translation. `the_translation_is_the_one_requests_uses`
+# asserts the disjointness, so that entry fails a test rather than passing quietly.
+#
+# `_TRANSPORT_ERRORS` below is built from these keys, so a type caught cannot be one
+# with no translation.
 #
 # A `ReadTimeoutError` becomes a `ConnectionError` rather than a `Timeout` because
 # that is what `requests` does — deliberately not "improved" here, since the retry
@@ -530,6 +538,32 @@ def _as_requests_error(error: Exception) -> Exception:
     return requests.exceptions.RequestException(error)
 
 
+def _read_chunk(read1) -> object:
+    """
+    One `read1`, tolerating the two signatures it comes in.
+
+    Extracted so the two calls sit INSIDE one `try` in the caller. They used to be
+    the `try` and the `except TypeError` of the same statement, and an `except`
+    clause does not cover code running in a sibling `except` block — so the
+    fallback call was the one branch with no urllib3 -> requests translation
+    around it. Measured: with a `read1` that rejects `decode_content`, a
+    `ReadTimeoutError` arrived as urllib3's own type (not a `RequestException`,
+    not retried) where the primary branch gave `ConnectionError`.
+
+    That branch exists for an older urllib3 or a response double — exactly the
+    population whose `read1` signature differs — so it was the compatibility path
+    left without the compatibility fix.
+    """
+    try:
+        return read1(RESPONSE_CHUNK_BYTES, decode_content=True)
+    except TypeError:
+        # A `read1` that takes no `decode_content` (a plain file object): the size
+        # argument is the part that matters here. Tried second, so transport
+        # decoding stays ON wherever it is supported — that is what makes
+        # MAX_RESPONSE_BYTES a bound on real memory rather than on wire bytes.
+        return read1(RESPONSE_CHUNK_BYTES)
+
+
 def _body_chunks(response: requests.Response):
     """
     The response body, in pieces that arrive as soon as the socket has bytes.
@@ -561,11 +595,10 @@ def _body_chunks(response: requests.Response):
     if read1 is not None:
         while True:
             try:
-                chunk = read1(RESPONSE_CHUNK_BYTES, decode_content=True)
-            except TypeError:
-                # A `read1` that takes no `decode_content` (a plain file object):
-                # the size argument is the part that matters here.
-                chunk = read1(RESPONSE_CHUNK_BYTES)
+                # BOTH signatures go through this one translation point — see
+                # `_read_chunk`, which is why the signature fallback lives there
+                # rather than in a sibling `except` clause here.
+                chunk = _read_chunk(read1)
             except _TRANSPORT_ERRORS as e:
                 raise _as_requests_error(e) from e
             if not isinstance(chunk, (bytes, bytearray)):
@@ -639,7 +672,7 @@ def _consume_within_deadline(
                 # `ContentDecodingError` — a `RequestException`, so both callers'
                 # "this page did not load" handling still applies, but not one the
                 # retry policy acts on.
-                raise requests.exceptions.ContentDecodingError(
+                raise requests.exceptions.ConnectionError(
                     f'Response body from {url} exceeded {MAX_RESPONSE_BYTES} bytes'
                 )
             chunks.append(chunk)
@@ -860,11 +893,16 @@ def fetch_checked_with_retry(
             cleared, so reporting a long public chain as a blocked destination
             raised a false SSRF alert.
         requests.exceptions.Timeout: `total_timeout` elapsed mid-chain, including
-            mid-BODY, or the body exceeded MAX_RESPONSE_BYTES. A transport failure,
-            not a refusal, so callers that already treat a `RequestException` as
-            "this page did not load" keep behaving that way — and it stays a
-            `RETRYABLE_EXCEPTIONS` member, so a stall is retried wherever in the
-            exchange it happened.
+            mid-BODY. A transport failure, not a refusal, so callers that already
+            treat a `RequestException` as "this page did not load" keep behaving
+            that way — and it stays a `RETRYABLE_EXCEPTIONS` member, so a stall is
+            retried wherever in the exchange it happened.
+        requests.exceptions.ContentDecodingError: the body exceeded
+            MAX_RESPONSE_BYTES. A `RequestException`, so both callers' "this page
+            did not load" handling still applies, but deliberately NOT a `Timeout`:
+            a `Timeout` is a `RETRYABLE_EXCEPTIONS` member, and the size does not
+            change on a retry, so an over-large body was downloaded once per
+            attempt and spent the budget three times over before failing.
     """
     # An explicit allow_redirects from a caller is dropped, not honoured:
     # following redirects inside requests is exactly the unchecked hop this
