@@ -288,8 +288,8 @@ def _validated_form_id(raw: Any) -> str | None:
     That set is stated as a COMPLEMENT rather than as a list, because a list of it
     has been short every time it was written by hand: in scope is any character
     outside this pattern's `[0-9A-Za-z_.-]` that the ROUTE admits, which for ASCII
-    is every character of `[-._~()'!*:@,;=+&$%<> \\[\\]{}|^]` except `-`, `.` and `_`
-    — 24 of them, where `:`, `+`, `@`, `%`, `~` and a SPACE within an id such as
+    is every character of `[-._~()'!*:@,;=+&$%<> \\[\\]{}|^]` except `-`, `.` and
+    `_` — 24 of them, where `:`, `+`, `@`, `%`, `~` and a SPACE within an id such as
     `'my form'` are illustrations and not the set. Seven of the eighteen unnamed
     ones (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the #379 payload's own characters,
     which is why they are the ones a hand-written list drops. On the other side,
@@ -297,16 +297,17 @@ def _validated_form_id(raw: Any) -> str | None:
     characters the route does NOT admit, so they sit with the tab and the newline
     below rather than in the scan.
 
-    That set is narrower than "everything non-ASCII" and than "whitespace", and
-    both narrowings come from ONE fact about the route rather than about this
-    pattern: powertools' capture group reaches past ASCII only through `\\w`, which
-    matches any Unicode letter or number plus `_`, and it lists a literal space but
-    no other whitespace. So `'café'` and `'my form'` matched a route and are the
-    scan's to find, while a tab, a newline, and any non-ASCII character `\\w` does
-    NOT match (`'form€a'`, `'form\\xa0a'`, `'form«a'`, an NFD `'cafe\\u0301'`) never
-    matched one at all — those rows answered 404 before this change as well as after,
-    so they are unreachable rather than reachable-then-orphaned. Telling an operator
-    to rename one would be renaming a row that was never served.
+    The non-ASCII half of that is narrower than "everything non-ASCII" and the
+    whitespace half narrower than "whitespace", and both narrowings come from ONE
+    fact about the route rather than about this pattern: powertools' capture group
+    reaches past ASCII only through `\\w`, which matches any Unicode letter or
+    number plus `_`, and it lists a literal space but no other whitespace. So
+    `'café'` and `'my form'` matched a route and are the scan's to find, while a
+    tab, a newline, and any non-ASCII character `\\w` does NOT match (`'form€a'`,
+    `'form\\xa0a'`, `'form«a'`, an NFD `'cafe\\u0301'`) never matched one at all —
+    those rows answered 404 before this change as well as after, so they are
+    unreachable rather than reachable-then-orphaned. Telling an operator to rename
+    one would be renaming a row that was never served.
     `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` pins the whole
     split off the live resolver, since it is what bounds the operator scan's reach.
 
@@ -315,19 +316,18 @@ def _validated_form_id(raw: Any) -> str | None:
     marks (`M*`), symbols (`S*`), punctuation (`P*`), separators (`Z*`) and format
     characters (`C*`). The difference falls on the shapes an operator is most likely
     to misfile, and it runs in BOTH directions. Routable, hence the scan's to find,
-    however much they read as punctuation: a modifier letter (`'hawaiʼi-form'`, whose
-    `ʼ` is U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII quote — as is the
-    Hawaiian ʻokina, U+02BB, which is the same category; and note that characters
-    NAMED as accents are `Lm` too, so `'formˆa'` is in scope. Those are U+02C6,
-    U+02CA, U+02CB, U+02CE, U+02CF and U+A788, spelled out rather than written as
-    the range U+02CA-U+02CF, which also holds U+02CC MODIFIER LETTER LOW VERTICAL
-    LINE and U+02CD MODIFIER LETTER LOW MACRON — `Lm` and in scope like the rest,
-    but not accents), a fraction or superscript (`'half-½-price'`, `'surface-m²'`)
-    and a roman
-    numeral (`'section-Ⅷ'`). Unroutable, hence NOT the scan's, however much they read
-    as letters: a script that writes a vowel as a combining mark, so Hindi
-    `'फॉर्म'`, Thai `'แบบฟอร์ม'` and Arabic `'نَموذج'` never matched a route because the
-    mark is `Mc`/`Mn` even where the base character is `Lo` (precomposed Korean
+    however much they read as punctuation: a modifier letter (`'hawaiʼi-form'`,
+    whose `ʼ` is U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII quote — as is
+    the Hawaiian ʻokina, U+02BB, which is the same category; and note that
+    characters NAMED as accents are `Lm` too, so `'formˆa'` is in scope — those
+    being U+02C6, U+02CA, U+02CB, U+02CE, U+02CF and U+A788, spelled out rather than
+    as the range U+02CA-U+02CF, which also holds U+02CC MODIFIER LETTER LOW VERTICAL
+    LINE and U+02CD MODIFIER LETTER LOW MACRON, `Lm` and in scope like the rest but
+    not accents), a fraction or superscript (`'half-½-price'`, `'surface-m²'`) and a
+    roman numeral (`'section-Ⅷ'`). Unroutable, hence NOT the scan's, however much
+    they read as letters: a script that writes a vowel as a combining mark, so Hindi
+    `'फॉर्म'`, Thai `'แบบฟอร์ม'` and Arabic `'نَموذج'` never matched a route because
+    the mark is `Mc`/`Mn` even where the base character is `Lo` (precomposed Korean
     `'피드백'` is all `Lo`, and did resolve). That is the ONE direction of this split
     with a real cost: over-reporting wastes a rename, but under-reporting means an
     operator reads a printed row as out of scope, skips it, and it 404s in
