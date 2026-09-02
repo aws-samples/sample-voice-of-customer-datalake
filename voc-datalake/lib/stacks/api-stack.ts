@@ -871,6 +871,11 @@ export class VocApiStack extends VocStack {
     }
 
     NagSuppressions.addResourceSuppressions(chatStreamLambda, [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'CDK grantInvoke includes qualified versions/aliases, so the wildcard is scoped to ProjectsApi only; ChatStream uses it for the canonical bounded project-context contract.',
+        appliesTo: [{ regex: '/Resource::<.*ProjectsApi.*\\.Arn>:\\*/' }],
+      },
       { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
     ], true);
 
