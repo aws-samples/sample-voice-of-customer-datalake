@@ -5608,20 +5608,35 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         pattern does not) and print it, and a check covering only the memorable
         characters is what let the prose stand at six of twenty-four. Seven of the
         rest are the characters the #379 fix turns on — the quote, parens and
-        semicolon the payload closes its handwritten string literal with, plus the
-        `<`, `>` and `&` `_js_value` escapes for the HTML parser — so the `dangerous`
-        loop above asserts those for their own reason and this loop re-covers them
-        deliberately: they are in both sets, and each set's claim should be readable
-        without the other.
+        semicolon the payload breaks out with (three of those four in the payload
+        itself, decomposed at `_INJECTION_PAYLOAD`), plus the `<`, `>` and `&`
+        `_js_value` escapes for the HTML parser — so the `dangerous` loop above
+        asserts those for their own reason and this loop re-covers them deliberately:
+        they are in both sets, and each set's claim should be readable without the
+        other.
 
         The set's MEMBERSHIP is derived from the installed resolver rather than
-        counted, and that is the assertion the documents actually rest on: they print
-        this set, and a cardinality check cannot tell a match from a swap. Trading
-        `!` for `"` keeps the count at 24 while replacing a character the route
-        admits with one it does not, and the refusal loop passes either way — the
-        validator refuses both — so the count alone let a genuinely in-scope
+        counted, and the derived set is then held against all THREE copies of it —
+        this file's literal and the fenced block each document prints. A count cannot
+        tell a match from a swap, and an assertion on the literal alone cannot tell
+        either document from a stale one: both printed sets could lose a character
+        with nothing failing (verified by mutation, dropping `~` from each). The
+        printed lines are the ones an operator reads to decide whether the row in
+        front of them needs renaming, so a character missing there is a row left to
+        404 in production — which is the same failure this test exists for, one level
+        out. Trading `!` for `"` keeps the count at 24 while replacing a character the
+        route admits with one it does not, and the refusal loop passes either way —
+        the validator refuses both — so the count alone let a genuinely in-scope
         character disappear from the printed set while asserting a refusal that is
         true for the wrong reason.
+
+        Equality against a hand-written literal rather than a derivation feeding the
+        refusal loop, which is the shape the vacuity control below turns on: a broken
+        splice reports every character as excluded, so a derived set used as the
+        SOURCE of the cases would silently check nothing, while one used as the ORACLE
+        against a written-down set cannot. The three-way equality inherits that — an
+        empty derivation fails against all three copies rather than passing against
+        none.
 
         `my form` earns its place for the same reason `a:b` has one: a stored id with
         an INTERIOR SPACE resolved before this change (every route keyed
@@ -5685,7 +5700,8 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         # character would drop out of the printed set unnoticed (verified by
         # mutation). A character is in scope exactly when all eight routes admit it
         # and this validator refuses it, which is the complement the documents state,
-        # so deriving it is also what keeps the two copies honest.
+        # so the derived set is the oracle both this literal and their printed blocks
+        # are checked against below.
         in_scope_ascii = {
             character
             for character in map(chr, range(0x20, 0x7f))
@@ -5701,12 +5717,48 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
             'the in-scope ASCII set derived from the installed resolver is '
             f'{"".join(sorted(in_scope_ascii))!r}, not the '
             f'{"".join(sorted(set(scanned_ascii)))!r} listed here — either the '
-            "route's capture group moved, or this literal and the set printed in "
-            'CHANGELOG.md and docs/feedback-forms.md are now wrong. Both documents '
-            'state that set as a COMPLEMENT (every character the route admits and '
-            'this pattern does not) and then print it, so this literal is the copy '
-            'that has to agree with them.'
+            "route's capture group moved, or this literal is now wrong. Both "
+            'documents state that set as a COMPLEMENT (every character the route '
+            'admits and this pattern does not) and then print it, and the '
+            'assertion below is what holds their copies to it.'
         )
+        # The documents' OWN copies, which are the ones an operator reads. The
+        # assertion above pins this file's literal and nothing else, so without this
+        # the set could be dropped from both printed blocks and the whole suite would
+        # stay green (verified by mutation: deleting `~` from each). That is the
+        # defect one level down from the one this test is for — the prose stood at six
+        # of twenty-four while the code was right — and there are four copies of the
+        # set now, so leaving three unchecked is how the fifth round of this arrives.
+        #
+        # The fenced line is located by its leading `space` token rather than by a
+        # line number: `space` is there because a literal space cannot be shown
+        # otherwise, which makes it a stable anchor and not a formatting choice.
+        # Exactly one match per document is required, so a block that is reworded
+        # away fails here rather than silently asserting nothing.
+        repo_root = Path(__file__).resolve().parents[4]
+        for relative in ('CHANGELOG.md', 'docs/feedback-forms.md'):
+            printed = [
+                line.split()
+                for line in (repo_root / relative).read_text(
+                    encoding='utf-8'
+                ).splitlines()
+                if line.split()[:1] == ['space']
+            ]
+            assert len(printed) == 1, (
+                f'{relative} has {len(printed)} fenced lines beginning with the '
+                '`space` token, not 1 — that line is the set of in-scope ASCII '
+                'characters the upgrade note tells an operator to scan for, and '
+                'this assertion cannot check a set it cannot find'
+            )
+            document_set = {' ' if token == 'space' else token for token in printed[0]}
+            assert document_set == in_scope_ascii, (
+                f'{relative} prints '
+                f'{"".join(sorted(document_set))!r} as the in-scope ASCII set, but '
+                f'{"".join(sorted(in_scope_ascii))!r} is what the installed '
+                'resolver admits and this validator refuses. An operator decides '
+                'whether the row in front of them needs renaming from that line, '
+                'so a character missing from it is a row left to 404 in production.'
+            )
 
     def test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve(
         self, feedback_form_handler
@@ -5743,9 +5795,10 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         On the ASCII side the same principle applies to the CLASS rather than to a
         category: the in-scope set is 24 characters, and the note named six of them,
         so `'form(1)'` and `'a;b'` are sampled beside the named `'a:b'`. Those two
-        hold characters the #379 fix turns on — `(`, `)` and `;` are three of the
-        four the payload closes its handwritten string literal with — which is the
-        reason a list written by hand omits them: they read as attack syntax rather
+        hold characters the #379 fix turns on — `(`, `)` and `;` are three of the four
+        the payload breaks out with, and the `)` and `;` are two of the three
+        `_INJECTION_PAYLOAD`'s own comment names — which is the reason a list written
+        by hand omits them: they read as attack syntax rather
         than as an id anyone would seed, and they resolved regardless. The other half
         is asserted too: `"`, `#`, `/`, `?`, a backslash and a backtick are the
         printable-ASCII characters the ROUTE omits, which all three documents state
@@ -5786,12 +5839,12 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         # The ASCII cases first. `a:b` is one of the characters both documents name;
         # `form(1)` and `a;b` are two they do NOT. The in-scope ASCII set is 24
         # characters, and the seven the #379 fix turns on (`&`, `'`, `(`, `)`, `;`,
-        # `<`, `>` — the quote, parens and semicolon the payload closes its
-        # handwritten string literal with, plus the three `_js_value` escapes for the
-        # HTML parser) are exactly the ones a hand-written list drops, because they
-        # read as attack syntax rather than as an id anyone would seed. They resolved
-        # all the same, so sampling only a NAMED character would pin the note's list
-        # rather than the class the classifier actually tests.
+        # `<`, `>` — the quote, parens and semicolon the payload breaks out with, plus
+        # the three `_js_value` escapes for the HTML parser) are exactly the ones a
+        # hand-written list drops, because they read as attack syntax rather than as an
+        # id anyone would seed. They resolved all the same, so sampling only a NAMED
+        # character would pin the note's list rather than the class the classifier
+        # actually tests.
         #
         # Then one id per `\w` category, so no category stands in for another: `Ll`
         # `café`, `Lm` `hawaiʼi-form` (U+02BC, an apostrophe to the eye), `Lo`
